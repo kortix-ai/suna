@@ -117,3 +117,27 @@ export async function upsertCredential(opts: {
   // Reflect "connected" in the connector status.
   await db.update(executorConnectors).set({ status: 'active', updatedAt: new Date() }).where(eq(executorConnectors.connectorId, opts.connectorId));
 }
+
+/**
+ * Remove a credential — disconnect. `userId=null` = shared; set = that member's
+ * own. If no credentials remain for the connector, flip its status back to
+ * `needs_auth` so it shows as needing connection again.
+ */
+export async function deleteCredential(connectorId: string, userId: string | null): Promise<void> {
+  await db
+    .delete(executorCredentials)
+    .where(and(eq(executorCredentials.connectorId, connectorId), userClause(userId)));
+  const [remaining] = await db
+    .select({ id: executorCredentials.credentialId })
+    .from(executorCredentials)
+    .where(eq(executorCredentials.connectorId, connectorId))
+    .limit(1);
+  if (!remaining) {
+    await db
+      .update(executorConnectors)
+      .set({ status: 'needs_auth', updatedAt: new Date() })
+      .where(eq(executorConnectors.connectorId, connectorId));
+  }
+}
+
+export type { ShareScope };

@@ -13,6 +13,25 @@ import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '.
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { getWarmCountsBySlug, resolveTemplateWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
+
+/**
+ * Build a `slug → warm status` resolver for a project's templates: the per-template
+ * opt-in config merged with live ready/warming counts. Returns a function that
+ * yields null for every slug when the operator gate is off (feature unavailable).
+ */
+async function buildTemplateWarmResolver(
+  projectId: string,
+  metadata: unknown,
+): Promise<(slug: string) => { enabled: boolean; size: number; ready: number; warming: number } | null> {
+  if (!warmPoolEnabled()) return () => null;
+  const counts = await getWarmCountsBySlug(projectId).catch(() => new Map());
+  return (slug: string) => {
+    const cfg = resolveTemplateWarmConfig(metadata, slug);
+    const c = counts.get(slug) ?? { ready: 0, warming: 0 };
+    return { enabled: cfg.enabled, size: cfg.size, ready: c.ready, warming: c.warming };
+  };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -362,9 +381,11 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
+    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map(serializeTemplate),
+      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -408,10 +429,12 @@ projectsApp.openapi(
   // before reading them, so the dashboard never shows a permanent "Building".
   await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
+  const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
   return c.json({
-    templates: templates.map(serializeTemplate),
+    templates: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
+    warm_pool_available: warmPoolEnabled(),
   });
 },
 );
@@ -420,10 +443,72 @@ projectsApp.openapi(
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
 // template's live state + the most recent failed build (across any template).
 //
-// Overall budget for the (potentially Daytona-bound) templates lookup. Kept
-// comfortably under the frontend's 30s request timeout so a degraded provider
-// degrades the alert to "no templates" instead of timing the poll out.
+// Whole-handler wall-clock budget, kept comfortably under the frontend's 30s
+// request timeout (apps/web/src/lib/api-client.ts → "Request timed out after
+// 30s"). EVERY dependency this poll touches — git-auth resolution, the
+// (Daytona-bound) templates lookup, AND the build-log DB query — can degrade
+// independently, so bounding only the templates fetch still let a slow DB or
+// git-auth call hang the request to the client's 30s abort. A single budget
+// over the whole body guarantees the poll always answers fast: a degraded
+// dependency renders the alert as "unknown / no templates" instead of paging
+// us with the timeout error.
 const SANDBOX_HEALTH_BUDGET_MS = 12_000;
+
+interface SandboxHealthPayload {
+  primary_slug: string | null;
+  primary_template: ReturnType<typeof serializeTemplate> | null;
+  ready: boolean;
+  building: boolean;
+  latest_build: ReturnType<typeof serializeBuildSummary> | null;
+  latest_failure: ReturnType<typeof serializeBuildSummary> | null;
+}
+
+// Safe degraded payload: same shape as the happy path, surfaced when any
+// dependency is too slow. "Unknown" rather than a hard error so the sidebar
+// alert simply shows nothing and the next poll re-checks once we recover.
+const SANDBOX_HEALTH_DEGRADED: SandboxHealthPayload = {
+  primary_slug: null,
+  primary_template: null,
+  ready: false,
+  building: false,
+  latest_build: null,
+  latest_failure: null,
+};
+
+async function buildSandboxHealth(
+  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
+  projectId: string,
+): Promise<SandboxHealthPayload> {
+  const project = await loadGitProject(loaded);
+  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+  try {
+    // Repo unreachable / manifest broken / Daytona slow — render as "no
+    // templates" rather than failing the whole poll. (Each Daytona state
+    // lookup is also individually bounded in the provider.)
+    templates = await listSandboxTemplates(project);
+  } catch {
+    /* no templates */
+  }
+  const primary = templates[0] ?? null;
+  const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
+  const latest = builds[0] ?? null;
+  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const isBuilding =
+    (latest && latest.status === 'building') ||
+    (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
+
+  return {
+    primary_slug: primary?.slug ?? null,
+    primary_template: primary ? serializeTemplate(primary) : null,
+    ready: primary?.ready ?? false,
+    building: isBuilding,
+    latest_build: latest ? serializeBuildSummary(latest) : null,
+    latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
+  };
+}
+
+// Exported for unit coverage of the wall-clock degradation contract.
+export { SANDBOX_HEALTH_BUDGET_MS, SANDBOX_HEALTH_DEGRADED, buildSandboxHealth };
 
 projectsApp.openapi(
   createRoute({
@@ -445,38 +530,20 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const project = await loadGitProject(loaded);
-  let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
+  let payload: SandboxHealthPayload = SANDBOX_HEALTH_DEGRADED;
   try {
-    // Defense-in-depth: even though each Daytona state lookup is now bounded,
-    // cap the whole templates fetch so this frequently-polled endpoint can
-    // never hang past the frontend's request timeout. A slow lookup degrades
-    // to the same "no templates" fallback as a repo/manifest error.
-    templates = await withTimeout(
-      listSandboxTemplates(project),
+    payload = await withTimeout(
+      buildSandboxHealth(loaded, projectId),
       SANDBOX_HEALTH_BUDGET_MS,
-      'sandbox-health listSandboxTemplates',
+      'sandbox-health',
     );
   } catch {
-    // Repo unreachable / manifest broken / lookup too slow — render as
-    // "no templates".
+    // Any dependency (git-auth / templates / build-log DB) too slow or
+    // failing — degrade to "unknown" rather than hang to the client's 30s
+    // abort. The losing work settles in the background; the next poll retries.
   }
-  const primary = templates[0] ?? null;
-  const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
-  const latest = builds[0] ?? null;
-  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
-  const isBuilding =
-    (latest && latest.status === 'building') ||
-    (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
 
-  return c.json({
-    primary_slug: primary?.slug ?? null,
-    primary_template: primary ? serializeTemplate(primary) : null,
-    ready: primary?.ready ?? false,
-    building: isBuilding,
-    latest_build: latest ? serializeBuildSummary(latest) : null,
-    latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
-  });
+  return c.json(payload);
 },
 );
 
@@ -655,9 +722,11 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
+    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map(serializeTemplate),
+      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

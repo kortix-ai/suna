@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Secrets stay out of git.
+#
+# Cloudflare creds via env so they never touch disk:
+#   export TF_VAR_cloudflare_api_token=...
+#   export TF_VAR_cloudflare_zone_id=...
+
+aws_region = "us-west-2"
+vpc_cidr   = "10.30.0.0/16" # must not overlap ECS (10.10/16 dev, 10.20/16 prod)
+
+cluster_version = "1.32"
+
+# Lock the public Kubernetes API endpoint to known egress if you can.
+# cluster_endpoint_public_access_cidrs = ["203.0.113.10/32"]
+
+node_instance_types = ["m6i.large"]
+node_desired_size   = 3
+node_min_size       = 3
+node_max_size       = 9
+
+# Same Secrets Manager bundle the ECS prod task uses — NOT copied, read in place.
+# Friendly name (the ECS task references the same secret by full ARN, kortix-prod-env-omifd2).
+app_secret_name     = "kortix-prod-env"
+app_namespace       = "kortix-prod"
+app_service_account = "kortix-api"
+
+api_domain = "api-eks.kortix.com"
+
+# github_repo         = "kortix-ai/suna"
+# ci_deploy_role_name = "kortix-gha-eks-deploy"
+# admin_principal_arns = ["arn:aws:iam::935064898258:user/you@kortix.com"]

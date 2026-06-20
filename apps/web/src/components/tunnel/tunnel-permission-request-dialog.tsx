@@ -19,11 +19,11 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useApprovePermissionRequest, useDenyPermissionRequest, type TunnelPermissionRequest } from '@/hooks/tunnel/use-tunnel';
 import { useTunnelStore } from '@/stores/tunnel-store';
+import { toast } from '@/lib/toast';
 import { EXPIRY_OPTIONS, getExpiresAt, getCapabilityInfo, getDefaultScope } from './types';
-import type { PermissionScope, FilesystemScope, ShellScope, NetworkScope } from './types';
+import type { PermissionScope, FilesystemScope, ShellScope } from './types';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
 import { ShellScopeEditor } from './scope-editors/shell-scope-editor';
-import { NetworkScopeEditor } from './scope-editors/network-scope-editor';
 import { getScopeEditorCapability } from './scope-editors';
 
 type Mode = 'once' | 'scoped' | 'all';
@@ -89,8 +89,12 @@ export function TunnelPermissionRequestDialog() {
         expiresAt,
       });
       removePendingRequest(currentRequest.requestId);
+      toast.success(`Granted ${currentRequest.capability} access`);
     } catch (err) {
       console.error('Failed to approve:', err);
+      toast.error('Failed to grant access', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
@@ -98,8 +102,12 @@ export function TunnelPermissionRequestDialog() {
     try {
       await denyMutation.mutateAsync(currentRequest.requestId);
       removePendingRequest(currentRequest.requestId);
+      toast.success('Request denied');
     } catch (err) {
       console.error('Failed to deny:', err);
+      toast.error('Failed to deny request', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
@@ -165,12 +173,6 @@ export function TunnelPermissionRequestDialog() {
                   {scopeEditorType === 'shell' && (
                     <ShellScopeEditor
                       scope={customScope as ShellScope}
-                      onChange={(s) => setCustomScope(s)}
-                    />
-                  )}
-                  {scopeEditorType === 'network' && (
-                    <NetworkScopeEditor
-                      scope={customScope as NetworkScope}
                       onChange={(s) => setCustomScope(s)}
                     />
                   )}
@@ -286,16 +288,6 @@ function extractScopeFromRequest(request: TunnelPermissionRequest): PermissionSc
         ...shBase,
         commands: command ? [command.split(' ')[0]!] : shBase.commands,
       } satisfies ShellScope;
-    }
-    case 'network': {
-      const netBase = base as NetworkScope;
-      const port = (rs as Record<string, unknown>).port as number | undefined;
-      const host = (rs as Record<string, unknown>).host as string | undefined;
-      return {
-        ...netBase,
-        ports: port ? [port] : netBase.ports,
-        hosts: host ? [host] : netBase.hosts,
-      } satisfies NetworkScope;
     }
     default:
       return base;

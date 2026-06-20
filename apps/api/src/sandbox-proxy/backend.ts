@@ -40,6 +40,8 @@ export interface SandboxRecord {
   sandboxId: string;
   /** Provider-side id used in proxy URLs (`/v1/p/<externalId>/<port>`). */
   externalId: string;
+  /** Owning session — links to project_sessions for the launching identity. */
+  sessionId: string;
   projectId: string;
   accountId: string;
   provider: string;
@@ -101,6 +103,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     .select({
       sandboxId: sessionSandboxes.sandboxId,
       externalId: sessionSandboxes.externalId,
+      sessionId: sessionSandboxes.sessionId,
       projectId: sessionSandboxes.projectId,
       accountId: sessionSandboxes.accountId,
       provider: sessionSandboxes.provider,
@@ -131,6 +134,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
   return {
     sandboxId: row.sandboxId,
     externalId: row.externalId ?? externalId,
+    sessionId: row.sessionId,
     projectId: row.projectId,
     accountId: row.accountId,
     provider: row.provider,

@@ -1,30 +1,15 @@
-import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { ENV_MODE, EnvMode } from '@/lib/utils/env-config';
+import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/v1';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8008/v1';
 
 const FRONTEND_URL = process.env.EXPO_PUBLIC_FRONTEND_URL || '';
 
 export function getServerUrl(): string {
-  let url = BACKEND_URL;
-
-  if (Platform.OS === 'web') {
-    log.log('📡 Using backend URL (web):', url);
-    return url;
-  }
-
-  if (url.includes('localhost') || url.includes('127.0.0.1')) {
-    const devHost = process.env.EXPO_PUBLIC_DEV_HOST || (
-      Platform.OS === 'ios' ? 'localhost' : '10.0.2.2'
-    );
-    url = url.replace('localhost', devHost).replace('127.0.0.1', devHost);
-    log.log('📡 Using backend URL (localhost):', url);
-  } else {
-    log.log('📡 Using backend URL:', url);
-  }
-
+  const url = resolveLocalUrl(BACKEND_URL);
+  log.log('📡 Using backend URL:', url);
   return url;
 }
 

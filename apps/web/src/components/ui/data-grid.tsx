@@ -136,14 +136,20 @@ export function DataGrid({
 
   // ── Theme resolved ───────────────────────────────────────────────────
   const theme = useMemo(() => {
-    const colorScheme = resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
+    const colorScheme =
+      resolvedTheme === 'dark' ? colorSchemeDarkBlue : colorSchemeLight;
     return gridTheme.withPart(colorScheme);
   }, [resolvedTheme]);
 
   // ── No data ──────────────────────────────────────────────────────────
   if (!rowData || rowData.length === 0) {
     return (
-      <div className={cn('w-full h-full flex items-center justify-center text-sm text-muted-foreground', className)}>
+      <div
+        className={cn(
+          'w-full h-full flex items-center justify-center text-sm text-muted-foreground',
+          className,
+        )}
+      >
         No data
       </div>
     );

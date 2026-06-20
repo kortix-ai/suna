@@ -1,6 +1,7 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
+import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -10,7 +11,7 @@ import {
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
-import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady } from './opencode'
+import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
@@ -23,21 +24,7 @@ import { startStaticWebServer } from './static-web'
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
 // prompts into the same opencode conversation instead of opening a fresh
 // session with no context.
-const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
-const OPENCODE_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
-
-function normalizeOpencodeSessionId(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const id = value.trim()
-  return OPENCODE_SESSION_ID_RE.test(id) ? id : null
-}
-
-function pinOpencodeSessionId(sessionId: string): void {
-  const id = normalizeOpencodeSessionId(sessionId)
-  if (!id) throw new Error('invalid opencode session id')
-  mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-  writeFileSync(OPENCODE_SESSION_PIN_PATH, id, 'utf8')
-}
+export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 
 async function main() {
   const bootTime = Date.now()
@@ -109,6 +96,12 @@ async function main() {
   // the boot long-pole; the opencode spawn (binary launch + port bind) is fast
   // and opencode doesn't touch the workspace until its first request anyway.
   const projectEnv = createProjectEnvStore()
+  if (!agentEnvDirIsTmpfs()) {
+    logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
+  }
+  if (!writeAgentEnvFile(projectEnv)) {
+    logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
+  }
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
         bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
@@ -213,6 +206,17 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
+  const onSessionIdle = (opencodeSessionId: string) => {
+    void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
+    )
+  }
+  const onSessionError = (opencodeSessionId: string) => {
+    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
+    )
+  }
+  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError }
   if (bootState.initialOpenCodeSessionRequired) {
     await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
       bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
@@ -222,24 +226,27 @@ async function startSessionRuntime(
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-      startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+      startOpencodeEventLoop(opencode, cfg, eventHandlers)
       return
     }
   }
-  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
+  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('opencode-listening'))
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-    startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+    startOpencodeEventLoop(opencode, cfg, eventHandlers)
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
 }
 
 // Read KEY=VALUE lines from the per-session env file into process.env. The warm
-// pool stages the claimant's session env there on claim (proven: PUT /files →
-// writeFile lands), so a fresh loadConfig() resolves the claimant's KORTIX_*.
-function reloadSessionEnv(path = '/etc/dnah-env'): void {
+// pool stages the claimant's session env there on claim (the API POSTs it via
+// the daemon's /file/upload endpoint), so a fresh loadConfig() resolves the
+// claimant's KORTIX_*. Lives under /tmp (NOT /etc): /file/upload's allowed-roots
+// gate (routes/files.ts) permits /tmp + the workspace but rejects /etc, so the
+// claim-write must target a /tmp path the file router will accept.
+function reloadSessionEnv(path = '/tmp/dnah-env'): void {
   let txt: string
   try { txt = readFileSync(path, 'utf8') } catch { return }
   for (const line of txt.split('\n')) {
@@ -253,11 +260,25 @@ function reloadSessionEnv(path = '/etc/dnah-env'): void {
 }
 
 // Warm-pool spare runtime (opt-in via KORTIX_WARM_POOL=1, set only by the pool
-// builder). Boot opencode generic (no repo) + the proxy so the VM is
-// snapshottable + health-green, then idle until claimed. On claim the control
-// plane writes the claimant's env to the session-env file; we DETECT it by
-// polling (robust to a snapshot-restored process missing a signal), then reload
-// env, re-read config, clone the claimant's repo, and start the session runtime.
+// builder). Boot opencode + the proxy so the VM is snapshottable + health-green,
+// then idle until claimed. On claim the control plane writes the claimant's env
+// to the session-env file; we DETECT it by polling (robust to a snapshot-restored
+// process missing a signal), then reload env, re-read config, materialize the
+// repo, and start the session runtime.
+//
+// Two park strategies:
+//   • Stage-1 (generic spare): boot opencode against the DEFAULT config with NO
+//     repo, then clone + warm opencode on CLAIM (~9s claim — pre-pays only the
+//     provider create).
+//   • Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1, set by the API pool driver on a
+//     project-scoped spare that carries KORTIX_REPO_URL/PROJECT_ID but NO session
+//     identity): clone the BASE branch AND warm the opencode project plugin AT
+//     PARK, so claim only creates the session branch locally (git checkout -B
+//     from the cloned base — instant, no network; materializeRepo's baked-checkout
+//     fast path) and adopts the already-warm opencode (~0.5s claim). opencode is
+//     warmed by a readiness PROBE (a /session read that resolves the /workspace
+//     Instance + loads pty-tools.ts) — never a bootstrap session, since there is
+//     no KORTIX_SESSION_ID to relay at park.
 async function runPoolMode(
   cfg: Config,
   bootTime: number,
@@ -266,14 +287,55 @@ async function runPoolMode(
   staticWeb: ReturnType<typeof startStaticWebServer>,
 ): Promise<void> {
   const projectEnv = createProjectEnvStore()
-  await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
-  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-  bootMark('pool-opencode-spawned')
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
-  bootMark('pool-ready')
-  logger.info('[pool] warm spare ready; awaiting claim', { timeline: bootState.timeline })
+  writeAgentEnvFile(projectEnv)
+
+  const cloneAtPark =
+    (process.env.KORTIX_WARM_POOL_CLONE_AT_PARK ?? '').trim() === '1' && cfg.autoClone && !!cfg.repoUrl
+
+  let opencode: Opencode
+  let server: ReturnType<typeof startProxy>
+
+  if (cloneAtPark) {
+    // STAGE-2: pre-pay the clone + opencode plugin-warm at park.
+    try { await configureGlobalGitIdentity(cfg, OPENCODE_HOME) } catch {}
+    try { await configureGitCredentialHelper(cfg, OPENCODE_HOME) } catch {}
+    // No KORTIX_BRANCH_NAME on a spare → materializeRepo clones the base branch
+    // and stays on it, leaving /workspace/.git present for the claim's fast path.
+    await materializeRepo(cfg).catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      logger.error('[pool] park-time repo materialization failed', err)
+    })
+    bootMark('pool-repo-materialized')
+    // Resolve the PROJECT opencode config (now that the repo exists) so the warm
+    // loads the project's pty plugin — the actual ~4.7s cost we want pre-paid.
+    const opencodeConfigDir = bootState.repoMaterializationError
+      ? cfg.defaultOpencodeConfigDir
+      : await resolveOpencodeConfigDir(cfg)
+    await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+    opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
+    if (!bootState.repoMaterializationError) {
+      await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch(() => {})
+    }
+    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+    bootMark('pool-opencode-spawned')
+    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+    installShutdownHandlers(opencode, server, staticWeb)
+    if (!bootState.repoMaterializationError) {
+      const warm = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('pool-opencode-listening'))
+      if (warm) { opencode.markReady(); bootMark('pool-opencode-warm') }
+    }
+    bootMark('pool-ready')
+  } else {
+    // STAGE-1: generic, session-less spare (clone + warm deferred to claim).
+    await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
+    opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
+    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+    bootMark('pool-opencode-spawned')
+    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+    installShutdownHandlers(opencode, server, staticWeb)
+    bootMark('pool-ready')
+  }
+  logger.info('[pool] warm spare ready; awaiting claim', { cloneAtPark, timeline: bootState.timeline })
 
   let claimed = false
   const claim = (trigger: string) => {
@@ -282,6 +344,7 @@ async function runPoolMode(
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
+      writeAgentEnvFile(createProjectEnvStore())
       const cfg2 = loadConfig()
       // Rebuild the proxy/control surface with the claimant's cfg — the spare
       // booted tokenless, so the auth gate would 503 every request otherwise.
@@ -289,10 +352,15 @@ async function runPoolMode(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone, cloneAtPark })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
+        // Clear any park-clone failure so this retries cleanly. When park
+        // pre-cloned (Stage-2 happy path) materializeRepo hits the baked-checkout
+        // fast path: set remote + local `git checkout -B <session>` from the
+        // cloned base, no network re-clone. Otherwise it clones now (Stage-1).
+        bootState.repoMaterializationError = null
         await materializeRepo(cfg2).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[pool] repo materialization failed', err)
@@ -300,6 +368,22 @@ async function runPoolMode(
         bootMark('claim-repo-materialized')
         if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
       }
+
+      // A warm spare's opencode process is started before claim, when it has no
+      // session-scoped Executor/CLI/LLM env and (for Stage-1) before the project
+      // config dir exists. Restart it after adopting the claimant env + repo so
+      // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
+      const claimOpencodeConfigDir = bootState.repoMaterializationError
+        ? cfg2.defaultOpencodeConfigDir
+        : await resolveOpencodeConfigDir(cfg2)
+      await ensureOpencodeConfigDeps(claimOpencodeConfigDir).catch((err) =>
+        logger.warn('[pool] claim config deps failed', { err: (err as Error).message }),
+      )
+      opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
+      await opencode.restart().catch((err) =>
+        logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
+      )
+      bootMark('claim-opencode-restarted')
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
       logger.info('[pool] claim complete', { claimMs: Date.now() - t0, timeline: bootState.timeline })
     })()
@@ -307,11 +391,27 @@ async function runPoolMode(
   process.on('SIGHUP', () => claim('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    try { txt = readFileSync('/tmp/dnah-env', 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
   }, 1000)
 }
 
+// Establish the session's canonical opencode root and (once) deliver the
+// initial prompt. IDEMPOTENT across daemon/opencode restarts: a restart (e.g.
+// the daemon OOM-killed during a heavy install, then relaunched by the runtime)
+// re-runs this. The old version unconditionally POSTed a NEW root and
+// re-delivered the whole prompt — leaving the pre-restart root orphaned
+// mid-turn (a `bash[running]` part that never completes) and the task running
+// twice. That orphan, plus a null DB pin, is exactly what stranded the web +
+// Slack on a dead turn (the 2026-06-15 spinner incident). Now we:
+//   1. REUSE the existing canonical root if opencode already holds one
+//      (pin file → else most-recently-active root, mirroring the server),
+//   2. abort an interrupted turn on the reused root so its stream finalizes
+//      instead of spinning forever, and
+//   3. deliver the initial prompt at most once (only to a root with no
+//      messages yet) — never re-running a task whose side effects already ran.
+// It also reports the canonical root to apps/api so the durable DB pin is set
+// server-side at bootstrap, with no dependency on a browser ever opening it.
 async function maybeCreateInitialOpencodeSession(
   opencodePort: number,
   bootState: SandboxBootState,
@@ -324,53 +424,219 @@ async function maybeCreateInitialOpencodeSession(
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
-  logger.info('[boot] creating initial opencode session', {
-    bytes: prompt.length,
-    hasPrompt: prompt.length > 0,
-    workspace,
-  })
+  const existing = await resolveExistingRoot(baseUrl, workspace)
+  let sessionId: string
+  let alreadyDelivered = false
+  if (existing) {
+    sessionId = existing.id
+    alreadyDelivered = existing.hasMessages
+    logger.info('[boot] reusing existing opencode root', {
+      sessionId,
+      alreadyDelivered,
+      lastTurnIncomplete: existing.lastTurnIncomplete,
+    })
+    // A turn interrupted by the restart left a part stuck "running"; finalize it
+    // so a client streaming this root sees the turn end instead of spinning.
+    if (existing.lastTurnIncomplete) await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  } else {
+    logger.info('[boot] creating initial opencode session', {
+      bytes: prompt.length,
+      hasPrompt: prompt.length > 0,
+      workspace,
+    })
+    const sessionRes = await waitForInitialSessionCreate(baseUrl, workspace)
+    const session = (await sessionRes.json()) as { id?: string }
+    if (!session.id) throw new Error('opencode session create returned no id')
+    sessionId = session.id
+  }
 
-  const sessionRes = await waitForInitialSessionCreate(baseUrl, workspace)
-  const session = (await sessionRes.json()) as { id?: string }
-  const sessionId = normalizeOpencodeSessionId(session.id)
-  if (!sessionId) throw new Error('opencode session create returned invalid id')
+  pinOpencodeSessionFile(sessionId)
+  bootState.initialOpenCodeSessionId = sessionId
+  // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
+  // browser ever opens otherwise kept a null pin, which forced a lazy resolution
+  // that could land on the wrong root.
+  void relayBootstrapPinToApi(sessionId)
 
-  if (!prompt) {
-    try {
-      pinOpencodeSessionId(sessionId)
-    } catch (err) {
-      logger.warn('[boot] failed to pin opencode session id', err)
+  if (prompt && !alreadyDelivered) {
+    const model = resolveOpencodeModel()
+    const promptRes = await fetch(
+      `${baseUrl}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(workspace)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parts: [{ type: 'text', text: prompt }],
+          ...(model ? { model } : {}),
+        }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    )
+    if (!promptRes.ok) {
+      throw new Error(`opencode prompt failed: ${promptRes.status} ${await promptRes.text()}`)
     }
-    bootState.initialOpenCodeSessionId = sessionId
-    bootMark('opencode-session-created')
-    logger.info('[boot] initial opencode session created', { sessionId })
-    return
+    logger.info('[boot] initial prompt delivered', { sessionId })
+  } else if (prompt) {
+    logger.info('[boot] initial prompt already delivered to reused root; not re-running', { sessionId })
+  } else {
+    logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
+  bootMark('opencode-session-created')
+}
 
-  const model = resolveOpencodeModel()
-  const promptRes = await fetch(
-    `${baseUrl}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(workspace)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        parts: [{ type: 'text', text: prompt }],
-        ...(model ? { model } : {}),
-      }),
-      signal: AbortSignal.timeout(15_000),
-    },
-  )
-  if (!promptRes.ok) {
-    throw new Error(`opencode prompt failed: ${promptRes.status} ${await promptRes.text()}`)
-  }
+/** Best-effort write of the canonical opencode root id to the well-known pin
+ *  file (the in-sandbox source of truth read by abort/relay/turn-end). */
+function pinOpencodeSessionFile(sessionId: string): void {
   try {
-    pinOpencodeSessionId(sessionId)
+    mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+    writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
-  bootState.initialOpenCodeSessionId = sessionId
-  bootMark('opencode-session-created')
-  logger.info('[boot] initial prompt delivered', { sessionId })
+}
+
+interface ExistingRoot { id: string; hasMessages: boolean; lastTurnIncomplete: boolean }
+
+/**
+ * Resolve a usable existing canonical root for this workspace so a restart
+ * reuses it instead of creating a duplicate. Prefers the pinned id (if it still
+ * exists as a root), else the most-recently-active root. Returns null when
+ * opencode is unreachable or holds no root yet (the caller then creates one).
+ */
+async function resolveExistingRoot(baseUrl: string, workspace: string): Promise<ExistingRoot | null> {
+  // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
+  // boot as "no roots" would create a duplicate on restart — the exact bug we're
+  // killing — so only conclude "create a fresh root" once opencode has actually
+  // answered with an empty list (or never answers within the deadline).
+  const roots = await waitForRootList(baseUrl, workspace)
+  if (!roots || roots.length === 0) return null
+  const pinned = readPinnedOpencodeSessionId()
+  const chosen = (pinned && roots.find((r) => r.id === pinned)) || pickMostRecentRoot(roots)
+  if (!chosen) return null
+  const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
+  return { id: chosen.id, hasMessages: inspection.hasMessages, lastTurnIncomplete: inspection.lastTurnIncomplete }
+}
+
+interface RootLite { id: string; created: number; updated: number }
+
+/** Poll opencode's session list until it answers definitively (reachable),
+ *  returning the roots it holds (possibly `[]`). Null only if opencode never
+ *  became reachable within the deadline — so the caller never mistakes a slow
+ *  boot for an empty workspace and creates a duplicate root. */
+async function waitForRootList(baseUrl: string, workspace: string): Promise<RootLite[] | null> {
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    const roots = await listOpencodeRoots(baseUrl, workspace)
+    if (roots !== null) return roots
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return null
+}
+
+/** List opencode ROOT sessions (no parentID). Returns null when opencode is not
+ *  reachable yet — distinct from `[]` (reachable, no sessions). */
+async function listOpencodeRoots(baseUrl: string, workspace: string): Promise<RootLite[] | null> {
+  try {
+    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(workspace)}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as Array<{ id?: string; parentID?: string | null; time?: { created?: number; updated?: number } }>
+    if (!Array.isArray(data)) return []
+    return data
+      .filter((s) => s.id && !s.parentID)
+      .map((s) => ({ id: s.id as string, created: s.time?.created ?? 0, updated: s.time?.updated ?? s.time?.created ?? 0 }))
+  } catch {
+    return null
+  }
+}
+
+/** Most-recently-active root, tie-broken by newest-created then id. Kept in sync
+ *  with the server's pickCanonicalRoot (opencode-session-resolver.ts) so the
+ *  sandbox and the API converge on the SAME canonical root. */
+function pickMostRecentRoot(roots: RootLite[]): RootLite | null {
+  let best: RootLite | null = null
+  for (const r of roots) {
+    if (!best) { best = r; continue }
+    if (
+      r.updated > best.updated ||
+      (r.updated === best.updated && r.created > best.created) ||
+      (r.updated === best.updated && r.created === best.created && r.id < best.id)
+    ) {
+      best = r
+    }
+  }
+  return best
+}
+
+interface RootInspection { hasMessages: boolean; lastTurnIncomplete: boolean }
+
+/** Does the root already have messages (prompt delivered), and is its last turn
+ *  an assistant message left incomplete by a crash (no completion time)? */
+async function inspectRoot(baseUrl: string, workspace: string, sessionId: string): Promise<RootInspection> {
+  try {
+    const res = await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}/message?directory=${encodeURIComponent(workspace)}`,
+      { signal: AbortSignal.timeout(5_000) },
+    )
+    if (!res.ok) return { hasMessages: false, lastTurnIncomplete: false }
+    const msgs = (await res.json()) as Array<{ info?: { role?: string; time?: { completed?: number } } }>
+    if (!Array.isArray(msgs) || msgs.length === 0) return { hasMessages: false, lastTurnIncomplete: false }
+    const last = msgs[msgs.length - 1]
+    const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
+    return { hasMessages: true, lastTurnIncomplete: Boolean(incomplete) }
+  } catch {
+    return { hasMessages: false, lastTurnIncomplete: false }
+  }
+}
+
+/** Finalize an interrupted turn so a streaming client stops spinning. */
+async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  try {
+    await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`,
+      { method: 'POST', signal: AbortSignal.timeout(10_000) },
+    )
+    logger.info('[boot] aborted interrupted turn on reused root', { sessionId })
+  } catch (err) {
+    logger.warn('[boot] failed to abort interrupted turn', { sessionId, err: (err as Error).message })
+  }
+}
+
+/**
+ * Report the canonical opencode root to apps/api so it writes the durable DB
+ * pin (project_sessions.opencode_session_id) at bootstrap — no browser needed.
+ * Best-effort and fire-once: even if it never lands (transient blip), the API
+ * still heals the pin on the first /ensure-opencode. Never blocks boot.
+ */
+async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !token || !apiUrl) return
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        session_id: sessionId,
+        kind: 'opencode_session',
+        opencode_session_id: opencodeSessionId,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) {
+      logger.warn('[boot] bootstrap pin relay non-ok', { status: res.status })
+      return
+    }
+    logger.info('[boot] bootstrap opencode session pinned via api', { opencodeSessionId })
+  } catch (err) {
+    logger.warn('[boot] bootstrap pin relay failed', { err: (err as Error).message })
+  }
 }
 
 async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
@@ -397,29 +663,56 @@ async function waitForInitialSessionCreate(baseUrl: string, workspace: string): 
   throw new Error(lastError)
 }
 
-// Relay an opencode question.asked event to apps/api. apps/api blocks until
-// the user submits the Slack form, returns the captured `answers: string[][]`.
-// We then POST those answers to opencode's /question/{id}/reply so the agent
-// resumes naturally — same flow the dashboard uses, just over Slack.
-async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+// The relay context for a SLACK-originated session, or null when this is not
+// one. Slack sessions carry SLACK_* env injected by the dispatcher; the four
+// KORTIX_* vars are what we need to reach apps/api. Everywhere else (the web
+// dashboard, the CLI) this returns null so the sandbox stays out of the way and
+// the opencode event is handled natively. Shared by the question + turn-end
+// relays so BOTH gate on Slack identically — the question relay used to skip
+// this gate, which auto-answered the `question` tool in non-Slack sessions.
+function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
+  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
-    logger.warn('[opencode-events] missing env to relay question', {
+    logger.warn('[opencode-events] missing env to relay to apps/api', {
       hasProject: !!projectId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
     })
-    return
+    return null
   }
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  return { projectId, sessionId, token, apiRoot }
+}
+
+// Relay an opencode `question.asked` event for a SLACK session: post the
+// question(s) into the thread and resume the agent's (blocking) `question` tool
+// with a sentinel so the turn ends — the user's in-thread reply / button click
+// arrives as a new turn.
+//
+// "Is this a Slack session?" is read straight from the sandbox env, which IS the
+// session metadata: a Slack session is tagged `metadata.slack` at creation, and
+// the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
+// (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
+// metadata, so it has no such env — `slackRelayContext()` returns null and we
+// return WITHOUT touching opencode's question. That's the whole fix: the
+// dashboard answers `question.asked` interactively over opencode's own SSE, and
+// auto-answering it here was the "every question is auto-answered even outside
+// Slack" bug. No round-trip, no status codes — the env is the source of truth.
+async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+  const ctx = slackRelayContext()
+  if (!ctx) return
+  const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
-  let answers: string[][] | null = null
+
+  // Best-effort: render the question(s) into the thread. Independent of the
+  // resume below — a Slack turn must never hang waiting on this.
   try {
-    const res = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -428,25 +721,21 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
         opencode_session_id: req.sessionID,
         questions: req.questions,
       }),
-      signal: AbortSignal.timeout(15 * 60_000),
+      signal: AbortSignal.timeout(15_000),
     })
-    if (!res.ok) {
-      const body = (await res.text()).slice(0, 300)
-      logger.warn('[opencode-events] turn-question relay non-ok', { status: res.status, body })
-      return
-    }
-    const data = (await res.json()) as { ok?: boolean; answers?: string[][] }
-    if (!data.ok || !Array.isArray(data.answers)) {
-      logger.warn('[opencode-events] turn-question malformed response', data)
-      return
-    }
-    answers = data.answers
   } catch (err) {
-    logger.warn('[opencode-events] turn-question fetch failed', { err: (err as Error).message })
-    return
+    logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // Post the answers back into opencode so the question tool resumes.
+  // Resume opencode's (blocking) question tool with a sentinel so the turn ends;
+  // the user's reply / button click lands as a new turn. ALWAYS reply — a Slack
+  // question must never hang (that was "stuck until I kill it manually").
+  const sentinel =
+    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
+    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now. Next time, just ask with ' +
+    '`slack send` rather than the question tool.)'
+  const answers: string[][] = req.questions.map(() => [sentinel])
   const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
@@ -461,9 +750,83 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
       })
       return
     }
-    logger.info('[opencode-events] question replied to opencode', { requestId: req.id })
+    logger.info('[opencode-events] question resolved async (sentinel)', { requestId: req.id })
   } catch (err) {
     logger.warn('[opencode-events] opencode question.reply failed', { err: (err as Error).message })
+  }
+}
+
+// Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
+// turn to apps/api so the Slack live stream gets closed even when the agent
+// ends without `slack send`. Without this, abandoned streams sit until Slack's
+// inactivity timeout paints them as "Something went wrong" — a finished turn
+// that looks like a failed one. opencode fires these events for every session —
+// including subagent (Task tool) children — so we ignore any whose sessionID
+// isn't the root turn session. Only relevant for Slack-originated sessions
+// (SLACK_* env is injected by the Slack dispatcher); a no-op everywhere else.
+async function relayTurnEndToApi(
+  opencodeSessionId: string,
+  status: 'idle' | 'error',
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<void> {
+  const ctx = slackRelayContext()
+  if (!ctx) return
+  // Only the ROOT turn closes the Slack stream — a subagent going idle mid-task
+  // must NOT finalize the user-facing stream. Detected by parentID (objective),
+  // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
+  if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
+
+  const { projectId, sessionId, token, apiRoot } = ctx
+  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  const payload = JSON.stringify({ session_id: sessionId, kind: 'end', status, opencode_session_id: opencodeSessionId })
+  // This is the ONLY signal that finalizes a turn the agent ended without
+  // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
+  // best-effort: retry with backoff before giving up. A non-ok HTTP response is
+  // a definitive answer from apps/api (e.g. already finalized), so we stop on any
+  // `res.ok`; only network/5xx failures are retried.
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: payload,
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
+        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId, attempt })
+        return
+      }
+      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
+    } catch (err) {
+      logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
+    }
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+  }
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status })
+}
+
+// Is this opencode session the ROOT turn session (not a subagent child)? A root
+// has no parentID; Task-tool children do. We ask opencode directly rather than
+// comparing against the boot-pinned id: an opencode restart can mint a NEW root
+// and orphan the old pin, and gating turn-end on pin-equality then filters out
+// the REAL turn's `session.idle` — the Slack message then loads forever. parentID
+// is the objective signal that survives a re-pin. On any uncertainty, return
+// false so we never close the stream prematurely — the GC sweep is the backstop.
+async function isRootOpencodeSession(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<boolean> {
+  try {
+    const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(cfg.workspace)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return false
+    const session = (await res.json()) as { parentID?: string | null }
+    return !session.parentID
+  } catch {
+    return false
   }
 }
 
@@ -485,7 +848,7 @@ export function readPinnedOpencodeSessionId(): string | null {
   try {
     if (!existsSync(OPENCODE_SESSION_PIN_PATH)) return null
     const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    return normalizeOpencodeSessionId(id)
+    return id.length > 0 ? id : null
   } catch {
     return null
   }

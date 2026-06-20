@@ -1,8 +1,7 @@
 'use client';
 
-import { NextIntlClientProvider } from 'next-intl';
-import { ReactNode, useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { locales, defaultLocale, type Locale } from '@/i18n/config';
+import { useAuth } from '@/features/providers/auth-provider';
+import { defaultLocale, locales, type Locale } from '@/i18n/config';
 import {
   getBrowserLocale,
   hasExplicitBrowserLocalePreference,
@@ -10,7 +9,8 @@ import {
   persistBrowserLocale,
 } from '@/i18n/locale';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
-import { useAuth } from '@/components/AuthProvider';
+import { NextIntlClientProvider } from 'next-intl';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Preload default translations synchronously for immediate render
 // This prevents the loading spinner from blocking FCP
@@ -35,6 +35,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
   // Initialize with preloaded English translations to prevent blocking FCP
   const [messages, setMessages] = useState<any>(defaultTranslations);
+  const [isLoading, setIsLoading] = useState(false);
   const localeRef = useRef(locale);
 
   // Update ref and <html lang> when locale changes.
@@ -51,16 +52,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // Load translations for a given locale - memoized to avoid stale closures
   const loadTranslations = useCallback(async (targetLocale: Locale) => {
+    setIsLoading(true);
     try {
       const translations = await getTranslations(targetLocale);
       // Verify critical sections exist
       if (!translations || typeof translations !== 'object') {
         throw new Error(`Invalid translations object for locale ${targetLocale}`);
       }
-      if (!translations.common) {
+      if (!translations.common || !translations.modes) {
         console.warn(`Missing sections in ${targetLocale}:`, {
           hasCommon: !!translations.common,
-          keys: Object.keys(translations).slice(0, 10)
+          hasModes: !!translations.modes,
+          keys: Object.keys(translations).slice(0, 10),
         });
       }
       setMessages(translations);
@@ -81,18 +84,20 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocale(defaultLocale);
         localeRef.current = defaultLocale;
       }
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   // Initial load - check user metadata, then cookie/localStorage, then geo-detect
   useEffect(() => {
     let mounted = true;
-    
+
     function initializeLocale() {
       const currentLocale = getBrowserLocale(user, detectBestLocale);
-      
+
       if (!mounted) return;
-      
+
       // Only auto-save geo-detected locale if:
       // 1. User has NO explicit preference (no metadata, cookie, or localStorage)
       // 2. Geo-detected locale is different from default
@@ -100,15 +105,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       if (!hasExplicitBrowserLocalePreference(user) && currentLocale !== defaultLocale) {
         persistBrowserLocale(currentLocale);
       }
-      
+
       if (mounted) {
         setLocale(currentLocale);
         loadTranslations(currentLocale);
       }
     }
-    
+
     initializeLocale();
-    
+
     return () => {
       mounted = false;
     };
@@ -152,11 +157,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // Always render children immediately with available translations
   // This prevents blocking FCP - we start with English and swap if needed
   return (
-    <NextIntlClientProvider 
-      locale={locale} 
-      messages={safeMessages} 
-      timeZone="UTC"
-    >
+    <NextIntlClientProvider locale={locale} messages={safeMessages} timeZone="UTC">
       {children}
     </NextIntlClientProvider>
   );

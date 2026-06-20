@@ -24,6 +24,7 @@ import { KortixLoader } from '@/components/ui';
 import {
   Upload,
   FolderPlus,
+  FilePlus,
   Trash2,
   AlertCircle,
   LayoutGrid,
@@ -69,6 +70,7 @@ import {
   useOpenCodeDeleteFile,
   useOpenCodeMkdir,
   useOpenCodeRenameFile,
+  useOpenCodeWriteFile,
 } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -127,6 +129,7 @@ export interface FilesPageRef {
   uploadDocument: () => void;
   uploadImage: () => void;
   createFolder: () => void;
+  createFile: () => void;
   openFile: () => void;
   copyPath: () => void;
   renameFile: () => void;
@@ -192,6 +195,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(savedTabState?.viewerVisible ?? false);
   const [viewerFile, setViewerFile] = useState<SandboxFile | null>(savedTabState?.viewerFile ?? null);
+  const [viewerInitialEdit, setViewerInitialEdit] = useState(false);
 
   // Context-selected file (long-press selects for three-dot menu actions)
   const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(savedTabState?.selectedFile ?? null);
@@ -204,6 +208,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   // Create folder / rename bottom sheets
   const createFolderSheetRef = useRef<BottomSheetModal>(null);
   const [newFolderName, setNewFolderName] = useState('');
+  const newFileSheetRef = useRef<BottomSheetModal>(null);
+  const [newFileName, setNewFileName] = useState('');
   const renameSheetRef = useRef<BottomSheetModal>(null);
   const [renameName, setRenameName] = useState('');
   const [renameFile, setRenameFile] = useState<SandboxFile | null>(null);
@@ -231,6 +237,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const uploadMutation = useOpenCodeUploadFile();
   const deleteMutation = useOpenCodeDeleteFile();
   const createFolderMutation = useOpenCodeMkdir();
+  const writeFileMutation = useOpenCodeWriteFile();
   const renameMutation = useOpenCodeRenameFile();
 
   // Bottom sheet backdrop
@@ -251,6 +258,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     setNewFolderName('');
     haptics.medium();
     createFolderSheetRef.current?.present();
+  }, []);
+
+  const openCreateFile = useCallback(() => {
+    setNewFileName('');
+    haptics.medium();
+    newFileSheetRef.current?.present();
   }, []);
 
   // Breadcrumbs
@@ -319,6 +332,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     if (!newFolderName.trim()) return false;
     return siblingNames.includes(newFolderName.trim().toLowerCase());
   }, [newFolderName, siblingNames]);
+
+  // Check if new file name already exists (case-insensitive)
+  const fileNameExists = useMemo(() => {
+    if (!newFileName.trim()) return false;
+    return siblingNames.includes(newFileName.trim().toLowerCase());
+  }, [newFileName, siblingNames]);
 
   // Check if rename target already exists (case-insensitive, excluding current name)
   const renameNameExists = useMemo(() => {
@@ -545,6 +564,27 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     }
   }, [sandboxUrl, createFolderMutation, currentPath, newFolderName, folderNameExists]);
 
+  const handleCreateFile = useCallback(async () => {
+    const name = newFileName.trim();
+    if (!name || !sandboxUrl || fileNameExists) return;
+    haptics.tap();
+    Keyboard.dismiss();
+    try {
+      const filePath = `${currentPath}/${name}`;
+      await writeFileMutation.mutateAsync({ sandboxUrl, path: filePath, content: '' });
+      newFileSheetRef.current?.dismiss();
+      setNewFileName('');
+      haptics.success();
+      // Open the brand-new file straight into the editor.
+      setViewerInitialEdit(true);
+      setViewerFile({ name, path: filePath, type: 'file', size: 0, modified: new Date().toISOString() });
+      setViewerVisible(true);
+    } catch {
+      haptics.warning();
+      Alert.alert('Error', 'Failed to create file');
+    }
+  }, [sandboxUrl, writeFileMutation, currentPath, newFileName, fileNameExists]);
+
   // Expose actions to parent via ref (for BottomBar menu)
   useImperativeHandle(ref, () => ({
     showHidden,
@@ -556,13 +596,14 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     uploadDocument: () => handleUploadDocument(),
     uploadImage: () => handleUploadImage(),
     createFolder: () => openCreateFolder(),
+    createFile: () => openCreateFile(),
     openFile: () => handleOpenSelectedFile(),
     copyPath: () => handleCopyPath(),
     renameFile: () => handleRenameFile(),
     deleteFile: () => handleDeleteFile(),
     deselectFile: () => setSelectedFile(null),
     openPath: (path: string) => handleOpenPath(path),
-  }), [showHidden, viewMode, selectedFile, refetch, handleUploadDocument, handleUploadImage, openCreateFolder, handleOpenSelectedFile, handleCopyPath, handleRenameFile, handleDeleteFile, handleOpenPath]);
+  }), [showHidden, viewMode, selectedFile, refetch, handleUploadDocument, handleUploadImage, openCreateFolder, openCreateFile, handleOpenSelectedFile, handleCopyPath, handleRenameFile, handleDeleteFile, handleOpenPath]);
 
   const isAtRoot = currentPath === '/workspace';
 
@@ -874,7 +915,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             >
               Upload files or create a folder{'\n'}to get started
             </Text>
-            <View className="flex-row gap-3">
+            <View className="flex-row flex-wrap items-center justify-center gap-3" style={{ alignSelf: 'stretch' }}>
               <Pressable
                 onPress={handleUploadDocument}
                 className="flex-row items-center px-5 py-3 active:opacity-70"
@@ -919,6 +960,30 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   style={{ color: fgColor }}
                 >
                   New folder
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={openCreateFile}
+                className="flex-row items-center px-5 py-3 active:opacity-70"
+                style={{
+                  borderRadius: 9999,
+                  backgroundColor: isDark
+                    ? 'rgba(248, 248, 248, 0.1)'
+                    : 'rgba(18, 18, 21, 0.06)',
+                }}
+              >
+                <Icon
+                  as={FilePlus}
+                  size={16}
+                  color={fgColor}
+                  strokeWidth={2}
+                  style={{ marginRight: 8 }}
+                />
+                <Text
+                  className="text-sm font-roobert-medium"
+                  style={{ color: fgColor }}
+                >
+                  New file
                 </Text>
               </Pressable>
             </View>
@@ -1201,6 +1266,134 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         </BottomSheetView>
       </BottomSheetModal>
 
+      {/* Create File Bottom Sheet */}
+      <BottomSheetModal
+        ref={newFileSheetRef}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+        onDismiss={() => setNewFileName('')}
+        backgroundStyle={{
+          backgroundColor: getSheetBg(isDark),
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+        }}
+      >
+        <BottomSheetView
+          style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
+        >
+          {/* Header */}
+          <View className="flex-row items-center mb-5">
+            <View
+              className="w-10 h-10 rounded-xl items-center justify-center mr-3"
+              style={{
+                backgroundColor: isDark
+                  ? 'rgba(248, 248, 248, 0.08)'
+                  : 'rgba(18, 18, 21, 0.05)',
+              }}
+            >
+              <Icon as={FilePlus} size={20} color={fgColor} strokeWidth={1.8} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-lg font-roobert-semibold" style={{ color: fgColor }}>
+                New File
+              </Text>
+              <Text
+                className="text-xs font-roobert mt-0.5"
+                style={{
+                  color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+                }}
+                numberOfLines={1}
+              >
+                {currentPath === '/workspace' ? 'My Kortix' : currentPath.split('/').pop()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Input */}
+          <BottomSheetTextInput
+            value={newFileName}
+            onChangeText={setNewFileName}
+            placeholder="Enter file name (e.g. notes.md)"
+            placeholderTextColor={
+              isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'
+            }
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleCreateFile}
+            style={{
+              backgroundColor: isDark
+                ? 'rgba(248, 248, 248, 0.06)'
+                : 'rgba(18, 18, 21, 0.04)',
+              borderWidth: 1,
+              borderColor: fileNameExists
+                ? 'rgba(239, 68, 68, 0.6)'
+                : isDark
+                  ? 'rgba(248, 248, 248, 0.1)'
+                  : 'rgba(18, 18, 21, 0.08)',
+              borderRadius: 14,
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+              fontSize: 16,
+              fontFamily: 'Roobert',
+              color: fgColor,
+              marginBottom: fileNameExists ? 8 : 20,
+            }}
+          />
+          {fileNameExists && (
+            <Text
+              className="text-xs font-roobert mb-4"
+              style={{ color: '#ef4444', paddingLeft: 4 }}
+            >
+              A file or folder with that name already exists
+            </Text>
+          )}
+
+          {/* Create button */}
+          <BottomSheetTouchable
+            onPress={handleCreateFile}
+            disabled={!newFileName.trim() || fileNameExists || writeFileMutation.isPending}
+            style={{
+              backgroundColor:
+                newFileName.trim() && !fileNameExists
+                  ? themeColors.primary
+                  : isDark
+                    ? 'rgba(248, 248, 248, 0.08)'
+                    : 'rgba(18, 18, 21, 0.06)',
+              borderRadius: 9999,
+              paddingVertical: 15,
+              alignItems: 'center',
+              opacity: newFileName.trim() && !fileNameExists ? 1 : 0.5,
+            }}
+          >
+            <Text
+              className="text-[15px] font-roobert-semibold"
+              style={{
+                color:
+                  newFileName.trim() && !fileNameExists
+                    ? themeColors.primaryForeground
+                    : isDark
+                      ? 'rgba(248, 248, 248, 0.3)'
+                      : 'rgba(18, 18, 21, 0.3)',
+              }}
+            >
+              {writeFileMutation.isPending ? 'Creating...' : 'Create File'}
+            </Text>
+          </BottomSheetTouchable>
+        </BottomSheetView>
+      </BottomSheetModal>
+
       {/* Rename Bottom Sheet */}
       <BottomSheetModal
         ref={renameSheetRef}
@@ -1362,10 +1555,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         onClose={() => {
           setViewerVisible(false);
           setViewerFile(null);
+          setViewerInitialEdit(false);
         }}
         file={viewerFile}
         sandboxId={sandboxId || ''}
         sandboxUrl={sandboxUrl}
+        initialEditing={viewerInitialEdit}
       />
       </PageContent>
     </View>

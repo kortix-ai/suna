@@ -171,7 +171,14 @@ export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: stri
 }
 
 function normalizeGitHubPrivateKey(value: string) {
-  return value.trim().replace(/\\n/g, '\n');
+  // Strip surrounding quotes (a secret stored as "...PEM..." double-encodes the
+  // quotes into the value) and \n-escapes, so a quoted secret can never produce
+  // OpenSSL NO_START_LINE. Then normalize escaped newlines to real ones.
+  return value
+    .trim()
+    .replace(/^\s*(['"])([\s\S]*)\1\s*$/, '$2')
+    .trim()
+    .replace(/\\n/g, '\n');
 }
 
 function base64UrlJson(value: unknown) {
@@ -467,11 +474,24 @@ export async function commitFile(opts: {
   message: string;
   branch?: string;
   existingSha?: string;
+  authorName?: string;
+  authorEmail?: string;
   auth?: GitHubAuthContext;
 }): Promise<void> {
+  // Pin the commit identity explicitly. Without an `author`/`committer` the
+  // Contents API attributes the commit to whoever owns the token — which, on a
+  // server-side PAT, surfaces a personal GitHub user (e.g. "markokraemer
+  // committed") instead of Kortix. Defaulting here mirrors the identity used by
+  // every git-CLI commit path (branches.ts / merge.ts / seed.ts).
+  const ident = {
+    name: opts.authorName || 'Kortix',
+    email: opts.authorEmail || 'noreply@kortix.ai',
+  };
   const body: Record<string, unknown> = {
     message: opts.message,
     content: Buffer.from(opts.content, 'utf8').toString('base64'),
+    author: ident,
+    committer: ident,
   };
   if (opts.branch) body.branch = opts.branch;
   if (opts.existingSha) body.sha = opts.existingSha;

@@ -25,6 +25,8 @@ import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { toast } from '@/lib/toast';
+import { parseSetupLinkHref } from '@/components/setup-links/util';
+import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 
 // Mermaid rendering is comparatively heavy (the renderer pulls Dialog/Button
 // chrome and lazily imports the multi-hundred-KB `mermaid` package on first
@@ -453,7 +455,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
     return null;
   });
   const versionRef = useRef(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     // Exact cache hit — show immediately and update module state
@@ -495,7 +497,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
 
     // Also schedule a component-level debounced highlight for when the component
     // is stable (after streaming ends, component is no longer remounted by Streamdown).
-    clearTimeout(debounceRef.current);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       highlightAsync(code, language, theme).then((result) => {
         if (version === versionRef.current && result) {
@@ -506,7 +508,9 @@ export function HighlightedCode({ code, language, children }: { code: string; la
       });
     }, 100);
 
-    return () => clearTimeout(debounceRef.current);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [code, language, theme, hlKey]);
 
   const shikiResetClasses = cn(
@@ -898,6 +902,19 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // LINKS - Subtle, professional styling with Next.js routing
     // ═══════════════════════════════════════════════════════════════
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      // Agent-minted setup links (secret intake / Pipedream Quick Connect) are
+      // rendered as an in-app modal trigger instead of a plain link, so the
+      // human fills it in without leaving the chat. (In Slack the same URL is
+      // just a tappable link — no interception there.)
+      const setupLink = parseSetupLinkHref(href);
+      if (setupLink) {
+        return (
+          <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
+            {children}
+          </SetupLinkButton>
+        );
+      }
+
       // Note: localhost:PORT click interception is handled globally by
       // <LocalhostLinkInterceptor> — no per-link proxy logic needed here.
       // We still set the proxied href so the browser status bar / hover
@@ -1165,7 +1182,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       <Streamdown
         isAnimating={isStreaming}
         mode="static"
-        components={components}
+        components={components as any}
         remarkPlugins={customRemarkPlugins}
         rehypePlugins={allowHtml ? customRehypePlugins : customRehypePluginsNoRaw}
       >

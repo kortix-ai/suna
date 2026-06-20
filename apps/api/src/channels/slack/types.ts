@@ -8,14 +8,12 @@ export interface QuestionInfo {
   custom?: boolean;
 }
 
-export interface TurnStream {
+export interface LiveTurn {
   channel: string;
   ts: string;
   token: string;
   triggerTs: string;
   steps: StreamTaskChunk[];
-  streaming: boolean;
-  placeholderActive: boolean;
   expiry: number;
   finalized: boolean;
   projectId: string;
@@ -71,10 +69,21 @@ export interface SlackEvent {
   subtype?: string;
   team?: string;
   tab?: 'home' | 'messages';
+  // Present on assistant_thread_started / assistant_thread_context_changed.
+  // The AI-Assistant DM pane delivers its own thread coordinates here (NOT on
+  // the top-level event), so the picker has to read channel/thread from this.
+  assistant_thread?: {
+    user_id?: string;
+    channel_id?: string;
+    thread_ts?: string;
+    context?: Record<string, unknown>;
+  };
 }
 
 export interface SlackInteractionPayload {
   type: string;
+  // Present on shortcuts / message actions (type === 'message_action').
+  callback_id?: string;
   team?: { id: string };
   user?: { id: string };
   channel?: { id: string };

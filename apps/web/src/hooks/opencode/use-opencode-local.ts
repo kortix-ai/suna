@@ -11,10 +11,11 @@
  * - Variant persistence via useModelStore
  */
 
-import { useMemo, useCallback, useRef, useEffect } from 'react';
+import type { FlatModel } from '@/features/session/session-chat-input';
+import { featureFlags } from '@/lib/feature-flags';
+import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useModelStore, type ModelKey } from './use-model-store';
-import type { FlatModel } from '@/components/session/session-chat-input';
-import type { Agent, ProviderListResponse, Config } from '@opencode-ai/sdk/v2/client';
 
 export type { ModelKey };
 
@@ -22,7 +23,7 @@ export type { ModelKey };
 // Types
 // ============================================================================
 
-interface UseOpenCodeLocalOptions {
+export interface UseOpenCodeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
@@ -30,7 +31,7 @@ interface UseOpenCodeLocalOptions {
   sessionId?: string;
 }
 
-interface OpenCodeLocalAgent {
+export interface OpenCodeLocalAgent {
   /** Currently selected agent (or first available) */
   current: Agent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
@@ -41,7 +42,7 @@ interface OpenCodeLocalAgent {
   move: (direction: 1 | -1) => void;
 }
 
-interface OpenCodeLocalModel {
+export interface OpenCodeLocalModel {
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey (for sending to API) */
@@ -69,7 +70,7 @@ interface OpenCodeLocalModel {
   };
 }
 
-interface OpenCodeLocal {
+export interface OpenCodeLocal {
   agent: OpenCodeLocalAgent;
   model: OpenCodeLocalModel;
 }
@@ -77,6 +78,19 @@ interface OpenCodeLocal {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function uniqueBy<T>(arr: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of arr) {
+    const k = key(item);
+    if (!seen.has(k)) {
+      seen.add(k);
+      result.push(item);
+    }
+  }
+  return result;
+}
 
 /**
  * Normalize a model value into a ModelKey.
@@ -87,7 +101,7 @@ interface OpenCodeLocal {
  */
 export function parseModelKey(model: unknown): ModelKey | undefined {
   if (!model) return undefined;
-  if (typeof model === 'object') {
+  if (typeof model === 'object' && model !== null) {
     const obj = model as Record<string, unknown>;
     if (typeof obj.providerID === 'string' && typeof obj.modelID === 'string') {
       return { providerID: obj.providerID, modelID: obj.modelID };
@@ -136,22 +150,26 @@ export function useOpenCodeLocal({
           modelID,
           modelName: (model.name || modelID).replace('(latest)', '').trim(),
           variants: model.variants,
-          capabilities: caps ? {
-            reasoning: caps.reasoning ?? false,
-            vision: caps.input?.image ?? false,
-            toolcall: caps.toolcall ?? false,
-          } : {
-            reasoning: (model as any).reasoning ?? false,
-            vision: modalities?.input?.includes('image') ?? false,
-            toolcall: (model as any).tool_call ?? false,
-          },
+          capabilities: caps
+            ? {
+                reasoning: caps.reasoning ?? false,
+                vision: caps.input?.image ?? false,
+                toolcall: caps.toolcall ?? false,
+              }
+            : {
+                reasoning: (model as any).reasoning ?? false,
+                vision: modalities?.input?.includes('image') ?? false,
+                toolcall: (model as any).tool_call ?? false,
+              },
           contextWindow: (model as any).limit?.context,
           releaseDate: (model as any).release_date,
           family: (model as any).family,
-          cost: (model as any).cost ? {
-            input: (model as any).cost.input ?? 0,
-            output: (model as any).cost.output ?? 0,
-          } : undefined,
+          cost: (model as any).cost
+            ? {
+                input: (model as any).cost.input ?? 0,
+                output: (model as any).cost.output ?? 0,
+              }
+            : undefined,
           providerSource: (p as any).source,
         });
       }
@@ -169,10 +187,7 @@ export function useOpenCodeLocal({
       const all = Array.isArray(providers.all) ? providers.all : [];
       const connected = Array.isArray(providers.connected) ? providers.connected : [];
       const provider = all.find((x) => x.id === model.providerID);
-      return (
-        !!provider?.models[model.modelID] &&
-        connected.includes(model.providerID)
-      );
+      return !!provider?.models[model.modelID] && connected.includes(model.providerID);
     },
     [providers],
   );
@@ -198,10 +213,16 @@ export function useOpenCodeLocal({
   );
 
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
-  const visibleAgents = useMemo<Agent[]>(
-    () => (Array.isArray(rawAgents) ? rawAgents : []).filter((a) => !a.hidden),
-    [rawAgents],
-  );
+  // Project-only agents (orchestrator/project-maintainer/worker) are hidden
+  // when the project paradigm is off; their bodies reference project
+  // tools that aren't registered in default mode.
+  const visibleAgents = useMemo<Agent[]>(() => {
+    // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
+    const projectOnlyAgents = new Set(['project-manager']);
+    return (Array.isArray(rawAgents) ? rawAgents : []).filter(
+      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
+    );
+  }, [rawAgents]);
 
   // Resolve the current agent name with a two-tier priority:
   //   1. Per-session slot (sessionAgentName[sessionId]) — sticky for THIS session
@@ -293,7 +314,7 @@ export function useOpenCodeLocal({
     if (!currentAgent) return undefined;
     return getFirstValidModel(
       // 1. Per-session model (user's explicit choice in this session — survives reload)
-      () => sessionId ? modelStore.getSessionModel(sessionId) : undefined,
+      () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
       // 2. Per-agent model (persisted across sessions for this agent)
       () => modelStore.getSelectedModel(currentAgent.name),
       // 3. User's global default (set during onboarding or settings)
@@ -405,10 +426,13 @@ export function useOpenCodeLocal({
     if (modelStore.globalDefault && isModelValid(modelStore.globalDefault)) return;
     if (currentAgent.model) {
       if (isModelValid(currentAgent.model as ModelKey)) {
-        setModel({
-          providerID: currentAgent.model.providerID,
-          modelID: currentAgent.model.modelID,
-        }, { autoSeed: true });
+        setModel(
+          {
+            providerID: currentAgent.model.providerID,
+            modelID: currentAgent.model.modelID,
+          },
+          { autoSeed: true },
+        );
       }
     }
     // Only trigger on agent change — intentionally exclude setModel/modelStore from deps
@@ -436,7 +460,10 @@ export function useOpenCodeLocal({
   // ---- Variant management (matching SolidJS local.tsx:186-217) ----
   const variantCurrent = useMemo<string | undefined>(() => {
     if (!currentModel) return undefined;
-    return modelStore.getVariant({ providerID: currentModel.providerID, modelID: currentModel.modelID });
+    return modelStore.getVariant({
+      providerID: currentModel.providerID,
+      modelID: currentModel.modelID,
+    });
   }, [currentModel, modelStore]);
 
   const variantList = useMemo<string[]>(() => {
@@ -447,7 +474,10 @@ export function useOpenCodeLocal({
   const setVariant = useCallback(
     (value: string | undefined) => {
       if (!currentModel) return;
-      modelStore.setVariant({ providerID: currentModel.providerID, modelID: currentModel.modelID }, value);
+      modelStore.setVariant(
+        { providerID: currentModel.providerID, modelID: currentModel.modelID },
+        value,
+      );
     },
     [currentModel, modelStore],
   );

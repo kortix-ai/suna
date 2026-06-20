@@ -136,6 +136,12 @@ describe('daemon proxy auth gate', () => {
       '-c',
       `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
     ])
+    expect(buildGitAuthArgs('https://api.kortix.test/v1/git/project-123.git', 'secret-token')).toEqual([
+      '-c',
+      `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
+      '-c',
+      `http.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
   })
 
   it('fetches clone credentials from the API v1 project endpoint', async () => {
@@ -189,6 +195,41 @@ describe('daemon proxy auth gate', () => {
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('boots from an EMPTY upstream by initializing a fresh local repo', async () => {
+    // A managed repo that was provisioned but never seeded: it exists upstream
+    // but has no `main` branch. A cold clone would fail with "Remote branch main
+    // not found in upstream origin" — materializeRepo must NOT hard-fail; it
+    // should init a local repo at base + fork the session branch off it so the
+    // session still boots (100% local). resolveCloneToken short-circuits to
+    // undefined here (no apiUrl), so no network is touched.
+    const root = mkdtempSync(join(tmpdir(), 'kortix-clone-empty-'))
+    try {
+      const remote = join(root, 'remote.git')
+      const target = join(root, 'workspace')
+      git(['init', '--bare', remote]) // empty: no branches, no commits
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+        branchName: 'session-abc',
+      }))
+
+      // Repo materialized locally with a HEAD to work from.
+      expect(existsSync(join(target, '.git'))).toBe(true)
+      expect(gitOutput(['-C', target, 'log', '-1', '--format=%s'])).toBe('chore: initialize Kortix project')
+      // Checked out on the session branch (forked from the empty base commit).
+      expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-abc')
+      // Origin still wired up so the background publish / agent push can seed it.
+      expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(remote)
+      // Identity configured so the agent's commits are attributed.
+      expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -491,7 +532,7 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('syncs project env through /kortix/env and restarts opencode only on changes', async () => {
+  it('syncs project env through /kortix/env without restarting opencode', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'OLD_SECRET,REMOVED_SECRET',
@@ -526,7 +567,7 @@ describe('daemon proxy auth gate', () => {
       revision: 'rev-1',
       names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
     })
-    expect(restartCalls).toBe(1)
+    expect(restartCalls).toBe(0)
     expect(mergeProjectEnv({
       OLD_SECRET: 'old-process',
       REMOVED_SECRET: 'gone-process',
@@ -551,7 +592,7 @@ describe('daemon proxy auth gate', () => {
     })
     expect(replay.status).toBe(200)
     expect(await replay.json()).toMatchObject({ ok: true, changed: false })
-    expect(restartCalls).toBe(1)
+    expect(restartCalls).toBe(0)
   })
 
   it('does not restart opencode when env sync matches the boot revision and values', async () => {

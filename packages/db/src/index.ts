@@ -9,10 +9,11 @@ export {
   // Enums
   sandboxStatusEnum,
   deploymentStatusEnum,
-  deploymentSourceEnum,
-  projectStatusEnum,
-  projectSessionStatusEnum,
-  projectRoleEnum,
+	  deploymentSourceEnum,
+	  projectStatusEnum,
+	  projectSessionStatusEnum,
+	  sessionLifecycleCommandStatusEnum,
+	  projectRoleEnum,
   apiKeyStatusEnum,
   apiKeyTypeEnum,
   // Kortix tables — accounts
@@ -37,19 +38,22 @@ export {
   secretShareScopeEnum,
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
-  projectTriggerRuntime,
-  chatChannelBindings,
+	  projectTriggerRuntime,
+	  sessionLifecycleCommands,
+	  chatChannelBindings,
   chatInstalls,
   chatThreads,
   chatTurnStreams,
   chatEventDedup,
   projectSessions,
   projectSessionGrants,
+  projectSessionPublicShares,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
+  warmPoolPresence,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -161,6 +165,7 @@ export {
   executorProjectSettingsRelations,
   projectSecretGrantsRelations,
 } from './schema/kortix';
+export type { AgentGrant } from './schema/kortix';
 
 export type {
   TunnelMachineInfo,

@@ -292,7 +292,12 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_lb_listener.http]
+  # Both listeners must exist before the service: the HTTPS listener (when
+  # enabled) is what associates the target group with the load balancer, and ECS
+  # rejects CreateService against a target group that has no associated LB.
+  # Without this, the service can race ahead of the HTTPS listener on a fresh
+  # apply ("target group ... does not have an associated load balancer").
+  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
   tags       = var.tags
 }
 
@@ -335,6 +340,28 @@ resource "aws_appautoscaling_policy" "memory" {
     }
     target_value       = var.memory_target
     scale_in_cooldown  = 120
+    scale_out_cooldown = 30
+  }
+}
+
+# Request-count scaling — scales on load even when CPU/memory stay flat (the
+# failure mode of the 2026-06-08 incident, where the service was blocked on DB
+# connections, not CPU). Opt-in: only created when requests_per_target_target > 0.
+resource "aws_appautoscaling_policy" "requests" {
+  count              = var.requests_per_target_target > 0 ? 1 : 0
+  name               = "${local.name}-requests"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.this.resource_id
+  scalable_dimension = aws_appautoscaling_target.this.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.this.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.this.arn_suffix}/${aws_lb_target_group.this.arn_suffix}"
+    }
+    target_value       = var.requests_per_target_target
+    scale_in_cooldown  = 300
     scale_out_cooldown = 30
   }
 }

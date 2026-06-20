@@ -165,6 +165,10 @@ export async function supabaseAuth(c: Context, next: Next) {
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
+    // Per-agent authorization grant (non-null only for agent-session tokens).
+    // Read by requireScope() to gate Kortix CLI/API actions on top of the
+    // user's own role — net effect = userRole ∩ agentGrant.
+    c.set('agentGrant', result.agentGrant ?? null);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);
@@ -377,6 +381,7 @@ export async function combinedAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
     if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
+    c.set('agentGrant', patResult.agentGrant ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
     if (patResult.accountId) setContextField('accountId', patResult.accountId);

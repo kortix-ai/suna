@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
+import * as FileSystem from 'expo-file-system/legacy';
 import { API_URL, getAuthToken } from '@/api/config';
 import type { SandboxFile, FileUploadResponse } from '@/api/types';
 import type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
@@ -300,6 +301,88 @@ export function useOpenCodeUploadFile(
       return res.json();
     },
     onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
+        exact: false,
+        refetchType: 'all',
+      });
+    },
+    ...options,
+  });
+}
+
+/**
+ * Write (create or OVERWRITE) a text file's content via the OpenCode file API.
+ *
+ * /file/upload never overwrites — it suffixes on collision (`writeUploadUnique`,
+ * flag 'wx'). So to save an edit in place we upload the new content to a unique
+ * temp name in the same directory, then `rename` it over the target. fs.rename
+ * overwrites atomically, so there is never a window where the file is missing —
+ * if the rename fails the new bytes are still recoverable at the temp path. Works
+ * for both creating a new file and overwriting an existing one.
+ */
+export function useOpenCodeWriteFile(
+  options?: UseMutationOptions<
+    { path: string },
+    Error,
+    { sandboxUrl: string; path: string; content: string }
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sandboxUrl, path: fullPath, content }) => {
+      const token = await getAuthToken();
+      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const slash = fullPath.lastIndexOf('/');
+      const dir = slash >= 0 ? fullPath.slice(0, slash) : '';
+      const name = slash >= 0 ? fullPath.slice(slash + 1) : fullPath;
+      const tempName = `${name}.ktx-save-${Date.now()}`;
+      const remoteTemp = dir ? `${dir}/${tempName}` : tempName;
+
+      // 1. Stage the new content as a local temp file (decoupled from the
+      //    multipart filename, which is what the server uses for the dest path).
+      const localUri = `${FileSystem.cacheDirectory}ktx-edit-${Date.now()}.tmp`;
+      await FileSystem.writeAsStringAsync(localUri, content);
+
+      try {
+        // 2. Upload to the unique temp name → lands exactly at {dir}/{tempName}.
+        const formData = new FormData();
+        formData.append('path', dir);
+        formData.append('file', { uri: localUri, name: tempName, type: 'text/plain' } as any);
+        const up = await fetch(`${sandboxUrl}/file/upload`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+        });
+        if (!up.ok) {
+          throw new Error(`Upload failed: ${up.status} ${await up.text().catch(() => '')}`);
+        }
+
+        // 3. Rename temp → target (atomic overwrite).
+        const rn = await fetch(`${sandboxUrl}/file/rename`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ from: remoteTemp, to: fullPath }),
+        });
+        if (!rn.ok) {
+          // Best-effort: drop the orphaned temp so it doesn't litter the tree.
+          fetch(`${sandboxUrl}/file`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ path: remoteTemp }),
+          }).catch(() => {});
+          throw new Error(`Save failed: ${rn.status} ${await rn.text().catch(() => '')}`);
+        }
+        return { path: fullPath };
+      } finally {
+        FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: fileKeys.opencodeFile(variables.sandboxUrl, variables.path),
+      });
       queryClient.invalidateQueries({
         queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,

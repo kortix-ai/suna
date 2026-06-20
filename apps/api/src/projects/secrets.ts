@@ -65,6 +65,41 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
 }
 
 /**
+ * Upsert the SHARED (owner_user_id IS NULL) row for a project secret to a new
+ * value. Mirrors the POST /secrets handler's insert/onConflict, factored out so
+ * the public setup-link intake endpoint (no authenticated user) can write the
+ * value a human supplied via a minted link. `scope` is only set on first insert
+ * — an existing connector-scoped row keeps its scope on re-submit.
+ */
+export async function writeSharedProjectSecret(input: {
+  projectId: string;
+  name: string;
+  value: string;
+  scope?: 'runtime' | 'connector';
+  createdBy?: string | null;
+}): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(projectSecrets)
+    .values({
+      projectId: input.projectId,
+      name: input.name,
+      valueEnc: encryptProjectSecret(input.projectId, input.value),
+      scope: input.scope ?? 'runtime',
+      createdBy: input.createdBy ?? null,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projectSecrets.projectId, projectSecrets.name],
+      targetWhere: isNull(projectSecrets.ownerUserId),
+      set: {
+        valueEnc: encryptProjectSecret(input.projectId, input.value),
+        updatedAt: now,
+      },
+    });
+}
+
+/**
  * Decrypted key->value map of the project's SHARED runtime secrets (owner_user_id
  * IS NULL). Platform-reserved KORTIX_* rows are excluded so legacy system secrets
  * can never leak into the sandbox as user-controlled env vars. This is the

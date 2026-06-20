@@ -1,7 +1,7 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
-import { logger as appLogger } from './lib/logger';
+import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
@@ -24,12 +24,24 @@ import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { requestDeadline } from './middleware/request-deadline';
+// Statically imported (NOT await import() in the handlers): on a long-running
+// `bun --hot` dev process, dynamic import() can wedge permanently after enough
+// hot reloads — the promise never settles, the handler hangs, and Bun's
+// idleTimeout kills the socket with an empty reply. Frontend-polled routes
+// (maintenance banner, user-roles) must never sit behind a dynamic import.
+import { db, hasDatabase } from './shared/db';
+import { getPlatformRole } from './shared/platform-roles';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
+import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -39,6 +51,9 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
+import { kickWarmBaseBuild } from './snapshots/warm-bake';
+import { warmSnapshotsEnabled } from './shared/daytona';
+import { warmPoolEnabled } from './platform/services/warm-pool';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -63,6 +78,14 @@ import { adminApp } from './admin';
 process.on('unhandledRejection', (reason: unknown) => {
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
+    // A logging-transport failure must NEVER be reported through the logging
+    // transport (Better Stack) — that re-enqueues, re-overflows, and spirals,
+    // which is exactly what took prod down on 2026-06-18. Record it locally and
+    // drop it. See logger.ts isLoggingTransportError.
+    if (isLoggingTransportError(`${err.message}\n${err.stack ?? ''}`)) {
+      appLogger.localError('Dropped logging-transport rejection', { error: err.message });
+      return;
+    }
     appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
     captureException(err, { handler: 'unhandledRejection' });
   } catch {
@@ -72,6 +95,10 @@ process.on('unhandledRejection', (reason: unknown) => {
 
 process.on('uncaughtException', (err: Error) => {
   try {
+    if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
+      appLogger.localError('Dropped logging-transport exception', { error: err?.message ?? String(err) });
+      return;
+    }
     appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
     captureException(err, { handler: 'uncaughtException' });
   } catch {
@@ -115,10 +142,23 @@ const corsOrigins = [
   ]),
 ];
 
+// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
+// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
+// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
+// only — dev/prod keep the strict static allowlist.
+const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
+const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+
 app.use(
   '*',
   cors({
-    origin: corsOrigins,
+    origin: (origin) => {
+      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
+      if (!origin) return origin;
+      if (corsOrigins.includes(origin)) return origin;
+      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
+      return null; // not allowed → no Access-Control-Allow-Origin
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
     credentials: true,
@@ -204,7 +244,16 @@ app.use('*', async (c, next) => {
     (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
   );
 
-  if (!isExpectedProxyNoise) {
+  // Health/liveness probes fire every few seconds from the ALB + kubelet across
+  // every pod — by far the highest-volume request. A healthy probe carries no
+  // signal, and shipping one log line per probe is what feeds the Better Stack
+  // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
+  // logs, so a failing/degraded probe stays fully visible).
+  const isHealthProbe =
+    path === '/health' || path === '/v1/health' || path.endsWith('/health/live');
+  const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
+
+  if (!suppressLog) {
     const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
@@ -232,6 +281,11 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
 
 app.use('/v1/*', auditStateChangingRequest);
 
+// Wall-clock deadline for non-streaming requests — returns 503 before the 30s
+// client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
+// inside the middleware; disable entirely with REQUEST_DEADLINE_MS=0.
+app.use('/v1/*', requestDeadline);
+
 // === Top-Level Health Check (no auth) ===
 
 // Unified platform version (the root VERSION file). Baked into the image via the
@@ -240,6 +294,14 @@ app.use('/v1/*', auditStateChangingRequest);
 // that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
+// Exact source commit the image was built from (baked at build, preserved across
+// the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
+// Lets the team verify precisely which code is live. 'unknown' for local dev.
+const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+// When this process booted — confirms a deploy actually rolled fresh pods.
+const STARTED_AT = new Date().toISOString();
+// Which replica answered (pod name in k8s, task/container id in ECS).
+const API_INSTANCE = process.env.HOSTNAME || 'unknown';
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
@@ -250,8 +312,22 @@ const HealthSchema = z
     status: z.string(),
     service: z.string(),
     version: z.string(),
+    commit: z.string(),
+    environment: z.string(),
+    instance: z.string(),
+    started_at: z.string(),
+    uptime_seconds: z.number(),
+    memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
+    warm_snapshots: z.boolean(),
+    warm_pool: z.object({
+      enabled: z.boolean(),
+      max_total: z.number(),
+      size: z.number(),
+      clone_at_park: z.boolean(),
+      presence_minutes: z.number(),
+    }),
     tunnel: z.any(),
     leader: z.boolean(),
   })
@@ -262,8 +338,31 @@ const healthHandler = (c: any) =>
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
+    commit: API_COMMIT,
+    environment: config.INTERNAL_KORTIX_ENV,
+    instance: API_INSTANCE,
+    started_at: STARTED_AT,
+    uptime_seconds: Math.round(process.uptime()),
+    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
+    // the container's memory limit, without needing metrics-server/dashboards.
+    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
+    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
+    // misconfigured env var is visible remotely instead of failing silently.
+    warm_snapshots: warmSnapshotsEnabled(),
+    // Whether the warm POOL is live in THIS pod + its tuning. Surfaced so a
+    // values.yaml extraEnv that never reached the running pod (e.g. a stuck
+    // Argo sync) is visible remotely instead of silently leaving every start
+    // cold. Config-only — no DB query, so /health stays cheap (see the Better
+    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_ENABLED (no global cap).
+    warm_pool: {
+      enabled: warmPoolEnabled(),
+      default_size: config.KORTIX_WARM_POOL_SIZE,
+      clone_at_park: config.KORTIX_WARM_POOL_CLONE_AT_PARK,
+      presence_minutes: config.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+    },
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
   });
@@ -278,6 +377,50 @@ app.openapi(
   }),
   healthHandler,
 );
+
+// ─── Event-loop lag monitor → a real liveness signal ─────────────────────────
+//
+// The /health handlers above answer in <1ms even when the event loop is badly
+// degraded. During the 2026-06-18 incident that meant k8s liveness NEVER fired
+// and wedged pods were never restarted — a 90-minute outage instead of a ~45s
+// self-heal. This samples ACTUAL event-loop lag (a healthy loop drifts a few ms;
+// a starved one drifts into seconds) and exposes it at /health/live so a
+// degraded-but-not-dead pod can be detected and restarted by the kubelet.
+//
+// NOTE: the chart's livenessProbe still points at the shallow /v1/health by
+// default — flip health.livenessPath to /health/live only AFTER an image that
+// serves this route is confirmed live (otherwise old pods 404 their liveness
+// probe and crash-loop). See infra/k8s/charts/kortix-api.
+const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
+let eventLoopLagMs = 0;
+{
+  const SAMPLE_INTERVAL_MS = 1000;
+  let lastSample = performance.now();
+  const lagTimer = setInterval(() => {
+    const now = performance.now();
+    // How much longer than the interval the loop took to come back to this tick.
+    eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
+    lastSample = now;
+  }, SAMPLE_INTERVAL_MS);
+  // Never keep the process alive just for the sampler.
+  (lagTimer as { unref?: () => void }).unref?.();
+}
+
+const livenessHandler = (c: any) => {
+  const lag = Math.round(eventLoopLagMs);
+  if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
+    // 503 → kubelet liveness fails → the pod is restarted (auto-recovery).
+    return c.json(
+      { status: 'degraded', event_loop_lag_ms: lag, threshold_ms: MAX_EVENT_LOOP_LAG_MS },
+      503,
+    );
+  }
+  return c.json({ status: 'ok', event_loop_lag_ms: lag });
+};
+
+// Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
+app.get('/health/live', livenessHandler);
+app.get('/v1/health/live', livenessHandler);
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.openapi(
@@ -357,10 +500,7 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
   async (c: any) => {
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const { platformSettings } = await import('@kortix/db');
-  const { eq } = await import('drizzle-orm');
   const [row] = await db
     .select({ value: platformSettings.value })
     .from(platformSettings)
@@ -382,16 +522,13 @@ app.openapi(
   }),
   async (c: any) => {
   const accountId = c.get('userId') as string;
-  const { getPlatformRole } = await import('./shared/platform-roles');
   const role = await getPlatformRole(accountId);
   if (role !== 'admin' && role !== 'super_admin') {
     return c.json({ error: 'Admin access required' }, 403);
   }
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
   const body = await c.req.json().catch(() => ({}));
   const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  const { platformSettings } = await import('@kortix/db');
   await db
     .insert(platformSettings)
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
@@ -446,8 +583,6 @@ app.openapi(
     },
   }),
   async (c: any) => {
-  const { getPlatformRole } = await import('./shared/platform-roles');
-
   const accountId = c.get('userId') as string;
   const role = await getPlatformRole(accountId);
   const isAdmin = role === 'admin' || role === 'super_admin';
@@ -540,6 +675,7 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -567,6 +703,13 @@ app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+
+// Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
+// value-only) token is the bearer capability, so a human can fill in a secret
+// or 1-click a Pipedream connect from a Slack link with no login. The mint half
+// is authenticated, on projectsApp (/v1/projects/:id/{secret,connect}-requests).
+import { setupLinksPublicApp } from './setup-links/public-app';
+app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
@@ -742,6 +885,10 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Every replica stages snapshot/session-boot build contexts in tmpdir and can
+  // leak them on error paths; sweep stale ones so they don't fill node disk and
+  // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
+  startTmpReaper();
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -761,6 +908,10 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
+  // Experimental: pre-bake the shared memory-state warm base so the first
+  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
+  // + DAYTONA_WARM_TARGET are set; best-effort.
+  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -802,6 +953,7 @@ async function shutdown(signal: string) {
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
+  stopTmpReaper();
   // Flush observability data before exit
   await Promise.allSettled([appLogger.flush(), flushSentry()]);
   process.exit(0);
@@ -840,6 +992,15 @@ import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from '
 
 export default {
   port: config.PORT,
+
+  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
+  // bytes by then gets its socket closed with an EMPTY reply — no status, no
+  // body — which clients report as a bare network error and Better Stack as a
+  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
+  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
+  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
+  // server.timeout(req, 0) below.
+  idleTimeout: 30,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const url = getRequestUrl(req, config.PORT);

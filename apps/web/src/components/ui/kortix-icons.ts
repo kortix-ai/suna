@@ -13,33 +13,85 @@
  */
 
 export {
-  // ── Navigation & layout ─────────────────────────────────────
-  ChevronDown as IconChevronDown,
-  X as IconClose,
-
-  // ── Files & folders ─────────────────────────────────────────
-  Terminal as IconTerminal,
-
   // ── CRUD & actions ──────────────────────────────────────────
   Plus as IconAdd,
-  Minus as IconRemove,
-  Trash2 as IconDelete,
-  Pencil as IconEdit,
-  Copy as IconCopy,
-  Check as IconCheck,
-  Loader2 as IconLoader,
-  RotateCw as IconRefresh,
-  ExternalLink as IconExternal,
-  Link2 as IconLink,
-
+  Cpu as IconAgent,
+  AlertCircle as IconAlert,
+  ArrowUpRight as IconArrowUpRight,
+  // ── Navigation & layout ─────────────────────────────────────
+  ArrowLeft as IconBack,
   // ── Status / lifecycle ──────────────────────────────────────
+  CircleDashed as IconBacklog,
+  Bot as IconBot,
+  Calendar as IconCalendar,
+  XCircle as IconCancelled,
+  Check as IconCheck,
+  ChevronDown as IconChevronDown,
+  ChevronLeft as IconChevronLeft,
+  ChevronRight as IconChevronRight,
+  ChevronUp as IconChevronUp,
+  ChevronsUpDown as IconChevronsUpDown,
+  // ── Time & data ─────────────────────────────────────────────
   Clock as IconClock,
-  Square as IconStop,
+  X as IconClose,
+  Code2 as IconCode,
+  MessageCircle as IconComment,
+  Copy as IconCopy,
+  Trash2 as IconDelete,
+  CheckCircle2 as IconDone,
+  Download as IconDownload,
+  Pencil as IconEdit,
+  ExternalLink as IconExternal,
+  AlertOctagon as IconFailed,
+  File as IconFile,
+  FileText as IconFileText,
+  Filter as IconFilter,
+  Folder as IconFolder,
+  FolderOpen as IconFolderOpen,
+  ArrowRight as IconForward,
+  LayoutGrid as IconGrid,
+  Hash as IconHash,
+  CircleDot as IconInProgress,
+  CircleDotDashed as IconInReview,
   Inbox as IconInbox,
+  Info as IconInfo,
+  HelpCircle as IconInfoNeeded,
+  UserPlus as IconInvite,
+  Link2 as IconLink,
+  List as IconList,
+  Loader2 as IconLoader,
+  Mail as IconMail,
+  Menu as IconMenu,
+  MessageSquare as IconMessage,
+  MoreHorizontal as IconMore,
+  MoreVertical as IconMoreVertical,
+  Bell as IconNotification,
+  Pause as IconPause,
+  Play as IconPlay,
+  // ── Files & folders ─────────────────────────────────────────
+  FolderGit2 as IconProject,
+  RotateCw as IconRefresh,
+  Minus as IconRemove,
+  Search as IconSearch,
+  Send as IconSend,
+  Settings as IconSettings,
+  ArrowUpDown as IconSort,
+  Star as IconStar,
+  Square as IconStop,
+  Tag as IconTag,
+  Terminal as IconTerminal,
+  Circle as IconTodo,
+  Zap as IconTrigger,
+  StarOff as IconUnstar,
+  Upload as IconUpload,
+  // ── People & comms ──────────────────────────────────────────
+  User as IconUser,
+  Users as IconUsers,
+  AlertTriangle as IconWarning,
 
-  // ── Apps & deploy ───────────────────────────────────────────
   AppWindow as IconApp,
   Rocket as IconDeploy,
 } from 'lucide-react';
+
 
 export type { LucideIcon as Icon } from 'lucide-react';

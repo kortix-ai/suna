@@ -131,6 +131,23 @@ export function setBootstrapAuthToken(token: string | null): void {
 	}
 }
 
+/**
+ * Decode a JWT's `exp` claim and report whether it's expired — or within
+ * `skewSeconds` of expiring. Returns false when the token can't be parsed: let
+ * the server be the judge rather than discard a token we simply can't read.
+ */
+function isJwtExpired(token: string, skewSeconds = 30): boolean {
+	try {
+		const payload = token.split('.')[1];
+		if (!payload) return false;
+		const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+		if (typeof json.exp !== 'number') return false;
+		return Date.now() / 1000 >= json.exp - skewSeconds;
+	} catch {
+		return false;
+	}
+}
+
 /** Internal: actually fetch the token from Supabase with retries. */
 async function fetchToken(): Promise<string | null> {
 	const supabase = createClient();
@@ -140,10 +157,19 @@ async function fetchToken(): Promise<string | null> {
 			const {
 				data: { session },
 			} = await supabase.auth.getSession();
-			if (session?.access_token) return session.access_token;
 
-			// Session is null — token may have expired. Try an explicit refresh.
-			if (attempt === 0) {
+			// A present, non-expired token is good to use directly.
+			if (session?.access_token && !isJwtExpired(session.access_token)) {
+				return session.access_token;
+			}
+
+			// getSession() returns the STORED session even when its access_token
+			// has already expired — it does not refresh here. Handing that dead
+			// token to a caller produces a 401; on surfaces with no 401-recovery
+			// (e.g. the PTY WebSocket) that becomes an endless 1006 reconnect loop.
+			// So an expired-but-present session must be refreshed explicitly — the
+			// old code only refreshed when the session was entirely null.
+			if (attempt <= 1) {
 				const {
 					data: { session: refreshed },
 				} = await supabase.auth.refreshSession();

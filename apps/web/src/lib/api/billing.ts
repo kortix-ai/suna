@@ -93,6 +93,12 @@ export interface AccountState {
     display_name: string;
     monthly_credits: number;
     can_purchase_credits: boolean;
+    /** Enterprise feature gates for this tier (SSO / SCIM). Drives whether the
+     *  account-settings "Identity & directory" cards render. */
+    entitlements?: {
+      sso: boolean;
+      scim: boolean;
+    };
   };
   auto_topup?: {
     enabled: boolean;
@@ -115,6 +121,12 @@ export interface AccountState {
   }>;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
+  // Whether the CURRENT user may change billing for this account (billing.write —
+  // owners only by default). Drives the "Subscribe" / "Manage billing" CTA gate:
+  // members (billing.read only) see a disabled CTA instead of clicking through to
+  // a 403. UI hint only — the billing API enforces the same gate server-side.
+  // Absent (undefined) is treated as "allowed" so older responses don't block owners.
+  can_manage_billing?: boolean;
   // True only for genuine legacy per-machine accounts that have a machine to
   // migrate — gates the "Claim seat-based pricing" card (new per-seat-era users
   // must not see it, or the claim dead-ends on "nothing to switch").
@@ -127,6 +139,11 @@ export interface AccountState {
     typical_compute_budget_per_seat_usd: number;
     typical_llm_budget_per_seat_usd: number;
   };
+  // Live account-member count = the seat quantity a per-seat subscribe is billed
+  // for right now (server uses the same count for the Stripe line item). Lets the
+  // subscribe modal show the real projected total before redirecting to Stripe.
+  // Present once the API is updated; absent → fall back to seats.count then 1.
+  member_count?: number;
   usage_this_period?: {
     compute_usd: number;
     llm_usd: number;

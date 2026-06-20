@@ -1,0 +1,26 @@
+# Argo CD project scoping what the Kortix apps may deploy and where. Keeps the
+# GitOps blast radius to this repo + the in-cluster namespaces.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kortix
+  namespace: argocd
+spec:
+  description: Kortix API environments (GitOps)
+  sourceRepos:
+    - https://github.com/kortix-ai/suna.git
+    # Bootstrap source (until the GitOps manifests land on kortix-ai/suna):
+    - https://github.com/lillyboga/suna.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: kortix-prod
+    - server: https://kubernetes.default.svc
+      namespace: kortix-staging
+    - server: https://kubernetes.default.svc
+      namespace: kortix-dev
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

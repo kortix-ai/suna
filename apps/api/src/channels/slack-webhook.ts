@@ -6,5 +6,6 @@
 import './slack/routes';
 
 export { slackWebhookApp } from './slack/app';
-export { postQuestionAndWait, relayTurnStep, relayTurnAnswer } from './slack/questions';
+export { postQuestion } from './slack/questions';
+export { relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack/turn';
 export type { QuestionInfo } from './slack/questions';

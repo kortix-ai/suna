@@ -3,6 +3,7 @@ import {
   surfaceApiError,
   takeFlagValue,
   takeFlagBool,
+  emitJson,
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 
@@ -75,6 +76,8 @@ Options:
   --path <p>         Scope to a subtree (commits) or file (diff).
   --content          search: grep file contents instead of names.
   --limit <n>        Cap rows for history / commits.
+  --json             Emit the raw API payload as JSON (machine-readable);
+                     suppresses human output. Supported by every subcommand.
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
@@ -94,6 +97,7 @@ export async function runFiles(argv: string[]): Promise<number> {
   let path: string | undefined;
   let limit: string | undefined;
   let content = false;
+  let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -101,6 +105,7 @@ export async function runFiles(argv: string[]): Promise<number> {
     path = takeFlagValue(rest, ['--path']);
     limit = takeFlagValue(rest, ['--limit']);
     content = takeFlagBool(rest, ['--content']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -118,6 +123,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const p = positional[0];
         const qs = [refQ, p ? `path=${encodeURIComponent(p)}` : ''].filter(Boolean).join('&');
         const items = await ctx.client.get<FileEntry[]>(`${base}/files${qs ? `?${qs}` : ''}`);
+        if (json) {
+          emitJson(items);
+          return 0;
+        }
         if (items.length === 0) {
           process.stdout.write(`  ${C.dim}No files${p ? ` under ${p}` : ''}.${C.reset}\n`);
           return 0;
@@ -137,6 +146,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ path: string; ref: string; content: string }>(
           `${base}/files/content?${qs}`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         process.stdout.write(resp.content);
         if (!resp.content.endsWith('\n')) process.stdout.write('\n');
         return 0;
@@ -155,6 +168,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{
           results: { path: string; line_number?: number; line_text?: string }[];
         }>(`${base}/files/search?${qs}`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         if (resp.results.length === 0) {
           process.stdout.write(`  ${C.dim}No matches.${C.reset}\n`);
           return 0;
@@ -185,6 +202,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
           `${base}/files/history?${qs}`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         printCommitList(resp.commits, resp.hasMore);
         return 0;
       }
@@ -192,6 +213,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ default_branch: string; branches: BranchInfo[] }>(
           `${base}/branches`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         const nameW = Math.max(...resp.branches.map((b) => b.name.length), 6);
         process.stdout.write('\n');
         process.stdout.write(`  ${C.dim}${pad('BRANCH', nameW)}   TIP       AHEAD/BEHIND   SUBJECT${C.reset}\n`);
@@ -217,6 +242,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ commits: CommitSummary[]; hasMore: boolean }>(
           `${base}/commits${qs ? `?${qs}` : ''}`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         printCommitList(resp.commits, resp.hasMore);
         return 0;
       }
@@ -224,6 +253,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const sha = positional[0];
         if (!sha) return missing('a commit sha');
         const c = await ctx.client.get<CommitDetail>(`${base}/commits/${encodeURIComponent(sha)}`);
+        if (json) {
+          emitJson(c);
+          return 0;
+        }
         process.stdout.write('\n');
         process.stdout.write(`  ${C.yellow}commit ${c.hash}${C.reset}\n`);
         process.stdout.write(`  ${C.dim}Author: ${c.author_name} <${c.author_email}>${C.reset}\n`);
@@ -249,6 +282,10 @@ export async function runFiles(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ patch: string }>(
           `${base}/commits/${encodeURIComponent(sha)}/diff${qs}`,
         );
+        if (json) {
+          emitJson({ sha, path: path ?? null, patch: resp.patch });
+          return 0;
+        }
         process.stdout.write(resp.patch.endsWith('\n') ? resp.patch : `${resp.patch}\n`);
         return 0;
       }
@@ -264,6 +301,10 @@ export async function runFiles(argv: string[]): Promise<number> {
           deletions: number;
           is_up_to_date: boolean;
         }>(`${base}/version-diff?from=${encodeURIComponent(from)}&into=${encodeURIComponent(into)}`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         process.stdout.write('\n');
         process.stdout.write(`  ${C.bold}${from}${C.reset} ${C.dim}→${C.reset} ${C.bold}${into}${C.reset}\n`);
         process.stdout.write(

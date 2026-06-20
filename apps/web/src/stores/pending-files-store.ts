@@ -1,5 +1,5 @@
+import type { AttachedFile } from '@/features/session/session-chat-input';
 import { create } from 'zustand';
-import type { AttachedFile } from '@/components/session/session-chat-input';
 
 interface PendingFilesState {
   /** Files waiting to be sent with the first message of a new session */

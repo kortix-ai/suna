@@ -4,8 +4,8 @@
  * ============================================================================
  *
  * Every menu item in the app lives here. The Command Palette (Cmd+K),
- * Left Sidebar, User Settings Menu, and Settings Modal all consume these
- * definitions — update once, synced everywhere.
+ * Right Sidebar, Left Sidebar, User Settings Menu, and Settings Modal
+ * all consume these definitions — update once, synced everywhere.
  *
  * To add a new page / action:
  *   1. Add a lucide icon import below
@@ -13,66 +13,70 @@
  *   3. Done — it will appear in every surface that renders that section
  *
  * Each item declares which surfaces it should appear in via `showIn`.
- * Surfaces: 'commandPalette' | 'leftSidebar' | 'userMenu'
+ * Surfaces: 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'userMenu'
  * ============================================================================
  */
 
+import { Icon } from '@/features/icon/icon';
+import {
+  CogOne,
+  CogOneSolid,
+  CreditCardSolid,
+  Icon as IconMynauiType,
+  UsersSolid,
+} from '@mynaui/icons-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  // Navigation
+  Activity,
   Blocks,
-  FolderOpen,
+  Bot,
+  Cable,
   Calendar,
+  Coins,
+  Compass,
   // Projects / app navigation (new project shell)
   FolderGit2,
-  MessagesSquare,
-  SlidersHorizontal,
-  Webhook,
-  Hash,
-
-  // Actions
-  Plus,
-  TerminalSquare,
-  Layers,
+  FolderOpen,
   GitCompareArrows,
-  Search,
-  RefreshCw,
-
+  Globe,
+  Hash,
+  Key,
+  Keyboard,
   // Settings pages
   KeyRound,
-  Plug,
-  Settings as SettingsIcon,
-  Bot,
-
+  Layers,
+  // Navigation
+  LayoutDashboard,
+  LayoutTemplate,
+  LogOut,
+  MessagesSquare,
   // Preferences
   Palette,
-  Volume2,
-  Keyboard,
-
-  // Account
-  CreditCard,
-  Receipt,
-  Users,
-
-  // Theme
-  Sun,
-  Moon,
-  Monitor,
-
   // View / Misc
   PanelLeftClose,
-  LogOut,
+  Plug,
+  // Actions
+  Plus,
+  Receipt,
+  RefreshCw,
+  Rocket,
+  ScrollText,
+  Search,
+  SlidersHorizontal,
+  TerminalSquare,
+  Volume2,
+  Webhook,
 } from 'lucide-react';
+import { IconType } from 'react-icons/lib';
+
+const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 /** Where a menu item should be rendered. */
-type MenuSurface =
-  | 'commandPalette'
-  | 'leftSidebar'
-  | 'userMenu';
+export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'userMenu';
 
 /**
  * How the item behaves when activated.
@@ -81,12 +85,9 @@ type MenuSurface =
  * - 'action':   Runs an imperative callback (e.g. "new session", "logout")
  * - 'settings': Opens the UserSettingsModal to a specific tab
  * - 'theme':    Switches the app theme
+ * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
-type MenuItemKind =
-  | 'navigate'
-  | 'action'
-  | 'settings'
-  | 'theme';
+export type MenuItemKind = 'navigate' | 'action' | 'settings' | 'theme' | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -98,12 +99,14 @@ export type SettingsTabId =
   | 'referrals'
   | 'tokens'
   | 'shortcuts'
+  | 'instance-members'
   | 'instance-projects';
 
 /** The group / section a menu item belongs to. */
-type MenuGroup =
+export type MenuGroup =
   | 'actions'
   | 'navigation'
+  | 'quickActions'
   | 'settingsPages'
   | 'preferences'
   | 'account'
@@ -111,13 +114,27 @@ type MenuGroup =
   | 'view'
   | 'admin';
 
+/**
+ * Optional sub-group within a group for visual clustering.
+ * Used by the right sidebar to add separators between logical sections
+ * without changing the overall group structure.
+ */
+export type NavSubGroup = 'tools' | 'services' | 'security';
+
+/** Human-readable labels for sub-groups (used in expanded sidebar) */
+export const navSubGroupLabels: Record<NavSubGroup, string> = {
+  tools: '',
+  services: 'Services',
+  security: 'Security',
+};
+
 export interface MenuItemDef {
   /** Unique identifier for this item (used as React key, cmdk value, etc.) */
   id: string;
   /** Display label */
   label: string;
   /** Lucide icon component */
-  icon: LucideIcon;
+  icon: LucideIcon | IconMynauiType | IconType;
   /** Which group/section this belongs to */
   group: MenuGroup;
   /** Which UI surfaces should render this item */
@@ -139,8 +156,14 @@ export interface MenuItemDef {
   settingsTab?: SettingsTabId;
   /** For kind='theme': which theme to set */
   themeValue?: string;
+  /** For kind='sandboxService': the container port */
+  sandboxPort?: string;
+
   /** For kind='action': a string key identifying the action (resolved at runtime) */
   actionId?: string;
+
+  /** Optional sub-group for visual clustering within a group (e.g. right sidebar sections) */
+  subGroup?: NavSubGroup;
 
   // --- Display hints ---
   /** Keyboard shortcut string to show (e.g. "⌘J") */
@@ -156,13 +179,17 @@ export interface MenuItemDef {
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
   requiresProject?: boolean;
+  /** If true, item is only shown when the project / project-paradigm
+   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
+   *  project-paradigm surfaces (Board today; Milestones, Team later). */
+  requiresProjectsFlag?: boolean;
 }
 
 // ============================================================================
 // Registry definitions
 // ============================================================================
 
-const menuRegistry: MenuItemDef[] = [
+export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   // ACTIONS
   // ──────────────────────────────────────────────────────────────────────────
@@ -255,7 +282,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'nav-accounts',
     label: 'Accounts',
-    icon: Users,
+    icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -362,12 +389,13 @@ const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors?tab=policies',
     requiresProject: true,
-    keywords: 'policies approval block require_approval rules tools executor guardrails project customize',
+    keywords:
+      'policies approval block require_approval rules tools executor guardrails project customize',
   },
   {
     id: 'proj-members',
     label: 'Customize · Members',
-    icon: Users,
+    icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -411,7 +439,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'proj-settings',
     label: 'Project settings',
-    icon: SettingsIcon,
+    icon: CogOneSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -421,12 +449,301 @@ const menuRegistry: MenuItemDef[] = [
   },
 
   // ──────────────────────────────────────────────────────────────────────────
+  // QUICK ACTIONS (right sidebar top section)
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'files-quick',
+    label: 'Files',
+    icon: FolderOpen,
+    group: 'quickActions',
+    subGroup: 'tools',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/files',
+    tabId: 'page:/files',
+  },
+  {
+    id: 'new-terminal',
+    label: 'Terminal',
+    icon: TerminalSquare,
+    group: 'quickActions',
+    subGroup: 'tools',
+    showIn: ['rightSidebar'],
+    kind: 'action',
+    actionId: 'newTerminal',
+  },
+  {
+    id: 'workspace',
+    label: 'Workspace',
+    icon: Blocks,
+    group: 'quickActions',
+    subGroup: 'tools',
+    showIn: ['commandPalette', 'rightSidebar'],
+    kind: 'navigate',
+    href: '/workspace',
+    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
+    keywords: 'workspace agents skills commands tools build create',
+  },
+  {
+    id: 'secrets-quick',
+    label: 'Secrets Manager',
+    icon: KeyRound,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/settings/credentials',
+    tabId: 'settings:secrets',
+    tabType: 'settings',
+  },
+  {
+    id: 'providers-quick',
+    label: 'LLM Providers',
+    icon: Bot,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar'],
+    kind: 'action',
+    actionId: 'openProviderModal',
+  },
+  {
+    id: 'ssh-quick',
+    label: 'SSH',
+    icon: Key,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar', 'commandPalette'],
+    kind: 'action',
+    actionId: 'generateSSHKey',
+    keywords: 'ssh key generate public private git clone remote',
+  },
+  {
+    id: 'api-keys-quick',
+    label: 'API',
+    icon: Cable,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/settings/api-keys',
+    tabId: 'settings:api-keys',
+    tabType: 'settings',
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // NAVIGATION — Main pages
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/dashboard',
+    tabType: 'dashboard',
+  },
+  {
+    id: 'scheduled-tasks',
+    label: 'Triggers',
+    icon: Calendar,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['commandPalette', 'rightSidebar'],
+    kind: 'navigate',
+    href: '/scheduled-tasks',
+  },
+  ...(DEPLOYMENTS_ENABLED
+    ? [
+        {
+          id: 'deployments',
+          label: 'Deployments',
+          icon: Rocket,
+          group: 'navigation' as const,
+          subGroup: 'services' as const,
+          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
+          kind: 'navigate' as const,
+          href: '/deployments',
+        },
+      ]
+    : []),
+  {
+    id: 'running-services',
+    label: 'Service Manager',
+    icon: Activity,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/service-manager',
+    tabId: 'service-manager',
+    tabType: 'services',
+  },
+  {
+    id: 'internal-browser',
+    label: 'Internal Browser',
+    icon: Compass,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/p/browser',
+    tabId: 'preview:internal-browser',
+    tabType: 'preview',
+  },
+  {
+    id: 'agent-browser',
+    label: 'Agent Browser',
+    icon: Globe,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/browser',
+    tabId: 'browser:main',
+    tabType: 'browser',
+  },
+  {
+    id: 'desktop',
+    label: 'Desktop',
+    icon: Icon.Monitor,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/desktop',
+    tabId: 'desktop:main',
+    tabType: 'desktop',
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/files',
+  },
+  {
+    id: 'running-services-cmd',
+    label: 'Service Manager',
+    icon: Activity,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/service-manager',
+    tabId: 'service-manager',
+    tabType: 'services',
+    keywords:
+      'service manager services orchestration process manager sandbox active restart reload',
+  },
+  {
+    id: 'agent-browser-cmd',
+    label: 'Agent Browser',
+    icon: Globe,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/browser',
+    tabId: 'browser:main',
+    tabType: 'browser',
+    keywords: 'browser chromium agent viewport automation live stream',
+  },
+  {
+    id: 'internal-browser-cmd',
+    label: 'Internal Browser',
+    icon: Compass,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/p/browser',
+    tabId: 'preview:internal-browser',
+    tabType: 'preview',
+    keywords: 'internal browser preview iframe embedded web page',
+  },
+  {
+    id: 'desktop-cmd',
+    label: 'Desktop',
+    icon: Icon.Monitor,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/desktop',
+    tabId: 'desktop:main',
+    tabType: 'desktop',
+    keywords: 'desktop selkies novnc full screen xfce sandbox vnc remote',
+  },
+  {
+    id: 'templates',
+    label: 'Templates',
+    icon: LayoutTemplate,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/templates',
+    keywords: 'templates starter project boilerplate',
+  },
+  {
+    id: 'changelog',
+    label: 'Changelog',
+    icon: ScrollText,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/changelog',
+  },
+  {
+    id: 'credits-explained',
+    label: 'Credits Explained',
+    icon: Coins,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/credits-explained',
+    keywords: 'credits coins billing usage tokens cost explain',
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SETTINGS PAGES (navigate to route)
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'secrets-manager',
+    label: 'Secrets Manager',
+    icon: KeyRound,
+    group: 'settingsPages',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/settings/credentials',
+    tabType: 'settings',
+    keywords: 'secrets manager credentials env environment variables integrations keys',
+  },
+  {
+    id: 'api-keys',
+    label: 'API Keys',
+    icon: CogOneSolid,
+    group: 'settingsPages',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/settings/api-keys',
+    tabType: 'settings',
+  },
+  {
+    id: 'llm-providers',
+    label: 'LLM Providers',
+    icon: Bot,
+    group: 'settingsPages',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'openProviderModal',
+    keywords: 'llm providers models anthropic openai openrouter google groq xai',
+  },
+  // ──────────────────────────────────────────────────────────────────────────
   // PREFERENCES — open settings modal to a tab
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'pref-general',
     label: 'General',
-    icon: SettingsIcon,
+    icon: CogOne,
     group: 'preferences',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
@@ -471,12 +788,13 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'account-billing',
     label: 'Billing',
-    icon: CreditCard,
+    icon: CreditCardSolid,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'billing',
-    keywords: 'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
+    keywords:
+      'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
     requiresBilling: true,
   },
   {
@@ -492,7 +810,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'account-referrals',
     label: 'Referrals',
-    icon: Users,
+    icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
     kind: 'settings',
@@ -517,7 +835,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-light',
     label: 'Light Theme',
-    icon: Sun,
+    icon: Icon.Sun,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -527,7 +845,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-dark',
     label: 'Dark Theme',
-    icon: Moon,
+    icon: Icon.Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -537,7 +855,7 @@ const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-system',
     label: 'System Theme',
-    icon: Monitor,
+    icon: Icon.Monitor,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -568,7 +886,6 @@ const menuRegistry: MenuItemDef[] = [
     actionId: 'logout',
     keywords: 'log out sign out logout signout disconnect',
   },
-
 ];
 
 // ============================================================================
@@ -579,28 +896,101 @@ export function getItemsForSurface(surface: MenuSurface): MenuItemDef[] {
   return menuRegistry.filter((item) => item.showIn.includes(surface));
 }
 
+export function getItemsByGroup(surface: MenuSurface, group: MenuGroup): MenuItemDef[] {
+  return menuRegistry.filter((item) => item.showIn.includes(surface) && item.group === group);
+}
+
+export function getItemById(id: string): MenuItemDef | undefined {
+  return menuRegistry.find((item) => item.id === id);
+}
+
+/**
+ * Returns navigation items for a surface, clustered by subGroup.
+ * All items with the same subGroup are merged into a single cluster,
+ * regardless of their ordering in the registry.
+ * The cluster order follows the first appearance of each subGroup.
+ * Items without a subGroup are placed in a leading "ungrouped" cluster.
+ */
+export function getNavItemsClustered(surface: MenuSurface, group: MenuGroup): MenuItemDef[][] {
+  const items = getItemsByGroup(surface, group);
+  const clusterMap = new Map<string, MenuItemDef[]>();
+  const order: string[] = [];
+
+  for (const item of items) {
+    const key = item.subGroup ?? '__ungrouped__';
+    if (!clusterMap.has(key)) {
+      clusterMap.set(key, []);
+      order.push(key);
+    }
+    clusterMap.get(key)!.push(item);
+  }
+
+  return order.map((key) => clusterMap.get(key)!);
+}
+
+/**
+ * Returns whether a navigation item is currently "active" based on the pathname.
+ */
+export function isItemActive(item: MenuItemDef, pathname: string | null): boolean {
+  if (!pathname || !item.href) return false;
+  if (pathname === item.href) return true;
+  if (item.activePathPrefixes) {
+    return item.activePathPrefixes.some((prefix) => pathname.startsWith(prefix));
+  }
+  return false;
+}
+
 // ============================================================================
 // Settings modal tabs — derived from the same registry
 // ============================================================================
 
-interface SettingsTab {
+export interface SettingsTab {
   id: SettingsTabId;
   label: string;
-  icon: LucideIcon;
+  icon: LucideIcon | IconMynauiType | IconType;
 }
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
   const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
   return preferenceIds.map((tabId) => {
-    const item = menuRegistry.find(
-      (i) => i.kind === 'settings' && i.settingsTab === tabId,
-    );
+    const item = menuRegistry.find((i) => i.kind === 'settings' && i.settingsTab === tabId);
     if (!item) {
       // Fallback — should not happen if registry is complete
-      return { id: tabId, label: tabId, icon: SettingsIcon };
+      return { id: tabId, label: tabId, icon: CogOne };
     }
     return { id: tabId, label: item.label, icon: item.icon };
+  });
+}
+
+/**
+ * Instance-scoped tabs. Only injected into the settings modal when the
+ * current route is inside an instance (`/instances/:id/...`). Returns an
+ * empty array otherwise so the "Instance" section disappears entirely
+ * on `/instances` list or account-level pages.
+ */
+export function getInstanceTabs(): SettingsTab[] {
+  return [{ id: 'instance-members', label: 'Team', icon: UsersSolid }];
+}
+
+/** Account tabs for the settings modal */
+export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
+  const items: SettingsTab[] = [
+    { id: 'billing', label: 'Billing', icon: CreditCardSolid },
+    { id: 'transactions', label: 'Credits ledger', icon: Receipt },
+    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
+  ];
+  // Referrals tab disabled for now
+  // if (billingEnabled) {
+  //   items.push({ id: 'referrals', label: 'Referrals', icon: Users });
+  // }
+  // Enrich labels/icons from registry where possible
+  return items.map((tab) => {
+    const item = menuRegistry.find((i) => i.settingsTab === tab.id);
+    if (item) {
+      return { ...tab, label: item.label, icon: item.icon };
+    }
+    return tab;
   });
 }
 

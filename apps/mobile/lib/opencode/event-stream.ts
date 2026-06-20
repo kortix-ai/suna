@@ -74,6 +74,10 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const mountedRef = useRef(true);
   const sandboxUrlRef = useRef<string | undefined>(sandboxUrl);
   sandboxUrlRef.current = sandboxUrl;
+  // Sandbox URL we got an auth error (401/403) for. Reconnecting can't fix an
+  // authorization failure, so we stop retrying that URL and only resume when
+  // sandboxUrl changes to something else (e.g. switching sandbox / re-login).
+  const authFailedUrlRef = useRef<string | null>(null);
 
   // Event batching: queue SSE events and drain them on a timer so we re-render
   // at most ~60fps instead of once per raw delta (deltas can arrive 100+/sec
@@ -494,6 +498,12 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
 
   const connect = useCallback(async () => {
     if (!sandboxUrl || !mountedRef.current) return;
+    // Don't keep hammering a sandbox we're not authorized for (stale/foreign
+    // sandbox from the old global-sandbox model). Resumes when sandboxUrl changes.
+    if (authFailedUrlRef.current === sandboxUrl) {
+      log.log('🚫 [SSE] Skipping connect — sandbox previously returned auth error');
+      return;
+    }
 
     // Clean up existing
     clearHeartbeat();
@@ -569,10 +579,18 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
 
       es.addEventListener('error', (evt: any) => {
         if (!mountedRef.current) return;
-        log.warn('⚠️ [SSE] Connection error:', evt?.message || 'unknown');
         clearHeartbeat();
         es.close();
         esRef.current = null;
+        // Authorization failures (401/403) are permanent for this sandbox —
+        // retrying just spams the logs every 30s. Stop and wait for a new URL.
+        const status = evt?.xhrStatus;
+        if (status === 401 || status === 403) {
+          log.warn(`🚫 [SSE] Not authorized for sandbox (status ${status}); halting reconnect`);
+          authFailedUrlRef.current = sandboxUrl;
+          return;
+        }
+        log.warn('⚠️ [SSE] Connection error:', evt?.message || 'unknown');
         scheduleReconnect();
       });
     } catch (error: any) {

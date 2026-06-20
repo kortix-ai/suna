@@ -2,7 +2,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { basename } from 'node:path';
 
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { activeHostName } from '../api/config.ts';
+import { activeHostName, hasEnvTokenHost } from '../api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
 import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
@@ -10,6 +10,7 @@ import { selectFromList } from '../tui-select.ts';
 import { confirm, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
+import { projectWebUrl } from '../web-url.ts';
 import type {
   ProjectSummary,
   MeResponse,
@@ -133,8 +134,8 @@ export async function runShip(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // ── Auth (host: --host → link.json → active) ──────────────────────────────
-  const hostFromLink = !flags.host ? loadLink()?.host : undefined;
+  // ── Auth (host: --host → sandbox env token → link.json → active) ──────────
+  const hostFromLink = !flags.host && !hasEnvTokenHost() ? loadLink()?.host : undefined;
   const hostName = flags.host ?? hostFromLink;
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
@@ -823,22 +824,12 @@ function authHeaderArgs(repoUrl: string, token: string): string[] {
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
   // Prefer the server-provided dashboard URL; only fall back to guessing from
   // the API host for older backends that don't return one.
-  const url = project.dashboard_url ?? `${webDashboardUrl(auth.api_base)}/projects/${project.project_id}`;
+  const url = projectWebUrl(auth.api_base, project.project_id, project.dashboard_url);
   process.stdout.write(
     `\n${status.ok(`Shipped ${C.bold}${project.name}${C.reset}`)}\n` +
       `  ${C.dim}repo  ${C.reset}${repoUrl}\n` +
       `  ${C.dim}live  ${C.reset}${C.cyan}${url}${C.reset}\n\n`,
   );
-}
-
-function webDashboardUrl(apiBase: string): string {
-  try {
-    const u = new URL(apiBase);
-    if (u.hostname.startsWith('api.')) u.hostname = u.hostname.slice(4);
-    return u.origin;
-  } catch {
-    return 'https://kortix.com';
-  }
 }
 
 /**

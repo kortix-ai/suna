@@ -8,6 +8,14 @@ output "public_subnet_ids" {
 }
 
 output "private_subnet_ids" {
-  description = "Private subnet IDs (host the Fargate tasks)."
+  description = "Private subnet IDs (host the Fargate tasks / EKS nodes)."
   value       = aws_subnet.private[*].id
+}
+
+output "vpc_cidr" {
+  value = aws_vpc.this.cidr_block
+}
+
+output "availability_zones" {
+  value = local.azs
 }

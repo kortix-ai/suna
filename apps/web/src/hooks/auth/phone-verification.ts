@@ -1,10 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { phoneVerificationService } from '@/lib/api/phone-verification';
-import { useAuth } from '@/components/AuthProvider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const useEnrollPhoneNumber = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: phoneVerificationService.enrollPhoneNumber,
     onSuccess: () => {
@@ -23,7 +23,7 @@ export const useCreateChallenge = () => {
 
 export const useVerifyChallenge = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: phoneVerificationService.verifyChallenge,
     onSuccess: () => {
@@ -34,9 +34,22 @@ export const useVerifyChallenge = () => {
   });
 };
 
+export const useChallengeAndVerify = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: phoneVerificationService.challengeAndVerify,
+    onSuccess: () => {
+      // Invalidate all phone verification related caches after successful verification
+      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
+      queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
+    },
+  });
+};
+
 export const useListFactors = () => {
   const { user } = useAuth();
-  
+
   return useQuery({
     queryKey: ['phone-verification-factors'],
     queryFn: phoneVerificationService.listFactors,
@@ -51,7 +64,20 @@ export const useListFactors = () => {
 
 export const useUnenrollFactor = () => {
   const queryClient = useQueryClient();
-  
+
+  return useMutation({
+    mutationFn: phoneVerificationService.unenrollFactor,
+    onSuccess: () => {
+      // Invalidate caches after unenrolling
+      queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
+      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
+    },
+  });
+};
+
+export const useUnenrollPhoneFactor = () => {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: phoneVerificationService.unenrollFactor,
     onSuccess: () => {
@@ -64,7 +90,7 @@ export const useUnenrollFactor = () => {
 
 export const useGetAAL = () => {
   const { user } = useAuth();
-  
+
   return useQuery({
     queryKey: ['mfa-aal'],
     queryFn: phoneVerificationService.getAAL,

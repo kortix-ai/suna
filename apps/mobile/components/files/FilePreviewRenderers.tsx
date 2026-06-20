@@ -308,13 +308,13 @@ function JsonPreview({ content }: { content: string }) {
       />
       {/* Language badge at bottom */}
       <View
-        className="px-4 pt-3 border-t"
+        className="px-4 pt-2 border-t"
         style={{
           borderTopColor: isDark
             ? 'rgba(248, 248, 248, 0.08)'
             : 'rgba(18, 18, 21, 0.06)',
           backgroundColor: isDark ? '#121215' : '#ffffff',
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
         <Text
@@ -486,13 +486,13 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
       />
       {/* Language badge at bottom */}
       <View
-        className="px-4 pt-3 border-t"
+        className="px-4 pt-2 border-t"
         style={{
           borderTopColor: isDark
             ? 'rgba(248, 248, 248, 0.08)'
             : 'rgba(18, 18, 21, 0.06)',
           backgroundColor: isDark ? '#121215' : '#ffffff',
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
         <Text

@@ -17,7 +17,7 @@ import { tunnelRelay } from '../core/relay';
 import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
-import { getTunnelOwnerContext } from './auth';
+import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -31,6 +31,8 @@ export function createConnectionsRouter() {
       path: '/',
       tags: ['tunnel'],
       summary: 'List tunnel connections for the account',
+      description:
+        'Readable by any credential scoped to the owning account, including the sandbox agent (apiKey) so it can resolve its tunnel.',
       security: [{ bearerAuth: [] }],
       responses: {
         200: json(z.array(ConnectionSchema), 'Tunnel connections (each with an isLive flag)'),
@@ -38,9 +40,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { userId, accountId, ownerClause } = await getTunnelOwnerContext(c);
-
-      console.log(`[TUNNEL][GET /connections] userId=${userId} resolvedAccountId=${accountId} same=${userId === accountId}`);
+      const { ownerClause } = await getTunnelReadContext(c);
 
       const connections = await db
         .select()
@@ -48,12 +48,14 @@ export function createConnectionsRouter() {
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
 
-      console.log(`[TUNNEL][GET /connections] found ${connections.length} connections`, connections.map(c => ({ tunnelId: c.tunnelId, accountId: c.accountId })));
-
-      const enriched = connections.map((conn) => ({
-        ...conn,
-        isLive: tunnelRelay.isConnected(conn.tunnelId),
-      }));
+      const enriched = connections.map((conn) => {
+        const isLive = tunnelRelay.isConnected(conn.tunnelId);
+        return {
+          ...conn,
+          status: isLive ? 'online' : conn.status,
+          isLive,
+        };
+      });
 
       return c.json(enriched);
     },
@@ -127,10 +129,8 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { userId, accountId, ownerClause } = await getTunnelOwnerContext(c);
+      const { ownerClause } = await getTunnelReadContext(c);
       const tunnelId = c.req.param('tunnelId');
-
-      console.log(`[TUNNEL][GET /:tunnelId] userId=${userId} accountId=${accountId} tunnelId=${tunnelId}`);
 
       const [connection] = await db
         .select()
@@ -141,8 +141,6 @@ export function createConnectionsRouter() {
             ownerClause,
           ),
         );
-
-      console.log(`[TUNNEL][GET /:tunnelId] found=${!!connection}`);
 
       if (!connection) {
         return c.json({ error: 'Tunnel connection not found' }, 404);

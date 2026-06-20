@@ -1,6 +1,7 @@
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickProjectWarmBake } from '../../snapshots/warm-project';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import { invalidateProjectMirror, mergeBranches, readRepoFile } from '../git';
 import { MANIFEST_FILENAME } from '../triggers';
@@ -11,6 +12,7 @@ import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
+import { assertAgentScope } from '../../iam/agent-scope';
 
 projectsApp.openapi(
   createRoute({
@@ -34,6 +36,11 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Per-agent gate: merging a CR lands code on the base branch — the canonical
+  // destructive action. An agent-session token must be granted project.cr.merge
+  // (default-deny). Non-agent tokens (human dashboard / laptop CLI) pass through.
+  assertAgentScope(c, 'project.cr.merge');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -119,6 +126,12 @@ projectsApp.openapi(
     accountId: loaded.row.accountId,
     source: 'cr-merge',
   });
+
+  // Re-bake the project's WARM snapshot at the new tip (repo pre-cloned +
+  // opencode caches) so the next session boots commit-fresh with no clone.
+  // No-op unless warm snapshots are enabled (and skipped for projects whose
+  // default template is custom). Best-effort, never blocks.
+  kickProjectWarmBake({ ...projectForGit, metadata: loaded.row.metadata });
 
   // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
   // cache (what the gateway + dashboard read) is derived from the manifest, so

@@ -8,8 +8,33 @@
  *   4. Don't hit blocked paths (configurable)
  */
 
-import { dirname, resolve, normalize } from 'path';
+import { dirname, basename, join, resolve, normalize } from 'path';
 import { realpathSync } from 'fs';
+
+function resolveExistingRoot(path: string): string {
+  const normalized = normalize(resolve(path));
+  try {
+    return realpathSync(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function resolvePathForValidation(path: string): string {
+  const normalized = normalize(resolve(path));
+  try {
+    return realpathSync(normalized);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      throw new Error(`Access denied: cannot resolve path "${path}" (${code})`);
+    }
+
+    const parent = dirname(normalized);
+    if (parent === normalized) return normalized;
+    return join(resolvePathForValidation(parent), basename(normalized));
+  }
+}
 
 function assertAllowedResolvedPath(
   originalPath: string,
@@ -18,14 +43,15 @@ function assertAllowedResolvedPath(
   blockedPaths: string[] = [],
 ): void {
   for (const blocked of blockedPaths) {
-    if (resolved === blocked || resolved.startsWith(blocked + '/')) {
+    const normalizedBlocked = resolveExistingRoot(blocked);
+    if (resolved === normalizedBlocked || resolved.startsWith(normalizedBlocked + '/')) {
       throw new Error(`Access denied: blocked path "${originalPath}"`);
     }
   }
 
   if (allowedPaths.length > 0) {
     const withinAllowed = allowedPaths.some((allowed) => {
-      const normalizedAllowed = normalize(resolve(allowed));
+      const normalizedAllowed = resolveExistingRoot(allowed);
       return resolved === normalizedAllowed || resolved.startsWith(normalizedAllowed + '/');
     });
 
@@ -44,18 +70,7 @@ export function validatePath(
     throw new Error('Path is required');
   }
 
-  const normalized = normalize(resolve(path));
-  let resolved: string;
-  try {
-    resolved = realpathSync(normalized);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') {
-      resolved = normalized;
-    } else {
-      throw new Error(`Access denied: cannot resolve path "${path}" (${code})`);
-    }
-  }
+  const resolved = resolvePathForValidation(path);
 
   assertAllowedResolvedPath(path, resolved, allowedPaths, blockedPaths);
 }

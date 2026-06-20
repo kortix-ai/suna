@@ -1,18 +1,9 @@
 'use client';
 
-/**
- * UserAvatar — a person (round). The squared counterpart is <EntityAvatar>.
- *
- * Renders the supabase profile picture when one is available (avatar_url /
- * picture, served with referrerPolicy="no-referrer" so Google-hosted images
- * load), and falls back to neutral monochrome initials otherwise. People and
- * things share the same neutral material and size scale — only the shape
- * differs (round vs square). No colored backgrounds: simplicity is the brand.
- */
-
-import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { chalkColors } from '@kortix/shared';
+import * as React from 'react';
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
   const source = (name || '').trim();
@@ -33,7 +24,7 @@ function initialsFromIdentity(name: string | undefined, email: string): string {
 const SIZE_MAP = {
   xs: 'size-5 text-xs',
   sm: 'size-6 text-xs',
-  md: 'size-8 text-xs',
+  md: 'size-8 rounded-md text-xs',
   lg: 'size-10 text-sm',
   xl: 'size-14 text-base',
 } as const;
@@ -46,8 +37,8 @@ interface UserAvatarProps {
   avatarUrl?: string | null;
   size?: UserAvatarSize;
   className?: string;
-  /** Render a subtle ring so the avatar stands out on dense rows. */
   ring?: boolean;
+  variant?: 'default' | 'primary';
 }
 
 export function UserAvatar({
@@ -55,6 +46,7 @@ export function UserAvatar({
   name,
   avatarUrl,
   size = 'md',
+  variant = 'default',
   className,
   ring = false,
 }: UserAvatarProps) {
@@ -62,18 +54,30 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || ''),
     [name, email],
   );
+  const chalk = chalkColors(`${name}`);
 
   return (
     <Avatar
       className={cn(
-        SIZE_MAP[size],
-        'shrink-0 font-medium tracking-tight',
+        SIZE_MAP[size] ?? 'size-8',
+        'shrink-0 overflow-hidden rounded-sm p-0 font-medium tracking-tight',
         ring && 'ring-background ring-2',
+        variant === 'primary' && 'bg-primary text-primary-foreground',
         className,
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
-      <AvatarFallback className="border border-border/70 bg-muted/40 font-semibold text-foreground/80">
+      <AvatarFallback
+        className={cn(
+          'border-border text-foreground border bg-transparent font-semibold',
+          // variant === 'primary' && 'bg-primary text-primary-foreground',
+        )}
+        style={{
+          backgroundColor: chalk.background,
+          color: chalk.foreground,
+          borderColor: chalk.border,
+        }}
+      >
         {initials || '?'}
       </AvatarFallback>
     </Avatar>

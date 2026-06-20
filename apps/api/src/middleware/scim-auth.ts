@@ -9,6 +9,7 @@
 
 import type { Context, Next } from 'hono';
 import { validateScimToken } from '../repositories/scim';
+import { accountHasEntitlement } from '../billing/services/entitlements';
 
 const SCIM_ERROR_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:Error';
 
@@ -41,6 +42,18 @@ export async function scimAuth(c: Context, next: Next) {
       c,
       403,
       'SCIM token does not match the account in the URL',
+    );
+  }
+
+  // Plan gate: SCIM is an Enterprise-only feature. A token minted while the
+  // account was enterprise must stop working the moment the account is
+  // downgraded — so we check the live tier entitlement on every request, not
+  // just at mint time.
+  if (!(await accountHasEntitlement(result.accountId, 'scim'))) {
+    return scimError(
+      c,
+      403,
+      "SCIM provisioning is not enabled for this account's plan",
     );
   }
 

@@ -1,12 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
-/**
- * Scroll-triggered reveal with blur + slide + fade.
- * Fires once when the element enters the viewport.
- */
+
 export function Reveal({
   children,
   className = '',
@@ -23,7 +20,12 @@ export function Reveal({
     const el = ref.current;
     if (!el) return;
     const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } },
+      ([e]) => {
+        if (e.isIntersecting) {
+          setVisible(true);
+          obs.disconnect();
+        }
+      },
       { threshold: 0.15, rootMargin: '0px 0px -50px 0px' },
     );
     obs.observe(el);

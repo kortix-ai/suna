@@ -38,6 +38,28 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 
+  test('bakes a real Chromium for agent-browser and verifies it at build time', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    // Chromium comes from Playwright (cross-arch; Chrome for Testing has no
+    // linux-arm64 build) and pulls its OS libs via --with-deps.
+    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
+    // Wired BOTH ways: the documented env var → a stable symlink, AND
+    // agent-browser's own auto-detected cache (env-independent, #422-proof).
+    expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
+    expect(merged).toContain('/opt/kortix/home/.agent-browser/browsers/chrome-linux64');
+    // The build FAILS LOUDLY if Chromium didn't wire up — never install at runtime.
+    expect(merged).toContain('/usr/local/bin/chromium --version');
+    // Gate matches the resolved PATH (deterministic), not the browser name —
+    // doctor says "Chromium" on arm64 but "Google Chrome for Testing" on x64.
+    expect(merged).toContain("agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'");
+    // PLAYWRIGHT_BROWSERS_PATH must be set BEFORE the install so Chromium lands
+    // in the stable system path the symlinks resolve against.
+    const envIdx = merged.indexOf('PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers');
+    const installIdx = merged.indexOf('playwright@1.60.0 install');
+    expect(envIdx).toBeGreaterThanOrEqual(0);
+    expect(envIdx).toBeLessThan(installIdx);
+  });
+
   test('does NOT bake the project workspace into the image', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...COMMON });
     expect(merged).not.toContain('kortix-workspace.tar.gz');

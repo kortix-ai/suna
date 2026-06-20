@@ -15,6 +15,8 @@
  */
 
 import { createWsHandlers, type AuthResult } from 'agent-tunnel';
+import { eq, and, lt } from 'drizzle-orm';
+import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '@kortix/db';
 import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
@@ -27,6 +29,14 @@ import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
 import { heartbeatManager } from './core/heartbeat';
 import { notifyTunnelEvent } from './routes/permission-requests';
+// Static imports — these MUST NOT be dynamic `await import(...)`. Under
+// `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
+// and never settle, so onAuthenticate hangs → the agent never gets `auth_ok`
+// and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
+import { isTunnelToken, isKortixToken, hashSecretKey, deriveSigningKey } from '../shared/crypto';
+import { validateSecretKey } from '../repositories/api-keys';
+import { getSupabase } from '../shared/supabase';
+import { db } from '../shared/db';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
@@ -45,25 +55,17 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
   heartbeat: heartbeatManager,
   maxMessageSize: config.TUNNEL_MAX_WS_MESSAGE_SIZE,
   async onAuthenticate(tunnelId: string, token: string): Promise<AuthResult | null> {
-    const { isTunnelToken, candidateSecretKeyHashes, deriveSigningKey } = await import('../shared/crypto');
-    const { isKortixToken } = await import('../shared/crypto');
-    const { validateSecretKey } = await import('../repositories/api-keys');
-    const { getSupabase } = await import('../shared/supabase');
-    const { eq: eqOp, and: andOp, inArray: inArrayOp } = await import('drizzle-orm');
-    const { tunnelConnections } = await import('@kortix/db');
-    const { db } = await import('../shared/db');
-
     let accountId: string | null = null;
     let tunnel: any = null;
 
     if (isTunnelToken(token)) {
-      const tokenHashes = candidateSecretKeyHashes(token);
+      const tokenHash = hashSecretKey(token);
       const [row] = await db
         .select()
         .from(tunnelConnections)
-        .where(andOp(
-          eqOp(tunnelConnections.tunnelId, tunnelId),
-          inArrayOp(tunnelConnections.setupTokenHash, tokenHashes),
+        .where(and(
+          eq(tunnelConnections.tunnelId, tunnelId),
+          eq(tunnelConnections.setupTokenHash, tokenHash),
         ));
       if (row) {
         accountId = row.accountId;
@@ -86,9 +88,9 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       const [row] = await db
         .select()
         .from(tunnelConnections)
-        .where(andOp(
-          eqOp(tunnelConnections.tunnelId, tunnelId),
-          eqOp(tunnelConnections.accountId, accountId),
+        .where(and(
+          eq(tunnelConnections.tunnelId, tunnelId),
+          eq(tunnelConnections.accountId, accountId),
         ));
       tunnel = row;
     }
@@ -127,17 +129,12 @@ function startTunnelService(): void {
     }
 
     try {
-      const { eq } = await import('drizzle-orm');
-      const { tunnelConnections, tunnelPermissions } = await import('@kortix/db');
-      const { db } = await import('../shared/db');
-
       db.update(tunnelConnections)
         .set({ status: 'online', lastHeartbeatAt: new Date(), updatedAt: new Date() })
         .where(eq(tunnelConnections.tunnelId, tunnelId))
         .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
 
       // Sync active permissions to the agent
-      const { and } = await import('drizzle-orm');
       const activePerms = await db
         .select({
           permissionId: tunnelPermissions.permissionId,
@@ -175,10 +172,6 @@ function startTunnelService(): void {
     }
 
     try {
-      const { eq } = await import('drizzle-orm');
-      const { tunnelConnections } = await import('@kortix/db');
-      const { db } = await import('../shared/db');
-
       db.update(tunnelConnections)
         .set({ status: 'offline', updatedAt: new Date() })
         .where(eq(tunnelConnections.tunnelId, tunnelId))
@@ -196,10 +189,6 @@ function startTunnelService(): void {
 
   tunnelRelay.on('message:pong', async ({ tunnelId, params }) => {
     try {
-      const { eq } = await import('drizzle-orm');
-      const { tunnelConnections } = await import('@kortix/db');
-      const { db } = await import('../shared/db');
-
       db.update(tunnelConnections)
         .set({ lastHeartbeatAt: new Date(), updatedAt: new Date() })
         .where(eq(tunnelConnections.tunnelId, tunnelId))
@@ -218,10 +207,6 @@ function startTunnelService(): void {
   tunnelRelay.on('agent:timeout', async ({ tunnelId }) => {
     console.warn(`[tunnel] Agent ${tunnelId} timed out — marking offline`);
     try {
-      const { eq } = await import('drizzle-orm');
-      const { tunnelConnections } = await import('@kortix/db');
-      const { db } = await import('../shared/db');
-
       await db
         .update(tunnelConnections)
         .set({ status: 'offline', updatedAt: new Date() })
@@ -235,10 +220,6 @@ function startTunnelService(): void {
 
   permissionCleanupInterval = setInterval(async () => {
     try {
-      const { eq, and, lt } = await import('drizzle-orm');
-      const { tunnelPermissions } = await import('@kortix/db');
-      const { db } = await import('../shared/db');
-
       await db
         .update(tunnelPermissions)
         .set({ status: 'expired', updatedAt: new Date() })
@@ -250,7 +231,6 @@ function startTunnelService(): void {
         );
 
       // Expire pending device auth requests
-      const { tunnelDeviceAuthRequests } = await import('@kortix/db');
       await db
         .update(tunnelDeviceAuthRequests)
         .set({ status: 'expired', updatedAt: new Date() })

@@ -103,6 +103,19 @@ variable "memory_target" {
   default     = 70
 }
 
+variable "requests_per_target_target" {
+  description = <<-EOT
+    Target ALBRequestCountPerTarget for request-count scaling. 0 disables it.
+    CPU/memory target tracking is blind to I/O-bound stalls (during the
+    2026-06-08 DB-contention incident CPU averaged ~20%% so the service never
+    scaled out even while requests timed out). Scaling on requests-per-target
+    adds load-proportional capacity regardless of CPU. Set per-env to the
+    sustained healthy req/min/task divided by 1 (it's a per-minute target).
+  EOT
+  type        = number
+  default     = 0
+}
+
 # ── Options ───────────────────────────────────────────────────────────────────
 variable "certificate_arn" {
   description = "ACM cert ARN for the HTTPS listener (used when enable_https = true)."

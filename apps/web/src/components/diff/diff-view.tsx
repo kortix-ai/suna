@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { useTheme } from 'next-themes';
-import { PatchDiff } from '@pierre/diffs/react';
-import type { FileDiffOptions } from '@pierre/diffs';
-import { createTwoFilesPatch } from 'diff';
 import { cn } from '@/lib/utils';
+import type { FileDiffOptions } from '@pierre/diffs';
+import { PatchDiff } from '@pierre/diffs/react';
+import { createTwoFilesPatch } from 'diff';
+import { useTheme } from 'next-themes';
+import { useMemo } from 'react';
 
 // ---------------------------------------------------------------------------
 // Shared `DiffView` — single replacement for every custom diff renderer in
@@ -69,32 +69,35 @@ export function DiffView(props: PatchProps | FilesProps) {
     'after' in props ? props.after.contents : null,
   ]);
 
-  const options = useMemo<FileDiffOptions<undefined>>(() => ({
-    theme: { dark: 'pierre-dark', light: 'pierre-light' },
-    themeType,
-    diffStyle: props.layout ?? 'split',
-    diffIndicators: props.indicators ?? 'bars',
-    disableFileHeader: props.hideFileHeader ?? false,
-    disableLineNumbers: props.hideLineNumbers ?? false,
-    disableBackground: props.flatBackground ?? false,
-    overflow: props.wrap ? 'wrap' : 'scroll',
-    lineDiffType: props.inlineHighlight ?? 'word',
-  }), [
-    themeType,
-    props.layout,
-    props.indicators,
-    props.hideFileHeader,
-    props.hideLineNumbers,
-    props.flatBackground,
-    props.wrap,
-    props.inlineHighlight,
-  ]);
+  const options = useMemo<FileDiffOptions<undefined>>(
+    () => ({
+      theme: { dark: 'pierre-dark', light: 'pierre-light' },
+      themeType,
+      diffStyle: props.layout ?? 'split',
+      diffIndicators: props.indicators ?? 'bars',
+      disableFileHeader: props.hideFileHeader ?? false,
+      disableLineNumbers: props.hideLineNumbers ?? false,
+      disableBackground: props.flatBackground ?? false,
+      overflow: props.wrap ? 'wrap' : 'scroll',
+      lineDiffType: props.inlineHighlight ?? 'word',
+    }),
+    [
+      themeType,
+      props.layout,
+      props.indicators,
+      props.hideFileHeader,
+      props.hideLineNumbers,
+      props.flatBackground,
+      props.wrap,
+      props.inlineHighlight,
+    ],
+  );
 
   return (
     <PatchDiff
       patch={patch}
       options={options}
-      className={cn('kortix-diff-view text-sm leading-[1.55]', props.className)}
+      className={cn('kortix-diff-view text-[0.8rem] leading-[1.55]', props.className)}
     />
   );
 }

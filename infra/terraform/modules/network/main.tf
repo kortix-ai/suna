@@ -28,7 +28,7 @@ resource "aws_vpc" "this" {
   cidr_block           = var.cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = merge(var.tags, { Name = "${var.name}-vpc" })
+  tags                 = merge(var.tags, var.extra_vpc_tags, { Name = "${var.name}-vpc" })
 }
 
 resource "aws_internet_gateway" "this" {
@@ -43,7 +43,7 @@ resource "aws_subnet" "public" {
   cidr_block              = local.public_subnets[count.index]
   availability_zone       = local.azs[count.index]
   map_public_ip_on_launch = true
-  tags                    = merge(var.tags, { Name = "${var.name}-public-${local.azs[count.index]}", Tier = "public" })
+  tags                    = merge(var.tags, var.extra_public_subnet_tags, { Name = "${var.name}-public-${local.azs[count.index]}", Tier = "public" })
 }
 
 resource "aws_route_table" "public" {
@@ -67,7 +67,7 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = local.private_subnets[count.index]
   availability_zone = local.azs[count.index]
-  tags              = merge(var.tags, { Name = "${var.name}-private-${local.azs[count.index]}", Tier = "private" })
+  tags              = merge(var.tags, var.extra_private_subnet_tags, { Name = "${var.name}-private-${local.azs[count.index]}", Tier = "private" })
 }
 
 resource "aws_eip" "nat" {

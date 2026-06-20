@@ -169,9 +169,13 @@ async function getProjectSessionSandbox(
   sessionId: string,
 ): Promise<ProjectSessionSandbox | null> {
   try {
-    return await apiFetch<ProjectSessionSandbox>(
-      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sandbox`,
+    // Unified session-open endpoint: provisions/resumes + resolves the pin
+    // server-side, returning the sandbox row in its payload.
+    const r = await apiFetch<{ sandbox: ProjectSessionSandbox | null }>(
+      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+      { method: 'POST', body: JSON.stringify({}) },
     );
+    return r?.sandbox ?? null;
   } catch {
     return null;
   }
@@ -194,7 +198,9 @@ async function listProjectSessionSandboxes(): Promise<Array<{
   for (const project of projects) {
     const sessions = await listProjectSessions(project.project_id).catch(() => []);
     for (const session of sessions) {
-      const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+      // Derive from the session row — do NOT call /start while listing, or every
+      // sandbox across every project would be woken. Single-session opens use it.
+      const runtime = null;
       results.push({
         project,
         session,

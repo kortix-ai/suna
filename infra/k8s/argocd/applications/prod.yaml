@@ -1,0 +1,58 @@
+# Argo CD Application for EKS prod (api-eks.kortix.com).
+#
+# Multi-source: render the kortix-api Helm chart with the prod env value file
+# from the same repo. The deploy is whatever this revision of
+# infra/k8s/envs/prod/values.yaml says — a PR bumping image.tag IS the release;
+# git revert is the rollback. Argo CD continuously reconciles + self-heals drift.
+#
+# repoURL/targetRevision point at the canonical steady state. BOOTSTRAP: until
+# these manifests are merged to kortix-ai/suna, create this app with an override
+# (--repo https://github.com/lillyboga/suna.git --revision eks-migration), then
+# drop the override once merged. See infra/GITOPS.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kortix
+  sources:
+    - repoURL: https://github.com/kortix-ai/suna.git
+      targetRevision: prod
+      path: infra/k8s/charts/kortix-api
+      helm:
+        valueFiles:
+          - $values/infra/k8s/envs/prod/values.yaml
+    - repoURL: https://github.com/kortix-ai/suna.git
+      targetRevision: prod
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-prod
+  # External Secrets Operator's admission webhook injects defaults
+  # (conversionStrategy/decodingStrategy/metadataPolicy) into the ExternalSecret,
+  # which git doesn't carry — ignore those fields so the app isn't perpetually
+  # OutOfSync. ESO owns them; this changes diffing only, nothing in-cluster.
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.dataFrom[]?.extract.conversionStrategy
+        - .spec.dataFrom[]?.extract.decodingStrategy
+        - .spec.dataFrom[]?.extract.metadataPolicy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

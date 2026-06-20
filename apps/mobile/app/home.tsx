@@ -6,7 +6,7 @@
  * - Main: Either SessionPage (active session) or DashboardHome (new chat input)
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -51,7 +51,9 @@ import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
-import { UserMenuSheet } from '@/components/session/UserMenuSheet';
+import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
+import { useAccounts } from '@/lib/projects/hooks';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
 import { ProjectsPage } from '@/components/pages/ProjectsPage';
@@ -550,6 +552,12 @@ export default function HomeScreen() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+
+  // Tabs are remembered PER PROJECT; the sandbox home screen gets its own
+  // reserved scope so its tabs never bleed into (or out of) a project.
+  useLayoutEffect(() => {
+    useTabStore.getState().setScope('home');
+  }, []);
   const {
     sandboxUrl, sandboxId, isLoading: sandboxLoading, error: sandboxError,
     isProvisioning, provisioningSandboxId, provisioningExternalId, provisioningProvider, onProvisioningComplete,
@@ -731,7 +739,6 @@ export default function HomeScreen() {
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null);
-  const userMenuSheetRef = useRef<BottomSheetModal>(null);
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
@@ -751,6 +758,15 @@ export default function HomeScreen() {
   const planLabel = 'Self-Hosted';
   const sandboxLabel = sandboxId || 'Sandbox';
   const sandboxHost = sandboxUrl ? sandboxUrl.replace(/^https?:\/\//, '') : undefined;
+  // Account menu (web-parity user menu) — same account resolution as the
+  // projects screen: the store's selection, falling back to the first account.
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountsQuery = useAccounts(!!user);
+  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const activeAccount =
+    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
+    accountsQuery.data?.[0] ??
+    null;
 
   useEffect(() => {
     let mounted = true;
@@ -1081,7 +1097,7 @@ export default function HomeScreen() {
   }, [activePageId, activeSessionId, setShowTabsOverview]);
 
   const closeUserMenuSheet = useCallback(() => {
-    userMenuSheetRef.current?.dismiss();
+    setAccountMenuOpen(false);
   }, []);
 
   const handleGoToSettings = useCallback(() => {
@@ -1153,7 +1169,7 @@ export default function HomeScreen() {
   }, [themePreference, setColorScheme, themeTransitionOpacity]);
 
   const handleUserMenuOpen = useCallback(() => {
-    userMenuSheetRef.current?.present();
+    setAccountMenuOpen(true);
   }, []);
 
   const handleSignOut = useCallback(() => {
@@ -2091,18 +2107,15 @@ export default function HomeScreen() {
         </Drawer>
       </Drawer>
 
-      <UserMenuSheet
-        ref={userMenuSheetRef}
-        sandboxLabel={sandboxLabel}
-        sandboxHost={sandboxHost}
-        onManageInstances={handleManageInstances}
-        onAddInstance={handleAddInstance}
-        onOpenSettings={handleGoToSettings}
-        onOpenChangelog={handleOpenChangelog}
-        onSignOut={handleSignOut}
-        onSelectTheme={handleThemeSelect}
-        activeTheme={themePreference}
+      <AccountMenuSheet
+        open={accountMenuOpen}
+        name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
+        email={userEmail}
+        accountName={activeAccount?.name}
+        accountId={activeAccount?.account_id ?? null}
         isSigningOut={isSigningOut}
+        onSignOut={handleSignOut}
+        onClose={() => setAccountMenuOpen(false)}
       />
 
       <ViewChangesSheet

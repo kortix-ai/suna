@@ -1,6 +1,7 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeHostName, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
+import { emitJson } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 import type { MeResponse } from '../api/types.ts';
 
@@ -11,19 +12,22 @@ selected host.
 
 Options:
   --host <name>     Probe a specific host (default: active).
+  --json            Machine-readable JSON output.
   -h, --help        Show this help.
 `;
 
 interface WhoamiFlags {
   host?: string;
+  json: boolean;
   help: boolean;
 }
 
 function parseFlags(argv: string[]): WhoamiFlags {
-  const f: WhoamiFlags = { help: false };
+  const f: WhoamiFlags = { json: false, help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '-h' || a === '--help') f.help = true;
+    else if (a === '--json') f.json = true;
     else if (a === '--host') {
       const next = argv[i + 1];
       if (!next) throw new Error('--host requires a value');
@@ -79,6 +83,19 @@ export async function runWhoami(argv: string[]): Promise<number> {
 
   const resolvedHost = flags.host ?? activeHostName();
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
+
+  if (flags.json) {
+    emitJson({
+      host: resolvedHost ?? null,
+      url: auth.api_base,
+      user_id: me.user_id,
+      user_email: me.email || null,
+      account_id: active?.account_id ?? auth.account_id ?? null,
+      account: active ?? null,
+      accounts: me.accounts,
+    });
+    return 0;
+  }
 
   process.stdout.write(`\n  ${C.bold}${me.email || me.user_id}${C.reset}\n`);
   if (me.email) {

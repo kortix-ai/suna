@@ -37,13 +37,28 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
+  '.kortix/opencode/pty/opencode-pty/index.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/constants.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/buffer.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/formatters.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/manager.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/notification-manager.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/output-manager.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/permissions.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/kill.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/kill.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/list.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/list.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/read.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/read.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/spawn.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/spawn.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/write.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/write.txt',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/types.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/utils.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/wildcard.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/types.ts',
   '.kortix/opencode/pty/opencode-pty/src/shared/constants.ts',
@@ -53,6 +68,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
   '.kortix/opencode/skills/kortix-slack/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
@@ -170,7 +186,7 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
   reconcileProjectTemplates: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
@@ -178,7 +194,6 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  isOrgAccount: async () => false,
   verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
   verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
     ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
@@ -247,6 +262,7 @@ mock.module('../projects/github', () => ({
         description: null,
       }]
     : [],
+  isOrgAccount: async () => true,
   isGithubAppConfigured: () => true,
 }));
 
@@ -482,6 +498,7 @@ describe('create-repo starter scaffold contract', () => {
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.toml');
     expect(manifest?.content).toContain('name = "Company OS"');
+    expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 
   test('defaults to the general knowledge worker starter scaffold', () => {
@@ -497,6 +514,7 @@ describe('create-repo starter scaffold contract', () => {
     expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
     expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/brand-voice/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
+    expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
   });
 
   test('manages account GitHub App installation metadata through the project API', async () => {

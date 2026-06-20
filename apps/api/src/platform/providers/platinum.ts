@@ -14,6 +14,7 @@
 
 import { platinumJson } from '../../shared/platinum';
 import { serviceKeyForExternalId } from '../service-key';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { config, SANDBOX_VERSION } from '../../config';
 import type {
   SandboxProvider,
@@ -68,6 +69,8 @@ export class PlatinumProvider implements SandboxProvider {
 
     const envVars: Record<string, string> = {
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
+      // Frontend base for user-facing dashboard links (never the API host).
+      KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       ...opts.envVars,
     };
     if (!envVars.KORTIX_TOKEN) {

@@ -35,8 +35,8 @@ export default function AuthLayout() {
   // CRITICAL: Authenticated users should NEVER be on auth screens
   // Redirect them immediately to home
   if (isAuthenticated) {
-    log.log('🚫 Auth layout: user is authenticated, redirecting to /home');
-    return <Redirect href="/home" />;
+    log.log('🚫 Auth layout: user is authenticated, redirecting to /projects');
+    return <Redirect href="/projects" />;
   }
 
   return (

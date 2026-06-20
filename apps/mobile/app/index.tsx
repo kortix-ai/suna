@@ -37,8 +37,8 @@ export default function SplashScreen() {
         log.log('🚀 → /auth (not authenticated)');
         router.replace('/auth');
       } else {
-        log.log('🚀 → /home (authenticated)');
-        router.replace('/home');
+        log.log('🚀 → /projects (authenticated)');
+        router.replace('/projects');
       }
     }, 100);
 

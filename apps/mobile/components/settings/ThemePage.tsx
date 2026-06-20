@@ -13,6 +13,7 @@ import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useThemeStore } from '@/stores/theme-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -72,8 +73,10 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   };
 
   const saveThemePreference = async (preference: ThemePreference) => {
+    // Route through the theme store — it persists AND applies the scheme to
+    // NativeWind, keeping every other consumer (account-menu pills) in sync.
     try {
-      await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
+      await useThemeStore.getState().setPreference(preference);
       if (!isMountedRef.current) return;
       setThemePreference(preference);
     } catch {

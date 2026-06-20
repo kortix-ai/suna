@@ -161,3 +161,27 @@ nothing is worth changing.
 #   out_dir = "dist"
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"
+
+# ─── Per-agent authorization (optional) ───────────────────────────
+# Scope what each agent can touch — TWO knobs OpenCode's agent .md can't express:
+#   • kortix_cli — what it may do to Kortix via the CLI/API (open/merge CRs,
+#       deploy, manage triggers/secrets, spawn sessions). "all" = everything the
+#       LAUNCHING USER can do (an agent is always capped at its launcher) | a list
+#       | omit = none. Run `kortix validate --scopes` for the full action list.
+#   • connectors — which integration profiles it may call. "all" | [slugs] | omit = none.
+#
+# DEFAULT: with NO [[agents]] section, every agent gets FULL access — so your
+# default `kortix` agent can already merge / deploy / spawn sub-agents (all capped
+# at the launching user). Adding ANY [[agents]] entry opts you into governance:
+# from then on, list EVERY agent you want to run (including your default) or an
+# unlisted one is denied. Canonical setup = default agent "all" + scoped specialists:
+#
+# [[agents]]
+# name       = "kortix"            # your default general-purpose agent
+# kortix_cli = "all"               # full Kortix powers — merge, deploy, spawn… (∩ the user)
+# connectors = "all"               # every connector profile
+#
+# [[agents]]
+# name       = "release-bot"       # a scoped specialist
+# connectors = ["github"]
+# kortix_cli = ["project.cr.open"] # may OPEN a CR, but NOT merge it

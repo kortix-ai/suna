@@ -2,12 +2,15 @@ import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { loadAuth } from '../api/auth.ts';
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { runSessionsChat } from './sessions-chat.ts';
+import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { C, pad, status } from '../style.ts';
+import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 
 const HELP = `Usage: kortix sessions <subcommand> [options]
@@ -16,16 +19,24 @@ Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
 
 Subcommands:
-  ls                                List sessions on the project.
-  new [--prompt "<text>"]           Start a new session, optionally with
-                                    an initial prompt. Prints the new
-                                    session id + status.
+  ls                                List sessions on the project. --json.
+  status                            Mission control: every session + what
+                                    each agent is doing right now (live).
+                                    --all, --json. Aliases: overview, ps.
+  new [--prompt "<text>"]           Start a new session, optionally with an
+                                    initial prompt. --wait blocks until it's
+                                    running; --json prints the session object
+                                    (capture session_id to orchestrate).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
-  info <session-id>                 Show one session.
+  log [<session-id>]                Print a session's recent messages
+                                    (read-only) — peek at what an agent is
+                                    doing without sending it anything.
+                                    --limit <N>, --json. Aliases: messages.
+  info <session-id>                 Show one session. --json.
   preview <session-id> [port]       Print a clickable preview URL for a port
                                     in the session's sandbox (default 3000).
-                                    Root-served (assets work). --port also works.
+                                    Root-served (assets work). --port, --json.
   restart <session-id>              Restart (re-provision) a session.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
@@ -49,7 +60,18 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
+  // `log` owns its own flag parsing (incl. --limit + a positional session id),
+  // so route it before we consume flags below.
+  if (sub === 'log' || sub === 'messages' || sub === 'history') {
+    return runSessionsLog(argv.slice(1));
+  }
+  // `status` fans out live per-session reads; owns its own flag parsing.
+  if (sub === 'status' || sub === 'overview' || sub === 'ps') {
+    return runSessionsStatus(argv.slice(1));
+  }
   const rest = argv.slice(1);
+  const json = takeFlagBool(rest, ['--json']);
+  const wait = takeFlagBool(rest, ['--wait']);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -68,16 +90,16 @@ export async function runSessions(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return sessionsLs(ctxOpts);
+      return sessionsLs(ctxOpts, json);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, ctxOpts);
+      return sessionsNew(promptFlag, ctxOpts, json, wait);
     case 'info':
     case 'show':
-      return sessionsInfo(rest[0], ctxOpts);
+      return sessionsInfo(rest[0], ctxOpts, json);
     case 'preview':
     case 'url':
-      return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts);
+      return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts, json);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
     case 'rename':
@@ -95,7 +117,7 @@ export async function runSessions(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-async function sessionsLs(opts: CtxOpts): Promise<number> {
+async function sessionsLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -106,6 +128,11 @@ async function sessionsLs(opts: CtxOpts): Promise<number> {
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(sessions);
+    return 0;
   }
 
   if (sessions.length === 0) {
@@ -130,7 +157,12 @@ async function sessionsLs(opts: CtxOpts): Promise<number> {
   return 0;
 }
 
-async function sessionsNew(prompt: string | undefined, opts: CtxOpts): Promise<number> {
+async function sessionsNew(
+  prompt: string | undefined,
+  opts: CtxOpts,
+  json = false,
+  wait = false,
+): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -148,6 +180,53 @@ async function sessionsNew(prompt: string | undefined, opts: CtxOpts): Promise<n
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  // --wait: drive the same canonical /start lifecycle endpoint the dashboard
+  // polls. Row status alone can say "running" before OpenCode is actually ready.
+  if (wait) {
+    if (!json) {
+      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
+    }
+    for (let i = 0; i < 75; i += 1) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 4000));
+      try {
+        const start = await ctx.client.post<{
+          stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+          reason?: string;
+        }>(
+          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
+          {},
+        );
+        created = await ctx.client.get<ProjectSession>(
+          `/projects/${ctx.projectId}/sessions/${created.session_id}`,
+        );
+        if (start.stage === 'ready') break;
+        if (start.stage === 'failed' || start.stage === 'stopped') {
+          if (json) {
+            emitJson(created);
+          } else {
+            const detail = start.reason ? `: ${start.reason}` : created.error ? `: ${created.error}` : '';
+            process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
+          }
+          return 1;
+        }
+      } catch (err) {
+        if (json) {
+          emitJson(created);
+        } else {
+          process.stderr.write(
+            `${status.err((err as Error).message || 'Failed while waiting for session readiness')}\n`,
+          );
+        }
+        return 1;
+      }
+    }
+  }
+
+  if (json) {
+    emitJson(created);
+    return 0;
   }
 
   process.stdout.write(`\n${status.ok(`Session started ${C.bold}${shortId(created.session_id)}${C.reset}`)}\n`);
@@ -207,7 +286,11 @@ async function prepareClientCreatedBranch(
   return 'ok';
 }
 
-async function sessionsInfo(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
+async function sessionsInfo(
+  sessionId: string | undefined,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
@@ -222,6 +305,11 @@ async function sessionsInfo(sessionId: string | undefined, opts: CtxOpts): Promi
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(s);
+    return 0;
   }
 
   process.stdout.write('\n');
@@ -247,6 +335,7 @@ async function sessionsPreview(
   sessionId: string | undefined,
   portArg: string | undefined,
   opts: CtxOpts,
+  json = false,
 ): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
@@ -288,6 +377,11 @@ async function sessionsPreview(
   // subsequent asset requests. `*.localhost` resolves to 127.0.0.1 in browsers.
   const scheme = base.protocol.replace(':', '');
   const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(ctx.auth.token)}`;
+
+  if (json) {
+    emitJson({ session_id: s.session_id, port, sandbox: ext, url });
+    return 0;
+  }
 
   process.stdout.write(`\n  ${C.dim}port    ${C.reset}${port}\n`);
   process.stdout.write(`  ${C.dim}sandbox ${C.reset}${ext}\n`);
@@ -374,7 +468,7 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
   if (!ctx) return 1;
   const auth = loadAuth();
   if (!auth) return 1;
-  const url = `${webDashboardUrl(auth.api_base)}/projects/${ctx.projectId}/sessions/${sessionId}`;
+  const url = sessionWebUrl(auth.api_base, ctx.projectId, sessionId);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -464,22 +558,6 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-function webDashboardUrl(apiBase: string): string {
-  try {
-    const url = new URL(apiBase);
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      return `${url.protocol}//${url.hostname}:3000`;
-    }
-    if (url.hostname.startsWith('api.')) {
-      url.hostname = url.hostname.slice(4);
-      return url.origin;
-    }
-    return url.origin;
-  } catch {
-    return 'https://kortix.com';
-  }
 }
 
 function openInBrowser(url: string): void {

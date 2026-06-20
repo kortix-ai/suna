@@ -1,5 +1,5 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sandboxes } from '@kortix/db';
 import {
   getCreditAccount,
   getSubscriptionInfo,
@@ -7,6 +7,7 @@ import {
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import {
   getTier,
+  getTierEntitlements,
   getDailyCreditConfig,
   isPaidTier,
   isLegacyPaidTier,
@@ -19,6 +20,7 @@ import {
 import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
+import { countActiveMembers } from './seat-management';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
@@ -92,9 +94,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // User's instances (sandboxes)
   let instances: any[] = [];
   try {
-    const { db } = await import('../../shared/db');
-    const { sandboxes } = await import('@kortix/db');
-
     const sandboxRows = await db
       .select()
       .from(sandboxes)
@@ -172,6 +171,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
+      entitlements: tier.entitlements,
     },
     models: [],
     auto_topup: autoTopup,
@@ -180,6 +180,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     can_claim_computer: canClaimComputer,
     can_claim_per_seat: canClaimPerSeatPricing,
     billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    // Live member count = the seat quantity a per-seat subscribe bills for now
+    // (matches createPerSeatCheckoutSession). Drives the modal's projected total.
+    member_count: await countActiveMembers(accountId).catch(() => 1),
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
           count: sub?.seatCount ?? 1,
@@ -241,6 +244,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       display_name: 'Free',
       monthly_credits: 0,
       can_purchase_credits: false,
+      entitlements: getTierEntitlements('free'),
     },
     models: [],
     auto_topup: {
@@ -253,6 +257,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     can_claim_computer: false,
     can_claim_per_seat: false,
     billing_model: 'legacy',
+    member_count: 1,
   };
 }
 

@@ -4,9 +4,29 @@ import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } f
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { authorize } from '../../iam/dispatcher';
+import { ACCOUNT_ACTIONS } from '../../iam/actions';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 
 export const accountStateRouter = makeOpenApiApp<AppEnv>();
+
+// Whether the CURRENT user may change billing for `accountId` (billing.write —
+// owners only by default). Surfaced on account-state so the UI can disable the
+// "Subscribe" / "Manage billing" CTAs for members instead of letting them click
+// through to a 403. This is a UI hint only — the billing routes enforce the
+// same gate server-side (see require-billing-write.ts). Computed per-request
+// (NOT inside the cached buildAccountState) so one user's verdict is never
+// served to another. Defaults to `true` on a probe error so a transient glitch
+// never hides the CTA from a legitimate owner.
+async function canManageBilling(c: any, accountId: string): Promise<boolean> {
+  try {
+    const userId = c.get('userId') as string;
+    const { allowed } = await authorize(userId, accountId, ACCOUNT_ACTIONS.BILLING_WRITE);
+    return allowed;
+  } catch {
+    return true;
+  }
+}
 
 // Opaque account-state payload (credits, tier, subscription, …). Permissive on
 // purpose — the real shape is large and varies by mode (live / minimal / local mock).
@@ -27,7 +47,7 @@ accountStateRouter.openapi(
   }),
   async (c) => {
     if (!hasDatabase) {
-      return c.json(buildLocalAccountState());
+      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
     const accountId = await resolveScopedAccountId(c, 'query');
 
@@ -42,12 +62,12 @@ accountStateRouter.openapi(
       if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
         state.credits.can_run = true;
       }
-      return c.json(state);
+      return c.json({ ...state, can_manage_billing: await canManageBilling(c, accountId) });
     } catch (err) {
       // DB schema may not have billing tables (e.g. local dev without kortix schema).
       // Fall back to local account state so the app isn't blocked.
       console.error('[billing] account-state failed, falling back to local:', (err as Error)?.message || err);
-      return c.json(buildLocalAccountState());
+      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
   },
 );
@@ -66,7 +86,7 @@ accountStateRouter.openapi(
   }),
   async (c) => {
     if (!hasDatabase) {
-      return c.json(buildLocalAccountState());
+      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
     const accountId = await resolveScopedAccountId(c, 'query');
     try {
@@ -74,10 +94,10 @@ accountStateRouter.openapi(
       if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
         state.credits.can_run = true;
       }
-      return c.json(state);
+      return c.json({ ...state, can_manage_billing: await canManageBilling(c, accountId) });
     } catch (err) {
       console.error('[billing] minimal account-state failed, falling back to local:', (err as Error)?.message || err);
-      return c.json(buildLocalAccountState());
+      return c.json({ ...buildLocalAccountState(), can_manage_billing: true });
     }
   },
 );

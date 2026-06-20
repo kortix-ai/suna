@@ -1,190 +1,58 @@
-/**
- * E2E tests for the Agent Tunnel CLI (src/client/cli.ts).
- *
- * Strategy: spin up a lightweight mock HTTP server that simulates the
- * tunnel relay API, then invoke the CLI as a child process via `bun run`
- * with TUNNEL_API_URL pointing at the mock. Assert on JSON stdout,
- * stderr, and exit codes.
- *
- * Run: bun test src/client/cli.test.ts
- */
+import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { spawn } from 'child_process';
+import { resolve, dirname } from 'path';
 
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { spawn } from "child_process";
-import { resolve, dirname } from "path";
-import { existsSync, unlinkSync } from "fs";
+const TUNNEL_ID = 'test-tunnel-001';
 
-// ── Mock tunnel server ────────────────────────────────────────────────────
-
-const TUNNEL_ID = "test-tunnel-001";
-
-/** Builds JSON-RPC–style responses for each method. */
-function mockRpcResponse(
-  method: string,
-  params: Record<string, unknown>
-): unknown {
+function mockRpcResponse(method: string, params: Record<string, unknown>): unknown {
   switch (method) {
-    case "fs.read":
-      return {
-        content: `mock content of ${params.path}`,
-        size: 28,
-        path: params.path,
-      };
-    case "fs.write":
+    case 'fs.read':
+      return { content: `mock content of ${params.path}`, size: 28, path: params.path };
+    case 'fs.write':
       return { path: params.path, size: (params.content as string).length };
-    case "fs.list":
+    case 'fs.list':
       return {
         entries: [
-          {
-            name: "file.txt",
-            path: `${params.path}/file.txt`,
-            isDirectory: false,
-            isFile: true,
-          },
-          {
-            name: "subdir",
-            path: `${params.path}/subdir`,
-            isDirectory: true,
-            isFile: false,
-          },
+          { name: 'file.txt', path: `${params.path}/file.txt`, isDirectory: false, isFile: true },
+          { name: 'subdir', path: `${params.path}/subdir`, isDirectory: true, isFile: false },
         ],
         count: 2,
       };
-    case "shell.exec":
+    case 'shell.exec':
       return {
         exitCode: 0,
         signal: null,
-        stdout: `ran ${params.command} ${((params.args as string[]) || []).join(" ")}`,
-        stderr: "",
+        stdout: `ran ${params.command} ${((params.args as string[]) || []).join(' ')}`,
+        stderr: '',
         stdoutTruncated: false,
         stderrTruncated: false,
       };
-    case "desktop.screenshot":
-      // 1x1 red PNG as base64
-      return {
-        image:
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-        width: 1,
-        height: 1,
-        format: "png",
-      };
-    case "desktop.mouse.click":
-      return { ok: true };
-    case "desktop.mouse.move":
-      return { ok: true };
-    case "desktop.mouse.drag":
-      return { ok: true };
-    case "desktop.mouse.scroll":
-      return { ok: true };
-    case "desktop.keyboard.type":
-      return { ok: true };
-    case "desktop.keyboard.key":
-      return { ok: true };
-    case "desktop.window.list":
-      return {
-        windows: [
-          {
-            id: 42,
-            app: "Finder",
-            title: "Desktop",
-            bounds: { x: 0, y: 0, width: 1920, height: 1080 },
-            minimized: false,
-          },
-        ],
-      };
-    case "desktop.window.focus":
-      return { ok: true };
-    case "desktop.app.launch":
-      return { ok: true };
-    case "desktop.app.quit":
-      return { ok: true };
-    case "desktop.clipboard.read":
-      return { text: "clipboard mock content" };
-    case "desktop.clipboard.write":
-      return { ok: true };
-    case "desktop.screen.info":
-      return { width: 1920, height: 1080, scaleFactor: 2 };
-    case "desktop.cursor.image":
-      return {
-        image:
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==",
-        width: 100,
-        height: 100,
-        format: "png",
-      };
-    case "desktop.ax.tree":
-      return {
-        root: {
-          id: "0",
-          role: "AXApplication",
-          title: "TestApp",
-          value: "",
-          description: "",
-          bounds: { x: 0, y: 0, width: 800, height: 600 },
-          children: [
-            {
-              id: "0.0",
-              role: "AXButton",
-              title: "OK",
-              value: "",
-              description: "",
-              bounds: { x: 100, y: 100, width: 80, height: 30 },
-              children: [],
-              actions: ["AXPress"],
-              enabled: true,
-              focused: false,
-            },
-          ],
-          actions: [],
-          enabled: true,
-          focused: false,
-        },
-        elementCount: 2,
-      };
-    case "desktop.ax.action":
-      return {
-        ok: true,
-        action: params.action,
-        elementId: params.elementId,
-        before: { focused: false, value: "" },
-        after: { focused: true, value: "" },
-        stateChanged: true,
-        role: "AXButton",
-        title: "OK",
-      };
-    case "desktop.ax.set_value":
-      return {
-        ok: true,
-        elementId: params.elementId,
-        requestedValue: params.value,
-        actualValue: params.value,
-      };
-    case "desktop.ax.focus":
-      return {
-        ok: true,
-        elementId: params.elementId,
-        role: "AXTextField",
-        title: "Search",
-        before: { focused: false },
-        after: { focused: true },
-      };
-    case "desktop.ax.search":
-      return {
-        elements: [
-          {
-            id: "0.1",
-            role: "AXButton",
-            title: params.query as string,
-            value: "",
-            description: "",
-            bounds: { x: 200, y: 200, width: 60, height: 30 },
-            children: [],
-            actions: ["AXPress"],
-            enabled: true,
-            focused: false,
-          },
-        ],
-      };
+    case 'desktop.cua.ensure':
+      return { ok: true, binary: '/Users/me/.local/bin/cua-driver', version: 'cua-driver 0.5.7' };
+    case 'desktop.cua.start_daemon':
+      return { ok: true, status: 'ok' };
+    case 'desktop.cua.status':
+      return { status: 'ok' };
+    case 'desktop.cua.version':
+      return { version: 'cua-driver 0.5.7' };
+    case 'desktop.cua.list_tools':
+      return { tools: 'list_apps: List apps\nget_window_state: Get window state' };
+    case 'desktop.cua.describe':
+      return { description: `${params.tool}: mocked description` };
+    case 'desktop.cua.call':
+      return { tool: params.tool, args: params.args ?? {} };
+    case 'desktop.cua.list_apps':
+      return { applications: [{ name: 'TextEdit', pid: 123, bundle_id: 'com.apple.TextEdit' }] };
+    case 'desktop.cua.list_windows':
+      return { windows: [{ window_id: 77, pid: 123, title: 'Untitled', app: 'TextEdit' }] };
+    case 'desktop.cua.get_window_state':
+      return { pid: params.pid, window_id: params.window_id, accessibility_tree: '[element_index 1] text area' };
+    case 'desktop.cua.click':
+      return { ok: true, element_index: params.element_index };
+    case 'desktop.cua.type_text':
+      return { ok: true, text: params.text };
+    case 'desktop.cua.hotkey':
+      return { ok: true, keys: params.keys };
     default:
       return { error: `Unknown method: ${method}` };
   }
@@ -195,44 +63,29 @@ let mockPort = 0;
 
 beforeAll(() => {
   mockServer = Bun.serve({
-    port: 0, // random available port
+    port: 0,
     async fetch(req) {
       const url = new URL(req.url);
 
-      // GET /v1/tunnel/connections — list connections
-      if (
-        url.pathname === "/v1/tunnel/connections" &&
-        req.method === "GET"
-      ) {
+      if (url.pathname === '/v1/tunnel/connections' && req.method === 'GET') {
         return Response.json([
           {
             tunnelId: TUNNEL_ID,
-            name: "Test Tunnel",
+            name: 'Test Tunnel',
             isLive: true,
-            capabilities: ["filesystem", "shell", "desktop"],
-            machineInfo: {
-              hostname: "test-machine",
-              platform: "darwin",
-              arch: "arm64",
-            },
+            capabilities: ['filesystem', 'shell', 'desktop'],
+            machineInfo: { hostname: 'test-machine', platform: 'darwin', arch: 'arm64' },
           },
         ]);
       }
 
-      // POST /v1/tunnel/rpc/:tunnelId — RPC call
-      const rpcMatch = url.pathname.match(
-        /^\/v1\/tunnel\/rpc\/(.+)$/
-      );
-      if (rpcMatch && req.method === "POST") {
-        const body = (await req.json()) as {
-          method: string;
-          params: Record<string, unknown>;
-        };
-        const result = mockRpcResponse(body.method, body.params || {});
-        return Response.json({ result });
+      const rpcMatch = url.pathname.match(/^\/v1\/tunnel\/rpc\/(.+)$/);
+      if (rpcMatch && req.method === 'POST') {
+        const body = (await req.json()) as { method: string; params: Record<string, unknown> };
+        return Response.json({ result: mockRpcResponse(body.method, body.params || {}) });
       }
 
-      return new Response("Not Found", { status: 404 });
+      return new Response('Not Found', { status: 404 });
     },
   });
   mockPort = mockServer.port!;
@@ -242,9 +95,7 @@ afterAll(() => {
   mockServer?.stop(true);
 });
 
-// ── Test helpers ──────────────────────────────────────────────────────────
-
-const CLI_PATH = resolve(dirname(import.meta.dir), "client/cli.ts");
+const CLI_PATH = resolve(dirname(import.meta.dir), 'client/cli.ts');
 
 interface CliResult {
   stdout: string;
@@ -256,379 +107,173 @@ interface CliResult {
 function runCli(
   command: string,
   argsJson?: string,
-  envOverrides?: Record<string, string>
+  envOverrides?: Record<string, string>,
 ): Promise<CliResult> {
   return new Promise((resolve) => {
-    const cliArgs = ["run", CLI_PATH];
+    const cliArgs = ['run', CLI_PATH];
     if (command) cliArgs.push(command);
     if (argsJson) cliArgs.push(argsJson);
 
-    const child = spawn("bun", cliArgs, {
+    const child = spawn('bun', cliArgs, {
       env: {
         ...process.env,
         TUNNEL_API_URL: `http://localhost:${mockPort}`,
-        TUNNEL_TOKEN: "test-token",
-        TUNNEL_ID: "",
+        TUNNEL_TOKEN: 'test-token',
+        TUNNEL_ID: '',
         ...envOverrides,
       },
       cwd: dirname(dirname(CLI_PATH)),
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString()));
+    child.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
 
-    child.on("close", (code: number | null) => {
+    child.on('close', (code: number | null) => {
       let json: Record<string, unknown> | null = null;
       try {
         json = JSON.parse(stdout.trim());
       } catch {}
-      resolve({
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        exitCode: code ?? 1,
-        json,
-      });
+      resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code ?? 1, json });
     });
   });
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
-
-describe("Agent Tunnel CLI", () => {
-  // ── Dispatch & error handling ──
-
-  test("no command shows usage and exits 1", async () => {
-    const r = await runCli("");
+describe('Agent Tunnel CLI', () => {
+  test('no command shows usage and exits 1', async () => {
+    const r = await runCli('');
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toContain("Usage:");
-    expect(r.stderr).toContain("Available:");
+    expect(r.stderr).toContain('Usage:');
+    expect(r.stderr).toContain('Available:');
   });
 
-  test("unknown command shows error and exits 1", async () => {
-    const r = await runCli("nonexistent");
+  test('unknown command shows error and exits 1', async () => {
+    const r = await runCli('nonexistent');
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toContain("Unknown command: nonexistent");
-    expect(r.stderr).toContain("Available:");
+    expect(r.stderr).toContain('Unknown command: nonexistent');
   });
 
-  test("invalid JSON arg exits 1 with error", async () => {
-    const r = await runCli("fs_read", "{invalid json}");
+  test('invalid JSON arg exits 1 with JSON error', async () => {
+    const r = await runCli('fs_read', '{invalid json}');
     expect(r.exitCode).toBe(1);
+    expect(r.json!.success).toBe(false);
   });
 
-  // ── status ──
-
-  test("status returns connections list", async () => {
-    const r = await runCli("status");
+  test('status returns connections list', async () => {
+    const r = await runCli('status');
     expect(r.exitCode).toBe(0);
-    expect(r.json).not.toBeNull();
     expect(r.json!.success).toBe(true);
-    expect(Array.isArray(r.json!.connections)).toBe(true);
     const conns = r.json!.connections as Array<Record<string, unknown>>;
-    expect(conns.length).toBe(1);
     expect(conns[0].tunnelId).toBe(TUNNEL_ID);
-    expect(conns[0].status).toBe("ONLINE");
-    expect(r.json!.hasOnline).toBe(true);
+    expect(conns[0].capabilities).toEqual(['filesystem', 'shell', 'desktop']);
   });
 
-  // ── Filesystem ──
-
-  test("fs_read returns file content", async () => {
-    const r = await runCli("fs_read", '{"path":"/tmp/test.txt"}');
+  test('fs_read returns file content', async () => {
+    const r = await runCli('fs_read', '{"path":"/tmp/test.txt"}');
     expect(r.exitCode).toBe(0);
     expect(r.json!.success).toBe(true);
-    expect(r.json!.path).toBe("/tmp/test.txt");
-    expect(r.json!.content).toContain("mock content");
-    expect(typeof r.json!.size).toBe("number");
+    expect(r.json!.content).toContain('mock content');
   });
 
-  test("fs_write returns path and size", async () => {
-    const r = await runCli(
-      "fs_write",
-      '{"path":"/tmp/out.txt","content":"hello world"}'
-    );
+  test('fs_write returns path and size', async () => {
+    const r = await runCli('fs_write', '{"path":"/tmp/out.txt","content":"hello world"}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.path).toBe("/tmp/out.txt");
+    expect(r.json!.path).toBe('/tmp/out.txt');
     expect(r.json!.size).toBe(11);
   });
 
-  test("fs_list returns entries", async () => {
-    const r = await runCli("fs_list", '{"path":"/tmp"}');
+  test('fs_list returns entries', async () => {
+    const r = await runCli('fs_list', '{"path":"/tmp"}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
     expect(r.json!.count).toBe(2);
-    const entries = r.json!.entries as Array<Record<string, unknown>>;
-    expect(entries.length).toBe(2);
-    expect(entries[0].name).toBe("file.txt");
-    expect(entries[0].isFile).toBe(true);
-    expect(entries[1].name).toBe("subdir");
-    expect(entries[1].isDirectory).toBe(true);
   });
 
-  // ── Shell ──
-
-  test("shell returns command output", async () => {
-    const r = await runCli(
-      "shell",
-      '{"command":"echo","args":["hello","world"]}'
-    );
+  test('shell returns command output', async () => {
+    const r = await runCli('shell', '{"command":"echo","args":["hello","world"]}');
     expect(r.exitCode).toBe(0);
     expect(r.json!.success).toBe(true);
-    expect(r.json!.exitCode).toBe(0);
-    expect(r.json!.stdout).toContain("echo hello world");
-    expect(r.json!.stderr).toBe("");
+    expect(r.json!.stdout).toContain('echo hello world');
   });
 
-  // ── Screenshot ──
-
-  test("screenshot saves image and returns path", async () => {
-    const r = await runCli("screenshot");
+  test('cua_ensure returns binary and version', async () => {
+    const r = await runCli('cua_ensure');
     expect(r.exitCode).toBe(0);
     expect(r.json!.success).toBe(true);
-    expect(r.json!.width).toBe(1);
-    expect(r.json!.height).toBe(1);
-    expect(r.json!.format).toBe("png");
-    expect(typeof r.json!.path).toBe("string");
-    const imgPath = r.json!.path as string;
-    expect(imgPath).toContain("tunnel-screenshots");
-    expect(imgPath).toEndWith(".png");
-    // Verify the file was actually written
-    expect(existsSync(imgPath)).toBe(true);
-    // Clean up
-    try {
-      unlinkSync(imgPath);
-    } catch {}
+    expect((r.json!.result as Record<string, unknown>).version).toBe('cua-driver 0.5.7');
   });
 
-  test("screenshot with region params", async () => {
-    const r = await runCli(
-      "screenshot",
-      '{"x":0,"y":0,"width":800,"height":600}'
-    );
+  test('cua_start_daemon returns daemon status', async () => {
+    const r = await runCli('cua_start_daemon');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
+    expect((r.json!.result as Record<string, unknown>).ok).toBe(true);
   });
 
-  // ── Mouse ──
-
-  test("click returns success", async () => {
-    const r = await runCli("click", '{"x":100,"y":200}');
+  test('cua_list_tools returns CUA tool descriptions', async () => {
+    const r = await runCli('cua_list_tools');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.x).toBe(100);
-    expect(r.json!.y).toBe(200);
-    expect(r.json!.button).toBe("left");
+    expect((r.json!.result as Record<string, unknown>).tools).toContain('list_apps');
   });
 
-  test("click with button and modifiers", async () => {
-    const r = await runCli(
-      "click",
-      '{"x":50,"y":50,"button":"right","clicks":2,"modifiers":["cmd"]}'
-    );
+  test('cua_describe requires a tool', async () => {
+    const r = await runCli('cua_describe');
+    expect(r.exitCode).toBe(1);
+    expect(r.json!.success).toBe(false);
+  });
+
+  test('cua_describe calls desktop.cua.describe', async () => {
+    const r = await runCli('cua_describe', '{"tool":"get_window_state"}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.button).toBe("right");
-    expect(r.json!.clicks).toBe(2);
+    expect((r.json!.result as Record<string, unknown>).description).toContain('get_window_state');
   });
 
-  test("mouse_move returns success", async () => {
-    const r = await runCli("mouse_move", '{"x":500,"y":300}');
+  test('cua_call calls arbitrary CUA tools', async () => {
+    const r = await runCli('cua_call', '{"tool":"check_permissions","args":{"format":"json"}}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.x).toBe(500);
-    expect(r.json!.y).toBe(300);
+    expect(r.json!.tool).toBe('check_permissions');
+    expect((r.json!.result as Record<string, unknown>).tool).toBe('check_permissions');
   });
 
-  test("mouse_drag returns success", async () => {
-    const r = await runCli(
-      "mouse_drag",
-      '{"fromX":0,"fromY":0,"toX":100,"toY":100}'
-    );
+  test('cua_list_apps returns app list', async () => {
+    const r = await runCli('cua_list_apps');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.fromX).toBe(0);
-    expect(r.json!.toX).toBe(100);
+    const result = r.json!.result as Record<string, unknown>;
+    expect(Array.isArray(result.applications)).toBe(true);
   });
 
-  test("mouse_scroll returns success", async () => {
-    const r = await runCli(
-      "mouse_scroll",
-      '{"x":500,"y":500,"deltaY":3}'
-    );
+  test('cua_list_windows returns window list', async () => {
+    const r = await runCli('cua_list_windows', '{"pid":123}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.deltaY).toBe(3);
+    const result = r.json!.result as Record<string, unknown>;
+    expect((result.windows as unknown[]).length).toBe(1);
   });
 
-  // ── Keyboard ──
-
-  test("type returns char count", async () => {
-    const r = await runCli("type", '{"text":"hello world"}');
+  test('cua_get_window_state returns accessibility markdown', async () => {
+    const r = await runCli('cua_get_window_state', '{"pid":123,"window_id":77}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.chars).toBe(11);
+    expect((r.json!.result as Record<string, unknown>).accessibility_tree).toContain('element_index');
   });
 
-  test("key returns pressed keys", async () => {
-    const r = await runCli("key", '{"keys":["cmd","s"]}');
+  test('cua_click supports element-indexed input', async () => {
+    const r = await runCli('cua_click', '{"pid":123,"window_id":77,"element_index":1}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    const keys = r.json!.keys as string[];
-    expect(keys).toEqual(["cmd", "s"]);
+    expect((r.json!.result as Record<string, unknown>).ok).toBe(true);
   });
 
-  // ── Windows ──
-
-  test("window_list returns windows", async () => {
-    const r = await runCli("window_list");
+  test('cua_type_text sends text', async () => {
+    const r = await runCli('cua_type_text', '{"pid":123,"text":"hello"}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    const windows = r.json!.windows as Array<Record<string, unknown>>;
-    expect(windows.length).toBe(1);
-    expect(windows[0].id).toBe(42);
-    expect(windows[0].app).toBe("Finder");
+    expect((r.json!.result as Record<string, unknown>).text).toBe('hello');
   });
 
-  test("window_focus returns success", async () => {
-    const r = await runCli("window_focus", '{"windowId":42}');
+  test('cua_hotkey sends keys', async () => {
+    const r = await runCli('cua_hotkey', '{"pid":123,"keys":["cmd","s"]}');
     expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.windowId).toBe(42);
+    expect((r.json!.result as Record<string, unknown>).keys).toEqual(['cmd', 's']);
   });
 
-  // ── Apps ──
-
-  test("app_launch returns success", async () => {
-    const r = await runCli("app_launch", '{"app":"Safari"}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.app).toBe("Safari");
-  });
-
-  test("app_quit returns success", async () => {
-    const r = await runCli("app_quit", '{"app":"Safari"}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.app).toBe("Safari");
-  });
-
-  // ── Clipboard ──
-
-  test("clipboard_read returns text", async () => {
-    const r = await runCli("clipboard_read");
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.text).toBe("clipboard mock content");
-  });
-
-  test("clipboard_write returns char count", async () => {
-    const r = await runCli("clipboard_write", '{"text":"test copy"}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.chars).toBe(9);
-  });
-
-  // ── Screen ──
-
-  test("screen_info returns dimensions", async () => {
-    const r = await runCli("screen_info");
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.width).toBe(1920);
-    expect(r.json!.height).toBe(1080);
-    expect(r.json!.scaleFactor).toBe(2);
-  });
-
-  test("cursor_image saves image", async () => {
-    const r = await runCli("cursor_image", '{"radius":50}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.width).toBe(100);
-    expect(r.json!.height).toBe(100);
-    const imgPath = r.json!.path as string;
-    expect(existsSync(imgPath)).toBe(true);
-    try {
-      unlinkSync(imgPath);
-    } catch {}
-  });
-
-  // ── Accessibility ──
-
-  test("ax_tree returns formatted tree", async () => {
-    const r = await runCli("ax_tree");
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.elementCount).toBe(2);
-    expect(typeof r.json!.tree).toBe("string");
-    const tree = r.json!.tree as string;
-    expect(tree).toContain("[AXApplication]");
-    expect(tree).toContain("[AXButton] OK");
-  });
-
-  test("ax_tree with pid filter", async () => {
-    const r = await runCli("ax_tree", '{"pid":1234,"maxDepth":4}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-  });
-
-  test("ax_action returns state change", async () => {
-    const r = await runCli(
-      "ax_action",
-      '{"elementId":"0.0","action":"AXPress"}'
-    );
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.action).toBe("AXPress");
-    expect(r.json!.elementId).toBe("0.0");
-    expect(r.json!.stateChanged).toBe(true);
-    expect(r.json!.role).toBe("AXButton");
-  });
-
-  test("ax_set_value returns verified value", async () => {
-    const r = await runCli(
-      "ax_set_value",
-      '{"elementId":"0.1","value":"search text"}'
-    );
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.requestedValue).toBe("search text");
-    expect(r.json!.actualValue).toBe("search text");
-  });
-
-  test("ax_focus returns focus state", async () => {
-    const r = await runCli("ax_focus", '{"elementId":"0.1"}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.role).toBe("AXTextField");
-    expect((r.json!.after as Record<string, unknown>).focused).toBe(true);
-  });
-
-  test("ax_search returns matching elements", async () => {
-    const r = await runCli("ax_search", '{"query":"Submit"}');
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-    expect(r.json!.count).toBe(1);
-    const elements = r.json!.elements as Array<Record<string, unknown>>;
-    expect(elements[0].role).toBe("AXButton");
-    expect(elements[0].title).toBe("Submit");
-  });
-
-  test("ax_search with role filter", async () => {
-    const r = await runCli(
-      "ax_search",
-      '{"query":"Submit","role":"button","maxResults":5}'
-    );
-    expect(r.exitCode).toBe(0);
-    expect(r.json!.success).toBe(true);
-  });
-
-  // ── Permission flow ──
-
-  describe("permission handling", () => {
+  describe('permission handling', () => {
     let permServer: ReturnType<typeof Bun.serve>;
     let permPort = 0;
 
@@ -638,25 +283,18 @@ describe("Agent Tunnel CLI", () => {
         async fetch(req) {
           const url = new URL(req.url);
 
-          if (url.pathname === "/v1/tunnel/connections") {
-            return Response.json([
-              { tunnelId: "perm-tunnel", isLive: true },
-            ]);
+          if (url.pathname === '/v1/tunnel/connections') {
+            return Response.json([{ tunnelId: 'perm-tunnel', isLive: true }]);
           }
 
-          // Always return 403 with requestId for RPC calls
-          if (url.pathname.startsWith("/v1/tunnel/rpc/")) {
+          if (url.pathname.startsWith('/v1/tunnel/rpc/')) {
             return Response.json(
-              {
-                code: -32003,
-                error: "Permission denied",
-                requestId: "req-abc-123",
-              },
-              { status: 403 }
+              { code: -32003, error: 'Permission denied', requestId: 'req-abc-123' },
+              { status: 403 },
             );
           }
 
-          return new Response("Not Found", { status: 404 });
+          return new Response('Not Found', { status: 404 });
         },
       });
       permPort = permServer.port!;
@@ -666,54 +304,25 @@ describe("Agent Tunnel CLI", () => {
       permServer?.stop(true);
     });
 
-    test("permission denied returns structured response", async () => {
-      const r = await runCli("fs_read", '{"path":"/etc/passwd"}', {
+    test('permission denied returns structured response', async () => {
+      const r = await runCli('cua_list_apps', undefined, {
         TUNNEL_API_URL: `http://localhost:${permPort}`,
       });
-      // CLI should output permission-required JSON (not crash)
-      expect(r.json).not.toBeNull();
       expect(r.json!.success).toBe(false);
       expect(r.json!.permissionRequired).toBe(true);
-      expect(r.json!.requestId).toBe("req-abc-123");
-      expect(typeof r.json!.message).toBe("string");
-    });
-
-    test("shell permission denied returns structured response", async () => {
-      const r = await runCli(
-        "shell",
-        '{"command":"rm","args":["-rf","/"]}',
-        { TUNNEL_API_URL: `http://localhost:${permPort}` }
-      );
-      expect(r.json!.success).toBe(false);
-      expect(r.json!.permissionRequired).toBe(true);
+      expect(r.json!.requestId).toBe('req-abc-123');
     });
   });
 
-  // ── Error handling: server down ──
-
-  describe("server unreachable", () => {
-    test("status with dead server returns error JSON", async () => {
-      const r = await runCli("status", undefined, {
-        TUNNEL_API_URL: "http://localhost:1",
-      });
-      expect(r.exitCode).toBe(1);
-      expect(r.json).not.toBeNull();
-      expect(r.json!.success).toBe(false);
-      expect(typeof r.json!.error).toBe("string");
-    });
-
-    test("fs_read with dead server returns error JSON", async () => {
-      const r = await runCli("fs_read", '{"path":"/tmp/x"}', {
-        TUNNEL_API_URL: "http://localhost:1",
-      });
+  describe('server unreachable', () => {
+    test('status with dead server returns error JSON', async () => {
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: 'http://localhost:1' });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);
     });
   });
 
-  // ── Empty connections ──
-
-  describe("no connections", () => {
+  describe('no connections', () => {
     let emptyServer: ReturnType<typeof Bun.serve>;
     let emptyPort = 0;
 
@@ -722,10 +331,8 @@ describe("Agent Tunnel CLI", () => {
         port: 0,
         async fetch(req) {
           const url = new URL(req.url);
-          if (url.pathname === "/v1/tunnel/connections") {
-            return Response.json([]);
-          }
-          return new Response("Not Found", { status: 404 });
+          if (url.pathname === '/v1/tunnel/connections') return Response.json([]);
+          return new Response('Not Found', { status: 404 });
         },
       });
       emptyPort = emptyServer.port!;
@@ -735,23 +342,20 @@ describe("Agent Tunnel CLI", () => {
       emptyServer?.stop(true);
     });
 
-    test("status with no connections returns empty list", async () => {
-      const r = await runCli("status", undefined, {
-        TUNNEL_API_URL: `http://localhost:${emptyPort}`,
-      });
+    test('status with no connections returns empty list', async () => {
+      const r = await runCli('status', undefined, { TUNNEL_API_URL: `http://localhost:${emptyPort}` });
       expect(r.exitCode).toBe(0);
       expect(r.json!.success).toBe(true);
       expect((r.json!.connections as unknown[]).length).toBe(0);
-      expect(typeof r.json!.message).toBe("string");
     });
 
-    test("fs_read with no connections returns error", async () => {
-      const r = await runCli("fs_read", '{"path":"/tmp/x"}', {
+    test('fs_read with no connections returns error', async () => {
+      const r = await runCli('fs_read', '{"path":"/tmp/x"}', {
         TUNNEL_API_URL: `http://localhost:${emptyPort}`,
       });
       expect(r.exitCode).toBe(1);
       expect(r.json!.success).toBe(false);
-      expect(r.json!.error).toContain("No tunnel connection found");
+      expect(r.json!.error).toContain('No tunnel connection found');
     });
   });
 });

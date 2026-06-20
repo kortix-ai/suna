@@ -78,7 +78,10 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
   getLatestComputeSession: async (sandboxId: string) =>
     sessions
       .filter((s) => s.sandboxId === sandboxId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0] ?? null,
+      .sort(
+        (a, b) =>
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      )[0] ?? null,
   updateComputeSession: async (id: string, patch: any) => {
     const row = sessions.find((s) => s.id === id);
     if (!row) return;
@@ -88,6 +91,7 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
     sessions.filter(
       (s) => s.state === 'active' && new Date(s.lastBilledAt) <= cutoff,
     ),
+  getComputeUsageSince: async () => ({ totalCostUsd: 0, sessionCount: 0 }),
 }));
 
 // Override the credits mock to actually capture the type tag.

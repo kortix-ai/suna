@@ -6,6 +6,7 @@ import {
   deleteRepo as ghDeleteRepo,
   isOrgAccount,
 } from '../github';
+import { config } from '../../config';
 import {
   basicAuthHeader,
   type GitConnectionRef,
@@ -76,8 +77,13 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
   const pat = managedGithubToken();
   if (pat) {
     // owner may be a personal account (throwaway) → createRepo must hit
-    // /user/repos, not /orgs/{owner}/repos. Resolve the real type.
-    const ownerType = (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
+    // /user/repos, not /orgs/{owner}/repos. Production managed repos always live
+    // under the configured org, so prod keeps the strict org-only path (no
+    // lookup); only local dev detects a personal owner (cached via isOrgAccount).
+    const ownerType =
+      config.INTERNAL_KORTIX_ENV === 'prod'
+        ? 'Organization'
+        : (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
     return { token: pat, source: 'pat', owner, ownerType };
   }
   const installId = managedGithubInstallId();

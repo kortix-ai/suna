@@ -13,9 +13,9 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import { useMemo, useCallback, useSyncExternalStore } from 'react';
-import type { FlatModel } from '@/components/session/session-chat-input';
+import type { FlatModel } from '@/features/session/session-chat-input';
 import { safeSetItem } from '@/lib/storage/managed-storage';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 // ============================================================================
 // Types
@@ -68,9 +68,7 @@ const STORE_KEY = 'opencode-model-store-v1';
  */
 const MAX_SESSION_ENTRIES = 200;
 
-function capSessionMap<V>(
-  map: Record<string, V> | undefined,
-): Record<string, V> | undefined {
+function capSessionMap<V>(map: Record<string, V> | undefined): Record<string, V> | undefined {
   if (!map) return map;
   const keys = Object.keys(map);
   if (keys.length <= MAX_SESSION_ENTRIES) return map;
@@ -262,22 +260,19 @@ export function useModelStore(allModels: FlatModel[]) {
   );
 
   // Set visibility for a model
-  const setVisibility = useCallback(
-    (model: ModelKey, show: boolean) => {
-      const s = getStore();
-      const index = s.user.findIndex(
-        (x) => x.modelID === model.modelID && x.providerID === model.providerID,
-      );
-      const next = [...s.user];
-      if (index >= 0) {
-        next[index] = { ...next[index], visibility: show ? 'show' : 'hide' };
-      } else {
-        next.push({ ...model, visibility: show ? 'show' : 'hide' });
-      }
-      setStore({ ...s, user: next });
-    },
-    [],
-  );
+  const setVisibility = useCallback((model: ModelKey, show: boolean) => {
+    const s = getStore();
+    const index = s.user.findIndex(
+      (x) => x.modelID === model.modelID && x.providerID === model.providerID,
+    );
+    const next = [...s.user];
+    if (index >= 0) {
+      next[index] = { ...next[index], visibility: show ? 'show' : 'hide' };
+    } else {
+      next.push({ ...model, visibility: show ? 'show' : 'hide' });
+    }
+    setStore({ ...s, user: next });
+  }, []);
 
   // Clear every visibility override so all models revert to their default
   // (shown). Leaves recent/variant/selection state untouched.

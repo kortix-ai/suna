@@ -85,6 +85,7 @@ export function createChatCompletionsRoute(
           error: message,
           message,
           code: 'subscription_required',
+          account_id: principal.accountId,
         },
         402,
       );

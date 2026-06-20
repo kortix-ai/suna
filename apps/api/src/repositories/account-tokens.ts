@@ -8,6 +8,7 @@ import {
   isApiKeySecretConfigured,
   isAccountToken,
 } from '../shared/crypto';
+import type { AgentGrant } from '@kortix/db';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,10 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token is scoped to one project; the auth
    *  middleware enforces URL :projectId === this value. */
   projectId?: string | null;
+  /** Non-null = this is an agent-session token; the running agent's resolved
+   *  authorization (which Kortix CLI/API actions + connectors it may use,
+   *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
+  agentGrant?: AgentGrant | null;
   error?: string;
 }
 
@@ -30,6 +35,9 @@ export interface CreateAccountTokenParams {
    *  = user-scoped (laptop CLI). */
   projectId?: string;
   expiresAt?: Date;
+  /** Set for agent-session tokens — the resolved per-agent grant to stamp
+   *  onto the token (already ∩ the launching user's role). */
+  agentGrant?: AgentGrant | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -146,6 +154,7 @@ export async function createAccountToken(
       publicKey,
       secretKeyHash,
       expiresAt: params.expiresAt ?? null,
+      agentGrant: params.agentGrant ?? null,
     })
     .returning();
 
@@ -244,6 +253,7 @@ export async function validateAccountToken(
         expiresAt: accountTokens.expiresAt,
         lastUsedAt: accountTokens.lastUsedAt,
         createdAt: accountTokens.createdAt,
+        agentGrant: accountTokens.agentGrant,
         patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -292,6 +302,7 @@ export async function validateAccountToken(
       userId: row.userId,
       tokenId: row.tokenId,
       projectId: row.projectId,
+      agentGrant: row.agentGrant ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

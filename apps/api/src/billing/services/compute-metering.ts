@@ -152,7 +152,7 @@ async function settleComputeWindow(
 
 /**
  * Sandbox transitioned to stopped/hibernated. Settle and close the row.
- * The next start/wake will open a fresh row via startComputeSession.
+ * The next runtime start will open a fresh row via startComputeSession.
  */
 export async function pauseComputeSession(sandboxId: string): Promise<void> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
@@ -194,7 +194,7 @@ export async function reopenComputeForSandbox(
   const last = await getLatestComputeSession(sandboxId);
   const spec: SandboxSpec = last
     ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
-    : { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+    : { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
   return startComputeSession({ sandboxId, accountId, sessionId, actorUserId, spec });
 }
 

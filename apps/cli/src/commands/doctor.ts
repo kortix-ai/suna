@@ -1,5 +1,6 @@
 import { ApiError } from '../api/client.ts';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
+import { hasEnvTokenHost } from '../api/config.ts';
 import { opencodeClient } from '../api/sandbox-proxy.ts';
 import { loadLink } from '../project-link.ts';
 import {
@@ -64,7 +65,8 @@ export async function runDoctor(argv: string[]): Promise<number> {
   let failures = 0;
 
   // ── 1. Auth ─────────────────────────────────────────────────────────────
-  const hostFromLink = !flags.host ? loadLink()?.host ?? undefined : undefined;
+  const hostFromLink =
+    !flags.host && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
   const hostName = flags.host ?? hostFromLink;
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {

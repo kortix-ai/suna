@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kortix-api
+description: Kortix API on EKS — Deployment + ALB Ingress + HPA/PDB + External Secrets.
+type: application
+# Chart version; the app image tag is passed at deploy time via image.tag.
+version: 0.1.0
+appVersion: "1.0.0"

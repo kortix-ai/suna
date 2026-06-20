@@ -872,8 +872,8 @@ export async function switchToSessionSandboxAsync(
 
   let sandbox = prefetched ?? null;
   if (!sandbox) {
-    const { getProjectSessionSandbox } = await import('@/lib/projects-client');
-    sandbox = await getProjectSessionSandbox(projectId, sessionId);
+    const { startProjectSession } = await import('@/lib/projects-client');
+    sandbox = (await startProjectSession(projectId, sessionId))?.sandbox ?? null;
   }
 
   if (!sandbox || sandbox.status !== 'active' || !sandbox.external_id) {

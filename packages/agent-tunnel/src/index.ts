@@ -46,7 +46,7 @@ export type { TunnelServer } from './server';
 
 // ─── Client: SDK ────────────────────────────────────────────────────────────
 export { TunnelClient, TunnelClientError } from './client';
-export type { TunnelClientConfig, AXElement } from './client';
+export type { TunnelClientConfig } from './client';
 export { createTunnelTools } from './client';
 export type { TunnelToolDefinition, TunnelToolParameter } from './client';
 

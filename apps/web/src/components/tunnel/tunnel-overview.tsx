@@ -3,8 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Cable, Plus, Monitor, Trash2, Terminal, Copy, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Cable, Plus, Monitor, Trash2, Search, X, Terminal, Copy, Check } from 'lucide-react';
 import { getEnv } from '@/lib/env-config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -165,8 +165,7 @@ function ConnectButton() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const apiUrl = `${getEnv().BACKEND_URL}/tunnel`;
-  const command = `npx @kortix/agent-tunnel connect --api-url ${apiUrl}`;
+  const command = getConnectCommand();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(command);
@@ -230,8 +229,7 @@ function ConnectButton() {
 function ConnectGuide() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
-  const apiUrl = `${getEnv().BACKEND_URL}/tunnel`;
-  const command = `npx @kortix/agent-tunnel connect --api-url ${apiUrl}`;
+  const command = getConnectCommand();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(command);
@@ -417,6 +415,21 @@ export function TunnelOverview() {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * The `npx @kortix/agent-tunnel connect` command we show the user to run on the
+ * machine they want to connect. The local agent appends its own paths to
+ * `--api-url`, so this must be an ABSOLUTE `…/v1/tunnel` URL. BACKEND_URL is
+ * often root-relative in the browser (same-origin proxy / sandbox preview), so
+ * resolve it against the current origin before handing it to a process that
+ * runs off-host.
+ */
+function getConnectCommand(): string {
+  const backend = (getEnv().BACKEND_URL || '').replace(/\/+$/, '');
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const absolute = /^https?:\/\//i.test(backend) ? backend : `${origin}${backend}`;
+  return `npx @kortix/agent-tunnel connect --api-url ${absolute}/tunnel`;
+}
 
 function formatRelative(dateStr: string): string {
   const now = Date.now();

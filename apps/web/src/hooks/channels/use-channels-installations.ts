@@ -83,6 +83,28 @@ export function useSlackMode(projectId: string | null) {
   });
 }
 
+const manifestKey = (projectId: string | null) =>
+  ['channels', 'slack-manifest', projectId ?? 'none'] as const;
+
+export function useSlackManifest(projectId: string | null) {
+  return useQuery({
+    queryKey: manifestKey(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      if (!projectId) return null;
+      const res = await backendApi.get<Record<string, unknown>>(
+        `/webhooks/slack/${encodeURIComponent(projectId)}/manifest`,
+        { showErrors: false },
+      );
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message ?? 'Failed to load Slack manifest');
+      }
+      return JSON.stringify(res.data, null, 2);
+    },
+  });
+}
+
 export function useDisconnectSlack() {
   const qc = useQueryClient();
   return useMutation({

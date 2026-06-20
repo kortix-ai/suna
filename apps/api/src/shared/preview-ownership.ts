@@ -14,11 +14,70 @@
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
-import { accountMembers, sessionSandboxes } from '@kortix/db';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../executor/share';
+import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq, or } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+// ─── Session-visibility gate for the daemon/opencode port ────────────────────
+// canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
+// correct for preview web ports, but the daemon port (8000) reverse-proxies a
+// session's OpenCode conversation + its owner's synced secrets — which is
+// governed by SESSION VISIBILITY (private | project | restricted), enforced on
+// the REST routes via loadVisibleSession but historically NOT on this data
+// path. Without this, a same-account member who once had access to a session
+// (so their client captured the sandbox + opencode ids) could keep reading /
+// posting to it via /v1/p/<ext>/8000/session/... after the owner made it
+// private or revoked their grant. Mirror the REST check here. Short TTL keeps
+// the hot path cheap; revocation lags at most one window (matches the existing
+// membership cache trade-off).
+const SESSION_VISIBILITY_TTL_MS = 10_000;
+const sessionVisibilityCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+
+/**
+ * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
+ * Returns true when there is no project_session row for the sandbox (pool /
+ * builder boxes that aren't user sessions) so non-session proxy use is
+ * unaffected — the account-membership gate still applies to those.
+ */
+export async function canAccessSandboxSession(input: {
+  sessionId: string;
+  projectId: string;
+  accountId: string;
+  userId: string;
+}): Promise<boolean> {
+  const key = `${input.sessionId}|${input.userId}`;
+  const cached = sessionVisibilityCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+
+  const [row] = await db
+    .select({ visibility: projectSessions.visibility, createdBy: projectSessions.createdBy })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.sessionId, input.sessionId),
+        eq(projectSessions.projectId, input.projectId),
+        eq(projectSessions.accountId, input.accountId),
+      ),
+    )
+    .limit(1);
+
+  let allowed = true;
+  if (row) {
+    const subject = await resolveShareSubject(input.userId);
+    const grants = (await loadSessionGrants([input.sessionId])).get(input.sessionId) ?? [];
+    allowed = isSessionVisibleTo(
+      row.visibility as 'private' | 'project' | 'restricted',
+      row.createdBy,
+      grants,
+      subject,
+    );
+  }
+  sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
+  return allowed;
+}
 
 type CacheEntry = {
   allowed: boolean;
@@ -34,19 +93,6 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function preferredSandboxOrder() {
-  return [
-    sql`case
-      when ${sessionSandboxes.status} = 'active' then 0
-      when ${sessionSandboxes.status} = 'provisioning' then 1
-      when ${sessionSandboxes.status} = 'stopped' then 2
-      else 3
-    end`,
-    sql`case when ${sessionSandboxes.poolState} is null then 0 else 1 end`,
-    sql`${sessionSandboxes.updatedAt} desc`,
-  ];
-}
 
 /**
  * Resolve the real session sandbox uuid + owning account from a
@@ -67,7 +113,6 @@ async function resolveSandboxRef(
     .select({ sandboxId: sessionSandboxes.sandboxId, accountId: sessionSandboxes.accountId })
     .from(sessionSandboxes)
     .where(idCondition)
-    .orderBy(...preferredSandboxOrder())
     .limit(1);
 
   return row ?? null;
@@ -165,4 +210,18 @@ export async function resolvePreviewUserContext(
   if (!userId) return null;
   const entry = await getOrCompute(previewSandboxId, userId);
   return entry.payload;
+}
+
+export function clearPreviewOwnershipCache(): void {
+  previewContextCache.clear();
+}
+
+/** Drop every cached entry for a user. */
+export function invalidatePreviewCacheForUser(userId: string): void {
+  const suffix = `:${userId}`;
+  for (const key of previewContextCache.keys()) {
+    if (key.endsWith(suffix)) {
+      previewContextCache.delete(key);
+    }
+  }
 }

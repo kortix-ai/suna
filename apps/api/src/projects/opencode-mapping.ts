@@ -10,9 +10,11 @@
  *   1. Honor the pin whenever it still exists in the sandbox's live session
  *      list (stable identity — never flip off it for recency/duplicates).
  *   2. If the pin is missing (fresh/rebuilt sandbox, deleted session, never
- *      set), adopt the DETERMINISTIC canonical root: oldest root by created
- *      time, tie-broken by id, so every caller converges on the same id.
- *   3. If the sandbox holds no root at all, create exactly one and pin it.
+ *      set), adopt the DETERMINISTIC canonical root: the most-recently-active
+ *      root (tie-broken by newest-created, then id), so every caller converges
+ *      on the LIVE root — never an orphaned pre-restart root frozen mid-turn.
+ *   3. If the sandbox holds no root at all, report not_ready. The sandbox
+ *      daemon owns root creation during boot; the API only adopts/persists it.
  *
  * Reachability mirrors the preview proxy exactly (the path the live session's
  * OpenCode traffic already uses): resolve the per-sandbox service key + Daytona
@@ -31,9 +33,12 @@ import {
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import { resolvePreviewLink, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
+  pickCanonicalRoot,
   resolveRootSessionId,
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
+
+export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
 /** Workspace directory the session's OpenCode root lives under. */
 const WORKSPACE = '/workspace';
@@ -61,12 +66,12 @@ export async function sandboxOpencodeEndpoint(
   return { url: url.replace(/\/$/, ''), headers };
 }
 
-type ListResult =
+export type ListResult =
   | { ok: true; sessions: OpencodeSessionLite[] }
   | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable' };
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
-async function listSandboxOpencodeSessions(
+export async function listSandboxOpencodeSessions(
   externalId: string,
   userId: string | undefined,
 ): Promise<ListResult> {
@@ -89,29 +94,9 @@ async function listSandboxOpencodeSessions(
   }
 }
 
-export async function createSandboxOpencodeSession(
-  externalId: string,
-  userId: string | undefined,
-): Promise<string | null> {
-  const ep = await sandboxOpencodeEndpoint(externalId, userId);
-  if (!ep) return null;
-  try {
-    const res = await fetch(
-      `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
-      { method: 'POST', headers: ep.headers, body: JSON.stringify({}), signal: AbortSignal.timeout(15_000) },
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as { id?: string };
-    return data.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
-type EnsureReason =
+export type EnsureReason =
   | 'unchanged'
   | 'healed'
-  | 'created'
   | 'not_ready'
   | 'unreachable';
 
@@ -124,10 +109,10 @@ export interface EnsureResult {
 
 /**
  * The single authoritative writer of `opencode_session_id`. Lists the sandbox's
- * OpenCode sessions, resolves the canonical root (creating one if the sandbox
- * has none and allowCreate), and persists it when it differs from the stored
- * pin. Best-effort on unreachability: returns the current pin unchanged so a
- * transient sandbox blip never clobbers a good mapping.
+ * OpenCode sessions, resolves the canonical root, and persists it when it
+ * differs from the stored pin. Best-effort on unreachability: returns the
+ * current pin unchanged so a transient sandbox blip never clobbers a good
+ * mapping.
  */
 export async function ensureOpencodeSessionPin(input: {
   projectId: string;
@@ -136,10 +121,8 @@ export async function ensureOpencodeSessionPin(input: {
   externalId: string;
   userId: string | undefined;
   currentPin: string | null;
-  allowCreate?: boolean;
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
-  const allowCreate = input.allowCreate ?? true;
 
   const listed = await listSandboxOpencodeSessions(externalId, userId);
   if (!listed.ok) {
@@ -152,15 +135,9 @@ export async function ensureOpencodeSessionPin(input: {
 
   let sessions = listed.sessions;
   let resolved = resolveRootSessionId({ pinnedRootId: currentPin, sessions });
-  let created = false;
 
   if (!resolved) {
-    if (!allowCreate) return { pin: currentPin, changed: false, reason: 'not_ready', sessions };
-    const newId = await createSandboxOpencodeSession(externalId, userId);
-    if (!newId) return { pin: currentPin, changed: false, reason: 'unreachable', sessions };
-    resolved = newId;
-    sessions = [...sessions, { id: newId }];
-    created = true;
+    return { pin: currentPin, changed: false, reason: 'not_ready', sessions };
   }
 
   if (resolved === currentPin) {
@@ -178,5 +155,5 @@ export async function ensureOpencodeSessionPin(input: {
       ),
     );
 
-  return { pin: resolved, changed: true, reason: created ? 'created' : 'healed', sessions };
+  return { pin: resolved, changed: true, reason: 'healed', sessions };
 }

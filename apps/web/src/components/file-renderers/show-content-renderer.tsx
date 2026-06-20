@@ -132,9 +132,9 @@ function getShowFileCategory(filePath: string): string {
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */
 const BLOB_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'docx', 'pptx']);
 
-function RendererFallback() {
+function RendererFallback({ className }: { className?: string }) {
   return (
-    <div className="flex items-center justify-center h-[420px]">
+    <div className={cn('flex items-center justify-center', className || 'h-[420px]')}>
       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />
     </div>
   );
@@ -176,6 +176,12 @@ interface ShowContentProps {
   aspectRatio?: string;
   /** Optional: render a proxied localhost iframe. Caller provides this component. */
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
+  /**
+   * Fill the available height (side-panel "Actions" surface) instead of the
+   * compact fixed-height card used inline in the chat column. Media stretches
+   * to fill; text/code scroll internally rather than capping at a fixed height.
+   */
+  fill?: boolean;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -190,8 +196,21 @@ export function ShowContentRenderer({
   language = '',
   aspectRatio = '',
   LocalhostPreview,
+  fill = false,
 }: ShowContentProps) {
   const arCSS = showAspectRatioToCSS(aspectRatio);
+
+  // ── Height presets — fill the panel vs. the compact inline card ──
+  // `mediaH`   → visual media (image/video/pdf/sheets/docs/generic file)
+  // `textWrap` → scrollable text/code/markdown surfaces
+  const mediaH = fill ? 'h-full' : 'h-[420px]';
+  const textWrap = fill
+    ? 'px-5 py-5 h-full overflow-auto'
+    : 'px-5 py-5 max-h-96 overflow-auto';
+  // In fill mode the show card owns its own internal scroll, so we drop the
+  // `data-scrollable` hook the panel uses to uncap inline content (otherwise the
+  // panel body would scroll the whole card instead of the content within it).
+  const scrollableAttr = fill ? undefined : true;
 
   // ── Resolve effective type: 'file' auto-detects from extension ──
   const effectiveType = useMemo(() => {
@@ -313,12 +332,12 @@ export function ShowContentRenderer({
     const favicon = showFavicon(safeExternalUrl);
     const domain = showDomain(safeExternalUrl);
     return (
-      <div className="px-5 py-5">
+      <div className={cn('px-5 py-5', fill && 'h-full flex items-center')}>
         <a
           href={safeExternalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="group flex items-center gap-4 p-4 rounded-2xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
+          className="group flex w-full items-center gap-4 p-4 rounded-2xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
         >
           <div className="flex items-center justify-center size-10 rounded-lg bg-muted/30 flex-shrink-0 overflow-hidden">
             {favicon ? (
@@ -357,13 +376,13 @@ export function ShowContentRenderer({
   // HEIC images go through an extra conversion step (blob → JPEG → blobUrl)
   // ═════════════════════════════════════════════════════════════════════════
   if (isImage && path) {
-    if (blobLoading || heicConverting) return <RendererFallback />;
+    if (blobLoading || heicConverting) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     // HEIC: use the converted JPEG URL
     const imageUrl = isHeic ? heicImageUrl : blobUrl;
     if (imageUrl) {
       return (
-        <div className="h-[420px]">
+        <div className={mediaH}>
           <ImageRenderer url={imageUrl} fileName={fileName} />
         </div>
       );
@@ -375,11 +394,11 @@ export function ShowContentRenderer({
   // Video — loaded via useBinaryBlob → blobUrl → VideoRenderer
   // ═════════════════════════════════════════════════════════════════════════
   if (isVideo && path) {
-    if (blobLoading) return <RendererFallback />;
+    if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (blobUrl) {
       return (
-        <div className="h-[420px]">
+        <div className={mediaH}>
           <VideoRenderer url={blobUrl} />
         </div>
       );
@@ -391,11 +410,11 @@ export function ShowContentRenderer({
   // Audio — loaded via useBinaryBlob → blobUrl → <audio>
   // ═════════════════════════════════════════════════════════════════════════
   if (isAudio && path) {
-    if (blobLoading) return <RendererFallback />;
+    if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (blobUrl) {
       return (
-        <div className="flex flex-col items-center justify-center py-10 gap-5">
+        <div className={cn('flex flex-col items-center justify-center gap-5', fill ? 'h-full' : 'py-10')}>
           <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center">
             <Music className="size-6 text-muted-foreground/40" />
           </div>
@@ -413,12 +432,12 @@ export function ShowContentRenderer({
   // PDF — loaded via useBinaryBlob → blobUrl → PdfRenderer (with zoom)
   // ═════════════════════════════════════════════════════════════════════════
   if (isPdf && path) {
-    if (blobLoading) return <RendererFallback />;
+    if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (rawBlob) {
       return (
-        <Suspense fallback={<RendererFallback />}>
-          <div className="h-[420px]">
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={mediaH}>
             <PdfRenderer blob={rawBlob} className="h-full" />
           </div>
         </Suspense>
@@ -431,11 +450,11 @@ export function ShowContentRenderer({
   // CSV / TSV — loaded via useFileContent → text → CsvRenderer
   // ═════════════════════════════════════════════════════════════════════════
   if (isCsv && path) {
-    if (csvLoading) return <RendererFallback />;
+    if (csvLoading) return <RendererFallback className={mediaH} />;
     if (csvData?.content) {
       return (
-        <Suspense fallback={<RendererFallback />}>
-          <div className="h-[420px] overflow-hidden">
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={cn(mediaH, 'overflow-hidden')}>
             <CsvRenderer content={csvData.content} className="h-full" />
           </div>
         </Suspense>
@@ -449,8 +468,8 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isXlsx && path && sandboxPath) {
     return (
-      <Suspense fallback={<RendererFallback />}>
-        <div className="h-[420px] overflow-hidden">
+      <Suspense fallback={<RendererFallback className={mediaH} />}>
+        <div className={cn(mediaH, 'overflow-hidden')}>
           <XlsxRenderer filePath={sandboxPath} fileName={fileName} className="h-full" />
         </div>
       </Suspense>
@@ -461,12 +480,12 @@ export function ShowContentRenderer({
   // DOCX — loaded via useBinaryBlob → rawBlob → DocxRenderer
   // ═════════════════════════════════════════════════════════════════════════
   if (isDocx && path) {
-    if (blobLoading) return <RendererFallback />;
+    if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (rawBlob) {
       return (
-        <Suspense fallback={<RendererFallback />}>
-          <div className="h-[420px] overflow-hidden">
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={cn(mediaH, 'overflow-hidden')}>
             <DocxRenderer blob={rawBlob} className="h-full" />
           </div>
         </Suspense>
@@ -479,12 +498,12 @@ export function ShowContentRenderer({
   // PPTX — loaded via useBinaryBlob → rawBlob → PptxRenderer
   // ═════════════════════════════════════════════════════════════════════════
   if (isPptx && path) {
-    if (blobLoading) return <RendererFallback />;
+    if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (rawBlob) {
       return (
-        <Suspense fallback={<RendererFallback />}>
-          <div className="h-[420px] overflow-hidden">
+        <Suspense fallback={<RendererFallback className={mediaH} />}>
+          <div className={cn(mediaH, 'overflow-hidden')}>
             <PptxRenderer
               blob={rawBlob}
               binaryUrl={blobUrl}
@@ -506,7 +525,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (effectiveType === 'file' && path && sandboxPath) {
     return (
-      <div className="h-[420px]">
+      <div className={mediaH}>
         <FileContentRenderer
           filePath={sandboxPath}
           showHeader={false}
@@ -522,7 +541,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isCode && content) {
     return (
-      <div className="px-5 py-5 max-h-96 overflow-auto">
+      <div className={textWrap}>
         <CodeHighlight
           code={content}
           language={language || 'text'}
@@ -536,7 +555,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isMarkdown && content) {
     return (
-      <div data-scrollable className="px-5 py-5 max-h-96 overflow-auto">
+      <div data-scrollable={scrollableAttr} className={textWrap}>
         <UnifiedMarkdown content={content} />
       </div>
     );
@@ -547,7 +566,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isText && content) {
     return (
-      <div data-scrollable className="px-5 py-5 max-h-96 overflow-auto">
+      <div data-scrollable={scrollableAttr} className={textWrap}>
         <UnifiedMarkdown content={content} />
       </div>
     );
@@ -558,12 +577,16 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (isHtml && content && htmlBlobUrl) {
     return (
-      <div className="overflow-hidden">
+      <div className={cn('overflow-hidden', fill && 'h-full')}>
         <iframe
           src={htmlBlobUrl}
           title={title || 'HTML Preview'}
           className="w-full border-0 bg-white"
-          style={{ height: arCSS ? undefined : '540px', aspectRatio: arCSS || undefined }}
+          style={
+            fill
+              ? { height: '100%' }
+              : { height: arCSS ? undefined : '540px', aspectRatio: arCSS || undefined }
+          }
           sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
         />
       </div>
@@ -575,7 +598,7 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   if (effectiveType === 'error' && content) {
     return (
-      <div className="px-5 py-4">
+      <div className={cn('px-5 py-4', fill && 'h-full flex items-center')}>
         <div className="flex items-start gap-3">
           <AlertTriangle className="size-4 flex-shrink-0 mt-0.5 text-red-500" />
           <p className="text-sm text-foreground whitespace-pre-wrap"><TextWithPaths text={content} /></p>
@@ -588,9 +611,9 @@ export function ShowContentRenderer({
   // Fallback — unknown type
   // ═════════════════════════════════════════════════════════════════════════
   return (
-    <div className="px-5 py-4">
+    <div className={cn('px-5 py-4', fill && 'h-full overflow-auto')}>
       {content && (
-        <div data-scrollable className="max-h-96 overflow-auto">
+        <div data-scrollable={scrollableAttr} className={fill ? undefined : 'max-h-96 overflow-auto'}>
           <UnifiedMarkdown content={content} />
         </div>
       )}
@@ -637,9 +660,11 @@ interface ShowCarouselProps {
   LocalhostPreview?: React.ComponentType<{ url: string; label?: string }>;
   /** Called when the active carousel item changes — lets parents track the current item for "Open File" etc. */
   onIndexChange?: (index: number) => void;
+  /** Fill the available height (side-panel surface) instead of a fixed-height card. */
+  fill?: boolean;
 }
 
-export function ShowCarousel({ items, LocalhostPreview, onIndexChange }: ShowCarouselProps) {
+export function ShowCarousel({ items, LocalhostPreview, onIndexChange, fill = false }: ShowCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
 
@@ -658,9 +683,9 @@ export function ShowCarousel({ items, LocalhostPreview, onIndexChange }: ShowCar
   const itemTitle = currentItem.title || currentItem.type || '';
 
   return (
-    <div>
-      {/* ── Content area — stable min height prevents jarring jumps ── */}
-      <div className="min-h-[420px]">
+    <div className={cn(fill && 'flex h-full flex-col')}>
+      {/* ── Content area — fills in the panel, stable min height inline ── */}
+      <div className={cn(fill ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-[420px]')}>
         <ShowContentRenderer
           type={currentItem.type}
           title={currentItem.title}
@@ -671,12 +696,13 @@ export function ShowCarousel({ items, LocalhostPreview, onIndexChange }: ShowCar
           language={currentItem.language}
           aspectRatio={currentItem.aspect_ratio}
           LocalhostPreview={LocalhostPreview}
+          fill={fill}
         />
       </div>
 
       {/* ── Navigation bar ── */}
       {count > 1 && (
-        <div className="flex items-center gap-3 px-5 py-3 border-t border-border/15">
+        <div className="flex shrink-0 items-center gap-3 px-5 py-3 border-t border-border/15">
           {/* Prev */}
           <button
             type="button"

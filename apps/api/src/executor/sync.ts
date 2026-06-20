@@ -30,6 +30,7 @@ import {
   normalizeOpenApi,
   normalizePipedream,
 } from './normalize';
+import { parseSpecDocument } from './spec-doc';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
@@ -245,15 +246,21 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
 }
 
 async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
-  const raw = /^https?:\/\//i.test(spec)
-    ? await (await fetch(spec)).text()
-    : await readRepoFile(project, spec, project.defaultBranch);
-  try {
-    return JSON.parse(raw);
-  } catch {
-    // YAML specs would need a YAML parser; JSON is the supported P0 format.
-    throw new Error('spec is not valid JSON (YAML specs not yet supported)');
+  let raw: string;
+  if (/^https?:\/\//i.test(spec)) {
+    const res = await fetch(spec, {
+      // Signal we accept either form; servers that content-negotiate may hand
+      // back JSON, but we parse whatever comes regardless.
+      headers: { accept: 'application/json, application/yaml, text/yaml, text/plain, */*' },
+    });
+    if (!res.ok) {
+      throw new Error(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+    }
+    raw = await res.text();
+  } else {
+    raw = await readRepoFile(project, spec, project.defaultBranch);
   }
+  return parseSpecDocument(raw, spec);
 }
 
 async function loadHttpRoutes(project: GitBackedProject, spec: string | null): Promise<HttpRouteSpec[]> {

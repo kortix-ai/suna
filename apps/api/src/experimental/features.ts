@@ -24,7 +24,7 @@
 import { config } from '../config';
 
 /** Stable identifiers for experimental features. */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -64,6 +64,16 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     available: () => true,
     // Operator-wide default; flip KORTIX_APPS_EXPERIMENTAL to default the fleet on.
     platformDefault: () => config.KORTIX_APPS_EXPERIMENTAL,
+  },
+  {
+    key: 'marketplace',
+    name: 'Marketplace',
+    description:
+      'Browse and 1-click install skills from a marketplace of community & vendor registries (any SKILL.md repo). Sources, updates, and team scopes are still in flux.',
+    stability: 'experimental',
+    available: () => true,
+    // Off by default — experimental / WIP.
+    platformDefault: () => false,
   },
   {
     key: 'agent_tunnel',

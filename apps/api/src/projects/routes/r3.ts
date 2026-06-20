@@ -6,8 +6,9 @@ import { kickPreBuild } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
-import { completeChatGptHeadlessAuth, startChatGptHeadlessAuth } from '../opencode-chatgpt-auth';
-import { encryptProjectSecret, isValidSecretName } from '../secrets';
+import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
+import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
+import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -510,6 +511,8 @@ projectsApp.openapi(
 
   if (sharing) await setSecretSharing(secretId, sharing);
 
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
   const view = views.find((v) => v.name === name);
@@ -517,130 +520,76 @@ projectsApp.openapi(
 },
 );
 
-// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start
-// Starts the OpenCode ChatGPT Pro/Plus headless device-code flow on the API
-// server. This deliberately does not require a running sandbox: provider
-// credentials are project configuration, and sandboxes only consume the saved
-// CODEX_AUTH_JSON secret later.
+// ─── Provider OAuth device flow (poll-based) ───────────────────────────────
+//
+// Connect a subscription-backed LLM provider (today: a ChatGPT Plus/Pro
+// account via the OpenAI Codex device grant) and save the resulting login as
+// the project's CODEX_AUTH_JSON secret — which sandboxes materialize into
+// OpenCode's auth.json on boot. No sandbox is required to connect.
+//
+// Two quick, NON-streaming calls so they survive any edge (a long-lived
+// streaming response gets reset by Cloudflare) and any replica:
+//   POST …/oauth/:provider/start → kicks the device flow in a DETACHED
+//        background task on this replica, returns the device challenge.
+//   POST …/oauth/:provider/poll  → ANY replica reads the shared DB flow row;
+//        once the user finishes authorizing, writes the secret and returns it.
+// The in-flight flow lives in `kortix.oauth_provider_flows` (not replica
+// memory), so start and poll need not hit the same pod. The detached task
+// isn't tied to a client connection, so nothing the edge does can kill it.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/providers/openai/chatgpt/headless/start',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/providers/openai/chatgpt/headless/start',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 500),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+// Kortix provider id → the secret we persist the resulting auth.json under.
+// Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
+const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
+  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
+};
 
-  try {
-    return c.json(await startChatGptHeadlessAuth({
-      projectId,
-      userId: loaded.userId,
-    }));
-  } catch (err) {
-    return c.json({
-      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
-    }, 500);
-  }
-},
-);
+// How long the encrypted flow handle stays valid (OpenAI expires the device
+// code on its side too; this just bounds the opaque handle clients hold).
+const DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
+// Floor for the client poll cadence (OpenAI returns its own suggested interval).
+const OAUTH_POLL_INTERVAL_MS = 3000;
 
-// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete
-// Waits for the server-side OpenCode device flow to complete, then writes the
-// resulting auth.json into project_secrets as CODEX_AUTH_JSON. This is
-// intentionally Codex-specific; generic OpenCode auth can keep using its own
-// OPENCODE_AUTH_JSON row without being overwritten by subscription onboarding.
+// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret with the
+// requested sharing, then returns the caller's view of it. Codex-specific on
+// purpose: a generic OPENCODE_AUTH_JSON row is never overwritten by this.
+async function writeCodexAuthSecret(input: {
+  projectId: string;
+  userId: string;
+  value: string;
+  sharing?: ReturnType<typeof parseSharingIntent>;
+}) {
+  const { projectId, userId, value, sharing } = input;
+  const now = new Date();
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/providers/openai/chatgpt/headless/complete',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/providers/openai/chatgpt/headless/complete',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 500),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const authId = normalizeString(body.auth_id);
-  if (!authId) return c.json({ error: 'auth_id is required' }, 400);
-
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-    }
-  }
-  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
-  }
-
-  try {
-    const value = await completeChatGptHeadlessAuth({
-      authId,
-      projectId,
-      userId: loaded.userId,
-    });
-
-    const now = new Date();
-    if (sharing?.mode === 'private') {
-      await db
-        .insert(projectSecrets)
-        .values({
-          projectId,
-          name: CODEX_AUTH_JSON_SECRET_NAME,
-          valueEnc: encryptProjectSecret(projectId, value),
-          ownerUserId: loaded.userId,
-          active: true,
-          createdBy: loaded.userId,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
-          targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
-          set: {
-            valueEnc: encryptProjectSecret(projectId, value),
-            active: true,
-            updatedAt: now,
-          },
-        });
-
-      const subject = await resolveShareSubject(loaded.userId);
-      const views = await loadSecretViewsForUser(projectId, subject, true);
-      const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
-      return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
-    }
-
+  if (sharing?.mode === 'private') {
     await db
       .insert(projectSecrets)
       .values({
         projectId,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
-        createdBy: loaded.userId,
+        ownerUserId: userId,
+        active: true,
+        createdBy: userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
+        targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          active: true,
+          updatedAt: now,
+        },
+      });
+  } else {
+    await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name: CODEX_AUTH_JSON_SECRET_NAME,
+        valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -662,16 +611,257 @@ projectsApp.openapi(
       ))
       .limit(1);
     if (sharing && row) await setSecretSharing(row.secretId, sharing);
+  }
 
-    const subject = await resolveShareSubject(loaded.userId);
-    const views = await loadSecretViewsForUser(projectId, subject, true);
-    const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
-    return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
+  const subject = await resolveShareSubject(userId);
+  const views = await loadSecretViewsForUser(projectId, subject, true);
+  return views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME)
+    ?? { name: CODEX_AUTH_JSON_SECRET_NAME };
+}
+
+// Best-effort token expiry (ms remaining) from a stored auth.json, for display.
+function authExpiresInMs(authJson: string): number | null {
+  try {
+    const parsed = JSON.parse(authJson);
+    // opencode auth.json is keyed by provider: { openai: { expires, ... } }.
+    for (const entry of Object.values(parsed ?? {})) {
+      const expires = (entry as { expires?: unknown })?.expires;
+      if (typeof expires === 'number' && Number.isFinite(expires)) {
+        return Math.max(0, expires - Date.now());
+      }
+    }
+  } catch {
+    // not parseable / no expiry — treat as unknown
+  }
+  return null;
+}
+
+// ─── POST /v1/projects/:projectId/oauth/:provider/start ────────────────────
+// Kick the device flow in a detached background task; return the challenge.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/oauth/{provider}/start',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/oauth/:provider/start',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), provider: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'Device challenge'),
+        ...errors(400, 401, 403, 404, 502),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  if (!OAUTH_PROVIDERS[provider]) {
+    return c.json({ error: `OAuth device flow is not available for "${provider}"` }, 400);
+  }
+
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+  // A shared credential needs manage; a private (owner-only) one just needs read.
+  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
+    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  }
+
+  // Request a device code straight from OpenAI — a couple HTTPS calls, no
+  // subprocess, no server-side flow record. Everything `poll` needs is sealed
+  // into the opaque `flow_id` (encrypted with the project key), so any replica
+  // can serve any poll and there's nothing to leak or OOM.
+  let challenge;
+  try {
+    challenge = await startCodexDeviceAuth();
   } catch (err) {
     return c.json({
-      error: err instanceof Error ? err.message : 'Failed to complete ChatGPT authorization',
-    }, 500);
+      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
+    }, 502);
   }
+
+  const expiresAt = Date.now() + DEVICE_AUTH_TTL_MS;
+  const flowId = encryptProjectSecret(
+    projectId,
+    JSON.stringify({
+      d: challenge.deviceAuthId,
+      u: challenge.userCode,
+      s: sharing ?? null,
+      uid: loaded.userId,
+      e: expiresAt,
+    }),
+  );
+
+  return c.json({
+    flow_id: flowId,
+    verification_url: challenge.verificationUrl,
+    user_code: challenge.userCode,
+    expires_at: expiresAt,
+    interval_ms: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
+  });
+},
+);
+
+// ─── POST /v1/projects/:projectId/oauth/:provider/poll ─────────────────────
+// Any replica: read the shared flow row; on success persist the secret.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/oauth/{provider}/poll',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/oauth/:provider/poll',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), provider: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'Poll result'),
+        ...errors(400, 401, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const flowId = normalizeString(body.flow_id);
+  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
+
+  // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
+  // another project — or a tampered one — simply won't decrypt → expired.
+  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number };
+  try {
+    state = JSON.parse(decryptProjectSecret(projectId, flowId));
+  } catch {
+    return c.json({ status: 'expired' });
+  }
+  // Only the member who started it may poll it, and only before it expires.
+  if (
+    !state.d || !state.u ||
+    state.uid !== loaded.userId ||
+    typeof state.e !== 'number' || Date.now() > state.e
+  ) {
+    return c.json({ status: 'expired' });
+  }
+
+  const result = await pollCodexDeviceAuth({ deviceAuthId: state.d, userCode: state.u });
+  if (result.status === 'pending') {
+    return c.json({ status: 'pending', next_poll_ms: OAUTH_POLL_INTERVAL_MS });
+  }
+  if (result.status === 'failed') {
+    return c.json({ status: 'failed', error: result.error });
+  }
+
+  // Authorized — persist the auth.json as the project secret with the sharing
+  // chosen at start time (sealed, tamper-proof, in the flow handle).
+  const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
+  await writeCodexAuthSecret({ projectId, userId: loaded.userId, value: result.authJson, sharing });
+
+  return c.json({
+    status: 'success',
+    credential: {
+      provider_id: provider,
+      expires_in_ms: authExpiresInMs(result.authJson),
+      updated_at: new Date().toISOString(),
+    },
+  });
+},
+);
+
+// ─── GET /v1/projects/:projectId/oauth ─────────────────────────────────────
+// List configured OAuth credentials (derived from the saved project secrets).
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/oauth',
+    tags: ['secrets'],
+    summary: 'GET /:projectId/oauth',
+    ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+        200: json(z.any(), 'Configured OAuth credentials'),
+        ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
+  for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
+    const [row] = await db
+      .select({ valueEnc: projectSecrets.valueEnc, updatedAt: projectSecrets.updatedAt })
+      .from(projectSecrets)
+      .where(and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, cfg.secretName),
+        isNull(projectSecrets.ownerUserId),
+      ))
+      .limit(1);
+    if (!row) continue;
+    let expiresInMs: number | null = null;
+    try {
+      expiresInMs = authExpiresInMs(decryptProjectSecret(projectId, row.valueEnc));
+    } catch {
+      // unreadable — leave unknown
+    }
+    items.push({
+      provider_id: providerId,
+      expires_in_ms: expiresInMs,
+      updated_at: (row.updatedAt ?? new Date()).toISOString(),
+    });
+  }
+
+  return c.json({ items });
+},
+);
+
+// ─── DELETE /v1/projects/:projectId/oauth/:provider ────────────────────────
+// Remove an OAuth credential (deletes the backing secret).
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/oauth/{provider}',
+    tags: ['secrets'],
+    summary: 'DELETE /:projectId/oauth/:provider',
+    ...auth,
+      request: { params: z.object({ projectId: z.string(), provider: z.string() }) },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cfg = OAUTH_PROVIDERS[provider];
+  if (!cfg) return c.json({ error: 'Not found' }, 404);
+
+  await db
+    .delete(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)));
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
+  return c.json({ ok: true });
 },
 );
 
@@ -713,6 +903,8 @@ projectsApp.openapi(
       eq(projectSecrets.name, name),
       isNull(projectSecrets.ownerUserId),
     ));
+
+  void propagateProjectSecretsToActiveSandboxes(projectId);
 
   return c.json({ ok: true });
 },
@@ -797,6 +989,8 @@ projectsApp.openapi(
       .where(eq(projectSecrets.secretId, existingMine.secretId));
   }
 
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
@@ -837,6 +1031,8 @@ projectsApp.openapi(
       eq(projectSecrets.name, name),
       eq(projectSecrets.ownerUserId, loaded.userId),
     ));
+
+  void propagateProjectSecretsToActiveSandboxes(projectId);
 
   return c.json({ ok: true });
 },

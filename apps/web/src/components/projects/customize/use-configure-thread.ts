@@ -14,11 +14,8 @@
  */
 
 import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 
-import { createProjectSession } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 type ConfigureKind = 'agent' | 'skill' | 'command';
@@ -61,34 +58,30 @@ export interface ConfigureThread {
 }
 
 export function useConfigureThread(projectId: string): ConfigureThread {
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const closeCustomize = useCustomizeStore((s) => s.close);
   const [pending, setPending] = useState(false);
+  const newSession = useNewProjectSession(projectId);
 
   const start = useCallback(
-    async (prompt: string) => {
+    (prompt: string) => {
       // Guard re-entry: ignore extra clicks while a session is being minted so
       // we don't fire two creates (and blow the concurrent-session limit).
       if (pending) return;
       setPending(true);
-      try {
-        const session = await createProjectSession(projectId);
-        // The active-session chat reads this and auto-sends once the runtime
-        // is ready (same contract the project-home composer uses).
-        sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, prompt);
-        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        closeCustomize();
-        router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-        // Leave `pending` true on success — we're navigating away and the
-        // overlay is closing; flipping it back would flash the idle button.
-      } catch (err) {
-        setPending(false);
-        if ((err as any)?.code === 'concurrent_session_limit') return;
-        toast.error(err instanceof Error ? err.message : 'Failed to start session');
-      }
+      // Optimistic, identical to the project-home composer: mint the session,
+      // stash the seed prompt, close the overlay, and drop into the instant shell
+      // — which shows the prompt + inline boot status and auto-sends it once the
+      // runtime is ready (the hook persists + bounces on a terminal failure).
+      // Leave `pending` true: we're navigating away and the overlay is closing,
+      // so flipping it back would only flash the idle button.
+      newSession({
+        onNavigate: (sessionId) => {
+          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, prompt);
+          closeCustomize();
+        },
+      });
     },
-    [projectId, router, queryClient, closeCustomize, pending],
+    [pending, newSession, closeCustomize],
   );
 
   return { start, pending };

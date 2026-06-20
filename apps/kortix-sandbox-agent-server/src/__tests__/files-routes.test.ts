@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createHmac } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -192,10 +193,176 @@ describe('daemon file write routes', () => {
     expect(res.status).toBe(404)
   })
 
-  it('GET /file/content still falls through to opencode (not intercepted)', async () => {
-    // opencode points at a dead port, so a proxied read yields 502/503 — but
-    // crucially NOT a daemon file-route response. Proves reads aren't captured.
-    const res = await fetch(`${base}/file/content?path=README.md`, { headers: authHeaders() })
-    expect([502, 503]).toContain(res.status)
+  it('GET /file/content is now daemon-served (404 for missing, not an opencode 502)', async () => {
+    // The daemon owns reads now — a missing file is a daemon 404, NOT a proxied
+    // 502/503 from the dead opencode upstream. Proves reads are intercepted.
+    const res = await fetch(`${base}/file/content?path=does-not-exist.md`, { headers: authHeaders() })
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /file/raw streams exact binary bytes (xlsx mime, no corruption)', async () => {
+    // A payload with bytes that don't survive a UTF-8 round-trip, including a
+    // NUL — proves we return the raw bytes, not a lossy text re-encode.
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0xfe, 0x41])
+    await fs.writeFile(`${WORKSPACE}/sheet.xlsx`, bytes)
+
+    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`, {
+      headers: authHeaders(),
+    })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    const out = new Uint8Array(await res.arrayBuffer())
+    expect(out.length).toBe(bytes.length)
+    expect([...out]).toEqual([...bytes])
+  })
+
+  it('GET /file/raw resolves a workspace-relative path', async () => {
+    await fs.writeFile(`${WORKSPACE}/deck.pptx`, new Uint8Array([1, 2, 3]))
+    const res = await fetch(`${base}/file/raw?path=deck.pptx`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    )
+    expect(new Uint8Array(await res.arrayBuffer()).length).toBe(3)
+  })
+
+  it('GET /file/raw is 404 for a missing file and 400 with no path', async () => {
+    const missing = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/nope.xlsx`)}`, {
+      headers: authHeaders(),
+    })
+    expect(missing.status).toBe(404)
+    const noPath = await fetch(`${base}/file/raw`, { headers: authHeaders() })
+    expect(noPath.status).toBe(400)
+  })
+
+  it('GET /file/raw rejects path traversal outside allowed roots (403)', async () => {
+    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent('/etc/passwd')}`, {
+      headers: authHeaders(),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('GET /file/raw requires a signed context (401 unauthenticated)', async () => {
+    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`)
+    expect(res.status).toBe(401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Read / list / status / find — the daemon owns the full file API. These run
+// against a real git repo fixture so `ignored` and `/file/status` are exercised.
+// ---------------------------------------------------------------------------
+describe('daemon file read + list + status + find routes', () => {
+  let server: ReturnType<typeof Bun.serve>
+  let base: string
+  let WS: string
+
+  const git = (...args: string[]) => execFileSync('git', ['-C', WS, ...args], { stdio: 'pipe' })
+
+  beforeAll(async () => {
+    WS = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-read-test-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@kortix.ai')
+    git('config', 'user.name', 'Kortix Test')
+
+    await fs.writeFile(`${WS}/hello.txt`, 'line one\nline two\n')
+    await fs.mkdir(`${WS}/sub`, { recursive: true })
+    await fs.writeFile(`${WS}/sub/nested.md`, '# Nested\nsearchable needle here\n')
+    await fs.writeFile(`${WS}/.gitignore`, 'ignored.txt\n')
+    // Binary by extension (xlsx) + binary by NUL-sniff (unknown .dat extension).
+    await fs.writeFile(`${WS}/sheet.xlsx`, new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x41]))
+    await fs.writeFile(`${WS}/blob.dat`, new Uint8Array([0x01, 0x00, 0xfe, 0xff, 0x02]))
+    git('add', '-A')
+    git('commit', '-q', '-m', 'init')
+
+    // Now create uncommitted changes for /file/status.
+    await fs.writeFile(`${WS}/hello.txt`, 'line one\nline two\nline three\n') // modified
+    await fs.writeFile(`${WS}/new.txt`, 'brand new\n') // untracked → added
+    await fs.writeFile(`${WS}/ignored.txt`, 'do not track\n') // gitignored
+
+    const cfg: Config = { ...baseConfig(), workspace: WS, projectTarget: WS }
+    const app = buildOpencodeApp(cfg, fakeOpencode(), Date.now())
+    server = Bun.serve({ port: 0, fetch: app.fetch })
+    base = `http://127.0.0.1:${server.port}`
+  })
+
+  afterAll(async () => {
+    server?.stop(true)
+    if (WS) await fs.rm(WS, { recursive: true, force: true })
+  })
+
+  it('GET /file/content returns text as utf8 with a size', async () => {
+    const res = await fetch(`${base}/file/content?path=hello.txt`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as any
+    expect(body.type).toBe('text')
+    expect(body.content).toBe('line one\nline two\nline three\n')
+    expect(body.encoding).toBeUndefined()
+    expect(body.size).toBe('line one\nline two\nline three\n'.length)
+  })
+
+  it('GET /file/content base64-encodes binary by extension (xlsx) with correct mime', async () => {
+    const res = await fetch(`${base}/file/content?path=sheet.xlsx`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as any
+    expect(body.type).toBe('binary')
+    expect(body.encoding).toBe('base64')
+    expect(body.mimeType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    expect([...Buffer.from(body.content, 'base64')]).toEqual([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff, 0x41])
+  })
+
+  it('GET /file/content detects binary via NUL-byte sniff for unknown extensions', async () => {
+    const res = await fetch(`${base}/file/content?path=blob.dat`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as any
+    expect(body.type).toBe('binary')
+    expect(body.encoding).toBe('base64')
+    expect([...Buffer.from(body.content, 'base64')]).toEqual([0x01, 0x00, 0xfe, 0xff, 0x02])
+  })
+
+  it('GET /file lists a directory with absolute paths and gitignore flags', async () => {
+    const res = await fetch(`${base}/file?path=.`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const nodes = (await res.json()) as Array<{ name: string; path: string; absolute: string; type: string; ignored: boolean }>
+    const byName = Object.fromEntries(nodes.map((n) => [n.name, n]))
+    expect(byName['hello.txt']).toMatchObject({ type: 'file', ignored: false })
+    expect(byName['sub']).toMatchObject({ type: 'directory' })
+    expect(byName['ignored.txt']?.ignored).toBe(true)
+    expect(byName['.git']?.ignored).toBe(true)
+    expect(byName['hello.txt']?.absolute).toBe(path.join(WS, 'hello.txt'))
+  })
+
+  it('GET /file/status reports modified + added, excludes ignored', async () => {
+    const res = await fetch(`${base}/file/status`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const rows = (await res.json()) as Array<{ path: string; status: string; added: number; removed: number }>
+    const byPath = Object.fromEntries(rows.map((r) => [r.path, r]))
+    expect(byPath['hello.txt']?.status).toBe('modified')
+    expect(byPath['hello.txt']?.added).toBe(1)
+    expect(byPath['new.txt']?.status).toBe('added')
+    expect(byPath['ignored.txt']).toBeUndefined()
+  })
+
+  it('GET /find/file fuzzy-matches by name', async () => {
+    const res = await fetch(`${base}/find/file?query=nested`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const paths = (await res.json()) as string[]
+    expect(paths).toContain('sub/nested.md')
+  })
+
+  it('GET /find returns text matches (ripgrep or Node fallback)', async () => {
+    const res = await fetch(`${base}/find?pattern=needle`, { headers: authHeaders() })
+    expect(res.status).toBe(200)
+    const matches = (await res.json()) as Array<{ path: string; line_number: number; lines: string }>
+    expect(matches.length).toBeGreaterThan(0)
+    expect(matches.some((m) => m.path.endsWith('nested.md') && m.lines.includes('needle'))).toBe(true)
+  })
+
+  it('read/list/find require a signed context (401 unauthenticated)', async () => {
+    expect((await fetch(`${base}/file?path=.`)).status).toBe(401)
+    expect((await fetch(`${base}/file/status`)).status).toBe(401)
+    expect((await fetch(`${base}/find?pattern=x`)).status).toBe(401)
   })
 })

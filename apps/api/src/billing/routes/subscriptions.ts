@@ -16,6 +16,7 @@ import {
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
@@ -50,7 +51,7 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await maybeMigrateLegacyAccount(accountId);
     if (result.status === 'failed') {
       return c.json({ ok: false, status: result.status, error: result.reason ?? 'Migration failed' }, 400);
@@ -77,7 +78,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Checkout session result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const email = c.get('userEmail');
     const body = await c.req.json();
 
@@ -110,7 +111,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Checkout session result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const email = c.get('userEmail');
     const body = await c.req.json();
 
@@ -157,7 +158,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Inline checkout result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const email = c.get('userEmail');
     const body = await c.req.json();
 
@@ -184,7 +185,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Inline checkout confirmation result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json();
 
     const result = await confirmInlineCheckout({
@@ -208,7 +209,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Portal session result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const email = c.get('userEmail');
     const body = await c.req.json();
     const result = await createPortalSession(accountId, body.return_url, email);
@@ -227,7 +228,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Cancellation result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json().catch(() => ({}));
     const result = await cancelSubscription(accountId, body.feedback);
     return c.json(result);
@@ -245,7 +246,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Reactivation result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await reactivateSubscription(accountId);
     return c.json(result);
   },
@@ -262,7 +263,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Downgrade scheduling result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json();
     const result = await scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type);
     return c.json(result);
@@ -280,7 +281,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Cancellation result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await cancelScheduledChange(accountId);
     return c.json(result);
   },

@@ -4,6 +4,40 @@
 
 import { Context } from 'hono';
 import { recordAuditEvent } from '../../shared/audit';
+import { accountHasEntitlement } from '../../billing/services/entitlements';
+import type { TierEntitlements } from '../../types';
+
+/** Human label per entitlement, for the 402 message shown to admins. */
+const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
+  sso: 'SAML single sign-on',
+  scim: 'SCIM directory provisioning',
+};
+
+/**
+ * Gate an enterprise-only IAM surface behind the account's plan. Returns a 402
+ * `Response` to return early when the account's tier lacks `key`, or `null`
+ * when entitled. Enterprise features (SSO, SCIM) are sales-assigned via the
+ * `enterprise` tier — everyone else gets a "contact sales" 402 rather than a
+ * silent 403, so the UI can surface an upgrade path.
+ *
+ *   const denied = await requireEntitlement(c, accountId, 'sso');
+ *   if (denied) return denied;
+ */
+export async function requireEntitlement(
+  c: Context,
+  accountId: string,
+  key: keyof TierEntitlements,
+): Promise<Response | null> {
+  if (await accountHasEntitlement(accountId, key)) return null;
+  return c.json(
+    {
+      error: `${ENTITLEMENT_LABEL[key]} is available on the Enterprise plan. Contact sales to enable it.`,
+      code: 'entitlement_required',
+      entitlement: key,
+    },
+    402,
+  );
+}
 
 export async function readBody(c: Context): Promise<Record<string, unknown>> {
   try {

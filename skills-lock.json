@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "brand-guidelines": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/brand-guidelines/SKILL.md",
+      "computedHash": "dc286e42a2b5cbc0036525992945d5f336790116e0e08bf830ca1b24a9fe7495"
+    },
+    "internal-comms": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/internal-comms/SKILL.md",
+      "computedHash": "23402d86ab9bf271ff78a2f3831ea22b8d46585113e2b4dd5874e7c3c2726b30"
+    },
+    "kortix-image": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/kortix-image/SKILL.md",
+      "computedHash": "9c0d2c1e2505f59590d4eafa398a13a28bcbfa7de4960f621a632b136f2738a7"
+    },
+    "kortix-presentation": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/kortix-presentation/SKILL.md",
+      "computedHash": "d4bcda6296754f94f6d72cfba02c27d3163df7f276fe011d3c96ccf3b3c871e5"
+    },
+    "kortix-social": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/kortix-social/SKILL.md",
+      "computedHash": "4792961624bcda8f64cb9f0ee93d7ae05c2b90fb634b831db6b5d2c1210d4da8"
+    },
+    "product-marketing": {
+      "source": "kortix-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/product-marketing/SKILL.md",
+      "computedHash": "96b534fda94490a52ddaeae4b63662273a90e610fbb1a240faf78656c1040954"
+    }
+  }
+}

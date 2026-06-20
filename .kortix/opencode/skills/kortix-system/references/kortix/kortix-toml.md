@@ -96,6 +96,38 @@ framework = "next"
   NEXT_PUBLIC_API_URL = "https://api.example.com"
 ```
 
+## `[[agents]]`
+
+Per-agent **authorization overlay** — the only Kortix-owned facet of an agent.
+Everything else about an agent (prompt, model, tools, `permission`, which skills
+it loads) lives in its OpenCode `.md`; this block adds the two things that `.md`
+can't express. Keyed by the agent's `name`.
+
+| Key          | Notes                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| `name`       | Agent name; matches the `.md` (e.g. `.kortix/opencode/agents/<name>.md`).                       |
+| `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: none).    |
+| `kortix_cli` | What it may do to Kortix via the CLI/API (project-scoped iam actions). Same shape (default: none). |
+
+```toml
+[[agents]]
+name       = "release-bot"
+connectors = ["github"]
+kortix_cli = ["project.deploy", "project.cr.open"]   # may OPEN a CR, but not merge it
+```
+
+**Grantable `kortix_cli` actions** (project-scoped only — account-level admin
+actions can never be granted to an agent; run `kortix validate --scopes`):
+`project.read|write|delete|deploy`, `project.cr.open|merge`,
+`project.session.read|start|exec|stop`, `project.members.read|manage`,
+`project.trigger.read|create|update|delete|fire`, `channel.read|connect|send|disconnect`.
+
+**Resolution at session start:** no `[[agents]]` section → no restriction (full
+access, backward-compatible); agent listed → its grant; section present but agent
+unlisted → default-deny (it still runs its `.md`, just with no connectors / Kortix
+powers). The grant is always intersected with the launching user's role (agent ≤
+user) and takes effect only once a CR is merged (read from the default branch).
+
 ## Schema versioning
 
 `kortix_version` is the schema version. Manifests without it are
@@ -117,6 +149,7 @@ self-describing at a glance.
 | Sandbox runtime        | `[opencode]` (where to launch opencode with its config)             |
 | Session bootstrap      | `[env]` (advisory — surfaced to dashboard, not enforced)            |
 | Apps deploy sweep      | `[[apps]]`                                                          |
+| Session token mint     | `[[agents]]` (per-agent connectors + kortix_cli scope)            |
 | Dashboard UI           | All of the above + `[project]` + the raw manifest                   |
 
 Unknown top-level tables are ignored — safe to add your own metadata,

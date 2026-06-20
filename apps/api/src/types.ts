@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import type { AgentGrant } from '@kortix/db';
 
-// === Request Schemas (Router) === 
+// === Request Schemas (Router) ===
 
 export const WebSearchRequestSchema = z.object({
   query: z.string().min(1, 'Query is required'),
@@ -87,6 +88,10 @@ export interface AuthVariables {
   tokenProjectId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
+  /** Per-agent authorization grant — non-null only for agent-session tokens.
+   *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
+   *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
+  agentGrant?: AgentGrant | null;
 }
 
 // Hono environment type — Variables match exactly what the auth middleware sets.
@@ -95,6 +100,23 @@ export type AppEnv = {
 };
 
 // ─── Tier System (Billing) ──────────────────────────────────────────────────
+
+/**
+ * Enterprise feature gates, keyed by tier. These unlock the identity/governance
+ * surfaces that only Enterprise (sales-assigned) accounts get. A self-serve
+ * tier (Free / Team) has every flag `false`; the `enterprise` tier has them all
+ * `true`. Enforced server-side in the SCIM / SSO routes + the /scim/v2 data
+ * plane, and surfaced on the account-state `tier` block so the UI can hide the
+ * setup cards for non-entitled accounts. Add a key here, set it per tier in
+ * billing/services/tiers.ts, then guard the relevant route with
+ * `requireEntitlement(c, accountId, '<key>')`.
+ */
+export interface TierEntitlements {
+  /** SAML SSO provider config + JIT provisioning + group-claim mapping. */
+  sso: boolean;
+  /** SCIM 2.0 directory provisioning (token mint/revoke + /scim/v2 endpoints). */
+  scim: boolean;
+}
 
 export interface TierConfig {
   name: string;
@@ -108,6 +130,8 @@ export interface TierConfig {
   hidden: boolean;
   /** Max concurrent project sessions allowed for accounts on this tier. */
   concurrentSessionLimit: number;
+  /** Enterprise feature gates. Absent ⇒ treated as all-false. */
+  entitlements: TierEntitlements;
 }
 
 export interface DailyCreditConfig {
@@ -155,6 +179,9 @@ export interface AccountStateResponse {
     display_name: string;
     monthly_credits: number;
     can_purchase_credits: boolean;
+    /** Enterprise feature gates for this tier — drives whether the UI shows
+     *  the SSO / SCIM setup cards. */
+    entitlements: TierEntitlements;
   };
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
@@ -195,6 +222,14 @@ export interface AccountStateResponse {
     /** Pricing-page transparency only — not a wallet partition. */
     typical_llm_budget_per_seat_usd: number;
   };
+  /**
+   * Live count of account members — the seat quantity a per-seat subscribe will
+   * be billed for RIGHT NOW (createPerSeatCheckoutSession uses the same
+   * countActiveMembers). Always present (unlike `seats`, which only appears once
+   * the account is already on per-seat), so the subscribe modal can show the real
+   * projected total (members × price) BEFORE redirecting to Stripe.
+   */
+  member_count: number;
   /**
    * Spend breakdown by category for the current billing period. Sourced from
    * credit_ledger aggregation, not from a partitioned wallet. Null for legacy

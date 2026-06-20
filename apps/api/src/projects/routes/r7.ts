@@ -1,20 +1,17 @@
-import { pauseComputeSession } from '../../billing/services/compute-metering';
-import { config, type SandboxProviderName } from '../../config';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
-import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
-import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
-import { kickProvisionOnOpen, resumeStoppedSandbox, syncOpencodeSessionsHandler } from './shared';
+import { sendSessionCreateError } from '../lib/sessions';
+import { createSession, deleteSession } from '../session-lifecycle';
+import { syncOpencodeSessionsHandler } from './shared';
 
 projectsApp.openapi(
   createRoute({
@@ -321,18 +318,31 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const result = await createProjectSession({
+  const result = await createSession({
+    source: 'ui',
     project: loaded.row,
     userId: loaded.userId,
     body,
     request: requestAuditContext(c),
+    idempotencyKey: c.req.header('idempotency-key') ?? null,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
+  if (!result.row) {
+    return c.json(
+      {
+        status: result.status,
+        command_id: result.commandId ?? null,
+        session_id: result.sessionId ?? null,
+        reason: result.reason ?? null,
+      },
+      202,
+    );
+  }
   return c.json(
-    serializeSession(result.row!, {
+      serializeSession(result.row, {
       viewerId: loaded.userId,
       canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
     }),
@@ -370,15 +380,41 @@ projectsApp.openapi(
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
     .orderBy(desc(projectSessions.updatedAt));
 
+  const resumableStoppedSessionIds = rows.length
+    ? new Set(
+        (
+          await db
+            .select({ sessionId: sessionSandboxes.sessionId })
+            .from(sessionSandboxes)
+            .where(
+              and(
+                eq(sessionSandboxes.projectId, projectId),
+                eq(sessionSandboxes.accountId, loaded.row.accountId),
+                eq(sessionSandboxes.status, 'stopped'),
+                inArray(sessionSandboxes.sessionId, rows.map((r) => r.sessionId)),
+              ),
+            )
+        )
+          .map((r) => r.sessionId)
+          .filter((id): id is string => !!id),
+      )
+    : new Set<string>();
+
+  const listableRows = rows.filter((r) => {
+    const meta = (r.metadata ?? {}) as Record<string, unknown>;
+    if (typeof meta.deletedAt === 'string') return false;
+    return r.status !== 'stopped' || resumableStoppedSessionIds.has(r.sessionId);
+  });
+
   // Filter to sessions the viewer may see: their own, project-wide, or ones
   // shared with them (restricted + grant). Then surface owner + sharing so the
   // list can show "shared by X".
   const subject = await resolveShareSubject(loaded.userId);
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   const grantsBySession = await loadSessionGrants(
-    rows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
+    listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  const visible = rows.filter((r) =>
+  const visible = listableRows.filter((r) =>
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,
@@ -443,75 +479,6 @@ projectsApp.openapi(
 },
 );
 
-// POST /v1/projects/:projectId/sessions/:sessionId/ensure-opencode
-// Backend-owned mapping: resolve the sandbox's canonical OpenCode root id and
-// persist it to project_sessions.opencode_session_id. This is the sole
-// authoritative writer of the pin. Idempotent — repeated calls are no-ops once
-// the pin matches the live root; heals a stale/missing pin; creates a root if
-// the sandbox has none.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/ensure-opencode',
-    tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/ensure-opencode',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404, 409),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const visible = await loadVisibleSession(loaded, sessionId);
-  if (!visible) return c.json({ error: 'Not found' }, 404);
-
-  const [sandbox] = await db
-    .select({ externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-  if (!sandbox?.externalId) return c.json({ error: 'sandbox not provisioned' }, 409);
-
-  const result = await ensureOpencodeSessionPin({
-    projectId,
-    sessionId,
-    accountId: loaded.row.accountId,
-    externalId: sandbox.externalId,
-    userId: loaded.userId,
-    currentPin: visible.row.opencodeSessionId ?? null,
-  });
-
-  // Re-read so the serialized row reflects the (possibly) updated pin.
-  const [row] = await db
-    .select()
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-
-  return c.json({
-    ...serializeSession(row ?? visible.row, {
-      grants: visible.grants,
-      viewerId: loaded.userId,
-      canManageProject: visible.canManageProject,
-    }),
-    ensure: { reason: result.reason, changed: result.changed, pin: result.pin },
-  });
-},
-);
 
 // PUT /v1/projects/:projectId/sessions/:sessionId/sharing
 // Owner or project manager sets who can see/open this session
@@ -677,110 +644,6 @@ projectsApp.openapi(
   syncOpencodeSessionsHandler as any,
 );
 
-// GET /v1/projects/:projectId/sessions/:sessionId/sandbox
-// Returns the session's sandbox runtime row from `kortix.session_sandboxes`.
-// Decoupled from the legacy /instances sandbox table: no billing fields, no
-// team-membership coupling. Returns 404 while the row is being inserted —
-// the frontend polls.
-// Provision a sandbox for a dormant session (e.g. a migrated legacy session) on
-// first open. Fire-and-forget; flips the session to 'provisioning' first so the
-// status guard at the call sites prevents re-kicking on every poll.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/sandbox',
-    tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/sandbox',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  // Only members who can see the session may reach its sandbox.
-  const sandboxVisible = await loadVisibleSession(loaded, sessionId);
-  if (!sandboxVisible) return c.json({ error: 'Not found' }, 404);
-
-  let [row] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-
-  // Hibernated sandbox (explicit Stop / idle maintenance set status='stopped'
-  // but KEPT the VM + disk via provider.stop). Resume it in place rather than
-  // deleting + cold-reprovisioning a box whose workspace is still intact — the
-  // whole point of hibernate-over-destroy. resumeStoppedSandbox flips the row
-  // back to 'active' and kicks the provider start in the background; we re-read
-  // so the response carries the fresh status and the frontend's health poll
-  // takes over (identical to the idle-wake path). Concurrent polls that lose
-  // the transition just fall through and read the now-'active' row.
-  if (row && row.status === 'stopped' && row.externalId
-      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) {
-    await resumeStoppedSandbox({
-      sandboxId: row.sandboxId,
-      sessionId: row.sessionId,
-      accountId: row.accountId,
-      provider: row.provider,
-      externalId: row.externalId,
-    });
-    const [resumed] = await db
-      .select()
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
-      .limit(1);
-    if (resumed) row = resumed;
-  }
-
-  // (Re)provision on open when there's no usable sandbox: a dormant migrated
-  // session (no row), or a truly dead one (error / no externalId — a hibernated
-  // box would have been resumed above, not deleted). The UI polls this endpoint,
-  // so it's the natural trigger. The project_session 'provisioning' flag (set by
-  // kickProvisionOnOpen) guards against re-kicking on subsequent 404 polls.
-  const usable = row && (row.status === 'provisioning' || row.status === 'active');
-  if (!usable) {
-    if (sandboxVisible.row.status !== 'provisioning') {
-      if (row) {
-        await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
-      }
-      await kickProvisionOnOpen(loaded, sandboxVisible.row, projectId, sessionId);
-    }
-    return c.json({ error: 'Not found' }, 404);
-  }
-
-  return c.json({
-    sandbox_id: row.sandboxId,
-    session_id: row.sessionId,
-    project_id: row.projectId,
-    account_id: row.accountId,
-    provider: row.provider,
-    external_id: row.externalId,
-    base_url: row.baseUrl,
-    status: row.status,
-    config: serializeSessionSandboxConfig(row.config),
-    metadata: row.metadata ?? {},
-    last_used_at: row.lastUsedAt?.toISOString() ?? null,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  });
-},
-);
 
 // DELETE /v1/projects/:projectId/sessions/:sessionId
 // Soft delete only. We deliberately keep the remote branch so the user can
@@ -816,80 +679,14 @@ projectsApp.openapi(
     return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
   }
 
-  const [sandbox] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-
-  const [row] = await db
-    .update(projectSessions)
-    .set({ status: 'stopped', updatedAt: new Date() })
-    .where(and(
-      eq(projectSessions.sessionId, sessionId),
-      eq(projectSessions.projectId, projectId),
-      eq(projectSessions.accountId, loaded.row.accountId),
-    ))
-    .returning();
-
-  if (!row) return c.json({ error: 'Not found' }, 404);
-
-  if (sandbox) {
-    await db
-      .update(sessionSandboxes)
-      .set({
-        // 'archived' — NOT 'stopped'. Explicit session deletion is the one case
-        // where we remove the provider box (below), so the disk is gone. Marking
-        // it 'archived' (vs the 'stopped' = hibernated-and-resumable state used
-        // by idle/maintenance) tells GET …/sandbox NOT to attempt a resume of a
-        // box that no longer exists; reopening a deleted session cold-reprovisions
-        // fresh from the preserved git branch instead.
-        status: 'archived',
-        metadata: {
-          ...(sandbox.metadata ?? {}),
-          stoppedAt: new Date().toISOString(),
-          initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
-          ...(sandbox.status === 'active'
-            ? {}
-            : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
-      .catch((err) => {
-        console.warn(`[projects] failed to mark session sandbox archived for ${sessionId}:`, err);
-      });
-
-    if (sandbox.externalId && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider)) {
-      const provider = getProvider(sandbox.provider as SandboxProviderName);
-      // Explicit user session deletion is the ONLY place we remove the provider
-      // box. Everywhere else (idle auto-stop, maintenance, restart) hibernates
-      // instead, because a stopped Daytona box auto-archives to cheap cold
-      // storage and can be resumed in place. Here the user has chosen to delete
-      // the session, so we free the compute outright — the work is safe on the
-      // git branch, which we deliberately preserve.
-      void provider.remove(sandbox.externalId).catch((err) => {
-        console.warn(`[projects] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`, err);
-      });
-    }
-  }
-
-  void pauseComputeSession(sessionId).catch((err) =>
-    console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
-  );
-
-  return c.json({ ok: true });
+  const result = await deleteSession({
+    projectId,
+    sessionId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+    metadata: visible.row.metadata,
+  });
+  if ('error' in result) return c.json({ error: result.error }, result.status as any);
+  return c.json(result);
 },
 );
-
-// POST /v1/projects/:projectId/sessions/:sessionId/wake
-// Wake a sandbox that the provider auto-stopped while idle. The DB row still
-// reads `active` (nothing updates it when Daytona auto-stops after ~15min), so
-// opening such a session would otherwise hit a dead container and spin on the
-// health poll. The frontend fires this on open: a running sandbox is a cheap
-// status no-op; a stopped one gets started in the background while the health
-// poll picks up readiness — so the request returns instantly either way.

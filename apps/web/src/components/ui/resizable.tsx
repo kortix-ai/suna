@@ -1,9 +1,9 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import * as ResizablePrimitive from "react-resizable-panels"
+import * as React from 'react';
+import * as ResizablePrimitive from 'react-resizable-panels';
 
-import { cn } from "@/lib/utils"
+import { cn } from '@/lib/utils';
 
 function ResizablePanelGroup({
   className,
@@ -13,36 +13,42 @@ function ResizablePanelGroup({
     <ResizablePrimitive.PanelGroup
       data-slot="resizable-panel-group"
       className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
-        className
+        'flex h-full w-full data-[panel-group-direction=vertical]:flex-col',
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 const ResizablePanel = React.forwardRef<
   React.ElementRef<typeof ResizablePrimitive.Panel>,
   React.ComponentPropsWithoutRef<typeof ResizablePrimitive.Panel>
 >((props, ref) => {
-  return <ResizablePrimitive.Panel ref={ref} data-slot="resizable-panel" {...props} />
+  return (
+    <ResizablePrimitive.Panel
+      ref={ref}
+      data-slot="resizable-panel"
+      {...props}
+    />
+  );
 });
 
-ResizablePanel.displayName = "ResizablePanel";
+ResizablePanel.displayName = 'ResizablePanel';
 
 function ResizableHandle({
   withHandle,
   className,
   ...props
 }: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {
-  withHandle?: boolean
+  withHandle?: boolean;
 }) {
   return (
     <ResizablePrimitive.PanelResizeHandle
       data-slot="resizable-handle"
       className={cn(
-        "relative flex cursor-col-resize items-center justify-center focus-visible:ring-ring focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize [&[data-panel-group-direction=vertical]>div]:rotate-90",
-        className
+        'relative flex cursor-col-resize items-center justify-center focus-visible:ring-ring focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:cursor-row-resize [&[data-panel-group-direction=vertical]>div]:rotate-90',
+        className,
       )}
       {...props}
     >
@@ -52,7 +58,7 @@ function ResizableHandle({
         </div>
       )}
     </ResizablePrimitive.PanelResizeHandle>
-  )
+  );
 }
 
-export { ResizablePanelGroup, ResizablePanel, ResizableHandle }
+export { ResizablePanelGroup, ResizablePanel, ResizableHandle };

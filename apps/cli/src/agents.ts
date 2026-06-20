@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'cursor';
 
@@ -10,82 +10,90 @@ export const DEFAULT_PRIMARY: CodingAgent = 'codex';
 /** Path of the canonical Kortix skill, relative to repo root. */
 export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
 
-interface InstallResult {
-  agent: CodingAgent;
-  written: string[];
-  skipped: string[];
-}
+/** The OpenCode runtime config dir every coding agent is pointed at. */
+const OPENCODE_DIR = '.kortix/opencode';
 
-export interface InstallAgentsInput {
+/**
+ * Native discovery directory each agent reads. We symlink it straight at the
+ * OpenCode config dir so the agent picks up its shared skills + agents:
+ *
+ *   .opencode → .kortix/opencode   (OpenCode native; recursive skill discovery)
+ *   .claude   → .kortix/opencode   (Claude Code: .claude/skills, .claude/agents — flat, depth-1)
+ *   .agents   → .kortix/opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
+ *
+ * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
+ * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
+ * choice wires `.agents`. Each link targets `.kortix/opencode` directly (not via
+ * `.opencode`) so any agent can be wired independently. Cursor has no dir of its
+ * own — it reads the root `AGENTS.md` natively.
+ *
+ * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
+ * under a grouping folder (e.g. `GENERAL-KNOWLEDGE-WORKER/<skill>/SKILL.md`) are
+ * NOT discovered locally by Claude. They still load in the OpenCode sandbox and
+ * for Codex, both of which discover skills recursively.
+ */
+const AGENT_LINK: Partial<Record<CodingAgent, string>> = {
+  opencode: '.opencode',
+  claude: '.claude',
+  codex: '.agents',
+};
+
+export interface WireAgentsInput {
   repoRoot: string;
   agents: readonly CodingAgent[];
   overwrite: boolean;
 }
 
-export interface InstallAgentsResult {
+export interface WireAgentsResult {
   written: string[];
   skipped: string[];
 }
 
 /**
- * Wire each chosen coding agent up to the canonical Kortix skill at
- * `.kortix/opencode/skills/kortix-system/SKILL.md`. On-demand-skill
- * agents (opencode, claude) get a tiny wrapper at their native discovery
- * path. Always-loaded agents (codex AGENTS.md, cursor rules) get a tiny
- * stub that points them at the canonical skill.
+ * Wire each chosen coding agent to the project's OpenCode config. opencode /
+ * claude / codex get a symlink from their native discovery dir to
+ * `.kortix/opencode` (sharing its skills + agents). codex and cursor also get a
+ * root `AGENTS.md` pointer — the universal, always-loaded instructions file they
+ * read natively (which is why Cursor needs no rule file of its own).
  */
-export function installAgentSkills(input: InstallAgentsInput): InstallAgentsResult {
+export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
   const skipped: string[] = [];
+  let wantAgentsMd = false;
 
   for (const agent of input.agents) {
-    const res = installOne(input.repoRoot, agent, input.overwrite);
-    written.push(...res.written);
-    skipped.push(...res.skipped);
+    const link = AGENT_LINK[agent];
+    if (link) {
+      const abs = resolve(input.repoRoot, link);
+      if (!handleExisting(abs, input.overwrite)) {
+        skipped.push(link);
+      } else {
+        try {
+          symlinkSync(OPENCODE_DIR, abs);
+          written.push(`${link} → ${OPENCODE_DIR}`);
+        } catch (err) {
+          // Symlinks need elevated privileges on some platforms (e.g. Windows
+          // without Developer Mode). Never fail init over it — just note it.
+          skipped.push(`${link} (symlink unsupported: ${(err as Error).message})`);
+        }
+      }
+    }
+    if (agent === 'codex' || agent === 'cursor') wantAgentsMd = true;
+  }
+
+  // AGENTS.md — the universal, always-loaded instructions file Codex injects on
+  // the first turn and Cursor applies as a rule. Written once if either is wired.
+  if (wantAgentsMd) {
+    const abs = resolve(input.repoRoot, 'AGENTS.md');
+    if (handleExisting(abs, input.overwrite)) {
+      writeFileSync(abs, agentsPointer(), 'utf8');
+      written.push('AGENTS.md');
+    } else {
+      skipped.push('AGENTS.md');
+    }
   }
 
   return { written, skipped };
-}
-
-function installOne(repoRoot: string, agent: CodingAgent, overwrite: boolean): InstallResult {
-  const written: string[] = [];
-  const skipped: string[] = [];
-
-  if (agent === 'opencode' || agent === 'claude') {
-    const wrapperPath =
-      agent === 'opencode'
-        ? '.opencode/skills/kortix/SKILL.md'
-        : '.claude/skills/kortix/SKILL.md';
-    const wrapperAbs = resolve(repoRoot, wrapperPath);
-    if (handleExisting(wrapperAbs, overwrite)) {
-      mkdirSync(dirname(wrapperAbs), { recursive: true });
-      writeFileSync(wrapperAbs, skillWrapper(agent), 'utf8');
-      written.push(wrapperPath);
-    } else {
-      skipped.push(wrapperPath);
-    }
-  } else if (agent === 'codex') {
-    const stubPath = 'AGENTS.md';
-    const stubAbs = resolve(repoRoot, stubPath);
-    if (handleExisting(stubAbs, overwrite)) {
-      writeFileSync(stubAbs, codexStub(), 'utf8');
-      written.push(stubPath);
-    } else {
-      skipped.push(stubPath);
-    }
-  } else if (agent === 'cursor') {
-    const stubPath = '.cursor/rules/kortix.mdc';
-    const stubAbs = resolve(repoRoot, stubPath);
-    if (handleExisting(stubAbs, overwrite)) {
-      mkdirSync(dirname(stubAbs), { recursive: true });
-      writeFileSync(stubAbs, cursorStub(), 'utf8');
-      written.push(stubPath);
-    } else {
-      skipped.push(stubPath);
-    }
-  }
-
-  return { agent, written, skipped };
 }
 
 /** Return true if it's OK to (over)write at `abs`. */
@@ -98,29 +106,21 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   }
   if (!st && !existsSync(abs)) return true;
   if (overwrite) {
+    // force + non-recursive: removes a stale symlink or file without ever
+    // recursively wiping a real directory the user may have created.
     rmSync(abs, { force: true, recursive: false });
     return true;
   }
   return false;
 }
 
-function skillWrapper(agent: CodingAgent): string {
-  return `---
-name: kortix
-description: Load the canonical Kortix project skill before configuring Kortix.
----
-
-This ${agent} project skill is a discovery wrapper. Before editing \`kortix.toml\`,
-\`.kortix/**\`, or any Kortix agent/runtime configuration, read
-\`${CANONICAL_SKILL}\`. It is the canonical reference for this repository.
-`;
-}
-
-function codexStub(): string {
+function agentsPointer(): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project — its agent runtime
-config lives under \`.kortix/\` and the manifest is \`kortix.toml\`.
+config lives under \`.kortix/\` and the manifest is \`kortix.toml\`. The OpenCode
+config dir is symlinked into each wired coding agent's native location
+(\`.opencode\`, \`.claude\`, \`.agents\`), so its skills and agents are shared.
 
 Whenever the user asks about Kortix — \`kortix.toml\`, triggers, secrets, the
 sandbox image, sessions, deployable apps, or how to configure OpenCode
@@ -128,23 +128,5 @@ sandbox image, sessions, deployable apps, or how to configure OpenCode
 ACP) — read \`${CANONICAL_SKILL}\` first. It is the canonical reference.
 
 For any other task, proceed normally.
-`;
-}
-
-function cursorStub(): string {
-  return `---
-description: Kortix project — load the kortix skill before editing kortix.toml or .kortix/**
-globs: ["kortix.toml", ".kortix/**", ".opencode/**"]
-alwaysApply: false
----
-
-This repository is a [Kortix](https://kortix.ai) project. The canonical
-reference for everything Kortix-related — the \`kortix.toml\` manifest,
-triggers, secrets, sandbox image, session lifecycle, deployable apps, and
-how to configure OpenCode (agents, skills, commands, tools, plugins, MCP
-servers, custom tools, ACP) — lives at \`${CANONICAL_SKILL}\`.
-
-Before editing anything under \`kortix.toml\`, \`.kortix/\`, or \`.opencode/\`,
-read that file.
 `;
 }

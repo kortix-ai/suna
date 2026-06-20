@@ -25,7 +25,7 @@ import {
   createExecutorClient,
   type ExecutorClient,
 } from '../../../../packages/executor-sdk/src/index';
-import { getEnv, requireEnv } from '../lib';
+import { getEnv, requireEnv, mintConnectLink, mintSecretLink, kortixPost, kortixDelete, kortixProjectId } from '../lib';
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -97,6 +97,77 @@ const META_TOOLS = [
         },
       },
       required: ['connector', 'action'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'connect',
+    description:
+      'Get a 1-click Pipedream Quick Connect link for a connector that is declared but not yet authenticated, and SURFACE the returned url to the human in your reply. Use this the moment you add/need a Pipedream connector — never tell the human to open the dashboard. In the web UI the link opens a connect popup; in Slack it is a tappable link. No credential ever touches the sandbox. The connector must already exist in kortix.toml (add it + land the change request first).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Connector slug to connect, e.g. "smartlead".' },
+        expires_in_minutes: { type: 'number', description: 'Link lifetime in minutes (default 30, max 1440).' },
+      },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'request_secret',
+    description:
+      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. You never see the value; once they submit it, the secret becomes available to your session (check KORTIX_PROJECT_SECRET_NAMES). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        names: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Env var name(s) to request, e.g. ["APOLLO_API_KEY","SMARTLEAD_API_KEY"]. UPPER_SNAKE_CASE.',
+        },
+        scope: { type: 'string', enum: ['runtime', 'connector'], description: 'runtime (default) or connector.' },
+        labels: { type: 'object', description: 'Optional per-name human label, { NAME: "label" }.' },
+        descriptions: { type: 'object', description: 'Optional per-name hint shown on the form, { NAME: "where to find it" }.' },
+        expires_in_minutes: { type: 'number', description: 'Link lifetime in minutes (default 30, max 1440).' },
+      },
+      required: ['names'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'add_connector',
+    description:
+      'Add (or update) an integration connector on this project RIGHT NOW — committed to kortix.toml on main and synced server-side, exactly like the dashboard\'s "Add app". No change request needed; it is live this session. Use this to set up a new tool, then call `connect` (Pipedream) or `request_secret` for its credential. For Pipedream pass provider="pipedream" + app (e.g. "smartlead").',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'Connector slug, e.g. "smartlead".' },
+        provider: { type: 'string', enum: ['pipedream', 'mcp', 'openapi', 'graphql', 'http'], description: 'Connector provider.' },
+        app: { type: 'string', description: 'Pipedream app slug (provider=pipedream), e.g. "smartlead".' },
+        name: { type: 'string', description: 'Optional display name.' },
+        url: { type: 'string', description: 'MCP server URL (provider=mcp).' },
+        transport: { type: 'string', enum: ['http', 'sse'], description: 'MCP transport (provider=mcp).' },
+        endpoint: { type: 'string', description: 'GraphQL endpoint (provider=graphql).' },
+        base_url: { type: 'string', description: 'HTTP base URL (provider=http).' },
+        spec: { type: 'string', description: 'OpenAPI/GraphQL/HTTP spec ref.' },
+        credential: { type: 'string', enum: ['shared', 'per_user'], description: 'Credential storage mode.' },
+      },
+      required: ['slug', 'provider'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
+    name: 'remove_connector',
+    description: 'Remove a connector from this project (committed to kortix.toml on main + catalog). No change request needed.',
+    inputSchema: {
+      type: 'object',
+      properties: { slug: { type: 'string', description: 'Connector slug to remove.' } },
+      required: ['slug'],
       additionalProperties: false,
     },
     readOnly: false,
@@ -178,6 +249,97 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
       const callArgs = asRecord(args.args);
       const result = await executor.call(connector, action, callArgs);
       return { content: content(result), isError: !result.ok };
+    }
+
+    case 'connect': {
+      const slug = typeof args.slug === 'string' ? args.slug : '';
+      if (!slug) return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+      const expires = typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
+      try {
+        const link = await mintConnectLink({ slug, expiresInMinutes: expires });
+        return {
+          content: content({
+            ok: true,
+            slug: link.slug,
+            app: link.app,
+            url: link.url,
+            expires_at: link.expires_at,
+            instructions: 'Surface this url to the human now. Web: opens a connect popup. Slack: tappable link.',
+          }),
+          isError: false,
+        };
+      } catch (err) {
+        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+      }
+    }
+
+    case 'request_secret': {
+      const names = Array.isArray(args.names)
+        ? args.names.filter((n): n is string => typeof n === 'string')
+        : [];
+      if (names.length === 0) return { content: content({ ok: false, error: 'names is required' }), isError: true };
+      const scope = args.scope === 'connector' ? 'connector' : args.scope === 'runtime' ? 'runtime' : undefined;
+      const expires = typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
+      try {
+        const link = await mintSecretLink({
+          names,
+          scope,
+          expiresInMinutes: expires,
+          labels: asRecord(args.labels) as Record<string, string>,
+          descriptions: asRecord(args.descriptions) as Record<string, string>,
+        });
+        return {
+          content: content({
+            ok: true,
+            names: link.names,
+            scope: link.scope,
+            url: link.url,
+            expires_at: link.expires_at,
+            instructions: 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. You never see the value; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
+          }),
+          isError: false,
+        };
+      } catch (err) {
+        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+      }
+    }
+
+    case 'add_connector': {
+      const slug = typeof args.slug === 'string' ? args.slug : '';
+      const provider = typeof args.provider === 'string' ? args.provider : '';
+      if (!slug || !provider) return { content: content({ ok: false, error: 'slug and provider are required' }), isError: true };
+      const projectId = kortixProjectId();
+      if (!projectId) return { content: content({ ok: false, error: 'KORTIX_PROJECT_ID not set' }), isError: true };
+      const draft: Record<string, unknown> = { slug, provider };
+      for (const k of ['app', 'name', 'url', 'transport', 'endpoint', 'spec', 'credential'] as const) {
+        if (typeof args[k] === 'string') draft[k] = args[k];
+      }
+      if (typeof args.base_url === 'string') draft.baseUrl = args.base_url;
+      try {
+        const res = await kortixPost<{ ok: boolean; sync?: unknown }>(`/executor/projects/${projectId}/connectors`, draft);
+        return {
+          content: content({
+            ok: true, slug, provider, applied: true, sync: res.sync,
+            instructions: `Live now (committed to kortix.toml on main + synced) — no change request needed. Next: call connect("${slug}") for a Pipedream app, or request_secret for an API key.`,
+          }),
+          isError: false,
+        };
+      } catch (err) {
+        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+      }
+    }
+
+    case 'remove_connector': {
+      const slug = typeof args.slug === 'string' ? args.slug : '';
+      if (!slug) return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+      const projectId = kortixProjectId();
+      if (!projectId) return { content: content({ ok: false, error: 'KORTIX_PROJECT_ID not set' }), isError: true };
+      try {
+        await kortixDelete(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);
+        return { content: content({ ok: true, slug, removed: true }), isError: false };
+      } catch (err) {
+        return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
+      }
     }
 
     default:

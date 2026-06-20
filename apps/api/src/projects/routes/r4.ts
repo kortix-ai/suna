@@ -1,14 +1,14 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { postQuestionAndWait, relayTurnAnswer, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
+import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectTriggerRuntime, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projectTriggerRuntime, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
@@ -418,6 +418,8 @@ projectsApp.openapi(
     output?: string;
     sources?: Array<{ url?: string; text?: string }>;
     blocks?: unknown[];
+    status?: string;
+    opencode_session_id?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -425,9 +427,42 @@ projectsApp.openapi(
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
   const sessionId = body.session_id?.trim();
+  if (!sessionId) {
+    return c.json({ error: 'session_id is required' }, 400);
+  }
+
+  // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
+  // finish (idle) or die (error) without the agent closing its Slack message;
+  // finalize it gracefully instead of letting it rot into a timeout failure.
+  // (`turn_end` is the alias newer sandboxes send, with status + the opencode
+  // session id for the server-side root-session guard.)
+  if (body.kind === 'end' || body.kind === 'turn_end') {
+    const status = body.status === 'error' ? 'error' : 'idle';
+    const ok = await relayTurnEnd(sessionId, status);
+    return c.json({ ok });
+  }
+
+  // `opencode_session` carries the canonical opencode ROOT id the sandbox just
+  // bootstrapped (or reused after a restart). Persist it as the durable pin so
+  // the Kortix session resolves to the LIVE root with NO dependency on a browser
+  // ever opening it — closing the null-pin gap that left Slack/trigger/cron
+  // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
+  // is already scoped to this project (checked above); the daemon only ever
+  // reports its own pin-file root, never a subagent.
+  if (body.kind === 'opencode_session') {
+    const ocId = body.opencode_session_id?.trim();
+    if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
+    const updated = await db
+      .update(projectSessions)
+      .set({ opencodeSessionId: ocId, updatedAt: new Date() })
+      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+      .returning({ sessionId: projectSessions.sessionId });
+    return c.json({ ok: updated.length > 0 });
+  }
+
   const text = (body.text ?? '').trim();
-  if (!sessionId || !text) {
-    return c.json({ error: 'session_id and text are required' }, 400);
+  if (!text) {
+    return c.json({ error: 'text is required' }, 400);
   }
 
   const detail = body.detail?.trim() || undefined;
@@ -527,9 +562,12 @@ projectsApp.openapi(
     const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
     const options = optionsRaw
       .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
-      .filter((o): o is Record<string, unknown> => !!o && typeof o.label === 'string')
+      // opencode's QuestionInfo carries `value` (required) + optional `label`. The
+      // harness `question` tool uses `label`. Accept EITHER so an option that only
+      // has `value` still renders a button instead of silently vanishing.
+      .filter((o): o is Record<string, unknown> => !!o && (typeof o.label === 'string' || typeof o.value === 'string'))
       .map((o) => ({
-        label: String(o.label),
+        label: String(o.label ?? o.value),
         description: typeof o.description === 'string' ? String(o.description) : undefined,
       }));
     questions.push({
@@ -544,9 +582,14 @@ projectsApp.openapi(
     return c.json({ error: 'no valid questions provided' }, 400);
   }
 
-  const result = await postQuestionAndWait(sessionId, questions);
+  // Non-blocking: post the question(s) into the thread and return immediately
+  // with sentinel `answers`. The agent does NOT wait for an inline answer — the
+  // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
+  // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
+  // image (resumes opencode from them) unblocked.
+  const result = await postQuestion(sessionId, questions);
   if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
-  return c.json({ ok: true, ask_id: result.ask_id, answers: result.answers });
+  return c.json({ ok: true, answers: result.answers });
 },
 );
 
@@ -600,13 +643,25 @@ projectsApp.openapi(
   });
 
   if (result.status === 'queued') {
-    return c.json({ status: 'queued', reason: result.reason ?? null }, 202);
+    await markGitTriggerFired(projectId, slug, now);
+    return c.json({
+      status: 'queued',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      reason: result.reason ?? null,
+      deduped: result.deduped ?? false,
+    }, 202);
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
   }
   await markGitTriggerFired(projectId, slug, now);
-  return c.json({ status: 'fired', session_id: result.sessionId ?? null }, 202);
+  return c.json({
+    status: result.deduped ? 'deduped' : 'fired',
+    command_id: result.commandId ?? null,
+    session_id: result.sessionId ?? null,
+    deduped: result.deduped ?? false,
+  }, 202);
 },
 );
 

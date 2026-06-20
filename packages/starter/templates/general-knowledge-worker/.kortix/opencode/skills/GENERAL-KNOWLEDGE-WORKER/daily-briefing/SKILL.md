@@ -1,5 +1,5 @@
 ---
-name: daily-briefinging
+name: daily-briefing
 description: "Get a clear view of what matters most today. This skill works with whatever you tell me, and gets richer when you connect your tools."
 ---
 

@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "kortix-api.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-api.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kortix-api.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -14,7 +14,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { validateManifest, formatIssues } from '@kortix/manifest-schema';
+import { validateManifest, formatIssues, GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 import { C, status } from '../style.ts';
 
 const HELP = `Usage: kortix validate [options]
@@ -24,6 +24,7 @@ Statically validate the project's kortix.toml against the canonical schema.
 Options:
   --file <path>   Validate this file instead of ./kortix.toml.
   --json          Emit a machine-readable JSON report (no color).
+  --scopes        Print the full grantable kortix_cli action enum and exit.
   -h, --help      Show this help.
 `;
 
@@ -31,23 +32,45 @@ interface Flags {
   file?: string;
   json: boolean;
   help: boolean;
+  scopes: boolean;
 }
 
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { json: false, help: false };
+  const flags: Flags = { json: false, help: false, scopes: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--file' && argv[i + 1]) flags.file = argv[++i];
     else if (arg === '--json') flags.json = true;
+    else if (arg === '--scopes') flags.scopes = true;
     else if (arg === '-h' || arg === '--help') flags.help = true;
   }
   return flags;
+}
+
+/** One line per agent: its assigned connectors + Kortix-CLI powers. */
+function describeAgents(parsed: Record<string, unknown> | null): string {
+  const agents = parsed?.agents;
+  if (!Array.isArray(agents) || agents.length === 0) return '';
+  const show = (v: unknown): string =>
+    v === 'all' ? 'all' : Array.isArray(v) ? (v.join(', ') || 'none') : 'none (default-deny)';
+  const lines = agents.map((a: any) => {
+    const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]`;
+  });
+  return `\n${C.dim}Per-agent scope (kortix.toml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
 
 export function runValidate(argv: string[]): number {
   const flags = parseFlags(argv);
   if (flags.help) {
     process.stdout.write(HELP);
+    return 0;
+  }
+  if (flags.scopes) {
+    process.stdout.write(
+      `${C.dim}Grantable kortix_cli actions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
+    );
+    for (const a of GRANTABLE_KORTIX_CLI_ACTIONS) process.stdout.write(`  ${a}\n`);
     return 0;
   }
 
@@ -94,6 +117,7 @@ export function runValidate(argv: string[]): number {
 
   if (result.valid && warnings.length === 0) {
     process.stdout.write(`${status.ok('kortix.toml is valid')}\n`);
+    process.stdout.write(describeAgents(result.parsed));
     return 0;
   }
 

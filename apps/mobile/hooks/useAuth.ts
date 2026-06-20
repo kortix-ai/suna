@@ -129,6 +129,18 @@ async function createSessionFromUrl(url: string) {
   return data.session;
 }
 
+/**
+ * Mobile is login-only. A user whose account was created moments ago (as part of
+ * the OAuth flow that just completed) must not be allowed in — registration only
+ * happens on the web. Password sign-up is web-only and magic link uses
+ * `shouldCreateUser: false`, so OAuth is the only path that can mint a new user.
+ */
+function isNewlyCreatedUser(user: User): boolean {
+  const created = user.created_at ? new Date(user.created_at).getTime() : 0;
+  if (!created) return false;
+  return Date.now() - created < 30_000;
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
@@ -141,6 +153,7 @@ export function useAuth() {
   });
 
   const [error, setError] = useState<AuthError | null>(null);
+  const [oauthRejection, setOauthRejection] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const initializedUserIdRef = useRef<string | null>(null);
   const initializedCanTrackRef = useRef<boolean | null>(null);
@@ -197,7 +210,19 @@ export function useAuth() {
         if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
           log.log('🔄 Auth state changed:', _event);
         }
-        
+
+        // Login-only gate: a brand-new account signing in here came from OAuth
+        // (the only remaining create path on mobile). Reject it before it's ever
+        // marked authenticated so no redirect fires, and tell the user to
+        // register on the web. The signOut below emits SIGNED_OUT which keeps
+        // the state cleared.
+        if (_event === 'SIGNED_IN' && session?.user && isNewlyCreatedUser(session.user)) {
+          log.warn('🚫 New OAuth user on mobile — signing out (register on the web)');
+          setOauthRejection('No account found. Create an account on the web first.');
+          await supabase.auth.signOut().catch(() => {});
+          return;
+        }
+
         setAuthState({
           user: session?.user ?? null,
           session,
@@ -290,34 +315,61 @@ export function useAuth() {
         setError(null);
         setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email,
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: normalizedEmail,
           password,
           options: {
-            data: {
-              full_name: fullName,
-            },
+            data: fullName ? { full_name: fullName } : undefined,
             emailRedirectTo: await createAuthCallbackRedirect(),
           },
         });
 
-        if (signUpError) {
+        const alreadyExists =
+          !!signUpError &&
+          (/already registered|already exists/i.test(signUpError.message) ||
+            signUpError.status === 422);
+
+        if (signUpError && !alreadyExists) {
           log.error('❌ Sign up error:', signUpError.message);
           setError({ message: signUpError.message, status: signUpError.status });
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: false, error: signUpError };
         }
 
-        log.log('✅ Sign up successful:', data.user?.email);
-        
-        // If user is auto-logged in after signup, invalidate cache to fetch fresh account state
-        if (data.session) {
-          log.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
-          queryClient.invalidateQueries({ queryKey: ['account-state'] });
+        // Mirror web signUpWithPassword: immediately establish a session. When
+        // Supabase email confirmations are off (local default) this signs the
+        // user in; when on (cloud) it reports "email not confirmed" and we
+        // surface that instead.
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
+
+        if (signInError) {
+          if (/not confirmed|email_not_confirmed/i.test(signInError.message)) {
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            return { success: true, requiresEmailConfirmation: true };
+          }
+          if (alreadyExists) {
+            const error = {
+              message: 'An account with this email already exists. Try signing in instead.',
+            };
+            setError(error);
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            return { success: false, error };
+          }
+          log.error('❌ Sign up sign-in error:', signInError.message);
+          setError({ message: signInError.message, status: signInError.status });
+          setAuthState((prev) => ({ ...prev, isLoading: false }));
+          return { success: false, error: signInError };
         }
-        
+
+        log.log('✅ Sign up successful:', signInData.user?.email);
+        queryClient.invalidateQueries({ queryKey: ['account-state'] });
         setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: true, data };
+        return { success: true, data: signInData };
       } catch (err: any) {
         log.error('❌ Sign up exception:', err);
         const error = { message: err.message || 'An unexpected error occurred' };
@@ -326,7 +378,7 @@ export function useAuth() {
         return { success: false, error };
       }
     },
-    []
+    [queryClient]
   );
 
   /**
@@ -690,7 +742,7 @@ export function useAuth() {
         email: email.trim().toLowerCase(),
         options: {
           emailRedirectTo,
-          shouldCreateUser: true, // Auto-create account if doesn't exist
+          shouldCreateUser: false, // Login only — new accounts are created on the web
         },
       });
 
@@ -912,9 +964,13 @@ export function useAuth() {
     }
   }, [queryClient, isSigningOut]);
 
+  const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
+
   return {
     ...authState,
     error,
+    oauthRejection,
+    clearOauthRejection,
     isSigningOut,
     signIn,
     signUp,

@@ -2,10 +2,30 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useMemo, useCallback, useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { CodeEditor } from '@/components/file-editors/code-editor';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { errorToast, successToast } from '@/components/ui/toast';
+import {
+  appendPreviewToken,
+  isSubdomainPreviewUrl,
+  useAuthenticatedPreviewUrl,
+} from '@/hooks/use-authenticated-preview-url';
+import { useHeicBlob } from '@/hooks/use-heic-url';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { getAuthToken } from '@/lib/auth-token';
+import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
+import { cn } from '@/lib/utils';
+import { isHeicFile } from '@/lib/utils/heic-convert';
+import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import {
   AlertTriangle,
   Braces,
+  Check,
   CircleAlert,
   Code,
   Download,
@@ -15,31 +35,11 @@ import {
   GitBranch,
   Globe,
   Loader2,
-  Save,
   RotateCcw,
-  Check,
+  Save,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { InfoBanner } from '@/components/ui/info-banner';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { CodeEditor } from '@/components/file-editors/code-editor';
-import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
-import {
-  useAuthenticatedPreviewUrl,
-  isSubdomainPreviewUrl,
-  appendPreviewToken,
-} from '@/hooks/use-authenticated-preview-url';
-import { getAuthToken } from '@/lib/auth-token';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
-import { isHeicFile } from '@/lib/utils/heic-convert';
-import { useHeicBlob } from '@/hooks/use-heic-url';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small
@@ -67,7 +67,9 @@ const ImageRenderer = lazy(() =>
   import('@/components/file-renderers/image-renderer').then((m) => ({ default: m.ImageRenderer })),
 );
 const SqliteRenderer = lazy(() =>
-  import('@/components/file-renderers/sqlite-renderer').then((m) => ({ default: m.SqliteRenderer })),
+  import('@/components/file-renderers/sqlite-renderer').then((m) => ({
+    default: m.SqliteRenderer,
+  })),
 );
 
 // ---------------------------------------------------------------------------
@@ -102,7 +104,24 @@ export type FileCategory =
 export function getFileCategory(filename: string, mimeType?: string): FileCategory {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
-  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif', 'tiff', 'tif', 'heic', 'heif'].includes(ext)) return 'image';
+  if (
+    [
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'svg',
+      'webp',
+      'ico',
+      'bmp',
+      'avif',
+      'tiff',
+      'tif',
+      'heic',
+      'heif',
+    ].includes(ext)
+  )
+    return 'image';
   if (ext === 'pdf') return 'pdf';
   if (ext === 'docx') return 'docx';
   if (['pptx', 'ppt'].includes(ext)) return 'pptx';
@@ -135,25 +154,66 @@ export function getLanguageFromExt(filename: string): string {
   if (baseName === 'makefile' || baseName === 'gnumakefile') return 'makefile';
 
   const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    mjs: 'javascript', cjs: 'javascript',
-    py: 'python', rb: 'ruby', go: 'go', rs: 'rust',
-    java: 'java', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-    cs: 'csharp', swift: 'swift', kt: 'kotlin', php: 'php',
-    html: 'html', css: 'css', scss: 'scss', less: 'less',
-    json: 'json', jsonc: 'json', json5: 'json',
-    yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    xml: 'xml', sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
-    md: 'markdown', mdx: 'markdown', txt: 'plaintext',
-    dockerfile: 'dockerfile', makefile: 'makefile',
-    vue: 'vue', svelte: 'svelte',
-    env: 'properties', ini: 'properties', conf: 'properties',
-    cfg: 'properties', properties: 'properties',
-    graphql: 'graphql', gql: 'graphql',
-    prisma: 'prisma', proto: 'proto',
-    nix: 'nix', lua: 'lua', r: 'r', dart: 'dart',
-    tf: 'hcl', hcl: 'hcl', tfvars: 'hcl',
-    diff: 'diff', patch: 'diff',
+    ts: 'typescript',
+    tsx: 'tsx',
+    js: 'javascript',
+    jsx: 'jsx',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    py: 'python',
+    rb: 'ruby',
+    go: 'go',
+    rs: 'rust',
+    java: 'java',
+    c: 'c',
+    cpp: 'cpp',
+    h: 'c',
+    hpp: 'cpp',
+    cs: 'csharp',
+    swift: 'swift',
+    kt: 'kotlin',
+    php: 'php',
+    html: 'html',
+    css: 'css',
+    scss: 'scss',
+    less: 'less',
+    json: 'json',
+    jsonc: 'json',
+    json5: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'toml',
+    xml: 'xml',
+    sql: 'sql',
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    fish: 'bash',
+    md: 'markdown',
+    mdx: 'markdown',
+    txt: 'plaintext',
+    dockerfile: 'dockerfile',
+    makefile: 'makefile',
+    vue: 'vue',
+    svelte: 'svelte',
+    env: 'properties',
+    ini: 'properties',
+    conf: 'properties',
+    cfg: 'properties',
+    properties: 'properties',
+    graphql: 'graphql',
+    gql: 'graphql',
+    prisma: 'prisma',
+    proto: 'proto',
+    nix: 'nix',
+    lua: 'lua',
+    r: 'r',
+    dart: 'dart',
+    tf: 'hcl',
+    hcl: 'hcl',
+    tfvars: 'hcl',
+    diff: 'diff',
+    patch: 'diff',
     vim: 'vim',
   };
   return map[ext] || 'plaintext';
@@ -170,8 +230,8 @@ function isBlobCategory(cat: FileCategory): cat is BlobCategory {
 /** Spinner placeholder used inside <Suspense> for lazy-loaded renderers. */
 function RendererFallback() {
   return (
-    <div className="flex items-center justify-center h-full">
-      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />
+    <div className="flex h-full items-center justify-center">
+      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
     </div>
   );
 }
@@ -193,15 +253,19 @@ function isNotFoundError(errorMsg: string): boolean {
 function FileNotFoundState({ filePath }: { filePath: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-      <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
-        <FileX className="h-6 w-6 text-muted-foreground/40" />
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+        <FileX className="text-muted-foreground/40 h-6 w-6" />
       </div>
-      <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line195JsxTextFileNotFound')}</p>
-      <p className="text-xs font-mono text-muted-foreground/50 max-w-sm break-all">
-        {filePath}
+      <p className="text-muted-foreground text-sm font-medium">
+        {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line195JsxTextFileNotFound')}
       </p>
-      <p className="text-xs text-muted-foreground/40 max-w-xs">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line201JsxTextThisFileDoesNotExistOrMayHave')}</p>
+      <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">{filePath}</p>
+      <p className="text-muted-foreground/40 max-w-xs text-xs">
+        {tHardcodedUi.raw(
+          'featuresFilesComponentsFileContentRenderer.line201JsxTextThisFileDoesNotExistOrMayHave',
+        )}
+      </p>
     </div>
   );
 }
@@ -262,9 +326,12 @@ export function FileContentRenderer({
   // Text content (for code/text files, CSV, non-HEIC images).
   // HEIC files are loaded exclusively via the blob pipeline — the text/base64
   // endpoint often returns 500 for HEIC because the server can't encode them.
-  const { data: fileContent, isLoading, error, refetch } = useFileContent(
-    isHeicImage ? null : filePath,
-  );
+  const {
+    data: fileContent,
+    isLoading,
+    error,
+    refetch,
+  } = useFileContent(isHeicImage ? null : filePath);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -314,18 +381,25 @@ export function FileContentRenderer({
   }, [isHtmlFile, rewritePortPath, staticPort]);
 
   // Authenticate the preview session before rendering the iframe
-  const authenticatedPreviewUrl = useAuthenticatedPreviewUrl(isHtmlFile && isHtmlPreview ? htmlPreviewUrl : '');
+  const authenticatedPreviewUrl = useAuthenticatedPreviewUrl(
+    isHtmlFile && isHtmlPreview ? htmlPreviewUrl : '',
+  );
 
   // Poll the health endpoint until the static server responds
-  const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+  const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>(
+    'checking',
+  );
   const [healthRetryNonce, setHealthRetryNonce] = useState(0);
   const healthRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear the transient "saved" flash timer if we unmount before it fires.
-  useEffect(() => () => {
-    if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
@@ -401,8 +475,13 @@ export function FileContentRenderer({
   );
 
   // Binary blob for PDF, DOCX, video, audio, PPTX — AND HEIC images
-  const blobPath = (isBlobCategory(fileCategory) || isHeicImage) ? filePath : null;
-  const { blobUrl, blob: rawBlob, isLoading: blobLoading, error: blobError } = useBinaryBlob(blobPath);
+  const blobPath = isBlobCategory(fileCategory) || isHeicImage ? filePath : null;
+  const {
+    blobUrl,
+    blob: rawBlob,
+    isLoading: blobLoading,
+    error: blobError,
+  } = useBinaryBlob(blobPath);
 
   // HEIC conversion — converts the raw HEIC blob to a renderable JPEG URL
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
@@ -441,37 +520,40 @@ export function FileContentRenderer({
     try {
       await source.download(filePath, fileName);
     } catch {
-      toast.error(`Failed to download ${fileName}`);
+      errorToast(`Failed to download ${fileName}`);
     }
   }, [filePath, fileName, source]);
 
   // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
   // When called from the header button we pass latestContentRef.current.
   // When called from CodeEditor's Cmd+S, CodeEditor passes its own localContent.
-  const handleSave = useCallback(async (content: string) => {
-    if (readOnly) return;
-    setIsSaving(true);
-    try {
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const file = new File([blob], fileName, { type: 'text/plain' });
-      const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-      await source.upload(file, parentPath || undefined);
-      // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
-      // CodeEditor's originalContent effect will then sync savedContent.current
-      // to match localContent, clearing its internal hasChanges flag.
-      await refetch();
-      setHasUnsavedChanges(false);
-      setSaveFlash(true);
-      if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
-      saveFlashTimerRef.current = setTimeout(() => setSaveFlash(false), 2000);
-      onSaved?.();
-      toast.success('File saved');
-    } catch (err) {
-      toast.error(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [filePath, fileName, refetch, onSaved, readOnly, source]);
+  const handleSave = useCallback(
+    async (content: string) => {
+      if (readOnly) return;
+      setIsSaving(true);
+      try {
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const file = new File([blob], fileName, { type: 'text/plain' });
+        const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        await source.upload(file, parentPath || undefined);
+        // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
+        // CodeEditor's originalContent effect will then sync savedContent.current
+        // to match localContent, clearing its internal hasChanges flag.
+        await refetch();
+        setHasUnsavedChanges(false);
+        setSaveFlash(true);
+        if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
+        saveFlashTimerRef.current = setTimeout(() => setSaveFlash(false), 2000);
+        onSaved?.();
+        successToast('File saved');
+      } catch (err) {
+        errorToast(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [filePath, fileName, refetch, onSaved, readOnly, source],
+  );
 
   // Discard handler — force-remounts CodeEditor so it re-initialises from fileContent.content.
   const handleDiscard = useCallback(() => {
@@ -482,10 +564,13 @@ export function FileContentRenderer({
   }, [readOnly, fileContent?.content]);
 
   // Track editor content changes (called on every keystroke by CodeEditor)
-  const handleEditorChange = useCallback((content: string) => {
-    if (readOnly) return;
-    latestContentRef.current = content;
-  }, [readOnly]);
+  const handleEditorChange = useCallback(
+    (content: string) => {
+      if (readOnly) return;
+      latestContentRef.current = content;
+    },
+    [readOnly],
+  );
 
   // Cmd+S handler for when CodeEditor is not mounted (e.g. markdown preview)
   useEffect(() => {
@@ -515,10 +600,7 @@ export function FileContentRenderer({
   // Image rendering — skip HEIC (handled separately via blob pipeline)
   const imageDataUrl = useMemo(() => {
     if (isHeicImage) return null;
-    if (
-      fileContent?.encoding === 'base64' &&
-      isImageMime(fileContent.mimeType)
-    ) {
+    if (fileContent?.encoding === 'base64' && isImageMime(fileContent.mimeType)) {
       return `data:${fileContent.mimeType};base64,${fileContent.content}`;
     }
     return null;
@@ -526,10 +608,14 @@ export function FileContentRenderer({
 
   // Determine loading state
   const needsBlob = isBlobCategory(fileCategory) || isHeicImage;
-  const isContentReady = needsBlob
-    ? (!blobLoading && !blobError)
-    : (!isLoading && !error);
-  const contentError = needsBlob ? blobError : (error instanceof Error ? error.message : error ? String(error) : null);
+  const isContentReady = needsBlob ? !blobLoading && !blobError : !isLoading && !error;
+  const contentError = needsBlob
+    ? blobError
+    : error instanceof Error
+      ? error.message
+      : error
+        ? String(error)
+        : null;
   const showLoadingState = needsBlob ? blobLoading : isLoading;
 
   // Detect "file not found" — either via explicit error or empty resolution
@@ -537,9 +623,19 @@ export function FileContentRenderer({
     if (contentError) return isNotFoundError(contentError);
     // Query settled with no data and no error → file likely doesn't exist
     if (!showLoadingState && !contentError && !needsBlob && !isLoading && !fileContent) return true;
-    if (!showLoadingState && !contentError && needsBlob && !blobLoading && !blobError && !rawBlob) return true;
+    if (!showLoadingState && !contentError && needsBlob && !blobLoading && !blobError && !rawBlob)
+      return true;
     return false;
-  }, [contentError, showLoadingState, needsBlob, isLoading, fileContent, blobLoading, blobError, rawBlob]);
+  }, [
+    contentError,
+    showLoadingState,
+    needsBlob,
+    isLoading,
+    fileContent,
+    blobLoading,
+    blobError,
+    rawBlob,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -566,18 +662,18 @@ export function FileContentRenderer({
   };
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
+    <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
       {showHeader && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50 shrink-0 h-10">
-          <div className="flex items-center gap-1 flex-1 min-w-0">
+        <div className="border-border/50 flex h-10 shrink-0 items-center gap-2 border-b px-3 py-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             {Breadcrumbs && <Breadcrumbs filePath={filePath} />}
             {/* Edit state indicator */}
             {!readOnly && hasUnsavedChanges && (
               <Badge variant="warning" size="sm" className="shrink-0">
                 <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500"></span>
                 </span>
                 Edited
               </Badge>
@@ -589,19 +685,23 @@ export function FileContentRenderer({
               </Badge>
             )}
             {readOnly && (
-              <Badge variant="muted" size="sm" className="shrink-0 uppercase tracking-wider">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line554JsxTextViewOnly')}</Badge>
+              <Badge variant="muted" size="sm" className="shrink-0 tracking-wider uppercase">
+                {tHardcodedUi.raw(
+                  'featuresFilesComponentsFileContentRenderer.line554JsxTextViewOnly',
+                )}
+              </Badge>
             )}
             {/* Inline diagnostic counts */}
             {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
-              <span className="inline-flex items-center gap-1.5 shrink-0">
+              <span className="inline-flex shrink-0 items-center gap-1.5">
                 {fileDiagErrorCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-destructive text-xs font-medium">
+                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium">
                     <CircleAlert className="h-3 w-3" />
                     {fileDiagErrorCount}
                   </span>
                 )}
                 {fileDiagWarningCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-yellow-500 text-xs font-medium">
+                  <span className="inline-flex items-center gap-0.5 text-xs font-medium text-yellow-500">
                     <AlertTriangle className="h-3 w-3" />
                     {fileDiagWarningCount}
                   </span>
@@ -610,17 +710,19 @@ export function FileContentRenderer({
             )}
           </div>
 
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-0.5">
             {/* Explicit Save button — only when editing and has changes */}
             {!readOnly && hasUnsavedChanges && fileContent?.type === 'text' && (
               <>
                 <Button
                   variant="default"
                   size="sm"
-                  className="h-7 px-3 text-xs gap-1.5 font-medium"
+                  className="h-7 gap-1.5 px-3 text-xs font-medium"
                   onClick={() => handleSave(latestContentRef.current)}
                   disabled={isSaving}
-                  title={tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line586JsxAttrTitleSaveS')}
+                  title={tHardcodedUi.raw(
+                    'featuresFilesComponentsFileContentRenderer.line586JsxAttrTitleSaveS',
+                  )}
                 >
                   {isSaving ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -632,9 +734,11 @@ export function FileContentRenderer({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground h-7 w-7"
                   onClick={handleDiscard}
-                  title={tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges')}
+                  title={tHardcodedUi.raw(
+                    'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
+                  )}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
@@ -650,11 +754,7 @@ export function FileContentRenderer({
                 onClick={() => setIsHtmlPreview((v) => !v)}
                 title={isHtmlPreview ? 'View source' : 'Preview'}
               >
-                {isHtmlPreview ? (
-                  <Code className="h-4 w-4" />
-                ) : (
-                  <Globe className="h-4 w-4" />
-                )}
+                {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
               </Button>
             )}
 
@@ -680,11 +780,7 @@ export function FileContentRenderer({
                 onClick={() => setIsMarkdownPreview((v) => !v)}
                 title={isMarkdownPreview ? 'View source' : 'Preview'}
               >
-                {isMarkdownPreview ? (
-                  <Code className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
+                {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             )}
 
@@ -694,7 +790,7 @@ export function FileContentRenderer({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground/60 hover:text-foreground"
+              className="text-muted-foreground/60 hover:text-foreground h-7 w-7"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
               title="Download"
@@ -710,245 +806,278 @@ export function FileContentRenderer({
       <div className={cn('flex-1', readOnly ? 'overflow-auto' : 'overflow-hidden')}>
         <ClientErrorBoundary
           fallback={() => (
-            <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-              <div className="h-12 w-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
-                <FileWarning className="h-6 w-6 text-destructive/50" />
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+                <FileWarning className="text-destructive/50 h-6 w-6" />
               </div>
-              <p className="text-sm font-medium text-muted-foreground">Couldn&apos;t preview this file</p>
-              <p className="text-xs text-muted-foreground/50 max-w-sm break-all font-mono">{filePath}</p>
+              <p className="text-muted-foreground text-sm font-medium">
+                Couldn&apos;t preview this file
+              </p>
+              <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
+                {filePath}
+              </p>
               <Button variant="outline" size="sm" onClick={handleDownload}>
-                <Download className="h-3.5 w-3.5 mr-1.5" />
+                <Download className="mr-1.5 h-3.5 w-3.5" />
                 Download
               </Button>
             </div>
           )}
         >
-        {/* Loading */}
-        {showLoadingState && (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />
-          </div>
-        )}
+          {/* Loading */}
+          {showLoadingState && (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+            </div>
+          )}
 
-        {/* Error */}
-        {contentError && !showLoadingState && (
-          errorFallback ? errorFallback(contentError, filePath) : (
-            isNotFound ? (
+          {/* Error */}
+          {contentError &&
+            !showLoadingState &&
+            (errorFallback ? (
+              errorFallback(contentError, filePath)
+            ) : isNotFound ? (
               <FileNotFoundState filePath={filePath} />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-                <div className="h-12 w-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
-                  <FileWarning className="h-6 w-6 text-destructive/50" />
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+                  <FileWarning className="text-destructive/50 h-6 w-6" />
                 </div>
-                <p className="text-sm font-medium text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line692JsxTextFailedToLoadFile')}</p>
-                <p className="text-xs text-muted-foreground/50 max-w-sm break-all font-mono">
+                <p className="text-muted-foreground text-sm font-medium">
+                  {tHardcodedUi.raw(
+                    'featuresFilesComponentsFileContentRenderer.line692JsxTextFailedToLoadFile',
+                  )}
+                </p>
+                <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
                   {filePath}
                 </p>
-                <p className="text-xs text-muted-foreground/60 max-w-sm">
-                  {contentError}
-                </p>
+                <p className="text-muted-foreground/60 max-w-sm text-xs">{contentError}</p>
               </div>
-            )
-          )
-        )}
+            ))}
 
-        {/* Image content (non-HEIC) */}
-        {!isLoading && !error && imageDataUrl && (
-          <Suspense fallback={<RendererFallback />}>
-            <ImageRenderer url={imageDataUrl} className="h-full" fileName={fileName} />
-          </Suspense>
-        )}
+          {/* Image content (non-HEIC) */}
+          {!isLoading && !error && imageDataUrl && (
+            <Suspense fallback={<RendererFallback />}>
+              <ImageRenderer url={imageDataUrl} className="h-full" fileName={fileName} />
+            </Suspense>
+          )}
 
-        {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
-        {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
-        {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
-          <Suspense fallback={<RendererFallback />}>
-            <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
-          </Suspense>
-        )}
+          {/* HEIC image — loaded as raw blob, converted to JPEG client-side */}
+          {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
+          {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
+            <Suspense fallback={<RendererFallback />}>
+              <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
+            </Suspense>
+          )}
 
-        {/* PDF preview */}
-        {isContentReady && fileCategory === 'pdf' && rawBlob && (
-          <Suspense fallback={<RendererFallback />}>
-            <PdfRenderer blob={rawBlob} className="h-full" />
-          </Suspense>
-        )}
+          {/* PDF preview */}
+          {isContentReady && fileCategory === 'pdf' && rawBlob && (
+            <Suspense fallback={<RendererFallback />}>
+              <PdfRenderer blob={rawBlob} className="h-full" />
+            </Suspense>
+          )}
 
-        {/* DOCX preview */}
-        {isContentReady && fileCategory === 'docx' && rawBlob && (
-          <Suspense fallback={<RendererFallback />}>
-            <DocxRenderer blob={rawBlob} className="h-full" />
-          </Suspense>
-        )}
+          {/* DOCX preview */}
+          {isContentReady && fileCategory === 'docx' && rawBlob && (
+            <Suspense fallback={<RendererFallback />}>
+              <DocxRenderer blob={rawBlob} className="h-full" />
+            </Suspense>
+          )}
 
-        {/* XLSX / XLS preview */}
-        {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
-          <Suspense fallback={<RendererFallback />}>
-            <XlsxRenderer
-              filePath={filePath}
-              fileName={fileName}
-              className="h-full"
-            />
-          </Suspense>
-        )}
+          {/* XLSX / XLS preview */}
+          {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
+            <Suspense fallback={<RendererFallback />}>
+              <XlsxRenderer filePath={filePath} fileName={fileName} className="h-full" />
+            </Suspense>
+          )}
 
-        {/* SQLite database viewer */}
-        {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
-          <Suspense fallback={<RendererFallback />}>
-            <SqliteRenderer
-              filePath={filePath}
-              fileName={fileName}
-              className="h-full"
-              readOnly={readOnly}
-            />
-          </Suspense>
-        )}
+          {/* SQLite database viewer */}
+          {!isLoading && !error && !isNotFound && fileCategory === 'sqlite' && (
+            <Suspense fallback={<RendererFallback />}>
+              <SqliteRenderer
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                readOnly={readOnly}
+              />
+            </Suspense>
+          )}
 
-        {/* CSV / TSV preview */}
-        {!isLoading && !error && fileCategory === 'csv' && fileContent && (
-          <Suspense fallback={<RendererFallback />}>
-            <CsvRenderer content={fileContent.content} className="h-full" />
-          </Suspense>
-        )}
+          {/* CSV / TSV preview */}
+          {!isLoading && !error && fileCategory === 'csv' && fileContent && (
+            <Suspense fallback={<RendererFallback />}>
+              <CsvRenderer content={fileContent.content} className="h-full" />
+            </Suspense>
+          )}
 
-        {/* Video preview */}
-        {isContentReady && fileCategory === 'video' && blobUrl && (
-          <Suspense fallback={<RendererFallback />}>
-            <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
-          </Suspense>
-        )}
+          {/* Video preview */}
+          {isContentReady && fileCategory === 'video' && blobUrl && (
+            <Suspense fallback={<RendererFallback />}>
+              <VideoRenderer url={blobUrl} className="h-full" onDownload={handleDownload} />
+            </Suspense>
+          )}
 
-        {/* Audio preview */}
-        {isContentReady && fileCategory === 'audio' && blobUrl && (
-          <div className="flex flex-col items-center justify-center h-full gap-5 p-8">
-            <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center">
-              <svg className="h-6 w-6 text-muted-foreground/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-              </svg>
+          {/* Audio preview */}
+          {isContentReady && fileCategory === 'audio' && blobUrl && (
+            <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
+              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-2xl">
+                <svg
+                  className="text-muted-foreground/40 h-6 w-6"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path d="M9 18V5l12-2v13" />
+                  <circle cx="6" cy="18" r="3" />
+                  <circle cx="18" cy="16" r="3" />
+                </svg>
+              </div>
+              <p className="text-muted-foreground/60 text-sm">{fileName}</p>
+              <audio controls src={blobUrl} className="w-full max-w-sm" />
             </div>
-            <p className="text-sm text-muted-foreground/60">{fileName}</p>
-            <audio controls src={blobUrl} className="w-full max-w-sm" />
-          </div>
-        )}
+          )}
 
-        {/* PPTX preview */}
-        {isContentReady && fileCategory === 'pptx' && rawBlob && (
-          <Suspense fallback={<RendererFallback />}>
-            <PptxRenderer
-              blob={rawBlob}
-              binaryUrl={blobUrl}
-              filePath={filePath}
-              fileName={fileName}
-              className="h-full"
-              onDownload={handleDownload}
+          {/* PPTX preview */}
+          {isContentReady && fileCategory === 'pptx' && rawBlob && (
+            <Suspense fallback={<RendererFallback />}>
+              <PptxRenderer
+                blob={rawBlob}
+                binaryUrl={blobUrl}
+                filePath={filePath}
+                fileName={fileName}
+                className="h-full"
+                onDownload={handleDownload}
+              />
+            </Suspense>
+          )}
+
+          {/* HTML preview via static file server */}
+          {isHtmlFile && isHtmlPreview && (
+            <>
+              {/* Server still starting — spinner + polling message */}
+              {serverHealth !== 'unavailable' &&
+                (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
+                  <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
+                    <Loader2 className="h-5 w-5 animate-spin opacity-40" />
+                    <p className="text-xs opacity-50">
+                      {tHardcodedUi.raw(
+                        'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
+                      )}
+                    </p>
+                  </div>
+                )}
+
+              {/* Preview server never responded — recoverable, offer a retry */}
+              {serverHealth === 'unavailable' && (
+                <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                  <FileWarning className="h-5 w-5 opacity-40" />
+                  <p className="max-w-xs text-xs opacity-60">
+                    {"Couldn't reach the preview server. The sandbox may still be starting up."}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHealthRetryNonce((n) => n + 1)}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Retry
+                  </Button>
+                </div>
+              )}
+
+              {/* Server ready — render iframe */}
+              {serverHealth === 'ready' && authenticatedPreviewUrl && (
+                <iframe
+                  key={`html-preview-${filePath}`}
+                  src={authenticatedPreviewUrl}
+                  title={fileName}
+                  className="h-full w-full border-0"
+                  sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
+                />
+              )}
+            </>
+          )}
+
+          {/* HTML source — shown when preview toggle is off */}
+          {isHtmlFile && !isHtmlPreview && !isLoading && !error && fileContent?.type === 'text' && (
+            <CodeEditor
+              key={`html-source-${filePath}-${discardKey}`}
+              {...codeEditorProps}
+              className={readOnly ? 'min-h-full' : 'h-full'}
             />
-          </Suspense>
-        )}
+          )}
 
-        {/* HTML preview via static file server */}
-        {isHtmlFile && isHtmlPreview && (
-          <>
-            {/* Server still starting — spinner + polling message */}
-            {serverHealth !== 'unavailable' && (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin opacity-40" />
-                <p className="text-xs opacity-50">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer')}</p>
-              </div>
-            )}
-
-            {/* Preview server never responded — recoverable, offer a retry */}
-            {serverHealth === 'unavailable' && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-6 text-center">
-                <FileWarning className="h-5 w-5 opacity-40" />
-                <p className="text-xs opacity-60 max-w-xs">{"Couldn't reach the preview server. The sandbox may still be starting up."}</p>
-                <Button variant="outline" size="sm" onClick={() => setHealthRetryNonce((n) => n + 1)}>
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Retry
+          {/* Binary fallback */}
+          {!isLoading &&
+            !error &&
+            fileContent &&
+            fileContent.type === 'binary' &&
+            !imageDataUrl &&
+            !isHeicImage &&
+            !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+                  <FileWarning className="text-muted-foreground/30 h-6 w-6" />
+                </div>
+                <p className="text-muted-foreground/50 text-sm">
+                  {tHardcodedUi.raw(
+                    'featuresFilesComponentsFileContentRenderer.line844JsxTextBinaryFile',
+                  )}
+                </p>
+                <Button variant="outline" size="sm" className="" onClick={handleDownload}>
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Download
                 </Button>
               </div>
             )}
 
-            {/* Server ready — render iframe */}
-            {serverHealth === 'ready' && authenticatedPreviewUrl && (
-              <iframe
-                key={`html-preview-${filePath}`}
-                src={authenticatedPreviewUrl}
-                title={fileName}
-                className="w-full h-full border-0"
-                sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
-              />
-            )}
-          </>
-        )}
-
-        {/* HTML source — shown when preview toggle is off */}
-        {isHtmlFile && !isHtmlPreview && !isLoading && !error && fileContent?.type === 'text' && (
-          <CodeEditor
-            key={`html-source-${filePath}-${discardKey}`}
-            {...codeEditorProps}
-            className={readOnly ? 'min-h-full' : 'h-full'}
-          />
-        )}
-
-        {/* Binary fallback */}
-        {!isLoading &&
-          !error &&
-          fileContent &&
-          fileContent.type === 'binary' &&
-          !imageDataUrl &&
-          !isHeicImage &&
-          !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
-            <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-              <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
-                <FileWarning className="h-6 w-6 text-muted-foreground/30" />
+          {/* Text / code content */}
+          {!isLoading &&
+            !error &&
+            fileContent &&
+            fileContent.type === 'text' &&
+            !imageDataUrl &&
+            fileCategory !== 'csv' &&
+            fileCategory !== 'html' && (
+              <div className={cn('relative flex flex-col', readOnly ? 'min-h-full' : 'h-full')}>
+                {/* Diff indicator */}
+                {fileContent.patch && fileContent.patch.hunks.length > 0 && (
+                  <InfoBanner
+                    tone="warning"
+                    icon={GitBranch}
+                    className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
+                  >
+                    {tHardcodedUi.raw(
+                      'featuresFilesComponentsFileContentRenderer.line869JsxTextUncommittedChanges',
+                    )}
+                  </InfoBanner>
+                )}
+                {isJsonTreeView && isJsonFile ? (
+                  <div key={filePath} className="h-full w-full overflow-auto">
+                    <JsonTreeView
+                      content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                    />
+                  </div>
+                ) : isMarkdownPreview && isMarkdownFile ? (
+                  <div key={filePath} className="h-full w-full overflow-auto p-6">
+                    <MarkdownWithFrontmatter
+                      content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                    />
+                  </div>
+                ) : (
+                  <CodeEditor
+                    key={`${filePath}-${discardKey}`}
+                    {...codeEditorProps}
+                    className={readOnly ? 'min-h-full' : 'h-full'}
+                  />
+                )}
               </div>
-              <p className="text-sm text-muted-foreground/50">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line844JsxTextBinaryFile')}</p>
-              <Button variant="outline" size="sm" className="" onClick={handleDownload}>
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Download
-              </Button>
-            </div>
-          )}
+            )}
 
-        {/* Text / code content */}
-        {!isLoading &&
-          !error &&
-          fileContent &&
-          fileContent.type === 'text' &&
-          !imageDataUrl &&
-          fileCategory !== 'csv' &&
-          fileCategory !== 'html' && (
-            <div className={cn('relative flex flex-col', readOnly ? 'min-h-full' : 'h-full')}>
-              {/* Diff indicator */}
-              {fileContent.patch && fileContent.patch.hunks.length > 0 && (
-                <InfoBanner
-                  tone="warning"
-                  icon={GitBranch}
-                  className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
-                >{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line869JsxTextUncommittedChanges')}</InfoBanner>
-              )}
-              {isJsonTreeView && isJsonFile ? (
-                <div key={filePath} className="w-full h-full overflow-auto">
-                  <JsonTreeView content={hasUnsavedChanges ? latestContentRef.current : displayContent} />
-                </div>
-              ) : isMarkdownPreview && isMarkdownFile ? (
-                <div key={filePath} className="w-full h-full overflow-auto p-6">
-                  <MarkdownWithFrontmatter content={hasUnsavedChanges ? latestContentRef.current : displayContent} />
-                </div>
-              ) : (
-                <CodeEditor
-                  key={`${filePath}-${discardKey}`}
-                  {...codeEditorProps}
-                  className={readOnly ? 'min-h-full' : 'h-full'}
-                />
-              )}
-            </div>
+          {/* File not found fallback — catches cases where loading settled but no content/error */}
+          {!showLoadingState && !contentError && isNotFound && (
+            <FileNotFoundState filePath={filePath} />
           )}
-
-        {/* File not found fallback — catches cases where loading settled but no content/error */}
-        {!showLoadingState && !contentError && isNotFound && (
-          <FileNotFoundState filePath={filePath} />
-        )}
         </ClientErrorBoundary>
       </div>
     </div>
@@ -971,7 +1100,9 @@ function JsonTreeView({ content }: { content: string }) {
 
   if (parsed === null) {
     return (
-      <div className="p-4 text-sm text-destructive/70 font-mono">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line915JsxTextInvalidJson')}</div>
+      <div className="text-destructive/70 p-4 font-mono text-sm">
+        {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line915JsxTextInvalidJson')}
+      </div>
     );
   }
 
@@ -982,7 +1113,15 @@ function JsonTreeView({ content }: { content: string }) {
   );
 }
 
-function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string | null; depth: number }) {
+function JsonNode({
+  value,
+  keyName,
+  depth,
+}: {
+  value: unknown;
+  keyName: string | null;
+  depth: number;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [isCollapsed, setIsCollapsed] = useState(depth > 2);
 
@@ -1018,9 +1157,20 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
     return (
       <div style={{ paddingLeft: depth * 20 }} className="break-all">
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-emerald-500/80">{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuot')}{value.length > 200 ? value.slice(0, 200) + '...' : value}{tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuotb4125902')}</span>
+        <span className="text-emerald-500/80">
+          {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuot')}
+          {value.length > 200 ? value.slice(0, 200) + '...' : value}
+          {tHardcodedUi.raw(
+            'featuresFilesComponentsFileContentRenderer.line963JsxTextQuotb4125902',
+          )}
+        </span>
         {isUrl && (
-          <a href={value} target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-400/60 hover:text-blue-400 text-xs">
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-1 text-xs text-blue-400/60 hover:text-blue-400"
+          >
             open
           </a>
         )}
@@ -1034,15 +1184,17 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
       <div>
         <div
           style={{ paddingLeft: depth * 20 }}
-          className="cursor-pointer hover:bg-muted/30 rounded-lg transition-colors inline-flex items-center gap-1"
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
-          <span className="text-muted-foreground/40 text-xs w-3.5 text-center select-none">
+          <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
             {isCollapsed ? '\u25B6' : '\u25BC'}
           </span>
           {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
           {isCollapsed ? (
-            <span className="text-muted-foreground/40">[{count} item{count !== 1 ? 's' : ''}]</span>
+            <span className="text-muted-foreground/40">
+              [{count} item{count !== 1 ? 's' : ''}]
+            </span>
           ) : (
             <span className="text-muted-foreground/30">[</span>
           )}
@@ -1052,7 +1204,9 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
             {value.map((item, idx) => (
               <JsonNode key={idx} value={item} keyName={null} depth={depth + 1} />
             ))}
-            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">]</div>
+            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">
+              ]
+            </div>
           </>
         )}
       </div>
@@ -1066,15 +1220,17 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
       <div>
         <div
           style={{ paddingLeft: depth * 20 }}
-          className="cursor-pointer hover:bg-muted/30 rounded-lg transition-colors inline-flex items-center gap-1"
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
-          <span className="text-muted-foreground/40 text-xs w-3.5 text-center select-none">
+          <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
             {isCollapsed ? '\u25B6' : '\u25BC'}
           </span>
           {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
           {isCollapsed ? (
-            <span className="text-muted-foreground/40">{'{' + count + ' key' + (count !== 1 ? 's' : '') + '}'}</span>
+            <span className="text-muted-foreground/40">
+              {'{' + count + ' key' + (count !== 1 ? 's' : '') + '}'}
+            </span>
           ) : (
             <span className="text-muted-foreground/30">{'{'}</span>
           )}
@@ -1084,7 +1240,9 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
             {entries.map(([k, v]) => (
               <JsonNode key={k} value={v} keyName={k} depth={depth + 1} />
             ))}
-            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">{'}'}</div>
+            <div style={{ paddingLeft: depth * 20 }} className="text-muted-foreground/30">
+              {'}'}
+            </div>
           </>
         )}
       </div>

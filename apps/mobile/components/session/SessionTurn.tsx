@@ -2517,29 +2517,21 @@ function ToolCard({
   }));
 
   return (
-    <View
-      style={{
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: cardBorder(isDark),
-        backgroundColor: cardBg(isDark),
-        marginBottom: 6,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Header row */}
+    <View style={{ marginBottom: 4 }}>
+      {/* Inline trigger row — compact "thinking-stream" style (web parity:
+          tool-renderers.tsx BasicTool). No bordered card, flush-left so the
+          icon aligns with the reasoning rows. */}
       <TouchableOpacity
         activeOpacity={hasExpandable || projectNavTarget ? 0.7 : 1}
         onPress={handlePress}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: 12,
-          paddingVertical: 10,
+          paddingVertical: 5,
         }}
       >
         {/* Tool icon */}
-        <IconComponent size={15} color={iconColor} style={{ marginRight: 8 }} />
+        <IconComponent size={14} color={iconColor} style={{ marginRight: 8 }} />
 
         {isRunning ? (
           /* Shimmer over title + subtitle while streaming */
@@ -2552,8 +2544,8 @@ function ToolCard({
             <Text
               style={{
                 fontSize: 13,
-                fontFamily: 'Roobert-Medium',
-                color: fg(isDark),
+                fontFamily: 'Roobert',
+                color: mutedStrong(isDark),
               }}
             >
               {info.title}
@@ -2611,12 +2603,17 @@ function ToolCard({
         </View>
       </TouchableOpacity>
 
-      {/* Expanded content — tool-specific */}
+      {/* Expanded content — tool-specific. The collapsed trigger is inline, so
+          the detail gets its own light container when opened. */}
       {expanded && (
         <View
           style={{
-            borderTopWidth: 1,
-            borderTopColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+            marginTop: 4,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: cardBorder(isDark),
+            backgroundColor: cardBg(isDark),
+            overflow: 'hidden',
           }}
         >
           {getExpandedContent(tool, isDark)}

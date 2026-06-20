@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 import { TunnelRelayError, TunnelMethods, TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
@@ -9,7 +9,7 @@ import { writeAuditLog, buildRequestSummary } from '../core/audit-logger';
 import { notifyPermissionRequest } from './permission-requests';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { getTunnelReadContext } from './auth';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 
@@ -44,8 +44,7 @@ export function createRpcRouter() {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
-      const accountId = (c.get('accountId') as string | undefined) || await resolveAccountId(userId);
+      const { accountId, ownerClause } = await getTunnelReadContext(c);
       const tunnelId = c.req.param('tunnelId');
 
       const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
@@ -63,10 +62,6 @@ export function createRpcRouter() {
       if (!method || typeof method !== 'string') {
         return c.json({ error: 'method is required' }, 400);
       }
-
-      const ownerClause = accountId !== userId
-        ? or(eq(tunnelConnections.accountId, accountId), eq(tunnelConnections.accountId, userId))
-        : eq(tunnelConnections.accountId, accountId);
 
       const [tunnel] = await db
         .select()
@@ -192,11 +187,7 @@ function resolveCapability(method: string): TunnelCapability | null {
   const prefixMap: Record<string, TunnelCapability> = {
     fs: 'filesystem',
     shell: 'shell',
-    net: 'network',
     desktop: 'desktop',
-    apps: 'apps',
-    hardware: 'hardware',
-    gpu: 'gpu',
   };
 
   return prefixMap[prefix] || null;

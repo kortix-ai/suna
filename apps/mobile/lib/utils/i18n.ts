@@ -42,9 +42,19 @@ export const initializeI18n = async () => {
     let initialLanguage: SupportedLocale = DEFAULT_LOCALE;
 
     // Priority 1: Check user profile preference (if authenticated)
-    // This ALWAYS takes precedence - user explicitly set it in settings
+    // This ALWAYS takes precedence - user explicitly set it in settings.
+    // NOTE: supabase.auth.getUser() hits the network to validate the JWT and
+    // can hang indefinitely when offline. Since this runs on the critical boot
+    // path (the app renders nothing until i18n is ready), we race it against a
+    // short timeout so a missing connection can never block startup — we just
+    // fall back to the locally-saved language preference below.
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await Promise.race([
+        supabase.auth.getUser(),
+        new Promise<{ data: { user: null } }>((resolve) =>
+          setTimeout(() => resolve({ data: { user: null } }), 2500),
+        ),
+      ]);
       if (user?.user_metadata?.locale && SUPPORTED_LOCALES.includes(user.user_metadata.locale as SupportedLocale)) {
         initialLanguage = user.user_metadata.locale as SupportedLocale;
         log.log(`✅ Using user metadata locale (highest priority): ${initialLanguage}`);

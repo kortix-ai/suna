@@ -1,0 +1,95 @@
+# Dev environment values for the kortix-api chart, deployed by Argo CD
+# (infra/k8s/argocd/applications/dev.yaml) onto the dev-eks cluster. GitOps
+# source of truth for what runs on EKS dev — deploy-dev-eks.yml bumps `image.tag`
+# on every push to `main`; `git revert` is the rollback.
+
+# Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
+# is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
+image:
+  tag: "dev-f923dea3"
+kortixVersion: ""
+env:
+  internalKortixEnv: dev
+# Pool-only mode: disable the experimental Daytona memory-snapshot path on dev.
+# It depends on the flaky experimental region and doesn't beat the warm pool
+# (which runs on the reliable region). Rendered as explicit container env, so it
+# OVERRIDES whatever the synced kortix-dev-env secret bundle carries (k8s env
+# wins over envFrom). Flip back to "true" only once Daytona stabilizes the
+# experimental region.
+extraEnv:
+  KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
+  # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's
+  # a pure accelerator: any claim miss/error falls through to the unchanged cold
+  # provision (session-runtime-allocator.ts:83-88), so it can only speed starts
+  # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
+  # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
+  # (~0.5s, no network) instead of re-cloning (~9s).
+  #
+  # Per-project, active-only model: SIZE spares per project the user CURRENTLY has
+  # OPEN (FE presence heartbeat → DB presence → reconcile keeps/refills only
+  # present projects and reaps a project's spares the moment its tab closes). So
+  # MAX_TOTAL is now just a runaway COST CEILING, not the limiter — the real count
+  # is (projects open right now) × SIZE. Also master-enable: warmPoolEnabled() =
+  # MAX_TOTAL>0. Pre-warm is skipped for non-billing accounts (refillProjectPool
+  # gate). Must live here (k8s env), NOT in .env.dev (unit-warm-pool.test asserts
+  # off there). For prod, raise MAX_TOTAL to your cost budget (it caps concurrent
+  # open projects × SIZE, not total projects).
+  KORTIX_WARM_POOL_MAX_TOTAL: "20"
+  KORTIX_WARM_POOL_SIZE: "2"
+  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
+  # Vestigial under the presence model (the DB-presence staleness window in
+  # warm-pool.ts governs reaping now); kept for back-compat.
+  KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
+# PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
+# served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
+# singleton workers (one Postgres leader lease is shared across both on the dev
+# data plane). At cutover, flip this to true here AND disable the ECS dev service.
+workers:
+  enabled: false
+# Dev sizing (≤100 users): 1 replica floor, burst to 2. Far below prod's 3→12.
+replicas: 1
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+# No PDB on a 1-replica dev: minAvailable 50% rounds to 1 → 0 allowed disruptions,
+# which blocks node drain (cluster-autoscaler can't consolidate, upgrades stall).
+# A 1-replica deploy has no HA to protect anyway; brief restart on drain is fine.
+pdb:
+  enabled: false
+# Smaller pod envelope than prod (500m/1Gi) — light dev load packs onto fewer
+# nodes. ephemeral-storage (2Gi/8Gi) is inherited from the chart base.
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+serviceAccount:
+  name: kortix-api
+  # IRSA role from the dev-eks cluster layer (module.app_irsa, name
+  # "kortix-dev-eks-app"). Predictable from the role name; verify with
+  # `terraform -chdir=infra/terraform/environments/dev-eks/cluster output app_irsa_role_arn`.
+  roleArn: arn:aws:iam::935064898258:role/kortix-dev-eks-app
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-dev-env
+  targetSecretName: kortix-api-env
+ingress:
+  enabled: true
+  # dev-api.kortix.com is now the Cloudflare Worker's custom domain
+  # (infra/cloudflare/workers/api-router, env=dev). It routes here via the clean
+  # backend name dev-api-eks.kortix.com (EKS = primary backend) or fails over to
+  # the ECS standby (dev-api-ecs-fargate). So EKS serves dev-api-eks ONLY, on its
+  # own cert (57eed8f4) — it no longer serves dev-api or borrows the ECS dev ALB
+  # cert (a9af6fd8), which is now free for the ECS dev stack alone.
+  host: dev-api-eks.kortix.com
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
+  cloudflareProxied: true
+# Plain rolling Deployment (no canary) — same delivery model as prod-eks:
+# probe-based auto-healing, HPA autoscaling, zero-downtime rolling deploys.
+rollout:
+  enabled: false

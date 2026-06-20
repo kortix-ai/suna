@@ -32,6 +32,11 @@ export type RequestAuditContext = {
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
+// NOTE: the partial index idx_project_sessions_account_active (see
+// packages/db/drizzle/20260617102106_account_active_session_index.sql) hard-codes
+// this exact set in its WHERE predicate to keep the concurrency-cap COUNT fast.
+// If you change these statuses, update that index's predicate in a new migration
+// or the planner will silently stop using it.
 export const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
 
 export const PROVISIONING_SESSION_STATUSES = ['queued', 'branching', 'provisioning'] as const;
@@ -451,7 +456,17 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
 }
 
 
-export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
+export interface TemplateWarmStatus {
+  enabled: boolean;
+  size: number;
+  ready: number;
+  warming: number;
+}
+
+export function serializeTemplate(
+  t: Awaited<ReturnType<typeof listSandboxTemplates>>[number],
+  warm?: TemplateWarmStatus | null,
+) {
   return {
     template_id: t.templateId,
     slug: t.slug,
@@ -473,6 +488,9 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    // Per-template warm pool config + live counts (null when the operator gate
+    // is off, i.e. the feature isn't available platform-wide).
+    warm_pool: warm ?? null,
   };
 }
 

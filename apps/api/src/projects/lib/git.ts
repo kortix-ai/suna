@@ -4,21 +4,36 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { isLegacyFreestyleGitConfigured, mintLegacyFreestyleRepoToken } from '../git-backends/legacy-freestyle';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
-import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
-import { ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+import { ttlMemo } from '../../shared/ttl-memo';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+
+// Memoized briefly (positive hits only): this runs on every project-scoped
+// request, and prod pays a cross-region roundtrip per DB statement. A revoked
+// membership lingers for at most one TTL window; a fresh grant is visible
+// immediately because null results are never cached.
+const loadAccountMembership = ttlMemo({
+  ttlMs: 15_000,
+  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
+  loader: async (userId: string, accountId: string) => {
+    const [membership] = await db
+      .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+      .limit(1);
+    return membership ?? null;
+  },
+  shouldCache: (membership) => membership !== null,
+});
 
 export async function getAccountMembership(userId: string, accountId: string) {
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return membership ?? null;
+  return loadAccountMembership(userId, accountId);
 }
 
 
@@ -430,6 +445,23 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
+  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.externalRepoId) {
+    if (!(await isLegacyFreestyleGitConfigured())) return { authSource: 'none' };
+    try {
+      const push = await mintLegacyFreestyleRepoToken({
+        repoId: remote.externalRepoId,
+        identityId: remote.ref,
+      });
+      return {
+        auth: { token: push.token, source: 'managed' },
+        authSource: 'managed',
+      };
+    } catch (err) {
+      console.warn(`[projects] failed to mint legacy Freestyle token for ${project.projectId}:`, err);
+      return { authSource: 'none' };
+    }
+  }
+
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
     if (!repo) return { authSource: 'none' };
@@ -473,6 +505,17 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         authSource: 'project_credential',
       };
     }
+  }
+
+  const legacyToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
+  if (legacyToken) {
+    return {
+      auth: {
+        token: legacyToken,
+        source: 'project_credential',
+      },
+      authSource: 'project_credential',
+    };
   }
 
   return { authSource: 'none' };
@@ -894,6 +937,44 @@ export async function loadGitProject(loaded: { row: ProjectRow }) {
     manifestPath: loaded.row.manifestPath,
     gitAuthToken: gitAuth.auth?.token ?? null,
   };
+}
+
+/**
+ * Resolve a project's upstream git auth token from just its id — loads the
+ * project row, then runs the normal `resolveProjectGitAuth` resolution
+ * (managed App/PAT, BYO App, project_credential, legacy secret).
+ *
+ * This is the lazy fallback the shared mirror layer (`git/mirror.ts`) calls
+ * when a caller reaches `refreshMirror()` without a token. The per-project
+ * mirror is a shared resource hit by ~15 code paths; relying on every caller to
+ * thread a non-null token is fragile, and `refreshMirror`'s per-project dedup
+ * means a single tokenless caller can make the cold bare-clone of a PRIVATE
+ * repo run unauthenticated (`fatal: could not read Username for github.com`)
+ * and fail every concurrent caller piggybacking on that shared clone. Resolving
+ * here guarantees the network git op is authenticated whenever a credential
+ * exists, regardless of which caller won the refresh lock.
+ *
+ * Returns null when the project is gone or has no resolvable git auth. Never
+ * throws — a resolution failure must degrade to "no token" (caller behaves
+ * exactly as before this hook existed), never crash the mirror refresh.
+ */
+export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return null;
+    const gitAuth = await resolveProjectGitAuth(row);
+    return gitAuth.auth?.token ?? null;
+  } catch (err) {
+    console.warn(
+      `[projects] lazy git-auth resolve failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }
 
 // GET /v1/projects/:projectId/sandboxes

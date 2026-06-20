@@ -44,6 +44,12 @@ interface SandboxConnectionStore {
 // see the lightweight reconnect pill instead, making reconnection feel instant.
 const STORAGE_KEY = "kortix-sandbox-was-connected";
 const PROVISION_VERIFIED_KEY = "kortix-sandbox-provision-verified";
+// Stronger than PROVISION_VERIFIED: POST /start already resolved stage='ready',
+// which the backend only returns once it reached the daemon's /session (runtime
+// proven healthy server-side). When this flag is set, the new instance starts
+// optimistically connected+healthy so the chat shows WITHOUT waiting out an extra
+// client-side /kortix/health round-trip. The poller still runs and self-corrects.
+const RUNTIME_READY_VERIFIED_KEY = "kortix-sandbox-runtime-ready";
 
 function loadWasConnected(): boolean {
 	try {
@@ -76,6 +82,22 @@ function loadProvisionVerified(): boolean {
 function clearProvisionVerified() {
 	try {
 		sessionStorage.removeItem(PROVISION_VERIFIED_KEY);
+	} catch {
+		/* SSR or storage unavailable */
+	}
+}
+
+function loadRuntimeReadyVerified(): boolean {
+	try {
+		return sessionStorage.getItem(RUNTIME_READY_VERIFIED_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+function clearRuntimeReadyVerified() {
+	try {
+		sessionStorage.removeItem(RUNTIME_READY_VERIFIED_KEY);
 	} catch {
 		/* SSR or storage unavailable */
 	}
@@ -174,8 +196,42 @@ export function resetSandboxFail() {
  * so the dashboard doesn't show a blocking overlay during the transition.
  */
 export function resetForServerSwitch() {
+	const runtimeReady = loadRuntimeReadyVerified();
 	const fromProvisioning = loadProvisionVerified();
+	clearRuntimeReadyVerified();
 	clearProvisionVerified();
+
+	if (runtimeReady) {
+		// /start already resolved stage==='ready' (markRuntimeReadyVerified is set
+		// ONLY then — page.tsx), which the backend returns only after it reached the
+		// daemon and OpenCode answered: the runtime is PROVEN healthy server-side.
+		// So seed healthy=true (optimistic) — NOT healthy=null. The SSE event stream
+		// (use-opencode-events) AND message sync (use-session-sync) both gate on this
+		// same `healthy` flag, so seeding null left the FE UNSUBSCRIBED until the
+		// ~350ms client health poll flipped it green — by which point the server-side
+		// first turn (KORTIX_INITIAL_PROMPT, delivered during boot) had accumulated
+		// and bulk-rendered AT ONCE instead of streaming. healthy=true subscribes at
+		// the switch, so part.updated events render token-by-token, and also reclaims
+		// the redundant health RTT. The 350ms poller still runs and self-corrects to
+		// healthy=false (reconnect pill) if the browser genuinely can't reach the box,
+		// so this only narrows to the ready path where health was actually proven.
+		useSandboxConnectionStore.setState({
+			status: "connected",
+			failCount: 0,
+			initialCheckDone: true,
+			wasConnected: true,
+			reconnectAttempts: 0,
+			disconnectedAt: null,
+			sandboxVersion: null,
+			openCodeVersion: null,
+			healthy: true,
+			runtimeError: null,
+			recoveryPhase: "idle",
+			restartRequestedAt: null,
+		});
+		saveWasConnected(true);
+		return;
+	}
 
 	if (fromProvisioning) {
 		// Provisioning already verified health — skip the blocking overlay.
@@ -223,6 +279,20 @@ export function resetForServerSwitch() {
 export function markProvisioningVerified() {
 	try {
 		sessionStorage.setItem(PROVISION_VERIFIED_KEY, "1");
+	} catch {
+		/* SSR or storage unavailable */
+	}
+}
+
+/**
+ * Called right before switching to a sandbox whose POST /start already returned
+ * stage='ready' (runtime proven healthy server-side). The next server-switch
+ * reset starts optimistically connected+healthy so the chat shows without an
+ * extra client health RTT. Implies provisioning-verified.
+ */
+export function markRuntimeReadyVerified() {
+	try {
+		sessionStorage.setItem(RUNTIME_READY_VERIFIED_KEY, "1");
 	} catch {
 		/* SSR or storage unavailable */
 	}

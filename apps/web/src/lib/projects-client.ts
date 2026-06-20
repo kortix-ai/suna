@@ -1,9 +1,12 @@
+import type { QueryClient } from '@tanstack/react-query';
+
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -71,7 +74,7 @@ export interface AccountDetail {
   updated_at: string;
 }
 
-interface AccountMemberGroup {
+export interface AccountMemberGroup {
   group_id: string;
   name: string;
 }
@@ -92,7 +95,7 @@ export interface AccountMember {
   joined_at: string;
 }
 
-interface ProjectGroupAccessSource {
+export interface ProjectGroupAccessSource {
   group_id: string;
   group_name: string;
   role: ProjectRole;
@@ -165,7 +168,7 @@ export interface ResendInviteResult {
   email_skip_reason: string | null;
 }
 
-interface AccountInviteDescribeFull {
+export interface AccountInviteDescribeFull {
   invite_id: string;
   account_id: string;
   account_name: string | null;
@@ -179,7 +182,7 @@ interface AccountInviteDescribeFull {
   email_matches_caller: true;
 }
 
-interface AccountInviteDescribeRedacted {
+export interface AccountInviteDescribeRedacted {
   invite_id: string;
   expired: boolean;
   accepted_at: string | null;
@@ -367,6 +370,10 @@ function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
     throw response.error ?? new Error('Project request failed');
   }
   return response.data;
+}
+
+export async function listProjects() {
+  return unwrap(await backendApi.get<KortixProject[]>('/projects'));
 }
 
 export async function listProjectsForAccount(accountId?: string) {
@@ -764,28 +771,55 @@ export async function upsertProjectSecret(
   );
 }
 
-export async function startProjectChatGptHeadlessAuth(projectId: string) {
+// ── Provider OAuth device flow (poll-based) ────────────────────────────────
+// Connect a subscription-backed provider (e.g. ChatGPT) via a device-code flow.
+// `start` returns the challenge; the caller polls `poll` until it resolves.
+// Plain JSON requests (no streaming) — survives the edge and any replica.
+
+export interface ProviderOAuthStart {
+  flow_id: string;
+  verification_url: string;
+  user_code: string | null;
+  /** Epoch ms when the device code expires. */
+  expires_at: number;
+  /** Suggested poll cadence. */
+  interval_ms: number;
+}
+
+export interface ProviderOAuthCredential {
+  provider_id: string;
+  expires_in_ms: number | null;
+  updated_at: string;
+}
+
+export type ProviderOAuthPoll =
+  | { status: 'pending'; next_poll_ms?: number }
+  | { status: 'success'; credential: ProviderOAuthCredential }
+  | { status: 'expired' }
+  | { status: 'failed'; error: string };
+
+export async function startProjectProviderOAuth(
+  projectId: string,
+  provider: string,
+  input?: { sharing?: ConnectorSharing },
+): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<{
-      authId: string;
-      url: string;
-      instructions: string;
-      code: string | null;
-    }>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
-      {},
+    await backendApi.post<ProviderOAuthStart>(
+      `/projects/${projectId}/oauth/${provider}/start`,
+      { sharing: input?.sharing },
     ),
   );
 }
 
-export async function completeProjectChatGptHeadlessAuth(
+export async function pollProjectProviderOAuth(
   projectId: string,
-  input: { authId: string; sharing?: ConnectorSharing },
-) {
+  provider: string,
+  flowId: string,
+): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProjectSecret>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
-      { auth_id: input.authId, sharing: input.sharing },
+    await backendApi.post<ProviderOAuthPoll>(
+      `/projects/${projectId}/oauth/${provider}/poll`,
+      { flow_id: flowId },
     ),
   );
 }
@@ -861,7 +895,7 @@ export interface AdminConnector {
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
   actions: ConnectorAction[];
-  hasAuth: boolean;
+  authSecret: string | null;
   sharing: ConnectorSharing | null;
   secretSet: boolean;
 }
@@ -986,7 +1020,7 @@ export interface ConnectorDraftInput {
   url?: string;
   transport?: 'http' | 'sse';
   endpoint?: string;
-  base_url?: string;
+  baseUrl?: string;
   spec?: string;
   /** Credential storage mode. */
   credential?: 'shared' | 'per_user';
@@ -1127,11 +1161,23 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
+  /** Per-template warm pool config + live counts. null when the operator gate
+   *  is off (feature unavailable platform-wide). */
+  warm_pool?: {
+    enabled: boolean;
+    size: number;
+    /** Sandboxes parked and ready to claim instantly. */
+    ready: number;
+    /** Sandboxes currently booting toward ready. */
+    warming: number;
+  } | null;
 }
 
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
+  /** Whether the warm pool feature is enabled platform-wide. */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSnapshotBuild {
@@ -1151,6 +1197,8 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
+  /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSandboxHealth {
@@ -1169,10 +1217,10 @@ export interface RebuildSnapshotResponse {
   snapshot_name: string;
 }
 
-export async function listSandboxTemplates(projectId: string) {
+export async function listProjectSandboxes(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
-      `/projects/${projectId}/sandbox-templates`,
+      `/projects/${projectId}/sandboxes`,
     ),
   );
 }
@@ -1189,6 +1237,13 @@ export async function getProjectSandboxHealth(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
       `/projects/${projectId}/sandbox-health`,
+      {
+        // Background poll used by alerts/settings. React Query owns retry/error
+        // state; the global error handler would otherwise spam console.error
+        // during transient dev boot or provider stalls.
+        showErrors: false,
+        timeout: 15_000,
+      },
     ),
   );
 }
@@ -1611,6 +1666,13 @@ export async function listChangeRequests(
   return unwrap(
     await backendApi.get<{ change_requests: ChangeRequest[] }>(
       `/projects/${projectId}/change-requests${query}`,
+      {
+        // This is often a badge/background poll. Keep failures visible to the
+        // query consumer without turning temporary poll misses into global API
+        // errors in the browser console.
+        showErrors: false,
+        timeout: 15_000,
+      },
     ),
   );
 }
@@ -1724,7 +1786,7 @@ export async function commitSessionChanges(
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
-// /projects/{project_id}/sessions/{session_id}.
+// /instances/{session_id}/dashboard.
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionStatus =
@@ -1807,6 +1869,94 @@ export async function setProjectSessionSharing(
   );
 }
 
+export interface SessionPreviewCandidate {
+  id: string;
+  label: string;
+  port: number;
+  path: string;
+  status: 'online' | 'offline' | 'unknown';
+  source: string;
+}
+
+export interface SessionPublicShare {
+  share_id: string;
+  session_id: string;
+  project_id: string;
+  resource_type: 'preview' | 'file' | string;
+  label: string;
+  port: number | null;
+  path: string;
+  file_path: string | null;
+  mode: 'view' | 'interactive' | string;
+  allow_websocket: boolean;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+  public_token?: string;
+  public_path?: string;
+  proxy_path?: string;
+}
+
+export interface CreateSessionPublicShareInput {
+  preview_id?: string;
+  preview?: {
+    label?: string;
+    url?: string;
+    port?: number;
+    path?: string;
+  };
+  file?: {
+    label?: string;
+    path: string;
+  };
+  mode?: 'view' | 'interactive';
+  label?: string;
+  expires_at?: string | null;
+}
+
+export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/previews`,
+    ),
+  );
+}
+
+export async function listSessionPublicShares(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ shares: SessionPublicShare[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function createSessionPublicShare(
+  projectId: string,
+  sessionId: string,
+  input: CreateSessionPublicShareInput,
+) {
+  return unwrap(
+    await backendApi.post<{ share: SessionPublicShare }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      input,
+    ),
+  );
+}
+
+export async function revokeSessionPublicShare(
+  projectId: string,
+  sessionId: string,
+  shareId: string,
+) {
+  return unwrap(
+    await backendApi.delete<{ share: SessionPublicShare }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
+    ),
+  );
+}
+
 export async function createProjectSession(
   projectId: string,
   input?: {
@@ -1824,12 +1974,22 @@ export async function createProjectSession(
     session_id?: string;
   },
 ) {
-  return unwrap(
+  const session = unwrap(
     await backendApi.post<ProjectSession>(
       `/projects/${projectId}/sessions`,
       input ?? {},
     ),
   );
+  // Mark freshly-created EMPTY sessions so the session page shows the instant
+  // typeable shell instead of the resume loader. THE chokepoint for every empty
+  // project-session create path (sidebar button, ⌘T shortcut, command palette).
+  // `session_id` is exactly the route param those navigations land on.
+  // Skip when an initial_prompt is set: those sessions get a server-side reply,
+  // so they must mount the real chat to stream it (the shell would hold it back).
+  if (!input?.initial_prompt) {
+    markSessionFresh((session as ProjectSession | undefined)?.session_id);
+  }
+  return session;
 }
 
 export async function getProjectSession(
@@ -1846,34 +2006,16 @@ export async function getProjectSession(
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
-  input: { name?: string | null; metadata?: Record<string, unknown> | null },
+  input: {
+    name?: string;
+    metadata?: Record<string, unknown>;
+  },
 ) {
   return unwrap(
     await backendApi.patch<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
       input,
     ),
-  );
-}
-
-/**
- * Backend-owned OpenCode↔Kortix mapping. The API resolves the sandbox's
- * canonical OpenCode root id and persists it to opencode_session_id (creating
- * one if the sandbox has none, healing a stale pin). Idempotent. The returned
- * session row carries the authoritative `opencode_session_id`, plus an
- * `ensure` summary of what happened. Clients must NOT set the pin themselves.
- */
-export async function ensureOpencodeSession(projectId: string, sessionId: string) {
-  return unwrap(
-    await backendApi.post<
-      ProjectSession & {
-        ensure?: {
-          reason: 'unchanged' | 'healed' | 'created' | 'not_ready' | 'unreachable';
-          changed: boolean;
-          pin: string | null;
-        };
-      }
-    >(`/projects/${projectId}/sessions/${sessionId}/ensure-opencode`, {}),
   );
 }
 
@@ -1895,20 +2037,6 @@ export async function restartProjectSession(
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
-      {},
-    ),
-  );
-}
-
-/**
- * Wake a sandbox the provider auto-stopped while idle. Cheap status no-op when
- * it's running; starts it in the background when stopped. Fire on session open
- * so an idled sandbox warms immediately instead of spinning the health poll.
- */
-export async function wakeProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
-    await backendApi.post<{ status: 'running' | 'waking' | 'unknown' }>(
-      `/projects/${projectId}/sessions/${sessionId}/wake`,
       {},
     ),
   );
@@ -1944,7 +2072,7 @@ export async function syncOpencodeSessionData(
 // in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
-type ProjectTriggerType = 'cron' | 'webhook';
+export type ProjectTriggerType = 'cron' | 'webhook';
 
 /** Parsed trigger spec — what the listing endpoint returns. */
 export interface ProjectTrigger {
@@ -1971,7 +2099,7 @@ export interface ProjectTrigger {
 
 /** Parse error surfaced by the listing endpoint so the UI can render
  * broken triggers next to green ones. */
-interface ProjectTriggerParseError {
+export interface ProjectTriggerParseError {
   slug: string;
   path: string;
   error: string;
@@ -2078,7 +2206,7 @@ export async function fireProjectTrigger(projectId: string, slug: string) {
 // team-membership coupling. Access gated by `project_members` only.
 // ---------------------------------------------------------------------------
 
-type ProjectSessionSandboxStatus =
+export type ProjectSessionSandboxStatus =
   | 'provisioning'
   | 'active'
   | 'stopped'
@@ -2090,7 +2218,7 @@ export interface ProjectSessionSandbox {
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: 'daytona' | 'local_docker';
+  provider: 'daytona' | 'local_docker' | 'justavps';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -2101,17 +2229,70 @@ export interface ProjectSessionSandbox {
   updated_at: string;
 }
 
-export async function getProjectSessionSandbox(
+
+export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+
+export interface SessionStartResult {
+  /** Coarse lifecycle stage to render + poll on. */
+  stage: SessionStartStage;
+  /** Whether polling /start again can make progress (false = terminal). */
+  retriable: boolean;
+  sandbox: ProjectSessionSandbox | null;
+  opencode_session_id: string | null;
+  reason?: string;
+}
+
+/**
+ * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
+ * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * stage='ready'.
+ */
+export async function startProjectSession(
   projectId: string,
   sessionId: string,
-): Promise<ProjectSessionSandbox | null> {
-  const response = await backendApi.get<ProjectSessionSandbox>(
-    `/projects/${projectId}/sessions/${sessionId}/sandbox`,
-    // 404 is an expected "not provisioned yet" state — caller polls.
+): Promise<SessionStartResult | null> {
+  const response = await backendApi.post<SessionStartResult>(
+    `/projects/${projectId}/sessions/${sessionId}/start`,
+    {},
+    // 402 (billing) is handled by the page's plan gate before polling; other
+    // failures just yield null and the caller retries.
     { showErrors: false },
   );
   if (!response.success || !response.data) return null;
   return response.data;
+}
+
+/**
+ * Stable React Query key for the session-open (`/start`) poll. Shared by the
+ * session page's useQuery AND every create→navigate site that prefetches it, so
+ * the keys can never drift — a mismatch would issue a SECOND `/start` POST
+ * instead of adopting the in-flight one.
+ */
+export function sessionStartKey(projectId: string, sessionId: string) {
+  return ['session-start', projectId, sessionId] as const;
+}
+
+/**
+ * Begin the session runtime boot DURING the route transition (before the session
+ * page mounts), so provisioning overlaps navigation instead of starting after the
+ * page paints. Idempotent + fire-and-forget: React Query dedupes against the
+ * session page's own query (same key), and `/start` is idempotent server-side.
+ * Also warms the route bundle. Use at every createProjectSession→navigate site.
+ */
+export function prefetchSessionStart(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery({
+    queryKey: sessionStartKey(projectId, sessionId),
+    queryFn: () => startProjectSession(projectId, sessionId),
+    staleTime: 0,
+  });
+}
+
+export async function createProject(input: ProjectInput) {
+  return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
@@ -2237,29 +2418,19 @@ export async function updateAppsConfig(
   return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
-/** Configure the per-project warm sandbox pool (Customize → Sandbox). */
-export async function updateWarmPool(
+/**
+ * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
+ * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
+ * the platform default). Live ready/warming counts come back on each template via
+ * `listProjectSnapshots`.
+ */
+export async function updateTemplateWarmPool(
   projectId: string,
-  input: { enabled?: boolean; size?: number },
+  input: { slug: string; enabled?: boolean; size?: number },
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
   );
-}
-
-export interface WarmPoolStatus {
-  available: boolean;
-  enabled: boolean;
-  size: number;
-  /** Sandboxes parked and ready to claim instantly. */
-  ready: number;
-  /** Sandboxes currently booting toward ready. */
-  warming: number;
-}
-
-/** Live warm pool config + status (ready / warming counts). */
-export async function getWarmPoolStatus(projectId: string): Promise<WarmPoolStatus> {
-  return unwrap(await backendApi.get<WarmPoolStatus>(`/projects/${projectId}/warm-pool`));
 }
 
 export async function setProjectOnboardingComplete(

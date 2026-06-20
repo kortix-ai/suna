@@ -46,26 +46,14 @@ const DEFAULTS: Partial<TunnelConfig> = {
   shellEnvPassthrough: ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'NODE_ENV', 'HOSTNAME'],
 };
 
-export function trustedCredential(value: string, name: string): string {
-  if (!/^[A-Za-z0-9._~+/=-]+$/.test(value)) {
-    throw new Error(`${name} contains unsupported credential characters`);
+function compactConfig(input: Partial<TunnelConfig>): Partial<TunnelConfig> {
+  const output: Partial<TunnelConfig> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) {
+      (output as Record<string, unknown>)[key] = value;
+    }
   }
-  return value;
-}
-
-export function trustedHttpUrl(value: string, name = 'apiUrl'): string {
-  const url = new URL(value);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`${name} must use http or https`);
-  }
-  return url.toString().replace(/\/$/, '');
-}
-
-function trustedWsPath(value: string): string {
-  if (!value.startsWith('/') || value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) {
-    throw new Error('wsPath must be an absolute URL path');
-  }
-  return value;
+  return output;
 }
 
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
@@ -87,16 +75,10 @@ export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig 
 
   const merged = {
     ...DEFAULTS,
-    ...fileConfig,
+    ...compactConfig(fileConfig),
     ...envConfig,
-    ...overrides,
+    ...compactConfig(overrides),
   } as TunnelConfig;
 
-  return {
-    ...merged,
-    token: merged.token ? trustedCredential(merged.token, 'token') : '',
-    tunnelId: merged.tunnelId ? trustedCredential(merged.tunnelId, 'tunnelId') : '',
-    apiUrl: trustedHttpUrl(merged.apiUrl),
-    wsPath: trustedWsPath(merged.wsPath || '/ws'),
-  };
+  return merged;
 }

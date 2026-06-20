@@ -104,6 +104,10 @@ interface SyncState {
 	) => void;
 	optimisticRemove: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/** True when the session's message list still holds an unconfirmed optimistic
+	 *  message — lets the SSE reconciler avoid idling+clearing a brand-new session
+	 *  whose first prompt the server hasn't registered yet. */
+	hasOptimisticMessages: (sessionID: string) => boolean;
 	clearSession: (sessionID: string) => void;
 	hydrate: (
 		sessionID: string,
@@ -671,6 +675,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	// ---- Selector: join messages + parts into MessageWithParts[] ----
+
+	hasOptimisticMessages: (sessionID) => {
+		const list = get().messages[sessionID];
+		if (!list || list.length === 0) return false;
+		return list.some((m) => optimisticIds.has(m.id));
+	},
 
 	getMessages: (sessionID) => {
 		const s = get();

@@ -26,6 +26,7 @@ import {
 } from './share';
 import {
   credentialExists,
+  deleteCredential,
   loadConnectorGrants,
   loadGrantsForMany,
   resolveCredentialValue,
@@ -37,6 +38,7 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
+import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
   pipedreamConfigured,
@@ -193,7 +195,7 @@ async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
 }
 
 /** Load a pipedream connector's app slug, id, mode (verifies provider). */
-async function loadPipedreamConnector(projectId: string, slug: string) {
+export async function loadPipedreamConnector(projectId: string, slug: string) {
   const [row] = await db
     .select({ connectorId: executorConnectors.connectorId, providerType: executorConnectors.providerType, config: executorConnectors.config, credentialMode: executorConnectors.credentialMode })
     .from(executorConnectors)
@@ -217,6 +219,7 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
     projectId: result.projectId,
     sessionId: c.req.header('X-Kortix-Session-Id') ?? null,
     subject: await resolveShareSubject(result.userId),
+    agentGrant: result.agentGrant ?? null,
   };
 }
 
@@ -236,6 +239,9 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
 
   const out: CatalogConnector[] = [];
   for (const row of conns) {
+    // Per-agent assignment: an agent only sees connectors its grant lists —
+    // consistent with the call gate, so it never lists a tool it can't invoke.
+    if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) continue;
     const { hasAuth } = authOf(row);
@@ -329,6 +335,17 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft, (draft as any)?.sharing as SharingIntent | undefined),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) => setConnectorCredentialShared(projectId, slug, value),
+  deleteConnectorCredential: async (projectId, slug, userId) => {
+    const [row] = await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+      .limit(1);
+    if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
+    const mode = row.credentialMode as 'shared' | 'per_user';
+    await deleteCredential(row.connectorId, mode === 'per_user' ? userId : null);
+    return { ok: true as const };
+  },
   setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
   setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies: (projectId, slug) => getConnectorPoliciesFromManifest(projectId, slug),
@@ -336,11 +353,11 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   setConnectorPolicies: (projectId, accountId, slug, policies) =>
     setConnectorPoliciesInManifest(projectId, accountId, slug, policies as Parameters<typeof setConnectorPoliciesInManifest>[3]),
   pipedreamConnect: pipedreamConfigured()
-    ? async (projectId, slug, userId) => {
+    ? async (projectId, slug, userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
         const effectiveUser = conn.mode === 'per_user' ? userId : null;
-        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, effectiveUser);
+        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, effectiveUser, redirects);
         return { token, app: conn.app, connectUrl };
       }
     : undefined,

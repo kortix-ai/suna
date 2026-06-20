@@ -69,7 +69,7 @@ export function SunaMigrationBanner({ accountId }: { accountId?: string | null }
           <Loader2 className="size-3.5 animate-spin mr-1.5" />Restoring…
         </Button>
       ) : (
-        <Button size="sm" onClick={() => start.mutate()} disabled={start.isPending} className="shrink-0">
+        <Button size="sm" onClick={() => start.mutate({})} disabled={start.isPending} className="shrink-0">
           {failed ? 'Retry' : 'Restore my projects'}
           <ArrowRight className="size-3.5 ml-1.5" />
         </Button>

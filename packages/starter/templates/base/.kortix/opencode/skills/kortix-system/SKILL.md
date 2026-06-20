@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), (4) the Kortix change-request (CR) system — the mandatory path for landing any session-branch work on `main`, including the rule that an agent MUST open a CR if it wants its changes merged, and (5) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, asks how to merge / ship / land session work on `main`, asks anything about change requests / CRs / PRs, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
+description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.toml` and OpenCode config under `.kortix/opencode/`); the full `kortix.toml` manifest (keys, trigger fields, secrets contract, `[[apps]]` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.toml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
 ---
 
 <skill name="kortix-system">
@@ -59,13 +59,26 @@ Kortix cloud state — not just files in the repo. Examples:
 | "list / read project secrets" | `kortix secrets ls` |
 | "set / unset a secret" | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME` |
 | "pull / push my `.env`" | `kortix env pull`, `kortix env push --from .env` |
-| "what sessions are running right now?" | `kortix sessions ls` |
-| "spawn another session to do X" | `kortix sessions new --prompt "X"` |
+| "what sessions are running right now?" | `kortix sessions ls` *(add `--json` to parse)* |
+| "show all parallel agents at a glance — what's everyone doing?" | `kortix sessions status` *(mission control; `--all`, `--json`)* |
+| "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
+| "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
+| "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+
+**Everything is scriptable — drive Kortix like the dashboard.** Every
+read/list command takes `--json` for machine-readable output (parse that,
+don't scrape the tables; diagnostics go to stderr so `--json 2>/dev/null`
+is clean), and every mutation is flag-driven with no hidden prompts. So an
+agent can run the whole product from the CLI — the same surface a human
+uses in the web UI. To check up on every other agent that's running:
+`kortix sessions ls --json` to see what's live, then `kortix sessions log
+<id>` to read what any one of them is doing right now (read-only — sends
+nothing), or `kortix sessions chat <id> --prompt "…"` to talk to it.
 
 **Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
 do (commits, file edits, running tests, local search). The CLI is the
@@ -75,6 +88,16 @@ cloud-state surface; everything else is local.
 project-scoped — it cannot enumerate other projects or hit account-level
 routes. Trying `kortix projects ls` from inside the sandbox returns 403;
 that's intentional. Use `kortix projects info` to inspect **this** project.
+
+**Getting a credential — never punt to the dashboard.** When you need an API key
+or an app connected, **mint a setup link and surface the URL in the same turn** —
+don't tell the human to "open Customize → Connectors", and don't ask them to
+paste a raw key into chat. Use the `request_secret` / `connect` tools on the
+`kortix-executor` MCP (or `secrets request` / `executor connect` /
+`kortix secrets request` / `kortix connectors link`). The human gets a fill-in
+modal (web) or a tappable link (Slack); you never touch the raw value. Do this
+automatically whenever you add or need a tool. Full playbook in the
+**credentials-and-setup-links** reference below.
 
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it
@@ -157,7 +180,65 @@ The location of OpenCode's config dir is declared in `kortix.toml` under `[openc
 The platform never reads opencode's config dir; OpenCode never reads `kortix.toml`. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
 </contract>
 
+<agent-authorization>
+## Per-agent authorization — `[[agents]]`
+
+An agent **is** its OpenCode `.md` (front matter + system prompt). Everything about
+*how an agent behaves* stays OpenCode-native in that file. `kortix.toml`'s optional
+`[[agents]]` block is a thin **scoping overlay**, keyed by the agent's name, that adds
+only the two things OpenCode's agent config cannot express:
+
+```toml
+[[agents]]
+name       = "release-bot"            # = the agent's .md name (e.g. .kortix/opencode/agents/release-bot.md)
+connectors = ["github"]               # which connector profiles it may call   (default: none)
+kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Kortix CLI/API (default: none)
+```
+
+**Which file owns what — never duplicate across the boundary:**
+
+| Setting | Lives in |
+| --- | --- |
+| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** (OpenCode-native) |
+| **`connectors`** (integration access) + **`kortix_cli`** (Kortix CLI/API powers) | **`kortix.toml` `[[agents]]`** |
+
+**How the grant resolves at session start (backward-compatible):**
+- Manifest has **no `[[agents]]`** at all → no restriction (full access). Existing projects are unchanged.
+- Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
+- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** (it still runs its `.md`, but with no connectors and no Kortix-CLI powers).
+- **Your default agent:** with no `[[agents]]` it has **full access** (merge / deploy / spawn sub-agents, ∩ the user). The moment you adopt `[[agents]]`, **declare it too** — `[[agents]] name = "kortix"`, `kortix_cli = "all"`, `connectors = "all"` — or it falls under the unlisted-deny rule above. So: keep the default agent `"all"` and scope the *specialists* down.
+- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
+
+**`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent). Run
+`kortix validate --scopes` to print this list:
+
+```
+project.read  project.write  project.delete  project.deploy
+project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
+project.session.read  project.session.start  project.session.exec  project.session.stop
+project.members.read  project.members.manage
+project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
+channel.read  channel.connect  channel.send  channel.disconnect
+```
+
+`kortix validate` validates `[[agents]]` (rejecting unknown / account-scoped actions) and
+prints each agent's resolved scope. Use `kortix validate --scopes` to see the full enum.
+</agent-authorization>
+
 <references>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
+  How to get a credential you don't have — an API key, or an app connected —
+  by minting a short-lived **setup link** and surfacing the URL, instead of
+  punting the human to the dashboard or asking them to paste a raw key. Covers
+  the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
+  (the `request_secret` + `connect` MCP tools, the `secrets request` /
+  `executor connect` shims, the `kortix secrets request` / `kortix connectors
+  link` CLI), what the human sees (web modal vs Slack link), how to verify it
+  landed, and the security model. Load this whenever you hit "I need an API key /
+  I need this app connected" — it is the canonical, autonomous flow.
+</reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,

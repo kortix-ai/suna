@@ -11,10 +11,34 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { checkInstanceHealth } from '@/lib/platform/client';
+import { getAuthToken } from '@/api/config';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
+
+/**
+ * Reachability probe for a session sandbox. Unlike the generic
+ * `checkInstanceHealth` (which is keyed off a `version` field the per-session
+ * sandbox runtime doesn't return, and sends no auth), this hits the proxied
+ * `/kortix/health` WITH the bearer token — the session sandbox proxy 403s
+ * without it — and treats any 200 as reachable. Mirrors the authenticated
+ * probe the connect loop uses. Returns false only on a non-200 / network error.
+ */
+async function probeSandboxReachable(sandboxUrl: string): Promise<boolean> {
+  try {
+    const token = await getAuthToken();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${sandboxUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export interface SandboxReachability {
   /** True once we've completed at least one probe. */
@@ -48,9 +72,8 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const probe = async () => {
-      const version = await checkInstanceHealth(sandboxUrl);
+      const isReachable = await probeSandboxReachable(sandboxUrl);
       if (cancelled || !mountedRef.current) return;
-      const isReachable = version !== null;
       setState((prev) => {
         let downSince = prev.downSince;
         if (isReachable) {

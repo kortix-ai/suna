@@ -1,8 +1,12 @@
 import Docker from 'dockerode';
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
 import { getAuthCandidates, getSandboxServiceKeyByExternalId } from '../services/sandbox-auth';
+import { isForbiddenSandboxEnv } from '../sandbox-env';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import type {
   SandboxProvider,
   ProviderName,
@@ -20,6 +24,20 @@ import {
   getSandboxUpdateStatus,
   setUpdateStatus,
 } from './local-docker/status';
+
+// Re-export the public surface so `platform/providers/index.ts` (the only
+// importer) keeps working unchanged.
+export {
+  getImagePullStatus,
+  getSandboxUpdateStatus,
+  resetSandboxUpdateStatus,
+} from './local-docker/status';
+export type {
+  ImagePullStatus,
+  SandboxUpdatePhase,
+  SandboxUpdateStatus,
+  SandboxInfo,
+} from './local-docker/types';
 
 /** Container name — configurable so self-hosted and dev can coexist. */
 const CONTAINER_NAME = config.SANDBOX_CONTAINER_NAME;
@@ -101,6 +119,30 @@ function getSandboxInternalApiUrl(): string {
   }
 
   return `http://host.docker.internal:${config.PORT}`;
+}
+
+/**
+ * Read key=value pairs from the core/docker/.env file.
+ * API keys and credentials that OpenCode needs inside the container.
+ */
+function readSandboxEnv(): string[] {
+  const candidates = [
+    resolve(__dirname, '../../../../../core/docker/.env'),
+    resolve(process.cwd(), 'core/docker/.env'),
+    resolve(process.cwd(), '../../core/docker/.env'),
+  ];
+  for (const envPath of candidates) {
+    try {
+      const content = readFileSync(envPath, 'utf-8');
+      return content
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#') && line.includes('='));
+    } catch {
+      continue;
+    }
+  }
+  return [];
 }
 
 function getDocker(): Docker {
@@ -501,6 +543,7 @@ export class LocalDockerProvider implements SandboxProvider {
     const sandboxApiBase = getSandboxInternalApiUrl();
     const desired: Record<string, string> = {
       KORTIX_API_URL: sandboxApiBase,
+      KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       TUNNEL_API_URL: sandboxApiBase,
     };
 
@@ -774,7 +817,43 @@ export class LocalDockerProvider implements SandboxProvider {
     if (!authToken) {
       authToken = generateSandboxKeyPair().secretKey;
     }
+    const sandboxEnvVars = readSandboxEnv();
+
     const serviceKey = authToken;
+
+    // Vars we set explicitly below — don't let the forwarded .env duplicate them.
+    const MANAGED_VARS = new Set([
+      'KORTIX_TOKEN',
+      'KORTIX_API_URL',
+      'KORTIX_FRONTEND_URL',
+      'TUNNEL_API_URL',
+      'TUNNEL_TOKEN',
+      'SANDBOX_ID',
+      'SANDBOX_VERSION',
+      'INTERNAL_SERVICE_KEY',
+      'PROJECT_ID',
+      'CORS_ALLOWED_ORIGINS',
+    ]);
+
+    // Forward the developer's non-secret env, but NEVER a real provider secret.
+    // The sandbox reaches every upstream (LLM gateway, Tavily, …) through the
+    // kortix-api router with its KORTIX_TOKEN — it must not hold raw keys.
+    const droppedSecrets: string[] = [];
+    const filteredSandboxEnv = sandboxEnvVars.filter((entry) => {
+      const varName = entry.split('=')[0];
+      if (MANAGED_VARS.has(varName)) return false;
+      if (isForbiddenSandboxEnv(varName)) {
+        droppedSecrets.push(varName);
+        return false;
+      }
+      return true;
+    });
+    if (droppedSecrets.length > 0) {
+      console.log(
+        `[LOCAL-DOCKER] Not injecting ${droppedSecrets.length} secret(s) into sandbox ` +
+        `(reached via router with KORTIX_TOKEN): ${droppedSecrets.join(', ')}`,
+      );
+    }
 
     const sandboxApiBase = getSandboxInternalApiUrl();
 
@@ -797,6 +876,7 @@ export class LocalDockerProvider implements SandboxProvider {
       'SALT_FILE_PATH=/persistent/secrets/.salt',
       'ENCRYPTION_KEY_PATH=/persistent/secrets/.encryption-key',
       `KORTIX_API_URL=${sandboxApiBase}`,
+      `KORTIX_FRONTEND_URL=${sandboxFrontendBaseUrl()}`,
       `KORTIX_TOKEN=${authToken}`,
       `INTERNAL_SERVICE_KEY=${serviceKey}`,
       `TUNNEL_API_URL=${sandboxApiBase}`,
@@ -808,6 +888,7 @@ export class LocalDockerProvider implements SandboxProvider {
       'PROJECT_ID=local',
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
+      ...filteredSandboxEnv,
       // The in-sandbox `kortix` CLI authenticates with the project-scoped PAT
       // (KORTIX_CLI_TOKEN), not KORTIX_TOKEN (the service key). Forward it so
       // `kortix cr open` / `secrets` / … work in local sandboxes too — parity
