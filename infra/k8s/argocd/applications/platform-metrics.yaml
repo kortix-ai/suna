@@ -85,10 +85,23 @@ spec:
             enabled: true
             storageClassName: gp2
             size: 5Gi
+          envFromSecret: grafana-github-oauth
           grafana.ini:
             server:
               domain: grafana.kortix.com
               root_url: "%(protocol)s://%(domain)s/"
+            auth:
+              disable_login_form: false
+            auth.github:
+              enabled: true
+              allow_sign_up: true
+              auto_login: false
+              scopes: user:email,read:org
+              auth_url: https://github.com/login/oauth/authorize
+              token_url: https://github.com/login/oauth/access_token
+              api_url: https://api.github.com/user
+              allowed_organizations: kortix-ai
+              role_attribute_path: "'Editor'"
           ingress:
             enabled: true
             ingressClassName: alb
