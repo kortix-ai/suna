@@ -479,7 +479,7 @@ jobs:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
