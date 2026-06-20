@@ -120,3 +120,50 @@ Tooling alone does not equal compliance — several gaps are **process**, not co
 - **Vulnerability management gate** — no Trivy CRITICAL gate on images yet
   (Wave 1), so there's no enforced SLA on shipping known-vulnerable components
   (CC7.1 / OWASP A06).
+
+---
+
+## Implementation status — Waves 1–5 (updated 2026-06-20)
+
+Some items above were written before the waves landed and are now done; this
+section is the current source of truth.
+
+### Done (committed to `eks-migration`, awaiting push/sync — not yet live)
+
+- **Wave 1** — supply-chain scanning (Trivy fs/image/IaC, Checkov, Hadolint,
+  full-history Gitleaks → SARIF), Terraform fmt/validate/tflint + drift, SBOM
+  (syft) + cosign sign/attest + SLSA provenance on the dev image, Dockerfile OCI
+  labels + HEALTHCHECK, Dependabot terraform+docker, ADRs/runbooks/SECURITY.md.
+  The Trivy CRITICAL image gate now exists.
+- **Wave 2** — securityContext (non-root, seccomp, no-priv-esc, drop ALL) on the
+  API + migrate job; readOnlyRootFilesystem opt-in; ServiceMonitor (gated);
+  kortix-dev moved onto the `kortix` Argo project.
+- **Wave 3** — Kyverno + 7 ClusterPolicies (AUDIT), opt-in default-deny
+  NetworkPolicy, PodSecurityAdmission labels, Velero, Falco. Falco runtime
+  detection now exists (sidekick webhook is still a placeholder).
+- **Wave 4** — Alertmanager enabled with routing + inhibition; PrometheusRules
+  with runbook links; Tempo + OTel collector backend. Alerting now exists
+  (Slack/PagerDuty webhooks are placeholders).
+- **Wave 5** — OpenCost cost visibility.
+
+### Still gated — decision- or apply-blocked, NOT safe to add as code yet
+
+- **Progressive delivery (canary)** — the chart ships the Rollout + CloudWatch
+  AnalysisTemplate, but it was deliberately disabled (commit `0860ec1`) and the
+  ECS→EKS cutover isn't final. Enable post-cutover only: `rollout.enabled: true`
+  + `rollout.analysis.enabled: true` in `envs/prod/values.yaml`, then fill
+  `analysis.lbArnSuffix`/`tgArnSuffix` from the live ALB.
+- **Spot node pools (cost)** — add an optional spot node group to `modules/eks`,
+  set it in the dev-eks tfvars (non-prod only). Needs `terraform apply`.
+- **external-dns** — wedged cluster-wide; DNS is manual today. Fix the IRSA/RBAC
+  or remove the controller so desired-state matches reality. Needs apply.
+- **Legacy retirement** — `modules/api-host` (Lightsail) + the ECS `dev`/`prod`
+  import path can be deleted once the EKS cutover is final (kills the drift).
+- **App-side instrumentation** — a Prometheus `/metrics` route + OTel SDK in the
+  API unblock ServiceMonitor scraping, API SLO burn-rate alerts, and traces into
+  Tempo. The backends are deployed and waiting.
+- **SSO + gateway** — `devops.<domain>` ingress + OIDC; replaces the tunnels and
+  the placeholder Grafana admin login.
+- **Real secret wiring** — replace the Slack/PagerDuty placeholders, the Velero
+  S3 bucket + IRSA role, and the Falco sidekick webhook with provisioned values.
+- **DR drill** — `scripts/dr-test.sh` + a real Velero restore to prove RTO/RPO.

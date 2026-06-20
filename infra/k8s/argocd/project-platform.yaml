@@ -20,6 +20,7 @@ spec:
     - https://kyverno.github.io/kyverno/
     - https://falcosecurity.github.io/charts
     - https://vmware-tanzu.github.io/helm-charts
+    - https://opencost.github.io/opencost-helm-chart
   destinations:
     - server: https://kubernetes.default.svc
       namespace: kortix-platform
@@ -31,6 +32,8 @@ spec:
       namespace: falco
     - server: https://kubernetes.default.svc
       namespace: velero
+    - server: https://kubernetes.default.svc
+      namespace: opencost
     # kube-prometheus-stack places kubelet/coredns scrape Services here so it can
     # collect core-component + node/pod metrics. Standard for a monitoring stack.
     - server: https://kubernetes.default.svc
