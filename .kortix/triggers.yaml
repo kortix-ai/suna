@@ -1,0 +1,6 @@
+# Trigger definitions — config only, no runtime state.
+# Runtime state (is_active, last_run, executions) lives in kortix.db.
+# This file is the source of truth for what triggers EXIST.
+# Safe to git commit, branch, and share.
+
+triggers: []

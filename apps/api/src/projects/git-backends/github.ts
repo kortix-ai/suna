@@ -144,7 +144,7 @@ export const githubBackend: GitHostBackend = {
     ref: GitConnectionRef,
     token: string,
     files: SeedFile[],
-    opts: { branch: string; message: string },
+    opts: { branch: string; message: string; baseFiles?: SeedFile[] },
   ): Promise<void> {
     await seedRepoViaGitPush({
       upstreamUrl: ref.upstreamUrl,
@@ -152,6 +152,13 @@ export const githubBackend: GitHostBackend = {
       files,
       branch: opts.branch,
       commitMessage: opts.message,
+      // Deterministic base commit (constant-var render) — committed FIRST so
+      // every project of this starter shares an identical root SHA with the
+      // image-baked scaffold (snapshots/build-context.ts). Without forwarding
+      // this, the project root was the project-named files commit → unrelated
+      // to the baked scaffold → every fresh session full-cloned through the
+      // tunnel instead of delta-fetching one tiny commit (2026-06-13).
+      baseFiles: opts.baseFiles,
     });
   },
 
