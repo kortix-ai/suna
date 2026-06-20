@@ -6,6 +6,7 @@ import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/a
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -14,6 +15,8 @@ import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
 import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 import { allocateSessionRuntime } from './session-runtime-allocator';
@@ -165,6 +168,20 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** New session (brand-new branch == base, no remote commits). Lets the
+   *  daemon create the session branch LOCALLY instead of a redundant network
+   *  fetch of a branch that's identical to base — that fetch cost up to ~10s
+   *  through the dev tunnel (2026-06-13). Restart/resume omit it (their branch
+   *  may carry the agent's pushed commits → real fetch needed). */
+  freshSession?: boolean;
+  /** The project's base-branch tip SHA, resolved server-side (no tunnel). When
+   *  it equals the image-baked scaffold's root SHA — true for a fresh project
+   *  seeded from the starter with no per-project commit — the daemon skips the
+   *  in-guest `git fetch` ENTIRELY (the baked scaffold already IS base), turning
+   *  repo materialization into a pure-local op. That fetch is a zero-object
+   *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
+   *  (2026-06-13). Omitted → daemon delta-fetches as before. */
+  baseSha?: string;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -472,36 +489,150 @@ export async function createProjectSession(input: {
     return { error: { status: 500, body: { error: message, retry: true } } };
   }
 
-  // NOTE: the session branch is NOT pushed to origin here. The sandbox creates
-  // it locally from the base checkout at boot, and publishes it lazily on first
-  // push / change-request creation. Session creation owns durable identity; the
-  // runtime allocator only attaches compute for this exact id.
-  allocateSessionRuntime({
-    sessionId,
-    accountId,
-    projectId,
-    userId,
-    project,
-    providerName,
-    baseRef,
-    agentName,
-    sandboxSlug,
-    sessionMetadata: metadata,
-    runtimeMetadata: input.metadata,
-    extraEnvVars: input.extraEnvVars,
-    buildEnvVars: () => buildSessionSandboxEnvVars({
-      accountId,
-      projectId,
-      sessionId,
-      userId,
-      repoUrl: project.repoUrl,
-      baseRef,
-      agentName,
-      initialPrompt,
-      opencodeModel,
-    }),
-    resolveGitAuthToken: async () => (await resolveProjectGitAuth(project)).auth?.token ?? null,
-  });
+  // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
+  // status endpoint and shows the ConnectingScreen during the long tail.
+  void (async () => {
+    const tl = new ProvisionTimeline(sessionId, 'session-create');
+    try {
+      // Resolve git auth and user env concurrently. Git auth is needed for
+      // background freshness checks / remote branch publishing, but a warm
+      // session can boot from an existing ready snapshot without waiting for it.
+      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
+        tl.mark('git-auth');
+        return gitAuth;
+      });
+      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
+        ...project,
+        gitAuthToken: gitAuth.auth?.token ?? null,
+      }));
+      // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
+      // can skip the in-guest fetch when the baked scaffold already IS base.
+      // Best-effort + timeout-guarded (never block create): on failure/timeout
+      // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
+      // with gitAuth (folded into the env-build chain, not awaited inline).
+      const baseShaPromise = Promise.race([
+        resolveCommitSha(project, baseRef).catch(() => undefined),
+        new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+      ]);
+      const envPromise = baseShaPromise.then((baseSha) =>
+        buildSessionSandboxEnvVars({
+          accountId,
+          projectId,
+          sessionId,
+          userId,
+          repoUrl: project.repoUrl,
+          baseRef,
+          agentName,
+          initialPrompt,
+          opencodeModel,
+          freshSession: true,
+          baseSha,
+        }),
+      ).then((envVars) => {
+        tl.mark('env-vars');
+        return envVars;
+      });
+
+      const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
+        const [current] = await db
+          .select({ metadata: projectSessions.metadata })
+          .from(projectSessions)
+          .where(eq(projectSessions.sessionId, sessionId))
+          .limit(1);
+        const currentMetadata =
+          current?.metadata && typeof current.metadata === 'object'
+            ? (current.metadata as Record<string, unknown>)
+            : {};
+        await db
+          .update(projectSessions)
+          .set({
+            metadata: { ...currentMetadata, ...extra },
+            updatedAt: new Date(),
+          })
+          .where(eq(projectSessions.sessionId, sessionId));
+      };
+
+      // Origin branch creation is publishing work, not readiness work. The
+      // sandbox now creates the session branch locally from the base checkout
+      // immediately, so this remote push runs fully in the background. The
+      // metadata writes that record success/failure are pure telemetry —
+      // fire-and-forget so they never block the IIFE itself.
+      const branchAlreadyCreated =
+        body.branch_already_created === true || body.branchAlreadyCreated === true;
+      const branchPromise: Promise<void> = branchAlreadyCreated
+        ? Promise.resolve()
+        : projectWithGitAuthPromise.then((projectWithGitAuth) =>
+            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
+          ).then(() => {
+            tl.mark('branch-pushed');
+            void mergeSessionMetadata({
+              remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
+            }).catch(() => {});
+          });
+      branchPromise.catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
+        void mergeSessionMetadata({
+          remote_branch: {
+            status: 'failed',
+            branch: sessionId,
+            error: message.slice(0, 500),
+            updated_at: new Date().toISOString(),
+          },
+        }).catch(() => {});
+      });
+
+      const extraEnvVars = {
+        ...(await envPromise),
+        ...(input.extraEnvVars ?? {}),
+      };
+
+      const provisionPromise = provisionSessionSandbox({
+        sandboxId: sessionId,
+        accountId,
+        projectId,
+        userId,
+        provider: providerName,
+        metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        extraEnvVars,
+        gitProject: {
+          projectId,
+          repoUrl: project.repoUrl,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          gitAuthToken: null,
+        },
+        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
+        baseRef,
+        sandboxSlug,
+      });
+
+      // provisionSessionSandbox returns once its row is inserted; provider
+      // create and remote branch push both continue in detached background work.
+      await provisionPromise;
+      tl.mark('kicked');
+      const sessionStartTimeline = tl.log();
+      // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
+      // here used to add ~30-80ms of DB round-trip to every session start.
+      void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
+    } catch (err) {
+      const message = (err as Error)?.message || 'Sandbox provisioning failed';
+      console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
+      try {
+        await db
+          .update(projectSessions)
+          .set({
+            status: 'failed',
+            error: message,
+            metadata: { ...metadata, provisioning_error: message },
+            updatedAt: new Date(),
+          })
+          .where(eq(projectSessions.sessionId, sessionId));
+      } catch (markErr) {
+        console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
+      }
+    }
+  })();
 
   return { row: sessionRow, headers: responseHeaders };
 }

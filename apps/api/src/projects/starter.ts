@@ -7,6 +7,7 @@
  */
 
 export {
+  DEFAULT_STARTER_TEMPLATE_ID,
   getStarterFiles as buildStarterFiles,
   normalizeStarterTemplateId,
 } from '@kortix/starter';

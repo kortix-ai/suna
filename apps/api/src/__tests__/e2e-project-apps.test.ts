@@ -74,10 +74,10 @@ let freestyleResponse: { ok: boolean; status: number; json: () => Promise<unknow
 };
 
 const originalFetch = globalThis.fetch;
-// Intercept only api.freestyle.sh; let everything else pass through.
+// Intercept Freestyle; let everything else pass through.
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = typeof input === 'string' ? input : input?.url ?? '';
-  if (typeof url === 'string' && url.includes('freestyle.sh')) {
+  if (typeof url === 'string' && (url.includes('freestyle.sh') || url.includes('freestyle.test'))) {
     let body: unknown = null;
     try { body = init?.body ? JSON.parse(init.body) : null; } catch { /* ignore */ }
     freestyleCalls.push({ url, method: init?.method ?? 'GET', body });

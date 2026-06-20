@@ -774,7 +774,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(body.session_id).toBeTruthy();
-    expect(branchCreateCalls).toBe(0);
+    expect(branchCreateCalls).toBe(1);
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);

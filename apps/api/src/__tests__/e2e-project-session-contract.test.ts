@@ -1538,7 +1538,7 @@ describe('project session API contract', () => {
     expect(body.sandbox_provider).toBe('daytona');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
-    expect(branchCreateCalls).toBe(0);
+    expect(branchCreateCalls).toBe(1);
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);

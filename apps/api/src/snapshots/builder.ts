@@ -167,9 +167,16 @@ export async function ensureSandboxImage(
   // within the same build window — must produce exactly ONE provider build and
   // ONE build-log row. `daytona.snapshot.create` calls racing under the same
   // name conflict, and duplicate rows are what left two "Building" entries
-  // orphaned in the UI. We dedupe in-process by target snapshot name; the
+  // orphaned in the UI. We dedupe in-process by (provider, snapshot name); the
   // cross-process case (API restart mid-build) is healed by reconcileStaleBuilds.
-  const existing = inflightBuilds.get(identity.snapshotName);
+  //
+  // The provider MUST be part of the key: the same identity can be requested for
+  // two providers at once (e.g. a background reconcile builds on the template's
+  // recorded provider while a session — or a failover — needs it on a DIFFERENT
+  // provider). Keying on the name alone would dedupe the session onto the wrong
+  // provider's build and, when that one fails, fail the session with it.
+  const buildKey = `${buildProvider}:${identity.snapshotName}`;
+  const existing = inflightBuilds.get(buildKey);
   if (existing) return existing;
 
   const buildPromise = runInlineBuild(project, template, identity, {
@@ -177,8 +184,8 @@ export async function ensureSandboxImage(
     accountId: opts.accountId,
     source: opts.source ?? 'session-start',
     buildProvider,
-  }).finally(() => inflightBuilds.delete(identity.snapshotName));
-  inflightBuilds.set(identity.snapshotName, buildPromise);
+  }).finally(() => inflightBuilds.delete(buildKey));
+  inflightBuilds.set(buildKey, buildPromise);
   return buildPromise;
 }
 
@@ -214,6 +221,7 @@ async function runInlineBuild(
       })
     : null;
 
+  const prevSnapshot = template.providerSnapshotName;
   try {
     await provider.buildSnapshot({
       snapshotName: identity.snapshotName,
@@ -226,6 +234,21 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
+      // ONE stateful template, captured WARM (no warm pool, no per-gen snapshots).
+      // KORTIX_WARM_POOL=1 boots the daemon's runPoolMode: scaffold-warm opencode
+      // (project-init to completion) + pin a root session; the capture gates on
+      // the PIN FILE (/var/run/kortix/opencode-session-id) so the snapshot freezes
+      // a genuinely-warm opencode — forks resume runtime-ready (~2s) instead of
+      // the ~6s cold opencode-init wall a bare HTTP gate left. Predecessor pruned
+      // below ⇒ exactly one stateful-<id> snapshot, restore_clone-forked on demand.
+      isShared: !!template.isShared,
+      capture: template.isShared ? 'stateful' : 'none',
+      captureCondition: template.isShared
+        ? { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 }
+        : undefined,
+      captureEnv: template.isShared
+        ? { KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
+        : undefined,
     });
     if (buildId) await closeBuildLogReady(buildId);
     await recordTemplateBuilt(template.templateId, {
@@ -234,6 +257,15 @@ async function runInlineBuild(
       builtFromCommit: identity.builtFromCommit,
       provider: opts.buildProvider,
     });
+    // One-template invariant: a successful rebuild supersedes the previous
+    // snapshot. Delete it so old runtime fingerprints don't accumulate — this
+    // was leaking a full ~8 GB rootfs template per agent-source change (7 stale
+    // copies = 56 GB observed before this fix).
+    if (prevSnapshot && prevSnapshot !== identity.snapshotName) {
+      await provider
+        .deleteSnapshot(prevSnapshot)
+        .catch((e) => console.warn(`[snapshots] prune predecessor ${prevSnapshot} failed: ${e?.message ?? e}`));
+    }
     return {
       snapshotName: identity.snapshotName,
       slug: template.slug,
