@@ -671,6 +671,17 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
   app.route('/internal/gateway', createInternalGatewayRoutes());
 
+  if (
+    config.LLM_GATEWAY_ENABLED &&
+    !config.LLM_GATEWAY_BASE_URL &&
+    !config.LLM_GATEWAY_PROXY_PORT &&
+    !config.LLM_GATEWAY_PROXY_TARGET
+  ) {
+    appLogger.error(
+      '[gateway] LLM_GATEWAY_BASE_URL is unset and no proxy is configured — sandboxes will fall back to the in-API /v1/llm passthrough (OpenRouter-only, wrong catalog shape → single-model picker). Set LLM_GATEWAY_BASE_URL to the standalone gateway URL (e.g. https://gateway.kortix.com/v1/llm).',
+    );
+  }
+
   if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
     const proxyBase = (
       config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
