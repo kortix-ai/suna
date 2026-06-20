@@ -217,3 +217,31 @@ State across prod-eu / dev / preview, and the GitOps gaps.
   won't diff raw values without a release replace); reconciles on next argo chart bump.
 - **Out-of-band secrets** (correct pattern, but move to External Secrets eventually):
   grafana-github-oauth, headlamp-kubeconfig, argocd-secret dex, preview generator token.
+
+## GitOps cutover complete (2026-06-21)
+
+PR #3519 merged to main → manifests on the tracked branch. The platform stack is
+now **self-managing**: `infra/k8s/argocd/platform-app-of-apps.yaml` (Application
+`kortix-platform`, applied once per cluster) manages every platform-*.yaml from
+main — no more manual kubectl apply. Previews revived (ApplicationSet fixed to
+target in-cluster, PR-generator token secret created on dev-eks).
+
+### Functional state — everything Healthy / working
+- prod-eu: kortix-api 3/3, gateway (devops/grafana/argo/cost all gated), full
+  platform stack Healthy. dev: kortix-api 2/2, gateway, previews (pr-3435 Healthy).
+- SSO: Grafana + Argo via GitHub, Headlamp via the gate.
+
+### Remaining (Healthy but not Synced-green) — cosmetic / known, with fix path
+- **console (Headlamp Deployment), logs (Loki StatefulSet), kyverno (CRDs),
+  kyverno-policies (ClusterPolicies) show OutOfSync.** Cause: the charts/operators
+  mutate their own resources (Kyverno autogens pod-controller rules + manages its
+  experimental CRDs; the Headlamp/Loki charts mutate workload fields). All Healthy
+  and functional. CLEAN FIX (follow-up): re-apply these via Argo with ServerSideApply
+  to establish field ownership, then add `ignoreDifferences` with
+  `managedFieldsManagers` per resource. NOT done with broad ignores (would mask real
+  drift). managedFields are currently empty (resources were client-side applied then
+  adopted), which is why manager-scoped ignores don't take yet.
+- **dev kortix-api Progressing**: rolling the securityContext change from the merge;
+  settles to Healthy once the rollout completes.
+- **preview pr-3455 ExternalSecret "could not update Secret"**: the kortix-preview-env
+  bundle / ESO perms for that PR namespace — preview-data issue, not platform.
