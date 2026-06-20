@@ -95,6 +95,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     git \
     openssh-client && \
+    apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # License
