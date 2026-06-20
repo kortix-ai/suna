@@ -9,6 +9,10 @@ image:
 kortixVersion: "0.9.64"
 env:
   internalKortixEnv: prod
+extraEnv:
+  # Keep the warm sandbox pool globally off in prod. Projects can still opt in
+  # once the operator gate is re-enabled; this override forces the gate closed.
+  KORTIX_WARM_POOL_ENABLED: "false"
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
 # ECS, so EKS runs API-only and ECS keeps ownership of the singleton workers
 # (one Postgres leader lease is shared across both). At cutover, flip this to
