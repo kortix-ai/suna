@@ -12,6 +12,7 @@ import {
   getGatewayLog,
   getGatewayOverview,
   getGatewaySeries,
+  getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
   runGatewayPlayground,
@@ -41,6 +42,15 @@ export function useGatewayBreakdown(projectId: string | undefined, days = 30) {
   return useQuery({
     queryKey: ['project-gateway-breakdown', projectId, days],
     queryFn: () => getGatewayBreakdown(projectId!, days),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+export function useGatewaySessions(projectId: string | undefined, days = 30) {
+  return useQuery({
+    queryKey: ['project-gateway-sessions', projectId, days],
+    queryFn: () => getGatewaySessions(projectId!, days),
     enabled: !!projectId,
     staleTime: 30_000,
   });

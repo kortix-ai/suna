@@ -2,6 +2,7 @@ export interface AuthedPrincipal {
   userId: string;
   accountId: string;
   projectId?: string;
+  sessionId?: string;
   keyId?: string;
 }
 

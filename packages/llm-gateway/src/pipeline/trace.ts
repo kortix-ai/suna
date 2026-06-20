@@ -38,6 +38,7 @@ export function createTraceEmitter(
       accountId: fields.accountId ?? '',
       actorUserId: fields.actorUserId ?? '',
       projectId: fields.projectId,
+      sessionId: fields.sessionId,
       keyId: fields.keyId,
       requestedModel: fields.requestedModel ?? '',
       resolvedModel: fields.resolvedModel ?? fields.requestedModel ?? '',

@@ -81,6 +81,7 @@ export async function handleChatCompletions(
     accountId: principal.accountId,
     actorUserId: principal.userId,
     projectId: principal.projectId,
+    sessionId: principal.sessionId,
     keyId: principal.keyId,
   };
 

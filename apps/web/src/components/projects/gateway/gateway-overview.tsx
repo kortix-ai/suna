@@ -20,6 +20,7 @@ import {
   useGatewayErrors,
   useGatewayOverview,
   useGatewaySeries,
+  useGatewaySessions,
 } from '@/hooks/projects/use-project-gateway';
 
 const RANGES = [
@@ -197,6 +198,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const { data: overview } = useGatewayOverview(projectId, days);
   const { data: seriesData } = useGatewaySeries(projectId, days);
   const { data: breakdown } = useGatewayBreakdown(projectId, days);
+  const { data: sessionsData } = useGatewaySessions(projectId, days);
   const { data: errorData } = useGatewayErrors(projectId, days);
 
   const requests = overview?.requests ?? 0;
@@ -209,6 +211,8 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const sparkSeries = series.map((s) => ({ ...s, tokens: s.input_tokens + s.output_tokens }));
   const models = breakdown?.models ?? [];
   const maxModelRequests = Math.max(1, ...models.map((m) => m.requests));
+  const sessions = sessionsData?.sessions ?? [];
+  const maxSessionCost = Math.max(0.000001, ...sessions.map((s) => s.cost));
   const errorTypes = errorData?.errors ?? [];
   const maxErrorCount = Math.max(1, ...errorTypes.map((e) => e.count));
 
@@ -357,6 +361,49 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                       <div
                         className="h-full rounded-full transition-[width] duration-700 ease-out"
                         style={{ width: `${(m.requests / maxModelRequests) * 100}%`, backgroundColor: accent }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="Top sessions"
+          count={sessions.length}
+          description="Highest-spend sessions across this window"
+        >
+          {sessions.length === 0 ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {sessions.map((s, i) => {
+                const accent = modelAccent(s.session_id);
+                return (
+                  <div key={s.session_id} className="min-w-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="flex size-5 shrink-0 items-center justify-center rounded-md text-xs font-semibold tabular-nums"
+                          style={{ backgroundColor: tint(accent, 14), color: accent }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span className="truncate font-mono text-xs text-foreground">
+                          {s.session_id.slice(0, 8)}
+                        </span>
+                      </div>
+                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                        {s.requests.toLocaleString()} req · {s.models} model{s.models === 1 ? '' : 's'} ·{' '}
+                        {fmtUsd(s.cost)}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-primary/[0.06]">
+                      <div
+                        className="h-full rounded-full transition-[width] duration-700 ease-out"
+                        style={{ width: `${(s.cost / maxSessionCost) * 100}%`, backgroundColor: accent }}
                       />
                     </div>
                   </div>

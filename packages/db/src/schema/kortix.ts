@@ -1339,6 +1339,7 @@ export const accountTokens = kortixSchema.table(
      *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
      *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
     agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
+    sessionId: text('session_id'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -1650,6 +1651,7 @@ export const gatewayRequestLogs = kortixSchema.table(
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
     actorUserId: uuid('actor_user_id'),
+    sessionId: text('session_id'),
     keyId: uuid('key_id'),
     requestedModel: text('requested_model').notNull(),
     resolvedModel: text('resolved_model').notNull(),
@@ -1679,6 +1681,7 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
     index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
     index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
+    index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
   ],
 );
 

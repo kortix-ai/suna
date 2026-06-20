@@ -86,6 +86,21 @@ export interface GatewayBreakdown {
   models: GatewayModelStat[];
 }
 
+export interface GatewaySessionStat {
+  session_id: string;
+  requests: number;
+  errors: number;
+  cost: number;
+  tokens: number;
+  models: number;
+  last_at: string;
+}
+
+export interface GatewaySessions {
+  window_days: number;
+  sessions: GatewaySessionStat[];
+}
+
 export interface GatewayBudgetRow {
   budget_id: string;
   scope: 'project' | 'member';
@@ -188,6 +203,14 @@ export async function getGatewayBreakdown(projectId: string, days?: number): Pro
   return unwrap(
     await backendApi.get<GatewayBreakdown>(
       `/projects/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
+    ),
+  );
+}
+
+export async function getGatewaySessions(projectId: string, days?: number): Promise<GatewaySessions> {
+  return unwrap(
+    await backendApi.get<GatewaySessions>(
+      `/projects/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
     ),
   );
 }

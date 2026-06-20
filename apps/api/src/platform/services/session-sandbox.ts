@@ -119,6 +119,7 @@ async function mintExecutorToken(opts: {
       accountId: opts.accountId,
       userId: opts.userId,
       projectId: opts.projectId,
+      sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
     });

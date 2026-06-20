@@ -284,6 +284,62 @@ projectsApp.openapi(
 projectsApp.openapi(
   createRoute({
     method: 'get',
+    path: '/{projectId}/gateway/sessions',
+    tags: ['gateway'],
+    summary: 'GET /:projectId/gateway/sessions',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ days: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Gateway spend by session'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
+    const rows = await db
+      .select({
+        sessionId: gatewayRequestLogs.sessionId,
+        requests: sql<number>`count(*)::int`,
+        errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
+        models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
+        lastAt: sql<string>`max(${gatewayRequestLogs.createdAt})`,
+      })
+      .from(gatewayRequestLogs)
+      .where(
+        and(
+          eq(gatewayRequestLogs.projectId, projectId),
+          sql`${gatewayRequestLogs.sessionId} is not null`,
+          sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
+        ),
+      )
+      .groupBy(gatewayRequestLogs.sessionId)
+      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`))
+      .limit(50);
+
+    return c.json({
+      window_days: days,
+      sessions: rows.map((r) => ({
+        session_id: r.sessionId,
+        requests: r.requests,
+        errors: r.errors,
+        cost: r.cost,
+        tokens: Number(r.tokens),
+        models: r.models,
+        last_at: r.lastAt,
+      })),
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
     path: '/{projectId}/gateway/breakdown',
     tags: ['gateway'],
     summary: 'GET /:projectId/gateway/breakdown',

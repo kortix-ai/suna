@@ -45,6 +45,7 @@ export function createInternalGatewayRoutes() {
           userId: account.userId,
           accountId: account.accountId,
           projectId: account.projectId ?? undefined,
+          sessionId: account.sessionId ?? undefined,
         },
       });
     }
@@ -128,6 +129,7 @@ export function createInternalGatewayRoutes() {
       requestId: trace.requestId,
       accountId: trace.accountId,
       projectId: trace.projectId,
+      sessionId: trace.sessionId,
       actorUserId: trace.actorUserId,
       keyId: trace.keyId,
       requestedModel: trace.requestedModel ?? '',

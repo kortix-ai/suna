@@ -5,6 +5,7 @@ export interface GatewayTraceInput {
   requestId: string;
   accountId: string;
   projectId?: string | null;
+  sessionId?: string | null;
   actorUserId?: string | null;
   keyId?: string | null;
   requestedModel: string;
@@ -46,6 +47,7 @@ export async function recordGatewayTrace(input: GatewayTraceInput): Promise<void
       requestId: input.requestId,
       accountId: input.accountId,
       projectId: input.projectId || null,
+      sessionId: input.sessionId || null,
       actorUserId: input.actorUserId || null,
       keyId: input.keyId || null,
       requestedModel: input.requestedModel,
