@@ -13,7 +13,7 @@
 #
 # Docs: https://docs.kortix.ai/projects/sandbox
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/usr/local/bin:/opt/supabase:/root/.bun/bin:$PATH
