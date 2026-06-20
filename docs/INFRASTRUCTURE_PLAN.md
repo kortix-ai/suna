@@ -1,4 +1,4 @@
-# Enterprise Infrastructure Remediation Plan
+# Infrastructure Remediation Plan
 
 > Status: **DRAFT — awaiting sign-off before implementation (Phase 3).**
 > Scope: `suna-eks-migration` — EKS (prod eu-west-2, dev us-west-2) + Argo CD GitOps + ECS legacy.
