@@ -66,7 +66,9 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/agent-browser/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
+  '.kortix/opencode/skills/kortix-slack/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
@@ -80,7 +82,6 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
-  '.kortix/opencode/skills/kortix-slack/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
   '.kortix/opencode/tools/memory.ts',
@@ -185,6 +186,7 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
   reconcileProjectTemplates: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
@@ -260,6 +262,7 @@ mock.module('../projects/github', () => ({
         description: null,
       }]
     : [],
+  isOrgAccount: async () => true,
   isGithubAppConfigured: () => true,
 }));
 
@@ -316,6 +319,7 @@ async function selectRowsForTable(table: unknown) {
 }
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -494,6 +498,7 @@ describe('create-repo starter scaffold contract', () => {
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.toml');
     expect(manifest?.content).toContain('name = "Company OS"');
+    expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 
   test('defaults to the general knowledge worker starter scaffold', () => {
@@ -509,6 +514,7 @@ describe('create-repo starter scaffold contract', () => {
     expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
     expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/brand-voice/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
+    expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
   });
 
   test('manages account GitHub App installation metadata through the project API', async () => {

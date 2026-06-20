@@ -47,7 +47,9 @@ function DeviceAuthorize() {
   const deny = useDenyDeviceAuth();
 
   const [name, setName] = useState('');
-  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set(['filesystem', 'shell']));
+  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(
+    new Set(['filesystem', 'shell', 'desktop']),
+  );
   const [done, setDone] = useState<'approved' | 'denied' | null>(null);
 
   useEffect(() => {
@@ -225,8 +227,8 @@ function DeviceAuthorize() {
 
             {/* Capabilities */}
             <div className="mb-6 space-y-1">
-              {CAPABILITY_REGISTRY.filter(
-                (cap) => cap.key === 'filesystem' || cap.key === 'shell',
+              {CAPABILITY_REGISTRY.filter((cap) =>
+                ['filesystem', 'shell', 'desktop'].includes(cap.key),
               ).map((cap) => {
                 const Icon = cap.icon;
                 const selected = selectedCaps.has(cap.key);
