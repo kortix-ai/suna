@@ -133,3 +133,7 @@ infra/terraform/**/*.tfvars
 
 apps/mobile/.env.example
 .cursorignore
+
+# local Headlamp login token (ephemeral, do not commit)
+headlamp-token.txt
+grafana-creds.txt

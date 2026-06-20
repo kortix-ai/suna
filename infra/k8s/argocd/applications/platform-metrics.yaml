@@ -1,0 +1,88 @@
+# Metrics + dashboards — kube-prometheus-stack (Prometheus + Grafana + node /
+# kube-state metrics + curated dashboards). Grafana is the single observability
+# pane for the console; it carries a Loki datasource (platform-logs) so logs and
+# metrics share one UI. Behind the tunnel today; lands under devops.<domain>/grafana
+# in the hosting phase.
+#
+# Single-source: chart from the upstream helm repo, all config inline.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-metrics
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 86.3.2
+    helm:
+      releaseName: kps
+      values: |
+        fullnameOverride: kps
+        # EKS runs the control plane — these scrape targets aren't reachable,
+        # so disable them to avoid permanently-down targets/alerts.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        alertmanager:
+          enabled: false
+        grafana:
+          enabled: true
+          service:
+            type: ClusterIP
+          persistence:
+            enabled: true
+            storageClassName: gp2
+            size: 5Gi
+          # Default login is admin / prom-operator (tunnel only). OIDC SSO
+          # replaces this in the hosting phase — no real secret in git.
+          # The Loki datasource comes from loki-stack (auto-discovered by the
+          # sidecar), so it isn't redeclared here.
+          #
+          # Hosting phase: add grafana.ini.server.root_url +
+          # serve_from_sub_path:true to serve under devops.<domain>/grafana.
+          # (Left off now so the tunnel serves Grafana at :3000 root — with the
+          # subpath on, :3000/ 301-redirects to :80/grafana/ and breaks.)
+        prometheus:
+          prometheusSpec:
+            retention: 7d
+            # Accept remote_write from the dev-us cluster's agent (cross-region pane).
+            enableRemoteWriteReceiver: true
+            resources:
+              requests:
+                cpu: 200m
+                memory: 1Gi
+              limits:
+                memory: 2Gi
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  storageClassName: gp2
+                  resources:
+                    requests:
+                      storage: 20Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
