@@ -1,82 +1,51 @@
 'use client';
 
-import { toast } from '@/lib/toast';
-import { CalendarDays, Mail, MessageCircle, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import Image from 'next/image';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { successToast } from '@/components/ui/toast';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
+import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isWorkEmail } from '@/lib/personal-email';
 import { cn } from '@/lib/utils';
+import { TelephoneSolid } from '@mynaui/icons-react';
+import Link from 'next/link';
 
-// Public team demo event (cal.com/team/kortix/demo). Namespace stays unique to
-// this surface so the embed's UI config doesn't collide with other instances.
 const MARKO_CAL_LINK = 'team/kortix/demo';
 const MARKO_CAL_NAMESPACE = 'kortix-onboarding';
 const MARKO_EMAIL = 'marko@kortix.ai';
 const MARKO_WHATSAPP = '17372940835';
 const STORAGE_KEY = 'kortix:marko-welcome-dismissed';
 
-function useDismissed(): [boolean, () => void, boolean] {
-  const [dismissed, setDismissed] = useState(true);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      setDismissed(localStorage.getItem(STORAGE_KEY) === '1');
-    } catch {
-      setDismissed(false);
-    }
-    setHydrated(true);
-  }, []);
-
-  const dismiss = useCallback(() => {
-    setDismissed(true);
-    try {
-      localStorage.setItem(STORAGE_KEY, '1');
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  return [dismissed, dismiss, hydrated];
-}
-
-export function PersonalOnboardingWelcome({
-  projectId,
-}: {
-  /** When provided, the widget hides while that project's onboarding
-   *  wizard is still pending — so the user only sees one CTA at a time. */
-  projectId?: string;
-} = {}) {
+export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } = {}) {
   const { user } = useAuth();
   const tier = usePersonalContactTier();
   const isPaid = tier === 'personal';
-  const [dismissed, dismiss, hydrated] = useDismissed();
+  const [dismissed, setDismissed] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
   const [qualifierOpen, setQualifierOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
   const onboarding = useProjectOnboarding(projectId ?? '');
   const wizardPending = !!projectId && onboarding.hydrated && onboarding.status === 'pending';
 
-  // Slide-in once dismissed-state has hydrated and we know we should render.
   useEffect(() => {
-    if (!hydrated || dismissed) {
-      setVisible(false);
-      return;
-    }
-    const t = window.setTimeout(() => setVisible(true), 60);
-    return () => window.clearTimeout(t);
-  }, [hydrated, dismissed]);
+    setDismissed(localStorage.getItem(STORAGE_KEY) === '1');
+    setHydrated(true);
+  }, []);
 
-  // Show the enterprise-demo card to any cloud signup on a WORK email — those
-  // are the real leads. Self-hosters (flag off → tier 'none') and personal/free
-  // inboxes (gmail, outlook, …) never see it. The BOOKING is further screened
-  // to 11+ employees via the qualifier below; the personal WhatsApp line stays
-  // a paid-only perk.
   if (tier === 'none') return null;
   if (!isWorkEmail(user?.email)) return null;
   if (!hydrated || dismissed) return null;
@@ -88,94 +57,82 @@ export function PersonalOnboardingWelcome({
     '';
   const defaultEmail = user?.email ?? '';
 
+  const dismiss = () => {
+    setDismissed(true);
+    localStorage.setItem(STORAGE_KEY, '1');
+  };
+
+  const copyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(MARKO_EMAIL);
+      successToast('Email copied');
+    } catch {
+      window.location.href = `mailto:${MARKO_EMAIL}`;
+    }
+  };
+
   return (
     <>
-      <div
+      <Card
         className={cn(
-          'fixed z-40 transition-all duration-300 ease-out',
+          'bg-sidebar fixed z-40 gap-4 py-4 shadow-sm',
           'right-4 bottom-4 sm:right-6 sm:bottom-6',
-          'w-[min(480px,calc(100vw-2rem))]',
-          visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0',
+          'w-[min(500px,calc(100vw-2rem))]',
         )}
         role="complementary"
         aria-label="Welcome from Marko"
       >
-        <div className="border-border/60 bg-card relative overflow-hidden rounded-2xl border shadow-lg">
-          <button
-            type="button"
-            onClick={dismiss}
-            aria-label="Dismiss"
-            className={cn(
-              'absolute top-4 right-4 z-10 grid size-8 place-items-center rounded-full',
-              'text-muted-foreground/70 hover:bg-muted hover:text-foreground',
-              'transition-colors',
-            )}
-          >
-            <X className="size-4" />
-          </button>
-
-          <div className="relative flex flex-col gap-5 p-6 sm:p-7">
-            <div className="flex items-start gap-4">
-              <div className="border-border/60 bg-muted relative size-12 shrink-0 overflow-hidden rounded-2xl border">
-                <Image
-                  src="/marko.png"
-                  alt="Marko Kraemer"
-                  width={96}
-                  height={96}
-                  priority
-                  className="size-full object-cover"
-                />
-              </div>
-
-              <div className="min-w-0 flex-1 pr-8">
-                <h2 className="text-foreground text-base font-semibold tracking-tight">
-                  Hey, I&rsquo;m Marko
-                </h2>
-                <p className="text-muted-foreground mt-0.5 text-sm">Founder &amp; CEO, Kortix</p>
-              </div>
+        <CardHeader className="px-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-muted border-overlay size-10 shrink-0 overflow-hidden rounded-md">
+              <Image
+                src="/marko.png"
+                alt="Marko Kraemer"
+                width={80}
+                height={80}
+                className="img-outline size-full object-cover"
+              />
             </div>
-
-            <p className="text-foreground/90 text-sm leading-relaxed">
-              Want a hand setting up your company&rsquo;s AI command center?
-              {isPaid
-                ? ' Book a call or send me a WhatsApp message whenever you need help.'
-                : ' Book a demo and I’ll walk you through it.'}
-            </p>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => setQualifierOpen(true)}>
-                <CalendarDays />
-                Book a demo
-              </Button>
-              {isPaid && (
-                <Button asChild variant="outline">
-                  <a href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
-                    <MessageCircle />
-                    WhatsApp
-                  </a>
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(MARKO_EMAIL);
-                    toast.success('Email copied');
-                  } catch {
-                    window.location.href = `mailto:${MARKO_EMAIL}`;
-                  }
-                }}
-              >
-                <Mail />
-                {MARKO_EMAIL}
-              </Button>
+            <div className="min-w-0">
+              <CardTitle className="text-balance">Hey, I&rsquo;m Marko</CardTitle>
+              <CardDescription>Founder &amp; CEO, Kortix</CardDescription>
             </div>
           </div>
-        </div>
-      </div>
+          <CardAction>
+            <Button variant="ghost" size="icon" onClick={dismiss} aria-label="Dismiss">
+              <X />
+            </Button>
+          </CardAction>
+        </CardHeader>
 
-      {/* Same screening gate as the public demo: teams under 11 are captured
-          as a lead and confirmed, not put onto Marko's calendar. */}
+        <CardContent className="px-4">
+          <p className="text-foreground/90 text-sm leading-relaxed text-pretty">
+            Want a hand setting up your company&rsquo;s AI command center?
+            {isPaid
+              ? ' Book a call or send me a WhatsApp message whenever you need help.'
+              : ' Book a demo and I’ll walk you through it.'}
+          </p>
+        </CardContent>
+
+        <CardFooter className="flex-wrap gap-2 px-4">
+          <Button size="sm" onClick={() => setQualifierOpen(true)}>
+            <TelephoneSolid />
+            Book a demo
+          </Button>
+          {isPaid && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
+                <Icon.WhatsApp />
+                WhatsApp
+              </Link>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={copyEmail}>
+            {MARKO_EMAIL}
+          </Button>
+        </CardFooter>
+      </Card>
+
       <DemoQualifierModal
         open={qualifierOpen}
         onOpenChange={setQualifierOpen}

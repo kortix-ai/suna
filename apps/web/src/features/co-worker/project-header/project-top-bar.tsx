@@ -8,10 +8,7 @@ import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useSidebar } from '@/components/ui/sidebar';
-import {
-  SessionVisibilityBadge,
-  ShareSessionModal,
-} from '@/features/co-worker/project-sidebar/modal/share-session-modal';
+import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import { Icon } from '@/features/icon/icon';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
@@ -83,7 +80,7 @@ function ProjectSessionTab({
   );
 }
 
-export function ProjectTabBar({
+export function ProjectTopBar({
   projectId,
   hideTabSelector = false,
 }: {
@@ -234,7 +231,6 @@ export function ProjectTabBar({
       >
         {activeSession && (
           <>
-            <SessionVisibilityBadge session={activeSession} />
             {activeSession.can_manage_sharing !== false && (
               <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)}>
                 <Share className="size-3.5" />

@@ -102,6 +102,18 @@ externalSecrets:
   targetSecretName: kortix-api-env # synced k8s Secret
   refreshInterval: 1h
 
+# Drizzle migrations as an Argo CD PreSync hook (templates/migrate-job.yaml):
+# runs `db:migrate` before the Deployment rolls, gating the release on schema.
+# Enable in the env that OWNS the data plane (true for prod); leave false for a
+# pre-prod/canary that shares another env's DB and must never migrate it.
+migrate:
+  enabled: false
+  backoffLimit: 0 # fail fast — a bad migration should stop the release, not retry blindly
+  activeDeadlineSeconds: 600
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
+
 # Always-injected non-secret env (PORT is also set from containerPort).
 extraEnv: {}
 

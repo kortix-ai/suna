@@ -1,12 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 
+import Hint from '@/components/ui/hint';
 import { IconApp } from '@/components/ui/kortix-icons';
-import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { useIsMobile } from '@/hooks/utils';
 import { getProjectDetail } from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
 import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
 
 function useAppsEnabled(projectId: string): boolean {
@@ -19,9 +20,20 @@ function useAppsEnabled(projectId: string): boolean {
   return data?.project?.apps_enabled ?? false;
 }
 
+function useAppsActivate() {
+  const openApps = useAppsOverlayStore((s) => s.openApps);
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
+
+  return useCallback(() => {
+    openApps();
+    if (isMobile) setOpenMobile(false);
+  }, [openApps, isMobile, setOpenMobile]);
+}
+
 export function ProjectAppsNavItem({ projectId }: { projectId: string }) {
   const enabled = useAppsEnabled(projectId);
-  const openApps = useAppsOverlayStore((s) => s.openApps);
+  const onClick = useAppsActivate();
   const overlayOpen = useAppsOverlayStore((s) => s.open);
 
   if (!enabled) return null;
@@ -29,9 +41,10 @@ export function ProjectAppsNavItem({ projectId }: { projectId: string }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
-        onClick={() => openApps()}
+        onClick={onClick}
         isActive={overlayOpen}
-        className="transform-none !text-sm font-normal !transition-none data-[active=true]:font-normal [&_svg]:!size-4"
+        tooltip="Apps"
+        className="text-sm! font-medium [&_svg]:size-4!"
       >
         <IconApp />
         <span>Apps</span>
@@ -42,31 +55,15 @@ export function ProjectAppsNavItem({ projectId }: { projectId: string }) {
 
 export function ProjectAppsRailItem({ projectId }: { projectId: string }) {
   const enabled = useAppsEnabled(projectId);
-  const openApps = useAppsOverlayStore((s) => s.openApps);
-  const overlayOpen = useAppsOverlayStore((s) => s.open);
+  const onClick = useAppsActivate();
 
   if (!enabled) return null;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label="Apps"
-          onClick={() => openApps()}
-          className={cn(
-            'flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out',
-            overlayOpen
-              ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-              : 'text-sidebar-foreground hover:bg-sidebar-accent',
-          )}
-        >
-          <IconApp className="size-4" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={12} className="text-xs">
-        Apps
-      </TooltipContent>
-    </Tooltip>
+    <Hint label="Apps">
+      <SidebarMenuButton type="button" aria-label="Apps" onClick={onClick}>
+        <IconApp className="size-4.5!" />
+      </SidebarMenuButton>
+    </Hint>
   );
 }

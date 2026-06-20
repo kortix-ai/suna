@@ -18,6 +18,17 @@ env:
 workers:
   enabled: false
 
+# Drizzle migrations as a PreSync hook before each rollout (gates the release on
+# schema). The hook (templates/migrate-job.yaml) is in place and ready, but is
+# DISABLED on prod until the prod Drizzle ledger is baselined: prod's schema was
+# built out-of-band (manual psql) so drizzle.__drizzle_migrations records only 1
+# of the 11 committed migrations. Enabling now would make `db:migrate` re-apply
+# already-applied migrations and fail the release. Flip to true ONLY after a
+# one-time, gated baseline reconciles the ledger to the live schema (see the
+# `migration` skill: show SQL, test on a throwaway DB, get go-ahead).
+migrate:
+  enabled: false
+
 # Prod sizing / HA (chart defaults are already prod-tuned; pinned here explicitly).
 replicas: 3
 autoscaling:
@@ -49,14 +60,14 @@ serviceAccount:
 
 externalSecrets:
   enabled: true
-  region: us-west-2
+  region: eu-west-2
   secretName: kortix-prod-env
   targetSecretName: kortix-api-env
 
 ingress:
   enabled: true
   host: api-eks.kortix.com
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
+  certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/27dd2310-c468-428c-b97a-ec46b1eed6fd
   cloudflareProxied: true
 
 # Plain rolling Deployment (no canary). The EKS wins we actually want —

@@ -109,7 +109,8 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async () => {},
 }));
 
-const { spawnAgentTurn } = await import('../channels/slack/dispatch');
+const { spawnAgentTurn, dispatchSlackEvent } = await import('../channels/slack/dispatch');
+const { inboundMessageKey } = await import('../channels/slack/dedup');
 const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
 
 const envelope = { team_id: 'T1', event: undefined } as any;
@@ -208,5 +209,60 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     await spawnAgentTurn('proj-1', envelope, event);
     expect(createSessionCalls).toBe(0); // never a shadow session
     expect(deliverCalls).toBe(1); // delivered into the winner's session as a follow-up
+  });
+});
+
+// The exactly-once gate is THE regression guard for "@Kortix answered the same
+// question 3×". Slack delivers one user message as several events (a channel
+// @mention arrives as BOTH `app_mention` and `message`), can retry it with a
+// fresh event_id, and fans it across replicas — every one of which shares the
+// message's (team, channel, ts). The key collapses them to one identity, and
+// dispatchSlackEvent claims it atomically before ever spawning the turn.
+describe('inboundMessageKey — one message ⇒ one identity', () => {
+  test('app_mention and message of the SAME message yield the SAME key', () => {
+    const k1 = inboundMessageKey('T1', { channel: 'C1', ts: '100.1' }); // app_mention
+    const k2 = inboundMessageKey('T1', { channel: 'C1', ts: '100.1' }); // sibling message
+    expect(k1).toBe('slack:msg:T1:C1:100.1');
+    expect(k2).toBe(k1);
+  });
+
+  test('distinct messages → distinct keys; missing coordinates → null (no gate)', () => {
+    expect(inboundMessageKey('T1', { channel: 'C1', ts: '100.1' })).not.toBe(
+      inboundMessageKey('T1', { channel: 'C1', ts: '200.2' }),
+    );
+    expect(inboundMessageKey('T1', { ts: '100.1' })).toBeNull();
+    expect(inboundMessageKey('', { channel: 'C1', ts: '100.1' })).toBeNull();
+  });
+});
+
+describe('dispatchSlackEvent — exactly-once per inbound user message', () => {
+  const mention = (ts: string) =>
+    ({ team_id: 'T1', event: { type: 'app_mention', channel: 'C1', ts, user: 'U1', thread_ts: '90.0', text: 'hi' } }) as any;
+
+  test('a LOST message claim → the agent does NOT run (duplicate suppressed)', async () => {
+    deliverOutcome = 'delivered';
+    dbResults = [[]]; // claimInboundMessage → LOST: a sibling delivery already owns this message
+    await dispatchSlackEvent('proj-1', mention('100.1'));
+    expect(deliverCalls).toBe(0);
+    expect(createSessionCalls).toBe(0);
+  });
+
+  test('WON claim runs once; an immediate redelivery (LOST claim) does NOT answer again', async () => {
+    deliverOutcome = 'delivered';
+    // Delivery #1 — claim WON, known thread, delivered into the existing session.
+    dbResults = [
+      [{ eventId: 'slack:msg:T1:C1:100.1' }], // claimInboundMessage → WON
+      [{ sessionId: 'sess-1' }], // chat_threads lookup (known thread)
+      [], // update lastMessageAt
+    ];
+    await dispatchSlackEvent('proj-1', mention('100.1'));
+    expect(deliverCalls).toBe(1);
+
+    // Delivery #2 — the SAME message redelivered (fan-out / retry / other replica):
+    // a fresh event_id slips past the envelope dedup, but the message claim is lost.
+    dbResults = [[]]; // claimInboundMessage → LOST
+    await dispatchSlackEvent('proj-1', mention('100.1'));
+    expect(deliverCalls).toBe(1); // still ONE — no second answer for the same question
+    expect(createSessionCalls).toBe(0);
   });
 });

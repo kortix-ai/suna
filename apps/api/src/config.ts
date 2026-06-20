@@ -131,15 +131,15 @@ const envSchema = z.object({
   // Warm sandbox pool (re-introduced behind the session runtime allocator: a
   // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
   // bound to a session id on create — decoupled from the durable session row).
-  // Per-project desired spare count (operator default; per-project UI value
-  // overrides). Only matters once MAX_TOTAL > 0.
-  KORTIX_WARM_POOL_SIZE:           optInt(2),
-  // Global cap on total warm (pre-booted, unclaimed) spares across all projects
-  // — bounds idle cost + the Daytona quota. MASTER KILL SWITCH: default 0 =
-  // warm pool DISABLED fleet-wide (warmPoolEnabled() false → the allocator's
-  // claim path is skipped and every create cold-provisions, byte-identically to
-  // today). Set > 0 to enable — only after live-validating the claim path.
-  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
+  // Per-template default ready-count when a template is first opted in via the
+  // UI (per-template UI value overrides). Only matters when the pool is enabled.
+  KORTIX_WARM_POOL_SIZE:           optInt(1),
+  // Master on/off for the warm pool subsystem. Default ON = the feature is
+  // AVAILABLE: the per-template opt-in toggles render in Customize → Sandbox, but
+  // every template still defaults OFF, so nothing warms — and nothing is billed —
+  // until a template is explicitly opted in. Set false to kill the subsystem
+  // fleet-wide (allocator skips the claim path; every create cold-provisions).
+  KORTIX_WARM_POOL_ENABLED:        optBoolTrue,
   // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
   // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
   // base branch + warm the opencode project plugin AT PARK — so a claim only
@@ -550,7 +550,7 @@ export const config = {
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
-  KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
+  KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
   KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,

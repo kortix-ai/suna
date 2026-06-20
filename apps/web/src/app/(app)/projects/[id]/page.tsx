@@ -1,27 +1,21 @@
 'use client';
 
-import { errorToast } from '@/components/ui/toast';
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
 } from '@/features/co-worker/project-layout/project-home';
 import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { isBillingEnabled } from '@/lib/config';
-import {
-  createProjectSession,
-  getProjectDetail,
-  prefetchSessionStart,
-} from '@/lib/projects-client';
+import { getProjectDetail } from '@/lib/projects-client';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
+import { useCallback } from 'react';
 
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
-  const router = useRouter();
-  const queryClient = useQueryClient();
 
   const { data: projectDetail } = useQuery({
     queryKey: ['project-detail', projectId],
@@ -32,12 +26,14 @@ export default function ProjectIndexPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
-  const [busy, setBusy] = useState(false);
+  const newSession = useNewProjectSession(projectId);
 
   const handleSend = useCallback(
-    async (text: string, options?: ProjectHomeSendOptions) => {
-      if (!text.trim() || busy) return;
+    (text: string, options?: ProjectHomeSendOptions) => {
+      if (!text.trim()) return;
 
+      // Gate no-plan accounts before navigating so we never strand the user on a
+      // shell that can't provision — pitch the upgrade in place instead.
       const noPlan =
         isBillingEnabled() && !!accountState && !accountState.subscription?.subscription_id;
       if (noPlan) {
@@ -45,35 +41,23 @@ export default function ProjectIndexPage() {
         return;
       }
 
-      setBusy(true);
-      try {
-        const created = await createProjectSession(projectId, {
-          initial_prompt: text,
-          ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
-        });
-        const sessionId = created.session_id;
-        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        prefetchSessionStart(queryClient, projectId, sessionId);
-        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
-        router.push(`/projects/${projectId}/sessions/${sessionId}`);
-      } catch (err) {
-        setBusy(false);
-        const code = (err as any)?.code;
-        if (code === 'concurrent_session_limit') return;
-        if (code === 'subscription_required' || code === 'no_account') {
-          const blockedAccountId = (err as any)?.detail?.account_id ?? projectAccountId;
-          openUpgradeDialog({ reason: code, accountId: blockedAccountId });
-          return;
-        }
-        errorToast(err instanceof Error ? err.message : 'Failed to start session');
-      }
+      // Identical optimistic path to every other new-session entry point: mint the
+      // id, paint the instant shell, and let the session page auto-send `text` once
+      // the box is ready. No server-side initial_prompt — the shell shows the
+      // message + inline boot status, matching the global dashboard composer.
+      newSession({
+        create: options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : undefined,
+        onNavigate: (sessionId) => {
+          sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+        },
+      });
     },
-    [projectId, projectAccountId, queryClient, router, accountState, openUpgradeDialog, busy],
+    [accountState, projectAccountId, openUpgradeDialog, newSession],
   );
 
   return (
     <ProjectShell projectId={projectId}>
-      <ProjectHome projectId={projectId} onSend={handleSend} busy={busy} />
+      <ProjectHome projectId={projectId} onSend={handleSend} busy={false} />
     </ProjectShell>
   );
 }

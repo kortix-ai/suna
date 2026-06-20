@@ -165,6 +165,7 @@ export {
   executorProjectSettingsRelations,
   projectSecretGrantsRelations,
 } from './schema/kortix';
+export type { AgentGrant } from './schema/kortix';
 
 export type {
   TunnelMachineInfo,

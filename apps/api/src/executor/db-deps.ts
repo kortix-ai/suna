@@ -38,6 +38,7 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
+import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
   pipedreamConfigured,
@@ -218,6 +219,7 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
     projectId: result.projectId,
     sessionId: c.req.header('X-Kortix-Session-Id') ?? null,
     subject: await resolveShareSubject(result.userId),
+    agentGrant: result.agentGrant ?? null,
   };
 }
 
@@ -237,6 +239,9 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
 
   const out: CatalogConnector[] = [];
   for (const row of conns) {
+    // Per-agent assignment: an agent only sees connectors its grant lists —
+    // consistent with the call gate, so it never lists a tool it can't invoke.
+    if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
     const grants = grantsByConnector.get(row.connectorId) ?? [];
     if (!isSecretUsableBy(row.shareScope as 'project' | 'restricted', grants, p.subject)) continue;
     const { hasAuth } = authOf(row);

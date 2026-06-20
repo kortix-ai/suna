@@ -1,14 +1,8 @@
 'use client';
 
-import {
-  SharingPicker,
-  intentToSelection,
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/features/co-worker/shared/sharing-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -20,7 +14,13 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import Hint from '@/components/ui/hint';
+import {
+  SharingPicker,
+  intentToSelection,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/features/co-worker/shared/sharing-picker';
 import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
 import { LockSolid, UsersSolid } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
@@ -53,20 +53,14 @@ export function SessionVisibilityBadge({ session }: { session: ProjectSession })
   const sharedBy =
     !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
   return (
-    <Hint
-      side="bottom"
-      sideOffset={6}
-      className="text-xs"
-      label={sharedBy ?? `${meta.label} · who can access this session`}
-    >
-      <Badge variant="outline" size="sm" className="gap-1">
-        <Icon className="h-3 w-3" />
+    <Hint side="bottom" label={sharedBy ?? `${meta.label} · who can access this session`}>
+      <Badge variant="kortix" size="sm" className="gap-2">
+        <Icon className="size-3" />
         {meta.label}
       </Badge>
     </Hint>
   );
 }
-
 
 export function ShareSessionModal({
   projectId,
@@ -140,7 +134,7 @@ export function ShareSessionModal({
             size="sm"
             onClick={() => save.mutate()}
             disabled={save.isPending || !isSharingComplete(sharing)}
-            className=" w-full sm:w-auto"
+            className="w-full sm:w-auto"
           >
             {save.isPending && <Loading />}
             Save
