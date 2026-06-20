@@ -55,6 +55,7 @@ mock.module('../shared/crypto', () => ({
   // Generators / hashing (existence-only for import resolution)
   randomAlphanumeric: (length: number) => 'a'.repeat(length),
   hashSecretKey: (key: string) => `hash:${key}`,
+  candidateSecretKeyHashes: (key: string) => [`hash:${key}`],
   verifySecretKey: (key: string, hash: string) => hash === `hash:${key}`,
   timingSafeStringEqual: (a: string, b: string) => a === b,
   generateDeviceCode: () => 'device-code',

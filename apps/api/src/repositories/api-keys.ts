@@ -1,8 +1,9 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { kortixApiKeys } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
+  candidateSecretKeyHashes,
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
@@ -174,7 +175,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
   }
 
   try {
-    const secretKeyHash = hashSecretKey(secretKey);
+    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
 
     const [row] = await db
       .select({
@@ -188,7 +189,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
       .from(kortixApiKeys)
       .where(
         and(
-          eq(kortixApiKeys.secretKeyHash, secretKeyHash),
+          inArray(kortixApiKeys.secretKeyHash, secretKeyHashes),
           eq(kortixApiKeys.status, 'active'),
         ),
       )
@@ -196,7 +197,7 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
 
     if (!row) {
       const hasAnyKeys = await db.select({ keyId: kortixApiKeys.keyId }).from(kortixApiKeys).limit(1);
-      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHash.slice(0, 8)}... prefix="${secretKey.slice(0, 20)}..." anyKeysInDb=${hasAnyKeys.length > 0}`);
+      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..." anyKeysInDb=${hasAnyKeys.length > 0}`);
       return { isValid: false, error: 'API key not found or invalid' };
     }
 

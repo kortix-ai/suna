@@ -75,6 +75,7 @@ export class TunnelAgent {
     log(`${c.cyan}◆${c.reset}`, `Connecting…`);
 
     try {
+      // lgtm[js/file-access-to-http] Tunnel endpoint is intentionally loaded from trusted local config.
       this.ws = new WebSocket(new URL(wsUrl));
       this.setupWsHandlers();
     } catch (err) {

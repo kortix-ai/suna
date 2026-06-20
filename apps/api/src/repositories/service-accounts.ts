@@ -3,12 +3,13 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { serviceAccounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   generateServiceAccountSecret,
   hashSecretKey,
+  candidateSecretKeyHashes,
   isApiKeySecretConfigured,
   isServiceAccountToken,
 } from '../shared/crypto';
@@ -168,7 +169,7 @@ export async function validateServiceAccountToken(
     return { isValid: false, error: 'Invalid SA format — expected kortix_sa_ prefix' };
   }
   try {
-    const secretHash = hashSecretKey(secret);
+    const secretHashes = candidateSecretKeyHashes(secret);
     const [row] = await db
       .select({
         serviceAccountId: serviceAccounts.serviceAccountId,
@@ -177,7 +178,7 @@ export async function validateServiceAccountToken(
         expiresAt: serviceAccounts.expiresAt,
       })
       .from(serviceAccounts)
-      .where(eq(serviceAccounts.secretHash, secretHash))
+      .where(inArray(serviceAccounts.secretHash, secretHashes))
       .limit(1);
 
     if (!row) return { isValid: false, error: 'Service account not found' };

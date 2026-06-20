@@ -1,13 +1,12 @@
-import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
+import { createHmac, timingSafeEqual, randomInt, scryptSync } from 'crypto';
 import { config } from '../config';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
 export function randomAlphanumeric(length: number): string {
-  const bytes = randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += CHARS[bytes[i]! % CHARS.length];
+    result += CHARS[randomInt(CHARS.length)]!;
   }
   return result;
 }
@@ -114,12 +113,11 @@ const DIGITS = '0123456789';
  * (4 uppercase letters + hyphen + 4 digits)
  */
 export function generateDeviceCode(): string {
-  const bytes = randomBytes(8);
   let letters = '';
   let numbers = '';
   for (let i = 0; i < 4; i++) {
-    letters += UPPER[bytes[i]! % UPPER.length];
-    numbers += DIGITS[bytes[i + 4]! % DIGITS.length];
+    letters += UPPER[randomInt(UPPER.length)]!;
+    numbers += DIGITS[randomInt(DIGITS.length)]!;
   }
   return `${letters}-${numbers}`;
 }
@@ -135,17 +133,32 @@ export function hashSecretKey(secretKey: string): string {
     throw new Error('API_KEY_SECRET not configured');
   }
 
+  return `scrypt:v1:${scryptSync(secretKey, secret, 32).toString('hex')}`;
+}
+
+function legacyHashSecretKey(secretKey: string): string {
+  const secret = config.API_KEY_SECRET;
+  if (!secret) {
+    throw new Error('API_KEY_SECRET not configured');
+  }
+
   return createHmac('sha256', secret)
     .update(secretKey)
     .digest('hex');
 }
 
+export function candidateSecretKeyHashes(secretKey: string): string[] {
+  return [hashSecretKey(secretKey), legacyHashSecretKey(secretKey)];
+}
+
 export function verifySecretKey(secretKey: string, storedHash: string): boolean {
   try {
-    const computedHash = hashSecretKey(secretKey);
+    const computedHash = storedHash.startsWith('scrypt:v1:')
+      ? hashSecretKey(secretKey)
+      : legacyHashSecretKey(secretKey);
 
-    const storedBuffer = Buffer.from(storedHash, 'hex');
-    const computedBuffer = Buffer.from(computedHash, 'hex');
+    const storedBuffer = Buffer.from(storedHash.replace(/^scrypt:v1:/, ''), 'hex');
+    const computedBuffer = Buffer.from(computedHash.replace(/^scrypt:v1:/, ''), 'hex');
 
     if (storedBuffer.length !== computedBuffer.length) {
       return false;

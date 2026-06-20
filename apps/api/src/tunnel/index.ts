@@ -45,11 +45,11 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
   heartbeat: heartbeatManager,
   maxMessageSize: config.TUNNEL_MAX_WS_MESSAGE_SIZE,
   async onAuthenticate(tunnelId: string, token: string): Promise<AuthResult | null> {
-    const { isTunnelToken, hashSecretKey, deriveSigningKey } = await import('../shared/crypto');
+    const { isTunnelToken, candidateSecretKeyHashes, deriveSigningKey } = await import('../shared/crypto');
     const { isKortixToken } = await import('../shared/crypto');
     const { validateSecretKey } = await import('../repositories/api-keys');
     const { getSupabase } = await import('../shared/supabase');
-    const { eq: eqOp, and: andOp } = await import('drizzle-orm');
+    const { eq: eqOp, and: andOp, inArray: inArrayOp } = await import('drizzle-orm');
     const { tunnelConnections } = await import('@kortix/db');
     const { db } = await import('../shared/db');
 
@@ -57,13 +57,13 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
     let tunnel: any = null;
 
     if (isTunnelToken(token)) {
-      const tokenHash = hashSecretKey(token);
+      const tokenHashes = candidateSecretKeyHashes(token);
       const [row] = await db
         .select()
         .from(tunnelConnections)
         .where(andOp(
           eqOp(tunnelConnections.tunnelId, tunnelId),
-          eqOp(tunnelConnections.setupTokenHash, tokenHash),
+          inArrayOp(tunnelConnections.setupTokenHash, tokenHashes),
         ));
       if (row) {
         accountId = row.accountId;
