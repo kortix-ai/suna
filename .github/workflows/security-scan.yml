@@ -1,0 +1,159 @@
+name: Security Scan
+
+# Comprehensive DevSecOps scan suite. Runs weekly (catches newly-disclosed CVEs
+# in already-shipped images), on PRs that touch infra/containers, and on demand.
+# Every scanner emits SARIF into the GitHub Security → Code scanning tab so
+# findings are centralized, triageable, and trend over time.
+#
+# This workflow is REPORT-oriented (it surfaces findings). The blocking gates
+# live in ci.yml (PR dependency scan) and deploy-*.yml (image scan before ship).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  pull_request:
+    branches: [main, prod]
+    paths:
+      - "infra/**"
+      - "apps/*/Dockerfile"
+      - ".github/workflows/security-scan.yml"
+      - ".gitleaks.toml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-fs:
+    name: Trivy filesystem (vuln + secret + misconfig)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Trivy fs scan → SARIF
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+        env:
+          TRIVY_SKIP_DB_UPDATE: "false"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  trivy-image:
+    name: Trivy image re-scan
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - kortix/kortix-api:dev-latest
+          - kortix/kortix-frontend:dev-latest
+    steps:
+      - name: Trivy image scan → SARIF
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: "0"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ strategy.job-index }}
+
+  checkov:
+    name: Checkov (Terraform + K8s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkov scan → SARIF
+        uses: bridgecrewio/checkov-action@0f121ac57605f6e7f8cb145ad2ea49722232ff73
+        with:
+          directory: infra/
+          framework: terraform,kubernetes,helm,dockerfile
+          output_format: sarif
+          output_file_path: checkov.sarif
+          soft_fail: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        with:
+          sarif_file: checkov.sarif/results_sarif.sarif
+          category: checkov
+
+  hadolint:
+    name: Hadolint (Dockerfiles)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - apps/api/Dockerfile
+          - apps/web/Dockerfile
+          - apps/sandbox/Dockerfile
+          - .kortix/Dockerfile
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Hadolint → SARIF
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          format: sarif
+          output-file: hadolint.sarif
+          no-fail: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint-${{ strategy.job-index }}
+
+  gitleaks-history:
+    name: Gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Scan full history
+        run: gitleaks detect --source . --redact --no-banner --exit-code 1

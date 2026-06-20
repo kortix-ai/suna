@@ -178,6 +178,63 @@ jobs:
             "kortix/kortix-api:dev-latest"
           echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
+  # ── Supply chain: scan, SBOM, sign, provenance (SLSA) on the immutable tag ──
+  supply-chain:
+    name: Scan + SBOM + sign API image
+    needs: [detect-changes, tag-api]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    env:
+      IMAGE: ${{ needs.tag-api.outputs.image }}
+    steps:
+      - name: Trivy image scan (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
+      - name: Generate SBOM
+        uses: anchore/sbom-action@fc46e51fd3cb168ffb36c6d1915723c47db58abb # v0.17.7
+        with:
+          image: ${{ steps.digest.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - name: Sign + attest SBOM (keyless)
+        env:
+          REF: ${{ steps.digest.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$REF"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+      - name: SLSA build provenance
+        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        with:
+          subject-name: docker.io/kortix/kortix-api
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
   # ── Deploy the freshly-built image to the dev EKS cluster (GitOps) ──────────
   # Bump infra/k8s/envs/dev/values.yaml to the immutable :dev-<sha8> tag and
   # commit it to main ([skip ci] so this push doesn't re-trigger the workflow);

@@ -25,6 +25,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+LABEL org.opencontainers.image.title="kortix-frontend" \
+      org.opencontainers.image.description="Kortix web frontend (Next.js standalone)" \
+      org.opencontainers.image.source="https://github.com/kortix-ai/suna" \
+      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.vendor="Kortix"
+
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
@@ -52,6 +58,9 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
 
 # Use entrypoint for VPS URL rewriting support
 ENTRYPOINT ["/docker-entrypoint.sh"]
