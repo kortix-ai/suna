@@ -1,4 +1,3 @@
-Fix warm-pool trigger runtime auth
+Fix private repo provisioning failures
 
-- Fix warm-pool claimed sessions so their sandbox token is re-scoped to the real session before the spare row is removed.
-- Restart/reconfigure OpenCode after claim so Executor MCP, LLM gateway, and project config are available for manual and cron trigger sessions.
+Fixes an intermittent production session provisioning failure for private GitHub repos. The shared per-project git mirror now resolves stored project credentials before clone/fetch even when a tokenless background caller wins the refresh lock, preventing unauthenticated cold-cache clones. Git repository authentication failures are also categorized as git-auth instead of being misreported as a Daytona provider failure.

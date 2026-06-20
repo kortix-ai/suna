@@ -5,6 +5,7 @@ import { CapabilityRegistry } from './capabilities/index';
 import { createFilesystemCapability } from './capabilities/filesystem';
 import { createShellCapability } from './capabilities/shell';
 import { createDesktopCapability } from './capabilities/desktop';
+import { getServiceStatus, installService, uninstallService } from './service';
 import { hostname, platform, arch, release } from 'os';
 import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
@@ -118,20 +119,24 @@ async function printStartup(config: { tunnelId: string; apiUrl: string }, capabi
   console.log('');
 }
 
-function startAgent(config: TunnelConfig): void {
+function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
   const registry = new CapabilityRegistry();
   registry.register(createFilesystemCapability(config));
   registry.register(createShellCapability(config));
   registry.register(createDesktopCapability());
 
-  clearScreen();
-  printStartup(config, registry.getCapabilityNames(), '0.1.2');
+  if (!options.service) {
+    clearScreen();
+    printStartup(config, registry.getCapabilityNames(), '0.1.2');
+  } else {
+    console.log(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}`);
+  }
 
   const agent = new TunnelAgent(config, registry);
   agent.connect();
 
   const shutdown = () => {
-    console.log(`\n${c.dim}  Shutting down…${c.reset}`);
+    if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
     agent.disconnect();
     process.exit(0);
   };
@@ -174,6 +179,10 @@ function openBrowser(url: string): void {
 const CONFIG_DIR = join(homedir(), '.agent-tunnel');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
+function isSetupTunnelToken(token: string): boolean {
+  return token.startsWith('kortix_tnl_') || token.startsWith('tnl_');
+}
+
 function saveCredentials(tunnelId: string, token: string, apiUrl: string): void {
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   try { chmodSync(CONFIG_DIR, 0o700); } catch {}
@@ -188,7 +197,7 @@ function saveCredentials(tunnelId: string, token: string, apiUrl: string): void 
   try { chmodSync(CONFIG_FILE, 0o600); } catch {}
 }
 
-async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
+async function commandConnectDeviceAuth(config: TunnelConfig, flags: Record<string, string>): Promise<void> {
   console.log('');
   console.log(`  ${c.cyan}◆${c.reset} ${c.bold}Device Authorization${c.reset}`);
   console.log('');
@@ -263,6 +272,16 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
           console.log(`  ${c.dim}Credentials saved to ${CONFIG_FILE}${c.reset}`);
           console.log('');
 
+          if (flags.daemon === 'true' || flags.service === 'true' || flags.background === 'true') {
+            const status = installService({ keepAwake: flags['keep-awake'] === 'true' });
+            console.log(`  ${c.green}●${c.reset} Background service installed`);
+            console.log(`  ${c.dim}${status.path}${c.reset}`);
+            if (flags['keep-awake'] === 'true') {
+              console.log(`  ${c.dim}Keep-awake mode enabled for the service process${c.reset}`);
+            }
+            return;
+          }
+
           // Connect with received credentials
           const fullConfig = loadConfig({
             token: data.token,
@@ -271,6 +290,13 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
           });
           startAgent(fullConfig);
           return;
+        }
+
+        if (data.status === 'approved') {
+          process.stdout.write('\r' + ' '.repeat(60) + '\r');
+          console.log(`  ${c.red}✗${c.reset} Authorization was approved, but the setup token was not available.`);
+          console.log(`  ${c.dim}Run the connect command again to create a fresh device authorization code.${c.reset}`);
+          process.exit(1);
         }
 
         if (data.status === 'denied') {
@@ -300,19 +326,40 @@ async function commandConnect(flags: Record<string, string>): Promise<void> {
 
   // If both token and tunnelId are provided, connect directly
   if (config.token && config.tunnelId) {
+    if (flags.daemon === 'true' || flags.service === 'true' || flags.background === 'true') {
+      saveCredentials(config.tunnelId, config.token, config.apiUrl);
+      const status = installService({ keepAwake: flags['keep-awake'] === 'true' });
+      console.log(JSON.stringify(status, null, 2));
+      return;
+    }
     startAgent(config);
     return;
   }
 
   // If neither is provided, use device auth flow
   if (!config.token && !config.tunnelId) {
-    await commandConnectDeviceAuth(config);
+    await commandConnectDeviceAuth(config, flags);
     return;
   }
 
   // Partial — error
   console.error(`${c.red}${c.bold} error${c.reset} Provide both --token and --tunnel-id, or neither (for device auth)`);
   process.exit(1);
+}
+
+async function commandRun(flags: Record<string, string>): Promise<void> {
+  const config = loadConfig({
+    token: flags.token,
+    tunnelId: flags['tunnel-id'],
+    apiUrl: flags['api-url'],
+  });
+
+  if (!config.token || !config.tunnelId) {
+    console.error(`${c.red}${c.bold} error${c.reset} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
+    process.exit(1);
+  }
+
+  startAgent(config, { service: flags.service === 'true' });
 }
 
 async function commandStatus(flags: Record<string, string>): Promise<void> {
@@ -325,6 +372,17 @@ async function commandStatus(flags: Record<string, string>): Promise<void> {
   if (!config.token || !config.tunnelId) {
     console.error('Error: --token and --tunnel-id are required');
     process.exit(1);
+  }
+
+  if (isSetupTunnelToken(config.token)) {
+    console.log(JSON.stringify({
+      tunnelId: config.tunnelId,
+      apiUrl: config.apiUrl,
+      credential: 'device-setup-token',
+      note: 'Saved device credentials authenticate the local WebSocket agent. HTTP live status requires a user or sandbox API key.',
+      service: getServiceStatus(),
+    }, null, 2));
+    return;
   }
 
   try {
@@ -345,6 +403,34 @@ async function commandStatus(flags: Record<string, string>): Promise<void> {
   }
 }
 
+function commandInstallService(flags: Record<string, string>): void {
+  const config = loadConfig({
+    token: flags.token,
+    tunnelId: flags['tunnel-id'],
+    apiUrl: flags['api-url'],
+  });
+
+  if (!config.token || !config.tunnelId) {
+    console.error(`${c.red}${c.bold} error${c.reset} No saved tunnel credentials found. Run \`agent-tunnel connect\` first, or pass --token and --tunnel-id.`);
+    process.exit(1);
+  }
+
+  if (flags.token && flags['tunnel-id']) {
+    saveCredentials(config.tunnelId, config.token, config.apiUrl);
+  }
+
+  const status = installService({ keepAwake: flags['keep-awake'] === 'true' });
+  console.log(JSON.stringify(status, null, 2));
+}
+
+function commandUninstallService(): void {
+  console.log(JSON.stringify(uninstallService(), null, 2));
+}
+
+function commandServiceStatus(): void {
+  console.log(JSON.stringify(getServiceStatus(), null, 2));
+}
+
 function showHelp(): void {
   console.log('');
   console.log(`  ${c.cyan}▄▀█ █▀▀ █▀▀ █▄ █ ▀█▀${c.reset}   ${c.cyan}▀█▀ █ █ █▄ █ █▄ █ █▀▀ █  ${c.reset}`);
@@ -356,6 +442,10 @@ function showHelp(): void {
   console.log('');
   console.log(`${c.gray}  ── Commands ────────────────────────────────────────${c.reset}`);
   console.log(`  ${c.cyan}connect${c.reset}       Connect via device auth (opens browser)`);
+  console.log(`  ${c.cyan}run${c.reset}           Run using saved credentials ${c.dim}(used by service)${c.reset}`);
+  console.log(`  ${c.cyan}install-service${c.reset} Install/start a persistent background service`);
+  console.log(`  ${c.cyan}service-status${c.reset} Check persistent service status`);
+  console.log(`  ${c.cyan}uninstall-service${c.reset} Stop/remove the persistent service`);
   console.log(`  ${c.cyan}status${c.reset}        Check tunnel connection status`);
   console.log(`  ${c.cyan}help${c.reset}          Show this help message`);
   console.log('');
@@ -363,6 +453,8 @@ function showHelp(): void {
   console.log(`  ${c.white}--token${c.reset} ${c.dim}<token>${c.reset}       Skip device auth, connect directly`);
   console.log(`  ${c.white}--tunnel-id${c.reset} ${c.dim}<id>${c.reset}     Tunnel ID ${c.dim}(required with --token)${c.reset}`);
   console.log(`  ${c.white}--api-url${c.reset} ${c.dim}<url>${c.reset}       API URL ${c.dim}(default: http://localhost:8080)${c.reset}`);
+  console.log(`  ${c.white}--daemon${c.reset}             With connect: save credentials and install service`);
+  console.log(`  ${c.white}--keep-awake${c.reset}         Prevent sleep while service is running ${c.dim}(macOS/Linux)${c.reset}`);
   console.log('');
   console.log(`  ${c.dim}Config: ~/.agent-tunnel/config.json${c.reset}`);
   console.log(`  ${c.dim}powered by ${c.cyan}kortix${c.reset}`);
@@ -374,6 +466,18 @@ const { command, flags } = parseArgs(process.argv);
 switch (command) {
   case 'connect':
     commandConnect(flags);
+    break;
+  case 'run':
+    commandRun(flags);
+    break;
+  case 'install-service':
+    commandInstallService(flags);
+    break;
+  case 'service-status':
+    commandServiceStatus();
+    break;
+  case 'uninstall-service':
+    commandUninstallService();
     break;
   case 'status':
     commandStatus(flags);

@@ -1,7 +1,7 @@
 /**
  * Capability Registry — extensible registry for tunnel capabilities.
  *
- * Each capability (filesystem, shell, network, etc.) registers its
+ * Each capability (filesystem, shell, CUA-backed desktop, etc.) registers its
  * RPC method handlers here. The TunnelAgent dispatches incoming
  * JSON-RPC requests to the matching handler.
  */

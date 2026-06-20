@@ -1,9 +1,7 @@
 import {
   HardDrive,
   Terminal,
-  AppWindow,
-  Cpu,
-  Zap,
+  Monitor,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -20,13 +18,7 @@ export interface ShellScope {
   maxTimeout?: number;
 }
 
-export interface NetworkScope {
-  ports: number[];
-  hosts: string[];
-  protocols: ('http' | 'tcp')[];
-}
-
-export type PermissionScope = FilesystemScope | ShellScope | NetworkScope | Record<string, unknown>;
+export type PermissionScope = FilesystemScope | ShellScope | Record<string, unknown>;
 
 export interface CapabilityInfo {
   key: string;
@@ -52,24 +44,10 @@ export const CAPABILITY_REGISTRY: CapabilityInfo[] = [
     hasScopeEditor: true,
   },
   {
-    key: 'apps',
-    label: 'Applications',
-    description: 'Launch and interact with local applications',
-    icon: AppWindow,
-    hasScopeEditor: false,
-  },
-  {
-    key: 'hardware',
-    label: 'Hardware',
-    description: 'Access hardware information and sensors',
-    icon: Cpu,
-    hasScopeEditor: false,
-  },
-  {
-    key: 'gpu',
-    label: 'GPU',
-    description: 'GPU compute and acceleration',
-    icon: Zap,
+    key: 'desktop',
+    label: 'Computer Use',
+    description: 'Inspect and control local desktop apps through CUA Driver',
+    icon: Monitor,
     hasScopeEditor: false,
   },
 ];
@@ -96,6 +74,10 @@ export const SCOPE_REGISTRY: ScopeInfo[] = [
   { key: 'files:write',           capability: 'filesystem', label: 'Write files',         description: 'Create and modify local files',                category: 'Filesystem', grantScope: { operations: ['write'] } },
   { key: 'files:delete',          capability: 'filesystem', label: 'Delete files',        description: 'Delete local files and directories',           category: 'Filesystem', grantScope: { operations: ['delete'] } },
   { key: 'shell:exec',            capability: 'shell',      label: 'Execute commands',    description: 'Run shell commands in terminal',               category: 'Shell' },
+  { key: 'desktop:computer_use',   capability: 'desktop',    label: 'CUA driver',          description: 'Install, start, and inspect CUA Driver',        category: 'Computer Use', grantScope: { features: ['computer_use'] } },
+  { key: 'desktop:apps',           capability: 'desktop',    label: 'Applications',        description: 'List, launch, focus, and close apps',           category: 'Computer Use', grantScope: { features: ['apps', 'windows'] } },
+  { key: 'desktop:observe',        capability: 'desktop',    label: 'Observe screen',      description: 'Read windows, UI trees, and screenshots',       category: 'Computer Use', grantScope: { features: ['screenshot', 'windows', 'accessibility'] } },
+  { key: 'desktop:input',          capability: 'desktop',    label: 'Control input',       description: 'Click, type, hotkey, scroll, and drag',         category: 'Computer Use', grantScope: { features: ['mouse', 'keyboard', 'accessibility'] } },
 ];
 
 export interface ExpiryOption {
@@ -127,8 +109,6 @@ export function getDefaultScope(capability: string): PermissionScope {
       return { paths: [], operations: ['read', 'list'], excludePatterns: [] } satisfies FilesystemScope;
     case 'shell':
       return { commands: [], workingDir: '' } satisfies ShellScope;
-    case 'network':
-      return { ports: [], hosts: [], protocols: ['http'] } satisfies NetworkScope;
     default:
       return {};
   }

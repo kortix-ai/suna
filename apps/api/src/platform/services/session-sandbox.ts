@@ -652,13 +652,34 @@ export async function provisionSessionSandbox(opts: {
       // they don't read as code bugs in the console, and present a friendly
       // message to the user instead of the SDK stack trace.
       const isCapacity = /no available runner|no runners available|out of capacity|capacity exceeded|rate ?limit|too many requests/i.test(bgMessage);
+      // Git auth / repo-access failures. These are NOT a provider fault — the
+      // sandbox provider is fine; we couldn't clone the project's repo. Reporting
+      // them as "Provisioning failed via daytona" actively misdirects debugging
+      // (it reads as a Daytona outage), so categorize + surface them as a git
+      // problem with an actionable message.
+      const isGitAuth =
+        /could not read Username|terminal prompts disabled|Authentication failed|fatal: could not read|Invalid username or password|remote: Repository not found|HTTP 401|HTTP 403|access denied|Permission denied \(publickey\)/i.test(
+          bgMessage,
+        );
+      const failureCategory: 'provider-capacity' | 'git-auth' | null = isCapacity
+        ? 'provider-capacity'
+        : isGitAuth
+          ? 'git-auth'
+          : null;
       const userMessage = isCapacity
         ? 'The sandbox provider is at capacity right now. Try again in a minute.'
-        : `Provisioning failed via ${providerName}.`;
+        : isGitAuth
+          ? "Couldn't access the project's Git repository (authentication failed). Check the project's Git credentials and try again."
+          : `Provisioning failed via ${providerName}.`;
       if (isCapacity) {
         console.warn(
           `[session-sandbox] provider at capacity for ${sandbox.sandboxId} after retries — bouncing session:`,
           bgMessage.slice(0, 200),
+        );
+      } else if (isGitAuth) {
+        console.error(
+          `[session-sandbox] git auth/repo-access failure provisioning ${sandbox.sandboxId} (not a provider fault):`,
+          bgMessage.slice(0, 300),
         );
       } else {
         console.error(`[session-sandbox] Background provisioning failed for ${sandbox.sandboxId}:`, bgErr);
@@ -686,7 +707,7 @@ export async function provisionSessionSandbox(opts: {
               ),
               errorMessage: userMessage,
               lastProvisioningError: bgMessage.slice(0, 500),
-              ...(isCapacity ? { failureCategory: 'provider-capacity' as const } : {}),
+              ...(failureCategory ? { failureCategory } : {}),
             },
             updatedAt: new Date(),
           })

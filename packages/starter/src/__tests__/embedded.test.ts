@@ -24,4 +24,12 @@ describe('embedded starter snapshot', () => {
     );
     expect(skillFiles.length).toBeGreaterThan(0);
   });
+
+  test('does not ship gated agent tunnel skill by default', () => {
+    for (const starter of Object.values(
+      embeddedStarter as Record<string, { files: { path: string }[] }>,
+    )) {
+      expect(starter.files.some((f) => f.path.includes('/agent-tunnel/'))).toBe(false);
+    }
+  });
 });

@@ -187,11 +187,7 @@ function resolveCapability(method: string): TunnelCapability | null {
   const prefixMap: Record<string, TunnelCapability> = {
     fs: 'filesystem',
     shell: 'shell',
-    net: 'network',
     desktop: 'desktop',
-    apps: 'apps',
-    hardware: 'hardware',
-    gpu: 'gpu',
   };
 
   return prefixMap[prefix] || null;

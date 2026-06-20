@@ -48,10 +48,14 @@ export function createConnectionsRouter() {
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
 
-      const enriched = connections.map((conn) => ({
-        ...conn,
-        isLive: tunnelRelay.isConnected(conn.tunnelId),
-      }));
+      const enriched = connections.map((conn) => {
+        const isLive = tunnelRelay.isConnected(conn.tunnelId);
+        return {
+          ...conn,
+          status: isLive ? 'online' : conn.status,
+          isLive,
+        };
+      });
 
       return c.json(enriched);
     },
