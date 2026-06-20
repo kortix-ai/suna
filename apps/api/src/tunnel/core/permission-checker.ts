@@ -11,12 +11,6 @@ export interface PermissionCheckResult {
   reason?: string;
 }
 
-interface TunnelNetworkScope {
-  ports?: number[];
-  hosts?: string[];
-  protocols?: string[];
-}
-
 interface TunnelDesktopScope {
   features?: string[];
 }
@@ -72,8 +66,6 @@ function validateScope(
       return validateFilesystemScope(scope as TunnelFilesystemScope, operation, args);
     case 'shell':
       return validateShellScope(scope as TunnelShellScope, operation, args);
-    case 'network':
-      return validateNetworkScope(scope as TunnelNetworkScope, operation, args);
     case 'desktop':
       return validateDesktopScope(scope as TunnelDesktopScope, operation, args);
     default:
@@ -146,74 +138,75 @@ function validateShellScope(
   return { allowed: true };
 }
 
-function validateNetworkScope(
-  scope: TunnelNetworkScope,
-  _operation: string,
-  args: Record<string, unknown>,
-): PermissionCheckResult {
-  if (scope.ports && scope.ports.length > 0) {
-    const port = args.port as number | undefined;
-    if (port !== undefined && !scope.ports.includes(port)) {
-      return { allowed: false, reason: `Port ${port} not in allowed ports` };
-    }
-  }
-
-  if (scope.hosts && scope.hosts.length > 0) {
-    const host = args.host as string | undefined;
-    if (host && !scope.hosts.includes(host)) {
-      return { allowed: false, reason: `Host "${host}" not in allowed hosts` };
-    }
-  }
-
-  if (scope.protocols && scope.protocols.length > 0) {
-    const protocol = args.protocol as string | undefined;
-    if (protocol && !scope.protocols.includes(protocol)) {
-      return { allowed: false, reason: `Protocol "${protocol}" not in allowed protocols` };
-    }
-  }
-
-  return { allowed: true };
-}
-
 const DESKTOP_METHOD_FEATURES: Record<string, string> = {
-  'desktop.screenshot': 'screenshot',
-  'desktop.cursor.image': 'screenshot',
-  'desktop.screen.info': 'screenshot',
-  'desktop.mouse.click': 'mouse',
-  'desktop.mouse.move': 'mouse',
-  'desktop.mouse.drag': 'mouse',
-  'desktop.mouse.scroll': 'mouse',
-  'desktop.mouse.position': 'mouse',
-  'desktop.keyboard.type': 'keyboard',
-  'desktop.keyboard.key': 'keyboard',
-  'desktop.window.list': 'windows',
-  'desktop.window.focus': 'windows',
-  'desktop.window.resize': 'windows',
-  'desktop.window.close': 'windows',
-  'desktop.window.minimize': 'windows',
-  'desktop.app.launch': 'apps',
-  'desktop.app.quit': 'apps',
-  'desktop.app.list': 'apps',
-  'desktop.clipboard.read': 'clipboard',
-  'desktop.clipboard.write': 'clipboard',
-  'desktop.ax.tree': 'accessibility',
-  'desktop.ax.action': 'accessibility',
-  'desktop.ax.set_value': 'accessibility',
-  'desktop.ax.focus': 'accessibility',
-  'desktop.ax.search': 'accessibility',
+  'desktop.cua.ensure': 'computer_use',
+  'desktop.cua.start_daemon': 'computer_use',
+  'desktop.cua.status': 'computer_use',
+  'desktop.cua.version': 'computer_use',
+  'desktop.cua.list_tools': 'computer_use',
+  'desktop.cua.describe': 'computer_use',
+  'desktop.cua.bring_to_front': 'windows',
+  'desktop.cua.check_for_update': 'computer_use',
+  'desktop.cua.check_permissions': 'computer_use',
+  'desktop.cua.click': 'mouse',
+  'desktop.cua.double_click': 'mouse',
+  'desktop.cua.drag': 'mouse',
+  'desktop.cua.end_session': 'computer_use',
+  'desktop.cua.get_accessibility_tree': 'accessibility',
+  'desktop.cua.get_agent_cursor_state': 'mouse',
+  'desktop.cua.get_config': 'computer_use',
+  'desktop.cua.get_cursor_position': 'mouse',
+  'desktop.cua.get_recording_state': 'computer_use',
+  'desktop.cua.get_screen_size': 'screenshot',
+  'desktop.cua.get_window_state': 'accessibility',
+  'desktop.cua.hotkey': 'keyboard',
+  'desktop.cua.kill_app': 'apps',
+  'desktop.cua.launch_app': 'apps',
+  'desktop.cua.list_apps': 'apps',
+  'desktop.cua.list_windows': 'windows',
+  'desktop.cua.move_cursor': 'mouse',
+  'desktop.cua.page': 'accessibility',
+  'desktop.cua.press_key': 'keyboard',
+  'desktop.cua.replay_trajectory': 'computer_use',
+  'desktop.cua.right_click': 'mouse',
+  'desktop.cua.scroll': 'keyboard',
+  'desktop.cua.set_agent_cursor_enabled': 'mouse',
+  'desktop.cua.set_agent_cursor_motion': 'mouse',
+  'desktop.cua.set_agent_cursor_style': 'mouse',
+  'desktop.cua.set_config': 'computer_use',
+  'desktop.cua.set_value': 'accessibility',
+  'desktop.cua.start_recording': 'screenshot',
+  'desktop.cua.install_ffmpeg': 'computer_use',
+  'desktop.cua.start_session': 'computer_use',
+  'desktop.cua.stop_recording': 'screenshot',
+  'desktop.cua.type_text': 'keyboard',
+  'desktop.cua.zoom': 'screenshot',
 };
+
+export function desktopFeatureForMethod(method: string, args: Record<string, unknown> = {}): string | undefined {
+  if (method === 'desktop.cua.call') {
+    const tool = args.tool;
+    if (typeof tool !== 'string' || tool.length === 0) {
+      return undefined;
+    }
+    const toolMethod = tool.startsWith('desktop.cua.') ? tool : `desktop.cua.${tool}`;
+    return DESKTOP_METHOD_FEATURES[toolMethod];
+  }
+
+  return DESKTOP_METHOD_FEATURES[method];
+}
 
 function validateDesktopScope(
   scope: TunnelDesktopScope,
   operation: string,
-  _args: Record<string, unknown>,
+  args: Record<string, unknown>,
 ): PermissionCheckResult {
   if (!scope.features || scope.features.length === 0) {
     return { allowed: true };
   }
 
   const method = `desktop.${operation}`;
-  const feature = DESKTOP_METHOD_FEATURES[method];
+  const feature = desktopFeatureForMethod(method, args);
 
   if (!feature) {
     return { allowed: false, reason: `Unknown desktop method: "${method}"` };

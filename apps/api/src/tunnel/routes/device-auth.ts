@@ -128,9 +128,11 @@ export function createDeviceAuthPublicRouter() {
     async (c: any) => {
       const code = c.req.param('code');
       const authHeader = c.req.header('Authorization');
-      const secret = authHeader?.startsWith('Bearer ')
+      const bearerSecret = authHeader?.startsWith('Bearer ')
         ? authHeader.slice(7)
         : undefined;
+      const querySecret = c.req.query('secret');
+      const secret = bearerSecret || querySecret;
 
       if (!secret) {
         return c.json({ error: 'device auth secret required' }, 400);
@@ -155,29 +157,29 @@ export function createDeviceAuthPublicRouter() {
         return c.json({ error: 'Invalid secret' }, 403);
       }
 
-      // Check expiry
-      if (row.expiresAt < new Date()) {
-        return c.json({ status: 'expired' });
-      }
-
       if (row.status === 'denied') {
         return c.json({ status: 'denied' });
       }
 
       if (row.status === 'approved' && row.tunnelId && row.setupToken) {
-        const token = row.setupToken;
-
-        // NULL out the token after returning it once
-        db.update(tunnelDeviceAuthRequests)
-          .set({ setupToken: null, updatedAt: new Date() })
-          .where(eq(tunnelDeviceAuthRequests.id, row.id))
-          .catch(() => {});
-
         return c.json({
           status: 'approved',
           tunnelId: row.tunnelId,
-          token,
+          token: row.setupToken,
         });
+      }
+
+      if (row.status === 'approved' && row.tunnelId) {
+        return c.json({
+          status: 'approved',
+          tunnelId: row.tunnelId,
+        });
+      }
+
+      // Pending requests expire. Approved requests stay pollable for the CLI
+      // handoff window so retrying or duplicate pollers cannot strand the user.
+      if (row.expiresAt < new Date()) {
+        return c.json({ status: 'expired' });
       }
 
       return c.json({ status: 'pending' });

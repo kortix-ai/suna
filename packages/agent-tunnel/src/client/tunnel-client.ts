@@ -27,7 +27,7 @@ export class TunnelClient {
 
   readonly fs: FsNamespace;
   readonly shell: ShellNamespace;
-  readonly desktop: DesktopNamespace;
+  readonly cua: CuaNamespace;
 
   constructor(config: TunnelClientConfig) {
     this.apiUrl = config.apiUrl.replace(/\/+$/, '');
@@ -37,7 +37,7 @@ export class TunnelClient {
 
     this.fs = new FsNamespace(this);
     this.shell = new ShellNamespace(this);
-    this.desktop = new DesktopNamespace(this);
+    this.cua = new CuaNamespace(this);
   }
 
   async rpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -109,15 +109,11 @@ export class TunnelClient {
     if (res.ok) {
       const connections = (await res.json()) as Array<{ tunnelId: string; isLive?: boolean }>;
       const online = connections.find((c) => c.isLive);
-      if (online) {
-        this.cachedTunnelId = online.tunnelId;
+      const chosen = online ?? connections[0];
+      if (chosen) {
+        this.cachedTunnelId = chosen.tunnelId;
         this.cacheTimestamp = Date.now();
-        return online.tunnelId;
-      }
-      if (connections.length > 0) {
-        this.cachedTunnelId = connections[0].tunnelId;
-        this.cacheTimestamp = Date.now();
-        return connections[0].tunnelId;
+        return chosen.tunnelId;
       }
     }
 
@@ -126,7 +122,7 @@ export class TunnelClient {
       -1,
       'No tunnel connection found. The user needs to set up Agent Tunnel first:\n' +
       '1. Create a tunnel connection\n' +
-      '2. Run `npx @kortix/agent-tunnel connect` on their local machine',
+      '2. Connect the local machine from the Kortix desktop app or run the tunnel connect command',
     );
   }
 }
@@ -172,99 +168,58 @@ class ShellNamespace {
   }
 }
 
-class DesktopNamespace {
+class CuaNamespace {
   constructor(private client: TunnelClient) {}
 
-  async screenshot(params?: { region?: { x: number; y: number; width: number; height: number }; windowId?: number }): Promise<{ image: string; width: number; height: number; format?: string }> {
-    return (await this.client.rpc('desktop.screenshot', params ?? {})) as any;
+  async ensure(): Promise<{ ok: boolean; binary: string; version?: string }> {
+    return (await this.client.rpc('desktop.cua.ensure', {})) as any;
   }
 
-  async click(params: { x: number; y: number; button?: string; clicks?: number; modifiers?: string[] }): Promise<unknown> {
-    return this.client.rpc('desktop.mouse.click', params);
+  async startDaemon(): Promise<Record<string, unknown>> {
+    return (await this.client.rpc('desktop.cua.start_daemon', {})) as any;
   }
 
-  async type(text: string, delay?: number): Promise<unknown> {
-    return this.client.rpc('desktop.keyboard.type', { text, delay });
+  async status(): Promise<{ status: string }> {
+    return (await this.client.rpc('desktop.cua.status', {})) as any;
   }
 
-  async key(keys: string[]): Promise<unknown> {
-    return this.client.rpc('desktop.keyboard.key', { keys });
+  async version(): Promise<{ version: string }> {
+    return (await this.client.rpc('desktop.cua.version', {})) as any;
   }
 
-  async mouseMove(x: number, y: number): Promise<unknown> {
-    return this.client.rpc('desktop.mouse.move', { x, y });
+  async listTools(): Promise<{ tools: string }> {
+    return (await this.client.rpc('desktop.cua.list_tools', {})) as any;
   }
 
-  async mouseDrag(fromX: number, fromY: number, toX: number, toY: number, button?: string): Promise<unknown> {
-    return this.client.rpc('desktop.mouse.drag', { fromX, fromY, toX, toY, button });
+  async describe(tool: string): Promise<{ description: string }> {
+    return (await this.client.rpc('desktop.cua.describe', { tool })) as any;
   }
 
-  async mouseScroll(x: number, y: number, deltaX?: number, deltaY?: number): Promise<unknown> {
-    return this.client.rpc('desktop.mouse.scroll', { x, y, deltaX, deltaY });
+  async call(tool: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    return this.client.rpc('desktop.cua.call', { tool, args });
   }
 
-  async windowList(): Promise<{ windows: Array<{ id: number; app: string; title: string; bounds: { x: number; y: number; width: number; height: number }; minimized: boolean }> }> {
-    return (await this.client.rpc('desktop.window.list', {})) as any;
+  async listApps(): Promise<unknown> {
+    return this.client.rpc('desktop.cua.list_apps', {});
   }
 
-  async windowFocus(windowId: number): Promise<unknown> {
-    return this.client.rpc('desktop.window.focus', { windowId });
+  async listWindows(params?: { pid?: number; on_screen_only?: boolean }): Promise<unknown> {
+    return this.client.rpc('desktop.cua.list_windows', params ?? {});
   }
 
-  async appLaunch(app: string): Promise<unknown> {
-    return this.client.rpc('desktop.app.launch', { app });
+  async getWindowState(params: { pid: number; window_id: number; query?: string; capture_mode?: 'som' | 'vision' | 'ax'; screenshot_out_file?: string; session?: string }): Promise<unknown> {
+    return this.client.rpc('desktop.cua.get_window_state', params);
   }
 
-  async appQuit(app: string): Promise<unknown> {
-    return this.client.rpc('desktop.app.quit', { app });
+  async click(params: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('desktop.cua.click', params);
   }
 
-  async clipboardRead(): Promise<{ text: string }> {
-    return (await this.client.rpc('desktop.clipboard.read', {})) as any;
+  async typeText(params: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('desktop.cua.type_text', params);
   }
 
-  async clipboardWrite(text: string): Promise<unknown> {
-    return this.client.rpc('desktop.clipboard.write', { text });
+  async hotkey(params: Record<string, unknown>): Promise<unknown> {
+    return this.client.rpc('desktop.cua.hotkey', params);
   }
-
-  async screenInfo(): Promise<{ width: number; height: number; scaleFactor: number }> {
-    return (await this.client.rpc('desktop.screen.info', {})) as any;
-  }
-
-  async cursorImage(radius?: number): Promise<{ image: string; width: number; height: number; format?: string }> {
-    return (await this.client.rpc('desktop.cursor.image', { radius })) as any;
-  }
-
-  async axTree(params?: { pid?: number; maxDepth?: number; roles?: string[] }): Promise<{ root: AXElement; elementCount: number }> {
-    return (await this.client.rpc('desktop.ax.tree', params ?? {})) as any;
-  }
-
-  async axAction(elementId: string, action: string, pid?: number): Promise<Record<string, unknown>> {
-    return (await this.client.rpc('desktop.ax.action', { elementId, action, pid })) as any;
-  }
-
-  async axSetValue(elementId: string, value: string, pid?: number): Promise<Record<string, unknown>> {
-    return (await this.client.rpc('desktop.ax.set_value', { elementId, value, pid })) as any;
-  }
-
-  async axFocus(elementId: string, pid?: number): Promise<Record<string, unknown>> {
-    return (await this.client.rpc('desktop.ax.focus', { elementId, pid })) as any;
-  }
-
-  async axSearch(query: string, params?: { role?: string; pid?: number; maxResults?: number }): Promise<{ elements: AXElement[] }> {
-    return (await this.client.rpc('desktop.ax.search', { query, ...params })) as any;
-  }
-}
-
-export interface AXElement {
-  id: string;
-  role: string;
-  title: string;
-  value: string;
-  description: string;
-  bounds: { x: number; y: number; width: number; height: number };
-  children: AXElement[];
-  actions: string[];
-  enabled: boolean;
-  focused: boolean;
 }
