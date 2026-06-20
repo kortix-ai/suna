@@ -29,11 +29,11 @@ export function useProjectPresence(projectId: string | null | undefined): void {
       // spare is reaped after the staleness window. A quick tab-switch (back
       // within that window) never loses the spare; a long-hidden tab does.
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      void backendApi.post(base).catch(() => {});
+      void backendApi.post(base, undefined, { showErrors: false }).catch(() => {});
     };
     const leave = () => {
       // keepalive lets the request survive the page unload.
-      void backendApi.post(`${base}/leave`, undefined, { keepalive: true }).catch(() => {});
+      void backendApi.post(`${base}/leave`, undefined, { keepalive: true, showErrors: false }).catch(() => {});
     };
 
     ping();

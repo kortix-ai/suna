@@ -82,6 +82,12 @@ export const projectRoleEnum = kortixSchema.enum('project_role', [
   'viewer',
 ]);
 
+export const projectAccessRequestStatusEnum = kortixSchema.enum('project_access_request_status', [
+  'pending',
+  'approved',
+  'rejected',
+]);
+
 export const apiKeyStatusEnum = kortixSchema.enum('api_key_status', [
   'active',
   'revoked',
@@ -377,6 +383,36 @@ export const projectMembers = kortixSchema.table(
     index('idx_project_members_account_user').on(table.accountId, table.userId),
     index('idx_project_members_project').on(table.projectId),
     uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
+  ],
+);
+
+export const projectAccessRequests = kortixSchema.table(
+  'project_access_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    requesterUserId: uuid('requester_user_id').notNull(),
+    requesterEmail: varchar('requester_email', { length: 255 }).notNull(),
+    message: text('message'),
+    status: projectAccessRequestStatusEnum('status').default('pending').notNull(),
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_access_requests_project').on(table.projectId),
+    index('idx_project_access_requests_account').on(table.accountId),
+    index('idx_project_access_requests_requester').on(table.requesterUserId),
+    index('idx_project_access_requests_status').on(table.status),
+    uniqueIndex('idx_project_access_requests_pending_unique')
+      .on(table.projectId, table.requesterUserId)
+      .where(sql`${table.status} = 'pending'`),
   ],
 );
 

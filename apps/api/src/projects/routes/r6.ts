@@ -1,17 +1,34 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { deriveRequestContext } from '../../iam/cache';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { foldEffectiveProjectAccess, isAccountManager, parseProjectRole, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectGroupGrants, projectMembers, projects } from '@kortix/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
+
+function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
+  return {
+    request_id: row.requestId,
+    account_id: row.accountId,
+    project_id: row.projectId,
+    requester_user_id: row.requesterUserId,
+    requester_email: row.requesterEmail,
+    message: row.message ?? null,
+    status: row.status,
+    reviewed_by: row.reviewedBy ?? null,
+    reviewed_at: row.reviewedAt?.toISOString() ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -240,6 +257,263 @@ projectsApp.openapi(
     viewer_user_id: loaded.userId,
     members,
   });
+},
+);
+
+// POST /v1/projects/:projectId/access-requests
+// Lets a signed-in user with a project link ask the project's managers for
+// access without mounting the normal project shell (which would otherwise fan
+// out into many 403s). Mirrors the Figma-style "Request access" affordance.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/access-requests',
+    tags: ['access'],
+    summary: 'POST /:projectId/access-requests',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'Existing access request or access state'),
+        201: json(z.any(), 'Access request created'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const userId = c.get('userId') as string;
+  const requesterEmail = ((c.get('userEmail') as string | undefined) ?? '').trim().toLowerCase();
+  const body = await readBody(c);
+  const messageRaw = typeof body.message === 'string' ? body.message.trim() : '';
+  const message = messageRaw ? messageRaw.slice(0, 2000) : null;
+
+  const [project] = await db
+    .select({
+      accountId: projects.accountId,
+      projectId: projects.projectId,
+      status: projects.status,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project || project.status === 'archived') return c.json({ error: 'Not found' }, 404);
+
+  const membership = await getAccountMembership(userId, project.accountId);
+  if (membership) {
+    const actingTokenId =
+      ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+        | string
+        | undefined) ?? undefined;
+    const verdict = await authorize(
+      userId,
+      project.accountId,
+      PROJECT_ACTIONS.PROJECT_READ,
+      { type: 'project', id: projectId },
+      actingTokenId,
+      deriveRequestContext(c),
+    );
+    if (verdict.allowed) {
+      return c.json({ status: 'already_has_access', project_id: projectId });
+    }
+  }
+
+  const [existing] = await db
+    .select()
+    .from(projectAccessRequests)
+    .where(and(
+      eq(projectAccessRequests.projectId, projectId),
+      eq(projectAccessRequests.requesterUserId, userId),
+      eq(projectAccessRequests.status, 'pending'),
+    ))
+    .limit(1);
+
+  if (existing) {
+    return c.json({ status: 'pending', request: serializeProjectAccessRequest(existing) });
+  }
+
+  const [created] = await db
+    .insert(projectAccessRequests)
+    .values({
+      accountId: project.accountId,
+      projectId,
+      requesterUserId: userId,
+      requesterEmail: requesterEmail || userId,
+      message,
+    })
+    .returning();
+
+  return c.json({ status: 'created', request: serializeProjectAccessRequest(created) }, 201);
+},
+);
+
+// GET /v1/projects/:projectId/access-requests
+// Managers review pending "request access" asks from the Members screen.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/access-requests',
+    tags: ['access'],
+    summary: 'GET /:projectId/access-requests',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'Pending access requests'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const rows = await db
+    .select()
+    .from(projectAccessRequests)
+    .where(and(
+      eq(projectAccessRequests.projectId, projectId),
+      eq(projectAccessRequests.status, 'pending'),
+    ))
+    .orderBy(desc(projectAccessRequests.createdAt));
+
+  return c.json({ requests: rows.map(serializeProjectAccessRequest) });
+},
+);
+
+// POST /v1/projects/:projectId/access-requests/:requestId/approve
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/access-requests/{requestId}/approve',
+    tags: ['access'],
+    summary: 'POST /:projectId/access-requests/:requestId/approve',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), requestId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+      200: json(z.any(), 'Access request approved'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const requestId = c.req.param('requestId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const body = await readBody(c);
+  const role = body.role === undefined ? 'viewer' : parseProjectRole(body.role);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+
+  const [request] = await db
+    .select()
+    .from(projectAccessRequests)
+    .where(and(
+      eq(projectAccessRequests.requestId, requestId),
+      eq(projectAccessRequests.projectId, projectId),
+    ))
+    .limit(1);
+  if (!request) return c.json({ error: 'Not found' }, 404);
+  if (request.status !== 'pending') {
+    return c.json({ error: 'Access request has already been reviewed' }, 409);
+  }
+
+  const targetAccountRole = await ensureOrgMembership(
+    loaded.row.accountId,
+    request.requesterUserId,
+  );
+
+  if (!isAccountManager(targetAccountRole)) {
+    await grantProjectRole({
+      accountId: loaded.row.accountId,
+      projectId,
+      userId: request.requesterUserId,
+      role,
+      grantedBy: loaded.userId,
+    });
+  }
+
+  const [updated] = await db
+    .update(projectAccessRequests)
+    .set({
+      status: 'approved',
+      reviewedBy: loaded.userId,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(projectAccessRequests.requestId, requestId))
+    .returning();
+
+  return c.json({
+    request: serializeProjectAccessRequest(updated),
+    member: {
+      user_id: request.requesterUserId,
+      email: request.requesterEmail,
+      account_role: targetAccountRole,
+      project_role: isAccountManager(targetAccountRole) ? null : role,
+      effective_project_role: isAccountManager(targetAccountRole) ? 'manager' : role,
+      has_implicit_access: isAccountManager(targetAccountRole),
+    },
+  });
+},
+);
+
+// POST /v1/projects/:projectId/access-requests/:requestId/reject
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/access-requests/{requestId}/reject',
+    tags: ['access'],
+    summary: 'POST /:projectId/access-requests/:requestId/reject',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), requestId: z.string() }),
+      },
+    responses: {
+      200: json(z.any(), 'Access request rejected'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const requestId = c.req.param('requestId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const [request] = await db
+    .select()
+    .from(projectAccessRequests)
+    .where(and(
+      eq(projectAccessRequests.requestId, requestId),
+      eq(projectAccessRequests.projectId, projectId),
+    ))
+    .limit(1);
+  if (!request) return c.json({ error: 'Not found' }, 404);
+  if (request.status !== 'pending') {
+    return c.json({ error: 'Access request has already been reviewed' }, 409);
+  }
+
+  const [updated] = await db
+    .update(projectAccessRequests)
+    .set({
+      status: 'rejected',
+      reviewedBy: loaded.userId,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(projectAccessRequests.requestId, requestId))
+    .returning();
+
+  return c.json({ request: serializeProjectAccessRequest(updated) });
 },
 );
 
