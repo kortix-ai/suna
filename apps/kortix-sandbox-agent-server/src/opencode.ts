@@ -324,6 +324,7 @@ export type Opencode = {
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
+  reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
   getBinaryPath(): string | null
@@ -336,6 +337,9 @@ export function createOpencodeSupervisor(
   opencodeConfigDir: string,
   projectEnv?: ProjectEnvStore,
 ): Opencode {
+  let currentCfg = cfg
+  let currentOpencodeConfigDir = opencodeConfigDir
+  let currentProjectEnv = projectEnv
   let child: ChildProcess | null = null
   let binaryPath: string | null = null
   let stopping = false
@@ -375,15 +379,15 @@ export function createOpencodeSupervisor(
         err: (err as Error).message,
       })
     }
-    const baseEnv = projectEnv ? mergeProjectEnv(process.env, projectEnv) : process.env
+    const baseEnv = currentProjectEnv ? mergeProjectEnv(process.env, currentProjectEnv) : process.env
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
-      ...buildGitIdentityEnv(cfg),
+      ...buildGitIdentityEnv(currentCfg),
       HOME: OPENCODE_HOME,
       XDG_DATA_HOME: OPENCODE_DATA_HOME,
       XDG_CONFIG_HOME: OPENCODE_CONFIG_HOME,
       XDG_CACHE_HOME: OPENCODE_CACHE_HOME,
-      OPENCODE_CONFIG_DIR: opencodeConfigDir,
+      OPENCODE_CONFIG_DIR: currentOpencodeConfigDir,
       // Every non-interactive shell opencode spawns (`bash -c`) sources this,
       // so live project secrets reach the agent's commands without any
       // opencode plugin/config. Interactive shells + terminals get it from the
@@ -440,13 +444,13 @@ export function createOpencodeSupervisor(
     const args = [
       'serve',
       '--port',
-      String(cfg.opencodeInternalPort),
+      String(currentCfg.opencodeInternalPort),
       '--hostname',
       '127.0.0.1',
     ]
 
     const cwd = ensureCwdExists()
-    logger.info('[opencode] spawning', { bin, port: cfg.opencodeInternalPort, cwd })
+    logger.info('[opencode] spawning', { bin, port: currentCfg.opencodeInternalPort, cwd })
     const proc = spawn(bin, args, {
       cwd,
       env,
@@ -480,7 +484,7 @@ export function createOpencodeSupervisor(
   }
 
   async function checkReady(): Promise<boolean> {
-    return probeOpencodeSessionApi(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget, 2_000)
+    return probeOpencodeSessionApi(`http://127.0.0.1:${currentCfg.opencodeInternalPort}`, currentCfg.projectTarget, 2_000)
   }
 
   function scheduleReadinessProbe() {
@@ -509,7 +513,7 @@ export function createOpencodeSupervisor(
         return
       }
       binaryPath = bin
-      opencodeCwd = await resolveOpencodeCwd(cfg)
+      opencodeCwd = await resolveOpencodeCwd(currentCfg)
       try {
         await spawnChild(bin)
       } catch (err) {
@@ -552,12 +556,23 @@ export function createOpencodeSupervisor(
       await this.start()
     },
 
+    reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {
+      currentCfg = nextCfg
+      currentOpencodeConfigDir = nextOpencodeConfigDir
+      if (nextProjectEnv) currentProjectEnv = nextProjectEnv
+      state = 'starting'
+      logger.info('[opencode] reconfigured', {
+        projectId: nextCfg.projectId,
+        opencodeConfigDir: nextOpencodeConfigDir,
+      })
+    },
+
     getPid() {
       return child?.pid ?? null
     },
 
     getInternalUrl() {
-      return `http://127.0.0.1:${cfg.opencodeInternalPort}`
+      return `http://127.0.0.1:${currentCfg.opencodeInternalPort}`
     },
 
     getBinaryPath() {
