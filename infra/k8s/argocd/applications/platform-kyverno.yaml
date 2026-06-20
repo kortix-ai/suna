@@ -7,6 +7,8 @@ kind: Application
 metadata:
   name: kortix-platform-kyverno
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -50,6 +52,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      managedFieldsManagers:
+        - kube-apiserver
   syncPolicy:
     automated:
       prune: true

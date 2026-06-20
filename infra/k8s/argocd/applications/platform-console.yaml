@@ -13,6 +13,8 @@ kind: Application
 metadata:
   name: kortix-platform-console
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -89,6 +91,21 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kortix-platform
+  ignoreDifferences:
+    - kind: Service
+      jqPathExpressions:
+        - .spec.clusterIP
+        - .spec.clusterIPs
+        - .spec.ipFamilies
+        - .spec.ipFamilyPolicy
+        - .spec.internalTrafficPolicy
+        - .spec.sessionAffinity
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .spec.progressDeadlineSeconds
+        - .spec.revisionHistoryLimit
+        - .spec.strategy.rollingUpdate
   syncPolicy:
     automated:
       prune: true
