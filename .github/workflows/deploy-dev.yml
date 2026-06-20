@@ -331,6 +331,39 @@ jobs:
           echo "::error::dev Deployment did not roll out to :${TAG} within ~15m (Argo lag, stuck, or pods never Ready)."
           exit 1
 
+      - name: Debug failed dev rollout
+        if: failure() && steps.guard.outputs.exists == 'true'
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set +e
+          echo "::group::Deployment"
+          kubectl -n "$NAMESPACE" get deploy "$APP" -o wide
+          kubectl -n "$NAMESPACE" describe deploy "$APP"
+          echo "::endgroup::"
+
+          echo "::group::ReplicaSets"
+          kubectl -n "$NAMESPACE" get rs -l app.kubernetes.io/name="$APP" -o wide
+          kubectl -n "$NAMESPACE" describe rs -l app.kubernetes.io/name="$APP"
+          echo "::endgroup::"
+
+          echo "::group::Pods"
+          kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o wide
+          kubectl -n "$NAMESPACE" describe pods -l app.kubernetes.io/name="$APP"
+          echo "::endgroup::"
+
+          echo "::group::Recent events"
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -120
+          echo "::endgroup::"
+
+          echo "::group::New image pod logs"
+          for pod in $(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.containers[0].image}{"\n"}{end}' | awk -v tag=":${TAG}" '$2 ~ tag {print $1}'); do
+            echo "### $pod"
+            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=200
+            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --previous --tail=200
+          done
+          echo "::endgroup::"
+
       - name: Summary
         if: always() && steps.guard.outputs.exists == 'true'
         run: |
