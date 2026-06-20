@@ -252,8 +252,19 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
 }
 
 
+// `projects.project_id` is a Postgres `uuid` column, so a malformed id
+// (e.g. a truncated "fda4e35e") makes the lookup throw `invalid input syntax
+// for type uuid` (SQLSTATE 22P02) before any guard runs — surfacing as an
+// opaque 500. Validate the shape first so a bad id is a clean 404, not a 500.
+const PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return PROJECT_ID_RE.test(value);
+}
+
 export async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
+  if (!isUuid(projectId)) return null;
   const [row] = await db
     .select()
     .from(projects)

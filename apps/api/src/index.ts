@@ -56,6 +56,7 @@ import {
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -363,6 +364,7 @@ const HealthSchema = z
     }),
     tunnel: z.any(),
     leader: z.boolean(),
+    trigger_scheduler: z.any(),
   })
   .openapi('Health');
 
@@ -398,6 +400,10 @@ const healthHandler = (c: any) =>
     },
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
+    // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
+    // took, and what it did. On a non-leader pod the fields are null (the sweep
+    // only runs on the leader) — so "all pods null" = no leader = no triggers.
+    trigger_scheduler: getTriggerSchedulerHealth(),
   });
 
 app.openapi(
