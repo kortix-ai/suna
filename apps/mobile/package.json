@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@agentpress/shared": "file:./lib/agentpress-shared",
+    "@kortix/shared": "workspace:*",
     "@bacons/apple-targets": "^3.0.5",
     "@expensify/react-native-live-markdown": "0.1.317",
     "@gorhom/bottom-sheet": "^5.2.6",
@@ -101,7 +102,7 @@
     "react-native-drawer-layout": "^4.1.13",
     "react-native-email-link": "^1.16.1",
     "react-native-gesture-handler": "~2.28.0",
-    "react-native-keyboard-controller": "^1.20.2",
+    "react-native-keyboard-controller": "^1.18.5",
     "react-native-markdown-display": "^7.0.2",
     "react-native-purchases": "^9.6.5",
     "react-native-purchases-ui": "^9.6.5",

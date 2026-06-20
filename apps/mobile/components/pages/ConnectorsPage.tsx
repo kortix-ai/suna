@@ -661,7 +661,6 @@ function AddConnectorView({
             contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            scrollEventThrottle={200}
             onScroll={({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
               const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
               if (

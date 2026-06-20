@@ -27,7 +27,6 @@ import {
   BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
 import {
-  MessageSquare,
   Check,
   Copy,
   ExternalLink,
@@ -36,6 +35,7 @@ import {
   Plug,
   CircleCheck,
 } from 'lucide-react-native';
+import { SlackIcon } from '@/components/icons/slack-icon';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
@@ -364,8 +364,8 @@ export function ChannelsNavPage({
             <>
               {/* Connected */}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' }}>
-                <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: SLACK, alignItems: 'center', justifyContent: 'center' }}>
-                  <MessageSquare size={20} color="#fff" />
+                <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
+                  <SlackIcon width={20} height={20} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
@@ -403,8 +403,8 @@ export function ChannelsNavPage({
             <>
               {/* Disconnected */}
               <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 20 }}>
-                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: SLACK, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                  <MessageSquare size={28} color="#fff" />
+                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                  <SlackIcon width={28} height={28} />
                 </View>
                 <Text style={{ fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }}>Connect Slack</Text>
                 <Text style={{ fontSize: 13.5, lineHeight: 20, color: muted, textAlign: 'center', marginTop: 6, paddingHorizontal: 12 }}>
@@ -418,7 +418,7 @@ export function ChannelsNavPage({
                   activeOpacity={0.85}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 50, borderRadius: 9999, backgroundColor: SLACK }}
                 >
-                  <MessageSquare size={18} color="#fff" />
+                  <SlackIcon width={18} height={18} />
                   <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: '#fff' }}>Add to Slack</Text>
                 </TouchableOpacity>
               )}

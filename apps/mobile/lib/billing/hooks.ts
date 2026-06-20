@@ -1,15 +1,10 @@
 /**
  * Unified Billing React Query Hooks
- * 
+ *
  * Single hook for all billing data with proper invalidation
  */
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryOptions,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import {
   billingApi,
   accountStateSelectors,
@@ -48,15 +43,21 @@ export { accountStateSelectors };
 
 export const accountStateKeys = {
   all: ['account-state'] as const,
-  state: () => [...accountStateKeys.all, 'state'] as const,
+  state: (accountId?: string) =>
+    [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
 };
 
 // =============================================================================
 // UTILITY - Invalidation helper for mutations
 // =============================================================================
 
-export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
+export function invalidateAccountState(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accountId?: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: accountId ? accountStateKeys.state(accountId) : accountStateKeys.all,
+  });
 }
 
 // Don't retry on auth errors (401/403)
@@ -77,11 +78,13 @@ interface UseAccountStateOptions {
   staleTime?: number;
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
+  /** Fetch a specific team account rather than the user's primary account. */
+  accountId?: string;
 }
 
 /**
  * Unified hook for all account billing state.
- * 
+ *
  * The data is cached for 10 minutes and only refetched when:
  * - A mutation occurs (upgrade, downgrade, purchase, etc.)
  * - User explicitly refreshes
@@ -89,10 +92,11 @@ interface UseAccountStateOptions {
  */
 export function useAccountState(options?: UseAccountStateOptions) {
   const enabled = options?.enabled ?? true;
-  
+  const accountId = options?.accountId;
+
   return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(),
-    queryFn: () => billingApi.getAccountState(),
+    queryKey: accountStateKeys.state(accountId),
+    queryFn: () => billingApi.getAccountState(false, accountId),
     enabled,
     staleTime: options?.staleTime ?? 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 15, // 15 minutes
@@ -109,9 +113,9 @@ export function useAccountState(options?: UseAccountStateOptions) {
 
 export function useCreateCheckoutSession() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) => 
+    mutationFn: (request: CreateCheckoutSessionRequest) =>
       billingApi.createCheckoutSession(request),
     onSuccess: (data) => {
       if (data.status === 'upgraded' || data.status === 'updated') {
@@ -124,7 +128,7 @@ export function useCreateCheckoutSession() {
 
 export function useCancelSubscription() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request),
     onSuccess: () => {
@@ -141,7 +145,7 @@ export function useCreatePortalSession() {
 
 export function useScheduleDowngrade() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
     onSuccess: () => {
@@ -152,7 +156,7 @@ export function useScheduleDowngrade() {
 
 export function useCancelScheduledChange() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: () => billingApi.cancelScheduledChange(),
     onSuccess: () => {
@@ -228,28 +232,33 @@ export interface BillingStatus {
 export const billingKeys = accountStateKeys;
 
 // Transform AccountState to SubscriptionInfo
-function transformToSubscriptionInfo(state: AccountState | undefined): SubscriptionInfo | undefined {
+function transformToSubscriptionInfo(
+  state: AccountState | undefined
+): SubscriptionInfo | undefined {
   if (!state) return undefined;
-  
+
   // Get revenuecat_product_id from account state if available (for RevenueCat provider)
-  const revenuecatProductId = (state as any).subscription?.revenuecat_product_id || 
-                               (state as any).revenuecat_product_id || 
-                               null;
-  
+  const revenuecatProductId =
+    (state as any).subscription?.revenuecat_product_id ||
+    (state as any).revenuecat_product_id ||
+    null;
+
   return {
     status: state.subscription.status,
     plan_name: state.subscription.tier_display_name,
     tier_key: state.subscription.tier_key,
     billing_period: state.subscription.billing_period,
     provider: state.subscription.provider,
-    subscription: state.subscription.subscription_id ? {
-      id: state.subscription.subscription_id,
-      status: state.subscription.status,
-      tier_key: state.subscription.tier_key,
-      current_period_end: state.subscription.current_period_end || 0,
-      cancel_at: state.subscription.cancellation_effective_date || null,
-      cancel_at_period_end: state.subscription.cancel_at_period_end,
-    } : null,
+    subscription: state.subscription.subscription_id
+      ? {
+          id: state.subscription.subscription_id,
+          status: state.subscription.status,
+          tier_key: state.subscription.tier_key,
+          current_period_end: state.subscription.current_period_end || 0,
+          cancel_at: state.subscription.cancellation_effective_date || null,
+          cancel_at_period_end: state.subscription.cancel_at_period_end,
+        }
+      : null,
     tier: {
       name: state.tier.name,
       display_name: state.tier.display_name,
@@ -274,7 +283,7 @@ function transformToSubscriptionInfo(state: AccountState | undefined): Subscript
 // Transform AccountState to CreditBalance
 function transformToCreditBalance(state: AccountState | undefined): CreditBalance | undefined {
   if (!state) return undefined;
-  
+
   return {
     balance: state.credits.total,
     expiring_credits: state.credits.daily + state.credits.monthly,
@@ -287,7 +296,7 @@ function transformToCreditBalance(state: AccountState | undefined): CreditBalanc
 // Transform AccountState to BillingStatus
 function transformToBillingStatus(state: AccountState | undefined): BillingStatus | undefined {
   if (!state) return undefined;
-  
+
   return {
     can_run: state.credits.can_run,
     has_credits: state.credits.total > 0,
@@ -315,7 +324,7 @@ export function useSubscription(options?: UseSubscriptionOptions) {
   const { data, isLoading, error, refetch, ...rest } = useAccountState({
     enabled: options?.enabled,
   });
-  
+
   return {
     data: transformToSubscriptionInfo(data),
     isLoading,
@@ -333,7 +342,7 @@ export function useCreditBalance(options?: UseCreditBalanceOptions) {
   const { data, isLoading, error, refetch, ...rest } = useAccountState({
     enabled: options?.enabled,
   });
-  
+
   return {
     data: transformToCreditBalance(data),
     isLoading,
@@ -351,7 +360,7 @@ export function useBillingStatus(options?: UseBillingStatusOptions) {
   const { data, isLoading, error, refetch, ...rest } = useAccountState({
     enabled: options?.enabled,
   });
-  
+
   return {
     data: transformToBillingStatus(data),
     isLoading,
@@ -381,7 +390,7 @@ export function useSubscriptionCommitment(
 ) {
   // For now, return commitment info from account state
   const { data: accountState } = useAccountState({ enabled: options?.enabled ?? !!subscriptionId });
-  
+
   return {
     data: accountState?.subscription.commitment,
     isLoading: false,
@@ -395,12 +404,14 @@ export function useSubscriptionCommitment(
  */
 export function useScheduledChanges(options?: { enabled?: boolean }) {
   const { data: accountState } = useAccountState({ enabled: options?.enabled });
-  
+
   return {
-    data: accountState?.subscription.scheduled_change ? {
-      scheduled_change: accountState.subscription.scheduled_change,
-      has_scheduled_change: accountState.subscription.has_scheduled_change,
-    } : null,
+    data: accountState?.subscription.scheduled_change
+      ? {
+          scheduled_change: accountState.subscription.scheduled_change,
+          has_scheduled_change: accountState.subscription.has_scheduled_change,
+        }
+      : null,
     isLoading: false,
     error: null,
     refetch: async () => {},
@@ -413,7 +424,7 @@ export function useScheduledChanges(options?: { enabled?: boolean }) {
 
 export function usePurchaseCredits() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request),
     onSuccess: (data) => {
@@ -428,7 +439,7 @@ export function usePurchaseCredits() {
 
 export function useDeductTokenUsage() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: (usage: TokenUsage) => billingApi.deductTokenUsage(usage),
     onSuccess: () => {
@@ -439,7 +450,7 @@ export function useDeductTokenUsage() {
 
 export function useSyncSubscription() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: () => billingApi.syncSubscription(),
     onSuccess: () => {
@@ -483,9 +494,9 @@ export function useTrialStatus(options?: { enabled?: boolean }) {
 
 export function useStartTrial() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (request: { success_url: string; cancel_url: string }) => 
+    mutationFn: (request: { success_url: string; cancel_url: string }) =>
       billingApi.startTrial(request),
     onSuccess: (data) => {
       invalidateAccountState(queryClient);
@@ -498,7 +509,7 @@ export function useStartTrial() {
 
 export function useCancelTrial() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: () => billingApi.cancelTrial(),
     onSuccess: (response) => {

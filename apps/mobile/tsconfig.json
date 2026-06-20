@@ -4,7 +4,8 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["*"]
+      "@/*": ["*"],
+      "@kortix/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": [

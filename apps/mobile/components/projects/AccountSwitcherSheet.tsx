@@ -46,8 +46,14 @@ export function AccountSwitcherSheet({
   const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
 
   useEffect(() => {
-    if (open) sheetRef.current?.present();
-    else sheetRef.current?.dismiss();
+    if (!open) {
+      sheetRef.current?.dismiss();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      sheetRef.current?.present();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   const renderBackdrop = useCallback(
