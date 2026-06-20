@@ -5,13 +5,13 @@ import { parseBillingError, RequestTooLargeError } from './api/errors';
 
 const getApiUrl = () => getEnv().BACKEND_URL || '';
 
-interface ApiClientOptions {
+export interface ApiClientOptions {
   showErrors?: boolean;
   errorContext?: ErrorContext;
   timeout?: number;
 }
 
-interface ApiResponse<T = any> {
+export interface ApiResponse<T = any> {
   data?: T;
   error?: ApiError;
   success: boolean;
@@ -50,11 +50,11 @@ async function makeRequest<T = any>(
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
     const headers: Record<string, string> = {};
-    
+
     if (!isFormData) {
       headers['Content-Type'] = 'application/json';
     }
-    
+
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
 
@@ -144,7 +144,7 @@ async function makeRequest<T = any>(
 
     let data: T;
     const contentType = response.headers.get('content-type');
-    
+
     if (contentType?.includes('application/json')) {
       data = await response.json();
     } else if (contentType?.includes('text/')) {
@@ -166,7 +166,7 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const isAbortError = error?.name === 'AbortError' || 
+    const isAbortError = error?.name === 'AbortError' ||
                          error?.name === 'AbortSignal' ||
                          (error instanceof Error && error.message.includes('aborted'));
 
@@ -176,7 +176,7 @@ async function makeRequest<T = any>(
     }
 
     let apiError: ApiError;
-    
+
     if (isAbortError) {
       // An external abort (Next.js client navigation, tab close, React Query
       // cancelling an in-flight request, a dropped connection) is NOT a
@@ -238,6 +238,56 @@ async function makeRequest<T = any>(
   }
 }
 
+export const supabaseClient = {
+  async execute<T = any>(
+    queryFn: () => Promise<{ data: T | null; error: any }>,
+    errorContext?: ErrorContext
+  ): Promise<ApiResponse<T>> {
+    try {
+      const { data, error } = await queryFn();
+
+      if (error) {
+        const apiError: ApiError = Object.assign(Object.create(Error.prototype), {
+          message: error.message || 'Database error',
+          name: 'ApiError',
+          code: error.code,
+          details: error
+        });
+
+        handleApiError(apiError, errorContext);
+
+        return {
+          error: apiError,
+          success: false,
+        };
+      }
+
+      return {
+        data: data as T,
+        success: true,
+      };
+    } catch (error: any) {
+      const apiError: ApiError = error instanceof Error
+        ? Object.assign(Object.create(Error.prototype), {
+            message: error.message,
+            name: error.name || 'ApiError',
+            stack: error.stack
+          })
+        : Object.assign(Object.create(Error.prototype), {
+            message: String(error),
+            name: 'ApiError'
+          });
+
+      handleApiError(apiError, errorContext);
+
+      return {
+        error: apiError,
+        success: false,
+      };
+    }
+  },
+};
+
 export const backendApi = {
   get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),
@@ -291,4 +341,4 @@ export const backendApi = {
       headers: uploadHeaders,
     });
   },
-}; 
+};

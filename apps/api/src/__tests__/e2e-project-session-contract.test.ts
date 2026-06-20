@@ -25,9 +25,11 @@ const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
+const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
 
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
+process.env.KORTIX_URL = 'https://api.test.kortix.local';
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
@@ -261,6 +263,12 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WarmRuntimeUnavailableError';
+    }
+  },
   getProvider: () => ({
     getStatus: async () => providerStatus,
     start: async () => {
@@ -502,8 +510,9 @@ mock.module('../shared/db', () => ({
           set,
         }: {
           set: Partial<typeof projectSecrets.$inferInsert>;
-        }) => ({
-          returning: async () => {
+        }) => {
+          const conflictResult = {
+            returning: async () => {
             if (table === projectGitConnections) {
               const existingIndex = gitConnectionRows.findIndex(
                 (row) => row.projectId === values.projectId,
@@ -598,7 +607,15 @@ mock.module('../shared/db', () => ({
             else secretRows.push(row);
             return [row];
           },
-        }),
+            then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+              conflictResult.returning().then(resolve, reject);
+            },
+            catch: (reject: (reason: unknown) => unknown) => {
+              conflictResult.returning().catch(reject);
+            },
+          };
+          return conflictResult;
+        },
       }),
     }),
     delete: (table: unknown) => ({
@@ -719,6 +736,11 @@ describe('project session API contract', () => {
       delete process.env.API_KEY_SECRET;
     } else {
       process.env.API_KEY_SECRET = ORIGINAL_API_KEY_SECRET;
+    }
+    if (ORIGINAL_KORTIX_URL === undefined) {
+      delete process.env.KORTIX_URL;
+    } else {
+      process.env.KORTIX_URL = ORIGINAL_KORTIX_URL;
     }
   });
 

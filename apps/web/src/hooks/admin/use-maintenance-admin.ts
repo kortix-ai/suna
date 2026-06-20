@@ -35,6 +35,7 @@ export const useUpdateMaintenanceConfig = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-maintenance-config'] });
+      queryClient.invalidateQueries({ queryKey: systemStatusKeys.all });
       queryClient.invalidateQueries({ queryKey: systemStatusKeys.config });
     },
   });

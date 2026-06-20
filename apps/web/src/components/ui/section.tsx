@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Kortix <Section> — labelled section for structured internal surfaces.
+ * Kortix <Section> — labelled section used inside PageShell.
  *
  * Uppercase micro-label, optional trailing action, generous top-margin
  * between sections. No border box, no card chrome — the label and
@@ -15,7 +15,7 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
-interface SectionProps {
+export interface SectionProps {
   label?: string;
   action?: ReactNode;
   /** Extra top spacing (defaults to mt-10 between sections) */

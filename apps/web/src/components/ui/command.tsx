@@ -285,6 +285,19 @@ function CommandGroup({
   );
 }
 
+function CommandSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof CommandPrimitive.Separator>) {
+  return (
+    <CommandPrimitive.Separator
+      data-slot="command-separator"
+      className={cn('bg-border/40 mx-3 my-1 h-px', className)}
+      {...props}
+    />
+  );
+}
+
 function CommandItem({
   className,
   ...props
@@ -419,6 +432,7 @@ export {
   CommandGroup,
   CommandItem,
   CommandShortcut,
+  CommandSeparator,
   CommandFooter,
   CommandKbd,
 };

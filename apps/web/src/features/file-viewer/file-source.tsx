@@ -7,7 +7,7 @@ import { createContext, useContext, type ComponentType, type ReactNode } from 'r
  * `FileContent` type (structurally identical) so feature adapters can supply
  * their own typed hooks without conversion.
  */
-interface FileContent {
+export interface FileContent {
   type: 'text' | 'binary';
   content: string;
   patch?: FilePatch;
@@ -16,7 +16,7 @@ interface FileContent {
   mimeType?: string;
 }
 
-interface FilePatch {
+export interface FilePatch {
   oldFileName: string;
   newFileName: string;
   oldHeader?: string;
@@ -25,7 +25,7 @@ interface FilePatch {
   index?: string;
 }
 
-interface FilePatchHunk {
+export interface FilePatchHunk {
   oldStart: number;
   oldLines: number;
   newStart: number;
@@ -33,14 +33,14 @@ interface FilePatchHunk {
   lines: string[];
 }
 
-interface FileContentResult {
+export interface FileContentResult {
   data: FileContent | undefined;
   isLoading: boolean;
   error: unknown;
   refetch: () => Promise<unknown>;
 }
 
-interface BinaryBlobResult {
+export interface BinaryBlobResult {
   blobUrl: string | null;
   blob: Blob | null;
   isLoading: boolean;

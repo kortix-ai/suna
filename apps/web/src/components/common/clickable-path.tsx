@@ -42,7 +42,7 @@ interface ClickablePathProps {
   variant?: 'inline' | 'terminal';
 }
 
-function ClickablePath({
+export function ClickablePath({
   filePath,
   children,
   lineNumber,

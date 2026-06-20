@@ -45,7 +45,7 @@ export function VideoRenderer({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -182,7 +182,7 @@ export function VideoRenderer({
 
   const toggleFullscreen = async () => {
     if (!containerRef.current) return;
-    
+
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
@@ -435,5 +435,23 @@ export function VideoRenderer({
         </>
       )}
     </div>
+  );
+}
+
+// Compact video player for inline tool views
+export function InlineVideoPlayer({
+  url,
+  className,
+}: {
+  url: string;
+  className?: string;
+}) {
+  return (
+    <VideoRenderer
+      url={url}
+      className={cn('w-80 aspect-video rounded-2xl border border-neutral-200 dark:border-neutral-700/50', className)}
+      compact
+      loop
+    />
   );
 }

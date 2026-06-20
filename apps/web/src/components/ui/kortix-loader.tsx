@@ -44,6 +44,10 @@ interface KortixLoaderProps {
    * - 'auto': Auto-detect based on theme (default)
    */
   variant?: 'white' | 'black' | 'auto';
+  /**
+   * @deprecated Use 'variant' instead
+   */
+  forceTheme?: 'light' | 'dark';
 }
 
 const SIZE_MAP = {
@@ -90,6 +94,7 @@ export function KortixLoader({
   autoPlay = true,
   loop = true,
   variant = 'auto',
+  forceTheme, // deprecated, but kept for backwards compatibility
 }: KortixLoaderProps) {
   const { resolvedTheme } = useTheme();
   const loaderSize = customSize || SIZE_MAP[size];
@@ -108,6 +113,9 @@ export function KortixLoader({
   if (variant !== 'auto') {
     // Explicit variant set
     effectiveVariant = variant;
+  } else if (forceTheme) {
+    // Backwards compatibility with forceTheme
+    effectiveVariant = forceTheme === 'dark' ? 'white' : 'black';
   } else {
     // Auto-detect from theme
     const isDark = (resolvedTheme || 'dark') === 'dark';

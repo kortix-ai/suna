@@ -1,0 +1,1 @@
+export { useSmoothStream } from './animations';

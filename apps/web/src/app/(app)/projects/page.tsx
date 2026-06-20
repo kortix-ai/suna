@@ -270,7 +270,7 @@ export default function ProjectsPage() {
   }, [legacyMachinesQuery.data, query, projectIds]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" />;
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 
   // Bootstrapping the first project — hold the connecting screen instead of

@@ -5,8 +5,9 @@ import { useTranslations } from 'next-intl';
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Search } from "lucide-react"
+import { Search, Coins, MessageCircle, HelpCircle } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { SpotlightCard } from "@/components/ui/spotlight-card"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -33,7 +34,7 @@ const helpData = {
       items: [
         {
           title: "What are Credits?",
-          url: "/help/credits",
+          url: "/credits-explained",
         },
       ],
     },
@@ -109,10 +110,10 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
                         )}
                       >
                         {'external' in item && item.external ? (
-                          <a 
-                            href={item.url} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className={cn(
                               "flex items-center justify-between w-full px-3 py-2 text-sm",
                               active ? "text-foreground" : "text-muted-foreground"
@@ -121,8 +122,8 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
                             <span className="font-medium text-primary">{item.title}</span>
                           </a>
                         ) : (
-                          <Link 
-                            href={item.url} 
+                          <Link
+                            href={item.url}
                             className={cn(
                               "flex items-center justify-between w-full px-3 py-2 text-sm",
                               active ? "text-foreground" : "text-muted-foreground"

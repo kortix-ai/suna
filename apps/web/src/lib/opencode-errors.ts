@@ -1,9 +1,9 @@
-interface OpenCodeConfigIssue {
+export interface OpenCodeConfigIssue {
   path?: unknown[];
   message?: string;
 }
 
-interface OpenCodeConfigInvalidError {
+export interface OpenCodeConfigInvalidError {
   name: 'ConfigInvalidError';
   data?: {
     path?: string;
@@ -24,7 +24,7 @@ function rawErrorMessage(error: unknown): string {
   return String(error ?? '');
 }
 
-function parseOpenCodeErrorPayload(error: unknown): unknown {
+export function parseOpenCodeErrorPayload(error: unknown): unknown {
   const raw = rawErrorMessage(error).trim();
   if (!raw) return null;
 
@@ -48,7 +48,7 @@ function parseOpenCodeErrorPayload(error: unknown): unknown {
   return null;
 }
 
-function getOpenCodeConfigInvalidError(error: unknown): OpenCodeConfigInvalidError | null {
+export function getOpenCodeConfigInvalidError(error: unknown): OpenCodeConfigInvalidError | null {
   const payload = parseOpenCodeErrorPayload(error);
   if (!payload || typeof payload !== 'object') return null;
   const maybe = payload as Partial<OpenCodeConfigInvalidError>;

@@ -154,7 +154,7 @@ export default function CheckoutPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <KortixLoader size="large" variant="black" />
+        <KortixLoader size="large" forceTheme="light" />
       </div>
     }>
       <CheckoutContent />

@@ -29,6 +29,14 @@ import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagn
 // Using type assertion because TypeScript types are incomplete
 const langsTyped = langs as Record<string, (() => any) | undefined>;
 
+// Debug: uncomment to inspect available CodeMirror languages
+// if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+//   const availableLangs = Object.keys(langsTyped).filter(
+//     (key) => typeof langsTyped[key] === 'function'
+//   );
+//   console.log('[CodeEditor] Available languages:', availableLangs);
+// }
+
 // Helper function to safely get language extension
 const getLangExtension = (langKey: string): any => {
   try {
@@ -44,7 +52,7 @@ const getLangExtension = (langKey: string): any => {
       }
       return null;
     }
-    
+
     // Language not found in langs object
     if (process.env.NODE_ENV === 'development') {
       const availableLangs = Object.keys(langsTyped)
@@ -52,7 +60,7 @@ const getLangExtension = (langKey: string): any => {
         .sort();
       console.warn(
         `[CodeEditor] Language "${langKey}" not found.`,
-        `Looking for similar: ${availableLangs.filter(l => 
+        `Looking for similar: ${availableLangs.filter(l =>
           l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l)
         ).join(', ') || 'none'}`,
         `Total available: ${availableLangs.length} languages`
@@ -79,7 +87,7 @@ const languageMap: Record<string, () => any> = {
   tsx: () => getLangExtension('tsx'),
   mjs: () => getLangExtension('js'),
   cjs: () => getLangExtension('js'),
-  
+
   // Web technologies
   html: () => getLangExtension('html'),
   htm: () => getLangExtension('html'),
@@ -87,23 +95,23 @@ const languageMap: Record<string, () => any> = {
   scss: () => getLangExtension('scss'),
   sass: () => getLangExtension('sass'),
   less: () => getLangExtension('less'),
-  
+
   // Data formats
   json: () => getLangExtension('json'),
   jsonc: () => getLangExtension('json'),
   json5: () => getLangExtension('json'),
-  
+
   // Markdown
   md: () => getLangExtension('md'),
   markdown: () => getLangExtension('md'),
   mdx: () => getLangExtension('md'),
-  
+
   // Python
   python: () => getLangExtension('py'),
   py: () => getLangExtension('py'),
   pyi: () => getLangExtension('py'),
   pyw: () => getLangExtension('py'),
-  
+
   // Systems languages
   rust: () => getLangExtension('rs'),
   rs: () => getLangExtension('rs'),
@@ -116,7 +124,7 @@ const languageMap: Record<string, () => any> = {
   cc: () => getLangExtension('cpp'),
   hpp: () => getLangExtension('cpp'),
   hxx: () => getLangExtension('cpp'),
-  
+
   // Java family
   java: () => getLangExtension('java'),
   cs: () => getLangExtension('cs'),
@@ -124,7 +132,7 @@ const languageMap: Record<string, () => any> = {
   kotlin: () => getLangExtension('kt'),
   kt: () => getLangExtension('kt'),
   scala: () => getLangExtension('scala'),
-  
+
   // Scripting languages
   php: () => getLangExtension('php'),
   ruby: () => getLangExtension('rb'),
@@ -136,27 +144,27 @@ const languageMap: Record<string, () => any> = {
   pm: () => getLangExtension('pl'),
   lua: () => getLangExtension('lua'),
   r: () => getLangExtension('r'),
-  
+
   // Shell scripts
   sh: () => getLangExtension('sh'),
   bash: () => getLangExtension('bash'),
   zsh: () => getLangExtension('sh'),
   fish: () => getLangExtension('sh'),
   shell: () => getLangExtension('sh'),
-  
+
   // Data/Config
   sql: () => getLangExtension('sql'),
   yaml: () => getLangExtension('yaml'),
   yml: () => getLangExtension('yaml'),
   xml: () => getLangExtension('xml'),
   toml: () => getLangExtension('toml'),
-  
+
   // Mobile
   swift: () => getLangExtension('swift'),
-  
+
   // Properties / config (KEY=value with # comments) — used for .env, .ini, .properties, .conf
   properties: () => getLangExtension('properties'),
-  
+
   // Other
   vue: () => getLangExtension('vue'),
   svelte: () => getLangExtension('svelte'),
@@ -171,7 +179,7 @@ const languageMap: Record<string, () => any> = {
 };
 
 // Get language from file extension
-function getLanguageFromExtension(fileName: string): string {
+export function getLanguageFromExtension(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';
   const fileNameLower = fileName.toLowerCase();
   const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
@@ -195,7 +203,7 @@ function getLanguageFromExtension(fileName: string): string {
   if (baseName === 'makefile' || baseName === 'gnumakefile') {
     return 'shell'; // Closest available — CodeMirror has no native Makefile
   }
-  
+
   const extensionToLanguage: Record<string, string> = {
     // JavaScript/TypeScript
     js: 'javascript',
@@ -204,7 +212,7 @@ function getLanguageFromExtension(fileName: string): string {
     cjs: 'javascript',
     ts: 'typescript',
     tsx: 'tsx',
-    
+
     // Web technologies
     html: 'html',
     htm: 'html',
@@ -212,23 +220,23 @@ function getLanguageFromExtension(fileName: string): string {
     scss: 'scss',
     sass: 'sass',
     less: 'less',
-    
+
     // Data formats
     json: 'json',
     jsonc: 'json',
     json5: 'json',
-    
+
     // Markdown
     md: 'markdown',
     markdown: 'markdown',
     mdx: 'markdown',
-    
+
     // Python
     py: 'python',
     python: 'python',
     pyi: 'python',
     pyw: 'python',
-    
+
     // Systems languages
     rs: 'rust',
     go: 'go',
@@ -239,13 +247,13 @@ function getLanguageFromExtension(fileName: string): string {
     cc: 'cpp',
     hpp: 'cpp',
     hxx: 'cpp',
-    
+
     // Java family
     java: 'java',
     cs: 'csharp',
     kt: 'kotlin',
     scala: 'scala',
-    
+
     // Scripting languages
     php: 'php',
     rb: 'ruby',
@@ -255,23 +263,23 @@ function getLanguageFromExtension(fileName: string): string {
     pm: 'perl',
     lua: 'lua',
     r: 'r',
-    
+
     // Shell scripts
     sh: 'shell',
     bash: 'shell',
     zsh: 'shell',
     fish: 'shell',
-    
+
     // Data/Config
     sql: 'sql',
     yml: 'yaml',
     yaml: 'yaml',
     xml: 'xml',
     toml: 'toml',
-    
+
     // Mobile
     swift: 'swift',
-    
+
     // Other
     vue: 'vue',
     svelte: 'svelte',
@@ -292,7 +300,7 @@ function getLanguageFromExtension(fileName: string): string {
     properties: 'properties',
     conf: 'properties',
     cfg: 'properties',
-    
+
     // Plain text (no syntax highlighting)
     txt: 'text',
     log: 'text',
@@ -330,6 +338,7 @@ interface CodeEditorProps {
 export function CodeEditor({
   content,
   originalContent,
+  hasUnsavedChanges: externalHasUnsaved,
   onUnsavedChange,
   fileName,
   language: propLanguage,
@@ -358,21 +367,21 @@ export function CodeEditor({
   const [isReady, setIsReady] = useState(!!content);
   // Track last targetLine we scrolled to, so we only scroll once per value
   const lastScrolledLine = useRef<number | null>(null);
-  
+
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
   onUnsavedChangeRef.current = onUnsavedChange;
-  
+
   // After a save, briefly ignore external content prop changes so a stale
   // refetch doesn't flash the old content back into the editor.
   const saveTimestampRef = useRef(0);
-  
+
   // Compute hasChanges - only after editor is ready and content differs from saved
   const hasChanges = isReady && localContent !== savedContent.current;
-  
+
   // Track previous hasChanges to notify parent only on change
   const prevHasChanges = useRef(false);
-  
+
   // Notify parent when hasChanges state changes
   useEffect(() => {
     if (prevHasChanges.current !== hasChanges) {
@@ -380,7 +389,7 @@ export function CodeEditor({
       onUnsavedChangeRef.current?.(hasChanges);
     }
   }, [hasChanges]);
-  
+
   // Update savedContent ref when originalContent prop changes (e.g., after external save)
   // Also sync localContent if it matches the old saved content (no local edits)
   useEffect(() => {
@@ -537,7 +546,7 @@ export function CodeEditor({
     // For read-only mode (preview/streaming), always update when content changes
     // For editable mode, only update if we don't have local modifications
     const hasNoLocalChanges = readOnly || localContent === savedContent.current || !localContent;
-    
+
     if (content !== localContent && hasNoLocalChanges) {
       // After a save, ignore stale external content for a short window.
       // Query refetches / SSE invalidations can briefly serve the old cached
@@ -587,7 +596,7 @@ export function CodeEditor({
   // Extensions - ensure we only include valid extensions
   const extensions = useMemo(() => {
     const exts: any[] = [];
-    
+
     // Add language extension if available (filter out null/undefined)
     if (langExtension && langExtension.length > 0) {
       const validLangExts = langExtension.filter(ext => ext != null);
@@ -595,7 +604,7 @@ export function CodeEditor({
         exts.push(...validLangExts);
       }
     }
-    
+
     // Always add these core extensions
     exts.push(
       EditorView.lineWrapping,
@@ -606,14 +615,14 @@ export function CodeEditor({
     if (diagExt) {
       exts.push(lintGutter(), diagExt);
     }
-    
+
     return exts;
   }, [langExtension, diagExt]);
 
   const SaveButton = () => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     if (readOnly || !onSave) return null;
-    
+
     switch (saveState) {
       case 'saving':
         return (

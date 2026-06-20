@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   iconName: propIconName,
   iconColor: propIconColor = '#6B7280',
   backgroundColor: propBackgroundColor = '#F3F4F6',
+  agentName: propAgentName,
   isDefault: propIsDefault,
 
   // Common props
@@ -70,7 +72,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   if (iconName) {
     // Normalize and validate the icon name
     const normalizedIconName = normalizeIconName(iconName);
-    
+
     // If icon name is invalid, fall through to default bot icon
     if (normalizedIconName) {
       try {
@@ -117,3 +119,22 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     </div>
   );
 };
+
+interface AgentNameProps {
+  fallback?: string;
+  name?: string;
+}
+
+export const AgentName: React.FC<AgentNameProps> = ({
+  name,
+  fallback = "Kortix"
+}) => {
+  return <span>{name || fallback}</span>;
+};
+
+// Utility function for checking if agent has custom profile
+export function hasCustomProfile(agent: {
+  icon_name?: string | null;
+}): boolean {
+  return !!(agent.icon_name);
+}

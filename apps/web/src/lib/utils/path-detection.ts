@@ -122,7 +122,7 @@ function getPathRegex(): RegExp {
 // Public types
 // ---------------------------------------------------------------------------
 
-interface PathSegment {
+export interface PathSegment {
   type: 'text' | 'path';
   value: string;
   /** The clean file path (without :line:col) */
@@ -133,7 +133,7 @@ interface PathSegment {
   column?: number;
 }
 
-interface PathMatch {
+export interface PathMatch {
   /** The full matched string including :line:col */
   fullMatch: string;
   /** The clean file path without :line:col */
@@ -170,7 +170,7 @@ export function looksLikeFilePath(text: string): boolean {
  * Find all file path matches in a block of text.
  * Returns an array of PathMatch objects with positions and parsed line/col.
  */
-function detectFilePaths(text: string): PathMatch[] {
+export function detectFilePaths(text: string): PathMatch[] {
   if (!text || text.length < 4) return [];
 
   const regex = getPathRegex();

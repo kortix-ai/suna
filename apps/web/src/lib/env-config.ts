@@ -32,6 +32,7 @@ function readRawEnv(): Partial<RuntimeEnv> {
     WEBHOOK_BASE_URL: process.env.KORTIX_PUBLIC_WEBHOOK_BASE_URL || process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL || process.env.KORTIX_URL,
     BILLING_ENABLED: (process.env.KORTIX_PUBLIC_BILLING_ENABLED || process.env.NEXT_PUBLIC_BILLING_ENABLED) === 'true',
     APP_URL: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
+    SANDBOX_ID: process.env.KORTIX_PUBLIC_SANDBOX_ID || process.env.NEXT_PUBLIC_SANDBOX_ID || undefined,
     AUTH_PROVIDERS: process.env.KORTIX_PUBLIC_AUTH_PROVIDERS || process.env.NEXT_PUBLIC_AUTH_PROVIDERS || undefined,
     AUTH_METHODS: process.env.KORTIX_PUBLIC_AUTH_METHODS || process.env.NEXT_PUBLIC_AUTH_METHODS || undefined,
   }
@@ -55,3 +56,5 @@ export function getEnv(): RuntimeEnv {
   logRuntimeEnv(runtimeEnv)
   return runtimeEnv
 }
+
+export const env = getEnv()

@@ -95,7 +95,6 @@ import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { randomHex } from '@/lib/utils/random';
 import {
   createProjectTrigger,
   deleteProjectTrigger,
@@ -214,9 +213,14 @@ function buildCurlExample(url: string): string {
   ].join('\n');
 }
 
-/** Cryptographically random hex string (32 bytes of entropy). */
+/** Cryptographically random base64url string (~32 bytes of entropy). */
 function generateSecret(): string {
-  return randomHex(32);
+  if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
 async function copyToClipboard(value: string, label = 'Copied'): Promise<boolean> {

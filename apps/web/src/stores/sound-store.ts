@@ -22,11 +22,12 @@ export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
  * Available sound packs.
  *
  * - `off`      – all sounds disabled
+ * - `opencode` – default sound pack (OpenCode style)
  * - `kortix`   – Kortix branded sound pack
  */
-export type SoundPack = 'off' | 'kortix';
+export type SoundPack = 'off' | 'opencode' | 'kortix';
 
-interface SoundPreferences {
+export interface SoundPreferences {
   /** Active sound pack — 'off' disables all sounds */
   pack: SoundPack;
   /** Master volume 0-1 */
@@ -60,19 +61,6 @@ const DEFAULT_PREFERENCES: SoundPreferences = {
   volume: 0.5,
   events: {},
 };
-
-function normalizePreferences(value: unknown): SoundPreferences {
-  const preferences = (value ?? {}) as Partial<SoundPreferences>;
-  const pack = preferences.pack === 'kortix' ? 'kortix' : 'off';
-
-  return {
-    ...DEFAULT_PREFERENCES,
-    ...preferences,
-    pack,
-    volume: Math.max(0, Math.min(1, preferences.volume ?? DEFAULT_PREFERENCES.volume)),
-    events: preferences.events ?? {},
-  };
-}
 
 export const useSoundStore = create<SoundState>()(
   persist(
@@ -109,10 +97,6 @@ export const useSoundStore = create<SoundState>()(
     {
       name: 'kortix-sound-preferences',
       storage: createSafeJSONStorage(),
-      merge: (persisted, current) => ({
-        ...current,
-        preferences: normalizePreferences((persisted as Partial<SoundState> | undefined)?.preferences),
-      }),
       partialize: (state) => ({
         preferences: state.preferences,
       }),

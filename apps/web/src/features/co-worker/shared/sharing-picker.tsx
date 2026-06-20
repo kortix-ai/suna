@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-type SharingMode = 'project' | 'private' | 'members';
+export type SharingMode = 'project' | 'private' | 'members';
 
 export interface SharingSelection {
   mode: SharingMode;
@@ -26,7 +26,7 @@ interface OptionCopy {
   desc: string;
 }
 
-interface SharingCopy {
+export interface SharingCopy {
   heading: string;
   project: OptionCopy;
   private: OptionCopy;

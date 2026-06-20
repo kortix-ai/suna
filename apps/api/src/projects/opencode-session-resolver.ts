@@ -35,7 +35,7 @@ function activityOf(s: OpencodeSessionLite): number {
  * so there is no churn from `updated` drifting afterward. The daemon also pins
  * the canonical root server-side at bootstrap, so this heuristic is a fallback.
  */
-function pickCanonicalRoot(
+export function pickCanonicalRoot(
   sessions: OpencodeSessionLite[],
 ): OpencodeSessionLite | null {
   let best: OpencodeSessionLite | null = null;

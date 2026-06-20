@@ -14,9 +14,12 @@
 //   3. Labelling a project Members row that has access only via a group
 //      ("Inherited Editor via Engineering + 1 more").
 
+export type AccountRole = 'owner' | 'admin' | 'member';
+export type ProjectRole = 'manager' | 'editor' | 'viewer';
+
 export interface AccountMeta {
   email: string | null;
-  accountRole: 'owner' | 'admin' | 'member';
+  accountRole: AccountRole;
   isSuperAdmin: boolean;
 }
 
@@ -48,7 +51,7 @@ export function countOverridingMembers(
   return n;
 }
 
-const OVERRIDE_RANK: Record<AccountMeta['accountRole'] | 'super_admin' | 'unknown', number> = {
+const OVERRIDE_RANK: Record<AccountRole | 'super_admin' | 'unknown', number> = {
   super_admin: 0,
   owner: 1,
   admin: 2,
@@ -97,19 +100,17 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
 
 // ─── Project Members → inherited-via-group label ─────────────────────────
 
-type ProjectRoleValue = 'manager' | 'editor' | 'viewer';
-
-const PROJECT_ROLE_LABEL: Record<ProjectRoleValue, string> = {
+const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
   editor: 'Editor',
   viewer: 'Viewer',
 };
 
-interface ProjectAccessRowInput {
+export interface ProjectAccessRowInput {
   has_implicit_access: boolean;
-  project_role: ProjectRoleValue | null;
-  effective_project_role: ProjectRoleValue | null;
-  group_sources?: Array<{ group_name: string; role: ProjectRoleValue }>;
+  project_role: ProjectRole | null;
+  effective_project_role: ProjectRole | null;
+  group_sources?: Array<{ group_name: string; role: ProjectRole }>;
 }
 
 /**

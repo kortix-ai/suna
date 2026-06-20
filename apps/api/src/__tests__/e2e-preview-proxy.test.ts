@@ -102,6 +102,7 @@ mock.module('../shared/db', () => {
           ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
+        const isProjectSessionQuery = fieldKeys.includes('createdBy');
 
         const rowsFor = (ordered = false): any[] => {
           if (isSandboxQuery) {
@@ -109,6 +110,7 @@ mock.module('../shared/db', () => {
             return ordered ? sortPreferredSandboxRows(rows) : rows;
           }
           if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
+          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           // Fallback: empty (unknown query, e.g. accountGroupMembers in
           // resolveShareSubject — the test models no group memberships).
           return [];
@@ -145,6 +147,8 @@ mock.module('../shared/db', () => {
 });
 
 mock.module('../shared/preview-ownership', () => ({
+  canAccessSandboxSession: async ({ userId }: { userId?: string }) =>
+    Boolean(userId && mockDbSandbox && mockDbMembership),
   canAccessPreviewSandbox: async ({ userId }: { userId?: string }) =>
     Boolean(userId && mockDbSandbox && mockDbMembership),
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
@@ -170,6 +174,12 @@ mock.module('../shared/daytona', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WarmRuntimeUnavailableError';
+    }
+  },
   getProvider: () => ({
     resolvePreviewLink: async () => {
       return { url: mockPreviewUrl, token: mockPreviewToken };
@@ -200,7 +210,12 @@ mock.module('../projects/secrets', () => {
     revision: `rev-${projectId}`,
   });
   return {
+    listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
+    listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
+    listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
+    getProjectSecretValue: async () => null,
   };
 });
 
@@ -529,7 +544,7 @@ describe('Preview proxy: forwarding', () => {
         SENTRY_DSN: 'https://example.test/1',
       },
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      revision: `rev-${TEST_PROJECT_ID}`,
+      revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
@@ -550,7 +565,7 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toContain('project env sync failed: 401');
+    expect(body.message).toContain('env sync failed: 401');
     expect(mockFetchCalls).toHaveLength(1);
     expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
   });

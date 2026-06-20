@@ -56,7 +56,7 @@ export function useConnectSlack() {
   });
 }
 
-interface SlackMode {
+export interface SlackMode {
   oauth_available: boolean;
   install_url: string | null;
 }

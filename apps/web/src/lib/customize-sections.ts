@@ -26,7 +26,9 @@ export type CustomizeSection =
   | 'dev'
   | 'settings';
 
-const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
+export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
+
+export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'changes',
   'files',
   'skills',

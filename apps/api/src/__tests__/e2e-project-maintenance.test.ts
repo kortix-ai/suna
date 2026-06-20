@@ -10,6 +10,7 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 let providerStopError: Error | null = null;
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -37,6 +38,12 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WarmRuntimeUnavailableError';
+    }
+  },
   getProvider: () => ({
     stop: async (externalId: string) => {
       providerStops.push(externalId);

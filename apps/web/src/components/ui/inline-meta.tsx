@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 
-interface InlineMetaProps {
+export interface InlineMetaProps {
   className?: string;
   children: ReactNode;
 }

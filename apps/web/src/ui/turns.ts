@@ -69,6 +69,13 @@ export function isPatchPart(part: Part): part is PatchPart {
   return part.type === 'patch';
 }
 
+/** Get the text content from any part that has a `text` field. */
+export function getPartText(part: Part): string | undefined {
+  if (isTextPart(part)) return part.text;
+  if (isReasoningPart(part)) return part.text;
+  return undefined;
+}
+
 // ============================================================================
 // Attachment helpers (images, PDFs)
 // ============================================================================
@@ -202,6 +209,14 @@ export function findLastTextPart(parts: PartWithMessage[]): TextPart | undefined
   return undefined;
 }
 
+/** Check if a turn has tool steps. */
+export function turnHasSteps(parts: PartWithMessage[]): boolean {
+  return parts.some(({ part }) =>
+    part.type === 'tool' || part.type === 'compaction' ||
+    part.type === 'snapshot' || part.type === 'patch',
+  );
+}
+
 // ============================================================================
 // Shell mode detection
 // ============================================================================
@@ -213,7 +228,7 @@ export function findLastTextPart(parts: PartWithMessage[]): TextPart | undefined
  * Stricter than our previous implementation — matches SolidJS session-turn.tsx:364-379
  * which checks `msgParts.length !== 1` (exactly one assistant part total).
  */
-function isShellMode(turn: Turn): boolean {
+export function isShellMode(turn: Turn): boolean {
   const userParts = turn.userMessage.parts;
   if (userParts.length === 0) return false;
   const allSynthetic = userParts.every((p) => isTextPart(p) && (p as TextPart).synthetic);
@@ -261,11 +276,28 @@ export function getWorkingState(
 }
 
 // ============================================================================
+// Response part separation
+// ============================================================================
+
+/**
+ * Whether the last text part (the "response") should be extracted from the
+ * steps list and shown separately in the Response section.
+ *
+ * Matches SolidJS session-turn.tsx:440-443
+ */
+export function shouldHideResponsePart(
+  working: boolean,
+  responsePartId: string | undefined,
+): boolean {
+  return !working && !!responsePartId;
+}
+
+// ============================================================================
 // Hidden parts (permission / question active)
 // ============================================================================
 
 /** Tool part references to hide from the step list when permission/question is pending. */
-interface HiddenToolRef {
+export interface HiddenToolRef {
   messageID: string;
   callID: string;
 }
@@ -296,6 +328,38 @@ export function isToolPartHidden(
 }
 
 // ============================================================================
+// Answered question parts (shown when collapsed)
+// ============================================================================
+
+/**
+ * Collect answered question parts that should be shown outside of the
+ * steps list. Questions are always rendered standalone (never inside steps),
+ * so answered questions are shown regardless of stepsExpanded state.
+ */
+export function getAnsweredQuestionParts(
+  turn: Turn,
+  _stepsExpanded: boolean,
+  hasActiveQuestion: boolean,
+): PartWithMessage[] {
+  // Active question takes precedence — don't also show old answered ones
+  if (hasActiveQuestion) return [];
+
+  const result: PartWithMessage[] = [];
+  for (const msg of turn.assistantMessages) {
+    for (const part of msg.parts) {
+      if (
+        isToolPart(part) &&
+        part.tool === 'question' &&
+        (part.state as any)?.metadata?.answers?.length > 0
+      ) {
+        result.push({ part, message: msg });
+      }
+    }
+  }
+  return result;
+}
+
+// ============================================================================
 // Error extraction — with deep JSON unwrapping
 // ============================================================================
 
@@ -303,7 +367,7 @@ export function isToolPartHidden(
  * Extract human-readable error message from a raw error value.
  * Matches SolidJS `unwrap()` function — session-turn.tsx:34-81
  */
-function unwrapError(raw: unknown): string {
+export function unwrapError(raw: unknown): string {
   if (!raw) return 'An error occurred';
 
   if (typeof raw === 'string') {
@@ -328,7 +392,7 @@ function unwrapError(raw: unknown): string {
     }
   }
 
-  if (typeof raw === 'object') {
+  if (typeof raw === 'object' && raw !== null) {
     return extractErrorFromObject(raw) || 'An error occurred';
   }
 
@@ -364,7 +428,7 @@ export function getTurnError(turn: Turn): string | undefined {
  * Derive human-readable status from a part.
  * Matches SolidJS computeStatusFromPart — session-turn.tsx:83-119
  */
-function computeStatusFromPart(part: Part | undefined): string | undefined {
+export function computeStatusFromPart(part: Part | undefined): string | undefined {
   if (!part) return undefined;
 
   if (isToolPart(part)) {
@@ -400,6 +464,8 @@ function computeStatusFromPart(part: Part | undefined): string | undefined {
       case 'task_list':
       case 'task-list':
         return 'Listing tasks...';
+      case 'task_update':
+      case 'task-update':
       case 'task_done':
       case 'task-done':
         return 'Updating task...';
@@ -792,6 +858,16 @@ export function getDirectory(path: string | undefined): string | undefined {
   return path.slice(0, idx) || '/';
 }
 
+/** Strip the project root directory from paths for display. */
+export function relativizePath(path: string, projectDir?: string): string {
+  if (!projectDir) return path;
+  if (path.startsWith(projectDir)) {
+    const rel = path.slice(projectDir.length);
+    return rel.startsWith('/') ? rel.slice(1) : rel;
+  }
+  return path;
+}
+
 // ============================================================================
 // Diagnostics
 // ============================================================================
@@ -819,6 +895,14 @@ export function getPermissionForTool(
   callID: string,
 ): PermissionRequest | undefined {
   return permissions.find((p) => p.tool?.callID === callID);
+}
+
+/** Get the question request matching a specific tool part. */
+export function getQuestionForTool(
+  questions: QuestionRequest[],
+  callID: string,
+): QuestionRequest | undefined {
+  return questions.find((q) => q.tool?.callID === callID);
 }
 
 // ============================================================================
@@ -910,6 +994,16 @@ export function getRetryMessage(status: SessionStatus | undefined): string | und
 }
 
 // ============================================================================
+// hasDiffs check
+// ============================================================================
+
+/** Check if a user message has associated file diffs. */
+export function hasDiffs(userMessage: MessageWithParts): boolean {
+  const summary = (userMessage.info as any)?.summary;
+  return (summary?.diffs?.length ?? 0) > 0;
+}
+
+// ============================================================================
 // ANSI strip (used by bash tool renderer)
 // ============================================================================
 
@@ -944,6 +1038,30 @@ export function childMapByParent(
     }
   }
   return map;
+}
+
+/**
+ * Sort comparator for sessions.
+ * Two tiers:
+ *  1. Sessions updated within `now - 60s` are pinned to top, sorted by ID (stable).
+ *  2. Older sessions sorted by `updated` time descending.
+ * Matches SolidJS reference `sortSessions()` in helpers.ts.
+ */
+export function sortSessions(now: number) {
+  const oneMinuteAgo = now - 60 * 1000;
+  return (
+    a: { id: string; time: { updated?: number; created: number } },
+    b: { id: string; time: { updated?: number; created: number } },
+  ) => {
+    const aUpdated = a.time.updated ?? a.time.created;
+    const bUpdated = b.time.updated ?? b.time.created;
+    const aRecent = aUpdated > oneMinuteAgo;
+    const bRecent = bUpdated > oneMinuteAgo;
+    if (aRecent && bRecent) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    if (aRecent && !bRecent) return -1;
+    if (!aRecent && bRecent) return 1;
+    return bUpdated - aUpdated;
+  };
 }
 
 /**

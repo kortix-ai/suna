@@ -95,7 +95,12 @@ async function driveMcp(token: string) {
 
     const listed = await rpc(2, 'tools/list');
     const names = (listed.tools ?? []).map((t: { name: string }) => t.name);
-    check('tools/list → 4 stable meta-tools', JSON.stringify(names) === JSON.stringify(['connectors', 'discover', 'describe', 'call']), names);
+    check(
+      'tools/list → stable meta-tools',
+      JSON.stringify(names) ===
+        JSON.stringify(['connectors', 'discover', 'describe', 'call', 'connect', 'request_secret', 'add_connector', 'remove_connector']),
+      names,
+    );
 
     const conns = JSON.parse((await rpc(3, 'tools/call', { name: 'connectors', arguments: {} })).content[0].text);
     const seen = (conns.connectors ?? []).find((c: { slug: string }) => c.slug === SLUG);

@@ -14,6 +14,9 @@ import {
   Check,
   ThumbsUp,
   ThumbsDown,
+  PanelRightOpen,
+  PanelRightClose,
+  Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

@@ -82,10 +82,14 @@ mock.module('../shared/account-limits', () => ({
   maxProjectsForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
   resolveAccountTier: async () => 'free',
+  accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
 }));
 
 mock.module('../deployments/providers/freestyle', () => ({
+  getFreestyleApiKey: async () => 'test-freestyle-key',
+  getFreestyleApiUrl: () => 'https://freestyle.example.test',
+  callFreestyle: async () => new Response('{}', { status: 200 }),
   freestyleProvider: {
     name: 'freestyle',
     deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),

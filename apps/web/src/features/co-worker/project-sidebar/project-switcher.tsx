@@ -40,7 +40,7 @@ import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-s
 import { formatRelative } from '@kortix/shared';
 import { CheckCircleSolid, ChevronsUpDownSolid } from '@mynaui/icons-react';
 
-type ProjectSwitcherVariant = 'header' | 'sidebar';
+export type ProjectSwitcherVariant = 'header' | 'sidebar';
 
 export function ProjectSwitcher({
   variant = 'header',

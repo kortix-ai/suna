@@ -10,16 +10,16 @@ import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 // ============================================================================
 
 /** Which modifier key is used for tab switching (Cmd+1..9 or Ctrl+1..9) */
-type TabSwitchModifier = 'meta' | 'ctrl';
+export type TabSwitchModifier = 'meta' | 'ctrl';
 
-interface KeyboardShortcutPreferences {
+export interface KeyboardShortcutPreferences {
   /** Modifier used for tab switching shortcuts (1-9) — default: 'meta' on macOS, 'ctrl' elsewhere */
   tabSwitchModifier: TabSwitchModifier;
   /** Modifier for close-tab shortcut (W) — follows tabSwitchModifier */
   closeTabModifier: TabSwitchModifier;
 }
 
-interface UserPreferences {
+export interface UserPreferences {
   keyboard: KeyboardShortcutPreferences;
   /** Selected Kortix theme ID (e.g. 'default', 'ember', 'aurora') */
   themeId: string;

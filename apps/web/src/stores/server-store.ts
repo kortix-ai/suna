@@ -5,8 +5,12 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
-import { setActiveInstanceCookie } from '@/lib/instance-routes';
-import { randomHex } from '@/lib/utils/random';
+import {
+  buildInstancePath,
+  INSTANCE_SCOPED_ROUTES,
+  normalizeAppPathname,
+  setActiveInstanceCookie,
+} from '@/lib/instance-routes';
 
 /**
  * SDK client reset callback — set by opencode-sdk.ts to break the circular
@@ -24,7 +28,7 @@ function resetSDKClient(): void {
   _resetClient?.();
 }
 
-type SandboxProvider = 'daytona' | 'local_docker';
+export type SandboxProvider = 'daytona' | 'local_docker' | 'justavps';
 
 export interface ServerEntry {
   id: string;
@@ -35,7 +39,7 @@ export interface ServerEntry {
   provider?: SandboxProvider;
   /** Platform sandbox external ID used for proxy routing (/p/{external_id}/8000). */
   sandboxId?: string;
-  /** Stable DB sandbox_id used to associate project/session sandboxes with server entries. */
+  /** Stable DB sandbox_id used in instance-scoped frontend routes (/instances/{instanceId}/...). */
   instanceId?: string;
   /**
    * Container-port → host-port map from Docker (local_docker provider).
@@ -141,7 +145,8 @@ function getBackendUrl(): string {
 }
 
 function getDefaultSandboxUrl(): string {
-  return `${getBackendUrl()}/p/kortix-sandbox/8000`;
+  const sandboxId = getEnv().SANDBOX_ID || 'kortix-sandbox';
+  return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 
 function getServersApi(): string {
@@ -154,6 +159,16 @@ function getServersApi(): string {
  */
 function getSandboxServerUrl(sandboxId: string): string {
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
+}
+
+/**
+ * Resolve the effective URL for any server entry.
+ * Sandbox entries store url='' — their URL is derived from sandboxId.
+ * Custom entries use the user-provided URL directly.
+ */
+export function resolveServerUrl(server: ServerEntry): string {
+  if (server.sandboxId) return getSandboxServerUrl(server.sandboxId);
+  return server.url || getDefaultSandboxUrl();
 }
 
 /**
@@ -201,13 +216,13 @@ function deriveProxyBaseFromServerUrl(url: string): { sandboxId: string; backend
 }
 
 function generateId(): string {
-  return `srv_${Date.now().toString(36)}_${randomHex(3)}`;
+  return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // ── API sync helpers (fire-and-forget) ──────────────────────────────────────
 // ONLY custom user-added instances are synced to the servers API.
-// Managed sandbox entries ('default', 'cloud-sandbox') come from runtime/session
-// registration paths — they live in zustand/localStorage only.
+// Managed sandbox entries ('default', 'cloud-sandbox') come from the
+// sandboxes table via useSandbox() — they live in zustand/localStorage only.
 
 /** IDs of managed entries that should NOT be synced to the servers API. */
 const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID]);
@@ -275,8 +290,8 @@ function syncAllToApi(servers: ServerEntry[]) {
   }, { retryOnAuthError: false }).catch(() => {});
 }
 
-/** Load servers from API. */
-async function loadFromApi(): Promise<ServerEntry[] | null> {
+/** Load servers from API, merging authTokens from localStorage entries. */
+async function loadFromApi(localServers: ServerEntry[]): Promise<ServerEntry[] | null> {
   try {
     const res = await authenticatedFetch(getServersApi(), undefined,
       { retryOnAuthError: false });
@@ -286,7 +301,7 @@ async function loadFromApi(): Promise<ServerEntry[] | null> {
       label: string;
       url: string;
       isDefault: boolean;
-      provider: 'daytona' | 'local_docker' | null;
+      provider: 'daytona' | 'local_docker' | 'justavps' | null;
       sandboxId: string | null;
       mappedPorts: Record<string, string> | null;
     }> = await res.json();
@@ -306,10 +321,18 @@ async function loadFromApi(): Promise<ServerEntry[] | null> {
   }
 }
 
+const createDefaultServer = (): ServerEntry => ({
+  id: DEFAULT_SERVER_ID,
+  label: 'Local Sandbox',
+  url: getDefaultSandboxUrl(),
+  isDefault: true,
+  provider: 'local_docker',
+});
+
 export const useServerStore = create<ServerStore>()(
   persist(
     (set, get) => ({
-      // Starts empty — runtime/session sandboxes are registered by active pages.
+      // Starts empty — sandboxes are loaded via useSandbox hook after auth.
       servers: [],
       activeServerId: '',
       lastSelectedInstanceId: '',
@@ -469,7 +492,7 @@ export const useServerStore = create<ServerStore>()(
           activeServerId: id,
           serverVersion: state.serverVersion + 1,
           ...selectedSandboxPatch(target),
-          // Mark userSelected unless this is an automatic runtime switch.
+          // Mark userSelected unless this is an auto-switch (e.g. from useSandbox)
           ...(options?.auto ? {} : { userSelected: true }),
         });
       },
@@ -478,7 +501,8 @@ export const useServerStore = create<ServerStore>()(
         const state = get();
         const active = state.servers.find((s) => s.id === state.activeServerId);
         if (!active) {
-	          // In cloud mode, don't fall back to the local Docker URL.
+          // In cloud mode, don't fall back to the local Docker URL —
+          // useSandbox will register the real sandbox shortly.
           // Returning '' signals callers to wait / skip the request.
           if (state.activeServerId === CLOUD_SANDBOX_SERVER_ID || isBillingEnabled()) return '';
            // For local mode (empty activeServerId or 'default'), fall back
@@ -636,8 +660,8 @@ export const useServerStore = create<ServerStore>()(
         state.lastSelectedInstanceId = state.lastSelectedInstanceId ?? '';
         state.lastSelectedSandboxId = state.lastSelectedSandboxId ?? '';
 
-	        // Remove ALL managed sandbox entries from localStorage. Runtime/session
-	        // registration rebuilds active managed entries. This strips:
+        // Remove ALL managed sandbox entries from localStorage — sandboxes
+        // are loaded fresh via useSandbox hook on every page load. This strips:
         //   - Well-known IDs (default, cloud-sandbox)
         //   - Stale random-ID entries (srv_xxx) that have a provider set
         //     (leaked from addSandboxServer calls in older code)
@@ -648,7 +672,8 @@ export const useServerStore = create<ServerStore>()(
 
         // Managed sandbox entries are rebuilt from the platform API, so the
         // active server may be missing during hydration. Keep the selected
-	        // managed ID/cookie alive so refresh can restore the same instance.
+        // managed ID/cookie alive so refresh restores the same instance once
+        // useSandbox registers it again.
         if (state.activeServerId && !state.servers.some((s) => s.id === state.activeServerId)) {
           const activeLooksManaged =
             state.activeServerId === DEFAULT_SERVER_ID ||
@@ -674,13 +699,13 @@ export const useServerStore = create<ServerStore>()(
         }
 
         // Load custom entries from API (user-added URLs).
-	        // Sandbox entries come from runtime/session registration, not from here.
+        // Sandbox entries come from useSandbox hook, not from here.
         // Only sync with API if user is authenticated — otherwise these
         // fire-and-forget requests produce 401 console errors on the homepage.
         const localServers = [...state.servers];
         getSupabaseAccessToken().then((token) => {
           if (!token) return; // Not authenticated, skip API sync
-          loadFromApi().then((apiEntries) => {
+          loadFromApi(localServers).then((apiEntries) => {
             if (apiEntries && apiEntries.length > 0) {
               // Merge: keep sandbox entries from zustand + custom entries from API
               const currentState = useServerStore.getState();
@@ -706,6 +731,24 @@ export function getActiveOpenCodeUrl(): string {
   return useServerStore.getState().getActiveServerUrl();
 }
 
+/**
+ * Get the full active ServerEntry (including mappedPorts, provider, etc.).
+ * Returns null if the active server can't be found (shouldn't happen).
+ */
+export function getActiveServer(): ServerEntry | null {
+  const state = useServerStore.getState();
+  return state.servers.find((s) => s.id === state.activeServerId) ?? null;
+}
+
+/**
+ * Get the host port for a given container port on the active server.
+ * Returns null if no mapping exists (e.g. Daytona, default server, or unknown port).
+ */
+export function getActiveServerMappedPort(containerPort: string): string | null {
+  const server = getActiveServer();
+  return server?.mappedPorts?.[containerPort] ?? null;
+}
+
 // ── Subdomain proxy helpers ──────────────────────────────────────────────────
 
 /**
@@ -713,13 +756,54 @@ export function getActiveOpenCodeUrl(): string {
  * "http://localhost:8008/v1"). Used for subdomain URL construction:
  *   http://p{port}-{sandboxId}.localhost:{backendPort}/
  */
-function getBackendPort(): number {
+export function getBackendPort(): number {
   try {
     const url = new URL(getBackendUrl());
     return parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 80);
   } catch {
     return 8008; // fallback for local dev
   }
+}
+
+/**
+ * Get the sandboxId for the active server.
+ * - Local mode: defaults to 'kortix-sandbox' (the Docker container name)
+ * - Cloud mode: uses the server's sandboxId from the store (empty if not yet loaded)
+ */
+export function getActiveSandboxId(): string | undefined {
+  const state = useServerStore.getState();
+  const server = state.servers.find((s) => s.id === state.activeServerId) ?? null;
+  return server?.sandboxId;
+}
+
+/**
+ * Get SubdomainUrlOptions for the active server.
+ *
+ * Always returns a valid options object — every provider (local_docker, daytona,
+ * justavps) routes through the backend's unified preview proxy, so there is no
+ * "cloud uses its own scheme" special case anymore. The `apiBaseUrl` field lets
+ * `rewriteLocalhostUrl` take the path-based branch on remote deployments.
+ *
+ * Use in non-React contexts: call directly (reads from store snapshot).
+ */
+export function getSubdomainOpts(): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
+  return getInstanceSubdomainOpts();
+}
+
+export function getInstanceSubdomainOpts(
+  backendPort = 8000,
+): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
+  const active = getActiveServer();
+  const fromUrl = active?.url ? deriveProxyBaseFromServerUrl(active.url) : null;
+  if (fromUrl) {
+    return fromUrl;
+  }
+
+  return {
+    sandboxId: getActiveSandboxId() ?? getEnv().SANDBOX_ID ?? 'kortix-sandbox',
+    backendPort,
+    apiBaseUrl: getBackendUrl(),
+  };
 }
 
 /**
@@ -746,11 +830,11 @@ export function deriveSubdomainOpts(
     return fromUrl;
   }
 
-  // Fall back to the local sandbox name.
+  // Fall back to the configured sandbox ID (from runtime env) or 'kortix-sandbox'.
   // This ensures proxy rewriting NEVER silently degrades to raw localhost URLs
   // just because the store hasn't hydrated the sandboxId yet, or because the
   // provider is marked as cloud (Daytona/JustAVPS use the same /p/ proxy).
-  const sandboxId = server?.sandboxId || 'kortix-sandbox';
+  const sandboxId = server?.sandboxId || getEnv().SANDBOX_ID || 'kortix-sandbox';
   return {
     sandboxId,
     backendPort: getBackendPort(),
@@ -758,10 +842,24 @@ export function deriveSubdomainOpts(
   };
 }
 
+export function getActiveInstanceId(): string | undefined {
+  const state = useServerStore.getState();
+  const active = state.servers.find((s) => s.id === state.activeServerId);
+  return active?.instanceId;
+}
+
+export function getServerByInstanceId(instanceId: string): ServerEntry | undefined {
+  const state = useServerStore.getState();
+  return state.servers.find((s) => s.instanceId === instanceId);
+}
+
+/** Stable server IDs for managed sandbox entries */
+export { DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID };
+
 // ── Centralized Instance Switching ──────────────────────────────────────────
 //
 // ONE function that handles ALL instance switches. Every caller (sidebar,
-// session pages and sandbox lifecycle code call this instead of manually
+// /instances page, layout sync, onboarding) calls this instead of manually
 // orchestrating registerOrUpdateSandbox + swapForServer + setActiveServer.
 
 /**
@@ -806,9 +904,52 @@ function switchToServerEntry(serverId: string): void {
   store.setActiveServer(serverId);
 }
 
-interface SwitchToInstanceResult {
+export interface SwitchToInstanceResult {
   serverId: string;
   alreadyActive: boolean;
+}
+
+export interface SwitchToInstanceOptions {
+  /**
+   * When true, validate the instance against the platform API even if a matching
+   * server entry already exists in the store. Use this for explicit
+   * /instances/:id/... routes so stale local entries can't strand the UI on a
+   * dead or provisioning machine.
+   */
+  validate?: boolean;
+}
+
+export interface ActivateServerSelectionOptions {
+  pathname?: string | null;
+}
+
+export interface ActivateInstanceSelectionOptions extends SwitchToInstanceOptions, ActivateServerSelectionOptions {}
+
+export interface ActivateServerSelectionResult extends SwitchToInstanceResult {
+  href: string;
+}
+
+const PRESERVABLE_INSTANCE_PATHS = new Set<string>(INSTANCE_SCOPED_ROUTES);
+
+function deriveSelectionHref(server: ServerEntry | undefined, pathname?: string | null): string {
+  const tabStore = getTabStore().getState();
+  const activeTab = tabStore.activeTabId ? tabStore.tabs[tabStore.activeTabId] : null;
+  const tabHref = activeTab?.href ? normalizeAppPathname(activeTab.href) : '';
+  const normalizedPath = pathname ? normalizeAppPathname(pathname) : '';
+  const preserveCurrentPath =
+    normalizedPath !== ''
+    && normalizedPath !== '/dashboard'
+    && PRESERVABLE_INSTANCE_PATHS.has(normalizedPath)
+    && (!activeTab || activeTab.type === 'dashboard' || tabHref === '/dashboard');
+
+  const fallbackPath = PRESERVABLE_INSTANCE_PATHS.has(normalizedPath)
+    ? normalizedPath
+    : '/dashboard';
+
+  const nextPath = preserveCurrentPath
+    ? normalizedPath
+    : tabHref || fallbackPath || '/dashboard';
+  return server?.instanceId ? buildInstancePath(server.instanceId, nextPath) : nextPath;
 }
 
 function syncActiveInstanceCookie(server: ServerEntry | null | undefined): void {
@@ -825,7 +966,7 @@ function syncActiveInstanceCookie(server: ServerEntry | null | undefined): void 
  * Returns { serverId, alreadyActive } or null if the instance couldn't be found.
  * When fetchIfMissing is true (default), makes an API call for unknown instances.
  */
-function switchToInstance(
+export function switchToInstance(
   instanceId: string,
 ): SwitchToInstanceResult | null {
   const state = useServerStore.getState();
@@ -843,12 +984,97 @@ function switchToInstance(
     return { serverId: existing.id, alreadyActive: false };
   }
 
-  return null;
+  return null; // Not in store — caller should use switchToInstanceAsync
+}
+
+export function activateServerSelection(
+  serverId: string,
+  options?: ActivateServerSelectionOptions,
+): ActivateServerSelectionResult | null {
+  const state = useServerStore.getState();
+  const target = state.servers.find((s) => s.id === serverId);
+  if (!target) return null;
+
+  const alreadyActive = state.activeServerId === serverId;
+  if (!alreadyActive) {
+    switchToServerEntry(serverId);
+  }
+
+  const next = useServerStore.getState().servers.find((s) => s.id === serverId) ?? target;
+  return {
+    serverId,
+    alreadyActive,
+    href: deriveSelectionHref(next, options?.pathname),
+  };
+}
+
+export async function activateInstanceSelection(
+  instanceId: string,
+  options?: ActivateInstanceSelectionOptions,
+): Promise<ActivateServerSelectionResult | null> {
+  const result = switchToInstance(instanceId)
+    ?? await switchToInstanceAsync(instanceId, { validate: options?.validate });
+
+  if (!result) return null;
+
+  const server = useServerStore.getState().servers.find((s) => s.id === result.serverId);
+  return {
+    ...result,
+    href: deriveSelectionHref(server, options?.pathname),
+  };
 }
 
 /**
- * Switch to a project-session sandbox using the project-scoped
- * `/projects/:projectId/sessions/:sessionId/sandbox` endpoint.
+ * Async version — fetches sandbox info from API if not in store, registers
+ * it, and switches. Returns the result or null if the instance is not active
+ * (will redirect to /instances/:id for status UI).
+ */
+export async function switchToInstanceAsync(
+  instanceId: string,
+  options?: SwitchToInstanceOptions,
+): Promise<SwitchToInstanceResult | null> {
+  const validate = options?.validate ?? false;
+
+  // Fast path: only trust the store when explicit validation isn't required.
+  if (!validate) {
+    const sync = switchToInstance(instanceId);
+    if (sync) return sync;
+  }
+
+  // Not in store or validation requested — fetch from API
+  const { getSandboxById, extractMappedPorts } = await import('@/lib/platform-client');
+  const match = await getSandboxById(instanceId);
+
+  if (!match || match.status !== 'active' || !match.external_id) {
+    return null; // Not active — caller should redirect to /instances/:id
+  }
+
+  // Register and switch
+  const store = useServerStore.getState();
+  const isLocal = match.provider === 'local_docker';
+  const existing = store.servers.find((s) => s.instanceId === instanceId);
+  const stableId = isLocal
+    ? undefined
+    : existing?.id ?? stableServerIdForInstance(instanceId, match.provider);
+  const serverId = store.registerOrUpdateSandbox(
+    {
+      label: match.name || match.sandbox_id,
+      provider: match.provider as SandboxProvider,
+      sandboxId: match.external_id,
+      instanceId: match.sandbox_id,
+      mappedPorts: extractMappedPorts(match),
+    },
+    { autoSwitch: false, isLocal, stableId: isLocal ? undefined : stableId },
+  );
+  switchToServerEntry(serverId);
+  return { serverId, alreadyActive: false };
+}
+
+/**
+ * Project-session variant of `switchToInstanceAsync`. Uses the project-
+ * scoped `/projects/:projectId/sessions/:sessionId/sandbox` endpoint instead
+ * of the legacy /platform/sandbox/list lookup so session sandboxes stay
+ * fully decoupled from the legacy `kortix.sandboxes` table.
  */
 export async function switchToSessionSandboxAsync(
   projectId: string,

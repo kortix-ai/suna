@@ -1,5 +1,5 @@
 // Post-auth landing goes to the projects list.
-export const DEFAULT_AUTH_RETURN_URL = '/projects';
+const DEFAULT_AUTH_RETURN_URL = '/projects';
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',
@@ -14,7 +14,7 @@ export function sanitizeAuthReturnUrl(
   if (!value) return fallback;
 
   const trimmedValue = value.trim();
-  let decodedValue: string;
+  let decodedValue = trimmedValue;
   try {
     decodedValue = decodeURIComponent(trimmedValue);
   } catch {
@@ -47,3 +47,5 @@ export function sanitizeAuthReturnUrl(
 
   return trimmedValue;
 }
+
+export { DEFAULT_AUTH_RETURN_URL };

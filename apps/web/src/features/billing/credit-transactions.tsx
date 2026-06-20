@@ -31,17 +31,25 @@ import {
 } from "@/components/ui/select";
 import {
   AlertCircle,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
   Clock,
   Infinity,
   Plus,
   Minus,
   RefreshCw,
+  Info,
 } from 'lucide-react';
-import { useTransactions } from '@/hooks/billing/use-transactions';
+import { useTransactions, useTransactionsSummary } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
 
-export default function CreditTransactions() {
+interface Props {
+  accountId?: string;
+}
+
+export default function CreditTransactions({ accountId }: Props) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
@@ -272,4 +280,4 @@ export default function CreditTransactions() {
       </Card>
     </div>
   );
-} 
+}

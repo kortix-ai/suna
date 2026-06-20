@@ -1,24 +1,24 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
 import { logger } from '@/lib/logger';
 import {
+  safeLocalStorage,
   safeSetItem,
   registerDisposableKey,
-  createSafeJSONStorage,
 } from '@/lib/storage/managed-storage';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type TabType = 'session' | 'file' | 'dashboard' | 'settings' | 'project' | 'page' | 'preview' | 'terminal' | 'services' | 'browser' | 'desktop';
+export type TabType = 'session' | 'file' | 'dashboard' | 'settings' | 'project' | 'page' | 'preview' | 'terminal' | 'services' | 'browser' | 'desktop';
 
-/** The permanent projects/home tab. Always pinned, always first. */
-const DASHBOARD_TAB_ID = 'page:/projects';
+/** The permanent dashboard/home tab. Always pinned, always first. */
+export const DASHBOARD_TAB_ID = 'page:/dashboard';
 
 /** Maximum number of recently closed tabs to remember for CMD+Shift+T */
 const MAX_RECENTLY_CLOSED = 20;
@@ -35,15 +35,19 @@ const MAX_FOCUS_HISTORY = 50;
 const _recentlyClosedTabIds = new Set<string>();
 const RECENTLY_CLOSED_TTL_MS = 1500;
 
+export function isTabRecentlyClosed(id: string): boolean {
+  return _recentlyClosedTabIds.has(id);
+}
+
 function markTabClosed(id: string): void {
   _recentlyClosedTabIds.add(id);
   setTimeout(() => _recentlyClosedTabIds.delete(id), RECENTLY_CLOSED_TTL_MS);
 }
-const DASHBOARD_TAB: Omit<Tab, 'openedAt'> & { openedAt: number } = {
+export const DASHBOARD_TAB: Omit<Tab, 'openedAt'> & { openedAt: number } = {
   id: DASHBOARD_TAB_ID,
   title: '',
   type: 'dashboard',
-  href: '/projects',
+  href: '/dashboard',
   pinned: true,
   openedAt: 0,
 };
@@ -87,7 +91,7 @@ export interface Tab {
   title: string;
   /** What kind of tab this is — determines icon and routing */
   type: TabType;
-  /** The route path this tab maps to (e.g. /projects, /projects/:id/files). */
+  /** The route path this tab maps to (e.g. /sessions/abc, /files, /dashboard) */
   href: string;
   /** Whether the tab has been modified / needs attention (unsaved, pending permissions, etc.) */
   dirty?: boolean;
@@ -175,6 +179,8 @@ const MAX_CACHED_SERVERS = 5;
 // caches) before giving up — not just this store's own per-server blob. Register
 // that blob as a last-resort disposable so cross-store reclaim can still drop it.
 registerDisposableKey(PER_SERVER_KEY);
+
+const safeTabStorage = safeLocalStorage;
 
 type PerServerEntry = {
   tabs: Record<string, Tab>;
@@ -510,7 +516,7 @@ export const useTabStore = create<TabState>()(
       name: 'kortix-tabs',
       // Never let a full quota crash the app — the storage wrapper evicts the
       // disposable per-server cache and retries instead of throwing.
-      storage: createSafeJSONStorage(),
+      storage: createJSONStorage(() => safeTabStorage),
       // `recentlyClosedTabs` holds full Tab objects (incl. metadata) and is only
       // needed for Mod+Shift+T within a session — keep it in memory, off disk.
       partialize: (state) => ({

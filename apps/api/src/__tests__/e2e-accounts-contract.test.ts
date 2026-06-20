@@ -409,6 +409,17 @@ mock.module('../shared/db', () => ({
     }),
     execute: async (query: unknown) => {
       const strings = collectStringValues(query);
+      const accountId = strings.find((value) =>
+        memberRows.some((row) => row.accountId === value)
+      );
+      if (accountId) {
+        return [{
+          n: memberRows.filter((row) =>
+            row.accountId === accountId &&
+            authUsers.some((user) => user.id === row.userId)
+          ).length,
+        }];
+      }
       const user = authUsers.find((candidate) => strings.includes(candidate.email));
       return user ? [{ id: user.id }] : [];
     },

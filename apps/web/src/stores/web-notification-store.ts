@@ -8,9 +8,9 @@ import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 // Types
 // ============================================================================
 
-type WebNotificationPermission = 'default' | 'granted' | 'denied';
+export type WebNotificationPermission = 'default' | 'granted' | 'denied';
 
-interface WebNotificationPreferences {
+export interface WebNotificationPreferences {
   /** Master toggle for browser notifications */
   enabled: boolean;
   /** Notify when a session task completes (becomes idle after being busy) */

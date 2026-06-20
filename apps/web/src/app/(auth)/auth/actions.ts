@@ -39,7 +39,7 @@ function trustedWebOrigin(origin?: string | null): string {
 }
 
 
-export async function signIn(_prevState: any, formData: FormData) {
+export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
@@ -89,7 +89,7 @@ export async function signIn(_prevState: any, formData: FormData) {
   };
 }
 
-export async function signUp(_prevState: any, formData: FormData) {
+export async function signUp(prevState: any, formData: FormData) {
   const origin = formData.get('origin') as string;
   const email = formData.get('email') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -126,7 +126,7 @@ export async function signUp(_prevState: any, formData: FormData) {
   }
 
   if (!shouldCreateUser) {
-    return { message: 'Signups are currently closed.' };
+    return { signupClosed: true, message: 'Signups are currently closed. Request access below.' };
   }
 
   const supabase = await createClient();
@@ -165,7 +165,36 @@ export async function signUp(_prevState: any, formData: FormData) {
   };
 }
 
-export async function forgotPassword(_prevState: any, formData: FormData) {
+export async function requestAccess(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const company = formData.get('company') as string | undefined;
+  const useCase = formData.get('useCase') as string | undefined;
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  try {
+    const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
+    const res = await fetch(`${backendUrl}/access/request-access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        company: company?.trim() || undefined,
+        useCase: useCase?.trim() || undefined,
+      }),
+    });
+    if (res.ok) {
+      return { success: true, message: 'Your access request has been submitted. We\'ll be in touch!' };
+    }
+    return { message: 'Failed to submit request. Please try again.' };
+  } catch {
+    return { message: 'Failed to submit request. Please try again.' };
+  }
+}
+
+export async function forgotPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
 
@@ -189,7 +218,7 @@ export async function forgotPassword(_prevState: any, formData: FormData) {
   };
 }
 
-export async function resetPassword(_prevState: any, formData: FormData) {
+export async function resetPassword(prevState: any, formData: FormData) {
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
 
@@ -217,7 +246,96 @@ export async function resetPassword(_prevState: any, formData: FormData) {
   };
 }
 
-export async function signInWithPassword(_prevState: any, formData: FormData) {
+export async function resendMagicLink(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const origin = formData.get('origin') as string;
+  const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const isDesktopApp = formData.get('isDesktopApp') === 'true';
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  const supabase = await createClient();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Use magic link (passwordless) authentication
+  // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
+  // For web, use standard origin (https://kortix.com/auth/callback)
+  // Include email in redirect URL so it's available if the link expires
+  let emailRedirectTo: string;
+  if (isDesktopApp && origin.startsWith('kortix://')) {
+    // Match mobile implementation - simple protocol URL with optional terms_accepted
+    const params = new URLSearchParams();
+    if (acceptedTerms) {
+      params.set('terms_accepted', 'true');
+    }
+    emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+  } else {
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+  }
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: normalizedEmail,
+    options: {
+      emailRedirectTo,
+      shouldCreateUser: true, // Auto-create account if doesn't exist
+    },
+  });
+
+  if (error) {
+    return { message: error.message || 'Could not send magic link' };
+  }
+
+  // Return success message - user needs to check email
+  return {
+    success: true,
+    message: 'Check your email for a magic link to sign in',
+    email: email.trim().toLowerCase(),
+  };
+}
+
+export async function sendOtpCode(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const origin = formData.get('origin') as string;
+  const isDesktopApp = formData.get('isDesktopApp') === 'true';
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  const supabase = await createClient();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  let emailRedirectTo: string;
+  if (isDesktopApp && origin.startsWith('kortix://')) {
+    emailRedirectTo = 'kortix://auth/callback';
+  } else {
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
+  }
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: normalizedEmail,
+    options: {
+      emailRedirectTo,
+      shouldCreateUser: true,
+    },
+  });
+
+  if (error) {
+    return { message: error.message || 'Could not send verification code' };
+  }
+
+  return {
+    success: true,
+    message: 'Check your email for a 6-digit verification code',
+    email: normalizedEmail,
+  };
+}
+
+export async function signInWithPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -244,7 +362,7 @@ export async function signInWithPassword(_prevState: any, formData: FormData) {
   // Determine if new user (for analytics)
   const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
-  
+
   // Return success — let the client redirect after auth state hydrates.
   const finalReturnUrl = returnUrl;
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
@@ -271,7 +389,7 @@ export async function signInWithPassword(_prevState: any, formData: FormData) {
  * behavior is whether the inner signIn succeeds — driven by Supabase's
  * `enable_confirmations`, not by any billing flag.
  */
-export async function signUpWithPassword(_prevState: any, formData: FormData) {
+export async function signUpWithPassword(prevState: any, formData: FormData) {
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
@@ -368,7 +486,7 @@ export async function signOut() {
   return redirect('/');
 }
 
-export async function verifyOtp(_prevState: any, formData: FormData) {
+export async function verifyOtp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const token = formData.get('token') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);

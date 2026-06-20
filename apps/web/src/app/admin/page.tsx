@@ -2,7 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Activity, ArrowRight, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 
@@ -15,8 +17,23 @@ import {
   StatRow,
 } from './_components/section-header';
 
+const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
+  instances: '/admin/ops',
+  accounts: '/admin/accounts',
+};
+
 export default function AdminOverviewPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const legacySection = searchParams.get('section');
+
+  useEffect(() => {
+    if (legacySection && LEGACY_SECTION_REDIRECTS[legacySection]) {
+      router.replace(LEGACY_SECTION_REDIRECTS[legacySection]);
+    }
+  }, [legacySection, router]);
+
   const { data } = useOpsOverview();
 
   return (
@@ -40,6 +57,11 @@ export default function AdminOverviewPage() {
           value={data?.sandboxes.errored ?? 0}
           tone={(data?.sandboxes.errored ?? 0) > 0 ? 'danger' : 'success'}
         />
+        <StatPill
+          label={tHardcodedUi.raw('appAdminPage.line58JsxAttrLabelQueuedWork')}
+          value={data?.queues.queued_total ?? 0}
+          tone={(data?.queues.queued_total ?? 0) > 0 ? 'warning' : 'success'}
+        />
       </StatRow>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -47,7 +69,7 @@ export default function AdminOverviewPage() {
           href="/admin/ops"
           icon={Activity}
           title="Operations"
-          description={tHardcodedUi.raw('appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesAuditEventsUsageAnd')}
+          description={tHardcodedUi.raw('appAdminPage.line69JsxAttrDescriptionApiSessionsSandboxesQueuesAuditEventsUsageAnd')}
         />
         <QuickLink
           href="/admin/utils"

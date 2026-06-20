@@ -20,7 +20,7 @@ export interface LspDiagnostic {
   source?: string;
 }
 
-interface DiagnosticsState {
+export interface DiagnosticsState {
   /** All diagnostics keyed by file path (may be absolute or relative) */
   byFile: Record<string, LspDiagnostic[]>;
 
@@ -165,6 +165,33 @@ export function buildDiagnosticCountsMap(
   }
 
   return map;
+}
+
+/**
+ * Extract the relative filename from a diagnostic's file path.
+ * Used by the diagnostics panel to show short names.
+ */
+export function getRelativePath(absPath: string): string {
+  const clean = absPath.replace(/^file:\/\//, '');
+  // If it looks absolute, try common sandbox prefixes
+  if (clean.startsWith('/')) {
+    // Strip /workspace/desktop/.../ or /home/user/project/.../ patterns
+    // Strategy: find the deepest "project root" heuristic and strip it
+    // Common patterns: /workspace/X/Y/ where Y is the project
+    const parts = clean.split('/').filter(Boolean);
+    // Look for common project markers going from right to left
+    for (let i = 0; i < parts.length; i++) {
+      if (['src', 'lib', 'app', 'pages', 'components', 'public', 'test', 'tests', 'pkg', 'cmd', 'internal'].includes(parts[i])) {
+        return parts.slice(i).join('/');
+      }
+    }
+    // If no marker found, take the last 3 segments max
+    if (parts.length > 3) {
+      return parts.slice(-3).join('/');
+    }
+    return parts.join('/');
+  }
+  return clean;
 }
 
 // ============================================================================

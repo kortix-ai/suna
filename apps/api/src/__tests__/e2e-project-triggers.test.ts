@@ -265,6 +265,7 @@ mock.module('../projects/secrets', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
@@ -422,6 +423,7 @@ mock.module('../shared/db', () => ({
           return {
             returning: async () => apply(),
             then: (resolve: (v: any) => unknown) => resolve(apply()),
+            catch: () => undefined,
           };
         },
       }),

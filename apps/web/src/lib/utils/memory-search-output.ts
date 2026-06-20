@@ -1,6 +1,6 @@
-type MemorySearchHitSource = 'ltm' | 'obs' | 'unknown';
+export type MemorySearchHitSource = 'ltm' | 'obs' | 'unknown';
 
-interface ParsedMemorySearchHit {
+export interface ParsedMemorySearchHit {
   id: string;
   type: string;
   source: MemorySearchHitSource;
@@ -9,7 +9,7 @@ interface ParsedMemorySearchHit {
   files: string[];
 }
 
-interface ParsedMemorySearchOutput {
+export interface ParsedMemorySearchOutput {
   matched: boolean;
   label: string;
   query: string;

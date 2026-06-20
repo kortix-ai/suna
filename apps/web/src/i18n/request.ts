@@ -1,7 +1,7 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { defaultLocale, type Locale } from './config';
+import { locales, defaultLocale, type Locale } from './config';
 import { getCookieLocale, getUserLocale, normalizeLocale } from './locale';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -10,7 +10,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
   let locale: Locale = defaultLocale;
   const cookieStore = await cookies();
   const headersList = await headers();
-  
+
   // Priority 1: Check cookie FIRST (faster, no API call needed)
   // This is set by middleware or user preference
   const localeCookie = getCookieLocale(cookieStore.get('locale')?.value);
@@ -21,7 +21,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
       messages: (await import(`../../translations/${locale}.json`)).default
     };
   }
-  
+
   // Priority 2: Check user profile preference (if authenticated)
   // Only call getUser() if no cookie preference exists (optimization)
   // This ALWAYS takes precedence over geo-detection - user explicitly set it in settings
@@ -46,7 +46,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
         },
       }
     );
-    
+
     const { data: { user } } = await supabase.auth.getUser();
     const userLocale = getUserLocale(user);
     if (userLocale) {
@@ -59,7 +59,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
   } catch (error) {
     // User might not be authenticated, continue with other methods
   }
-  
+
   // Priority 3: If locale is provided in the URL path (e.g., /de, /it), use it for marketing pages
   // This allows SEO-friendly URLs like /de, /it for marketing content
   // Only used if user hasn't set an explicit preference
@@ -71,7 +71,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
       messages: (await import(`../../translations/${locale}.json`)).default
     };
   }
-  
+
   // Priority 4: Try to detect from Accept-Language header (browser language)
   const acceptLanguage = headersList.get('accept-language');
   if (acceptLanguage) {

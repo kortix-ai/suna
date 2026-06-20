@@ -7,21 +7,21 @@ import { backendApi } from '@/lib/api-client';
 // snake_case so we keep that on the wire and translate at the component
 // boundary when needed.
 
-type AppSourceGit = {
+export type AppSourceGit = {
   type: 'git';
   repo: string | null;
   branch: string | null;
   root_path: string | null;
 };
 
-type AppSourceTar = {
+export type AppSourceTar = {
   type: 'tar';
   url: string;
 };
 
-type AppSource = AppSourceGit | AppSourceTar;
+export type AppSource = AppSourceGit | AppSourceTar;
 
-interface AppBuild {
+export interface AppBuild {
   command: string | null;
   out_dir: string | null;
 }
@@ -36,7 +36,7 @@ export type DeploymentStatus =
   | 'failed'
   | 'stopped';
 
-interface ProjectAppDeploymentRow {
+export interface ProjectAppDeploymentRow {
   deployment_id: string;
   account_id: string;
   project_id: string | null;
@@ -77,7 +77,7 @@ export interface ProjectApp {
   drift: boolean;
 }
 
-interface ProjectAppParseError {
+export interface ProjectAppParseError {
   slug: string;
   path: string;
   error: string;
@@ -138,7 +138,7 @@ export async function deleteProjectApp(
   return unwrap(await backendApi.delete<ListProjectAppsResponse>(`${base(projectId)}/${slug}`));
 }
 
-interface DeployProjectAppResponse {
+export interface DeployProjectAppResponse {
   status: 'active' | 'failed';
   app_slug: string;
   deployment: ProjectAppDeploymentRow | null;
@@ -154,7 +154,7 @@ export async function deployProjectApp(
   ));
 }
 
-interface StopProjectAppResponse {
+export interface StopProjectAppResponse {
   ok: boolean;
   deployment: ProjectAppDeploymentRow | null;
 }
@@ -169,7 +169,7 @@ export async function stopProjectApp(
   ));
 }
 
-interface ProjectAppLogsResponse {
+export interface ProjectAppLogsResponse {
   ok: boolean;
   data?: unknown;
   error?: string;

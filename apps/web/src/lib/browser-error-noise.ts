@@ -68,17 +68,17 @@ export function isExtensionSource(filename: unknown): boolean {
   return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
-function isInjectedAppSource(filename: unknown): boolean {
+export function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function isKnownTestNoiseMessage(message: unknown): boolean {
+export function isKnownTestNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_TEST_NOISE_MESSAGES);
 }
 
-function isLikelyDomMutationNoise(message: unknown): boolean {
+export function isLikelyDomMutationNoise(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_DOM_MUTATION_NOISE_MESSAGES)
     || containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES);

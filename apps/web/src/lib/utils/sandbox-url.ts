@@ -30,7 +30,7 @@ export interface DetectedLocalhostUrl {
   inCodeBlock: boolean;
 }
 
-interface ParsedLocalhostUrl {
+export interface ParsedLocalhostUrl {
   /** Canonicalized localhost URL (http(s)://localhost:PORT/path?query#hash) */
   originalUrl: string;
   /** Parsed port number */
@@ -153,7 +153,7 @@ const KORTIX_MASTER_PROXY_REGEX = /^\/proxy\/(\d{1,5})(\/.*)?$/;
  * localhost/127.0.0.1 are same-app navigations, NOT sandbox services
  * to proxy. They should render as plain clickable links.
  */
-const APP_ROUTE_PREFIXES = /^\/(connectors|settings|dashboard|projects|agents|skills|tools|commands|support|files|p|browser|desktop|terminal|sessions|services|workspace|channels|scheduled-tasks|marketplace|templates|tunnel|admin|auth)(\/|$|\?)/;
+const APP_ROUTE_PREFIXES = /^\/(connectors|settings|dashboard|projects|agents|skills|tools|commands|deployments|support|changelog|files|p|browser|desktop|terminal|sessions|services|workspace|channels|scheduled-tasks|marketplace|templates|tunnel|admin|auth)(\/|$|\?)/;
 
 export function isAppRouteUrl(rawUrl: string | undefined): boolean {
   if (!rawUrl) return false;
@@ -327,6 +327,13 @@ export function detectLocalhostUrls(text: string): DetectedLocalhostUrl[] {
 }
 
 /**
+ * Check if a string contains any localhost URLs worth rewriting.
+ */
+export function hasLocalhostUrls(text: string): boolean {
+  return detectLocalhostUrls(text).length > 0;
+}
+
+/**
  * Detect whether the kortix-api backend is on the user's own machine
  * (i.e. apiBaseUrl hostname is localhost/127.0.0.1).
  *
@@ -351,7 +358,7 @@ function isBackendOnLocalhost(apiBaseUrl: string): boolean {
  * Build a preview proxy URL for a sandbox service port.
  *
  * Both modes are proxy URLs — neither connects to the user's raw localhost.
- * Provider type is irrelevant; the only thing
+ * Provider type (local_docker, daytona, justavps) is irrelevant; the only thing
  * that matters is whether kortix-api is running on the user's local machine,
  * because that determines whether *.localhost DNS can reach it.
  *
@@ -416,7 +423,7 @@ export function isProxiableLocalhostUrl(url: string): boolean {
 
   if (EXCLUDED_PORTS.has(parsed.port)) return false;
 
-  // If the URL is a known frontend app route (e.g. /projects or /settings) it must NOT be proxied — it is a navigation link to
+  // If the URL is a known frontend app route (e.g. /settings or /dashboard) it must NOT be proxied — it is a navigation link to
   // the local frontend, not a sandbox service.
   if (isAppRouteUrl(url)) return false;
 
@@ -471,7 +478,7 @@ const PATH_PROXY_URL_REGEX =
  * Subdomain: http://p3210-kortix-sandbox.localhost:8008/viewer.html
  * Path:      https://e2e-test.kortix.cloud/v1/p/kortix-sandbox/3210/viewer.html
  */
-function parseSubdomainUrl(url: string): {
+export function parseSubdomainUrl(url: string): {
   port: number;
   sandboxId: string;
   backendPort: number;

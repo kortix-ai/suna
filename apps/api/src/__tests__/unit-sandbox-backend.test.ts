@@ -10,7 +10,11 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let mockPayload: { userId: string; sandboxId: string } | null = null;
 
 mock.module('../shared/db', () => ({ db: {} }));
-mock.module('../shared/daytona', () => ({ getDaytona: () => ({}) }));
+mock.module('../shared/daytona', () => ({
+  getDaytona: () => ({}),
+  getDaytonaWarm: () => ({}),
+  warmSnapshotsEnabled: () => false,
+}));
 mock.module('../shared/preview-ownership', () => ({
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
     mockPayload ? { ...mockPayload, sandboxId, userId } : null,

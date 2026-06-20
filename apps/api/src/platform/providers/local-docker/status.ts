@@ -33,6 +33,10 @@ export function getSandboxUpdateStatus(): SandboxUpdateStatus {
   return { ..._updateStatus };
 }
 
+export function resetSandboxUpdateStatus(): void {
+  _updateStatus = { ...IDLE_UPDATE_STATUS };
+}
+
 export function setUpdateStatus(partial: Partial<SandboxUpdateStatus>): void {
   _updateStatus = { ..._updateStatus, ...partial, updatedAt: new Date().toISOString() };
 }

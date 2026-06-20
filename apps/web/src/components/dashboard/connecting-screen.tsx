@@ -55,6 +55,7 @@ export function ConnectingScreen({
   provider,
   backHref,
   minimal = false,
+  hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const status = useSandboxConnectionStore((s) => s.status);
@@ -89,7 +90,7 @@ export function ConnectingScreen({
 
   if (error) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ErrorView
           label={labelOverride || serverLabel}
           message={error.message}
@@ -103,7 +104,7 @@ export function ConnectingScreen({
 
   if (stopped) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <StoppedView
           label={stopped.name || labelOverride || serverLabel}
           onBack={handleSwitch}
@@ -114,11 +115,13 @@ export function ConnectingScreen({
 
   if (provisioning) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ProvisioningView
           label={labelOverride || serverLabel}
+          title={title || 'Provisioning workspace'}
           progress={provisioning.progress}
           stageLabel={provisioning.stageLabel}
+          stages={provisioning.stages}
           currentStage={provisioning.currentStage}
           machineInfo={provisioning.machineInfo}
           onBack={handleSwitch}
@@ -164,8 +167,9 @@ export function ConnectingScreen({
   if (!forceConnecting && status === 'unreachable') {
     return (
       <>
-        <FullScreenShell>
+        <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
           <UnreachableView
+            label={serverLabel}
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
             recoveryPhase={recoveryPhase}
@@ -188,7 +192,7 @@ export function ConnectingScreen({
   );
 }
 
-interface ConnectingScreenProps {
+export interface ConnectingScreenProps {
   /** Force the connecting view regardless of store state (dashboard gate). */
   forceConnecting?: boolean;
   /** Pin the stage label (Auth / Routing / Reaching / Restoring). */
@@ -228,6 +232,20 @@ interface ConnectingScreenProps {
    * Normal connecting waits render only the top progress line.
    */
   minimal?: boolean;
+  /**
+   * Compatibility flag for pages that previously hid loader chrome.
+   */
+  hideWorkspacePicker?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toast hook — kept as a no-op compatibility export for older shells.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useConnectionToasts() {
+  // Mid-session connection state now stays in the background and is surfaced
+  // exclusively via the reconnect pill in the bottom-right corner. Avoid
+  // duplicate toast noise for transient drops and recoveries.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +253,7 @@ interface ConnectingScreenProps {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type SandboxConnectionStatus = 'connecting' | 'connected' | 'unreachable';
-type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
+export type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
 
 const STAGE_COPY: Record<Stage, string> = {
   auth: 'Authenticating',
@@ -248,6 +266,8 @@ function FullScreenShell({
   children,
 }: {
   children: React.ReactNode;
+  /** Kept for call-site compatibility; loader chrome no longer renders it. */
+  showWorkspacePicker?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background">
@@ -302,15 +322,19 @@ function ProgressLine() {
 
 function ProvisioningView({
   label,
+  title,
   progress,
   stageLabel,
+  stages,
   currentStage,
   machineInfo,
   onBack,
 }: {
   label: string;
+  title: string;
   progress: number;
   stageLabel?: string;
+  stages?: ProvisioningStageInfo[] | null;
   currentStage?: string | null;
   machineInfo?: {
     ip: string;
@@ -486,6 +510,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function UnreachableView({
+  label,
   reconnectAttempts,
   provider,
   recoveryPhase,
@@ -494,6 +519,7 @@ function UnreachableView({
   onSwitch,
   sandboxId,
 }: {
+  label: string;
   reconnectAttempts: number;
   provider?: string;
   recoveryPhase: SandboxRecoveryPhase;

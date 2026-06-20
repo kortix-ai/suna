@@ -7,7 +7,7 @@ export function List({ className, ...props }: React.ComponentProps<'ul'>) {
   return <ul data-slot="list" className={cn('divide-border/60 divide-y', className)} {...props} />;
 }
 
-interface ListRowProps {
+export interface ListRowProps {
   leading?: React.ReactNode;
   title: React.ReactNode;
   badges?: React.ReactNode;

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { use, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTabStore } from '@/stores/tab-store';
 
 /**
@@ -20,8 +20,12 @@ import { useTabStore } from '@/stores/tab-store';
  *   - Otherwise we can't reconstruct the sandbox context, so we redirect to
  *     the projects index instead of leaving the user on a blank page.
  */
-export default function PreviewPage() {
-  const { port } = useParams<{ port: string }>();
+export default function PreviewPage({
+  params,
+}: {
+  params: Promise<{ port: string }>;
+}) {
+  const { port } = use(params);
   const router = useRouter();
   const { tabs, setActiveTab } = useTabStore();
 

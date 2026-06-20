@@ -140,7 +140,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
  * Enforcing (2) is what makes "Only me" / "Select members" sharing actually
  * restrict what lands in a member's sandbox env.
  */
-async function listProjectSecretsForUser(
+export async function listProjectSecretsForUser(
   projectId: string,
   subject: ShareSubject,
 ): Promise<Record<string, string>> {
@@ -193,7 +193,7 @@ async function listProjectSecretsForUser(
   return env;
 }
 
-function projectSecretsRevision(env: Record<string, string>): string {
+export function projectSecretsRevision(env: Record<string, string>): string {
   const hash = createHash('sha256');
   for (const [name, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
     hash.update(name);
@@ -202,6 +202,20 @@ function projectSecretsRevision(env: Record<string, string>): string {
     hash.update('\0');
   }
   return hash.digest('hex');
+}
+
+export async function listProjectSecretsSnapshot(projectId: string): Promise<{
+  env: Record<string, string>;
+  names: string[];
+  revision: string;
+}> {
+  const env = await listProjectSecrets(projectId);
+  const names = Object.keys(env).sort();
+  return {
+    env,
+    names,
+    revision: projectSecretsRevision(env),
+  };
 }
 
 /** Per-user snapshot — the sandbox-boot view (overrides + share-scope applied). */

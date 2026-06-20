@@ -3,9 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 const LEGAL_LAST_UPDATED = 'April 8, 2026';
 

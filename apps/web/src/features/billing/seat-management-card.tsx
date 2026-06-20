@@ -9,7 +9,7 @@
 import type { AccountState } from '@/lib/api/billing';
 import { Cpu, Sparkles, Users } from 'lucide-react';
 
-interface SeatManagementCardProps {
+export interface SeatManagementCardProps {
   accountState: AccountState;
 }
 

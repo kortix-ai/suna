@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * and dots all read as the same green/amber/red/blue.
  */
 
-type StatusTone =
+export type StatusTone =
   | 'success'
   | 'warning'
   | 'destructive'
@@ -60,6 +60,10 @@ export const STATUS_DOT: Record<StatusTone, string> = {
   info: 'bg-blue-500',
   neutral: 'bg-muted-foreground/40',
 };
+
+export function statusText(tone: StatusTone) {
+  return STATUS_TEXT[tone];
+}
 
 /**
  * A faint, tone-based status chip — the member of the status family for

@@ -33,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { randomHex } from '@/lib/utils/random';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -71,7 +70,7 @@ const DEFAULT_OPTIONS: Array<{ value: PolicyDefaultMode; label: string; descript
 ];
 
 function newRuleId() {
-  return randomHex(4);
+  return Math.random().toString(36).slice(2, 10);
 }
 
 export function PoliciesPanel({ projectId }: { projectId: string }) {

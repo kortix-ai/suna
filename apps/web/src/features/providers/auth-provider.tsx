@@ -66,6 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (currentSession?.user?.id) {
           const prevUserId = localStorage.getItem('kortix-last-user-id');
           if (prevUserId && prevUserId !== currentSession.user.id) {
+            console.log('[Auth] Initial session: user changed, clearing stale client state');
             await resetClientState();
           }
           localStorage.setItem('kortix-last-user-id', currentSession.user.id);
@@ -100,6 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const prevUserId = localStorage.getItem('kortix-last-user-id');
             const newUserId = newSession?.user?.id;
             if (newUserId && prevUserId && prevUserId !== newUserId) {
+              console.log('[Auth] User changed, clearing stale client state');
               await resetClientState();
             }
             if (newUserId) {

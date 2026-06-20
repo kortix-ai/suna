@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 
-interface OpsOverview {
+export interface OpsOverview {
   generated_at: string;
   api: {
     status: string;
@@ -21,6 +21,11 @@ interface OpsOverview {
     by_status: Record<string, number>;
     by_provider: Record<string, number>;
     errored: number;
+  };
+  queues: {
+    trigger_events_by_status: Record<string, number>;
+    channel_events_by_status: Record<string, number>;
+    queued_total: number;
   };
   audit: {
     events_24h: number;

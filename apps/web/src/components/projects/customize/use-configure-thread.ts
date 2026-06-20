@@ -18,7 +18,7 @@ import { useCallback, useState } from 'react';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-type ConfigureKind = 'agent' | 'skill' | 'command';
+export type ConfigureKind = 'agent' | 'skill' | 'command';
 
 const NEW_PROMPTS: Record<ConfigureKind, string> = {
   agent:

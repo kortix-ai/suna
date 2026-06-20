@@ -3,8 +3,11 @@
 /**
  * Files section inside the Customize full-screen modal.
  *
- * Wires the project's default branch, selected Version override, and
- * per-project files store so the explorer behaves consistently in the modal.
+ * Wraps the same `<FileExplorerPage />` used by the (now-deprecated)
+ * `/projects/[id]/files` route. The page wires up the project's default
+ * branch, the selected Version (Git branch override), and the per-project
+ * files store so the explorer behaves exactly the same inside the modal as
+ * it did on its own route.
  */
 
 import { useQuery } from '@tanstack/react-query';

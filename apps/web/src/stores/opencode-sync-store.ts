@@ -11,13 +11,12 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
 import type { FileDiff } from "@/ui/types";
-import { randomBase62 } from "@/lib/utils/random";
 
 // ============================================================================
 // Binary search — ported from @opencode-ai/util/binary (20 lines)
 // ============================================================================
 
-const Binary = {
+export const Binary = {
 	search<T>(
 		array: T[],
 		id: string,
@@ -42,8 +41,10 @@ const Binary = {
 
 let lastTs = 0;
 let counter = 0;
+const chars62 =
+	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-function ascendingId(prefix: "msg" | "prt" = "msg"): string {
+export function ascendingId(prefix: "msg" | "prt" = "msg"): string {
 	const now = Date.now();
 	if (now !== lastTs) {
 		lastTs = now;
@@ -52,7 +53,9 @@ function ascendingId(prefix: "msg" | "prt" = "msg"): string {
 	counter++;
 	const encoded = BigInt(now) * BigInt(0x1000) + BigInt(counter);
 	const hex = encoded.toString(16).padStart(12, "0").slice(0, 12);
-	return `${prefix}_${hex}${randomBase62(14)}`;
+	let rand = "";
+	for (let i = 0; i < 14; i++) rand += chars62[Math.floor(Math.random() * 62)];
+	return `${prefix}_${hex}${rand}`;
 }
 
 // ============================================================================

@@ -524,6 +524,7 @@ mock.module('../shared/db', () => ({
             }
             return Promise.resolve([]).then(resolve, reject);
           },
+          catch: () => undefined,
         }),
       }),
     }),
