@@ -105,6 +105,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  codex: 'ChatGPT',
   google: 'Google',
   xai: 'xAI',
   moonshotai: 'Moonshot',
