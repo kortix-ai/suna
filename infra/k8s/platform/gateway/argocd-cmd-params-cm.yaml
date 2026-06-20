@@ -1,0 +1,12 @@
+# Serves Argo CD under devops.kortix.com/argo behind the TLS-terminating ALB.
+# The argocd-server Deployment must be restarted to pick these up
+# (kubectl -n argocd rollout restart deploy/argo-cd-argocd-server).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+data:
+  server.rootpath: /argo
+  server.basehref: /argo
+  server.insecure: "true"
