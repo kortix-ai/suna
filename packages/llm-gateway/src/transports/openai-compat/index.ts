@@ -25,6 +25,6 @@ export function buildUpstreamRequest(
   return {
     url: `${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`,
     headers,
-    payload: body,
+    payload: descriptor.resolvedModel ? { ...body, model: descriptor.resolvedModel } : body,
   };
 }
