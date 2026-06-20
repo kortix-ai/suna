@@ -19,6 +19,39 @@ export const execFileAsync = promisify(execFile);
 const refreshLocks = new Map<string, Promise<string>>();
 const lastRefreshAt = new Map<string, number>();
 
+/**
+ * The per-project bare mirror is a SHARED resource: session provisioning, the
+ * version/checkpoint viewer, file browser, manifest/trigger/connector sync, the
+ * warm-snapshot baker and background rebuilds all reach it through
+ * `refreshMirror()`. The auth token is supplied per-call as
+ * `project.gitAuthToken`, and several of those callers legitimately resolve it
+ * to null (e.g. `.catch(() => null)` on a transient resolve, or a project shape
+ * built before auth is known). Because `refreshMirror()` dedups concurrent
+ * refreshes by projectId, a single tokenless caller winning the lock makes the
+ * cold bare-clone of a PRIVATE repo run unauthenticated
+ * (`fatal: could not read Username for 'https://github.com'`) — failing every
+ * concurrent caller that piggybacks on that one shared clone, including a
+ * token-bearing session start.
+ *
+ * Guarantee a token before any network git op: if the caller didn't pass one,
+ * resolve it lazily from the project's stored credentials. Dynamic import keeps
+ * this leaf module free of a static dependency on `../lib/git` (which transitively
+ * pulls in the mirror), and the resolver itself never throws.
+ */
+async function ensureMirrorAuthToken(project: GitBackedProject): Promise<string | null> {
+  if (project.gitAuthToken) return project.gitAuthToken;
+  try {
+    const { resolveProjectGitAuthTokenById } = await import('../lib/git');
+    return await resolveProjectGitAuthTokenById(project.projectId);
+  } catch (err) {
+    console.warn(
+      `[git-mirror] lazy auth resolve failed for ${project.projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
 function cacheRoot() {
   return process.env.KORTIX_GIT_CACHE_DIR || '/tmp/kortix/git-cache';
 }
@@ -137,7 +170,20 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   if (existsSync(join(repoPath, 'shallow'))) {
     await rm(repoPath, { recursive: true, force: true });
   }
-  if (!existsSync(repoPath)) {
+  const needsClone = !existsSync(repoPath);
+  const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
+  const needsFetch = !needsClone && (force || Date.now() - lastRefresh >= refreshIntervalMs());
+  // Nothing to do over the network — serve the warm cache without touching git.
+  if (!needsClone && !needsFetch) return repoPath;
+
+  // Resolve a token before EITHER network op. Whichever caller wins the
+  // refresh lock, the shared clone/fetch is authenticated whenever the project
+  // has a resolvable credential — eliminating the "tokenless caller poisons a
+  // private-repo clone" race described on `ensureMirrorAuthToken`.
+  const authToken = await ensureMirrorAuthToken(project);
+  const authHost = hostFromRepoUrl(project.repoUrl);
+
+  if (needsClone) {
     // Bare clone with ALL branches — required for the version/checkpoint
     // viewer. Older callers cloned --single-branch; we self-heal those on
     // refresh below by rewriting the fetch refspec.
@@ -146,18 +192,15 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
       '--bare',
       project.repoUrl,
       repoPath,
-    ], undefined, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+    ], undefined, true, authToken, undefined, authHost);
     lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
 
-  const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
-  if (!force && Date.now() - lastRefresh < refreshIntervalMs()) return repoPath;
-
   await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+  await runGit(['fetch', '--prune', 'origin'], repoPath, true, authToken, undefined, authHost);
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }

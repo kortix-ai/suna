@@ -939,6 +939,44 @@ export async function loadGitProject(loaded: { row: ProjectRow }) {
   };
 }
 
+/**
+ * Resolve a project's upstream git auth token from just its id — loads the
+ * project row, then runs the normal `resolveProjectGitAuth` resolution
+ * (managed App/PAT, BYO App, project_credential, legacy secret).
+ *
+ * This is the lazy fallback the shared mirror layer (`git/mirror.ts`) calls
+ * when a caller reaches `refreshMirror()` without a token. The per-project
+ * mirror is a shared resource hit by ~15 code paths; relying on every caller to
+ * thread a non-null token is fragile, and `refreshMirror`'s per-project dedup
+ * means a single tokenless caller can make the cold bare-clone of a PRIVATE
+ * repo run unauthenticated (`fatal: could not read Username for github.com`)
+ * and fail every concurrent caller piggybacking on that shared clone. Resolving
+ * here guarantees the network git op is authenticated whenever a credential
+ * exists, regardless of which caller won the refresh lock.
+ *
+ * Returns null when the project is gone or has no resolvable git auth. Never
+ * throws — a resolution failure must degrade to "no token" (caller behaves
+ * exactly as before this hook existed), never crash the mirror refresh.
+ */
+export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return null;
+    const gitAuth = await resolveProjectGitAuth(row);
+    return gitAuth.auth?.token ?? null;
+  } catch (err) {
+    console.warn(
+      `[projects] lazy git-auth resolve failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
 // GET /v1/projects/:projectId/sandboxes
 // Available templates for this project: platform default + any `[[sandbox.templates]]`
 // entries from kortix.toml. Each row includes its live Daytona state so the
