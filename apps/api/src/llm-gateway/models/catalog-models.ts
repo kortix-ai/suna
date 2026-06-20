@@ -1,5 +1,5 @@
 import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
-import { providerKindForNpm } from '@kortix/llm-gateway';
+import { resolveCatalogUpstream } from '@kortix/llm-gateway';
 import { codexModelIds } from './codex-models';
 
 interface GatewayModel {
@@ -39,8 +39,7 @@ export function managedModels(): Record<string, GatewayModel> {
 export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
-    if (!providerKindForNpm(provider.npm)) continue;
-    if (!provider.env?.[0]) continue;
+    if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
       out[`${provider.id}/${model.id}`] = {
         name: model.name,

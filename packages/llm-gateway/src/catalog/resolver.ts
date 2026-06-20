@@ -11,6 +11,10 @@ const BASE_URL_FALLBACKS: Record<string, string> = {
   deepseek: 'https://api.deepseek.com/v1',
   perplexity: 'https://api.perplexity.ai',
   cerebras: 'https://api.cerebras.ai/v1',
+  vercel: 'https://ai-gateway.vercel.sh/v1',
+  v0: 'https://api.v0.dev/v1',
+  deepinfra: 'https://api.deepinfra.com/v1/openai',
+  togetherai: 'https://api.together.xyz/v1',
 };
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
