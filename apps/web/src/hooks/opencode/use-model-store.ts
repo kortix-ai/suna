@@ -278,7 +278,9 @@ export function useModelStore(
       // connected. Everything else is search-only so the catalog can't flood.
       if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
         const sub = subProviderOf(model.modelID);
-        if (sub === SUBSCRIPTION_PROVIDER_ID) return true;
+        // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
+        // gate its display on the subscription being connected.
+        if (sub === SUBSCRIPTION_PROVIDER_ID) return connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false;
         if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
         return connectedProviderIds?.has(sub) ?? false;
       }

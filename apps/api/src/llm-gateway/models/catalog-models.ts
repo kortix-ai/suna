@@ -1,9 +1,6 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
-import { projectSecrets } from '@kortix/db';
 import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
 import { providerKindForNpm } from '@kortix/llm-gateway';
-import { db } from '../../shared/db';
-import { CODEX_AUTH_SECRET_NAME, codexModelIds } from './codex-models';
+import { codexModelIds } from './codex-models';
 
 interface GatewayModel {
   name: string;
@@ -57,8 +54,7 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   return out;
 }
 
-export function gatewayCodexModels(connectedSecretNames: Set<string>): Record<string, GatewayModel> {
-  if (!connectedSecretNames.has(CODEX_AUTH_SECRET_NAME)) return {};
+export function gatewayCodexModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const id of codexModelIds()) {
     out[`codex/${id}`] = {
@@ -72,26 +68,17 @@ export function gatewayCodexModels(connectedSecretNames: Set<string>): Record<st
   return out;
 }
 
-async function connectedSecretNames(projectId: string, userId: string | undefined): Promise<Set<string>> {
-  const ownerCondition = userId
-    ? or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId))
-    : isNull(projectSecrets.ownerUserId);
-  const rows = await db
-    .select({ name: projectSecrets.name })
-    .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), ownerCondition));
-  return new Set(rows.map((row) => row.name));
-}
-
 export async function gatewayModelCatalog(
   projectId: string | undefined,
-  userId: string | undefined,
+  _userId?: string | undefined,
 ): Promise<Record<string, GatewayModel>> {
   if (!projectId) return managedModels();
-  const connected = await connectedSecretNames(projectId, userId);
+  // Full catalog baked regardless of connection (managed + every BYOK provider +
+  // Codex). The picker gates DISPLAY by connection, so connecting a provider or
+  // the ChatGPT subscription reflects live — no new session / re-bake needed.
   return {
     ...managedModels(),
     ...gatewayModelsAll(),
-    ...gatewayCodexModels(connected),
+    ...gatewayCodexModels(),
   };
 }

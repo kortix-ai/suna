@@ -175,6 +175,12 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         ids.add(provider.id);
       }
     }
+    // ChatGPT subscription (Codex) — its auth is a JSON blob, not an env var, so
+    // it isn't in LLM_PROVIDERS. Surface it so codex/* models light up the instant
+    // the subscription is connected (same live-reflection as BYOK keys).
+    if (secretNames.has('CODEX_AUTH_JSON') || secretNames.has('OPENCODE_AUTH_JSON')) {
+      ids.add('codex');
+    }
     return ids;
   }, [secretNames]);
 
