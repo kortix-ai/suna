@@ -93,6 +93,7 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
   let projectId: string;
   let envelope: string;
   try {
+    // Reject non-canonical base64url spellings before decrypting the envelope.
     const encoded = token.slice(TOKEN_PREFIX.length);
     const decodedBytes = Buffer.from(encoded, 'base64url');
     if (decodedBytes.toString('base64url') !== encoded) {
