@@ -18,6 +18,7 @@ const DEFAULT_PUBLIC_URL = 'http://localhost:13737';
 const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
+const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 const LOCAL_SOURCE_TAG = 'selfhost-local';
 
@@ -72,8 +73,11 @@ interface SelfHostEnv {
   POSTGRES_PORT: string;
   FRONTEND_IMAGE: string;
   API_IMAGE: string;
+  GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
   KORTIX_LOCAL_IMAGES: string;
+  GATEWAY_INTERNAL_TOKEN: string;
+  OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
   SUPABASE_JWT_SECRET: string;
   SUPABASE_ANON_KEY: string;
@@ -178,6 +182,9 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   }
   if (!existing || existing.API_IMAGE === `${DEFAULT_API_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
     env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`;
+  }
+  if (!existing || existing.GATEWAY_IMAGE === `${DEFAULT_GATEWAY_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
+    env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`;
   }
   if (!existing || existing.SANDBOX_IMAGE === `${DEFAULT_SANDBOX_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
     env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
@@ -457,6 +464,7 @@ function shouldUseLocalSourceImages(flags: GlobalFlags): boolean {
 function applyLocalSourceImages(env: SelfHostEnv): void {
   env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
+  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.KORTIX_LOCAL_IMAGES = 'true';
 }
@@ -465,6 +473,7 @@ function ensureLocalSourceImages(): void {
   const images = [
     `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
     `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
+    `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
     `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
   ];
   const missing = images.filter((image) => !dockerImageExists(image));
@@ -615,8 +624,11 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     POSTGRES_PORT: '13741',
     FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`,
     API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`,
+    GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`,
     SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`,
     KORTIX_LOCAL_IMAGES: 'false',
+    GATEWAY_INTERNAL_TOKEN: token(32),
+    OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),
     SUPABASE_JWT_SECRET: jwtSecret,
     SUPABASE_ANON_KEY: supabaseJwt('anon', jwtSecret),
@@ -791,12 +803,29 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       KORTIX_LOCAL_IMAGES: \${KORTIX_LOCAL_IMAGES}
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
       KORTIX_BILLING_INTERNAL_ENABLED: "false"
+      LLM_GATEWAY_ENABLED: "true"
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
+      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
+      OPENROUTER_API_KEY: \${OPENROUTER_API_KEY}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       supabase-db:
         condition: service_healthy
       supabase-kong:
+        condition: service_started
+    restart: unless-stopped
+
+  llm-gateway:
+    image: \${GATEWAY_IMAGE}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      PORT: "8090"
+      KORTIX_API_URL: http://kortix-api:8008
+      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
+    depends_on:
+      kortix-api:
         condition: service_started
     restart: unless-stopped
 

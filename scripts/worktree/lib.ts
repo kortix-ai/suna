@@ -24,7 +24,7 @@ import { join, dirname, basename } from 'node:path';
 
 export const STRIDE = 100;
 export const BASE = {
-  web: 13000, api: 13008,
+  web: 13000, api: 13008, gateway: 13090,
   sbApi: 13321, sbDb: 13322, sbStudio: 13323, sbInbucket: 13324,
   sbAnalytics: 13327, sbPooler: 13329,
 } as const;
