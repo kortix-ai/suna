@@ -21,6 +21,7 @@ spec:
     - https://falcosecurity.github.io/charts
     - https://vmware-tanzu.github.io/helm-charts
     - https://opencost.github.io/opencost-helm-chart
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
   destinations:
     - server: https://kubernetes.default.svc
       namespace: kortix-platform

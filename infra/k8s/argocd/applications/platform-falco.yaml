@@ -76,7 +76,7 @@ spec:
                 pod — review for data exfiltration or C2.
               condition: >
                 outbound and container and kortix_container
-                and not fd.sip in (rfc_1918_addresses)
+                and not fd.snet in (rfc_1918_addresses)
               output: >
                 Unexpected outbound connection from a Kortix workload
                 (proc=%proc.name connection=%fd.name container=%container.name
