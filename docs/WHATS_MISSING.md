@@ -164,8 +164,17 @@ section is the current source of truth.
   burn-rate alerts. The **OTel SDK** for traces into Tempo is still pending.
   Caveat: `/metrics` is served openly — restrict it at the edge (Cloudflare/ALB)
   or add a bearer token before the prod cutover.
-- **SSO + gateway** — `devops.<domain>` ingress + OIDC; replaces the tunnels and
-  the placeholder Grafana admin login.
+- **SSO is LIVE but partly out-of-band** — GitHub login works: Grafana (native
+  GitHub OAuth, GitHub-only), Argo CD (GitHub via its Dex, org→admin), Headlamp
+  (token dropped — trusts the Cloudflare Access gate via unsafeUseServiceAccountToken).
+  CODIFY: Argo's `argocd-cm`/`argocd-rbac-cm`/`argocd-secret` (url, dex github
+  connector, RBAC) were live-patched, not in git — fold them into the Terraform
+  Argo helm values (`modules/eks/platform`) so a cluster rebuild keeps SSO.
+  GitHub OAuth client secrets live in k8s secrets (`grafana-github-oauth`,
+  `argocd-secret`) out-of-band — move to External Secrets / Secrets Manager.
+- **Headlamp = single-layer auth** — every gated user is the pod SA (cluster-admin)
+  on both clusters. Acceptable behind Cloudflare Access + CF-IP-locked ALB; scope
+  the SA down (view/edit) if cluster-admin-for-all-gated-users is too broad.
 - **Real secret wiring** — replace the Slack/PagerDuty placeholders, the Velero
   S3 bucket + IRSA role, and the Falco sidekick webhook with provisioned values.
 - **DR drill** — `scripts/dr-test.sh` + a real Velero restore to prove RTO/RPO.
