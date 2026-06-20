@@ -28,12 +28,34 @@ case "$target" in
     ;;
 esac
 
+compile_with_retry() {
+  local attempt=1
+  local max_attempts=4
+  local delay=5
+
+  while true; do
+    if bun build --compile --target="$target" --outfile=dist/kortix src/index.ts; then
+      return 0
+    fi
+
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      echo "bun build --compile failed after ${max_attempts} attempts" >&2
+      return 1
+    fi
+
+    echo "bun build --compile failed on attempt ${attempt}/${max_attempts}; retrying in ${delay}s..." >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
 # Refresh the embedded starter snapshot so the compiled binary carries an
 # up-to-date copy of the template tree (the on-disk walk does not survive
 # `bun build --compile`; see packages/starter/scripts/generate-embedded.ts).
 bun run ../../packages/starter/scripts/generate-embedded.ts
 
-bun build --compile --target="$target" --outfile=dist/kortix src/index.ts
+compile_with_retry
 chmod +x dist/kortix
 size="$(stat -f%z dist/kortix 2>/dev/null || stat -c%s dist/kortix)"
 echo "Built dist/kortix for ${target} (${size} bytes)"

@@ -70,8 +70,8 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
         *) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
     esac \
     && bun install --no-save \
-    && bun build apps/cli/src/index.ts --compile --target="$BUN_COMPILE_TARGET" --outfile /cli/kortix \
-    && chmod +x /cli/kortix
+    && BUN_COMPILE_TARGET="$BUN_COMPILE_TARGET" bash apps/cli/scripts/build.sh \
+    && cp apps/cli/dist/kortix /cli/kortix
 
 # ─── Stage 3: runtime ───────────────────────────────────────────────────
 
