@@ -73,9 +73,6 @@ export async function gatewayModelCatalog(
   _userId?: string | undefined,
 ): Promise<Record<string, GatewayModel>> {
   if (!projectId) return managedModels();
-  // Full catalog baked regardless of connection (managed + every BYOK provider +
-  // Codex). The picker gates DISPLAY by connection, so connecting a provider or
-  // the ChatGPT subscription reflects live — no new session / re-bake needed.
   return {
     ...managedModels(),
     ...gatewayModelsAll(),
