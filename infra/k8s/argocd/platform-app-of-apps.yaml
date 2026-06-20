@@ -1,0 +1,38 @@
+# Platform app-of-apps: one Application that manages every platform-*.yaml under
+# applications/ (the DevOps console, observability, security guardrails, cost,
+# gateway). Apply ONCE per platform cluster (prod-eks) to bootstrap; thereafter
+# Argo self-manages the whole stack from git — no more manual kubectl apply.
+#
+# Scoped via directory.include to platform-* only, so it never touches the
+# kortix-dev / kortix-prod workload apps (those are cluster-specific).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: main
+    path: infra/k8s/argocd/applications
+    directory:
+      recurse: false
+      include: "platform-*.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
