@@ -123,15 +123,22 @@ module "acm_argocd" {
   }
 }
 
-# ── TLS cert for the consolidated DevOps gateway (devops.kortix.com) ───────────
-# One shared ALB fronts Headlamp (/), Argo CD (/argo), Grafana (/grafana) and
-# OpenCost (/cost) under this host, gated by Cloudflare Access + a Cloudflare-IP-
-# locked ALB. Supersedes ops.kortix.com — see docs/runbooks/devops-gateway.md.
+# ── TLS cert for the consolidated DevOps gateway ──────────────────────────────
+# One shared ALB host-routes each tool to its own subdomain (each app serves at
+# root — no subpath gymnastics): devops→Headlamp, grafana→Grafana, argo→Argo CD,
+# cost→OpenCost. All four on one SAN cert, gated by Cloudflare Access + a
+# Cloudflare-IP-locked ALB. Supersedes ops.kortix.com — see
+# docs/runbooks/devops-gateway.md.
 module "acm_devops" {
   source      = "../../../modules/acm-cloudflare"
   domain_name = var.devops_domain
-  zone_id     = var.cloudflare_zone_id
-  tags        = local.tags
+  subject_alternative_names = [
+    "grafana.kortix.com",
+    "argo.kortix.com",
+    "cost.kortix.com",
+  ]
+  zone_id = var.cloudflare_zone_id
+  tags    = local.tags
   providers = {
     aws        = aws
     cloudflare = cloudflare
