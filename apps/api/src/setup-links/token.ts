@@ -93,7 +93,12 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
   let projectId: string;
   let envelope: string;
   try {
-    const decoded = Buffer.from(token.slice(TOKEN_PREFIX.length), 'base64url').toString('utf8');
+    const encoded = token.slice(TOKEN_PREFIX.length);
+    const decodedBytes = Buffer.from(encoded, 'base64url');
+    if (decodedBytes.toString('base64url') !== encoded) {
+      return { ok: false, status: 404, error: 'Invalid or unknown link' };
+    }
+    const decoded = decodedBytes.toString('utf8');
     const dot = decoded.indexOf('.');
     if (dot <= 0) return { ok: false, status: 404, error: 'Invalid or unknown link' };
     projectId = decoded.slice(0, dot);
