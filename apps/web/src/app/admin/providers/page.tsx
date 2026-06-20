@@ -30,6 +30,7 @@ import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -158,6 +159,53 @@ export default function ProvidersPage() {
     onError: (e: any) => toast.error(e?.message ?? 'Migrate failed'),
   });
 
+  // ── Warm pool (DB-backed master gate + default size) ──────────────────────
+  const warmQ = useQuery({
+    queryKey: ['admin', 'warm-pool-config'],
+    queryFn: async () => {
+      const r = await backendApi.get<{ enabled: boolean; size: number }>('/admin/api/warm-pool-config');
+      if (r.error) throw new Error(r.error.message);
+      return r.data!;
+    },
+  });
+  const [warmEnabled, setWarmEnabled] = useState(false);
+  const [warmSize, setWarmSize] = useState('0');
+  useEffect(() => {
+    if (!warmQ.data) return;
+    setWarmEnabled(!!warmQ.data.enabled);
+    setWarmSize(String(warmQ.data.size ?? 0));
+  }, [warmQ.data]);
+  const saveWarm = useMutation({
+    mutationFn: async () => {
+      const r = await backendApi.put('/admin/api/warm-pool-config', { enabled: warmEnabled, size: Number(warmSize) || 0 });
+      if (r.error) throw new Error(r.error.message);
+      return r.data;
+    },
+    onSuccess: () => { toast.success('Warm pool saved'); qc.invalidateQueries({ queryKey: ['admin', 'warm-pool-config'] }); },
+    onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
+  });
+
+  // ── Provider failover (one-shot, on session init) ─────────────────────────
+  const fbQ = useQuery({
+    queryKey: ['admin', 'provider-fallback'],
+    queryFn: async () => {
+      const r = await backendApi.get<{ enabled: boolean }>('/admin/api/provider-fallback');
+      if (r.error) throw new Error(r.error.message);
+      return r.data!;
+    },
+  });
+  const [fbEnabled, setFbEnabled] = useState(false);
+  useEffect(() => { if (fbQ.data) setFbEnabled(!!fbQ.data.enabled); }, [fbQ.data]);
+  const saveFb = useMutation({
+    mutationFn: async () => {
+      const r = await backendApi.put('/admin/api/provider-fallback', { enabled: fbEnabled });
+      if (r.error) throw new Error(r.error.message);
+      return r.data;
+    },
+    onSuccess: () => { toast.success('Failover saved'); qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] }); },
+    onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
+  });
+
   const dist = distQ.data;
   const allowed = dist?.allowed ?? [];
   const totalW = allowed.reduce((s, p) => s + (Number(weights[p]) || 0), 0);
@@ -270,6 +318,57 @@ export default function ProvidersPage() {
                 </Button>
               </>
             )}
+          </div>
+
+          {/* ── Warm pool ──────────────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold tracking-tight">Warm pool</h2>
+                <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
+                  Off by default — we don&apos;t hold idle warm boxes. When enabled, templates that opt in
+                  (Customize → Sandbox) keep this many spares parked for instant claim. Master gate; turning it
+                  off makes every session cold-provision.
+                </p>
+              </div>
+              {warmQ.isLoading ? (
+                <Skeleton className="h-6 w-10 rounded-full" />
+              ) : (
+                <Switch checked={warmEnabled} onCheckedChange={setWarmEnabled} aria-label="Enable warm pool" />
+              )}
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="space-y-1.5 w-40">
+                <label className="text-xs font-medium text-muted-foreground">Default ready-count</label>
+                <Input type="number" min={0} max={25} value={warmSize} disabled={!warmEnabled}
+                  onChange={(e) => setWarmSize(e.target.value)} className="rounded-2xl" />
+              </div>
+              <Button size="sm" onClick={() => saveWarm.mutate()} disabled={saveWarm.isPending} className="gap-1.5">
+                {saveWarm.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save warm pool
+              </Button>
+            </div>
+          </div>
+
+          {/* ── Provider failover ──────────────────────────────────────────── */}
+          <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold tracking-tight">Provider failover</h2>
+                <p className="text-xs text-muted-foreground max-w-2xl leading-relaxed">
+                  Off by default. When on, a session that fails to provision on its primary provider hands off
+                  ONCE to the next allowed provider before it&apos;s marked failed. Applies at session start only —
+                  running sandboxes are never auto-migrated.
+                </p>
+              </div>
+              {fbQ.isLoading ? (
+                <Skeleton className="h-6 w-10 rounded-full" />
+              ) : (
+                <Switch checked={fbEnabled} onCheckedChange={setFbEnabled} aria-label="Enable provider failover" />
+              )}
+            </div>
+            <Button size="sm" onClick={() => saveFb.mutate()} disabled={saveFb.isPending} className="gap-1.5">
+              {saveFb.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Save failover
+            </Button>
           </div>
 
           <PageSearchBar value={search} onChange={setSearch} placeholder="Search by provider, status, session, account, or external ID…" />

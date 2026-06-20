@@ -132,14 +132,15 @@ const envSchema = z.object({
   // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
   // bound to a session id on create — decoupled from the durable session row).
   // Per-template default ready-count when a template is first opted in via the
-  // UI (per-template UI value overrides). Only matters when the pool is enabled.
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
-  // Master on/off for the warm pool subsystem. Default ON = the feature is
-  // AVAILABLE: the per-template opt-in toggles render in Customize → Sandbox, but
-  // every template still defaults OFF, so nothing warms — and nothing is billed —
-  // until a template is explicitly opted in. Set false to kill the subsystem
-  // fleet-wide (allocator skips the claim path; every create cold-provisions).
-  KORTIX_WARM_POOL_ENABLED:        optBoolTrue,
+  // UI (per-template UI value overrides). FALLBACK DEFAULT ONLY — the live value
+  // is the DB `warm_pool` setting (admin Providers panel / runtime-settings.ts).
+  KORTIX_WARM_POOL_SIZE:           optInt(0),
+  // Master on/off for the warm pool subsystem. Default OFF — we don't run warm
+  // pools by default (they hold idle boxes for no reason). This env is only the
+  // FALLBACK default; the live master gate is the DB `warm_pool` setting flipped
+  // from the admin Providers panel (runtime-settings.ts → warmPoolEnabled()).
+  // When OFF the allocator skips the claim path and every create cold-provisions.
+  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
   // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
   // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
   // base branch + warm the opencode project plugin AT PARK — so a claim only

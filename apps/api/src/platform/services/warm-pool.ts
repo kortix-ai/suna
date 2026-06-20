@@ -38,6 +38,7 @@ import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
+import { warmPoolSetting } from './runtime-settings';
 import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
@@ -49,9 +50,6 @@ const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle
 const CLAIM_STALE_MS = 5 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap (>> a normal claim's <15s, so reconcile never races a live claim)
 const READY_PROBE_INTERVAL_MS = 2000;
 const MAX_WARM_SIZE = 25;
-/** Ready-count a template defaults to when first turned ON (operator default
- *  KORTIX_WARM_POOL_SIZE, overridable per-template in the UI). */
-const DEFAULT_WARM_SIZE = Math.max(0, config.KORTIX_WARM_POOL_SIZE);
 const PT_ENV_PATH = '/tmp/pt-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
 const DAEMON_PORT = 8000;
 
@@ -60,15 +58,17 @@ export interface WarmPoolConfig {
   size: number;
 }
 
-/** Master gate. Default ON (the feature is available, off per-template). Set
- *  KORTIX_WARM_POOL_ENABLED=false to make the whole driver inert (claim path
- *  skipped, every create cold-provisions). NOT tied to the optional global cap. */
-export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED;
+/** Master gate. Default OFF — we don't run warm pools by default. The live
+ *  value is the DB `warm_pool` setting (admin Providers panel), not env, so an
+ *  operator flips it without a redeploy. When OFF the whole driver is inert
+ *  (claim path skipped, every create cold-provisions) and every per-template
+ *  opt-in is AND-gated to off. NOT tied to the optional global cap. */
+export const warmPoolEnabled = (): boolean => warmPoolSetting().enabled;
 
 /**
  * Per-template warm config, read from `projects.metadata.warm_pool_templates[slug]`.
  * OPT-IN: `enabled` is true only when the operator gate is on AND this template's
- * slug was explicitly turned on (UI). Size defaults to DEFAULT_WARM_SIZE (1).
+ * slug was explicitly turned on (UI). Size defaults to the DB warm_pool size.
  *
  * The old project-wide opt-OUT `warm_pool` field is intentionally ignored — warm
  * pool is now off by default and configured per sandbox template, so any project
@@ -86,7 +86,7 @@ export function resolveTemplateWarmConfig(metadata: unknown, slug: string): Warm
   const size =
     cfg && typeof cfg.size === 'number' && Number.isInteger(cfg.size) && cfg.size >= 0
       ? Math.min(cfg.size, MAX_WARM_SIZE)
-      : DEFAULT_WARM_SIZE;
+      : warmPoolSetting().size;
   return { enabled: warmPoolEnabled() && optedIn, size };
 }
 
