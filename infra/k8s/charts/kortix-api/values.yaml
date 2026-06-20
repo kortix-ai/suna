@@ -166,6 +166,11 @@ topologySpread:
 security:
   enabled: true
   runAsNonRoot: true
+  # Numeric UID/GID of the image's non-root user (oven/bun ships bun=1000). REQUIRED:
+  # with a non-numeric USER (bun) the kubelet can't verify runAsNonRoot and the pod
+  # fails CreateContainerConfigError.
+  runAsUser: 1000
+  runAsGroup: 1000
   seccompProfile: RuntimeDefault
   allowPrivilegeEscalation: false
   dropAllCapabilities: true
