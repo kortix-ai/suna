@@ -218,7 +218,7 @@ function RevealKeyDialog({
             <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground">
 {`curl https://gateway.kortix.com/v1/chat/completions \\
   -H "Authorization: Bearer ${created.key_prefix}…" \\
-  -d '{"model":"claude-haiku-4.5","messages":[...]}'`}
+  -d '{"model":"kortix-basic","messages":[...]}'`}
             </pre>
           </div>
         </div>

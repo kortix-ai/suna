@@ -39,34 +39,24 @@ export interface ManagedModel {
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
-// `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
-// model. A bare, slash-free id is what lets the gateway tell a managed request
-// (`claude-opus-4.8` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
+// `kortix/<id>` (e.g. `kortix/kortix-power`) and sends `<id>` as the wire model.
+// A bare, slash-free id is what lets the gateway tell a managed request
+// (`kortix-power` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
 // the user's own key) without the two ever colliding.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: 'claude-opus-4.8',
-    name: 'Claude Opus 4.8',
-    bedrockModelId: 'us.anthropic.claude-opus-4-8',
-    openRouterModelId: 'anthropic/claude-opus-4.8',
-    inputPerMillion: 5,
-    outputPerMillion: 25,
-    cachedInputPerMillion: 0.5,
-    tier: 'flagship',
-  },
-  {
-    id: 'claude-sonnet-4.6',
-    name: 'Claude Sonnet 4.6',
+    id: 'kortix-power',
+    name: 'Kortix Power',
     bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
     openRouterModelId: 'anthropic/claude-sonnet-4.6',
     inputPerMillion: 3,
     outputPerMillion: 15,
     cachedInputPerMillion: 0.3,
-    tier: 'balanced',
+    tier: 'flagship',
   },
   {
-    id: 'claude-haiku-4.5',
-    name: 'Claude Haiku 4.5',
+    id: 'kortix-basic',
+    name: 'Kortix Basic',
     bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     openRouterModelId: 'anthropic/claude-haiku-4.5',
     inputPerMillion: 1,

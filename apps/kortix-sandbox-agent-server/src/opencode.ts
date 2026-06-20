@@ -163,7 +163,7 @@ async function fetchGatewayModels(
   return MINIMAL_FALLBACK_MODELS
 }
 
-const DEFAULT_KORTIX_MODEL = 'kortix/claude-opus-4.8'
+const DEFAULT_KORTIX_MODEL = 'kortix/kortix-power'
 
 type KortixGatewayModel = {
   name: string
@@ -175,16 +175,16 @@ type KortixGatewayModel = {
 }
 
 const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'claude-opus-4.8': {
-    name: 'Claude Opus 4.8',
+  'kortix-power': {
+    name: 'Kortix Power',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
-  'anthropic/claude-sonnet-4.6': {
-    name: 'Claude Sonnet 4.6',
+  'kortix-basic': {
+    name: 'Kortix Basic',
     reasoning: true,
     tool_call: true,
     attachment: true,

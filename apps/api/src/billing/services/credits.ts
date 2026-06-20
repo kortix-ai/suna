@@ -132,6 +132,8 @@ interface ModelPricing {
 }
 
 const MODEL_PRICING: Record<string, ModelPricing> = {
+  'kortix-power': { inputPricePerMillion: 3, outputPricePerMillion: 15, cachedInputPricePerMillion: 0.3 },
+  'kortix-basic': { inputPricePerMillion: 1, outputPricePerMillion: 5, cachedInputPricePerMillion: 0.1 },
   'claude-opus-4.8': { inputPricePerMillion: 5, outputPricePerMillion: 25 },
   'claude-sonnet-4.6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
   'gpt-5.5': { inputPricePerMillion: 5, outputPricePerMillion: 30 },
