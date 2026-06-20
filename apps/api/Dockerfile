@@ -46,7 +46,7 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
-FROM node:22-slim AS deps
+FROM node:26-slim AS deps
 
 WORKDIR /app
 
