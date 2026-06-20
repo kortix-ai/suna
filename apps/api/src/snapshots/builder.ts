@@ -168,9 +168,16 @@ export async function ensureSandboxImage(
   // within the same build window — must produce exactly ONE provider build and
   // ONE build-log row. `daytona.snapshot.create` calls racing under the same
   // name conflict, and duplicate rows are what left two "Building" entries
-  // orphaned in the UI. We dedupe in-process by target snapshot name; the
+  // orphaned in the UI. We dedupe in-process by (provider, snapshot name); the
   // cross-process case (API restart mid-build) is healed by reconcileStaleBuilds.
-  const existing = inflightBuilds.get(identity.snapshotName);
+  //
+  // The provider MUST be part of the key: the same identity can be requested for
+  // two providers at once (e.g. a background reconcile builds on the template's
+  // recorded provider while a session — or a failover — needs it on a DIFFERENT
+  // provider). Keying on the name alone would dedupe the session onto the wrong
+  // provider's build and, when that one fails, fail the session with it.
+  const buildKey = `${buildProvider}:${identity.snapshotName}`;
+  const existing = inflightBuilds.get(buildKey);
   if (existing) return existing;
 
   const buildPromise = runInlineBuild(project, template, identity, {
@@ -178,8 +185,8 @@ export async function ensureSandboxImage(
     accountId: opts.accountId,
     source: opts.source ?? 'session-start',
     buildProvider,
-  }).finally(() => inflightBuilds.delete(identity.snapshotName));
-  inflightBuilds.set(identity.snapshotName, buildPromise);
+  }).finally(() => inflightBuilds.delete(buildKey));
+  inflightBuilds.set(buildKey, buildPromise);
   return buildPromise;
 }
 
