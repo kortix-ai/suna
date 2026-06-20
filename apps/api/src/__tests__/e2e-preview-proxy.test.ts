@@ -38,13 +38,32 @@ let mockDbSandbox: any = {
 let mockDbMembership: any = { accountRole: 'member' };
 let mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
 let mockPreviewToken: string | null = 'daytona-preview-token-123';
-let mockDaytonaGetError: Error | null = null;
-let mockPreviewLinkError: Error | null = null;
 let mockWakeCalls: string[] = [];
 let mockFetchResponses: Array<{ status: number; body: string; headers?: Record<string, string> }> = [];
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+
+function mockSandboxRows(): any[] {
+  if (!mockDbSandbox) return [];
+  return Array.isArray(mockDbSandbox) ? mockDbSandbox : [mockDbSandbox];
+}
+
+function sortPreferredSandboxRows(rows: any[]): any[] {
+  const rank = (status: string) => {
+    if (status === 'active') return 0;
+    if (status === 'provisioning') return 1;
+    if (status === 'stopped') return 2;
+    return 3;
+  };
+  return [...rows].sort((a, b) => {
+    const statusDiff = rank(a.status) - rank(b.status);
+    if (statusDiff !== 0) return statusDiff;
+    const poolDiff = (a.poolState == null ? 0 : 1) - (b.poolState == null ? 0 : 1);
+    if (poolDiff !== 0) return poolDiff;
+    return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
+  });
+}
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -83,10 +102,15 @@ mock.module('../shared/db', () => {
           ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
+        const isProjectSessionQuery = fieldKeys.includes('createdBy');
 
-        const rowsFor = (): any[] => {
-          if (isSandboxQuery) return mockDbSandbox ? [mockDbSandbox] : [];
+        const rowsFor = (ordered = false): any[] => {
+          if (isSandboxQuery) {
+            const rows = mockSandboxRows();
+            return ordered ? sortPreferredSandboxRows(rows) : rows;
+          }
           if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
+          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           // Fallback: empty (unknown query, e.g. accountGroupMembers in
           // resolveShareSubject — the test models no group memberships).
           return [];
@@ -95,11 +119,19 @@ mock.module('../shared/db', () => {
           from: (table: any) => ({
             // `.where(...)` is both awaitable (resolveShareSubject awaits it
             // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (condition: any) => ({
-              limit: (n: number) => Promise.resolve(rowsFor().slice(0, n)),
-              then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
-                Promise.resolve(rowsFor()).then(resolve, reject),
-            }),
+            where: (condition: any) => {
+              let ordered = false;
+              const query = {
+                orderBy: () => {
+                  ordered = true;
+                  return query;
+                },
+                limit: (n: number) => Promise.resolve(rowsFor(ordered).slice(0, n)),
+                then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                  Promise.resolve(rowsFor(ordered)).then(resolve, reject),
+              };
+              return query;
+            },
           }),
         };
       },
@@ -115,23 +147,22 @@ mock.module('../shared/db', () => {
 });
 
 mock.module('../shared/preview-ownership', () => ({
+  canAccessSandboxSession: async ({ userId }: { userId?: string }) =>
+    Boolean(userId && mockDbSandbox && mockDbMembership),
   canAccessPreviewSandbox: async ({ userId }: { userId?: string }) =>
     Boolean(userId && mockDbSandbox && mockDbMembership),
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>
     userId && mockDbSandbox && mockDbMembership
-      ? { userId, sandboxId: mockDbSandbox.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
+      ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
       : null,
-  clearPreviewOwnershipCache: () => {},
 }));
 
 // Daytona SDK mock
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({
     get: async (sandboxId: string) => {
-      if (mockDaytonaGetError) throw mockDaytonaGetError;
       return {
         getPreviewLink: async (port: number) => {
-          if (mockPreviewLinkError) throw mockPreviewLinkError;
           return { url: mockPreviewUrl, token: mockPreviewToken };
         },
         start: async () => {
@@ -142,8 +173,27 @@ mock.module('../shared/daytona', () => ({
   }),
 }));
 
+mock.module('../platform/providers', () => ({
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WarmRuntimeUnavailableError';
+    }
+  },
+  getProvider: () => ({
+    resolvePreviewLink: async () => {
+      return { url: mockPreviewUrl, token: mockPreviewToken };
+    },
+    ensureRunning: async (sandboxId: string) => {
+      mockWakeCalls.push(sandboxId);
+    },
+  }),
+}));
+
 mock.module('../config', () => ({
+  SANDBOX_VERSION: 'test-version',
   config: {
+    KORTIX_LOCAL_DOCKER_HOST: 'host.docker.internal',
     isDaytonaEnabled: () => true,
     isLocalDockerEnabled: () => false,
     isJustAVPSEnabled: () => false,
@@ -160,8 +210,12 @@ mock.module('../projects/secrets', () => {
     revision: `rev-${projectId}`,
   });
   return {
+    listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
+    listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    projectSecretsRevision: (env: Record<string, string>) => `rev-${Object.keys(env).sort().join('-')}`,
+    getProjectSecretValue: async () => null,
   };
 });
 
@@ -171,7 +225,11 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
 
   // Let non-proxy URLs through (e.g. internal Hono test requests)
-  if (!urlStr.startsWith('https://preview.') && !urlStr.startsWith('http://preview.')) {
+  if (
+    !urlStr.startsWith('https://preview.') &&
+    !urlStr.startsWith('http://preview.') &&
+    !urlStr.startsWith('http://host.docker.internal:')
+  ) {
     return originalFetch(url, init);
   }
 
@@ -251,8 +309,6 @@ beforeEach(() => {
   mockDbMembership = { accountRole: 'member' };
   mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
   mockPreviewToken = 'daytona-preview-token-123';
-  mockDaytonaGetError = null;
-  mockPreviewLinkError = null;
   mockWakeCalls = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
@@ -370,7 +426,11 @@ describe('Preview proxy: ownership', () => {
       });
       expect(res.status).toBe(503);
       const body = await res.json();
-      expect(body).toEqual({ error: 'sandbox not ready', status });
+      expect(body).toEqual({
+        error: `sandbox not ready (status: ${status})`,
+        port: TEST_PORT,
+        status: 503,
+      });
     },
   );
 
@@ -381,6 +441,33 @@ describe('Preview proxy: ownership', () => {
       headers: { Authorization: 'Bearer test' },
     });
     expect(res.status).toBe(200);
+  });
+
+  test('prefers the active claimed row when an external id has older failed rows', async () => {
+    mockDbSandbox = [
+      {
+        ...mockDbSandbox,
+        sandboxId: '22222222-2222-4222-8222-222222222222',
+        sessionId: '22222222-2222-4222-8222-222222222222',
+        status: 'error',
+        updatedAt: '2026-06-04T08:56:42.000Z',
+      },
+      {
+        ...mockDbSandbox,
+        sandboxId: TEST_SESSION_SANDBOX_ID,
+        sessionId: TEST_SESSION_SANDBOX_ID,
+        status: 'active',
+        updatedAt: '2026-06-04T08:58:08.000Z',
+      },
+    ];
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/shared-local-docker-sandbox/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('Hello from upstream');
   });
 });
 
@@ -411,6 +498,24 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls).toHaveLength(1);
   });
 
+  test('proxies local_docker sandboxes through the host-mapped port', async () => {
+    mockDbSandbox = {
+      ...mockDbSandbox,
+      provider: 'local_docker',
+      baseUrl: 'http://localhost:18000',
+      metadata: { mappedPorts: { '8000': '18000', '3211': '18001' } },
+    };
+    mockFetchResponses = [{ status: 200, body: '{"runtimeReady":true}' }];
+
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/local-docker-sandbox/8000/kortix/health`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockFetchCalls[0]?.url).toBe('http://host.docker.internal:18000/kortix/health');
+  });
+
   test('syncs latest project secrets before forwarding prompt_async', async () => {
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -439,7 +544,7 @@ describe('Preview proxy: forwarding', () => {
         SENTRY_DSN: 'https://example.test/1',
       },
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      revision: `rev-${TEST_PROJECT_ID}`,
+      revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
@@ -460,7 +565,7 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toContain('project env sync failed: 401');
+    expect(body.message).toContain('env sync failed: 401');
     expect(mockFetchCalls).toHaveLength(1);
     expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
   });
@@ -721,7 +826,11 @@ describe('Preview proxy: retry exhaustion', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toContain('upstream unreachable');
+    expect(body).toEqual({
+      error: 'sandbox upstream unreachable',
+      port: TEST_PORT,
+      status: 502,
+    });
     // Should have made 4 attempts (0, 1, 2, 3)
     expect(callCount).toBe(4);
   });

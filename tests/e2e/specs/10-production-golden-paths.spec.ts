@@ -1,30 +1,30 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createHmac } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createHmac, randomUUID } from 'node:crypto';
+import { requireEnvValue } from '../helpers/env';
+import { createApiJsonClient, json } from '../helpers/http';
+import {
+  type AuthSession,
+  type AuthUser,
+  createAuthUser,
+  installBrowserSession,
+  signIn,
+} from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_GOLDEN_PASSWORD || 'E2eGoldenPaths123!';
 const runGoldenPaths = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
-
-interface AuthUser {
-  id: string;
-  email?: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
+const api = createApiJsonClient(apiBase);
+const authOptions = { supabaseUrl, password };
 
 interface AccountSummary {
   account_id: string;
   name: string;
-  personal_account: boolean;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
   account_role: 'owner' | 'admin' | 'member';
 }
 
@@ -89,186 +89,8 @@ interface OpenCodeFileNode {
   type: 'file' | 'directory';
 }
 
-function repoRoot(): string {
-  const path = require('path') as typeof import('node:path');
-  return path.resolve(__dirname, '../../..');
-}
-
-function parseEnvFile(relativePath: string): Record<string, string> {
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const filePath = path.isAbsolute(relativePath)
-    ? relativePath
-    : path.join(repoRoot(), relativePath);
-  if (!fs.existsSync(filePath)) return {};
-
-  const env: Record<string, string> = {};
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) continue;
-    env[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
-  }
-  return env;
-}
-
-function candidateEnvFiles(files: string[]): string[] {
-  const path = require('path') as typeof import('node:path');
-  const explicit = (process.env.E2E_ENV_FILE || '')
-    .split(path.delimiter)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return [...explicit, ...files];
-}
-
-function requireEnvValue(name: string, ...files: string[]): string {
-  if (process.env[name]) return process.env[name]!;
-
-  for (const file of candidateEnvFiles(files)) {
-    const value = parseEnvFile(file)[name];
-    if (value) return value;
-  }
-  throw new Error(`${name} was not found in ${candidateEnvFiles(files).join(', ')}`);
-}
-
-function optionalEnvValue(name: string, ...files: string[]): string | undefined {
-  if (process.env[name]) return process.env[name];
-
-  for (const file of candidateEnvFiles(files)) {
-    const value = parseEnvFile(file)[name];
-    if (value) return value;
-  }
-  return undefined;
-}
-
 function databaseUrl(): string {
   return process.env.E2E_DATABASE_URL || requireEnvValue('DATABASE_URL', 'apps/api/.env');
-}
-
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function json<T>(
-  response: Response,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const body = await response.text();
-  if (!expected.includes(response.status)) {
-    throw new Error(
-      `Expected ${expected.join('/')} from ${response.url}, got ${response.status}: ${body}`,
-    );
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
-}
-
-async function api<T>(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  return json<T>(
-    await fetch(`${apiBase}${path}`, {
-      method,
-      headers: authHeaders(token),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    expectedStatus,
-  );
-}
-
-async function apiStatus(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const response = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await response.text();
-  return response.status;
-}
-
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey =
-    optionalEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
-  return json<AuthSession>(
-    await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-    200,
-  );
-}
-
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-    await page.waitForTimeout(1_500);
-    if (!(await page.locator('input[name="email"]').isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      });
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
-}
-
-async function selectAccountForUi(page: Page, accountId: string) {
-  await page.evaluate((id) => {
-    localStorage.setItem(
-      'kortix.currentAccount',
-      JSON.stringify({ state: { selectedAccountId: id }, version: 1 }),
-    );
-  }, accountId);
 }
 
 async function poll<T>(
@@ -355,7 +177,6 @@ async function stopActiveProjectSessions(token: string, projectId: string) {
 }
 
 function queryScalar(sql: string): string {
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   return execFileSync('psql', [
     databaseUrl(),
     '-v',
@@ -405,13 +226,13 @@ test.describe.serial('10 - SPEC production golden paths', () => {
   let primarySandbox: SessionSandbox;
 
   test.beforeAll(async () => {
-    runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `golden-owner-${runId}@example.test`;
-    owner = await createAuthUser(ownerEmail);
-    ownerSession = await signIn(ownerEmail);
+    owner = await createAuthUser(ownerEmail, authOptions);
+    ownerSession = await signIn(ownerEmail, authOptions);
 
     const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    expect(accounts.some((item) => item.personal_account)).toBe(true);
+    expect(accounts.some((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner')).toBe(true);
 
     account = await api<AccountSummary>(
       ownerSession.access_token,
@@ -428,7 +249,9 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     const accountProjectName = `golden-account-${runId}`;
 
     const ownerAccounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    const personalAccount = ownerAccounts.find((item) => item.personal_account);
+    const personalAccount = ownerAccounts.find(
+      (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+    );
     expect(personalAccount).toBeTruthy();
     expect(ownerAccounts.map((item) => item.account_id)).toContain(account.account_id);
 
@@ -484,12 +307,12 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     expect(invite.status).toBe('pending');
     expect(invite.invite_id).toBeTruthy();
 
-    await createAuthUser(bobEmail);
-    const bobSession = await signIn(bobEmail);
+    await createAuthUser(bobEmail, authOptions);
+    const bobSession = await signIn(bobEmail, authOptions);
     const bobAccounts = await api<AccountSummary[]>(bobSession.access_token, 'GET', '/accounts');
     expect(bobAccounts.map((item) => item.account_id)).toContain(account.account_id);
 
-    await installBrowserSession(page, ownerSession, '/projects');
+    await installBrowserSession(page, ownerSession, '/projects', password);
     await selectAccountForUi(page, personalAccount!.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('h3', { hasText: personalProjectName })).toBeVisible();
@@ -620,7 +443,6 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     expect(sandbox.external_id).toBeTruthy();
     expect(sandbox.external_id).not.toBe(localSession.session_id);
 
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
     const dockerPs = execFileSync('docker', [
       'ps',
       '--format',
@@ -638,7 +460,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
   test('E2E-6: new session opens the project chat route without legacy redirects', async ({ page }) => {
     expect(project).toBeTruthy();
     await stopActiveProjectSessions(ownerSession.access_token, project.project_id);
-    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}/sessions`);
+    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}/sessions`, password);
     await selectAccountForUi(page, account.account_id);
     await page.goto(`/projects/${project.project_id}/sessions`, { waitUntil: 'domcontentloaded' });
 

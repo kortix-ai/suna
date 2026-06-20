@@ -1,6 +1,6 @@
 /**
  * Billing Hooks Index
- * 
+ *
  * UNIFIED APPROACH: All billing state comes from useAccountState
  * This provides a single source of truth and optimizes API calls.
  */
@@ -13,11 +13,11 @@ export {
   // Main hook
   useAccountState,
   useAccountStateWithStreaming,
-  
+
   // Query keys for manual invalidation if needed
   accountStateKeys,
   invalidateAccountState,
-  
+
   // Mutation hooks
   useCreateCheckoutSession,
   useCreatePerSeatCheckout,
@@ -29,7 +29,7 @@ export {
   useScheduleDowngrade,
   useCancelScheduledChange,
   useSyncSubscription,
-  
+
   // Usage history (transactions ledger lives in ./use-transactions below)
   useUsageHistory,
 

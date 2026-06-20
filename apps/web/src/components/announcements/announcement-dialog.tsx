@@ -27,7 +27,7 @@ export function AnnouncementDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeAnnouncement()}>
-      <DialogContent 
+      <DialogContent
         className="sm:max-w-lg p-0 gap-0 overflow-hidden border-border/50"
         hideCloseButton
         aria-describedby={undefined}
@@ -35,9 +35,9 @@ export function AnnouncementDialog() {
         <VisuallyHidden>
           <DialogTitle>Announcement</DialogTitle>
         </VisuallyHidden>
-        <Component 
-          onClose={closeAnnouncement} 
-          {...(currentAnnouncement.props || {})} 
+        <Component
+          onClose={closeAnnouncement}
+          {...(currentAnnouncement.props || {})}
         />
       </DialogContent>
     </Dialog>

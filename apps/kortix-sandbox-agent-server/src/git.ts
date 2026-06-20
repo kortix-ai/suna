@@ -858,7 +858,7 @@ export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   }
 }
 
-export type CommitPushResult = {
+type CommitPushResult = {
   /** A new commit was created from dirty working-tree changes. */
   committed: boolean
   /** New commits were pushed to origin (false when the remote was already up to date). */

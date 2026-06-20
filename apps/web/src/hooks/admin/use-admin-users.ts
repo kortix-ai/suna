@@ -81,7 +81,7 @@ export function useAdminUserList(params: UserListParams = {}) {
     queryKey: ['admin', 'users', 'list', params],
     queryFn: async (): Promise<UserListResponse> => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.search_email) searchParams.append('search_email', params.search_email);
@@ -89,7 +89,7 @@ export function useAdminUserList(params: UserListParams = {}) {
       if (params.tier_filter) searchParams.append('tier_filter', params.tier_filter);
       if (params.sort_by) searchParams.append('sort_by', params.sort_by);
       if (params.sort_order) searchParams.append('sort_order', params.sort_order);
-      
+
       const response = await backendApi.get(`/admin/users/list?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -105,7 +105,7 @@ export function useAdminUserDetails(userId: string | null) {
     queryKey: ['admin', 'users', 'details', userId],
     queryFn: async (): Promise<UserDetails> => {
       if (!userId) throw new Error('User ID is required');
-      
+
       const response = await backendApi.get(`/admin/users/${userId}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -168,11 +168,11 @@ export function useAdminUserThreads(params: UserThreadsParams) {
     queryKey: ['admin', 'users', 'threads', params.email, params.page, params.page_size],
     queryFn: async (): Promise<UserThreadsResponse> => {
       const searchParams = new URLSearchParams();
-      
+
       searchParams.append('email', params.email);
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
-      
+
       const response = await backendApi.get(`/admin/users/threads/by-email?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -196,11 +196,11 @@ export function useAdminUserActivity(params: UserActivityParams) {
     queryKey: ['admin', 'users', 'activity', params.userId, params.page, params.page_size, params.status_filter],
     queryFn: async () => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.status_filter) searchParams.append('status_filter', params.status_filter);
-      
+
       const response = await backendApi.get(`/admin/users/${params.userId}/activity?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -214,7 +214,7 @@ export function useAdminUserActivity(params: UserActivityParams) {
 
 export function useRefreshUserData() {
   const queryClient = useQueryClient();
-  
+
   return {
     refreshUserList: (params?: UserListParams) => {
       queryClient.invalidateQueries({
@@ -232,4 +232,4 @@ export function useRefreshUserData() {
       });
     },
   };
-} 
+}

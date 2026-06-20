@@ -35,19 +35,18 @@
  * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */
 import { createHash } from 'node:crypto';
-import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
+import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 import { isValidSecretName } from './secrets';
-import type { GitBackedProject } from './git';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
-export type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
+type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
 
-export interface ConnectorAuthSpec {
+interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
   type: ConnectorAuthType;
   /** For `custom`: where the credential goes. Defaults to `header`. */
@@ -102,7 +101,7 @@ export interface ConnectorSpec {
   policies: ConnectorPolicySpec[];
 }
 
-export interface ConnectorParseError {
+interface ConnectorParseError {
   slug: string;
   path: string;
   error: string;
@@ -159,29 +158,6 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
   specs.sort((a, b) => a.slug.localeCompare(b.slug));
   errors.sort((a, b) => a.slug.localeCompare(b.slug));
   return { specs, errors };
-}
-
-/**
- * Read + parse a project's manifest, then extract `[[connectors]]`. Returns
- * empty arrays + a single top-level error when the manifest fails to load —
- * never throws.
- */
-export async function loadProjectConnectors(project: GitBackedProject): Promise<LoadedConnectors> {
-  let manifest: ParsedManifest | null;
-  try {
-    manifest = await readManifest(project);
-  } catch (err) {
-    return {
-      specs: [],
-      errors: [{
-        slug: '(manifest)',
-        path: MANIFEST_FILENAME,
-        error: (err as Error).message || 'Failed to read manifest',
-      }],
-    };
-  }
-  if (!manifest) return { specs: [], errors: [] };
-  return extractConnectors(manifest);
 }
 
 /**

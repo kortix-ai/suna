@@ -74,10 +74,10 @@ let freestyleResponse: { ok: boolean; status: number; json: () => Promise<unknow
 };
 
 const originalFetch = globalThis.fetch;
-// Intercept only api.freestyle.sh; let everything else pass through.
+// Intercept Freestyle; let everything else pass through.
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = typeof input === 'string' ? input : input?.url ?? '';
-  if (typeof url === 'string' && url.includes('freestyle.sh')) {
+  if (typeof url === 'string' && (url.includes('freestyle.sh') || url.includes('freestyle.test'))) {
     let body: unknown = null;
     try { body = init?.body ? JSON.parse(init.body) : null; } catch { /* ignore */ }
     freestyleCalls.push({ url, method: init?.method ?? 'GET', body });
@@ -177,7 +177,10 @@ mock.module("../snapshots/builder", () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => '',
+  createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
@@ -185,6 +188,7 @@ mock.module('../projects/github', () => ({
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message, content: opts.content });
@@ -192,6 +196,9 @@ mock.module('../projects/github', () => ({
   createInstallationToken: async () => ({ token: 't' }),
   createRepo: async () => { throw new Error('not used'); },
   deleteFile: async () => {},
+  deleteRepo: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   getFileSha: async (opts: { path: string }) => (repoFiles.has(opts.path) ? `sha-${opts.path}` : null),
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
   getRepo: async () => ({
@@ -240,8 +247,10 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  projectSecretsRevision: () => 'empty',
   getProjectSecretValue: async () => null,
 }));
 
@@ -312,6 +321,7 @@ mock.module('../shared/db', () => ({
           return Promise.resolve();
         }
         return {
+          onConflictDoUpdate: async () => {},
           returning: async () => [],
           then: (resolve: (v: any) => unknown) => resolve([]),
         };

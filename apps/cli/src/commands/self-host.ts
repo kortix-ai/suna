@@ -190,7 +190,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance, env);
+  writeCompose(flags.instance);
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
@@ -229,7 +229,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance, env);
+  writeCompose(flags.instance);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host start${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
@@ -316,7 +316,7 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
     writeEnv(flags.instance, env);
     writeDbInit(flags.instance, env);
     writeKongConfig(flags.instance);
-    writeCompose(flags.instance, env);
+    writeCompose(flags.instance);
     process.stdout.write(`${status.ok('Updated self-host environment')}\n`);
     return 0;
   }
@@ -334,7 +334,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance, env);
+  writeCompose(flags.instance);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
   renderIntegrationSummary(env);
   return 0;
@@ -643,7 +643,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   };
 }
 
-function writeCompose(instance: string, env: SelfHostEnv): void {
+function writeCompose(instance: string): void {
   const project = composeProject(instance);
   const text = `services:
   supabase-db:

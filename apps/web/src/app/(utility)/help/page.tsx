@@ -4,8 +4,8 @@ import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { 
-  Coins, 
+import {
+  Coins,
   MessageCircle,
 } from 'lucide-react';
 import Link from 'next/link';

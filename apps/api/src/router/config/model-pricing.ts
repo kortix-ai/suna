@@ -121,21 +121,6 @@ export function stopModelPricing(): void {
   }
 }
 
-/**
- * Return a summary for startup logging.
- */
-export function getModelPricingStatus(): {
-  loaded: boolean;
-  modelCount: number;
-  lastFetchedAt: Date | null;
-} {
-  return {
-    loaded: pricingMap.size > 0,
-    modelCount,
-    lastFetchedAt,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Internal
 // ---------------------------------------------------------------------------

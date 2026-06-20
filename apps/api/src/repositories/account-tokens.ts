@@ -1,8 +1,9 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
+  candidateSecretKeyHashes,
   generateAccountTokenPair,
   isApiKeySecretConfigured,
   isAccountToken,
@@ -238,7 +239,7 @@ export async function validateAccountToken(
   }
 
   try {
-    const secretKeyHash = hashSecretKey(secretKey);
+    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
 
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
@@ -259,7 +260,7 @@ export async function validateAccountToken(
       .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
-          eq(accountTokens.secretKeyHash, secretKeyHash),
+          inArray(accountTokens.secretKeyHash, secretKeyHashes),
           eq(accountTokens.status, 'active'),
         ),
       )

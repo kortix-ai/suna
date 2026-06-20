@@ -17,7 +17,7 @@ export function createAbortRouter(cfg: Config): Hono {
     }
 
     const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
-    const url = `http://127.0.0.1:${cfg.opencodeInternalPort}/session/${sessionId}/abort?directory=${encodeURIComponent(workspace)}`
+    const url = `http://127.0.0.1:${cfg.opencodeInternalPort}/session/${encodeURIComponent(sessionId)}/abort?directory=${encodeURIComponent(workspace)}`
     try {
       const res = await fetch(url, {
         method: 'POST',

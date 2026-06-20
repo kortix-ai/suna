@@ -31,7 +31,7 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
   'Europe/Bucharest': 'en',
   'Europe/Athens': 'en',
   'Europe/Lisbon': 'en',
-  
+
   // Americas (mostly English, but some regions)
   'America/New_York': 'en',
   'America/Chicago': 'en',
@@ -71,7 +71,7 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
   'America/Salvador': 'pt',
   'America/Bahia': 'pt',
   'America/Noronha': 'pt',
-  
+
   // Asia Pacific
   'Asia/Tokyo': 'ja',
   'Asia/Shanghai': 'zh',
@@ -93,7 +93,7 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
   'Australia/Sydney': 'en',
   'Australia/Melbourne': 'en',
   'Pacific/Auckland': 'en',
-  
+
   // Africa & Middle East
   'Africa/Cairo': 'en',
   'Africa/Johannesburg': 'en',
@@ -111,62 +111,62 @@ export function detectLocaleFromTimezone(): Locale | null {
 
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
+
     // Direct timezone match
     if (TIMEZONE_TO_LOCALE_MAP[timezone]) {
       return TIMEZONE_TO_LOCALE_MAP[timezone];
     }
-    
+
     // Try to match by timezone region (e.g., "Europe/Berlin" -> "Europe" -> check German-speaking countries)
     const region = timezone.split('/')[0];
-    
+
     // German-speaking countries in Europe
     if (timezone.startsWith('Europe/')) {
       const germanTimezones = ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich'];
       if (germanTimezones.some(tz => timezone.includes(tz.split('/')[1]))) {
         return 'de';
       }
-      
+
       // Italian timezone
       if (timezone.includes('Rome') || timezone.includes('Milan')) {
         return 'it';
       }
-      
+
       // Spanish timezones
       if (timezone.includes('Madrid') || timezone.includes('Barcelona')) {
         return 'es';
       }
-      
+
       // French timezones
       if (timezone.includes('Paris')) {
         return 'fr';
       }
     }
-    
+
     // Portuguese-speaking regions
     if (timezone.startsWith('America/')) {
       if (timezone.includes('Sao_Paulo') || timezone.includes('Rio') || timezone.includes('Brasilia') || timezone.includes('Recife') || timezone.includes('Fortaleza') || timezone.includes('Manaus') || timezone.includes('Belem') || timezone.includes('Salvador') || timezone.includes('Campo_Grande') || timezone.includes('Cuiaba') || timezone.includes('Araguaina') || timezone.includes('Maceio') || timezone.includes('Bahia') || timezone.includes('Noronha') || timezone.includes('Rio_Branco')) {
         return 'pt';
       }
-      
+
       // Spanish-speaking regions in Americas
       if (timezone.includes('Mexico') || timezone.includes('Buenos_Aires') || timezone.includes('Lima') || timezone.includes('Santiago') || timezone.includes('Bogota') || timezone.includes('Caracas') || timezone.includes('Montevideo') || timezone.includes('La_Paz') || timezone.includes('Asuncion') || timezone.includes('Guayaquil') || timezone.includes('Panama') || timezone.includes('Costa_Rica') || timezone.includes('Guatemala') || timezone.includes('Havana') || timezone.includes('Santo_Domingo') || timezone.includes('San_Juan') || timezone.includes('Managua') || timezone.includes('Tegucigalpa') || timezone.includes('El_Salvador')) {
         return 'es';
       }
     }
-    
+
     // Chinese-speaking regions
     if (timezone.startsWith('Asia/')) {
       if (timezone.includes('Shanghai') || timezone.includes('Beijing') || timezone.includes('Chongqing') || timezone.includes('Urumqi') || timezone.includes('Hong_Kong') || timezone.includes('Macau') || timezone.includes('Taipei')) {
         return 'zh';
       }
-      
+
       // Japanese timezone
       if (timezone.includes('Tokyo')) {
         return 'ja';
       }
     }
-    
+
     return null;
   } catch (error) {
     console.warn('Failed to detect locale from timezone:', error);
@@ -186,13 +186,13 @@ export function detectLocaleFromBrowser(): Locale | null {
     // Log browser language info for debugging
     console.log('🌍 Browser navigator.language:', navigator.language);
     console.log('🌍 Browser navigator.languages:', navigator.languages);
-    
+
     const browserLang = navigator.language.split('-')[0].toLowerCase();
     if (locales.includes(browserLang as Locale)) {
       console.log('🌍 Matched browser language:', browserLang);
       return browserLang as Locale;
     }
-    
+
     // Try full language code (e.g., "de-DE", "it-IT")
     const fullLang = navigator.language.toLowerCase();
     for (const locale of locales) {
@@ -201,7 +201,7 @@ export function detectLocaleFromBrowser(): Locale | null {
         return locale;
       }
     }
-    
+
     console.log('🌍 No match found for browser language');
     return null;
   } catch (error) {
@@ -220,13 +220,13 @@ export function detectBestLocale(): Locale {
   if (timezoneLocale) {
     return timezoneLocale;
   }
-  
+
   // Fallback to browser language
   const browserLocale = detectLocaleFromBrowser();
   if (browserLocale) {
     return browserLocale;
   }
-  
+
   // Default fallback
   return defaultLocale;
 }
@@ -279,4 +279,3 @@ export function isEUTimezone(): boolean {
 export function detectCurrencyFromTimezone(): 'USD' | 'EUR' {
   return isEUTimezone() ? 'EUR' : 'USD';
 }
-

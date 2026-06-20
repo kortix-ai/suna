@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER_NAME="${SUPABASE_DB_CONTAINER:-supabase-db}"
+INSTANCE="${KORTIX_SELF_HOST_INSTANCE:-${KORTIX_E2E_INSTANCE:-default}}"
+CONTAINER_NAME="${SUPABASE_DB_CONTAINER:-kortix-${INSTANCE}-supabase-db-1}"
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   echo "Container '$CONTAINER_NAME' is not running."
-  echo "Start the local stack first (for example via scripts/get-kortix.sh)."
+  echo "Start the local stack first with: kortix self-host start --local --yes"
   exit 1
 fi
 

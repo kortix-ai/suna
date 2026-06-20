@@ -45,7 +45,7 @@ export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedMo
               <Zap className="h-5 w-5 text-primary" />
               <h2 className="text-lg font-semibold">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line47JsxTextHowCreditsWork')}</h2>
             </div>
-            
+
             <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsBillingCreditsExplainedModal.line51JsxTextCreditsAreConsumedBasedOnTheResourcesYour')}</p>
 
             <Card>

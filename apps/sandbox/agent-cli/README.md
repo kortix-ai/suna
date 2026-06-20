@@ -26,7 +26,7 @@ apps/sandbox/agent-cli/
 │   ├── format.ts        ←   date helpers
 │   └── index.ts         ←   barrel
 │
-├── channels/            ← communication adapters (Slack, Telegram, …)
+├── channels/            ← communication adapters and channel discovery
 ├── install-shims.sh     ← generates /usr/local/bin/<name> shims at image build
 └── README.md
 ```
@@ -36,12 +36,12 @@ sibling subdir next to `channels/`. The shim generator picks up `.ts` files
 recursively, so nothing else needs to change.
 
 PATH layout in the running sandbox stays flat — `/usr/local/bin/slack`,
-`/usr/local/bin/telegram`, `/usr/local/bin/kchannel`, etc. The subdirs are
-purely organizational so the source tree stays navigable.
+`/usr/local/bin/kchannel`, etc. The subdirs are purely organizational so the
+source tree stays navigable.
 
 ## Naming convention
 
-- **Bare names** (`slack`, `telegram`, `discord`) — platform / vendor adapters.
+- **Bare names** (`slack`) — platform / vendor adapters.
 - **`k`-prefix** (`kchannel`, `kconnectors`, `kpipedream`) — kortix-namespace
   meta tools that introspect or coordinate, not vendor wrappers.
 
@@ -83,8 +83,8 @@ Rules:
 
 - **JSON-only stdout**, exit 0 on success and 1 on failure. The agent
   parses results — never write progress to stdout.
-- **Auth via env.** Tokens (`SLACK_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN`, …) are
-  injected at sandbox spawn from `project_secrets` (cloud postgres).
+- **Auth via env.** Tokens such as `SLACK_BOT_TOKEN` are injected at sandbox
+  spawn from `project_secrets` (cloud postgres).
   No `--config-id`, no SQLite, no per-sandbox state. Sandboxes are
   per-session and destructive — anything you write to disk in the
   sandbox dies with it.
@@ -130,7 +130,7 @@ Both are minted per session by apps/api at sandbox spawn — see
 
 | Concern | Location |
 |---|---|
-| Slack/Telegram adapter | `channels/slack.ts`, `channels/telegram.ts` |
+| Slack adapter | `channels/slack.ts` |
 | Channel discovery | `channels/kchannel.ts` (env-driven) |
 | Webhook router that wakes the agent | `apps/api/src/channels/` (server-side, separate from this dir) |
 | Durable channel state | `project_secrets` (postgres) + `chat_channel_bindings` for OAuth team_id lookup |

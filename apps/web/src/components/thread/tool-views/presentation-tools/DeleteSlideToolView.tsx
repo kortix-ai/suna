@@ -99,7 +99,7 @@ export function DeleteSlideToolView({
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-6">
               {deleteData.message}
             </p>
-            
+
             <div className="grid grid-cols-2 gap-4 w-full max-w-md">
               <Card className="p-4 text-center">
                 <div className="flex items-center justify-center gap-2 mb-2">
@@ -110,7 +110,7 @@ export function DeleteSlideToolView({
                   #{deleteData.deleted_slide}
                 </p>
               </Card>
-              
+
               <Card className="p-4 text-center">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <FileText className="h-4 w-4 text-muted-foreground" />

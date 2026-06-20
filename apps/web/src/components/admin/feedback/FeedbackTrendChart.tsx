@@ -37,7 +37,7 @@ export function FeedbackTrendChart() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [days, setDays] = useState(30);
   const [granularity, setGranularity] = useState('day');
-  
+
   const { data: timeSeries, isLoading } = useAdminFeedbackTimeSeries(days, granularity);
 
   const chartData = useMemo(

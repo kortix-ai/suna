@@ -69,7 +69,7 @@ export function getFileTypeFromExtension(fileName: string): string {
   if (xlsxExtensions.includes(extension)) return 'xlsx';
   if (pptxExtensions.includes(extension)) return 'pptx';
   if (textExtensions.includes(extension)) return 'text';
-  
+
   return 'binary';
 }
 
@@ -106,5 +106,3 @@ export function getLanguageFromExtension(fileName: string): string {
 
   return extensionToLanguage[extension] || '';
 }
-
-

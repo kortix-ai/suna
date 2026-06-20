@@ -91,7 +91,6 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | --- | --- |
 | `GET /kortix/health` | Liveness (auth-bypassed). Reports daemon + OpenCode state, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
-| `POST /kortix/prompt` | Deliver a prompt to the running agent. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/proxy/{port}/*` | Reverse-proxy to a port inside the sandbox (its own port is blocked). |

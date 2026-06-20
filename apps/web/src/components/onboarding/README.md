@@ -9,20 +9,20 @@ onboarding/
 ├── index.ts                    # Main exports
 ├── onboarding-config.tsx       # Step definitions & navigation logic
 ├── new-onboarding-page.tsx     # Main onboarding page component
-├── 
+├──
 ├── steps/                      # Individual step components
 │   ├── ceo-intro-step.tsx
 │   ├── smart-context-step.tsx
 │   ├── workforce-selection-step.tsx
 │   ├── team-invitation-step.tsx
 │   └── completion-step.tsx
-├── 
+├──
 ├── agent-config/               # Agent configuration components
 │   ├── multi-agent-configuration.tsx
 │   ├── agent-configuration.tsx
 │   ├── field-renderer.tsx
 │   └── configuration-utils.ts
-├── 
+├──
 └── shared/                     # Shared utilities & components
     ├── types.ts                # TypeScript interfaces
     ├── data.ts                 # Agent definitions & integrations
@@ -206,4 +206,3 @@ The old monolithic `onboarding-steps.tsx` has been completely refactored:
 - **Lazy Loading**: Steps load on demand
 - **Memoization**: Optimized re-renders with React.memo
 - **Bundle Size**: Reduced from monolithic to modular approach
-

@@ -22,9 +22,6 @@ import type { AgentGrant } from '@kortix/db';
 import { parseSharingIntent, type SharingIntent } from './share';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-// Re-exported for callers that historically imported it from here.
-export { parseSharingIntent };
-
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
 // /call result `data` and the pipedream/policy payloads are modeled loosely
@@ -95,7 +92,7 @@ export interface ExecutorPrincipal {
   agentGrant?: AgentGrant | null;
 }
 
-export interface CatalogAction {
+interface CatalogAction {
   path: string; // connector-relative
   name: string;
   description: string;
@@ -120,16 +117,16 @@ export interface AdminConnectorView extends CatalogConnector {
   secretSet: boolean;
 }
 
-export interface SyncResult {
+interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
 }
 
-export type CrudOutcome =
+type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
-export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface ProjectPolicyView {

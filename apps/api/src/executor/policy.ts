@@ -17,8 +17,8 @@
  * The UI exposes only three shapes (`*`, `prefix.*`, exact); the engine supports
  * arbitrary `*` positions for power users authoring kortix.toml by hand.
  */
-export type PolicyAction = 'always_run' | 'require_approval' | 'block';
-export type Risk = 'read' | 'write' | 'destructive';
+type PolicyAction = 'always_run' | 'require_approval' | 'block';
+type Risk = 'read' | 'write' | 'destructive';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface Policy {
@@ -29,7 +29,7 @@ export interface Policy {
 }
 
 /** Convert a glob (`*`, `vercel.*`, `*.delete*`, exact) into an anchored regex. */
-export function globToRegex(glob: string): RegExp {
+function globToRegex(glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
   return new RegExp(`^${escaped}$`, 'i');
 }
@@ -41,11 +41,11 @@ export function globToRegex(glob: string): RegExp {
  * compiles to a never-match so a typo can't silently allow-all. (Storing the
  * matcher as a plain string keeps the schema unchanged — no migration.)
  */
-export function isRegexMatcher(pattern: string): boolean {
+function isRegexMatcher(pattern: string): boolean {
   return /^\/.*\/[a-z]*$/.test(pattern) && pattern.length > 2;
 }
 
-export function compileMatcher(pattern: string): RegExp {
+function compileMatcher(pattern: string): RegExp {
   if (isRegexMatcher(pattern)) {
     const lastSlash = pattern.lastIndexOf('/');
     const body = pattern.slice(1, lastSlash);
@@ -71,7 +71,7 @@ export function isValidMatcher(pattern: string): boolean {
   }
 }
 
-export function matchesPolicy(pattern: string, path: string): boolean {
+function matchesPolicy(pattern: string, path: string): boolean {
   if (pattern === '*') return true;
   return compileMatcher(pattern).test(path);
 }
@@ -91,22 +91,8 @@ function firstMatchOrNull(path: string, policies: Policy[]): PolicyAction | null
   return null;
 }
 
-/**
- * Legacy single-scope resolver — kept for back-compat with callers that only
- * have one list (and for unit tests covering pure first-match semantics).
- * Falls back to `always_run` when nothing matches (allow-all default).
- */
-export function resolvePolicyAction(relPath: string, policies: Policy[]): PolicyAction {
-  return firstMatchOrNull(relPath, policies) ?? 'always_run';
-}
-
-/** Is a tool visible to the agent in a single-scope list? Blocked = hidden. */
-export function isVisible(relPath: string, policies: Policy[]): boolean {
-  return resolvePolicyAction(relPath, policies) !== 'block';
-}
-
 /** Map risk → action under `default_mode = risk`. */
-export function riskDefaultAction(risk: Risk): PolicyAction {
+function riskDefaultAction(risk: Risk): PolicyAction {
   return risk === 'read' ? 'always_run' : 'require_approval';
 }
 
@@ -147,9 +133,4 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
 
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
-}
-
-/** Visibility under layered resolution — blocked tools are hidden from search. */
-export function isVisibleEffective(input: EffectiveResolveInput): boolean {
-  return resolveEffectiveAction(input).action !== 'block';
 }

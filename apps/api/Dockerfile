@@ -66,7 +66,7 @@ COPY packages/registry ./packages/registry
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
-# Include devDeps so drizzle-kit is available for schema push at runtime.
+# Include devDeps because the API runs TypeScript source directly under Bun.
 RUN corepack enable pnpm && \
     pnpm install --filter ./${SERVICE}... --shamefully-hoist --prod=false --ignore-scripts
 
@@ -161,10 +161,18 @@ RUN rm -f ${SERVICE}/node_modules/agent-tunnel 2>/dev/null; \
 COPY --from=deps /app/packages/agent-tunnel/src ./${SERVICE}/node_modules/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modules/agent-tunnel/package.json
 
+# Drop test-only source copied in with workspace packages. The runtime image
+# executes the API directly from TypeScript source, but does not need tests.
+RUN rm -rf \
+    ${SERVICE}/src/__tests__ \
+    apps/kortix-sandbox-agent-server/src/__tests__ \
+    apps/cli/src/__tests__ \
+    packages/starter/src/__tests__ \
+    packages/manifest-schema/src/__tests__
+
 WORKDIR /app/${SERVICE}
 
 # Pre-create the data dir and give the bun user write access before dropping privileges.
-# The queue drainer writes to .kortix-data/queue at runtime; without this it fails with EACCES.
 RUN mkdir -p /app/${SERVICE}/.kortix-data && \
     chown -R bun:bun /app/${SERVICE}/.kortix-data
 

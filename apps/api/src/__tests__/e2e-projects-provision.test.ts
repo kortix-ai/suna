@@ -86,10 +86,15 @@ mock.module('../projects/git-backends', () => ({
 // git) so loading the projects module graph doesn't drag real deployment code —
 // and its transitive DB imports — into this lightweight test.
 mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-key',
-  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' }),
-  freestyleProvider: { name: 'freestyle', deploy: async () => ({}), stop: async () => {}, logs: async () => ({}) },
+  getFreestyleApiKey: async () => 'test-freestyle-key',
+  getFreestyleApiUrl: () => 'https://freestyle.example.test',
+  callFreestyle: async () => new Response('{}', { status: 200 }),
+  freestyleProvider: {
+    name: 'freestyle',
+    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
+    stop: async () => {},
+    logs: async () => ({}),
+  },
 }));
 
 mock.module('../middleware/auth', () => ({
@@ -148,7 +153,10 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));

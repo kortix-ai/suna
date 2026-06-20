@@ -71,7 +71,7 @@ export function SentimentPieChart() {
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
-                <ChartTooltip 
+                <ChartTooltip
                   content={<ChartTooltipContent />}
                   formatter={(value, name) => [
                     `${value} (${total > 0 ? ((Number(value) / total) * 100).toFixed(1) : 0}%)`,
@@ -83,8 +83,8 @@ export function SentimentPieChart() {
             <div className="flex flex-wrap justify-center gap-4 mt-2">
               {chartData.map((entry, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
+                  <div
+                    className="w-3 h-3 rounded-full"
                     style={{ backgroundColor: entry.fill }}
                   />
                   <span className="text-xs text-muted-foreground">

@@ -27,7 +27,7 @@ import { config } from '../config';
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
-export type ExperimentalStability = 'experimental' | 'beta';
+type ExperimentalStability = 'experimental' | 'beta';
 
 interface ExperimentalFeatureDef {
   key: ExperimentalFeatureKey;
@@ -94,7 +94,7 @@ const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> =
     ExperimentalFeatureDef
   >;
 
-export const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] =
+const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] =
   FEATURES.map((f) => f.key);
 
 export function isExperimentalFeatureKey(

@@ -31,8 +31,6 @@ import type {
   RequestContext,
 } from './engine';
 import {
-  ACCOUNT_ROLE_PERMS,
-  PROJECT_ROLE_PERMS,
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
@@ -43,7 +41,7 @@ import {
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
 
-export type ActionScopeV2 = 'account' | 'project';
+type ActionScopeV2 = 'account' | 'project';
 
 /**
  * V2 scope detection. V2 collapses sandbox/trigger/channel into the
@@ -468,31 +466,3 @@ export async function listAccessibleProjectsV2(
   }
   return { mode: 'allow_only', allowed };
 }
-
-/** Thin assertion wrapper matching V1's `assertAuthorized`. */
-export async function assertAuthorizedV2(
-  userId: string,
-  accountId: string,
-  action: string,
-  target?: AuthorizeTarget,
-  actingTokenId?: string,
-  requestCtx?: RequestContext,
-): Promise<void> {
-  const result = await authorizeV2(
-    userId,
-    accountId,
-    action,
-    target,
-    actingTokenId,
-    requestCtx,
-  );
-  if (!result.allowed) {
-    const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
-    (err as Error & { status?: number }).status = 403;
-    throw err;
-  }
-}
-
-// ─── Suppress unused-locals warnings ───────────────────────────────────────
-// PERMS exports are kept for future use by the policies-replacement UI.
-export const _V2_INTERNALS = { ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS };

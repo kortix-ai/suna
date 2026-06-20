@@ -45,7 +45,7 @@ export function VideoRenderer({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -182,7 +182,7 @@ export function VideoRenderer({
 
   const toggleFullscreen = async () => {
     if (!containerRef.current) return;
-    
+
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
@@ -455,4 +455,3 @@ export function InlineVideoPlayer({
     />
   );
 }
-

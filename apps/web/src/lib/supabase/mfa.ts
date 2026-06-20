@@ -42,7 +42,7 @@ export const supabaseMFAService = {
    */
   async enrollPhoneNumber(data: PhoneVerificationEnroll): Promise<EnrollFactorResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.enroll({
         factorType: 'phone',
@@ -76,7 +76,7 @@ export const supabaseMFAService = {
    */
   async createChallenge(data: PhoneVerificationChallenge): Promise<ChallengeResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.challenge({
         factorId: data.factor_id,
@@ -105,7 +105,7 @@ export const supabaseMFAService = {
    */
   async verifyChallenge(data: PhoneVerificationVerify): Promise<PhoneVerificationResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.verify({
         factorId: data.factor_id,
@@ -132,7 +132,7 @@ export const supabaseMFAService = {
    */
   async challengeAndVerify(data: PhoneVerificationChallengeAndVerify): Promise<PhoneVerificationResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.challengeAndVerify({
         factorId: data.factor_id,
@@ -158,7 +158,7 @@ export const supabaseMFAService = {
    */
   async resendSMS(factorId: string): Promise<ChallengeResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.challenge({
         factorId: factorId,
@@ -187,10 +187,10 @@ export const supabaseMFAService = {
    */
   async listFactors(): Promise<ListFactorsResponse> {
     const supabase = createClient();
-    
+
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
-      
+
       if (error) {
         throw new Error(error.message);
       }
@@ -200,7 +200,7 @@ export const supabaseMFAService = {
       }
 
       const factors: FactorInfo[] = [];
-      
+
       if (user.factors) {
         for (const factor of user.factors) {
           factors.push({
@@ -227,7 +227,7 @@ export const supabaseMFAService = {
    */
   async unenrollFactor(factorId: string): Promise<PhoneVerificationResponse> {
     const supabase = createClient();
-    
+
     try {
       const response = await supabase.auth.mfa.unenroll({
         factorId: factorId,
@@ -270,16 +270,16 @@ export const supabaseMFAService = {
         factors: [],
       };
     }
-    
+
     try {
       const aalResponse = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      
+
       if (aalResponse.error) {
         throw new Error(aalResponse.error.message);
       }
 
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError) {
         throw new Error(userError.message);
       }
@@ -329,8 +329,8 @@ export const supabaseMFAService = {
       const current = aalResponse.data?.currentLevel;
       const nextLevel = aalResponse.data?.nextLevel;
 
-      let actionRequired: string = 'none';
-      let message: string = '';
+      let actionRequired: string;
+      let message: string;
 
       if (current === 'aal1' && nextLevel === 'aal1') {
         actionRequired = 'none';
@@ -383,4 +383,4 @@ export const supabaseMFAService = {
       throw new Error(`Failed to get AAL: ${toErrorMessage(error)}`);
     }
   },
-}; 
+};

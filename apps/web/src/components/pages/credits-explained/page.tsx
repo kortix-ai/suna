@@ -43,7 +43,7 @@ export default function CreditsPage() {
             <Zap className="h-5 w-5 text-primary" />
             <h2 className="text-xl font-semibold">{t('howCreditsWork.title')}</h2>
           </div>
-          
+
           <p className="text-muted-foreground leading-relaxed">
             {t('howCreditsWork.description')}
           </p>
@@ -99,7 +99,7 @@ export default function CreditsPage() {
             <DollarSign className="h-5 w-5 text-primary" />
             <h2 className="text-xl font-semibold">{t('howCreditsWork.pricingModel.title')}</h2>
           </div>
-          
+
           <p className="text-muted-foreground leading-relaxed">{tHardcodedUi.raw('componentsPagesCreditsExplainedPage.line113JsxTextWeApplyAMarkupOnTopOfProvider')}</p>
 
           <Card>

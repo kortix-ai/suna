@@ -26,7 +26,6 @@ required_local_checks=(
   api_rate_limit_tests
   api_proxy_contract_tests
   api_audit_tests
-  api_usage_tests
   api_github_app_tests
   api_create_repo_starter_tests
   legacy_migration_tooling
@@ -44,9 +43,8 @@ required_local_checks=(
 )
 
 required_self_hosted_titles=(
+  "API install-status endpoint works"
   "owner can authenticate via Supabase API"
-  "authenticated user can access setup-wizard-step"
-  "authenticated user can read available sandbox providers"
   "browser login flow reaches wizard"
   "API and web enforce account roles plus project-scoped access"
   "admin overview and operations dashboard use the supported ops API cleanly"
@@ -160,7 +158,6 @@ LOG
       totals: { accounts: 1, projects: 1, active_legacy_sandboxes: 0 },
       sessions: { by_status: { running: 1 }, errored: 0 },
       sandboxes: { by_status: { active: 1 }, by_provider: { daytona: 1 }, errored: 0 },
-      queues: { trigger_events_by_status: {}, channel_events_by_status: {}, queued_total: 0 },
       audit: { events_24h: 1, recent: [] },
       usage: { last_24h_by_provider: [], calls_24h: 1, cost_usd_24h: 0 },
       observability: {
@@ -431,7 +428,7 @@ write_self_hosted_fixture() {
     golden_backpressure_enabled: "1",
     provider: "local_docker"
   }' >"$self_hosted_dir/summary.json"
-  write_playwright_report "$self_hosted_dir/playwright-report.json" 13 "${required_self_hosted_titles[@]}"
+  write_playwright_report "$self_hosted_dir/playwright-report.json" "${#required_self_hosted_titles[@]}" "${required_self_hosted_titles[@]}"
   printf 'self-hosted fixture\n' >"$self_hosted_dir/playwright.log"
 }
 
@@ -927,7 +924,7 @@ assert_target_recorders_reject_stale_contract() {
   set +e
   GATE5_OPS_EXCEPTIONS_CONFIRM=I_ACCEPT_TARGET_OPS_EXCEPTIONS \
   GATE5_TARGET_EVIDENCE_DIR="$target_dir" \
-  GATE5_OPS_EXCEPTION_ITEMS='queues.queued_total|Fixture queued exception.|ops-exception-evidence.txt' \
+  GATE5_OPS_EXCEPTION_ITEMS='sessions.errored|Fixture session exception.|ops-exception-evidence.txt' \
   bash tests/e2e/scripts/record-gate5-ops-exceptions.sh >"$tmpdir/stale-ops-exceptions.out" 2>"$tmpdir/stale-ops-exceptions.err"
   status=$?
   set -e

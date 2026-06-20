@@ -75,7 +75,7 @@ export function PresentationSlidePreview({
 
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
       console.log(`[PresentationSlidePreview] Loading metadata (attempt ${retry + 1}):`, urlWithCacheBust);
-      
+
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: { 'Cache-Control': 'no-cache' },
@@ -92,12 +92,12 @@ export function PresentationSlidePreview({
       }
     } catch (err) {
       console.error(`[PresentationSlidePreview] Error loading metadata (attempt ${retry + 1}):`, err);
-      
+
       // Retry with exponential backoff if we haven't exceeded max retries
       if (retry < maxRetries) {
         const delay = Math.min(1000 * Math.pow(1.5, retry), 5000); // Cap at 5 seconds
         console.log(`[PresentationSlidePreview] Retrying in ${delay}ms...`);
-        
+
         retryTimeoutRef.current = setTimeout(() => {
           loadMetadata(retry + 1);
         }, delay);
@@ -110,7 +110,7 @@ export function PresentationSlidePreview({
 
   useEffect(() => {
     loadMetadata(0);
-    
+
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
@@ -160,7 +160,7 @@ export function PresentationSlidePreview({
     .sort((a, b) => a.number - b.number);
 
   // Find the slide to display: use initialSlide if provided, otherwise use first slide
-  const slideToDisplay = initialSlide 
+  const slideToDisplay = initialSlide
     ? slides.find(slide => slide.number === initialSlide) || slides[0]
     : slides[0];
 

@@ -253,6 +253,6 @@ jobs:
           generate_release_notes: false
           body: |
             Mutable DEV desktop build for `${{ github.sha }}`.
-            Defaults to `https://dev.kortix.com/dashboard`.
+            Defaults to `https://dev.kortix.com/projects`.
           files: |
             release/*

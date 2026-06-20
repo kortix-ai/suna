@@ -19,14 +19,6 @@ import {
   AUTO_TOPUP_MIN_THRESHOLD,
 } from '@kortix/shared';
 
-// ─── Validation Constants ────────────────────────────────────────────────────
-export {
-  AUTO_TOPUP_DEFAULT_AMOUNT,
-  AUTO_TOPUP_DEFAULT_THRESHOLD,
-  AUTO_TOPUP_MIN_AMOUNT,
-  AUTO_TOPUP_MIN_THRESHOLD,
-};
-
 /** Minimum 60 seconds between successful auto-topup charges. */
 const CHARGE_COOLDOWN_MS = 60_000;
 

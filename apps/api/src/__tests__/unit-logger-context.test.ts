@@ -77,7 +77,7 @@ describe('managed structured logger', () => {
     expect(logCalls[0].message).toContain('Request completed');
     expect(logCalls[0].context).toMatchObject({
       service: 'kortix-api',
-      env: 'test',
+      env: 'dev',
       version: 'test-version',
       method: 'POST',
       path: '/v1/projects/project-1/sessions/session-1',

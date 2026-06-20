@@ -80,4 +80,3 @@ export const isBillingEnabled = (): boolean => {
 };
 
 import { getEnv } from '@/lib/env-config';
-

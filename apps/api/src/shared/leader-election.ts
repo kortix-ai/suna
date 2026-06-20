@@ -87,10 +87,6 @@ export function isLeader(): boolean {
   return leader;
 }
 
-export function leaderOwnerId(): string {
-  return ownerId;
-}
-
 async function ensureLeaseTable(): Promise<void> {
   if (tableReady || !sql) return;
   // Idempotent + self-contained so coordination works even where the schema is

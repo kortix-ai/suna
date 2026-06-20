@@ -10,6 +10,7 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 let providerStopError: Error | null = null;
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -37,6 +38,12 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
+  WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WarmRuntimeUnavailableError';
+    }
+  },
   getProvider: () => ({
     stop: async (externalId: string) => {
       providerStops.push(externalId);
@@ -68,6 +75,18 @@ mock.module('../projects/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  getFileAtRef: async () => null,
+  resolveCommitSha: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
+  materializeRepoContext: async () => '/tmp/fake-snapshot-context',
+  resolveBranchTip: async () => 'a'.repeat(40),
+  getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
+  previewMerge: async () => ({ canMerge: true, conflicts: [] }),
+  mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  getMergeBase: async () => 'a'.repeat(40),
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   invalidateProjectMirror: () => {},
 }));
 

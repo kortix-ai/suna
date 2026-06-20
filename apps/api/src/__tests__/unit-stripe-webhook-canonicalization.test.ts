@@ -79,6 +79,22 @@ mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async (id: string) => id,
 }));
 
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: {
+    insert: () => ({
+      values: () => ({
+        onConflictDoNothing: () => ({
+          returning: async () => [{ eventId: 'evt_test_canonical' }],
+        }),
+      }),
+    }),
+    transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<unknown>) => fn({
+      execute: async () => {},
+    }),
+  },
+}));
+
 const { processStripeWebhook } = await import('../billing/services/webhooks');
 
 beforeEach(() => {

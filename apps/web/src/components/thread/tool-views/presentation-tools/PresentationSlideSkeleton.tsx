@@ -47,7 +47,7 @@ export function PresentationSlideSkeleton({
   // Build the full HTML document for the streaming content
   const streamingHtmlDoc = useMemo(() => {
     if (!streamingContent) return null;
-    
+
     // Wrap the content in a basic HTML structure with presentation styling
     return `<!DOCTYPE html>
 <html>
@@ -57,9 +57,9 @@ export function PresentationSlideSkeleton({
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { 
-      width: 1920px; 
-      height: 1080px; 
+    html, body {
+      width: 1920px;
+      height: 1080px;
       overflow: hidden;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -77,7 +77,7 @@ ${streamingContent}
   const hasContent = !!streamingContent && streamingContent.trim().length > 0;
 
   return (
-    <div 
+    <div
       className={cn(
         'group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden',
         isGenerating && 'ring-2 ring-blue-500/30',
@@ -87,8 +87,8 @@ ${streamingContent}
       {/* Slide header */}
       <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Badge 
-            variant="outline" 
+          <Badge
+            variant="outline"
             className={cn(
               'h-6 px-2 text-xs font-mono',
               isGenerating && 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
@@ -112,10 +112,10 @@ ${streamingContent}
           </div>
         )}
       </div>
-      
+
       {/* Slide Preview - Empty frame or streaming content */}
       <div className="relative aspect-video">
-        <div 
+        <div
           ref={setContainerRef}
           className={cn(
             'w-full h-full relative overflow-hidden',
@@ -156,4 +156,3 @@ ${streamingContent}
     </div>
   );
 }
-

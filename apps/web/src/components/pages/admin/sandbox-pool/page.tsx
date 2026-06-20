@@ -3,12 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useMemo } from "react";
-import { 
-  Box, 
-  RefreshCw, 
-  Plus, 
-  Trash2, 
-  Play, 
+import {
+  Box,
+  RefreshCw,
+  Plus,
+  Trash2,
+  Play,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -195,8 +195,8 @@ export default function SandboxPoolAdminPage() {
                     <Box className="w-6 h-6 text-secondary" />
                   </div>
                 </div>
-                <Progress 
-                  value={poolUtilization} 
+                <Progress
+                  value={poolUtilization}
                   className="mt-4 h-1.5 bg-muted"
                 />
               </CardContent>
@@ -409,8 +409,8 @@ export default function SandboxPoolAdminPage() {
               ) : sandboxes?.sandboxes && sandboxes.sandboxes.length > 0 ? (
                 <div className="grid gap-2 max-h-[400px] overflow-y-auto pr-2">
                   {sandboxes.sandboxes.map((sandbox, index) => (
-                    <div 
-                      key={sandbox.id} 
+                    <div
+                      key={sandbox.id}
                       className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
                     >
                       <div className="flex items-center gap-3">
@@ -421,7 +421,7 @@ export default function SandboxPoolAdminPage() {
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-xs text-muted-foreground">
-                          {sandbox.pooled_at 
+                          {sandbox.pooled_at
                             ? `Pooled ${new Date(sandbox.pooled_at).toLocaleTimeString()}`
                             : "Unknown"}
                         </span>

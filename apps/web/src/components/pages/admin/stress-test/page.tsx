@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
+import {
   Play,
   Square,
   RefreshCw,
@@ -36,9 +36,9 @@ export default function AdminStressTestPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [numRequestsInput, setNumRequestsInput] = useState('5');
   const numRequests = Math.min(200, Math.max(1, parseInt(numRequestsInput) || 5));
-  
+
   const { state, runStressTest, cancelTest, resetTest } = useStressTest();
-  
+
   const stats = useMemo(() => {
     const done = state.results.filter(r => r.status === 'done').length;
     const error = state.results.filter(r => r.status === 'error').length;
@@ -47,7 +47,7 @@ export default function AdminStressTestPage() {
     const completed = done + error;
     const total = state.results.length || numRequests;
     const progress = total > 0 ? (completed / total) * 100 : 0;
-    
+
     return { done, error, running, pending, completed, total, progress };
   }, [state.results, numRequests]);
 
@@ -90,7 +90,7 @@ export default function AdminStressTestPage() {
     const completed = state.results
       .filter(r => r.status === 'done' || r.status === 'error')
       .sort((a, b) => (b.total_ttft || b.request_time || 0) - (a.total_ttft || a.request_time || 0));
-    
+
     const combined = [...running, ...completed.slice(0, Math.max(0, 20 - running.length))];
     return combined.sort((a, b) => a.request_id - b.request_id).slice(0, 20);
   }, [state.results]);
@@ -122,7 +122,7 @@ export default function AdminStressTestPage() {
                 <Info className="h-5 w-5 text-blue-500" />
                 <p className="font-semibold text-blue-600 dark:text-blue-400">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line124JsxTextTimingMetricsTimeline')}</p>
               </div>
-              
+
               {/* Visual Timeline Diagram */}
               <div className="relative bg-muted/50 rounded-2xl p-4 overflow-x-auto">
                 <div className="min-w-[600px]">
@@ -132,7 +132,7 @@ export default function AdminStressTestPage() {
                     <div className="flex-1 border-t border-dashed border-border" />
                     <span className="font-mono">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line134JsxTextFirstTokenVisible')}</span>
                   </div>
-                  
+
                   {/* Total TTFT bar */}
                   <div className="mb-3">
                     <div className="flex items-center gap-2 mb-1">
@@ -142,7 +142,7 @@ export default function AdminStressTestPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Request Time + First Response breakdown */}
                   <div className="flex gap-1 mb-3">
                     <div className="w-32" />
@@ -155,7 +155,7 @@ export default function AdminStressTestPage() {
                       <span className="text-xs text-orange-700 dark:text-orange-300">{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line156JsxTextFirstResponse')}</span>
                     </div>
                   </div>
-                  
+
                   {/* Detailed breakdown */}
                   <div className="flex gap-1 mb-4">
                     <div className="w-32" />
@@ -184,7 +184,7 @@ export default function AdminStressTestPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Legend */}
                   <div className="flex flex-wrap gap-4 pt-3 border-t border-border text-xs">
                     <div className="flex items-center gap-1.5">
@@ -210,7 +210,7 @@ export default function AdminStressTestPage() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Formulas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="bg-muted/50 rounded-2xl p-3 border border-border">
@@ -252,7 +252,7 @@ export default function AdminStressTestPage() {
                   className="w-32"
                 />
               </div>
-              
+
               <div className="flex gap-2">
                 {!state.isRunning ? (
                   <Button onClick={handleStart} className="gap-2">
@@ -261,7 +261,7 @@ export default function AdminStressTestPage() {
                   <Button onClick={cancelTest} variant="destructive" className="gap-2">
                     <Square className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminStressTestPage.line266JsxTextStopTest')}</Button>
                 )}
-                
+
                 {(state.summary || state.error) && !state.isRunning && (
                   <Button onClick={resetTest} variant="outline" className="gap-2">
                     <RefreshCw className="h-4 w-4" />
@@ -291,7 +291,7 @@ export default function AdminStressTestPage() {
                     <span className="font-medium">{stats.completed}/{stats.total} requests</span>
                   </div>
                   <Progress value={stats.progress} className="h-2" />
-                  
+
                   {/* Quick Stats */}
                   <div className="grid grid-cols-4 gap-4 pt-2">
                     <div className="flex items-center gap-2">
@@ -352,7 +352,7 @@ export default function AdminStressTestPage() {
                             </td>
                             <td className="h-12 px-4 text-sm">
                               {threadUrl ? (
-                                <Link 
+                                <Link
                                   href={threadUrl}
                                   target="_blank"
                                   className="flex items-center gap-1 text-blue-500 hover:text-blue-600 hover:underline font-mono"
@@ -449,7 +449,7 @@ export default function AdminStressTestPage() {
                 <div className="space-y-1">
                   <p className="text-sm text-muted-foreground">Successful</p>
                   <p className="text-2xl font-bold text-green-500">
-                    {state.summary.successful} 
+                    {state.summary.successful}
                     <span className="text-sm font-normal text-muted-foreground ml-1">
                       ({((state.summary.successful / state.summary.total_requests) * 100).toFixed(1)}%)
                     </span>

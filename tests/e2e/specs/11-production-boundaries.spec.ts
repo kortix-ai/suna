@@ -1,29 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { authHeaders, createApiJsonClient, createApiStatusClient } from '../helpers/http';
+import { createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_BOUNDARY_PASSWORD || 'E2eBoundary123!';
 const runBoundaryTests = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
-
-interface AuthUser {
-  id: string;
-  email?: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
+const api = createApiJsonClient(apiBase);
+const apiStatus = createApiStatusClient(apiBase);
+const authOptions = { supabaseUrl, password };
 
 interface AccountSummary {
   account_id: string;
   name: string;
-  personal_account: boolean;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
   account_role: 'owner' | 'admin' | 'member';
 }
 
@@ -43,176 +37,6 @@ interface InviteResult {
   invite_id?: string;
   email: string;
   account_role: 'owner' | 'admin' | 'member';
-}
-
-function repoRoot(): string {
-  const path = require('path') as typeof import('node:path');
-  return path.resolve(__dirname, '../../..');
-}
-
-function parseEnvFile(relativePath: string): Record<string, string> {
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const filePath = path.isAbsolute(relativePath)
-    ? relativePath
-    : path.join(repoRoot(), relativePath);
-  if (!fs.existsSync(filePath)) return {};
-
-  const env: Record<string, string> = {};
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) continue;
-    env[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
-  }
-  return env;
-}
-
-function candidateEnvFiles(files: string[]): string[] {
-  const path = require('path') as typeof import('node:path');
-  const explicit = (process.env.E2E_ENV_FILE || '')
-    .split(path.delimiter)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return [...explicit, ...files];
-}
-
-function requireEnvValue(name: string, ...files: string[]): string {
-  if (process.env[name]) return process.env[name]!;
-
-  for (const file of candidateEnvFiles(files)) {
-    const value = parseEnvFile(file)[name];
-    if (value) return value;
-  }
-  throw new Error(`${name} was not found in ${candidateEnvFiles(files).join(', ')}`);
-}
-
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function json<T>(
-  response: Response,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const body = await response.text();
-  if (!expected.includes(response.status)) {
-    throw new Error(
-      `Expected ${expected.join('/')} from ${response.url}, got ${response.status}: ${body}`,
-    );
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
-}
-
-async function api<T>(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  return json<T>(
-    await fetch(`${apiBase}${path}`, {
-      method,
-      headers: authHeaders(token),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    expectedStatus,
-  );
-}
-
-async function apiStatus(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const response = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await response.text();
-  return response.status;
-}
-
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey = process.env.SUPABASE_ANON_KEY || requireEnvValue(
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    'apps/web/.env',
-    'apps/api/.env',
-  );
-  return json<AuthSession>(
-    await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-    200,
-  );
-}
-
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-    await page.waitForTimeout(1_500);
-    if (!(await page.locator('input[name="email"]').isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      });
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^Sign in$/i }).first().click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
-}
-
-async function selectAccountForUi(page: Page, accountId: string) {
-  await page.evaluate((id) => {
-    localStorage.setItem(
-      'kortix.currentAccount',
-      JSON.stringify({ state: { selectedAccountId: id }, version: 1 }),
-    );
-  }, accountId);
 }
 
 function percentile(values: number[], p: number) {
@@ -248,18 +72,18 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
   test.setTimeout(420_000);
 
   test('§10.6/§10.7 API boundaries and invite concurrency hold', async () => {
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `boundary-owner-${runId}@example.test`;
     const memberEmail = `boundary-member-${runId}@example.test`;
     const inviteeEmail = `boundary-invitee-${runId}@example.test`;
     const outsiderEmail = `boundary-outsider-${runId}@example.test`;
 
-    const owner = await createAuthUser(ownerEmail);
-    const member = await createAuthUser(memberEmail);
-    const outsider = await createAuthUser(outsiderEmail);
-    const ownerSession = await signIn(ownerEmail);
-    const memberSession = await signIn(memberEmail);
-    const outsiderSession = await signIn(outsiderEmail);
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const outsider = await createAuthUser(outsiderEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    const memberSession = await signIn(memberEmail, authOptions);
+    const outsiderSession = await signIn(outsiderEmail, authOptions);
 
     expect(owner.id).toBeTruthy();
     expect(member.id).toBeTruthy();
@@ -352,8 +176,8 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
     expect(redactedInvite.inviter_email).toBeNull();
     expect(redactedInvite.email).toBeNull();
 
-    await createAuthUser(inviteeEmail);
-    const inviteeSession = await signIn(inviteeEmail);
+    await createAuthUser(inviteeEmail, authOptions);
+    const inviteeSession = await signIn(inviteeEmail, authOptions);
     const accepts = await Promise.all([
       fetch(`${apiBase}/account-invites/${pendingInvite.invite_id}/accept`, {
         method: 'POST',
@@ -375,13 +199,15 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
   test('§10.6.C SLO probes meet the configured production budgets', async ({ page }) => {
     const healthLimit = threshold('E2E_SLO_HEALTH_MS', 250);
     const projectsFirstPaintLimit = threshold('E2E_SLO_PROJECTS_FIRST_PAINT_MS', 1500);
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `slo-owner-${runId}@example.test`;
 
-    await createAuthUser(ownerEmail);
-    const ownerSession = await signIn(ownerEmail);
+    await createAuthUser(ownerEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
     const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    const personalAccount = accounts.find((account) => account.personal_account);
+    const personalAccount = accounts.find(
+      (account) => account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+    );
     expect(personalAccount).toBeTruthy();
     const project = await api<ProjectSummary>(
       ownerSession.access_token,
@@ -407,7 +233,7 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
     }
     assertSlo('GET /v1/health p95', percentile(healthDurations, 95), healthLimit);
 
-    await installBrowserSession(page, ownerSession, '/projects');
+    await installBrowserSession(page, ownerSession, '/projects', password);
     await selectAccountForUi(page, personalAccount!.account_id);
     const { durationMs: projectsFirstPaintMs } = await measure(async () => {
       await page.goto('/projects', { waitUntil: 'domcontentloaded' });

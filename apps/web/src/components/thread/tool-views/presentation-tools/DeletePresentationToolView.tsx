@@ -58,9 +58,9 @@ export function DeletePresentationToolView({
           } else {
             // It's a plain string message, create a deleteData object from it
             // Try to extract path from toolCall arguments or the message
-            const deletedPath = toolCall.arguments?.presentation_name || 
-                              toolCall.arguments?.path || 
-                              output.match(/['"]([^'"]+)['"]/)?.[1] || 
+            const deletedPath = toolCall.arguments?.presentation_name ||
+                              toolCall.arguments?.path ||
+                              output.match(/['"]([^'"]+)['"]/)?.[1] ||
                               'Unknown';
             deleteData = {
               message: output,
@@ -69,9 +69,9 @@ export function DeletePresentationToolView({
           }
         } catch (e) {
           // If JSON parsing fails, treat as plain string message
-          const deletedPath = toolCall.arguments?.presentation_name || 
-                            toolCall.arguments?.path || 
-                            output.match(/['"]([^'"]+)['"]/)?.[1] || 
+          const deletedPath = toolCall.arguments?.presentation_name ||
+                            toolCall.arguments?.path ||
+                            output.match(/['"]([^'"]+)['"]/)?.[1] ||
                             'Unknown';
           deleteData = {
             message: output,
@@ -83,8 +83,8 @@ export function DeletePresentationToolView({
         deleteData = output as unknown as DeletePresentationData;
         // Ensure required fields exist
         if (!deleteData.deleted_path && toolCall.arguments) {
-          deleteData.deleted_path = toolCall.arguments.presentation_name || 
-                                   toolCall.arguments.path || 
+          deleteData.deleted_path = toolCall.arguments.presentation_name ||
+                                   toolCall.arguments.path ||
                                    'Unknown';
         }
         if (!deleteData.message && typeof output === 'object') {
@@ -94,8 +94,8 @@ export function DeletePresentationToolView({
     } else {
       // No output, try to construct from arguments
       if (toolCall.arguments) {
-        const deletedPath = toolCall.arguments.presentation_name || 
-                           toolCall.arguments.path || 
+        const deletedPath = toolCall.arguments.presentation_name ||
+                           toolCall.arguments.path ||
                            'Unknown';
         deleteData = {
           message: 'Presentation deleted successfully',
@@ -107,8 +107,8 @@ export function DeletePresentationToolView({
     console.error('Error parsing delete data:', e);
     // Try to construct from arguments as fallback
     if (toolCall.arguments) {
-      const deletedPath = toolCall.arguments.presentation_name || 
-                         toolCall.arguments.path || 
+      const deletedPath = toolCall.arguments.presentation_name ||
+                         toolCall.arguments.path ||
                          'Unknown';
       deleteData = {
         message: 'Presentation deleted',
@@ -119,8 +119,8 @@ export function DeletePresentationToolView({
     }
   }
 
-  const presentationName = deleteData?.deleted_path?.split('/').pop() || 
-                          toolCall.arguments?.presentation_name?.split('/').pop() || 
+  const presentationName = deleteData?.deleted_path?.split('/').pop() ||
+                          toolCall.arguments?.presentation_name?.split('/').pop() ||
                           'Unknown';
 
   return (
@@ -160,7 +160,7 @@ export function DeletePresentationToolView({
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-6">
               {deleteData.message}
             </p>
-            
+
             <Card className="p-6 w-full max-w-md">
               <div className="flex items-center gap-3">
                 <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-red-100 dark:bg-red-900/20">
@@ -174,7 +174,7 @@ export function DeletePresentationToolView({
                 </div>
               </div>
             </Card>
-            
+
             <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center mt-4">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsDeletepresentationtoolview.line183JsxTextAllSlidesAndMetadataHaveBeenPermanentlyRemoved')}</p>
           </div>
         )}

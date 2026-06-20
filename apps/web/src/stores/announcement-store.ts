@@ -57,11 +57,11 @@ export const useAnnouncementStore = create<AnnouncementStore>()(
       showPendingAnnouncement: () => {
         const { dismissedAnnouncements, isOpen } = get();
         if (isOpen) return;
-        
+
         const pending = PENDING_ANNOUNCEMENTS.find(
           (a) => !dismissedAnnouncements.includes(a.component)
         );
-        
+
         if (pending) {
           set({ isOpen: true, currentAnnouncement: pending });
         }

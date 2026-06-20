@@ -35,10 +35,10 @@ const ValueRenderer = ({ value }: { value: any }) => {
     // URL detection
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return (
-        <a 
-          href={value} 
-          target="_blank" 
-          rel="noopener noreferrer" 
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-blue-500 hover:underline inline-flex items-center gap-1 break-all"
         >{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line42JsxTextQuot')}{truncateString(value)}{tHardcodedUi.raw('componentsThreadToolViewsSharedSmartjsonviewer.line42JsxTextQuoteaab7c3c')}<ExternalLink className="h-3 w-3 inline flex-shrink-0" />
         </a>
@@ -53,7 +53,7 @@ const ValueRenderer = ({ value }: { value: any }) => {
   }
   if (type === 'number') return <span className="text-blue-600 dark:text-blue-400">{value}</span>;
   if (type === 'boolean') return <span className="text-amber-600 dark:text-amber-400">{String(value)}</span>;
-  
+
   return <span>{String(value)}</span>;
 };
 
@@ -64,12 +64,12 @@ const KeyRenderer = ({ name }: { name: string }) => (
   </span>
 );
 
-export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({ 
-  data, 
-  name, 
-  className, 
+export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({
+  data,
+  name,
+  className,
   initialExpandedDepth = 1,
-  depth = 0 
+  depth = 0
 }) => {
   const [isExpanded, setIsExpanded] = useState(depth < initialExpandedDepth);
   const [isHovered, setIsHovered] = useState(false);
@@ -105,12 +105,12 @@ export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({
   const brackets = type === 'array' ? ['[', ']'] : ['{', '}'];
 
   return (
-    <div 
+    <div
       className={cn("font-mono text-xs select-text", className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div 
+      <div
         className={cn(
           "flex items-start gap-1 cursor-pointer hover:bg-muted/50 rounded px-1 -ml-1 py-0.5 transition-colors group",
           !isExpanded && "items-center"
@@ -125,12 +125,12 @@ export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({
             isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
           )}
         </div>
-        
+
         <div className="flex-1 flex items-center flex-wrap gap-1">
           {name && <KeyRenderer name={name} />}
-          
+
           <span className="text-muted-foreground/50">{brackets[0]}</span>
-          
+
           {!isExpanded && !isEmpty && (
             <span className="text-muted-foreground/50 flex items-center gap-1.5 mx-0.5">
                <MoreHorizontal className="h-3 w-3" />

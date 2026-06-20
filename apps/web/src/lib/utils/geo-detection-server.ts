@@ -17,7 +17,7 @@ export function detectLocaleFromHeaders(acceptLanguage: string | null): Locale |
 
   try {
     console.log('🌍 Parsing Accept-Language header:', acceptLanguage);
-    
+
     // Parse Accept-Language header (e.g., "en-US,en;q=0.9,de;q=0.8")
     const languages = acceptLanguage
       .split(',')
@@ -66,4 +66,3 @@ export function detectBestLocaleFromHeaders(acceptLanguage: string | null): Loca
   const detected = detectLocaleFromHeaders(acceptLanguage);
   return detected || defaultLocale;
 }
-

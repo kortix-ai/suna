@@ -7,7 +7,7 @@
  * secret SERVER-SIDE, runs the call, and audits it.
  *
  * Auth: KORTIX_EXECUTOR_TOKEN (acts as the launching user) + KORTIX_API_URL,
- * both injected at sandbox spawn. See docs/specs/executor.md.
+ * both injected at sandbox spawn.
  *
  * Usage:
  *   executor connectors                       # what this session can use

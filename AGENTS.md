@@ -48,12 +48,18 @@ Mint a real JWT against local Supabase, then call the API with it:
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
+### End-to-end harnesses
+- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
+- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
+- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
+- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+
 ### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
   a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate enforces that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`, 328 routes).
+  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
+  authoritative route manifest (`tests/spec/routes.generated.json`).
 - **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
   written yet) and does **not** gate PRs, promotes, or deploys right now. The
   intended end-state is test-as-source-of-truth (touch an API contract → update

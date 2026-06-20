@@ -1,6 +1,6 @@
 /**
  * Utility to extract the current active session context for enriching preview tabs.
- * 
+ *
  * When a preview tab is opened from within a session (e.g., a localhost link in chat),
  * we want to tag it with the source session ID and title so the Running Services panel
  * can display "Slide 1 - Session Name" associations.
@@ -16,7 +16,7 @@ export interface SessionContext {
 /**
  * Get the current active session context from the tab store.
  * Returns null if the active tab is not a session tab.
- * 
+ *
  * Call this at the moment a preview tab is being opened to capture
  * which session triggered it.
  */

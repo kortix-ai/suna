@@ -12,10 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Search, 
-  User, 
-  CreditCard, 
+import {
+  Search,
+  User,
+  CreditCard,
   Calendar,
   Filter,
   TrendingUp,
@@ -38,9 +38,9 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
   const [tierFilter, setTierFilter] = useState<string>('');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
+
   const [debouncedSearch, setDebouncedSearch] = useState(searchEmail);
-  
+
   const { data: userListResponse, isLoading, error } = useAdminUserList({
     page,
     page_size: pageSize,
@@ -121,8 +121,8 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
       id: 'actions',
       header: 'Actions',
       cell: (user) => (
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
@@ -223,4 +223,4 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
       )}
     </div>
   );
-} 
+}

@@ -2,7 +2,7 @@ import { config } from '../../config';
 
 // === Key Injection Methods ===
 
-export type KeyInjectionMethod =
+type KeyInjectionMethod =
   | { type: 'json_body_field'; field: string }
   | { type: 'header'; headerName: string; prefix?: string };
 

@@ -6,4 +6,4 @@
   "printWidth": 100,
   "endOfLine": "lf",
   "plugins": ["prettier-plugin-organize-imports", "prettier-plugin-tailwindcss"]
-} 
+}

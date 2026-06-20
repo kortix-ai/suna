@@ -41,8 +41,8 @@ export type TrackedPageType = typeof TRACKED_PAGE_TYPES[number];
 
 export function getPageContext(pathname: string): ContainerLoadData {
   // Determine language from document or default to 'en'
-  const language = typeof document !== 'undefined' 
-    ? document.documentElement.lang || 'en' 
+  const language = typeof document !== 'undefined'
+    ? document.documentElement.lang || 'en'
     : 'en';
 
   // Map pathname to page context
@@ -55,7 +55,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Auth pages
   if (pathname.startsWith('/auth')) {
     return {
@@ -65,7 +65,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Dashboard (main dashboard page only)
   if (pathname === '/dashboard') {
     return {
@@ -75,7 +75,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Plans/Subscription page
   if (pathname === '/subscription' || pathname.startsWith('/subscription')) {
     return {
@@ -85,7 +85,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Checkout page (Stripe embedded checkout)
   if (pathname === '/checkout' || pathname.startsWith('/checkout')) {
     return {
@@ -95,7 +95,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Workspace/Threads - NOT tracked for routeChange (internal navigation)
   if (pathname.startsWith('/projects') || pathname.startsWith('/workspace') || pathname.startsWith('/thread')) {
     return {
@@ -105,7 +105,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Settings - NOT tracked for routeChange (internal navigation)
   if (pathname.startsWith('/settings')) {
     return {
@@ -115,7 +115,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
       language,
     };
   }
-  
+
   // Default for other pages
   return {
     master_group: 'General',
@@ -135,14 +135,14 @@ export function shouldTrackRouteChange(pageType: string): boolean {
 
 export function pushContainerLoad(pathname: string) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const pageContext = getPageContext(pathname);
-  
+
   // Push without 'event' key - this is initialization data
   window.dataLayer?.push(pageContext);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] Container Load pushed:', pageContext);
   }
@@ -153,10 +153,10 @@ export function pushContainerLoad(pathname: string) {
  */
 function getPageReferrer(): string {
   if (typeof window === 'undefined') return '';
-  
+
   // Check if we have a stored previous page in sessionStorage
   const previousPage = sessionStorage.getItem('gtm_previous_page');
-  
+
   // If no previous page, use document.referrer (initial load)
   return previousPage || document.referrer || '';
 }
@@ -174,7 +174,7 @@ function storePreviousPage() {
  */
 function isInitialLoad(): boolean {
   if (typeof window === 'undefined') return false;
-  
+
   // Check if we've tracked a page before
   const hasTrackedBefore = sessionStorage.getItem('gtm_has_tracked');
   return !hasTrackedBefore;
@@ -204,42 +204,42 @@ export interface RouteChangeData {
 /**
  * Push a routeChange event to the dataLayer
  * This tracks SPA navigation for accurate GA4 page views
- * 
+ *
  * Only fires for documented pages: Homepage, Auth, Dashboard, Plans, Order Confirm
  * Does NOT fire for internal navigation (threads, settings, etc.)
  */
 export function trackRouteChange(pathname: string, searchParams?: string) {
   if (typeof window === 'undefined') return;
-  
+
   // Get contextual variables for the current page
   const pageContext = getPageContext(pathname);
-  
+
   // Determine if this is an order confirmation (returning from Stripe checkout)
   const isOrderConfirm = pathname === '/dashboard' && searchParams?.includes('subscription=activated');
   const effectivePageType = isOrderConfirm ? 'order_confirm' : pageContext.page_type;
-  
+
   // Only track documented pages (Homepage, Auth, Dashboard, Plans, Order Confirm)
   // Skip internal navigation like threads, settings, etc.
   if (!shouldTrackRouteChange(effectivePageType)) {
     return;
   }
-  
+
   // Initialize dataLayer if needed
   initDataLayer();
-  
+
   // Construct the full URL with search params for page_location only
   const fullPath = searchParams ? `${pathname}?${searchParams}` : pathname;
   const pageLocation = `${window.location.origin}${fullPath}`;
-  
+
   // Get page title (or use pathname as fallback)
   const pageTitle = document.title || pathname;
-  
+
   // Get referrer
   const pageReferrer = getPageReferrer();
-  
+
   // Check if initial load
   const initialLoad = isInitialLoad();
-  
+
   // Construct the data object according to data dictionary
   // Note: page_path should NOT include query strings (only page_location does)
   const routeChangeData: RouteChangeData = {
@@ -253,18 +253,18 @@ export function trackRouteChange(pathname: string, searchParams?: string) {
     content_group: pageContext.content_group,
     page_type: effectivePageType,
   };
-  
+
   // Push to dataLayer
   window.dataLayer?.push(routeChangeData);
-  
+
   // Console log for debugging (remove in production if needed)
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] routeChange pushed:', routeChangeData);
   }
-  
+
   // Store current page as previous for next navigation
   storePreviousPage();
-  
+
   // Mark that we've tracked at least one page
   markAsTracked();
 }
@@ -285,15 +285,15 @@ export function clearGTMSession() {
  */
 export function trackRouteChangeForModal(pageType: 'plans' | 'order_confirm') {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const pageLocation = window.location.href;
   const pathname = window.location.pathname;
   const pageTitle = document.title || pathname;
   const pageReferrer = getPageReferrer();
   const initialLoad = isInitialLoad();
-  
+
   // Get context based on modal type
   const contextMap = {
     plans: {
@@ -307,9 +307,9 @@ export function trackRouteChangeForModal(pageType: 'plans' | 'order_confirm') {
       page_type: 'order_confirm',
     },
   };
-  
+
   const context = contextMap[pageType];
-  
+
   const routeChangeData: RouteChangeData = {
     event: 'routeChange',
     page_location: pageLocation,
@@ -321,13 +321,13 @@ export function trackRouteChangeForModal(pageType: 'plans' | 'order_confirm') {
     content_group: context.content_group,
     page_type: context.page_type,
   };
-  
+
   window.dataLayer?.push(routeChangeData);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] routeChange (modal) pushed:', routeChangeData);
   }
-  
+
   storePreviousPage();
   markAsTracked();
 }
@@ -344,16 +344,16 @@ export type AuthMethod = 'Email' | 'Google' | 'Apple' | 'GitHub';
  */
 export function trackSignUp(method: AuthMethod) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const signUpEvent = {
     event: 'sign_up',
     method: method,
   };
-  
+
   window.dataLayer?.push(signUpEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] sign_up pushed:', signUpEvent);
   }
@@ -365,16 +365,16 @@ export function trackSignUp(method: AuthMethod) {
  */
 export function trackLogin(method: AuthMethod) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const loginEvent = {
     event: 'login',
     method: method,
   };
-  
+
   window.dataLayer?.push(loginEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] login pushed:', loginEvent);
   }
@@ -386,15 +386,15 @@ export function trackLogin(method: AuthMethod) {
  */
 export function trackCtaUpgrade() {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const ctaEvent = {
     event: 'cta_upgrade',
   };
-  
+
   window.dataLayer?.push(ctaEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] cta_upgrade pushed:', ctaEvent);
   }
@@ -405,15 +405,15 @@ export function trackCtaUpgrade() {
  */
 export function trackCtaSignup() {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const ctaEvent = {
     event: 'cta_signup',
   };
-  
+
   window.dataLayer?.push(ctaEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] cta_signup pushed:', ctaEvent);
   }
@@ -425,15 +425,15 @@ export function trackCtaSignup() {
  */
 export function trackSendAuthLink() {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   const authLinkEvent = {
     event: 'send_auth_link',
   };
-  
+
   window.dataLayer?.push(authLinkEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] send_auth_link pushed:', authLinkEvent);
   }
@@ -479,12 +479,12 @@ export interface PurchaseData {
  */
 export function trackPurchase(data: PurchaseData) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   // Clear previous ecommerce object (GA4 best practice)
   window.dataLayer?.push({ ecommerce: null });
-  
+
   // Push the purchase event
   const purchaseEvent = {
     event: 'purchase',
@@ -516,9 +516,9 @@ export function trackPurchase(data: PurchaseData) {
       email: data.customer.email,
     },
   };
-  
+
   window.dataLayer?.push(purchaseEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] purchase pushed:', purchaseEvent);
   }
@@ -527,11 +527,11 @@ export function trackPurchase(data: PurchaseData) {
 /**
  * Store checkout data before redirecting to Stripe
  * This allows us to track the purchase with full data when user returns
- * 
+ *
  * item_id and item_name should match the format used in add_to_cart:
  * - item_id: e.g., "pro_yearly", "plus_monthly"
  * - item_name: e.g., "Pro Yearly", "Plus Monthly"
- * 
+ *
  * price = full product price (before discounts)
  * value = actual transaction value (after discounts/coupons)
  * previous_tier = user's tier before checkout (to determine customer_type)
@@ -570,10 +570,10 @@ export function getStoredCheckoutData(): {
   timestamp: number;
 } | null {
   if (typeof window === 'undefined') return null;
-  
+
   const stored = sessionStorage.getItem('gtm_checkout_data');
   if (!stored) return null;
-  
+
   try {
     const data = JSON.parse(stored);
     // Only use if less than 1 hour old
@@ -618,12 +618,12 @@ export interface PlanItemData {
  */
 export function trackSelectItem(item: PlanItemData) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   // Clear previous ecommerce object (GA4 best practice)
   window.dataLayer?.push({ ecommerce: null });
-  
+
   const selectItemEvent = {
     event: 'select_item',
     ecommerce: {
@@ -643,9 +643,9 @@ export function trackSelectItem(item: PlanItemData) {
       }],
     },
   };
-  
+
   window.dataLayer?.push(selectItemEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] select_item pushed:', selectItemEvent);
   }
@@ -657,12 +657,12 @@ export function trackSelectItem(item: PlanItemData) {
  */
 export function trackViewItem(item: PlanItemData, currency: string, value: number) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   // Clear previous ecommerce object (GA4 best practice)
   window.dataLayer?.push({ ecommerce: null });
-  
+
   const viewItemEvent = {
     event: 'view_item',
     ecommerce: {
@@ -682,9 +682,9 @@ export function trackViewItem(item: PlanItemData, currency: string, value: numbe
       }],
     },
   };
-  
+
   window.dataLayer?.push(viewItemEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] view_item pushed:', viewItemEvent);
   }
@@ -696,12 +696,12 @@ export function trackViewItem(item: PlanItemData, currency: string, value: numbe
  */
 export function trackAddToCart(item: PlanItemData, currency: string, value: number) {
   if (typeof window === 'undefined') return;
-  
+
   initDataLayer();
-  
+
   // Clear previous ecommerce object (GA4 best practice)
   window.dataLayer?.push({ ecommerce: null });
-  
+
   const addToCartEvent = {
     event: 'add_to_cart',
     ecommerce: {
@@ -721,9 +721,9 @@ export function trackAddToCart(item: PlanItemData, currency: string, value: numb
       }],
     },
   };
-  
+
   window.dataLayer?.push(addToCartEvent);
-  
+
   if (process.env.NODE_ENV === 'development') {
     console.log('[GTM] add_to_cart pushed:', addToCartEvent);
   }

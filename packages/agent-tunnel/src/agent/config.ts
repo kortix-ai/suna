@@ -56,6 +56,22 @@ function compactConfig(input: Partial<TunnelConfig>): Partial<TunnelConfig> {
   return output;
 }
 
+export function trustedCredential(value: string, name: string): string {
+  if (!value || /[\r\n]/.test(value)) {
+    throw new Error(`Invalid tunnel ${name}`);
+  }
+  return value;
+}
+
+export function trustedHttpUrl(value: string): string {
+  const raw = trustedCredential(value, 'apiUrl');
+  const url = new URL(raw);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Tunnel API URL must use http or https');
+  }
+  return url.toString().replace(/\/$/, '');
+}
+
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {

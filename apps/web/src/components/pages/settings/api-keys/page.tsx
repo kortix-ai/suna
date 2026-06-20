@@ -702,7 +702,7 @@ export default function APIKeysPage() {
                 {userKeys.map((apiKey: APIKeyResponse) => (
                   <div
                     key={apiKey.key_id}
-                    className={cn('px-4 py-3.5 flex items-center gap-3', 
+                    className={cn('px-4 py-3.5 flex items-center gap-3',
                       isKeyExpired(apiKey.expires_at) ? 'bg-yellow-500/5' : ''
                     )}
                   >

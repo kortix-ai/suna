@@ -128,7 +128,7 @@ export function createExecutorClient(opts: ExecutorClientOptions): ExecutorClien
   return new ExecutorClient(opts);
 }
 
-export function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
+function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
   const tools: ExecutorToolMatch[] = [];
   for (const connector of connectors) {
     for (const action of connector.actions) {
@@ -146,7 +146,8 @@ export function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMat
 }
 
 function normalizeApiUrl(input: string): string {
-  const trimmed = input.trim().replace(/\/+$/, '');
+  let trimmed = input.trim();
+  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
   return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }
 

@@ -19,4 +19,4 @@ export const useApiHealth = (options?: any) => {
     placeholderData: { status: 'ok', timestamp: '', instance_id: '' },
     ...options,
   });
-}; 
+};

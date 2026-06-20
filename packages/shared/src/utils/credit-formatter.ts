@@ -5,7 +5,7 @@
  * Robust version with null handling from mobile implementation
  */
 
-export const CREDITS_PER_DOLLAR = 100;
+const CREDITS_PER_DOLLAR = 100;
 
 /**
  * Convert dollars to credits
@@ -14,15 +14,6 @@ export const CREDITS_PER_DOLLAR = 100;
  */
 export function dollarsToCredits(dollars: number): number {
   return Math.round(dollars * CREDITS_PER_DOLLAR);
-}
-
-/**
- * Convert credits to dollars
- * @param credits - The credit amount to convert
- * @returns The equivalent dollar amount
- */
-export function creditsToDollars(credits: number): number {
-  return credits / CREDITS_PER_DOLLAR;
 }
 
 /**
@@ -65,15 +56,5 @@ export function formatCreditsWithSign(credits: number | null | undefined, option
   
   const formatted = formatCredits(Math.abs(credits), options);
   return credits >= 0 ? `+${formatted}` : `-${formatted}`;
-}
-
-/**
- * Format dollars as credits
- * @param dollars - The dollar amount to format as credits
- * @returns Formatted credit string
- */
-export function formatDollarsAsCredits(dollars: number): string {
-  const credits = dollarsToCredits(dollars);
-  return formatCredits(credits);
 }
 

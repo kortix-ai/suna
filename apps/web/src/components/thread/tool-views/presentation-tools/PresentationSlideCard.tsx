@@ -51,12 +51,12 @@ export function PresentationSlideCard({
     const updateScale = () => {
       const containerWidth = containerRef.offsetWidth;
       const containerHeight = containerRef.offsetHeight;
-      
+
       // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
       const scaleX = containerWidth / 1920;
       const scaleY = containerHeight / 1080;
       const newScale = Math.min(scaleX, scaleY);
-      
+
       // Only update if scale actually changed to prevent unnecessary re-renders
       if (Math.abs(newScale - scale) > 0.001) {
         setScale(newScale);
@@ -112,7 +112,7 @@ export function PresentationSlideCard({
   }
 
   return (
-    <div 
+    <div
       className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-colors duration-200', className)}
     >
       {/* Slide header */}
@@ -140,14 +140,14 @@ export function PresentationSlideCard({
           </Button>
         )}
       </div>
-      
+
       {/* Slide Preview */}
-      <div 
+      <div
         className="relative aspect-video bg-muted/30 cursor-pointer"
         onClick={() => onFullScreenClick?.(slide.number)}
       >
         <div className="w-full h-full flex items-center justify-center bg-transparent">
-          <div 
+          <div
             ref={setContainerRef}
             className="relative w-full h-full bg-background rounded-lg overflow-hidden"
             style={{
@@ -178,7 +178,7 @@ export function PresentationSlideCard({
             />
           </div>
         </div>
-        
+
         {/* Subtle hover overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
       </div>

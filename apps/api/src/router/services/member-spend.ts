@@ -46,15 +46,6 @@ export async function getSandboxMemberCapStatus(
   };
 }
 
-export async function isMemberOverCap(
-  sandboxId: string,
-  userId: string,
-): Promise<{ over: boolean; status: CapStatus | null }> {
-  const status = await getSandboxMemberCapStatus(sandboxId, userId);
-  if (!status || status.capCents === null) return { over: false, status };
-  return { over: status.currentCents >= status.capCents, status };
-}
-
 export async function applyActorSpend(
   sandboxId: string,
   userId: string,

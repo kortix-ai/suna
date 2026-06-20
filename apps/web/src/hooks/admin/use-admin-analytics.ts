@@ -154,7 +154,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
     queryKey: ['admin', 'analytics', 'threads', params],
     queryFn: async (): Promise<PaginatedResponse<ThreadAnalytics>> => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.min_messages !== undefined) searchParams.append('min_messages', params.min_messages.toString());
@@ -166,7 +166,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
       if (params.date_to) searchParams.append('date_to', params.date_to);
       if (params.sort_by) searchParams.append('sort_by', params.sort_by);
       if (params.sort_order) searchParams.append('sort_order', params.sort_order);
-      
+
       const response = await backendApi.get(`/admin/analytics/threads/browse?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -293,12 +293,12 @@ export function useRetentionData(params: RetentionParams = {}) {
     queryKey: ['admin', 'analytics', 'retention', params],
     queryFn: async (): Promise<PaginatedResponse<RetentionData>> => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.weeks_back) searchParams.append('weeks_back', params.weeks_back.toString());
       if (params.min_weeks_active) searchParams.append('min_weeks_active', params.min_weeks_active.toString());
-      
+
       const response = await backendApi.get(`/admin/analytics/retention?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -378,7 +378,7 @@ export function useARRWeeklyActuals() {
 
 export function useUpdateARRWeeklyActual() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (data: WeeklyActualData): Promise<WeeklyActualData> => {
       const platform = data.platform || 'web';
@@ -401,7 +401,7 @@ export interface DeleteWeeklyActualParams {
 
 export function useDeleteARRWeeklyActual() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ weekNumber, platform }: DeleteWeeklyActualParams): Promise<{ message: string }> => {
       const response = await backendApi.delete(`/admin/analytics/arr/actuals/${weekNumber}?platform=${platform}`);
@@ -426,7 +426,7 @@ export interface ToggleOverrideParams {
 
 export function useToggleFieldOverride() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ weekNumber, platform, field, override }: ToggleOverrideParams): Promise<{ message: string }> => {
       const response = await backendApi.patch(`/admin/analytics/arr/actuals/${weekNumber}/override?platform=${platform}`, {
@@ -476,7 +476,7 @@ export function useARRSimulatorConfig() {
 
 export function useUpdateARRSimulatorConfig() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (data: SimulatorConfigData): Promise<SimulatorConfigData> => {
       const response = await backendApi.put('/admin/analytics/arr/config', data);
@@ -647,7 +647,7 @@ export function useARRMonthlyActuals() {
 
 export function useUpdateARRMonthlyActual() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (data: MonthlyActualData): Promise<MonthlyActualData> => {
       const platform = data.platform || 'web';
@@ -670,7 +670,7 @@ export interface DeleteMonthlyActualParams {
 
 export function useDeleteARRMonthlyActual() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ monthIndex, platform }: DeleteMonthlyActualParams): Promise<{ message: string }> => {
       const response = await backendApi.delete(`/admin/analytics/arr/monthly-actuals/${monthIndex}?platform=${platform}`);
@@ -695,7 +695,7 @@ export interface ToggleMonthlyOverrideParams {
 
 export function useToggleMonthlyFieldOverride() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ monthIndex, platform, field, override }: ToggleMonthlyOverrideParams): Promise<{ message: string }> => {
       const response = await backendApi.patch(`/admin/analytics/arr/monthly-actuals/${monthIndex}/override?platform=${platform}`, {

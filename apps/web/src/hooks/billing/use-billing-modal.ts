@@ -21,7 +21,7 @@ export function useBillingModal(): UseBillingModalReturn {
 
     if (error instanceof BillingError) {
       const message = error.detail?.message?.toLowerCase() || '';
-      isCreditsExhausted = 
+      isCreditsExhausted =
         message.includes('credit') ||
         message.includes('balance') ||
         message.includes('insufficient') ||

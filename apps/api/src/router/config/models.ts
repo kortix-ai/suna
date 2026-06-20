@@ -25,7 +25,7 @@ export interface ModelConfig {
  * Any model NOT in this registry is passed through to OpenRouter as-is
  * with live pricing from models.dev (or zero if unknown).
  */
-export const MODELS: Record<string, ModelConfig> = {
+const MODELS: Record<string, ModelConfig> = {
   'minimax/minimax-m2.7': {
     openrouterId: 'minimax/minimax-m2.7',
     inputPer1M: 0.30,
@@ -97,12 +97,6 @@ export const MODELS: Record<string, ModelConfig> = {
     cacheReadPer1M: 0.10,
   },
 };
-
-/**
- * Default model for Kortix-managed contexts (cron, memory, etc.)
- * that need a sensible default without user input.
- */
-export const DEFAULT_MODEL_ID = 'minimax/minimax-m2.7';
 
 // =============================================================================
 // Model Resolution

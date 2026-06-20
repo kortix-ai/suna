@@ -146,4 +146,3 @@ export function getFileUrl(_sandboxId: string | undefined, path: string): string
 export function getFilename(filepath: string): string {
     return filepath.split('/').pop() || 'file';
 }
-

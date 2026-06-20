@@ -9,20 +9,7 @@ import {
   normalizeHttp,
   normalizeMcp,
   normalizeOpenApi,
-  namespacePath,
-  riskForMethod,
 } from '../executor/normalize';
-
-describe('riskForMethod', () => {
-  test('GET/HEAD read, DELETE destructive, others write', () => {
-    expect(riskForMethod('get')).toBe('read');
-    expect(riskForMethod('HEAD')).toBe('read');
-    expect(riskForMethod('delete')).toBe('destructive');
-    expect(riskForMethod('post')).toBe('write');
-    expect(riskForMethod('PUT')).toBe('write');
-    expect(riskForMethod('patch')).toBe('write');
-  });
-});
 
 describe('normalizeOpenApi', () => {
   const doc = {
@@ -168,7 +155,7 @@ describe('normalizeHttp', () => {
   });
 });
 
-describe('dispatch + namespacing', () => {
+describe('dispatch', () => {
   test('normalize() routes by provider', () => {
     expect(normalize({ provider: 'openapi', doc: { paths: { '/x': { get: { responses: {} } } } } })).toHaveLength(1);
     const pd = normalize({ provider: 'pipedream', app: 'gmail', actions: [{ key: 'gmail-send-email', name: 'Send Email' }] });
@@ -208,10 +195,6 @@ describe('dispatch + namespacing', () => {
     // present even when the app exposes no curated actions at all
     const empty = normalize({ provider: 'pipedream', app: 'github', actions: [] });
     expect(empty.some((a) => a.path === 'request')).toBe(true);
-  });
-
-  test('namespacePath prefixes the connector slug', () => {
-    expect(namespacePath('stripe', 'charges.create')).toBe('stripe.charges.create');
   });
 
   test('duplicate relative paths get de-duped', () => {

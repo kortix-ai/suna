@@ -60,29 +60,29 @@ export function RatingDistributionChart() {
         ) : (
           <ChartContainer config={chartConfig} className="h-[250px] w-full">
             <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-              <XAxis 
-                type="number" 
-                tickLine={false} 
+              <XAxis
+                type="number"
+                tickLine={false}
                 axisLine={false}
                 fontSize={12}
                 className="text-muted-foreground"
               />
-              <YAxis 
-                type="category" 
-                dataKey="rating" 
-                tickLine={false} 
+              <YAxis
+                type="category"
+                dataKey="rating"
+                tickLine={false}
                 axisLine={false}
                 fontSize={12}
                 width={40}
                 tickFormatter={(value) => `${value}★`}
                 className="text-muted-foreground"
               />
-              <ChartTooltip 
+              <ChartTooltip
                 content={<ChartTooltipContent />}
                 formatter={(value) => [`${value} reviews`, 'Count']}
               />
-              <Bar 
-                dataKey="count" 
+              <Bar
+                dataKey="count"
                 radius={[0, 4, 4, 0]}
                 maxBarSize={24}
               >

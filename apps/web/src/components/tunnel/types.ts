@@ -82,8 +82,8 @@ export const SCOPE_REGISTRY: ScopeInfo[] = [
 
 export interface ExpiryOption {
   label: string;
-  value: string; 
-  ms: number | null; 
+  value: string;
+  ms: number | null;
 }
 
 export const EXPIRY_OPTIONS: ExpiryOption[] = [

@@ -19,16 +19,16 @@ function useGlowTexture() {
     canvas.height = 64;
     const context = canvas.getContext('2d');
     if (!context) return null;
-    
+
     const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
     gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
     gradient.addColorStop(0.2, 'rgba(74, 222, 128, 0.8)');
     gradient.addColorStop(0.5, 'rgba(74, 222, 128, 0.2)');
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    
+
     context.fillStyle = gradient;
     context.fillRect(0, 0, 64, 64);
-    
+
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
@@ -67,7 +67,7 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
       if (child instanceof THREE.Mesh && child.material) {
         child.castShadow = true;
         child.receiveShadow = true;
-        
+
         if (child.name.toLowerCase().includes('led')) {
           const ledMat = new THREE.MeshStandardMaterial({
             color: '#000000',
@@ -94,8 +94,8 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
           // Add Sprite for "Bloom" glow
           const existingGlow = child.getObjectByName('led_glow_sprite');
           if (!existingGlow && glowTexture) {
-            const spriteMat = new THREE.SpriteMaterial({ 
-              map: glowTexture, 
+            const spriteMat = new THREE.SpriteMaterial({
+              map: glowTexture,
               transparent: true,
               opacity: 0,
               blending: THREE.AdditiveBlending,
@@ -104,7 +104,7 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
             });
             const sprite = new THREE.Sprite(spriteMat);
             sprite.name = 'led_glow_sprite';
-            sprite.scale.set(0.15, 0.15, 1); 
+            sprite.scale.set(0.15, 0.15, 1);
             sprite.position.set(0, 0, 0.015);
             child.add(sprite);
           }
@@ -161,13 +161,13 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
 
     if (ledMatRef.current) {
       const targetIntensity = isOn ? 4.0 : 0;
-      
+
       ledMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(
         ledMatRef.current.emissiveIntensity,
         targetIntensity,
         delta * 5
       );
-      
+
       const ledMesh = scene.getObjectByName('led_real_light')?.parent;
       if (ledMesh) {
         const light = ledMesh.getObjectByName('led_real_light') as THREE.PointLight;
@@ -183,7 +183,7 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
         }
       }
     }
-    
+
     // Start front-on (LED visible), tilt to reveal top (Kortix engraving) on scroll
     const scrollRX = t * 0.55;
     const scrollRY = t * 1.8;
@@ -191,14 +191,14 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
 
     const mouseX = mouseRef.current.x;
     const mouseY = mouseRef.current.y;
-    
+
     const tRX = scrollRX - mouseY * 0.05;
     const tRY = scrollRY + mouseX * 0.05;
 
     const pos = groupRef.current.position;
     const rot = groupRef.current.rotation;
-    
-    const damp = (current: number, target: number, lambda: number) => 
+
+    const damp = (current: number, target: number, lambda: number) =>
       THREE.MathUtils.damp(current, target, lambda, delta);
 
     pos.y = damp(pos.y, scrollY, 4);
@@ -213,7 +213,7 @@ function KortixBoxModel({ progressRef, isOn, setIsOn }: KortixBoxModelProps) {
 
   return (
     <group ref={groupRef} scale={1.2} visible={ready}>
-      <group 
+      <group
         ref={innerRef}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
@@ -233,15 +233,15 @@ function CinematicLights({ progressRef, isOn }: { progressRef: MutableRefObject<
   useFrame((_, delta) => {
     const t = progressRef.current;
     const fade = Math.max(0, 1 - t * 2.0);
-    const damp = (current: number, target: number, lambda: number) => 
+    const damp = (current: number, target: number, lambda: number) =>
       THREE.MathUtils.damp(current, target, lambda, delta);
 
     if (keyRef.current) {
-      const keyX = 5 - t * 2; 
+      const keyX = 5 - t * 2;
       const keyZ = 5 + t * 2;
       keyRef.current.position.x = damp(keyRef.current.position.x, keyX, 2);
       keyRef.current.position.z = damp(keyRef.current.position.z, keyZ, 2);
-      
+
       const targetInt = isOn ? 2 : 5;
       keyRef.current.intensity = damp(keyRef.current.intensity, targetInt * fade, 2);
     }

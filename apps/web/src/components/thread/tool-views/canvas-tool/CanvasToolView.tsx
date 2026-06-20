@@ -44,9 +44,9 @@ function emitCanvasRefresh(canvasPath: string) {
   if (window.__pendingCanvasRefreshEvents) {
     window.__pendingCanvasRefreshEvents.set(canvasPath, Date.now());
   }
-  
-  const event = new CustomEvent('canvas-tool-updated', { 
-    detail: { canvasPath, timestamp: Date.now() } 
+
+  const event = new CustomEvent('canvas-tool-updated', {
+    detail: { canvasPath, timestamp: Date.now() }
   });
   window.dispatchEvent(event);
 }
@@ -91,7 +91,7 @@ export function CanvasToolView({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [refreshKey, setRefreshKey] = useState(0);
   const lastRefreshRef = useRef<number>(0);
-  
+
   const extractedData = toolCall ? extractCanvasData(
     toolCall, toolResult!, isSuccess, toolTimestamp, assistantTimestamp
   ) : null;
@@ -111,7 +111,7 @@ export function CanvasToolView({
   const resolvedCanvasPath = useMemo(() => {
     const path = canvasPath || args.canvas_path || (canvasName ? `canvases/${canvasName}.kanvax` : null);
     if (!path) return null;
-    
+
     // Normalize path to include /workspace if needed
     if (path.startsWith('/workspace/')) return path;
     if (path.startsWith('workspace/')) return '/' + path;
@@ -122,8 +122,8 @@ export function CanvasToolView({
   const sandboxId = project?.sandbox?.id;
 
   // Load canvas file content
-  const { 
-    data: canvasContentData, 
+  const {
+    data: canvasContentData,
     isLoading: isLoadingContent,
     refetch: refetchContent,
   } = useFileContent(
@@ -142,7 +142,7 @@ export function CanvasToolView({
   // Emit canvas refresh event when tool completes
   useEffect(() => {
     if (toolCallId && refreshedToolCalls.has(toolCallId)) return;
-    
+
     if (toolCallId && toolResult && actualIsSuccess && resolvedCanvasPath) {
       refreshedToolCalls.add(toolCallId);
       setTimeout(() => {
@@ -159,7 +159,7 @@ export function CanvasToolView({
   // Listen for canvas updates from other tool calls
   useEffect(() => {
     if (!resolvedCanvasPath) return;
-    
+
     const handleCanvasUpdate = (event: CustomEvent) => {
       const { canvasPath: updatedPath, timestamp } = event.detail;
       // Check if this update is for our canvas and is newer than last refresh
@@ -183,7 +183,7 @@ export function CanvasToolView({
       bgColor: 'bg-zinc-100 dark:bg-zinc-800',
       borderColor: 'border-zinc-200 dark:border-zinc-700',
     };
-    
+
     if (isExplicitCreateCanvas || isImageGenToCanvas) {
       return { icon: Sparkles, title: 'Canvas', ...baseStyle };
     }

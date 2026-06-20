@@ -23,12 +23,7 @@ export interface Capabilities {
   database: boolean;
   /** Platform-admin token for /v1/ops/* + requireAdmin routes. */
   admin: boolean;
-  /**
-   * Runtime: OWNER was successfully funded via the real subscribe flow (set after
-   * bootstrap). Billing-gated flows (sessions, paid subscribe) require this — it's
-   * only achievable on a target whose Stripe account has the configured paid prices
-   * (e.g. dev-api), so those flows skip on a local stack that lacks them.
-   */
+  /** The target OWNER account is already funded enough to create sessions. */
   funded: boolean;
 }
 
@@ -134,7 +129,7 @@ export function loadEnv(): Env {
     supabaseAdmin: supabaseServiceRoleKey != null,
     database: databaseUrl != null,
     admin: adminToken != null,
-    funded: false, // set true after a successful OWNER subscribe at bootstrap
+    funded: pick("KE2E_CAP_FUNDED") === "1",
   };
 
   cached = {
@@ -155,26 +150,6 @@ export function loadEnv(): Env {
     testEmailDomain: pick("KE2E_EMAIL_DOMAIN") || "ke2e.kortix.test",
   };
   return cached;
-}
-
-/**
- * Hard safety preflight before any destructive (data-creating) run.
- * Mirrors the getSafeTestDbUrl guard pattern: refuse to run against an env we
- * can't positively identify as a test/dev target, and require explicit confirm.
- */
-export function assertSafeForDestructive(env: Env): void {
-  if (env.target === "prod") {
-    throw new Error(
-      `Refusing to run destructive flows against a prod target (${env.apiUrl}). ` +
-        `Prod runs must use --smoke (read-mostly) only.`,
-    );
-  }
-  if (!env.liveConfirm) {
-    throw new Error(
-      "Destructive live flows require KE2E_LIVE_CONFIRM to be set (acknowledges that real " +
-        "accounts/projects/sandboxes will be created and torn down against the target).",
-    );
-  }
 }
 
 export function describeEnv(env: Env): string {

@@ -74,10 +74,6 @@ if (SENTRY_DSN) {
   console.log('[sentry] Disabled (BETTERSTACK_API_SENTRY_DSN not set)');
 }
 
-// ─── Re-export for use in error handlers ────────────────────────────────────
-
-export { Sentry };
-
 /**
  * Capture an exception with optional extra context.
  * No-op if Sentry is not configured.
@@ -106,14 +102,6 @@ export function setSentryUser(user: { id: string; email?: string; accountId?: st
   if (user.accountId) {
     Sentry.setTag('accountId', user.accountId);
   }
-}
-
-/**
- * Clear user context (e.g., on logout or between requests).
- */
-export function clearSentryUser(): void {
-  if (!SENTRY_DSN) return;
-  Sentry.setUser(null);
 }
 
 /**
