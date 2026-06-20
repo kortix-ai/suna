@@ -8,45 +8,52 @@ export function bedrockBaseUrl(): string {
   return `https://bedrock-runtime.${config.AWS_BEDROCK_REGION || 'us-west-2'}.amazonaws.com`;
 }
 
-export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  const pricing = {
+function managedPricing(managed: ManagedModel) {
+  return {
     inputPerMillion: managed.inputPerMillion,
     outputPerMillion: managed.outputPerMillion,
     cachedInputPerMillion: managed.cachedInputPerMillion,
   };
+}
 
-  // Kortix-cloud: managed models route to AWS Bedrock (the platform's own key).
-  if (config.AWS_BEDROCK_API_KEY) {
-    return {
-      provider: 'bedrock',
-      kind: 'bedrock',
-      baseUrl: bedrockBaseUrl(),
-      apiKey: config.AWS_BEDROCK_API_KEY,
-      billingMode: 'credits',
-      markup: llmPriceMarkup(),
-      resolvedModel: managed.bedrockModelId,
-      pricing,
-    };
-  }
+function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.AWS_BEDROCK_API_KEY) return null;
+  return {
+    provider: 'bedrock',
+    kind: 'bedrock',
+    baseUrl: bedrockBaseUrl(),
+    apiKey: config.AWS_BEDROCK_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.bedrockModelId,
+    pricing: managedPricing(managed),
+  };
+}
 
-  // Self-host / no Bedrock: fall back to OpenRouter for the managed catalog so a
-  // self-hoster with only OPENROUTER_API_KEY still gets the curated models.
-  if (config.OPENROUTER_API_KEY) {
-    return {
-      provider: 'openrouter',
-      kind: 'openai-compat',
-      baseUrl: config.OPENROUTER_API_URL,
-      apiKey: config.OPENROUTER_API_KEY,
-      billingMode: 'credits',
-      markup: llmPriceMarkup(),
-      appName: 'Kortix',
-      appReferer: config.KORTIX_URL,
-      resolvedModel: managed.openRouterModelId,
-      pricing,
-    };
-  }
+function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.OPENROUTER_API_KEY) return null;
+  return {
+    provider: 'openrouter',
+    kind: 'openai-compat',
+    baseUrl: config.OPENROUTER_API_URL,
+    apiKey: config.OPENROUTER_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    appName: 'Kortix',
+    appReferer: config.KORTIX_URL,
+    resolvedModel: managed.openRouterModelId,
+    pricing: managedPricing(managed),
+  };
+}
 
-  return null;
+export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
+  return [bedrockManagedDescriptor(managed), openRouterManagedDescriptor(managed)].filter(
+    (d): d is UpstreamDescriptor => d !== null,
+  );
+}
+
+export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  return managedCandidates(managed)[0] ?? null;
 }
 
 export function codexDescriptor(credential: CodexCredential, model: string): UpstreamDescriptor {

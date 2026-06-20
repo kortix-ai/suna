@@ -3,7 +3,7 @@ import { getManagedModel } from '@kortix/shared/llm-catalog';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
-import { codexDescriptor, managedDescriptor } from './descriptors';
+import { codexDescriptor, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 
@@ -43,8 +43,7 @@ export async function resolveCandidates(principal: AuthedPrincipal, model: strin
   // clear "model not available" error.
   const managed = getManagedModel(model);
   if (managed && config.LLM_GATEWAY_ENABLED) {
-    const descriptor = managedDescriptor(managed);
-    if (descriptor) return [descriptor];
+    return managedCandidates(managed);
   }
   return [];
 }

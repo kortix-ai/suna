@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -90,9 +91,34 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
       onError: (e) => toast.error(e instanceof Error ? e.message : 'Could not remove budget'),
     });
 
+  const alerts: { label: string; pct: number }[] = [];
+  if (projectBudget && projectBudget.limit_usd > 0 && projectSpend / projectBudget.limit_usd >= 0.8) {
+    alerts.push({ label: 'Project', pct: (projectSpend / projectBudget.limit_usd) * 100 });
+  }
+  for (const m of members) {
+    const b = memberBudget(m.user_id);
+    if (b && b.limit_usd > 0 && m.cost / b.limit_usd >= 0.8) {
+      alerts.push({ label: m.email ?? 'A member', pct: (m.cost / b.limit_usd) * 100 });
+    }
+  }
+  alerts.sort((a, b) => b.pct - a.pct);
+  const exceeded = alerts.some((a) => a.pct >= 100);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl space-y-4 p-5">
+        {alerts.length > 0 && (
+          <InfoBanner
+            tone={exceeded ? 'destructive' : 'warning'}
+            title={exceeded ? 'Budget exceeded' : 'Approaching budget'}
+          >
+            {alerts.map((a) => (
+              <div key={a.label} className="tabular-nums">
+                {a.label} — {a.pct >= 100 ? 'over limit' : `${Math.round(a.pct)}% used`}
+              </div>
+            ))}
+          </InfoBanner>
+        )}
         <SectionCard
           title="Project budget"
           description="Cap total spend across everyone in this project's gateway"
