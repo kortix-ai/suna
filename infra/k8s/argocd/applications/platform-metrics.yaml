@@ -99,6 +99,8 @@ spec:
               - devops.kortix.com
             annotations:
               alb.ingress.kubernetes.io/group.name: kortix-devops
+              alb.ingress.kubernetes.io/group.order: "10"
+              alb.ingress.kubernetes.io/healthcheck-path: /grafana/api/health
               alb.ingress.kubernetes.io/scheme: internet-facing
               alb.ingress.kubernetes.io/target-type: ip
               alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
