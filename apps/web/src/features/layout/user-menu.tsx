@@ -125,7 +125,7 @@ export function UserMenu({
       >
         <UserAvatar
           email={user.email}
-          name={currentAccount?.name}
+          name={user?.name}
           avatarUrl={user.avatar}
           size="sm"
           className="size-full rounded-sm"
