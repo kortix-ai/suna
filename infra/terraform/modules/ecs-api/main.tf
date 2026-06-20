@@ -292,7 +292,12 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [aws_lb_listener.http]
+  # Both listeners must exist before the service: the HTTPS listener (when
+  # enabled) is what associates the target group with the load balancer, and ECS
+  # rejects CreateService against a target group that has no associated LB.
+  # Without this, the service can race ahead of the HTTPS listener on a fresh
+  # apply ("target group ... does not have an associated load balancer").
+  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
   tags       = var.tags
 }
 
