@@ -159,9 +159,11 @@ section is the current source of truth.
   or remove the controller so desired-state matches reality. Needs apply.
 - **Legacy retirement** — `modules/api-host` (Lightsail) + the ECS `dev`/`prod`
   import path can be deleted once the EKS cutover is final (kills the drift).
-- **App-side instrumentation** — a Prometheus `/metrics` route + OTel SDK in the
-  API unblock ServiceMonitor scraping, API SLO burn-rate alerts, and traces into
-  Tempo. The backends are deployed and waiting.
+- **App-side instrumentation** — the Prometheus `/metrics` route is now
+  implemented (`lib/metrics.ts`), unblocking ServiceMonitor scraping + API SLO
+  burn-rate alerts. The **OTel SDK** for traces into Tempo is still pending.
+  Caveat: `/metrics` is served openly — restrict it at the edge (Cloudflare/ALB)
+  or add a bearer token before the prod cutover.
 - **SSO + gateway** — `devops.<domain>` ingress + OIDC; replaces the tunnels and
   the placeholder Grafana admin login.
 - **Real secret wiring** — replace the Slack/PagerDuty placeholders, the Velero
