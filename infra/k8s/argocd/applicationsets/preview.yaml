@@ -22,7 +22,7 @@ spec:
   sourceRepos:
     - https://github.com/kortix-ai/suna.git
   destinations:
-    - name: kortix-dev-eks
+    - server: https://kubernetes.default.svc
       namespace: 'kortix-pr-*'
   clusterResourceWhitelist:
     - group: ''
@@ -73,7 +73,7 @@ spec:
             - name: ingress.host
               value: 'pr-{{.number}}.preview-api.kortix.com'
       destination:
-        name: kortix-dev-eks
+        server: https://kubernetes.default.svc
         namespace: 'kortix-pr-{{.number}}'
       # ESO's admission webhook injects defaults into the ExternalSecret that git
       # doesn't carry — ignore them so previews aren't perpetually OutOfSync.
