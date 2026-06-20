@@ -89,7 +89,7 @@ spec:
           grafana.ini:
             server:
               domain: grafana.kortix.com
-              root_url: "%(protocol)s://%(domain)s/"
+              root_url: "https://%(domain)s/"
             auth:
               disable_login_form: false
             auth.github:
