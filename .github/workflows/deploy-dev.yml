@@ -41,7 +41,7 @@ jobs:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      api: ${{ steps.filter.outputs.api }}
+      api: ${{ steps.outputs.outputs.api }}
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
     steps:
@@ -58,6 +58,9 @@ jobs:
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
+              - 'infra/k8s/charts/kortix-api/**'
+              - 'infra/k8s/envs/dev/**'
+              - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -76,11 +79,17 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'VERSION'
+      - name: Normalize outputs
+        id: outputs
+        run: |
+          api="${{ steps.filter.outputs.api }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then api=true; fi
+          echo "api=$api" >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
           {
             echo "### Changes detected"
-            echo "- API: ${{ steps.filter.outputs.api }}"
+            echo "- API: ${{ steps.outputs.outputs.api }}"
             echo "- Frontend: ${{ steps.filter.outputs.frontend }}"
             echo "- CLI: ${{ steps.filter.outputs.cli }}"
           } >> "$GITHUB_STEP_SUMMARY"
