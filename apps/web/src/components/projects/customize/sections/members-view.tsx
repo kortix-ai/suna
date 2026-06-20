@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Loader2, Mail, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
+import { Check, Clock, Loader2, Mail, MessageSquare, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 
@@ -33,10 +33,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   getProject,
+  approveProjectAccessRequest,
   inviteProjectMember,
   isInviteSent,
+  listProjectAccessRequests,
   listPendingProjectInvites,
   listProjectAccess,
+  rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
@@ -130,6 +133,8 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
         </header>
 
         {canManage && <InviteMemberCard projectId={projectId} />}
+
+        {canManage && <PendingAccessRequestsCard projectId={projectId} />}
 
         {canManage && <PendingInvitesCard projectId={projectId} />}
 
@@ -896,6 +901,121 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
   );
 }
 
+function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ['project-access-requests', projectId];
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  const markBusy = (id: string) => setBusyIds((prev) => new Set(prev).add(id));
+  const clearBusy = (id: string) =>
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  const requestsQuery = useQuery({
+    queryKey,
+    queryFn: () => listProjectAccessRequests(projectId),
+    staleTime: 10_000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (requestId: string) =>
+      approveProjectAccessRequest(projectId, requestId, 'viewer'),
+    onMutate: (requestId) => markBusy(requestId),
+    onSettled: (_data, _error, requestId) => clearBusy(requestId),
+    onSuccess: (result) => {
+      toast.success(`${result.member.email ?? 'Requester'} can now view this project`);
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to approve request'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (requestId: string) => rejectProjectAccessRequest(projectId, requestId),
+    onMutate: (requestId) => markBusy(requestId),
+    onSettled: (_data, _error, requestId) => clearBusy(requestId),
+    onSuccess: () => {
+      toast.success('Access request declined');
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to decline request'),
+  });
+
+  const requests = requestsQuery.data?.requests ?? [];
+
+  if (!requestsQuery.isLoading && requests.length === 0) return null;
+
+  return (
+    <SectionCard
+      flush
+      title="Access requests"
+      description="People who opened a private project link and asked to join. Approving grants Viewer access; you can raise their role after."
+      count={requests.length}
+    >
+      {requestsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!requestsQuery.isLoading && requests.length > 0 && (
+        <List>
+          {requests.map((request) => {
+            const busy = busyIds.has(request.request_id);
+            return (
+              <ListRow
+                key={request.request_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400">
+                    <MessageSquare className="h-4 w-4" />
+                  </span>
+                }
+                title={request.requester_email}
+                subtitle={
+                  <InlineMeta>
+                    <span>Requested {formatDate(request.created_at)}</span>
+                    {request.message ? <span>“{request.message}”</span> : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => approveMutation.mutate(request.request_id)}
+                        className="gap-1.5"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => rejectMutation.mutate(request.request_id)}
+                        className="gap-1.5"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Decline
+                      </Button>
+                    </div>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
+  );
+}
+
 // ─── Pending invitations (non-Kortix users who haven't signed up yet) ─────
 //
 // Bridges the gap between "I invited foo@example.com" and "foo joined the
@@ -1136,7 +1256,7 @@ function ProjectGroupGrantsCard({
       return t !== 0 ? t : a.group_id.localeCompare(b.group_id);
     });
   }, [grantsQuery.data]);
-  const groups: AccountGroup[] = groupsQuery.data ?? [];
+  const groups: AccountGroup[] = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
   const available = useMemo(
     () => groups.filter((g) => !attachedIds.has(g.group_id)),
