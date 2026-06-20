@@ -27,15 +27,16 @@ spec:
         replicaCount: 2
         config:
           inCluster: true
-          # The local (prod-eu) cluster shows up under this name.
           inClusterContextName: prod-eks
-          # Federate the other clusters: dev + per-PR previews live on
-          # kortix-dev-eks (us-west-2). Their contexts come from a mounted
-          # kubeconfig (secret headlamp-kubeconfig) so one console = every env.
+          # No token prompt: authenticate every user as the pod's service account.
+          # SAFE ONLY because devops.kortix.com sits behind Cloudflare Access
+          # (GitHub IdP + @kortix.com) on a Cloudflare-IP-locked ALB — that gate IS
+          # Headlamp's authentication. The SA's RBAC (below) bounds what users can do.
+          unsafeUseServiceAccountToken: true
+          # Federate dev + per-PR previews (kortix-dev-eks, us-west-2) from a
+          # mounted kubeconfig so one console = every env.
           extraArgs:
             - -kubeconfig=/headlamp/clusters/config
-          # Phase 3 — SSO. Set issuer/clientID/secret and every login maps to a
-          # real person; RBAC then decides viewer vs admin. Left empty = token login.
           oidc:
             secret:
               create: false
