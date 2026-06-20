@@ -1,4 +1,4 @@
-import { CircuitOpenError } from '../errors';
+import { CircuitOpenError, defaultIsRetryable } from '../errors';
 import { withRetry, type RetryOptions } from './retry';
 
 export type BreakerState = 'closed' | 'open' | 'half-open';
@@ -72,7 +72,7 @@ export async function withResilience<T>(
     binding?.breaker.onSuccess();
     return result;
   } catch (error) {
-    binding?.breaker.onFailure();
+    if (defaultIsRetryable(error)) binding?.breaker.onFailure();
     throw error;
   }
 }
