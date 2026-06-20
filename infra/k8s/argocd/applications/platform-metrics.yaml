@@ -33,7 +33,50 @@ spec:
         kubeProxy:
           enabled: false
         alertmanager:
-          enabled: false
+          enabled: true
+          alertmanagerSpec:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp2
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 2Gi
+          config:
+            route:
+              group_by: ["namespace", "alertname"]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 4h
+              receiver: "null"
+              routes:
+                - matchers: ['severity = "critical"']
+                  receiver: pagerduty
+                  continue: true
+                - matchers: ['severity = "warning"']
+                  receiver: slack
+            receivers:
+              - name: "null"
+              - name: slack
+                slack_configs:
+                  - api_url: https://hooks.slack.com/services/REPLACE/ME/PLEASE
+                    channel: "#alerts"
+                    send_resolved: true
+              - name: pagerduty
+                pagerduty_configs:
+                  - routing_key: REPLACE_WITH_PAGERDUTY_ROUTING_KEY
+                    send_resolved: true
+            inhibit_rules:
+              - source_matchers: ['severity = "critical"']
+                target_matchers: ['severity = "warning"']
+                equal: ["namespace", "alertname"]
         grafana:
           enabled: true
           service:
