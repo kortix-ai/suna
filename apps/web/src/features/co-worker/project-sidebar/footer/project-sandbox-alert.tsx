@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
@@ -143,25 +144,22 @@ function SandboxAlertContent({
       </div>
 
       {failure && (
-        <div className="border-border/60 border-t px-4 py-3">
+        <div className="border-border/60 border-t px-2 py-3">
           <div className="mb-1.5 flex min-w-0 items-center gap-2">
-            <span className="border-destructive/20 bg-destructive/10 text-destructive shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium">
+            <Badge variant="destructive" size="sm">
               {CATEGORY_LABEL[failure.error_category ?? 'unknown'] ?? failure.error_category}
-            </span>
-            <code className="text-muted-foreground min-w-0 truncate font-mono text-xs">
-              {failure.slug}
-            </code>
+            </Badge>
             <Button
               variant="link"
               size="sm"
-              className="text-muted-foreground ml-auto h-auto shrink-0 p-0 text-xs"
+              className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
               onClick={() => openCustomize('sandbox')}
             >
               Details
             </Button>
           </div>
           {failure.error && (
-            <pre className="bg-muted/60 text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs break-words whitespace-pre-wrap">
+            <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs break-words whitespace-pre-wrap">
               {failure.error}
             </pre>
           )}
