@@ -25,6 +25,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -93,11 +94,12 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
 
 function ProjectAccessLoading() {
   return (
-    <div className="bg-background flex min-h-screen items-center justify-center">
-      <div className="text-muted-foreground flex items-center gap-2 text-sm">
-        <Loader2 className="size-4 animate-spin" />
-        Opening project…
-      </div>
+    <div
+      className="bg-background flex min-h-screen items-center justify-center"
+      role="status"
+      aria-label="Loading project"
+    >
+      <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
     </div>
   );
 }
