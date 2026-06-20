@@ -449,17 +449,31 @@ export function extractFilePath(content: string | object | undefined | null): st
 }
 
 // Helper to clean and process a file path string, handling escaped chars
+function decodeCommonEscapes(value: string): string {
+  return value.replace(/\\([ntr"'\\])/g, (_match, escape: string) => {
+    switch (escape) {
+      case 'n':
+        return '\n';
+      case 't':
+        return '\t';
+      case 'r':
+        return '';
+      case '"':
+        return '"';
+      case "'":
+        return "'";
+      case '\\':
+        return '\\';
+      default:
+        return escape;
+    }
+  });
+}
+
 function cleanFilePath(path: string): string {
   if (!path) return path;
 
-  // Handle escaped newlines and other escaped characters
-  return path
-    .replace(/\\n/g, '\n') // Replace \n with actual newlines
-    .replace(/\\t/g, '\t') // Replace \t with actual tabs
-    .replace(/\\r/g, '') // Remove \r
-    .replace(/\\\\/g, '\\') // Replace \\ with \
-    .replace(/\\"/g, '"') // Replace \" with "
-    .replace(/\\'/g, "'") // Replace \' with '
+  return decodeCommonEscapes(path)
     .split('\n')[0] // Take only the first line if multiline
     .trim(); // Trim whitespace
 }
@@ -580,13 +594,7 @@ function processFileContent(content: string | object): string {
     } catch (e) {
     }
   }
-  return content
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '')
-    .replace(/\\\\/g, '\\')
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'");
+  return decodeCommonEscapes(content);
 }
 
 // Helper to determine file type (for syntax highlighting)
@@ -1225,7 +1233,7 @@ export function normalizeContentToString(content: string | object | undefined | 
     return content;
   }
 
-  if (typeof content === 'object' && content !== null) {
+  if (typeof content === 'object') {
     try {
       // Handle case where content is a parsed object with content field (new format)
       if ('content' in content && typeof content.content === 'string') {

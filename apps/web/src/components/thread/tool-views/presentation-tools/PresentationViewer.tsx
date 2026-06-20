@@ -113,7 +113,7 @@ export function PresentationViewer({
   const parsedStreamingArgs = useMemo(() => {
     const args = toolCall?.arguments;
     if (!args) return {};
-    if (typeof args === 'object' && args !== null) return args as Record<string, unknown>;
+    if (typeof args === 'object') return args as Record<string, unknown>;
     if (typeof args !== 'string') return {};
 
     // args is now typed as string
@@ -861,7 +861,7 @@ export function PresentationViewer({
               />
             </div>
           </div>
-        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || (!toolResult && !isStreaming) ? (
+        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || !toolResult ? (
           // Loading state - show skeleton slides while:
           // 1. Fetching metadata, OR
           // 2. Have presentation name but no metadata yet, OR

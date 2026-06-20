@@ -43,28 +43,23 @@ export function formatMCPToolName(serverName: string, toolName: string): string 
   const formattedServerName = MCP_SERVER_NAMES[serverName.toLowerCase()] ||
     serverName.charAt(0).toUpperCase() + serverName.slice(1);
 
-  let formattedToolName = toolName;
-
-  if (toolName.includes('-')) {
-    formattedToolName = toolName
+  const formattedToolName = toolName.includes('-')
+    ? toolName
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else if (toolName.includes('_')) {
-    formattedToolName = toolName
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else if (/[a-z][A-Z]/.test(toolName)) {
-    // camelCase to Title Case
-    formattedToolName = toolName
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else {
-    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1);
-  }
+      .join(' ')
+    : toolName.includes('_')
+      ? toolName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+      : /[a-z][A-Z]/.test(toolName)
+        ? toolName
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+        : toolName.charAt(0).toUpperCase() + toolName.slice(1);
 
   return `${formattedServerName}: ${formattedToolName}`;
 }
