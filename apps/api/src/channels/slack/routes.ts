@@ -12,6 +12,8 @@ import { alreadyHandled } from './dedup';
 import { parseEnvelope, verifySlackSignature } from './util';
 import {
   dispatchSlackEvent,
+  handleAssistantThreadStarted,
+  maybeHandleDmCommand,
   maybePostChannelIntro,
   maybePostPicker,
   resolveOauthProject,
@@ -113,6 +115,18 @@ slackWebhookApp.openapi(
       envelope.event.user
     ) {
       await publishHomeForUser(teamId, envelope.event.user);
+      return;
+    }
+    // Opening the Kortix DM (AI-Assistant pane) → greet with the project picker.
+    // The channel/thread live on event.assistant_thread, NOT the top-level event,
+    // so resolveOauthProject can't see it — handle it before that branch.
+    if (envelope.event?.type === 'assistant_thread_started') {
+      await handleAssistantThreadStarted(teamId, envelope.event);
+      return;
+    }
+    // A `/kortix …` typed in a DM (the Assistant pane can't run real slash
+    // commands) arrives as a plain message — run it as the command it is.
+    if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event))) {
       return;
     }
     const resolution = await resolveOauthProject(teamId, envelope.event?.channel);
@@ -231,9 +245,13 @@ slackWebhookApp.openapi(
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
   if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
 
-  void dispatchSlackEvent(projectId, envelope).catch((err) =>
-    console.error('[slack-webhook] byo handler failed', err),
-  );
+  void (async () => {
+    const teamId = envelope.team_id ?? envelope.event?.team ?? '';
+    if (envelope.event && (await maybeHandleDmCommand(teamId, envelope.event, projectId))) {
+      return;
+    }
+    await dispatchSlackEvent(projectId, envelope);
+  })().catch((err) => console.error('[slack-webhook] byo handler failed', err));
   return c.json({ ok: true });
 },
 );

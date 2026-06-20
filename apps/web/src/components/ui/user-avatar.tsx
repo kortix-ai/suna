@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { chalkColors } from '@kortix/shared';
 import * as React from 'react';
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
@@ -37,6 +38,7 @@ export interface UserAvatarProps {
   size?: UserAvatarSize;
   className?: string;
   ring?: boolean;
+  variant?: 'default' | 'primary';
 }
 
 export function UserAvatar({
@@ -44,6 +46,7 @@ export function UserAvatar({
   name,
   avatarUrl,
   size = 'md',
+  variant = 'default',
   className,
   ring = false,
 }: UserAvatarProps) {
@@ -51,18 +54,30 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || ''),
     [name, email],
   );
+  const chalk = chalkColors(`${name}`);
 
   return (
     <Avatar
       className={cn(
-        SIZE_MAP[size],
-        'size-6 shrink-0 rounded-md bg-transparent font-medium tracking-tight',
+        SIZE_MAP[size] ?? 'size-8',
+        'shrink-0 overflow-hidden rounded-sm p-0 font-medium tracking-tight',
         ring && 'ring-background ring-2',
+        variant === 'primary' && 'bg-primary text-primary-foreground',
         className,
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
-      <AvatarFallback className="border-border text-background border bg-transparent font-semibold">
+      <AvatarFallback
+        className={cn(
+          'border-border text-foreground border bg-transparent font-semibold',
+          // variant === 'primary' && 'bg-primary text-primary-foreground',
+        )}
+        style={{
+          backgroundColor: chalk.background,
+          color: chalk.foreground,
+          borderColor: chalk.border,
+        }}
+      >
         {initials || '?'}
       </AvatarFallback>
     </Avatar>

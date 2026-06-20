@@ -53,6 +53,7 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
+  warmPoolPresence,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -164,6 +165,7 @@ export {
   executorProjectSettingsRelations,
   projectSecretGrantsRelations,
 } from './schema/kortix';
+export type { AgentGrant } from './schema/kortix';
 
 export type {
   TunnelMachineInfo,

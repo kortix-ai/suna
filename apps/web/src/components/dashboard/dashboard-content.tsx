@@ -2,32 +2,29 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useIsMobile } from '@/hooks/utils';
-import { toast } from '@/lib/toast';
-import { useSidebar } from '@/components/ui/sidebar';
-import {
-  useCreateOpenCodeSession,
-  useSendOpenCodeMessage,
-  useOpenCodeAgents,
-  useOpenCodeProviders,
-  useOpenCodeCommands,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
-import { type AttachedFile, SessionChatInput } from '@/components/session/session-chat-input';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { useOpenCodeLocal, formatModelString } from '@/hooks/opencode/use-opencode-local';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { NoInstanceState } from '@/components/dashboard/no-instance-state';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { Menu } from 'lucide-react';
+import { useSidebar } from '@/components/ui/sidebar';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import {
+  ComposerChatInput,
+  type ComposerOptions,
+} from '@/features/session/composer-chat-input';
+import type { AttachedFile } from '@/features/session/session-chat-input';
+import { formatModelString } from '@/hooks/opencode/use-opencode-local';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useSandbox } from '@/hooks/platform/use-sandbox';
+import { useIsMobile } from '@/hooks/utils';
+import { getClient } from '@/lib/opencode-sdk';
 import { playSound } from '@/lib/sounds';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { useServerStore } from '@/stores/server-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { Menu } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 // ============================================================================
 // Dashboard Content
@@ -44,7 +41,6 @@ export function DashboardContent() {
   const isMobile = useIsMobile();
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
-  const sendMessage = useSendOpenCodeMessage();
 
   // No-instance fallback: when the user has no sandbox at all, render the
   // claim/onboarding hero in-place instead of bouncing to a dedicated page.
@@ -67,17 +63,8 @@ export function DashboardContent() {
     window.history.replaceState({}, '', `${clean.pathname}${clean.search}`);
   }, [queryClient]);
 
-  // Data
-  const { data: agents } = useOpenCodeAgents();
-  const { data: providers } = useOpenCodeProviders();
-  const { data: commands } = useOpenCodeCommands();
-  const { data: config } = useOpenCodeConfig();
-
-  // Unified model/agent/variant state
-  const local = useOpenCodeLocal({ agents, providers, config });
-
   const handleSend = useCallback(
-    async (text: string, files?: AttachedFile[]) => {
+    async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if ((!text.trim() && !files?.length) || isSending) return;
 
       playSound('send');
@@ -100,15 +87,8 @@ export function DashboardContent() {
           usePendingFilesStore.getState().setPendingFiles(files);
         }
 
-        const options: Record<string, unknown> = {};
-        if (local.agent.current) options.agent = local.agent.current.name;
-        if (local.model.currentKey) options.model = local.model.currentKey;
-        if (local.model.variant.current) options.variant = local.model.variant.current;
         if (Object.keys(options).length > 0) {
-          sessionStorage.setItem(
-            `opencode_pending_options:${session.id}`,
-            JSON.stringify(options),
-          );
+          sessionStorage.setItem(`opencode_pending_options:${session.id}`, JSON.stringify(options));
         }
 
         openTabAndNavigate({
@@ -132,12 +112,11 @@ export function DashboardContent() {
         setIsSending(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
+    [isSending, createSession],
   );
 
   const handleCommand = useCallback(
-    async (cmd: Command, args?: string) => {
+    async (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       try {
         const session = await createSession.mutateAsync();
         openTabAndNavigate({
@@ -148,36 +127,39 @@ export function DashboardContent() {
           serverId: useServerStore.getState().activeServerId,
         });
         const client = getClient();
-        void client.session.command({
-          sessionID: session.id,
-          command: cmd.name,
-          arguments: args || '',
-          ...(local.agent.current && { agent: local.agent.current.name }),
-          ...(local.model.currentKey && { model: formatModelString(local.model.currentKey) }),
-          ...(local.model.variant.current && { variant: local.model.variant.current }),
-        } as any).catch(() => {
-          toast.warning('Failed to execute command');
-        });
+        void client.session
+          .command({
+            sessionID: session.id,
+            command: cmd.name,
+            arguments: args || '',
+            ...(options.agent && { agent: options.agent }),
+            ...(options.model && { model: formatModelString(options.model) }),
+            ...(options.variant && { variant: options.variant }),
+          } as any)
+          .catch(() => {
+            toast.warning('Failed to execute command');
+          });
       } catch {
         toast.warning('Failed to create session');
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
+    [createSession],
   );
 
   if (showNoInstanceState) {
     return (
-      <div className="relative flex flex-col h-full bg-background">
+      <div className="bg-background relative flex h-full flex-col">
         {isMobile && (
-          <div className="absolute left-3 top-1.5 z-10">
+          <div className="absolute top-1.5 left-3 z-10">
             <button
               onClick={() => {
                 setSidebarOpenState(true);
                 setOpenMobile(true);
               }}
-              className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-              aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line177JsxAttrAriaLabelOpenMenu')}
+              className="text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent -ml-1.5 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg transition-colors"
+              aria-label={tHardcodedUi.raw(
+                'componentsDashboardDashboardContent.line177JsxAttrAriaLabelOpenMenu',
+              )}
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -189,17 +171,19 @@ export function DashboardContent() {
   }
 
   return (
-    <div className="relative flex flex-col h-full bg-background">
+    <div className="bg-background relative flex h-full flex-col">
       {/* Mobile menu button */}
       {isMobile && (
-        <div className="absolute left-3 top-1.5 z-10">
+        <div className="absolute top-1.5 left-3 z-10">
           <button
             onClick={() => {
               setSidebarOpenState(true);
               setOpenMobile(true);
             }}
-            className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-            aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line199JsxAttrAriaLabelOpenMenu')}
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent -ml-1.5 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg transition-colors"
+            aria-label={tHardcodedUi.raw(
+              'componentsDashboardDashboardContent.line199JsxAttrAriaLabelOpenMenu',
+            )}
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -211,35 +195,25 @@ export function DashboardContent() {
           a separate opaque block. Emphasized-exit curve yanks it on send. */}
       <div
         className={cn(
-          "absolute inset-0 z-0 pointer-events-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]",
-          isSending ? "opacity-0 -translate-y-1" : "opacity-100 translate-y-0",
+          'pointer-events-none absolute inset-0 z-0 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]',
+          isSending ? '-translate-y-1 opacity-0' : 'translate-y-0 opacity-100',
         )}
       >
-        <div className="relative w-full h-full overflow-hidden">
+        <div className="relative h-full w-full overflow-hidden">
           <WallpaperBackground />
         </div>
       </div>
 
       {/* Spacer — keeps the input anchored to the bottom while the wallpaper
           is absolute-positioned behind. */}
-      <div className="relative flex-1 min-h-0 z-10" />
+      <div className="relative z-10 min-h-0 flex-1" />
 
       {/* Chat Input — pinned to bottom, overlays the wallpaper */}
-      <SessionChatInput
+      <ComposerChatInput
         onSend={handleSend}
+        onCommand={handleCommand}
         disabled={isSending}
         placeholder={tHardcodedUi.raw('componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything')}
-        agents={local.agent.list}
-        selectedAgent={local.agent.current?.name ?? null}
-        onAgentChange={(name) => local.agent.set(name ?? undefined)}
-        models={local.model.list}
-        selectedModel={local.model.currentKey ?? null}
-        onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-        variants={local.model.variant.list}
-        selectedVariant={local.model.variant.current ?? null}
-        onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
-        commands={commands || []}
-        onCommand={handleCommand}
       />
     </div>
   );

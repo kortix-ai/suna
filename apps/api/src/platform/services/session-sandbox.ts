@@ -46,6 +46,7 @@ import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
+import { resolveAgentGrant } from '../../projects/agents';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
 // Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
@@ -93,11 +94,50 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
   return message.includes('not found') || message.includes('does not exist');
 }
 
+/**
+ * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
+ * the per-session executor/CLI account token carrying it. Best-effort: a manifest
+ * hiccup yields a null grant (full access, capped at the user by the route's own
+ * role check) and a mint failure yields null — neither bricks a session. The
+ * grant is read from the default branch, so any `[[agents]]` change activates
+ * only via a merged CR.
+ */
+async function mintExecutorToken(opts: {
+  accountId: string;
+  userId: string;
+  projectId: string;
+  sandboxId: string;
+  agentName: string;
+  gitProject: GitBackedProject;
+}): Promise<string | null> {
+  const agentGrant = await resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+    console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
+    return null;
+  });
+  try {
+    const tok = await createAccountToken({
+      accountId: opts.accountId,
+      userId: opts.userId,
+      projectId: opts.projectId,
+      name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
+      agentGrant,
+    });
+    return tok.secretKey;
+  } catch (err) {
+    console.warn(`[session-sandbox] failed to mint executor token for ${opts.projectId}:`, err);
+    return null;
+  }
+}
+
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
   projectId: string;
   userId: string;
+  /** The selected agent's name (= projectSessions.agentName). Resolves the
+   *  per-agent grant stamped onto the session's account token. Defaults to
+   *  'default' when omitted (legacy callers). */
+  agentName?: string;
   provider?: ProviderName;
   serverType?: string;
   location?: string;
@@ -137,6 +177,13 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
+  /**
+   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
+   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
+   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
+   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
+   */
+  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -253,17 +300,16 @@ export async function provisionSessionSandbox(opts: {
       title: 'Sandbox Token',
       type: 'sandbox',
     }),
-    createAccountToken({
+    // Resolve the per-agent grant from kortix.toml's [[agents]] overlay and mint
+    // the executor/CLI account token carrying it (best-effort — see helper).
+    mintExecutorToken({
       accountId,
       userId,
       projectId,
-      name: `Executor Session ${sandboxId.slice(0, 8)}`,
-    })
-      .then((tok) => tok.secretKey)
-      .catch((err) => {
-        console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
-        return null as string | null;
-      }),
+      sandboxId,
+      agentName: opts.agentName ?? 'default',
+      gitProject: opts.gitProject,
+    }),
     accountEntitledToLlmGateway(accountId).catch((err) => {
       console.warn(
         `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,

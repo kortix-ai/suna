@@ -89,7 +89,9 @@ spec:
         failureThreshold: {{ .Values.health.startupFailureThreshold }}
       livenessProbe:
         httpGet:
-          path: {{ .Values.health.path }}
+          # Defaults to the shallow path; set health.livenessPath to /health/live
+          # (event-loop-lag aware) once a route-bearing image is live in the env.
+          path: {{ .Values.health.livenessPath | default .Values.health.path }}
           port: http
         periodSeconds: {{ .Values.health.livenessPeriodSeconds }}
         timeoutSeconds: 5

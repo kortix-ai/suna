@@ -2,6 +2,7 @@ import { and, eq, ne } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 
 export function getAuthCandidates(primary?: string): string[] {
   return Array.from(new Set([
@@ -43,6 +44,7 @@ export function buildCanonicalSandboxAuthCommand(
 ): string {
   const effectiveLlmKey = llmApiKey ?? token;
   const llmBaseUrl = `${apiUrl.replace(/\/+$/, '')}/llm`;
+  const frontendUrl = sandboxFrontendBaseUrl();
   return `python3 - <<PY
 from pathlib import Path
 import json
@@ -50,6 +52,7 @@ import json
 token = ${JSON.stringify(token)}
 llm_key = ${JSON.stringify(effectiveLlmKey)}
 api_url = ${JSON.stringify(apiUrl)}
+frontend_url = ${JSON.stringify(frontendUrl)}
 llm_base_url = ${JSON.stringify(llmBaseUrl)}
 billing_enabled = ${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'True' : 'False'}
 
@@ -63,6 +66,7 @@ values = {
     "INTERNAL_SERVICE_KEY": token,
     "TUNNEL_TOKEN": token,
     "KORTIX_API_URL": api_url,
+    "KORTIX_FRONTEND_URL": frontend_url,
     "TUNNEL_API_URL": api_url,
 }
 if billing_enabled:
@@ -87,6 +91,7 @@ data.update({
     "INTERNAL_SERVICE_KEY": token,
     "TUNNEL_TOKEN": token,
     "KORTIX_API_URL": api_url,
+    "KORTIX_FRONTEND_URL": frontend_url,
 })
 if billing_enabled:
     data["KORTIX_LLM_API_KEY"] = llm_key

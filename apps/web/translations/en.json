@@ -5519,12 +5519,15 @@
     "componentsSessionDiffDialog": {
       "line32JsxTextFileChanges": "File Changes"
     },
-    "componentsSessionExportTranscriptDialog": {
+    "componentsSessionExportTranscriptModal": {
       "line118JsxTextExportTranscript": "Export Transcript",
       "line121JsxTextExportThisSessionAsAMarkdownFileConfigure": "Export this session as a Markdown file. Configure what to include below.",
       "line131JsxTextAssistantMetadata": "Assistant metadata",
+      "line131JsxTextAssistantMetadataDescription": "Include agent name, model, and response duration in headers.",
       "line145JsxTextToolCallDetails": "Tool call details",
+      "line145JsxTextToolCallDetailsDescription": "Include tool inputs, outputs, and errors in collapsible sections.",
       "line159JsxTextThinkingReasoning": "Thinking / reasoning",
+      "line159JsxTextThinkingReasoningDescription": "Include the model's internal reasoning blocks as quoted text.",
       "line176JsxTextLoadingMessages": "Loading messages...",
       "line224JsxTextDownloadMd": "Download .md"
     },

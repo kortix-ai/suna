@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
 import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
+import { markSessionFresh } from '@/lib/fresh-sessions';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
@@ -305,6 +306,11 @@ export function useCreateOpenCodeSession() {
       // Surgically insert into cache — SSE session.created will also fire
       // but this gives instant UI feedback. Dedup to avoid duplicate keys.
       const session = newSession as Session;
+      // Mark this session as freshly created so the session page shows the
+      // instant typeable shell (not the resume loader). In-memory + synchronous,
+      // so it's reliably set before the create-then-navigate hop. Every create
+      // path flows through this hook; resumes don't.
+      markSessionFresh(session.id);
       queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
         if (!old) return [session];
         const idx = old.findIndex((s) => s.id === session.id);

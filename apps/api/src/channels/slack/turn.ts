@@ -340,11 +340,18 @@ export async function relayTurnStep(
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) {
-    console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
-      sessionId,
-      title: title.slice(0, 80),
-      finalized: handle?.finalized ?? null,
-    });
+    // A FINALIZED turn is the expected, benign tail: the agent emitted a `slack
+    // step` after `slack send` (or session.idle/error) had already closed the
+    // turn. Drop it silently — this used to flood the logs whenever duplicate
+    // concurrent runs raced, which the inbound-message exactly-once gate now
+    // prevents. A MISSING row is the only genuinely-interesting case (a step
+    // arrived with no turn ever opened), so keep a quiet signal just for that.
+    if (!handle) {
+      console.warn('[slack-webhook] turn-stream step dropped — no open turn for session', {
+        sessionId,
+        title: title.slice(0, 80),
+      });
+    }
     return false;
   }
 

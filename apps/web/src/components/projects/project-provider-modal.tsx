@@ -30,13 +30,6 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  SharingPicker,
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/components/projects/sharing-picker';
-import type { FlatModel } from '@/components/session/session-chat-input';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -58,7 +51,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import {
+  SharingPicker,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/features/co-worker/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import type { FlatModel } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import {
@@ -1094,8 +1094,7 @@ function ChatGptSubscriptionConnect({
         <div className="min-w-0 flex-1">
           <div className="text-foreground text-sm font-medium">ChatGPT Plus/Pro</div>
           <p className="text-muted-foreground mt-0.5 text-xs leading-5">
-            Sign in with your ChatGPT subscription. We save the login as an encrypted
-            project secret
+            Sign in with your ChatGPT subscription. We save the login as an encrypted project secret
             so future sessions reuse it.
           </p>
         </div>
@@ -1105,9 +1104,7 @@ function ChatGptSubscriptionConnect({
         <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
           {challenge ? (
             <>
-              <div className="text-foreground text-xs font-medium">
-                Authorize in the browser
-              </div>
+              <div className="text-foreground text-xs font-medium">Authorize in the browser</div>
               {challenge.url && (
                 <Button
                   type="button"
@@ -1122,7 +1119,9 @@ function ChatGptSubscriptionConnect({
               )}
               {challenge.code ? (
                 <div className="mt-3">
-                  <div className="text-muted-foreground text-xs">Enter this code on the auth page:</div>
+                  <div className="text-muted-foreground text-xs">
+                    Enter this code on the auth page:
+                  </div>
                   <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
                     {challenge.code}
                   </div>
@@ -1130,19 +1129,17 @@ function ChatGptSubscriptionConnect({
               ) : null}
             </>
           ) : (
-            <div className="text-xs font-medium text-foreground">Starting authorization…</div>
+            <div className="text-foreground text-xs font-medium">Starting authorization…</div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {challenge
-              ? 'Waiting for you to finish in the browser…'
-              : 'Connecting to OpenAI…'}
+            {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
           </div>
         </div>
       )}
 
       {phase === 'done' && (
-        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs text-foreground/80">
+        <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
           ChatGPT subscription connected.
         </div>
       )}
@@ -1156,13 +1153,7 @@ function ChatGptSubscriptionConnect({
 
       <div className="mt-3 flex flex-wrap gap-2">
         {waiting ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="px-4"
-            onClick={reset}
-          >
+          <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
             Cancel
           </Button>
         ) : (

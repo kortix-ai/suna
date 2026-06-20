@@ -5,7 +5,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
+  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none data-[state=open]:ring-0 focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
 
   {
     variants: {
@@ -21,10 +21,10 @@ const buttonVariants = cva(
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
-        secondary: 'bg-secondary  hover:bg-secondary    text-foreground ',
+        secondary: 'bg-secondary  hover:bg-secondary/90    text-foreground ',
         'secondary-outline': 'bg-secondary hover:bg-secondary border border-border text-foreground',
-        sidebar:
-          'text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-sm !px-2.5 !py-1.5 [&_svg]:!size-3.5',
+        sidebar: 'text-sidebar-foreground hover:bg-sidebar-accent/80 ',
+        background: 'bg-background hover:bg-background/90  text-foreground ',
         input: 'bg-input text-primary hover:bg-input',
         accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10 rounded-md',
         ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
@@ -57,7 +57,7 @@ const buttonVariants = cva(
         lg: 'h-10  px-6 has-[>svg]:px-4',
         xl: 'h-12  px-8 has-[>svg]:px-6',
         icon: 'size-8 ',
-        'icon-xs': 'size-6 ',
+        'icon-xs': 'size-6 rounded-sm ',
         'icon-sm': 'size-7 ',
         'icon-lg': 'size-10 ',
         'magic-sm': 'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',

@@ -2,9 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Check,
@@ -17,11 +16,11 @@ import {
   Plug,
   Plus,
   Search,
-  ShieldAlert,
   Trash2,
   User,
   Users,
 } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import { Badge } from '@/components/ui/badge';
@@ -43,15 +42,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
+import {
+  SharingPicker,
+  intentToSelection,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/features/co-worker/shared/sharing-picker';
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
@@ -62,13 +66,8 @@ import {
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
-import {
-  SharingPicker,
-  intentToSelection,
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/components/projects/sharing-picker';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
@@ -98,10 +97,9 @@ interface SecretRow {
   updatedAt: string | null;
 }
 
-
 export function SecretsView({ projectId }: { projectId: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={KeyRound} title="Secrets" />
       <ProjectSecretsBody projectId={projectId} />
     </div>
@@ -120,10 +118,18 @@ function ProjectSecretsBody({ projectId }: { projectId: string }) {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}</h2>
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto')}{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>
-            {' '}{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line109JsxTextManifestValuesAreEncryptedAtRest')}</p>
+          <h2 className="text-foreground text-base font-semibold">
+            {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
+          </h2>
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
+            )}{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">kortix.toml</code>{' '}
+            {tHardcodedUi.raw(
+              'appProjectsIdCustomizeSecretsPage.line109JsxTextManifestValuesAreEncryptedAtRest',
+            )}
+          </p>
         </header>
 
         {secretsQuery.isLoading ? (
@@ -146,7 +152,9 @@ function ProjectSecretsBody({ projectId }: { projectId: string }) {
  * about: (a) older API builds that returned a bare array, (b) malformed
  * manifests that left required/optional missing.
  */
-function normalizeResponse(data: ProjectSecretsResponse | ProjectSecret[] | null | undefined): ProjectSecretsResponse {
+function normalizeResponse(
+  data: ProjectSecretsResponse | ProjectSecret[] | null | undefined,
+): ProjectSecretsResponse {
   if (Array.isArray(data)) {
     return { items: data, required: [], optional: [] };
   }
@@ -174,7 +182,11 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
   const seen = new Set<string>();
   const rows: SecretRow[] = [];
 
-  const toRow = (name: string, requirement: Requirement, item: ProjectSecret | undefined): SecretRow => ({
+  const toRow = (
+    name: string,
+    requirement: Requirement,
+    item: ProjectSecret | undefined,
+  ): SecretRow => ({
     name,
     requirement,
     sharedConfigured: Boolean(item?.configured),
@@ -227,7 +239,9 @@ function SecretsCard({
 
   // "Missing" = the member has no effective value (shared not reaching them and
   // no active override of their own).
-  const missingRequired = allRows.filter((r) => r.requirement === 'required' && r.effectiveSource === 'none');
+  const missingRequired = allRows.filter(
+    (r) => r.requirement === 'required' && r.effectiveSource === 'none',
+  );
 
   const [search, setSearch] = useState('');
   const [providerModalOpen, setProviderModalOpen] = useState(false);
@@ -304,7 +318,11 @@ function SecretsCard({
           tone="warning"
           icon={AlertTriangle}
           title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set for you`}
-        >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line278JsxTextSessionsCanStillStartButTheAgentWill')}</InfoBanner>
+        >
+          {tHardcodedUi.raw(
+            'appProjectsIdCustomizeSecretsPage.line278JsxTextSessionsCanStillStartButTheAgentWill',
+          )}
+        </InfoBanner>
       )}
 
       <ProjectProviderModal
@@ -315,12 +333,14 @@ function SecretsCard({
 
       <SectionCard
         title="Secrets"
-        description={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession')}
+        description={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession',
+        )}
         flush
         action={
           <div className="flex items-center gap-2">
             <div className="relative w-44">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
               <Input
                 type="text"
                 value={search}
@@ -336,13 +356,17 @@ function SecretsCard({
                 className="h-8 gap-1.5 text-xs"
                 onClick={() => setProviderModalOpen(true)}
               >
-                <Plug className="h-3.5 w-3.5" />Connect LLM provider</Button>
+                <Plug className="h-3.5 w-3.5" />
+                Connect LLM provider
+              </Button>
             )}
             <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs"
-              onClick={canManage ? openSharedCreate : () => setPersonalDialog({ open: true, row: null })}
+              onClick={
+                canManage ? openSharedCreate : () => setPersonalDialog({ open: true, row: null })
+              }
             >
               <Plus className="h-3.5 w-3.5" />
               Add
@@ -430,10 +454,18 @@ function SecretListRow({
       <ListRow
         compact
         leading={<EntityAvatar icon={KeyRound} size="sm" />}
-        title={<code className="truncate font-mono text-xs leading-none text-foreground">{row.name}</code>}
-        badges={<Badge variant="outline" size="sm">Managed</Badge>}
+        title={
+          <code className="text-foreground truncate font-mono text-xs leading-none">
+            {row.name}
+          </code>
+        }
+        badges={
+          <Badge variant="outline" size="sm">
+            Managed
+          </Badge>
+        }
         subtitle={
-          <span className="truncate text-xs leading-none text-muted-foreground">
+          <span className="text-muted-foreground truncate text-xs leading-none">
             {row.sharedConfigured ? 'Managed by Kortix' : 'Not set'}
           </span>
         }
@@ -442,7 +474,7 @@ function SecretListRow({
   }
 
   const subtitle = (
-    <span className="truncate text-xs leading-none text-muted-foreground">
+    <span className="text-muted-foreground truncate text-xs leading-none">
       {row.effectiveSource === 'mine'
         ? 'Using your own value'
         : row.effectiveSource === 'shared'
@@ -457,14 +489,30 @@ function SecretListRow({
   return (
     <ListRow
       compact
-      className={cn(row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]')}
+      className={cn(
+        row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]',
+      )}
       leading={<EntityAvatar icon={row.effectiveSource === 'mine' ? User : KeyRound} size="sm" />}
-      title={<code className="truncate font-mono text-xs leading-none text-foreground">{row.name}</code>}
+      title={
+        <code className="text-foreground truncate font-mono text-xs leading-none">{row.name}</code>
+      }
       badges={
         <>
-          {row.requirement === 'required' && <Badge variant="warning" size="sm">Required</Badge>}
-          {row.requirement === 'optional' && <Badge variant="outline" size="sm">Optional</Badge>}
-          {scopeLabel && <Badge variant="outline" size="sm">{scopeLabel}</Badge>}
+          {row.requirement === 'required' && (
+            <Badge variant="warning" size="sm">
+              Required
+            </Badge>
+          )}
+          {row.requirement === 'optional' && (
+            <Badge variant="outline" size="sm">
+              Optional
+            </Badge>
+          )}
+          {scopeLabel && (
+            <Badge variant="outline" size="sm">
+              {scopeLabel}
+            </Badge>
+          )}
         </>
       }
       subtitle={subtitle}
@@ -474,7 +522,11 @@ function SecretListRow({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Secret actions">
-                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
@@ -525,7 +577,7 @@ function SourceChooser({
   // Picking "Shared" is only meaningful if a shared value can reach the member.
   const sharedAvailable = row.sharedConfigured && row.usableByMe;
   return (
-    <div className="flex items-center rounded-2xl border border-border/60 p-0.5">
+    <div className="border-border/60 flex items-center rounded-2xl border p-0.5">
       <button
         type="button"
         disabled={busy || !sharedAvailable}
@@ -533,10 +585,12 @@ function SourceChooser({
         className={cn(
           'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
           !usingMine && sharedAvailable
-            ? 'bg-muted font-medium text-foreground'
-            : 'text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground',
+            ? 'bg-muted text-foreground font-medium'
+            : 'text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground disabled:opacity-40',
         )}
-        title={sharedAvailable ? 'Use the shared project value' : 'No shared value available to you'}
+        title={
+          sharedAvailable ? 'Use the shared project value' : 'No shared value available to you'
+        }
       >
         <Users className="h-3 w-3" />
         Shared
@@ -547,7 +601,9 @@ function SourceChooser({
         onClick={() => onChoose('mine')}
         className={cn(
           'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
-          usingMine ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:text-foreground',
+          usingMine
+            ? 'bg-primary/10 text-primary font-medium'
+            : 'text-muted-foreground hover:text-foreground',
         )}
         title="Use your own value for this key"
       >
@@ -625,7 +681,11 @@ function SecretDialog({
     save.mutate();
   }
 
-  const title = !row ? 'Add shared secret' : row.sharedConfigured ? `Edit ${row.name}` : `Set ${row.name}`;
+  const title = !row
+    ? 'Add shared secret'
+    : row.sharedConfigured
+      ? `Edit ${row.name}`
+      : `Set ${row.name}`;
 
   return (
     <Dialog
@@ -638,13 +698,29 @@ function SecretDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>The shared project value, injected into every member’s sessions (subject to sharing).</DialogDescription>
+          <DialogDescription>
+            The shared project value, injected into every member’s sessions (subject to sharing).
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
           {/* Dummy fields absorb browser autofill so the real inputs below
               aren't treated as a username/password login form. */}
-          <input type="text" name="username" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden="true" />
-          <input type="password" name="password" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="new-password"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
           <div className="space-y-1.5">
             <Label htmlFor="secret-dialog-name">Name</Label>
             <Input
@@ -684,14 +760,21 @@ function SecretDialog({
               disabled={save.isPending}
             />
             {row?.sharedConfigured && (
-              <p className="text-xs text-muted-foreground">Leave blank to keep the current value.</p>
+              <p className="text-muted-foreground text-xs">
+                Leave blank to keep the current value.
+              </p>
             )}
           </div>
 
           <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} />
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={save.isPending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={save.isPending}
+            >
               Cancel
             </Button>
             <Button
@@ -771,17 +854,37 @@ function PersonalSecretDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!save.isPending && !next) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!save.isPending && !next) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{row ? `Your value for ${row.name}` : 'Add your own secret'}</DialogTitle>
           <DialogDescription>
-            A private value only you can use. It overrides the shared value in your own sessions and is never visible to other members.
+            A private value only you can use. It overrides the shared value in your own sessions and
+            is never visible to other members.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-          <input type="text" name="username" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden="true" />
-          <input type="password" name="password" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="new-password"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
           <div className="space-y-1.5">
             <Label htmlFor="personal-secret-name">Name</Label>
             <Input
@@ -851,9 +954,10 @@ function ManifestStatusBanner({
     // Manifest loaded and DECLARED envs — keep the banner subtle.
     if (envCount > 0) {
       return (
-        <InfoBanner tone="success" icon={Check}>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line675JsxTextManifestLoadedFrom')}{' '}
-          <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> ·{' '}
-          {envCount} env {envCount === 1 ? 'key' : 'keys'} declared
+        <InfoBanner tone="success" icon={Check}>
+          {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line675JsxTextManifestLoadedFrom')}{' '}
+          <code className="bg-background rounded px-1 py-0.5 font-mono">{path}</code> · {envCount}{' '}
+          env {envCount === 1 ? 'key' : 'keys'} declared
         </InfoBanner>
       );
     }
@@ -862,17 +966,36 @@ function ManifestStatusBanner({
       <InfoBanner
         tone="neutral"
         icon={FileWarning}
-        title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line686JsxAttrTitleManifestLoadedButNoEnvKeysDeclared')}
-      >{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextAddA')}<code className="rounded bg-background px-1 py-0.5 font-mono">[env]</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextSectionTo')}{' '}
-        <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> with{' '}
-        <code className="rounded bg-background px-1 py-0.5 font-mono">required</code> /{' '}
-        <code className="rounded bg-background px-1 py-0.5 font-mono">optional</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line692JsxTextStringArrays')}</InfoBanner>
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line686JsxAttrTitleManifestLoadedButNoEnvKeysDeclared',
+        )}
+      >
+        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextAddA')}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">[env]</code>
+        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextSectionTo')}{' '}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">{path}</code> with{' '}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">required</code> /{' '}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">optional</code>
+        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line692JsxTextStringArrays')}
+      </InfoBanner>
     );
   }
 
   if (status === 'missing') {
     return (
-      <InfoBanner tone="neutral" icon={FileWarning} title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line699JsxAttrTitleNoManifestFound')}>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextCommitA')}<code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextToThisProjectToDeclareRequiredOptionalEnv')}</InfoBanner>
+      <InfoBanner
+        tone="neutral"
+        icon={FileWarning}
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line699JsxAttrTitleNoManifestFound',
+        )}
+      >
+        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextCommitA')}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
+        {tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line700JsxTextToThisProjectToDeclareRequiredOptionalEnv',
+        )}
+      </InfoBanner>
     );
   }
 
@@ -882,13 +1005,20 @@ function ManifestStatusBanner({
         tone="warning"
         icon={AlertTriangle}
         title={
-          <>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line713JsxTextCouldnTRead')}{' '}
-            <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
+          <>
+            {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line713JsxTextCouldnTRead')}{' '}
+            <code className="bg-background rounded px-1 py-0.5 font-mono">
+              {path ?? 'kortix.toml'}
+            </code>
           </>
         }
       >
-        {error && <p className="opacity-80 break-all">{error}</p>}
-        <p className="opacity-80">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line720JsxTextCheckTheRepoIsReachableAndLinkedThrough')}</p>
+        {error && <p className="break-all opacity-80">{error}</p>}
+        <p className="opacity-80">
+          {tHardcodedUi.raw(
+            'appProjectsIdCustomizeSecretsPage.line720JsxTextCheckTheRepoIsReachableAndLinkedThrough',
+          )}
+        </p>
       </InfoBanner>
     );
   }
@@ -896,8 +1026,22 @@ function ManifestStatusBanner({
   // Old API build that doesn't return manifest_status. Tell the user — most
   // likely they just need to restart their API dev server.
   return (
-    <InfoBanner tone="warning" icon={AlertTriangle} title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line729JsxAttrTitleManifestStatusUnavailable')}>
-      <p className="opacity-80">{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line731JsxTextTheApiIsnTReturningManifestInfoRestart')}<code className="rounded bg-background px-1 py-0.5 font-mono">apps/api</code>{tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line732JsxTextToPickUpRequiredOptionalKeysFromYour')}<code className="rounded bg-background px-1 py-0.5 font-mono">kortix.toml</code>.
+    <InfoBanner
+      tone="warning"
+      icon={AlertTriangle}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSecretsPage.line729JsxAttrTitleManifestStatusUnavailable',
+      )}
+    >
+      <p className="opacity-80">
+        {tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line731JsxTextTheApiIsnTReturningManifestInfoRestart',
+        )}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">apps/api</code>
+        {tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line732JsxTextToPickUpRequiredOptionalKeysFromYour',
+        )}
+        <code className="bg-background rounded px-1 py-0.5 font-mono">kortix.toml</code>.
       </p>
     </InfoBanner>
   );
@@ -906,10 +1050,10 @@ function ManifestStatusBanner({
 function SecretsSkeleton() {
   return (
     <Card className="gap-0 overflow-hidden py-0">
-      <div className="border-b border-border/60 px-6 py-4">
+      <div className="border-border/60 border-b px-6 py-4">
         <Skeleton className="h-8 w-full" />
       </div>
-      <div className="divide-y divide-border/60">
+      <div className="divide-border/60 divide-y">
         {Array.from({ length: 4 }).map((_, index) => (
           <div key={index} className="flex items-center gap-3 px-6 py-3">
             <Skeleton className="h-4 w-[200px]" />
@@ -926,7 +1070,9 @@ function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => voi
   return (
     <InfoBanner
       tone="destructive"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
+      )}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry

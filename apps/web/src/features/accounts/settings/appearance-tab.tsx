@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
+import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
@@ -79,6 +79,7 @@ export function AppearanceTab() {
   );
   const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
   const [mounted, setMounted] = React.useState(false);
+  const isSessionTabsEnabled = !disableTabSelector;
 
   React.useEffect(() => {
     setMounted(true);
@@ -153,25 +154,26 @@ export function AppearanceTab() {
 
       <div className="flex flex-col space-y-2">
         <label className="text-muted-foreground text-sm font-medium">Layout</label>
-        <Item className="items-start p-0">
-          <ItemContent>
-            <ItemTitle id="session-tabs-title">
+        <Field orientation="horizontal">
+          <FieldContent
+            className="cursor-pointer"
+            onClick={() => setDisableTabSelector(isSessionTabsEnabled)}
+          >
+            <FieldTitle id="session-tabs-title">
               {tHardcodedUi.raw('componentsSettingsAppearanceTab.line180JsxTextSessionTabs')}
-            </ItemTitle>
-            <ItemDescription>
+            </FieldTitle>
+            <FieldDescription>
               {tHardcodedUi.raw(
                 'componentsSettingsAppearanceTab.line182JsxTextShowATabBarAtTheTopOf',
               )}
-            </ItemDescription>
-          </ItemContent>
-          <ItemActions>
-            <Switch
-              id="session-tabs-switch"
-              checked={!disableTabSelector}
-              onCheckedChange={(v) => setDisableTabSelector(!v)}
-            />
-          </ItemActions>
-        </Item>
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            id="session-tabs-switch"
+            checked={isSessionTabsEnabled}
+            onCheckedChange={(v) => setDisableTabSelector(!v)}
+          />
+        </Field>
       </div>
     </div>
   );

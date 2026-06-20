@@ -1,13 +1,12 @@
 'use client';
 
 import { parseCustomizeSection } from '@/lib/customize-sections';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import {
-  createProjectSession,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
-  prefetchSessionStart,
   searchProjectFiles,
   type KortixAccount,
   type KortixProject,
@@ -60,15 +59,15 @@ import { featureFlags } from '@/lib/feature-flags';
 import { toast } from '@/lib/toast';
 import { useServerStore } from '@/stores/server-store';
 
-import { CompactDialog } from '@/components/session/compact-dialog';
-import { DiffDialog } from '@/components/session/diff-dialog';
-import { flattenModels } from '@/components/session/session-chat-input';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
+import { DiffDialog } from '@/features/session/diff-dialog';
+import { CompactModal } from '@/features/session/header/compact-modal';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
 import {
@@ -726,22 +725,25 @@ export function CommandPalette() {
 
   // ── Handlers ──
 
-  const handleNewSession = useCallback(async () => {
+  const newSession = useNewProjectSession(projectId ?? undefined);
+  const handleNewSession = useCallback(() => {
+    if (projectId) {
+      // Optimistic + shared — instant shell (see useNewProjectSession). The tab
+      // bar picks the session up from the URL.
+      newSession({
+        onNavigate: (sessionId) => {
+          openProjectTab(projectId, sessionId);
+          close();
+        },
+      });
+      return;
+    }
+    // No project context → the OpenCode-session path (dashboard / global).
     if (isCreating) return;
     setIsCreating(true);
-    try {
-      if (projectId) {
-        // New project shell — create a project session and route to it; the
-        // tab bar picks it up from the URL.
-        const session = await createProjectSession(projectId);
-        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        prefetchSessionStart(queryClient, projectId, session.session_id);
-        openProjectTab(projectId, session.session_id);
-        router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
-        router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-        close();
-      } else {
-        const session = await createSession.mutateAsync();
+    createSession
+      .mutateAsync()
+      .then((session) => {
         openTabAndNavigate({
           id: session.id,
           title: 'New session',
@@ -752,13 +754,10 @@ export function CommandPalette() {
           window.dispatchEvent(new CustomEvent('focus-session-textarea'));
         });
         close();
-      }
-    } catch {
-      toast.error('Failed to create session');
-    } finally {
-      setIsCreating(false);
-    }
-  }, [isCreating, projectId, createSession, queryClient, openProjectTab, router, close]);
+      })
+      .catch(() => toast.error('Failed to create session'))
+      .finally(() => setIsCreating(false));
+  }, [isCreating, projectId, newSession, createSession, openProjectTab, close]);
 
   // ── Switch sub-pickers: select handlers + filtered lists ──
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
@@ -2014,7 +2013,7 @@ export function CommandPalette() {
 
       {currentSessionId && (
         <>
-          <CompactDialog
+          <CompactModal
             sessionId={currentSessionId}
             open={compactOpen}
             onOpenChange={setCompactOpen}

@@ -18,6 +18,7 @@ import {
   postMessage,
 } from '../slack-api';
 import { PICKER_TTL_MS } from './app';
+import { handleSlashCommand } from './commands';
 import {
   createOrJoinThreadSession,
   deliverSlackFollowUpToSession,
@@ -30,12 +31,14 @@ import {
   saveTurn,
   startTurn,
 } from './turn';
+import { claimInboundMessage, inboundMessageKey } from './dedup';
 import { stripMentions } from './util';
 import type {
   EventClass,
   ProjectResolution,
   SlackEnvelope,
   SlackEvent,
+  SlashResponse,
 } from './types';
 
 export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
@@ -94,7 +97,33 @@ export async function maybePostPicker(
   const isDm = event.type === 'message' && event.channel_type === 'im' && !event.subtype;
   if (!isMention && !isDm) return;
 
-  const channelId = event.channel;
+  await postProjectPicker({
+    teamId,
+    projectIds,
+    channelId: event.channel,
+    threadTs: event.thread_ts ?? event.ts,
+    isDm,
+    envelope,
+  });
+}
+
+// Post the "which project should this conversation use?" picker — the SAME
+// affordance, byte-for-byte, for channels (first @mention) and DMs (assistant
+// open / first message). It guarantees a binding row exists FIRST (projectId
+// null) so the pick handler, which UPDATEs by channelId, has a row to write
+// into, and keeps at most one live picker per channel. `envelope`, when present,
+// is replayed after the pick so the message that triggered it runs.
+async function postProjectPicker(opts: {
+  teamId: string;
+  projectIds: string[];
+  channelId: string;
+  threadTs?: string;
+  isDm: boolean;
+  envelope?: SlackEnvelope;
+}): Promise<void> {
+  const { teamId, projectIds, channelId, threadTs, isDm, envelope } = opts;
+  if (!channelId || projectIds.length === 0) return;
+
   const claimed = await db
     .insert(chatChannelBindings)
     .values({ platform: 'slack', workspaceId: teamId, channelId, projectId: null })
@@ -137,7 +166,7 @@ export async function maybePostPicker(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Which project should ${channelLabel} use?*\nAsked once — I'll remember it for this channel.`,
+        text: `*Which project should ${channelLabel} use?*\nAsked once — I'll remember it for ${isDm ? 'this DM' : 'this channel'}.`,
       },
     },
     {
@@ -155,14 +184,18 @@ export async function maybePostPicker(
   for (const [k, v] of pendingPickers) {
     if (v.expiry < now) pendingPickers.delete(k);
   }
-  pendingPickers.set(pickerId, { envelope, expiry: now + PICKER_TTL_MS });
+  // Only register a replay when a message triggered the picker. On DM/assistant
+  // open there's no message to replay — the pick just binds + confirms.
+  if (envelope) {
+    pendingPickers.set(pickerId, { envelope, expiry: now + PICKER_TTL_MS });
+  }
 
   const pickerTs = await postBlocks(
     token,
     channelId,
     `Which project should ${channelLabel} use?`,
     blocks,
-    event.thread_ts ?? event.ts,
+    threadTs,
   );
   if (pickerTs) {
     await db
@@ -176,6 +209,121 @@ export async function maybePostPicker(
         ),
       );
   }
+}
+
+// The AI-Assistant DM pane fires `assistant_thread_started` when a user opens
+// (or starts a new) Kortix DM — the natural "which project is this connected
+// to?" moment, exactly like inviting the bot to a channel. We run the IDENTICAL
+// resolution the channel path uses (resolveOauthProject): one project →
+// auto-bind silently, two+ unbound → the same project picker right in the
+// assistant thread, already bound → nothing. So a DM user gets the exact same
+// "choose your Kortix project" experience as a channel, without needing a slash
+// command (which the Assistant pane can't run).
+export async function handleAssistantThreadStarted(
+  teamId: string,
+  event: SlackEvent,
+): Promise<void> {
+  const channelId = event.assistant_thread?.channel_id;
+  const threadTs = event.assistant_thread?.thread_ts;
+  if (!teamId || !channelId) return;
+
+  const resolution = await resolveOauthProject(teamId, channelId);
+  if (resolution.kind === 'ambiguous') {
+    await postProjectPicker({ teamId, projectIds: resolution.projectIds, channelId, threadTs, isDm: true });
+  } else if (resolution.kind === 'pending') {
+    const installs = await db
+      .select({ projectId: chatInstalls.projectId })
+      .from(chatInstalls)
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    if (installs.length > 0) {
+      await postProjectPicker({ teamId, projectIds: installs.map((i) => i.projectId), channelId, threadTs, isDm: true });
+    }
+  }
+  // 'project' (bound, or auto-bound when there's exactly one) and 'none' →
+  // no picker, identical to a channel that's already resolved.
+}
+
+// ── DM slash-command fallback ────────────────────────────────────────────────
+// Slack does NOT run slash commands inside the AI-Assistant DM pane (or any
+// message thread) — typing `/kortix switch` there is delivered to us as a plain
+// `message.im` instead of a slash payload. So when a DM message IS a `/kortix …`
+// command, run it through the EXACT same handler the real slash endpoint uses
+// and post the reply right back into the DM. This makes the commands work in
+// DMs even though Slack's native slash mechanism can't reach the assistant pane.
+const DM_COMMAND_RE = /^\/(kortix(?:-dev)?)\b[ \t]*([\s\S]*)$/i;
+
+async function postSlashResponseToChannel(
+  token: string,
+  channelId: string,
+  threadTs: string | undefined,
+  resp: SlashResponse,
+): Promise<void> {
+  if (resp.blocks && resp.blocks.length > 0) {
+    await postBlocks(token, channelId, resp.text ?? 'Kortix', resp.blocks, threadTs);
+  } else if (resp.text) {
+    await postMessage(token, channelId, resp.text, threadTs);
+  }
+}
+
+export async function maybeHandleDmCommand(
+  teamId: string,
+  event: SlackEvent,
+  fallbackProjectId?: string,
+): Promise<boolean> {
+  if (event.type !== 'message' || event.channel_type !== 'im' || event.subtype || event.bot_id) {
+    return false;
+  }
+  const channelId = event.channel;
+  if (!channelId) return false;
+  const match = (event.text ?? '').trim().match(DM_COMMAND_RE);
+  if (!match) return false;
+
+  const command = `/${match[1].toLowerCase()}`;
+  const [subRaw, ...rest] = (match[2] ?? '').trim().split(/\s+/);
+  const sub = (subRaw || 'help').toLowerCase();
+  const arg = rest.join(' ').trim();
+  const threadTs = event.thread_ts ?? event.ts;
+
+  // A bot token to reply with: prefer the channel's bound project, else the BYO
+  // project this webhook serves, else any workspace install.
+  let tokenProjectId: string | null = null;
+  const [binding] = await db
+    .select({ projectId: chatChannelBindings.projectId })
+    .from(chatChannelBindings)
+    .where(and(
+      eq(chatChannelBindings.platform, 'slack'),
+      eq(chatChannelBindings.workspaceId, teamId),
+      eq(chatChannelBindings.channelId, channelId),
+    ))
+    .limit(1);
+  tokenProjectId = binding?.projectId ?? fallbackProjectId ?? null;
+  if (!tokenProjectId) {
+    const [install] = await db
+      .select({ projectId: chatInstalls.projectId })
+      .from(chatInstalls)
+      .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+      .limit(1);
+    tokenProjectId = install?.projectId ?? null;
+  }
+  if (!tokenProjectId) return true; // it WAS a command — just nothing to reply with
+  const token = await loadSlackTokenForProject(tokenProjectId);
+  if (!token) return true;
+
+  // The Assistant pane has no 3s ACK window and no response_url, so a command
+  // that normally defers (the agent list touches git) posts its result straight
+  // into the DM instead.
+  const deferredDeliver = (body: SlashResponse): Promise<void> =>
+    postSlashResponseToChannel(token, channelId, threadTs, body);
+
+  let resp: SlashResponse;
+  try {
+    resp = await handleSlashCommand(sub, arg, { teamId, channelId, command, deferredDeliver });
+  } catch (err) {
+    console.error('[slack-webhook] dm command failed', err);
+    resp = { response_type: 'ephemeral', text: 'Something went wrong handling that command. Try again in a moment.' };
+  }
+  await postSlashResponseToChannel(token, channelId, threadTs, resp);
+  return true;
 }
 
 async function classifyEvent(
@@ -284,6 +432,19 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
     }
     return;
   }
+
+  // Exactly-once gate. ONE user message can arrive as several events (Slack
+  // delivers a channel @mention as both `app_mention` and `message`), be retried
+  // with a fresh event_id, and fan across replicas — but every delivery shares the
+  // message's (team, channel, ts). Claim that identity atomically; if we lose, a
+  // sibling delivery already owns this message, so we must NOT run it again.
+  // This is what stops the "answered the same question 3×" class for good — a
+  // redelivery that lands after the thread→session mapping exists would otherwise
+  // be routed as a fresh follow-up and run the agent a second time.
+  // (Button clicks synthesize their own turns via spawnAgentTurn directly and are
+  // intentionally NOT gated here, so re-clicking an option still works.)
+  const msgKey = inboundMessageKey(teamId, event);
+  if (msgKey && !(await claimInboundMessage(msgKey))) return;
 
   await spawnAgentTurn(projectId, envelope, event);
 }

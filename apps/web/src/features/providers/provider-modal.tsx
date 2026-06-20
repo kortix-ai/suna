@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import type { FlatModel } from '@/components/session/session-chat-input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +32,7 @@ import {
   ProviderLogo,
 } from '@/features/providers/provider-branding';
 import { ProviderRowContent } from '@/features/providers/provider-card';
+import type { FlatModel } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { opencodeKeys, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
