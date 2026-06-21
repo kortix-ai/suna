@@ -43,6 +43,11 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
     .where(eq(chatTurnStreams.sessionId, sessionId))
     .limit(1);
   if (!row) return null;
+  const expiry = new Date(row.expiresAt).getTime();
+  if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+    await deleteTurn(sessionId);
+    return null;
+  }
   const token = await loadSlackTokenForProject(row.projectId);
   if (!token) return null;
   return rowToHandle(row, token);
