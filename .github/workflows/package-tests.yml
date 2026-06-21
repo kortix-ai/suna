@@ -3,6 +3,7 @@ name: Package Unit Tests
 on:
   pull_request:
     branches: [main, prod]
+  merge_group: # run in the GitHub merge queue (required checks)
   workflow_dispatch:
 
 concurrency:
