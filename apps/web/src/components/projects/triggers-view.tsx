@@ -328,7 +328,7 @@ export function TriggersView({ projectId, type }: { projectId: string; type: Tri
  * Project-wide trigger kill-switch. Presentational — the parent owns the
  * mutation. When paused, the platform auto-runs none of this project's triggers
  * (cron sweep skips it, inbound webhooks are acknowledged-but-ignored); manual
- * test-fires still work. The amber banner explains the silence so an operator
+ * test-fires still work. The warning banner explains the silence so an operator
  * doesn't wonder why scheduled runs stopped.
  */
 function TriggersActivationControl({
