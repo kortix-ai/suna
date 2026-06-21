@@ -80,8 +80,8 @@ for (const file of files) {
   const category = categoryFromPath(file);
   const mtime = statSync(file).mtimeMs;
 
-  for (const match of xml.matchAll(/<testcase\b([^>]*)>([\s\S]*?)<\/testcase>|<testcase\b([^/>]*)\/>/g)) {
-    const testAttrs = attrs(match[1] ?? match[3] ?? '');
+  for (const match of xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
+    const testAttrs = attrs(match[1] ?? '');
     const body = match[2] ?? '';
     const name = testAttrs.name || 'unnamed test';
     const className = testAttrs.classname || category;
@@ -91,8 +91,15 @@ for (const file of files) {
     const start = Math.max(0, Math.round(stop - durationMs));
     const id = stableId(category, className, name);
     const details = statusDetails(body);
+    const uuid = randomUUID();
+    const attachments = [];
+    if (details?.trace) {
+      const source = `${uuid}-failure.txt`;
+      writeFileSync(join(outDir, source), `${details.trace}\n`);
+      attachments.push({ name: 'Failure output', source, type: 'text/plain' });
+    }
     const result = {
-      uuid: randomUUID(),
+      uuid,
       historyId: id,
       testCaseId: id,
       name,
@@ -106,11 +113,40 @@ for (const file of files) {
         { name: 'suite', value: category },
         { name: 'package', value: className },
       ],
+      ...(attachments.length ? { attachments } : {}),
       ...(details ? { statusDetails: details } : {}),
     };
-    writeFileSync(join(outDir, `${result.uuid}-result.json`), `${JSON.stringify(result, null, 2)}\n`);
+    writeFileSync(join(outDir, `${uuid}-result.json`), `${JSON.stringify(result, null, 2)}\n`);
     written += 1;
   }
 }
+
+// Environments tab: surface the run context (commit, branch, target, runner).
+const env = process.env;
+const envLines = Object.entries({
+  Commit: (env.GITHUB_SHA ?? '').slice(0, 12),
+  Branch: env.GITHUB_REF_NAME ?? '',
+  Repository: env.GITHUB_REPOSITORY ?? '',
+  Run: env.GITHUB_RUN_ID ? `${env.GITHUB_REPOSITORY ?? ''}#${env.GITHUB_RUN_ID}` : '',
+  Target: env.QA_WEB_BASE_URL || env.KE2E_API_URL || 'local (no live target)',
+  Node: process.version,
+}).filter(([, v]) => v);
+if (envLines.length) {
+  writeFileSync(join(outDir, 'environment.properties'), `${envLines.map(([k, v]) => `${k}=${v}`).join('\n')}\n`);
+}
+
+// Defect categories: split real product failures from broken/skipped.
+writeFileSync(
+  join(outDir, 'categories.json'),
+  `${JSON.stringify(
+    [
+      { name: 'Product defects', matchedStatuses: ['failed'] },
+      { name: 'Broken tests', matchedStatuses: ['broken'] },
+      { name: 'Skipped', matchedStatuses: ['skipped'] },
+    ],
+    null,
+    2,
+  )}\n`,
+);
 
 console.log(`junit-to-allure: wrote ${written} result(s) from ${files.length} JUnit file(s) -> ${outDir}`);

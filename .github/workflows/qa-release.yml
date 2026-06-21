@@ -102,6 +102,8 @@ jobs:
 
       - name: Install test dependencies
         run: cd tests && bun install --frozen-lockfile
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: Install Playwright Chromium
         run: cd tests && npx playwright install --with-deps chromium
 
@@ -126,7 +128,12 @@ jobs:
       - name: Build report artifacts
         if: always()
         run: |
+          # Co-located bun:test unit suites (~830) into the report.
+          bash tests/scripts/collect-bun-junit.sh || true
+          # vitest/pact/bun JUnit -> allure-results.
           npm --prefix tests run allure:junit
+          # ke2e API flows (283) -> allure-results (native exporter, same dir).
+          npm --prefix tests run allure || true
           cd tests
           rm -rf test-results/allure-report
           npx allure generate test-results/allure-results -o test-results/allure-report || true
