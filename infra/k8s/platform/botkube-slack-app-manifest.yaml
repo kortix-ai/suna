@@ -1,0 +1,41 @@
+# Slack App manifest for Botkube (Socket Mode).
+#
+# Create the app: https://api.slack.com/apps -> Create New App -> From a manifest
+#   -> pick your workspace -> paste this file's contents -> Create.
+#
+# Then:
+#   1. Install to Workspace -> OAuth & Permissions -> copy the Bot User OAuth Token (xoxb-...)
+#   2. Basic Information -> App-Level Tokens -> Generate -> add scope connections:write
+#      -> copy the App token (xapp-...)
+#   3. In Slack, invite the bot to the channel:  /invite @Kortix Alerts   (in #ops)
+#
+# Hand the xoxb- + xapp- tokens to wire into the botkube-communication secret.
+display_information:
+  name: Alert Daddy
+  description: Kubernetes alerts + read-only kubectl from Slack, via Botkube.
+  background_color: "#0b1221"
+features:
+  bot_user:
+    display_name: Alert Daddy
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - groups:history
+      - groups:read
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+  interactivity:
+    is_enabled: true
+  socket_mode_enabled: true
+  org_deploy_enabled: false
