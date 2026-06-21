@@ -54,5 +54,21 @@ for f in $other_envs; do
   $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
 done
 
+# Keep the starter embedded snapshot in sync with the templates. The compiled
+# `kortix` binary ships packages/starter/src/embedded.generated.json, so a stale
+# snapshot would scaffold old files. If any template changed in this commit,
+# regenerate and re-stage so the commit always carries a fresh snapshot.
+starter_templates=$(git diff --cached --name-only --diff-filter=ACMRD \
+  | grep -E '^packages/starter/templates/' || true)
+if [ -n "$starter_templates" ]; then
+  if command -v bun >/dev/null 2>&1; then
+    ( cd packages/starter && bun run scripts/generate-embedded.ts >/dev/null 2>&1 ) || true
+    git add packages/starter/src/embedded.generated.json 2>/dev/null || true
+  else
+    echo "pre-commit: starter templates changed but 'bun' is not on PATH —" >&2
+    echo "  run 'cd packages/starter && bun run scripts/generate-embedded.ts' and re-stage." >&2
+  fi
+fi
+
 # (3) Backstop: block any remaining unencrypted, committable .env.
 exec $DX ext precommit
