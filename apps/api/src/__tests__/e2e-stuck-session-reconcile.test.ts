@@ -9,27 +9,46 @@
 //
 // Gated on TEST_DATABASE_URL + explicit confirmation + non-prod (it writes and
 // deletes rows). Skips otherwise — same harness contract as the other e2e suites.
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { eq, inArray } from 'drizzle-orm';
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
-  createDb,
+  type Database,
   accounts,
-  projects,
+  chatTurnStreams,
+  createDb,
   projectSessions,
+  projects,
   sessionSandboxes,
   usageEvents,
-  chatTurnStreams,
-  type Database,
 } from '@kortix/db';
-import { reconcileStuckActiveSessions } from '../projects/sandbox-reaper';
+import { eq, inArray } from 'drizzle-orm';
+import type { reconcileStuckActiveSessions as ReconcileStuckActiveSessionsFn } from '../projects/sandbox-reaper';
 
 const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
   process.env.TEST_DATABASE_URL &&
-  process.env.KORTIX_TEST_DB_CONFIRM === TEST_DB_CONFIRMATION &&
-  process.env.INTERNAL_KORTIX_ENV !== 'prod',
+    process.env.KORTIX_TEST_DB_CONFIRM === TEST_DB_CONFIRMATION &&
+    process.env.INTERNAL_KORTIX_ENV !== 'prod',
 );
 const describeWithDb = HAS_CONFIRMED_TEST_DB ? describe : describe.skip;
+
+let reconcileStuckActiveSessions: typeof ReconcileStuckActiveSessionsFn;
+let testDb: Database | null = null;
+
+function db(): Database {
+  if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is required');
+  if (!testDb) testDb = createDb(process.env.TEST_DATABASE_URL, { max: 1 });
+  return testDb;
+}
+
+if (HAS_CONFIRMED_TEST_DB) {
+  mock.module('../shared/db', () => ({ db: db() }));
+  mock.module('../config', () => ({
+    config: {
+      KORTIX_BILLING_INTERNAL_ENABLED: false,
+      KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+    },
+  }));
+}
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000009301';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009302';
@@ -45,16 +64,13 @@ const S_RECENT_USAGE_KEEP = 'keep-recent-usage';
 const S_INFLIGHT_TURN_KEEP = 'keep-inflight-turn';
 const S_WITHIN_TTL_KEEP = 'keep-within-ttl';
 const ALL_SESSIONS = [
-  S_NO_BOX_STUCK, S_STOPPED_BOX_STUCK, S_ACTIVE_BOX_KEEP,
-  S_RECENT_USAGE_KEEP, S_INFLIGHT_TURN_KEEP, S_WITHIN_TTL_KEEP,
+  S_NO_BOX_STUCK,
+  S_STOPPED_BOX_STUCK,
+  S_ACTIVE_BOX_KEEP,
+  S_RECENT_USAGE_KEEP,
+  S_INFLIGHT_TURN_KEEP,
+  S_WITHIN_TTL_KEEP,
 ];
-
-let testDb: Database | null = null;
-function db(): Database {
-  if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is required');
-  if (!testDb) testDb = createDb(process.env.TEST_DATABASE_URL, { max: 1 });
-  return testDb;
-}
 
 const minsAgo = (now: Date, m: number) => new Date(now.getTime() - m * 60_000);
 
@@ -62,7 +78,9 @@ async function cleanup() {
   const d = db();
   await d.delete(usageEvents).where(inArray(usageEvents.sessionId, ALL_SESSIONS));
   await d.delete(chatTurnStreams).where(inArray(chatTurnStreams.sessionId, ALL_SESSIONS));
-  await d.delete(sessionSandboxes).where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE]));
+  await d
+    .delete(sessionSandboxes)
+    .where(inArray(sessionSandboxes.sandboxId, [SANDBOX_STOPPED, SANDBOX_ACTIVE]));
   await d.delete(projectSessions).where(inArray(projectSessions.sessionId, ALL_SESSIONS));
   await d.delete(projects).where(eq(projects.projectId, PROJECT_ID));
   await d.delete(accounts).where(eq(accounts.accountId, ACCOUNT_ID));
@@ -73,13 +91,21 @@ async function seed(now: Date) {
   const old = minsAgo(now, 30); // older than the 15m auto-stop TTL → a candidate
   await d.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'Reaper E2E Acct' });
   await d.insert(projects).values({
-    projectId: PROJECT_ID, accountId: ACCOUNT_ID, name: 'Reaper E2E', repoUrl: 'https://example.test/r.git',
+    projectId: PROJECT_ID,
+    accountId: ACCOUNT_ID,
+    name: 'Reaper E2E',
+    repoUrl: 'https://example.test/r.git',
   });
 
   // One session row per case (distinct branch_name — unique per project).
   const sess = (sessionId: string, status: 'running' | 'provisioning', updatedAt: Date) => ({
-    sessionId, accountId: ACCOUNT_ID, projectId: PROJECT_ID, branchName: `b/${sessionId}`,
-    status, createdAt: minsAgo(now, 60), updatedAt,
+    sessionId,
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    branchName: `b/${sessionId}`,
+    status,
+    createdAt: minsAgo(now, 60),
+    updatedAt,
   });
   await d.insert(projectSessions).values([
     sess(S_NO_BOX_STUCK, 'running', old),
@@ -93,28 +119,61 @@ async function seed(now: Date) {
   // A stopped box behind one stuck session (must NOT keep it alive); an ACTIVE
   // box behind the keep session (the provider reaper owns that one).
   await d.insert(sessionSandboxes).values([
-    { sandboxId: SANDBOX_STOPPED, sessionId: S_STOPPED_BOX_STUCK, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'stopped', externalId: 'ext-stopped' },
-    { sandboxId: SANDBOX_ACTIVE, sessionId: S_ACTIVE_BOX_KEEP, accountId: ACCOUNT_ID, projectId: PROJECT_ID, status: 'active', externalId: 'ext-active' },
+    {
+      sandboxId: SANDBOX_STOPPED,
+      sessionId: S_STOPPED_BOX_STUCK,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      status: 'stopped',
+      externalId: 'ext-stopped',
+    },
+    {
+      sandboxId: SANDBOX_ACTIVE,
+      sessionId: S_ACTIVE_BOX_KEEP,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      status: 'active',
+      externalId: 'ext-active',
+    },
   ]);
 
   // Recent LLM usage → meaningful activity within the TTL window.
   await d.insert(usageEvents).values({
-    accountId: ACCOUNT_ID, projectId: PROJECT_ID, sessionId: S_RECENT_USAGE_KEEP,
-    provider: 'kortix', model: 'test', route: 'chat', createdAt: minsAgo(now, 2),
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    sessionId: S_RECENT_USAGE_KEEP,
+    provider: 'kortix',
+    model: 'test',
+    route: 'chat',
+    createdAt: minsAgo(now, 2),
   });
   // An in-flight (unfinalized) turn → never reap.
   await d.insert(chatTurnStreams).values({
-    sessionId: S_INFLIGHT_TURN_KEEP, projectId: PROJECT_ID, teamId: 't', channel: 'c',
-    triggerTs: '1', finalized: false, originatingEvent: {}, expiresAt: minsAgo(now, -60),
+    sessionId: S_INFLIGHT_TURN_KEEP,
+    projectId: PROJECT_ID,
+    teamId: 't',
+    channel: 'c',
+    triggerTs: '1',
+    finalized: false,
+    originatingEvent: {},
+    expiresAt: minsAgo(now, -60),
   });
 }
 
 async function statusOf(sessionId: string): Promise<string> {
-  const [row] = await db().select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+  const [row] = await db()
+    .select({ status: projectSessions.status })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
   return row?.status ?? '<missing>';
 }
 
 describeWithDb('reconcileStuckActiveSessions (real DB)', () => {
+  beforeAll(async () => {
+    ({ reconcileStuckActiveSessions } = await import('../projects/sandbox-reaper'));
+  });
+
   beforeEach(cleanup);
   afterEach(cleanup);
 
