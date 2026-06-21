@@ -14,7 +14,7 @@ flow("TRG-1", { domain: "triggers", routes: ["GET /v1/projects/:projectId/trigge
 
 flow(
   "TRG-2",
-  { domain: "triggers", serial: true, routes: ["POST /v1/projects/:projectId/triggers"] },
+  { domain: "triggers", routes: ["POST /v1/projects/:projectId/triggers"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("create a cron trigger → 201", async () => {
@@ -38,7 +38,7 @@ flow(
 
 flow(
   "TRG-3",
-  { domain: "triggers", serial: true, routes: ["PATCH /v1/projects/:projectId/triggers/:slug"] },
+  { domain: "triggers", routes: ["PATCH /v1/projects/:projectId/triggers/:slug"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.client.as(ctx.P.OWNER).post(
@@ -57,7 +57,7 @@ flow(
 
 flow(
   "TRG-4",
-  { domain: "triggers", serial: true, routes: ["DELETE /v1/projects/:projectId/triggers/:slug"] },
+  { domain: "triggers", routes: ["DELETE /v1/projects/:projectId/triggers/:slug"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.client.as(ctx.P.OWNER).post(

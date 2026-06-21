@@ -51,7 +51,6 @@ flow(
   "SEC-4",
   {
     domain: "security",
-    serial: true,
     routes: [
       "GET /v1/projects/:projectId/secrets",
       "POST /v1/projects/:projectId/secrets",
@@ -195,7 +194,6 @@ flow(
   "SEC-C",
   {
     domain: "security",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId",
       "PATCH /v1/accounts/:accountId",
@@ -254,7 +252,6 @@ flow(
   "SEC-D",
   {
     domain: "security",
-    serial: true,
     routes: [
       "POST /v1/projects/:projectId/cli-token",
       "DELETE /v1/projects/:projectId/cli-token/:tokenId",
@@ -476,7 +473,6 @@ flow(
   "SEC-H",
   {
     domain: "security",
-    serial: true,
     routes: [
       "POST /v1/accounts/:accountId/iam/groups",
       "GET /v1/accounts/:accountId/audit",

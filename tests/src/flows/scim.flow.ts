@@ -35,7 +35,6 @@ flow(
     domain: "scim",
     tags: ["smoke"],
     routes: ["GET /scim/v2/accounts/:accountId/ServiceProviderConfig"],
-    serial: true,
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -78,7 +77,6 @@ flow(
       "PATCH /scim/v2/accounts/:accountId/Users/:userId",
       "DELETE /scim/v2/accounts/:accountId/Users/:userId",
     ],
-    serial: true,
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -168,7 +166,6 @@ flow(
       "PATCH /scim/v2/accounts/:accountId/Groups/:groupId",
       "DELETE /scim/v2/accounts/:accountId/Groups/:groupId",
     ],
-    serial: true,
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -254,7 +251,6 @@ flow(
   {
     domain: "scim",
     routes: ["GET /scim/v2/accounts/:accountId/ServiceProviderConfig"],
-    serial: true,
   },
   async (ctx) => {
     // Cross-tenant: a SCIM token minted for team A must not work against team B's

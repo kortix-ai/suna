@@ -14,6 +14,7 @@ let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let stuckSessions: Array<{ sessionId: string }> = [];
 
 /** A thenable that also exposes `.limit()` so both `await where()` (turn query)
  *  and `where().limit()` (candidate query) resolve to the same rows. */
@@ -45,15 +46,29 @@ mock.module('../shared/db', () => ({
                 ? activeTurns
                 : table === usageEvents
                   ? usageRows
-                  : [],
+                  : table === projectSessions
+                    ? stuckSessions
+                    : [],
             table === usageEvents && throwOnUsageLookup,
           ),
       }),
     }),
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({
-        where: async () => {
-          updateCalls.push({ table, updates });
+        // Awaitable (reconcileRowToStopped) AND chainable to `.returning()`
+        // (reconcileStuckActiveSessions). Records exactly one update call either way.
+        where: () => {
+          const record = () => updateCalls.push({ table, updates });
+          return {
+            then: (resolve: (v: unknown) => void) => {
+              record();
+              resolve(undefined);
+            },
+            returning: async () => {
+              record();
+              return [{ sessionId: 'updated' }];
+            },
+          };
         },
       }),
     }),
@@ -87,7 +102,7 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
-const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes } = await import('./sandbox-reaper');
+const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes, reconcileStuckActiveSessions } = await import('./sandbox-reaper');
 
 const TTL = 15 * 60_000;
 
@@ -104,6 +119,7 @@ beforeEach(() => {
   pausedCompute = [];
   endedCompute = [];
   updateCalls = [];
+  stuckSessions = [];
 });
 
 // ── pure decision matrix (the money + UX correctness lives here) ─────────────
@@ -385,5 +401,42 @@ describe('reapOrphanProviderBoxes', () => {
       if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
       else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;
     }
+  });
+});
+
+describe('reconcileStuckActiveSessions', () => {
+  test('no candidates → no-op', async () => {
+    stuckSessions = [];
+    const result = await reconcileStuckActiveSessions(new Date());
+    expect(result.candidates).toBe(0);
+    expect(result.reconciled).toBe(0);
+    expect(updateCalls.length).toBe(0);
+    expect(pausedCompute.length).toBe(0);
+  });
+
+  test('stuck session with a dead box → close billing + flip session to stopped', async () => {
+    stuckSessions = [{ sessionId: 's1' }];
+    // per-session sandbox lookup resolves to the sessionSandboxes mock (candidates)
+    candidates = [{ sandboxId: 'sb1' }];
+    const result = await reconcileStuckActiveSessions(new Date());
+    expect(result.candidates).toBe(1);
+    expect(result.reconciled).toBe(1);
+    expect(result.billingClosed).toBe(1);
+    expect(pausedCompute).toContain('sb1');
+    // exactly one project_sessions row flipped to 'stopped'
+    const sessionUpdates = updateCalls.filter((u) => u.table === projectSessions);
+    expect(sessionUpdates.length).toBe(1);
+    expect(sessionUpdates[0].updates.status).toBe('stopped');
+  });
+
+  test('stuck session with no sandbox row → still flips to stopped, nothing billed', async () => {
+    stuckSessions = [{ sessionId: 's2' }];
+    candidates = []; // no sandbox rows for this session
+    const result = await reconcileStuckActiveSessions(new Date());
+    expect(result.candidates).toBe(1);
+    expect(result.reconciled).toBe(1);
+    expect(result.billingClosed).toBe(0);
+    expect(pausedCompute.length).toBe(0);
+    expect(updateCalls.filter((u) => u.table === projectSessions).length).toBe(1);
   });
 });

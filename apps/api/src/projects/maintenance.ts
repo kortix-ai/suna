@@ -9,6 +9,7 @@ import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import {
   reapAndReconcileSandboxes,
   reconcileOrphanComputeSessions,
+  reconcileStuckActiveSessions,
   reapOrphanProviderBoxes,
   countBillingInvariantViolations,
 } from './sandbox-reaper';
@@ -144,7 +145,7 @@ async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, orphanCompute, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
+    const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
       reapAndReconcileSandboxes().catch((err) => {
@@ -156,6 +157,15 @@ async function runProjectMaintenance(): Promise<void> {
       reconcileOrphanComputeSessions().catch((err) => {
         console.warn('[project-maintenance] orphan-compute reconcile failed:', err instanceof Error ? err.message : err);
         return { checked: 0, closed: 0, errors: 0 };
+      }),
+      // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
+      // status with no running box behind them — invisible to the provider reaper
+      // above (which keys off an `active` sandbox row) and the real reason an
+      // account's concurrent-session cap fills up and wedges Slack. DB-only, so
+      // it drains the cap even while Daytona is throttling the box reaper.
+      reconcileStuckActiveSessions().catch((err) => {
+        console.warn('[project-maintenance] stuck-session reconcile failed:', err instanceof Error ? err.message : err);
+        return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
@@ -193,12 +203,13 @@ async function runProjectMaintenance(): Promise<void> {
     ]);
     if (
       idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
+      stuckSessions.reconciled || stuckSessions.errors ||
       orphanBoxes.stopped || orphanBoxes.errors ||
       branches.deleted || branches.errors ||
       computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
       snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, orphanCompute, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+      console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc });
     }
 
     // Invariant monitor: in steady state, every `active` compute session has a

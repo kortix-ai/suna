@@ -28,12 +28,13 @@
  * invariant rather than a best-effort.
  */
 
-import { and, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
 
 export const REAP_BATCH_SIZE = 100;
@@ -446,6 +447,89 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
   };
   await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, rows.length) }, worker));
   return { checked: rows.length, closed, errors };
+}
+
+const STUCK_SESSION_BATCH = 200;
+
+/**
+ * Reconcile project_sessions stuck in an ACTIVE status that have no genuinely-
+ * running box behind them. THE leak that wedged Slack ("I'm queued behind other
+ * project work") and 429'd new sessions: a session counts against the account's
+ * concurrent-session cap while its status is in ACTIVE_SESSION_STATUSES, but the
+ * provider reaper (reapAndReconcileSandboxes) only ever visits sessions whose
+ * `session_sandboxes` row is still `active`. A session left `running` /
+ * `provisioning` / `queued` / `branching` after its box was stopped or removed
+ * — a missed stop webhook, a getStatus throttled to 'unknown', a continueSession
+ * that flipped stopped→running then failed to deliver, or a create that never
+ * got a box — is STRUCTURALLY INVISIBLE to that pass and so eats a cap slot
+ * forever. Such sessions accreted to 200+ on a single account and blocked it.
+ *
+ * This pass closes that gap from the session side. It is DB-ONLY (no provider
+ * round-trip), so it is immune to the Daytona throttling that starves the box
+ * reaper, and it acts ONLY on sessions that are provably idle:
+ *   - status ∈ ACTIVE_SESSION_STATUSES and untouched for longer than the auto-
+ *     stop TTL (so a healthy in-flight provision/branch is never touched),
+ *   - NO `active` session_sandboxes row (a live box is the provider reaper's job),
+ *   - NO in-flight turn (unfinalized chat_turn_stream), and
+ *   - NO LLM usage within the TTL window.
+ * For each it settles + closes any lingering billing window (DB-only) and flips
+ * the session to `stopped` — resumable: the next open reprovisions a fresh box.
+ * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
+ */
+export async function reconcileStuckActiveSessions(
+  now = new Date(),
+): Promise<{ candidates: number; reconciled: number; billingClosed: number; errors: number }> {
+  const cutoff = new Date(now.getTime() - autoStopTtlMs());
+  const { chatTurnStreams, usageEvents } = await import('@kortix/db');
+
+  const candidates = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        lt(projectSessions.updatedAt, cutoff),
+        sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
+        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
+      ),
+    )
+    .limit(STUCK_SESSION_BATCH);
+
+  const result = { candidates: candidates.length, reconciled: 0, billingClosed: 0, errors: 0 };
+  if (candidates.length === 0) return result;
+
+  for (const c of candidates) {
+    try {
+      // Close any lingering billing window for the session's (non-active) box(es).
+      // pauseComputeSession is DB-only + idempotent (no-op when no row is open).
+      const sbs = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.sessionId, c.sessionId));
+      for (const sb of sbs) {
+        await pauseComputeSession(sb.sandboxId).catch((err) =>
+          console.warn(`[reaper] stuck-session pauseComputeSession failed for ${sb.sandboxId}:`, err instanceof Error ? err.message : err),
+        );
+        result.billingClosed += 1;
+      }
+      // Re-check the status in the UPDATE predicate so we never clobber a session
+      // a real open transitioned out from under us between SELECT and UPDATE.
+      const updated = await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: now })
+        .where(and(
+          eq(projectSessions.sessionId, c.sessionId),
+          inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        ))
+        .returning({ sessionId: projectSessions.sessionId });
+      if (updated.length) result.reconciled += 1;
+    } catch (err) {
+      result.errors += 1;
+      console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });
+    }
+  }
+  return result;
 }
 
 /**

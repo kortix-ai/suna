@@ -47,7 +47,11 @@ jobs:
             echo "::notice::QA_WEB_BASE_URL/E2E_BASE_URL is not set; skipping browser regression."
             exit 0
           fi
-          make e2e visual a11y
+          make e2e a11y
+          # Visual is advisory: it snapshots the live target (no deterministic
+          # per-platform baselines), so a pixel diff shouldn't red-gate qa-main.
+          # It still runs and its results land in the report.
+          make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -64,6 +68,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install workspace dependencies
         run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: Run migration tests

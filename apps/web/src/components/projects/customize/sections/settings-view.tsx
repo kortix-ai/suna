@@ -11,6 +11,7 @@ import {
   FlaskConical,
   GitBranch,
   Loader2,
+  Pause,
   Settings,
   Trash2,
   UserPlus,
@@ -38,6 +39,8 @@ import {
   getProject,
   inviteRepoCollaborator,
   isManagedGithubProject,
+  listProjectTriggers,
+  setProjectTriggersActivation,
   updateExperimentalFeature,
   updateProject,
   type ExperimentalFeatureView,
@@ -106,6 +109,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard project={project} canManage={!!canManage} />
             <ExperimentalCard project={project} canManage={!!canManage} />
+            {canManage && <TriggersActivationCard projectId={projectId} canManage={!!canManage} />}
             {canManage && (
               <SectionCard
                 tone="destructive"
@@ -392,6 +396,69 @@ function ExperimentalFeatureRow({
         onCheckedChange={(v) => mutation.mutate(v)}
       />
     </div>
+  );
+}
+
+/**
+ * Customize → Settings → Pause all triggers. The project-wide trigger
+ * kill-switch (`projects.metadata.triggers_paused`), deliberately tucked away
+ * here as a small dev/debug control rather than advertised on the Triggers tab:
+ * it's only needed when another environment should own this repo's schedules &
+ * webhooks (so they don't double-fire). When on, the platform auto-runs none of
+ * this project's triggers; manual test-fires still work. The Triggers tab shows
+ * a compact "paused" notice that points back here.
+ */
+function TriggersActivationCard({
+  projectId,
+  canManage,
+}: {
+  projectId: string;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const queryKey = ['project-triggers', projectId];
+  const triggersQuery = useQuery({
+    queryKey,
+    queryFn: () => listProjectTriggers(projectId),
+    staleTime: 10_000,
+  });
+  const paused = triggersQuery.data?.triggers_paused ?? false;
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
+    onSuccess: (data, next) => {
+      queryClient.setQueryData(queryKey, data);
+      toast.success(next ? 'All triggers paused for this project' : 'Triggers resumed');
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Failed to update trigger activation'),
+  });
+
+  return (
+    <SectionCard className="border-dashed">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Pause className="text-muted-foreground size-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-foreground text-sm font-medium">
+              Pause all triggers
+              {paused && <span className="text-muted-foreground font-normal"> · paused</span>}
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Dev kill-switch — stop the platform auto-running this project&apos;s schedules &amp;
+              webhooks (manual test-fires still work). Use it when another environment owns the
+              triggers.
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={paused}
+          disabled={!canManage || mutation.isPending || triggersQuery.isLoading}
+          onCheckedChange={(v) => mutation.mutate(v)}
+          aria-label="Pause all triggers for this project"
+        />
+      </div>
+    </SectionCard>
   );
 }
 
