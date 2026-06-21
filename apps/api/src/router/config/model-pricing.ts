@@ -2,8 +2,8 @@
  * models.dev pricing — live LLM pricing from the open-source models database.
  *
  * Fetches https://models.dev/api.json on boot and refreshes every 24 h in the
- * background (non-blocking). Builds a flat Map<modelId, pricing> for the
- * providers we proxy (anthropic, openai, xai, google, groq, deepseek).
+ * background (non-blocking). Builds a flat Map<modelId, pricing> plus a
+ * normalized-id index for resilient provider-native lookups.
  *
  * Usage:
  *   import { initModelPricing, getModelPricing } from './model-pricing';
@@ -135,7 +135,7 @@ async function refreshPricing(): Promise<void> {
 
     const res = await fetch(API_URL, {
       signal: controller.signal,
-      headers: { 'Accept': 'application/json' },
+      headers: { Accept: 'application/json' },
     });
     clearTimeout(timeout);
 
@@ -153,9 +153,11 @@ async function refreshPricing(): Promise<void> {
       for (const model of Object.values(provider.models)) {
         const input = model.cost?.input;
         const output = model.cost?.output;
-        if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0)) continue;
+        if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0))
+          continue;
         const entry: ModelPricingEntry = { inputPer1M: input, outputPer1M: output };
-        if (typeof model.cost?.cache_read === 'number') entry.cacheReadPer1M = model.cost.cache_read;
+        if (typeof model.cost?.cache_read === 'number')
+          entry.cacheReadPer1M = model.cost.cache_read;
         if (!newMap.has(model.id)) newMap.set(model.id, entry);
         const nk = normModelId(model.id);
         if (!newNorm.has(nk)) newNorm.set(nk, entry);
