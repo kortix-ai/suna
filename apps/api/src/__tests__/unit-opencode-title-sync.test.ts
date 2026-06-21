@@ -5,6 +5,9 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 const sandboxRows: Array<{ sessionId: string; externalId: string | null }> = [];
 const dbUpdates: Array<Record<string, unknown>> = [];
 let listedSessions: any[] = [];
+// Externals whose sandbox lookup should THROW (e.g. provider rate limit /
+// archived box) — used to prove one bad sandbox never sinks the whole batch.
+const throwForExternalIds = new Set<string>();
 
 mock.module('../shared/db', () => ({
   db: {
@@ -30,10 +33,15 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../projects/opencode-mapping', () => ({
-  listSandboxOpencodeSessions: async () => ({
-    ok: true,
-    sessions: listedSessions,
-  }),
+  listSandboxOpencodeSessions: async (externalId: string) => {
+    if (throwForExternalIds.has(externalId)) {
+      throw new Error(`DaytonaRateLimitError: ThrottlerException: Too Many Requests (${externalId})`);
+    }
+    return {
+      ok: true,
+      sessions: listedSessions,
+    };
+  },
   resolveRootSessionId: ({
     pinnedRootId,
     sessions,
@@ -52,6 +60,7 @@ afterEach(() => {
   sandboxRows.length = 0;
   dbUpdates.length = 0;
   listedSessions = [];
+  throwForExternalIds.clear();
 });
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -128,5 +137,37 @@ describe('syncOpenCodeTitlesForSessions', () => {
     const metadata = synced.metadata as Record<string, unknown>;
     expect(metadata.name).toBe('Previous title');
     expect(dbUpdates.at(-1)?.metadata).toMatchObject({ name: 'Previous title' });
+  });
+
+  test('one throttled/unreachable sandbox does not reject the batch; other rows still sync', async () => {
+    // Regression: a single sandbox whose lookup throws (provider rate limit /
+    // archived box) used to reject the whole `Promise.all`, 500ing GET /sessions.
+    // The batch must now resolve, keeping the bad row unchanged and syncing the rest.
+    sandboxRows.push(
+      { sessionId: 'ok-session', externalId: 'sandbox-ok' },
+      { sessionId: 'bad-session', externalId: 'sandbox-bad' },
+    );
+    throwForExternalIds.add('sandbox-bad');
+    listedSessions = [{ id: 'root-ok', title: 'Synced', time: { created: 1, updated: 10 } }];
+
+    const result = await syncOpenCodeTitlesForSessions({
+      rows: [
+        row({ sessionId: 'ok-session', metadata: {} }),
+        row({ sessionId: 'bad-session', metadata: { name: 'Kept' }, opencodeSessionId: 'pin-bad' }),
+      ],
+      projectId: 'project-1',
+      accountId: 'account-1',
+      userId: 'user-1',
+    });
+
+    // Batch resolved (no throw), order preserved, both rows returned.
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.sessionId)).toEqual(['ok-session', 'bad-session']);
+    // The reachable sandbox synced its root/title.
+    expect(result[0].opencodeSessionId).toBe('root-ok');
+    expect((result[0].metadata as Record<string, unknown>).name).toBe('Synced');
+    // The throwing sandbox's row is returned UNCHANGED (best-effort fallback).
+    expect(result[1].opencodeSessionId).toBe('pin-bad');
+    expect((result[1].metadata as Record<string, unknown>).name).toBe('Kept');
   });
 });

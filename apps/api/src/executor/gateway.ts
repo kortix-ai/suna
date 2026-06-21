@@ -27,7 +27,7 @@ import type { ActionBinding, Risk } from './types';
 export interface GatewayConnector {
   connectorId: string;
   slug: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ExecutorAuth;
@@ -66,8 +66,13 @@ export interface ExecutionRecord {
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
-  /** Resolve the credential value/binding. `userId=null` = shared; set = that member's own. */
-  resolveCredential(connectorId: string, userId: string | null): Promise<string | null>;
+  /**
+   * Resolve the credential value/binding for a connector. `userId=null` = shared;
+   * set = that member's own. Receives the loaded connector so the resolver can
+   * pick the credential source by provider (e.g. a channel connector's platform
+   * install token) without re-querying.
+   */
+  resolveCredential(connector: GatewayConnector, userId: string | null): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -131,7 +136,7 @@ async function connectorUsable(
   // 2. Credential — none needed (public), shared, or this member's own (per_user).
   if (!connector.hasAuth) return { ok: true, secret: null };
   const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
-  const secret = await deps.resolveCredential(connector.connectorId, userId);
+  const secret = await deps.resolveCredential(connector, userId);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
 }
@@ -231,6 +236,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         paramHints: paramHintsFromSchema(action.inputSchema),
         fetchImpl: deps.fetchImpl,
       });
+      // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
+      // envelope on failure. Surface that as a real error so the agent gets the
+      // cause (matching the in-sandbox CLI, which throws on `!ok`).
+      if (connector.provider === 'channel') result = mapChannelEnvelope(result);
     }
     if (result.ok) {
       await audit(deps, input, connector.connectorId, 'ok', action.risk, { http_status: result.status });
@@ -249,6 +258,19 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
     return { status: 'error', reason };
   }
+}
+
+/**
+ * Slack-style envelope: the Web API returns HTTP 200 even on failure, with the
+ * real outcome in `{ ok: boolean, error? }`. Map `ok:false` to a failed
+ * ExecResult so the gateway's normal error path surfaces the cause.
+ */
+function mapChannelEnvelope(result: ExecResult): ExecResult {
+  const data = result.data as { ok?: unknown } | null;
+  if (result.ok && data && typeof data === 'object' && data.ok === false) {
+    return { ...result, ok: false };
+  }
+  return result;
 }
 
 /**

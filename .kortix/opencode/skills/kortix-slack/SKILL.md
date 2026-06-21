@@ -1,6 +1,6 @@
 ---
 name: kortix-slack
-description: How to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or when `$SLACK_BOT_TOKEN` is set in the env), or when the user asks how to do anything in Slack.
+description: How to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), or when the user asks how to do anything in Slack.
 ---
 
 <skill name="slack">
@@ -8,7 +8,7 @@ description: How to answer in Slack as a teammate. Covers the live plan-block st
 <overview>
 Your sandbox is wired into Slack. When a teammate `@`-mentions the bot or replies in a thread the bot owns, the platform spins up this session and hands you the message; your turn IS the Slack reply.
 
-The `slack` CLI is on `$PATH` and authenticated with `$SLACK_BOT_TOKEN`. Two patterns matter most:
+The `slack` CLI is on `$PATH` and **just works** — every call runs through the Kortix Executor, which resolves the Slack bot token **server-side**. There is no token in your sandbox and nothing to configure: don't look for `$SLACK_BOT_TOKEN`, don't reach for an MCP/HTTP workaround, just run the commands below. They are the full, supported surface (posting, **file upload**, history, reactions, search, edit/delete — all of it). Two patterns matter most:
 
 - **`slack step "..."`** — narrate progress. Updates the live plan block in the Slack thread *as you go*.
 - **`slack send "..."`** — finalize the turn with your answer. This closes the plan block and posts the reply.
@@ -351,7 +351,7 @@ The `question` tool's return value is `answers: string[][]` — one array per qu
 <files-and-artifacts>
 ### Uploading files: `slack send --file <path> --channel <id>`
 
-When the work produces an artifact (a CSV, a report, a diff, a screenshot), upload it instead of pasting the contents. `--file` requires a `--channel` and (typically) a `--thread` so it lands under the answer:
+**File upload is fully supported — `slack send --file` is the way.** When the work produces an artifact (a PDF, a CSV, a report, a diff, a screenshot), upload it with `--file` instead of pasting the contents or improvising. Do **not** conclude "uploads aren't supported", and do **not** reach for the executor/MCP, a manual `files.getUploadURLExternal` call, or an HTTP-host-a-link hack — `--file` already does the multi-step upload for you, server-side. It requires a `--channel` and (typically) a `--thread` so it lands under the answer:
 
 ```sh
 slack send \

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
 import { resolveProjectContext } from '../command-helpers.ts';
+import { executorProjectContext } from '../executor/gateway.ts';
 import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
@@ -70,6 +71,14 @@ describe('in-sandbox auth resolution', () => {
   it('reads the project id from KORTIX_PROJECT_ID', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-xyz';
     expect(resolveProjectId()).toBe('proj-xyz');
+  });
+
+  it('lets executor management commands override KORTIX_PROJECT_ID with --project', () => {
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+
+    expect(executorProjectContext('proj-from-flag').projectId).toBe('proj-from-flag');
   });
 });
 

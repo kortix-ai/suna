@@ -28,12 +28,13 @@
  * invariant rather than a best-effort.
  */
 
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
 
 export const REAP_BATCH_SIZE = 100;
@@ -448,6 +449,89 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
   return { checked: rows.length, closed, errors };
 }
 
+const STUCK_SESSION_BATCH = 200;
+
+/**
+ * Reconcile project_sessions stuck in an ACTIVE status that have no genuinely-
+ * running box behind them. THE leak that wedged Slack ("I'm queued behind other
+ * project work") and 429'd new sessions: a session counts against the account's
+ * concurrent-session cap while its status is in ACTIVE_SESSION_STATUSES, but the
+ * provider reaper (reapAndReconcileSandboxes) only ever visits sessions whose
+ * `session_sandboxes` row is still `active`. A session left `running` /
+ * `provisioning` / `queued` / `branching` after its box was stopped or removed
+ * — a missed stop webhook, a getStatus throttled to 'unknown', a continueSession
+ * that flipped stopped→running then failed to deliver, or a create that never
+ * got a box — is STRUCTURALLY INVISIBLE to that pass and so eats a cap slot
+ * forever. Such sessions accreted to 200+ on a single account and blocked it.
+ *
+ * This pass closes that gap from the session side. It is DB-ONLY (no provider
+ * round-trip), so it is immune to the Daytona throttling that starves the box
+ * reaper, and it acts ONLY on sessions that are provably idle:
+ *   - status ∈ ACTIVE_SESSION_STATUSES and untouched for longer than the auto-
+ *     stop TTL (so a healthy in-flight provision/branch is never touched),
+ *   - NO `active` session_sandboxes row (a live box is the provider reaper's job),
+ *   - NO in-flight turn (unfinalized chat_turn_stream), and
+ *   - NO LLM usage within the TTL window.
+ * For each it settles + closes any lingering billing window (DB-only) and flips
+ * the session to `stopped` — resumable: the next open reprovisions a fresh box.
+ * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
+ */
+export async function reconcileStuckActiveSessions(
+  now = new Date(),
+): Promise<{ candidates: number; reconciled: number; billingClosed: number; errors: number }> {
+  const cutoff = new Date(now.getTime() - autoStopTtlMs());
+  const { chatTurnStreams, usageEvents } = await import('@kortix/db');
+
+  const candidates = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        lt(projectSessions.updatedAt, cutoff),
+        sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
+        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
+      ),
+    )
+    .limit(STUCK_SESSION_BATCH);
+
+  const result = { candidates: candidates.length, reconciled: 0, billingClosed: 0, errors: 0 };
+  if (candidates.length === 0) return result;
+
+  for (const c of candidates) {
+    try {
+      // Close any lingering billing window for the session's (non-active) box(es).
+      // pauseComputeSession is DB-only + idempotent (no-op when no row is open).
+      const sbs = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(eq(sessionSandboxes.sessionId, c.sessionId));
+      for (const sb of sbs) {
+        await pauseComputeSession(sb.sandboxId).catch((err) =>
+          console.warn(`[reaper] stuck-session pauseComputeSession failed for ${sb.sandboxId}:`, err instanceof Error ? err.message : err),
+        );
+        result.billingClosed += 1;
+      }
+      // Re-check the status in the UPDATE predicate so we never clobber a session
+      // a real open transitioned out from under us between SELECT and UPDATE.
+      const updated = await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: now })
+        .where(and(
+          eq(projectSessions.sessionId, c.sessionId),
+          inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        ))
+        .returning({ sessionId: projectSessions.sessionId });
+      if (updated.length) result.reconciled += 1;
+    } catch (err) {
+      result.errors += 1;
+      console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });
+    }
+  }
+  return result;
+}
+
 /**
  * Close billing + reconcile a sandbox the PROVIDER reports stopped/archived,
  * keyed by external id. The deterministic billing-close path shared by the
@@ -520,4 +604,108 @@ export async function countBillingInvariantViolations(): Promise<number> {
       sql`(${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active')`,
     ));
   return Number(row?.n ?? 0);
+}
+
+// ── Orphan provider-box reaper ───────────────────────────────────────────────
+//
+// The passes above are DB-driven: they reconcile boxes that HAVE a
+// session_sandboxes row. A box that loses its row (migration, a dropped create,
+// a pre-clamp leftover) — or a persistent (autoStop=0) box nothing else reaps —
+// keeps running on the provider forever, invisible to the DB sweep, burning
+// compute (the leak observed 2026-06-21: ~85 running boxes the DB didn't track).
+// This pass closes the gap from the OTHER side: it lists the boxes THIS
+// environment owns on the provider and stops any with no live DB row.
+//
+// Safety:
+//  - Scoped to this env via provider labels (the org is shared across
+//    prod/dev/local) — see DaytonaProvider.listManagedRunningSandboxes.
+//  - keepSet = every box the DB considers live (active/provisioning) OR touched
+//    within ORPHAN_KEEP_RECENT_MS, so an in-flight session is never stopped.
+//  - Age grace: a box younger than ORPHAN_BOX_GRACE_MS (or whose createdAt we
+//    can't read) is skipped — covers the window between provider-create and the
+//    DB row landing.
+//  - STOP only, never delete (Daytona auto-archives stopped boxes); bounded per
+//    pass; failures are logged and the sweep continues.
+const ORPHAN_KEEP_RECENT_MS = 15 * 60_000; // don't stop a just-touched box
+const ORPHAN_BOX_GRACE_MS = 60 * 60_000; // a box must be this old to qualify
+const ORPHAN_REAP_MAX_PER_PASS = 50; // bound provider stop() calls per pass
+
+export interface OrphanReapResult {
+  listed: number;
+  orphans: number;
+  stopped: number;
+  errors: number;
+}
+
+export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
+  const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
+  if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
+  // Daytona is the only org-shared provider that leaks this way; local_docker
+  // boxes are per-host and Platinum is reconciled on its own path.
+  if (!config.DAYTONA_API_KEY) return zero;
+  let listManaged: (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>) | undefined;
+  try {
+    const provider = getProvider('daytona');
+    listManaged = provider.listManagedRunningSandboxes?.bind(provider);
+  } catch {
+    return zero;
+  }
+  if (!listManaged) return zero;
+
+  let boxes: Array<{ externalId: string; createdAt: Date | null }>;
+  try {
+    boxes = await listManaged();
+  } catch (err) {
+    console.warn('[reaper] orphan-box list failed:', err instanceof Error ? err.message : err);
+    return zero;
+  }
+  if (boxes.length === 0) return zero;
+
+  // keepSet: never stop a box the DB considers live or touched recently.
+  const keepRows = await db
+    .select({ externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(
+      and(
+        isNotNull(sessionSandboxes.externalId),
+        or(
+          inArray(sessionSandboxes.status, ['active', 'provisioning']),
+          gt(sessionSandboxes.updatedAt, new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS)),
+        ),
+      ),
+    );
+  const keep = new Set(keepRows.map((r) => r.externalId).filter((x): x is string => !!x));
+
+  const cutoff = now.getTime() - ORPHAN_BOX_GRACE_MS;
+  const orphans = boxes.filter(
+    (b) => !keep.has(b.externalId) && b.createdAt != null && b.createdAt.getTime() <= cutoff,
+  );
+
+  let stopped = 0;
+  let errors = 0;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < orphans.length && stopped + errors < ORPHAN_REAP_MAX_PER_PASS) {
+      const box = orphans[cursor++];
+      try {
+        await getProvider('daytona').stop(box.externalId);
+        // Reconcile any DB row (state drift) + close billing; no-op when there's none.
+        await reconcileSandboxStoppedByExternalId(box.externalId, now).catch(() => {});
+        stopped += 1;
+      } catch (err) {
+        errors += 1;
+        if (errors <= 5) {
+          console.warn(
+            `[reaper] orphan-box stop failed for ${box.externalId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, orphans.length) }, worker));
+  if (stopped || errors) {
+    console.log('[reaper] orphan-box sweep', { listed: boxes.length, orphans: orphans.length, stopped, errors });
+  }
+  return { listed: boxes.length, orphans: orphans.length, stopped, errors };
 }

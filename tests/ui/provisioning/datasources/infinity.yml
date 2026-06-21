@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  - name: ke2e
+    type: yesoreyeram-infinity-datasource
+    uid: ke2e-infinity
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      allowedHosts:
+        - http://data

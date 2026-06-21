@@ -1,0 +1,2549 @@
+[
+  {
+    "id": "ACC-1",
+    "domain": "access",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "ACC-2",
+    "domain": "access",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACC-3",
+    "domain": "access",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACCT-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACCT-2",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACCT-3",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACCT-4",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACCT-5",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "DEL-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "DEP-1",
+    "domain": "accounts",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "INV-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INV-2",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ME-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "MEM-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "MEM-2",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "MEM-3",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "MEM-4",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "MEM-5",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-2",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 11,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "RTR-4",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TOK-1",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 3,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TOK-2",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TOK-3",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 6,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TOK-4",
+    "domain": "accounts",
+    "status": "passed",
+    "cases": 8,
+    "routes": 7,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-1",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-2",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-3",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-4",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-5",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ADM-6",
+    "domain": "admin",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "RUN-1",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-2",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-3",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-4",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-5",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-6",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-7",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 3,
+    "routes": 3,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "RUN-8",
+    "domain": "agent-run",
+    "status": "skipped",
+    "cases": 4,
+    "routes": 4,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "APP-1",
+    "domain": "apps",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "APP-2",
+    "domain": "apps",
+    "status": "passed",
+    "cases": 5,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "APP-3",
+    "domain": "apps",
+    "status": "passed",
+    "cases": 4,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "APP-4",
+    "domain": "apps",
+    "status": "passed",
+    "cases": 5,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "AUD-1",
+    "domain": "audit",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "AUD-2",
+    "domain": "audit",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "AUD-3",
+    "domain": "audit",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "AUD-4",
+    "domain": "audit",
+    "status": "passed",
+    "cases": 8,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "AUTH-1",
+    "domain": "auth",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SYS-3",
+    "domain": "auth",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "BILL-1",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "BILL-2",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-3",
+    "domain": "billing",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 3,
+    "tags": "",
+    "gated": "funded"
+  },
+  {
+    "id": "BILL-3b",
+    "domain": "billing",
+    "status": "skipped",
+    "cases": 3,
+    "routes": 3,
+    "tags": "",
+    "gated": "stripe"
+  },
+  {
+    "id": "BILL-4",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 7,
+    "routes": 6,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-4b",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-5",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 12,
+    "routes": 9,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "BILL-6",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 6,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-7",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-8",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 5,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-9",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 4,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-9b",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 7,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-10",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "BILL-11",
+    "domain": "billing",
+    "status": "skipped",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": "stripe"
+  },
+  {
+    "id": "DEL-2",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 6,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "DEL-2b",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "DEL-3",
+    "domain": "billing",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-1",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "CR-2",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-3",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-4",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-5",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-6",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-7",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-8",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-10",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 4,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-11",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-12",
+    "domain": "change-requests",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-1",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 5,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-2",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-3",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-4",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-5",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-6",
+    "domain": "channels",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "CHN-7",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-8",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-9",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 8,
+    "routes": 6,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-10",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-11",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CHN-12",
+    "domain": "channels",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CR-9",
+    "domain": "cli",
+    "status": "skipped",
+    "cases": 4,
+    "routes": 9,
+    "tags": "",
+    "gated": "funded"
+  },
+  {
+    "id": "CREATE-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 2,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-2",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-3",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-4",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-5",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "HOSTS-6",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INIT-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INIT-2",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INIT-3",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INIT-4",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "LOGIN-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "LOGIN-2",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "LOGIN-3",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "LOGIN-4",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "LOGOUT-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-1",
+    "domain": "cli",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": "freestyle"
+  },
+  {
+    "id": "SHIP-2",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-3",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-4",
+    "domain": "cli",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 2,
+    "tags": "",
+    "gated": "freestyle"
+  },
+  {
+    "id": "SHIP-5",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-6",
+    "domain": "cli",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 4,
+    "tags": "",
+    "gated": "freestyle"
+  },
+  {
+    "id": "SHIP-7",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-8",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 3,
+    "routes": 0,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SHIP-9",
+    "domain": "cli",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 4,
+    "tags": "",
+    "gated": "freestyle"
+  },
+  {
+    "id": "WHOAMI-1",
+    "domain": "cli",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-1",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "CONN-2",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-3",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-4",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-5",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-6",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-7",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-8",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-9",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-10",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-11",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "CONN-12",
+    "domain": "connectors",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "FILE-1",
+    "domain": "files",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "FILE-2",
+    "domain": "files",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "FILE-3",
+    "domain": "files",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "FILE-4",
+    "domain": "files",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "FILE-5",
+    "domain": "files",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "FILE-6",
+    "domain": "files",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "FILE-7",
+    "domain": "files",
+    "status": "passed",
+    "cases": 7,
+    "routes": 3,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "FILE-8",
+    "domain": "files",
+    "status": "skipped",
+    "cases": 3,
+    "routes": 3,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "FILE-9",
+    "domain": "files",
+    "status": "skipped",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "GH-1",
+    "domain": "git",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-2",
+    "domain": "git",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-3",
+    "domain": "git",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-5",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-6",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-7",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-8",
+    "domain": "git",
+    "status": "passed",
+    "cases": 9,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-9",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-10",
+    "domain": "git",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-11",
+    "domain": "git",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-12",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-13",
+    "domain": "git",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-14",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-15",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-4",
+    "domain": "git",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "GH-4",
+    "domain": "github",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "GOLD-1",
+    "domain": "golden",
+    "status": "skipped",
+    "cases": 7,
+    "routes": 7,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "IAM-1",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-2",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 6,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-3",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 7,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-4",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-5",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-6",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-7",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-8",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-9",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 2,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-10",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 3,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-11",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-12",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-13",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 4,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-14",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-15",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-16",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-17",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 5,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-18",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 5,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-19",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 5,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-20",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-21",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 6,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-22",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 8,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-23",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 7,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "IAM-24",
+    "domain": "iam",
+    "status": "passed",
+    "cases": 6,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "OAU-1",
+    "domain": "oauth",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "OAU-2",
+    "domain": "oauth",
+    "status": "passed",
+    "cases": 5,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "OAU-3",
+    "domain": "oauth",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "OAU-4",
+    "domain": "oauth",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "OPS-1",
+    "domain": "ops",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-1",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "PLT-3",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 5,
+    "routes": 4,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "PLT-4",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-5",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-6",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-7",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PLT-8",
+    "domain": "platform",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PRX-1",
+    "domain": "preview-proxy",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "PRX-2",
+    "domain": "preview-proxy",
+    "status": "passed",
+    "cases": 7,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "EXP-1",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 6,
+    "routes": 1,
+    "tags": "experimental",
+    "gated": ""
+  },
+  {
+    "id": "INV-3",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INV-4",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "INV-5",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-1",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-2",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-3",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-4",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-5",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 8,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PACC-6",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 8,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-1",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-2",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-3",
+    "domain": "projects",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "freestyle"
+  },
+  {
+    "id": "PROJ-5",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-6",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-7",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-8",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-9",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-10",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 5,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-11",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-12",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-13",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-14",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-15",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-16",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-17",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "PROJ-18",
+    "domain": "projects",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": "freestyle stripe"
+  },
+  {
+    "id": "SESS-10",
+    "domain": "projects",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "RTR-1",
+    "domain": "router",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "RTR-2",
+    "domain": "router",
+    "status": "passed",
+    "cases": 7,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "RTR-3",
+    "domain": "router",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SBX-1",
+    "domain": "sandboxes",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "SBX-2",
+    "domain": "sandboxes",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "SBX-3",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 5,
+    "routes": 3,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SBX-4",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 9,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SBX-5",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 5,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SNAP-1",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SNAP-2",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SNAP-3",
+    "domain": "sandboxes",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SCIM-1",
+    "domain": "scim",
+    "status": "passed",
+    "cases": 4,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SCIM-2",
+    "domain": "scim",
+    "status": "passed",
+    "cases": 10,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SCIM-3",
+    "domain": "scim",
+    "status": "passed",
+    "cases": 10,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SCIM-4",
+    "domain": "scim",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-1",
+    "domain": "secrets",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-2",
+    "domain": "secrets",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-3",
+    "domain": "secrets",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-5",
+    "domain": "secrets",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-4",
+    "domain": "security",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-A",
+    "domain": "security",
+    "status": "passed",
+    "cases": 4,
+    "routes": 4,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SEC-B",
+    "domain": "security",
+    "status": "passed",
+    "cases": 8,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-C",
+    "domain": "security",
+    "status": "passed",
+    "cases": 6,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-D",
+    "domain": "security",
+    "status": "passed",
+    "cases": 9,
+    "routes": 8,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-E",
+    "domain": "security",
+    "status": "passed",
+    "cases": 3,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SEC-F",
+    "domain": "security",
+    "status": "passed",
+    "cases": 7,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-G",
+    "domain": "security",
+    "status": "passed",
+    "cases": 5,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-H",
+    "domain": "security",
+    "status": "passed",
+    "cases": 3,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SEC-I",
+    "domain": "security",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SRV-1",
+    "domain": "servers",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SRV-2",
+    "domain": "servers",
+    "status": "passed",
+    "cases": 5,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SRV-3",
+    "domain": "servers",
+    "status": "passed",
+    "cases": 5,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SRV-4",
+    "domain": "servers",
+    "status": "passed",
+    "cases": 4,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SESS-1",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "daytona funded"
+  },
+  {
+    "id": "SESS-2",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "SESS-3",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "SESS-4",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "daytona funded"
+  },
+  {
+    "id": "SESS-5",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": "daytona funded"
+  },
+  {
+    "id": "SESS-6",
+    "domain": "sessions",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "SESS-7",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "daytona funded"
+  },
+  {
+    "id": "SESS-8",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": "daytona funded"
+  },
+  {
+    "id": "SESS-9",
+    "domain": "sessions",
+    "status": "skipped",
+    "cases": 2,
+    "routes": 3,
+    "tags": "",
+    "gated": "funded daytona"
+  },
+  {
+    "id": "SESS-11",
+    "domain": "sessions",
+    "status": "passed",
+    "cases": 4,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "ACC-4",
+    "domain": "system",
+    "status": "passed",
+    "cases": 9,
+    "routes": 9,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "DOCS-1",
+    "domain": "system",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SYS-1",
+    "domain": "system",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "smoke health",
+    "gated": ""
+  },
+  {
+    "id": "SYS-2",
+    "domain": "system",
+    "status": "passed",
+    "cases": 2,
+    "routes": 2,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SYS-4",
+    "domain": "system",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "smoke health",
+    "gated": ""
+  },
+  {
+    "id": "SYS-5",
+    "domain": "system",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "SYS-6",
+    "domain": "system",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "TRG-1",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-2",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 2,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-3",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-4",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-5",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-6",
+    "domain": "triggers",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "TRG-7",
+    "domain": "triggers",
+    "status": "passed",
+    "cases": 1,
+    "routes": 1,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TRG-8",
+    "domain": "triggers",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "TRG-9",
+    "domain": "triggers",
+    "status": "skipped",
+    "cases": 0,
+    "routes": 0,
+    "tags": "",
+    "gated": "todo"
+  },
+  {
+    "id": "TUN-1",
+    "domain": "tunnel",
+    "status": "passed",
+    "cases": 9,
+    "routes": 6,
+    "tags": "smoke",
+    "gated": ""
+  },
+  {
+    "id": "TUN-2",
+    "domain": "tunnel",
+    "status": "passed",
+    "cases": 8,
+    "routes": 3,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TUN-3",
+    "domain": "tunnel",
+    "status": "passed",
+    "cases": 5,
+    "routes": 4,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TUN-4",
+    "domain": "tunnel",
+    "status": "passed",
+    "cases": 7,
+    "routes": 2,
+    "tags": "",
+    "gated": ""
+  },
+  {
+    "id": "TUN-5",
+    "domain": "tunnel",
+    "status": "passed",
+    "cases": 9,
+    "routes": 5,
+    "tags": "",
+    "gated": ""
+  }
+]

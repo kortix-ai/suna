@@ -1,0 +1,167 @@
+name: DB Migrations
+
+# PR gate for database migrations. Runs only when packages/db changes.
+# Four checks, each preventing a failure mode we have actually hit:
+#   1. lint          — migration files are well-formed (no bad filenames, empty
+#                      files, merge-conflict markers, or leftover placeholders)
+#   2. immutability  — already-merged migrations may not be edited (the
+#                      checksum guarantee, enforced at PR time)
+#   3. shadow-db     — every migration applies cleanly to a FRESH database
+#                      (prevents "the files don't reproduce reality")
+#   4. schema-sync   — kortix.ts and the committed migrations agree
+# See packages/db/MIGRATIONS.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/db/**'
+      - '.github/workflows/db-migrations.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: db-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Migration files are well-formed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Lint migration files
+        run: cd packages/db && bun scripts/lint-migrations.ts
+
+  immutability:
+    name: Migrations are immutable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject edits to already-merged migrations
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          # Modified files directly under migrations/ (depth-1 glob excludes _archive/).
+          CHANGED=$(git diff --diff-filter=M --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "::error::Migrations are immutable — these already-merged files were modified. Create a NEW migration instead of editing an existing one:"
+            echo "$CHANGED"
+            exit 1
+          fi
+          echo "OK — no existing migration files were modified."
+
+  sequence:
+    name: Migrations are sequential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: New migrations must come after every merged migration
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          # Highest 17-digit timestamp already merged (depth-1; _archive is 14-digit, excluded).
+          BASE_MAX=$(git ls-tree -r --name-only "$BASE" -- packages/db/migrations \
+            | sed -n 's#.*/\([0-9]\{17\}\)_.*\.sql$#\1#p' | sort -n | tail -1 || true)
+          # Migrations ADDED by this PR.
+          ADDED=$(git diff --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' || true)
+          bad=0
+          for f in $ADDED; do
+            ts=$(basename "$f" | sed -n 's#^\([0-9]\{17\}\)_.*#\1#p')
+            if [ -z "$ts" ]; then
+              echo "::error file=$f::Migration filename has no 17-digit UTC timestamp prefix (old format / hand-written). Use \`pnpm migrate:create\` or \`pnpm migrate:generate\`."
+              bad=1; continue
+            fi
+            if [ -n "${BASE_MAX:-}" ] && [ "$ts" -le "$BASE_MAX" ]; then
+              echo "::error file=$f::Out-of-sequence migration: timestamp $ts is not after the latest merged migration ($BASE_MAX). Regenerate it with a current timestamp so it sorts last."
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then exit 1; fi
+          echo "OK — every new migration's timestamp comes after the latest merged one."
+
+  shadow-db:
+    name: Applies cleanly to a fresh DB
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install pnpm
+        run: corepack enable pnpm
+      - name: Install @kortix/db dependencies
+        run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Apply external prerequisites (Supabase Auth / Storage / Basejump stubs)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
+      - name: Apply ALL migrations from scratch
+        run: pnpm --filter @kortix/db migrate
+      - name: Assert no pending migrations
+        run: pnpm --filter @kortix/db migrate:status
+      - name: Sanity-check the schema was built
+        run: |
+          set -euo pipefail
+          COUNT=$(psql "$DATABASE_URL" -tA -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='kortix' AND table_type='BASE TABLE'")
+          echo "kortix base tables: $COUNT"
+          test "$COUNT" -ge 90
+
+  schema-sync:
+    name: Schema matches migrations
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgres://ci:ci@localhost:1/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install pnpm
+        run: corepack enable pnpm
+      - name: Install @kortix/db dependencies
+        run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - name: kortix.ts must match the committed migrations
+        run: |
+          set -euo pipefail
+          ( cd packages/db && bun scripts/generate.ts __ci_schema_sync )
+          DIRTY=$(git status --porcelain -- packages/db/migrations packages/db/drizzle)
+          if [ -n "$DIRTY" ]; then
+            echo "::error::kortix.ts is out of sync with the committed migrations/snapshot. Run 'pnpm migrate:generate <slug>', review, and commit the result."
+            echo "$DIRTY"
+            exit 1
+          fi
+          echo "OK — kortix.ts matches the committed migrations."

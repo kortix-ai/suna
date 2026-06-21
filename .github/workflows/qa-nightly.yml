@@ -1,0 +1,271 @@
+name: QA - nightly
+
+# Scheduled expensive/non-PR suites. These should target a dedicated staging or
+# QA environment, never shared production.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "API base URL including /v1, for example https://qa-api.example.com/v1"
+        required: false
+        type: string
+      dast_target_url:
+        description: "DAST target origin without /v1, for example https://qa-api.example.com"
+        required: false
+        type: string
+      pentest_target_url:
+        description: "Automated pentest target origin without /v1; leave blank to derive from api_base_url"
+        required: false
+        type: string
+      chaos_base_url:
+        description: "Chaos probe API base URL including /v1; leave blank to skip chaos"
+        required: false
+        type: string
+
+concurrency:
+  group: qa-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  static-security:
+    name: static security scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run static security scans
+        run: bash tests/security/run.sh --static
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-security
+          path: tests/test-results/security/**
+          retention-days: 30
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tests/test-results/security
+        continue-on-error: true
+
+  performance:
+    name: performance / load
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run k6 load profile when configured
+        run: |
+          set -euo pipefail
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::notice::QA_API_BASE_URL/QA_TARGET_URL is not set; skipping performance."
+            exit 0
+          fi
+          case "$API_BASE_URL" in
+            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+              echo "::error::Refusing to run performance tests against production-looking target: $API_BASE_URL"
+              exit 1
+              ;;
+          esac
+          BASE_URL="$API_BASE_URL" make performance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-performance
+          path: tests/test-results/performance/**
+          retention-days: 30
+
+  dast:
+    name: DAST + API fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+      DAST_TARGET_URL: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run DAST when configured
+        run: |
+          set -euo pipefail
+          target="${DAST_TARGET_URL:-}"
+          if [ -z "$target" ] && [ -n "${API_BASE_URL:-}" ]; then
+            target="${API_BASE_URL%/}"
+            target="${target%/v1}"
+          fi
+          if [ -z "$target" ]; then
+            echo "::notice::QA_DAST_TARGET_URL is not set; skipping DAST."
+            exit 0
+          fi
+          case "$target" in
+            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+              echo "::error::Refusing to run DAST against production-looking target: $target"
+              exit 1
+              ;;
+          esac
+          TARGET_URL="$target" make security-dast
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-dast
+          path: tests/test-results/security/**
+          retention-days: 30
+
+  pentest:
+    name: automated pentest e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      API_BASE_URL: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+      PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Run automated pentest when configured
+        run: |
+          set -euo pipefail
+          target="${PENTEST_TARGET_URL_INPUT:-}"
+          if [ -z "$target" ] && [ -n "${API_BASE_URL:-}" ]; then
+            target="${API_BASE_URL%/}"
+            target="${target%/v1}"
+          fi
+          if [ -z "$target" ]; then
+            echo "::notice::QA_PENTEST_TARGET_URL is not set; skipping automated pentest."
+            exit 0
+          fi
+          case "$target" in
+            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+              echo "::error::Refusing to run automated pentest against production-looking target: $target"
+              exit 1
+              ;;
+          esac
+          PENTEST_TARGET_URL="$target" PENTEST_LIVE_CONFIRM=ci make pentest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-pentest
+          path: tests/test-results/pentest/**
+          retention-days: 30
+
+  mutation:
+    name: mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Run mutation tests
+        run: make mutation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-mutation
+          path: tests/test-results/mutation/**
+          retention-days: 30
+
+  chaos:
+    name: chaos / resilience
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CHAOS_BASE_URL: ${{ inputs.chaos_base_url || vars.QA_CHAOS_BASE_URL }}
+      TOXIPROXY: ${{ vars.QA_TOXIPROXY_URL }}
+      PROXY: ${{ vars.QA_TOXIPROXY_PROXY || 'postgres' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run chaos only when a dedicated target is configured
+        run: |
+          set -euo pipefail
+          if [ -z "${CHAOS_BASE_URL:-}" ] || [ -z "${TOXIPROXY:-}" ]; then
+            echo "::notice::QA_CHAOS_BASE_URL and QA_TOXIPROXY_URL are not set; skipping chaos."
+            exit 0
+          fi
+          case "$CHAOS_BASE_URL $TOXIPROXY" in
+            *prod*|*production*|*api.kortix.com*|*kortix.com*)
+              echo "::error::Refusing to run chaos against production-looking target."
+              exit 1
+              ;;
+          esac
+          BASE_URL="$CHAOS_BASE_URL" TOXIPROXY="$TOXIPROXY" PROXY="$PROXY" make chaos
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-nightly-chaos
+          path: tests/test-results/chaos/**
+          retention-days: 30
+
+  publish-report:
+    name: publish nightly report
+    needs: [static-security, performance, dast, pentest, mutation, chaos]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+      QA_REPORTS_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+      QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
+      QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Download lane results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: qa-nightly-*
+          path: tests/test-results
+      - name: Build Allure report
+        run: |
+          npm --prefix tests run allure:junit
+          cd tests
+          rm -rf test-results/allure-report
+          npx allure generate test-results/allure-results -o test-results/allure-report || true
+      - name: AWS auth for report publish
+        if: env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Publish nightly Allure report
+        if: env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        run: |
+          set -euo pipefail
+          run_key="nightly/${{ github.run_id }}"
+          aws s3 sync tests/test-results/allure-report \
+            "s3://${QA_REPORTS_BUCKET}/${QA_REPORTS_PREFIX}/${run_key}/" \
+            --delete --only-show-errors
+          url="${QA_REPORTS_PUBLIC_BASE_URL%/}/${QA_REPORTS_PREFIX}/${run_key}/index.html"
+          {
+            echo "### Nightly Allure report"
+            echo ""
+            echo "Report: $url"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 
-import { buildOpencodeConfigContent } from '../opencode'
+import { buildExecutorMcpConfigContent, buildOpencodeConfigContent } from '../opencode'
 
 const ENV = { KORTIX_EXECUTOR_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 

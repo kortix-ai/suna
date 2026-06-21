@@ -2,12 +2,46 @@ import { and, eq, inArray } from 'drizzle-orm';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
+import { logger as appLogger } from '../lib/logger';
 import {
   listSandboxOpencodeSessions,
   resolveRootSessionId,
   type OpencodeSessionLite,
 } from './opencode-mapping';
 import type { ProjectSessionRow } from './lib/serializers';
+
+// Title-sync is best-effort enrichment that runs on every session list/read. It
+// fans out one sandbox round-trip per active sandbox (preview-link resolution +
+// an OpenCode `/session` fetch). Two hard rules keep it from taking down the
+// list endpoint or the shared sandbox provider:
+//   1. BOUNDED concurrency — never fire N unbounded provider calls at once. A
+//      busy project can hold dozens of active sandboxes; an unbounded `Promise.all`
+//      burst-hammers the (org-shared) provider API and trips its rate limiter
+//      (`DaytonaRateLimitError` / 429), which then throws and 500s the list,
+//      which the browser retries, which fires the burst again — a self-sustaining
+//      amplification loop. A small worker pool spreads the calls instead.
+//   2. PER-ITEM isolation — one unreachable / throttled / archived sandbox must
+//      never reject the whole batch. Each row falls back to its unchanged value.
+const TITLE_SYNC_CONCURRENCY = 6;
+
+/** Map with a bounded worker pool, preserving input order. Never rejects: a
+ *  failing item resolves via the caller's own try/catch to a fallback value. */
+async function mapBounded<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 type OpenCodeSessionSnapshot = {
   id: string;
@@ -188,13 +222,23 @@ export async function syncOpenCodeTitlesForSessions(input: {
   );
   if (externalBySessionId.size === 0) return input.rows;
 
-  const updated = await Promise.all(
-    input.rows.map((row) => {
-      const externalId = externalBySessionId.get(row.sessionId);
-      if (!externalId) return row;
-      return syncRowFromSandbox({ row, externalId, userId: input.userId });
-    }),
-  );
+  const updated = await mapBounded(input.rows, TITLE_SYNC_CONCURRENCY, async (row) => {
+    const externalId = externalBySessionId.get(row.sessionId);
+    if (!externalId) return row;
+    try {
+      return await syncRowFromSandbox({ row, externalId, userId: input.userId });
+    } catch (err) {
+      // Best-effort: a single unreachable / throttled / archived sandbox must
+      // not 500 the list. Keep the row's current state and move on.
+      appLogger.warn('[title-sync] per-sandbox sync failed; keeping row unchanged', {
+        sessionId: row.sessionId,
+        projectId: input.projectId,
+        externalId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return row;
+    }
+  });
 
   return updated;
 }

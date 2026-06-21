@@ -17,7 +17,8 @@
     "bundle:darwin-x64": "bash bundle/bundle-darwin-x64.sh",
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
-    "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*"
+    "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*",
+    "test": "bun test"
   },
   "dependencies": {
     "@kortix/executor-sdk": "workspace:*",

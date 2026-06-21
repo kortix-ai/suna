@@ -42,6 +42,7 @@ import {
   Terminal,
   Timer,
   Trash2,
+  UserCircle,
   Webhook,
   Zap,
 } from 'lucide-react';
@@ -70,6 +71,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -97,9 +99,11 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectAccess,
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
+  type ProjectAccessMember,
   type ProjectTrigger,
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
@@ -350,6 +354,17 @@ function ProjectTriggersBody({
     [queryClient, queryKey],
   );
 
+  // Project-level kill-switch (server-side `triggers_paused`). When on, the
+  // platform auto-runs NONE of this project's triggers regardless of each
+  // trigger's repo `enabled` — used to stop a repo deployed to two control
+  // planes from double-firing. Shared across the Schedules + Webhooks views;
+  // toggling here writes back to the same `['project-triggers', projectId]`
+  // cache both pages read.
+  // The kill-switch toggle lives in Customize → Settings now (a small, tucked-
+  // away dev control). Here we only read the paused state to show a compact
+  // notice so an operator viewing triggers knows why scheduled runs are silent.
+  const triggersPaused = triggersQuery.data?.triggers_paused ?? false;
+
   // Filter to just this view's type — the API returns every trigger
   // because they share one `kortix.toml`, but each page is scoped.
   const allTriggers = triggersQuery.data?.triggers ?? [];
@@ -365,6 +380,13 @@ function ProjectTriggersBody({
           <h2 className="text-foreground text-base font-semibold">{meta.pageTitle}</h2>
           <p className="text-muted-foreground text-xs">{meta.description}</p>
         </header>
+
+        {triggersPaused && !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (
+          <InfoBanner tone="warning" icon={AlertTriangle}>
+            Triggers are paused for this project — scheduled runs and incoming webhooks are
+            ignored (manual test-fires still work). Resume in Customize → Settings.
+          </InfoBanner>
+        )}
 
         {triggersQuery.isLoading ? (
           <TriggersSkeleton />
@@ -659,9 +681,48 @@ function DetailBody({
       {/* Prompt template — inline editable */}
       <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
 
+      {/* Runs as — the member this trigger's automated runs act as */}
+      <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+
       {/* Meta */}
       <MetaSection trigger={trigger} />
     </div>
+  );
+}
+
+function OwnerSection({
+  projectId,
+  trigger,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  onMutated: () => void;
+}) {
+  const save = useMutation({
+    mutationFn: (userId: string) =>
+      updateProjectTrigger(projectId, trigger.slug, { owner_user_id: userId }),
+    onSuccess: () => {
+      toast.success('Updated who this runs as');
+      onMutated();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to update owner'),
+  });
+  return (
+    <section className="space-y-2">
+      <SectionHeader title="Runs as" icon={UserCircle} />
+      <RunsAsSelect
+        projectId={projectId}
+        value={trigger.owner_user_id}
+        onChange={(id) => save.mutate(id)}
+        disabled={save.isPending}
+      />
+      <p className="text-muted-foreground text-xs">
+        Automated runs act as this member. Connectors set to “each member brings
+        their own profile” use this person’s connected accounts; shared connectors
+        are unaffected. Defaults to whoever created the trigger.
+      </p>
+    </section>
   );
 }
 
@@ -957,6 +1018,56 @@ const TIMEZONES = [
 
 type WizardStep = 'source' | 'action' | 'config';
 
+/**
+ * "Runs as" owner picker. The selected member is who this trigger's automated
+ * sessions act AS — so a connector set to "each member brings their own"
+ * resolves to THAT member's connected accounts in scheduled/webhook runs
+ * (a shared connector is unaffected). Reused by the create wizard and the
+ * detail sheet. Reads the project's member list (cached query).
+ */
+function RunsAsSelect({
+  projectId,
+  value,
+  onChange,
+  disabled,
+}: {
+  projectId: string;
+  value: string | null;
+  onChange: (userId: string) => void;
+  disabled?: boolean;
+}) {
+  const { data } = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+  });
+  const viewerId = data?.viewer_user_id ?? null;
+  // Only members who can actually run in this project are eligible owners.
+  const eligible = (data?.members ?? []).filter(
+    (m: ProjectAccessMember) =>
+      m.effective_project_role != null ||
+      m.has_implicit_access ||
+      m.account_role === 'owner' ||
+      m.account_role === 'admin',
+  );
+  const labelFor = (m: ProjectAccessMember) =>
+    `${m.email || m.user_id.slice(0, 8)}${m.user_id === viewerId ? ' (you)' : ''}`;
+  return (
+    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="cursor-pointer">
+        <SelectValue placeholder="Select a member" />
+      </SelectTrigger>
+      <SelectContent>
+        {eligible.map((m) => (
+          <SelectItem key={m.user_id} value={m.user_id} className="cursor-pointer">
+            {labelFor(m)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function CreateTriggerDialog({
   projectId,
   open,
@@ -989,8 +1100,23 @@ function CreateTriggerDialog({
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [agentName, setAgentName] = useState('default');
+  // Who the trigger runs as. Defaults to the current user (the creator) once the
+  // member list loads; the picker lets you hand it to a teammate.
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+
+  const access = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+    enabled: open,
+  });
+  useEffect(() => {
+    if (open && ownerUserId == null && access.data?.viewer_user_id) {
+      setOwnerUserId(access.data.viewer_user_id);
+    }
+  }, [open, ownerUserId, access.data?.viewer_user_id]);
 
   // Reset on close → next open starts fresh.
   useEffect(() => {
@@ -1004,6 +1130,7 @@ function CreateTriggerDialog({
       setName('');
       setPrompt('');
       setAgentName('default');
+      setOwnerUserId(null);
       setError(null);
     }
   }, [open, forcedType]);
@@ -1044,6 +1171,7 @@ function CreateTriggerDialog({
         type: sourceType,
         prompt_template: trimmedPrompt,
         agent: agentName.trim() || 'default',
+        ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1259,6 +1387,17 @@ function CreateTriggerDialog({
                   placeholder="default"
                   className="font-mono text-sm"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Runs as</Label>
+                <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
+                <p className="text-muted-foreground text-xs">
+                  Every run acts as this member. Connectors set to “each member brings
+                  their own profile” use this person’s connected accounts — so a
+                  personal cron (e.g. email triage) uses your own Gmail. Shared
+                  connectors are unaffected.
+                </p>
               </div>
 
               {error && (

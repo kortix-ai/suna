@@ -1,4 +1,3 @@
-Fix sandbox template snapshot builds
+Session reliability: drain stuck-active cap leak + /sessions 500 resilience + Daytona billing reaper
 
-- Stage scaffold.git for Daytona snapshot build contexts so template builds no longer fail before user Dockerfile steps.
-- Reuse the shared snapshot build-context path across providers to keep required files consistent.
+Fixes the production incident where sessions stuck in an active status with no live box ate the per-account concurrent-session cap — wedging Slack ("queued behind other project work") and 429'ing new sessions. Adds a DB-only reconcileStuckActiveSessions maintenance pass (immune to Daytona throttling) with a real-DB e2e, plus the already-merged /sessions list resilience (#3567) and the provider-agnostic Daytona billing reaper + orphan-box reaper. Also: honest, reason-aware Slack status messages (out-of-credits / at-cap / not-found).

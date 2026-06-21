@@ -3,12 +3,31 @@
  * create/confirm synthetic users and exchange password for a real JWT. Everything
  * else (accounts, members, policies, tokens) is provisioned through the Kortix API
  * so fixtures stay honest.
+ *
+ * Every call is time-bounded: a raw fetch with no timeout against an unreachable
+ * or misconfigured KE2E_SUPABASE_URL hangs the whole run silently at world setup
+ * (before any flow logs), so a hang must surface as a fast, clear failure instead.
  */
 import type { Env } from "../core/env";
 
+const SUPABASE_TIMEOUT_MS = Number(process.env.KE2E_SUPABASE_TIMEOUT_MS ?? 15_000);
+
+async function supaFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(SUPABASE_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error(
+        `Supabase request timed out after ${SUPABASE_TIMEOUT_MS}ms: ${url} — is KE2E_SUPABASE_URL reachable from CI?`,
+      );
+    }
+    throw new Error(`Supabase request failed: ${url} — ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 export async function passwordGrant(env: Env, email: string, password: string): Promise<string> {
   if (!env.supabaseAnonKey) throw new Error("KE2E_SUPABASE_ANON_KEY required for password grant");
-  const res = await fetch(`${env.supabaseUrl}/auth/v1/token?grant_type=password`, {
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: env.supabaseAnonKey, "content-type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -27,7 +46,7 @@ export async function adminCreateUser(env: Env, email: string, password: string)
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) {
     throw new Error("Supabase service-role + anon keys required to create test users");
   }
-  const res = await fetch(`${env.supabaseUrl}/auth/v1/admin/users`, {
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users`, {
     method: "POST",
     headers: {
       apikey: env.supabaseAnonKey,
@@ -43,11 +62,14 @@ export async function adminCreateUser(env: Env, email: string, password: string)
 
 export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) return;
-  await fetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
+  const res = await supaFetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",
     headers: {
       apikey: env.supabaseAnonKey,
       authorization: `Bearer ${env.supabaseServiceRoleKey}`,
     },
-  }).catch(() => {});
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`admin delete user ${userId} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
+  }
 }

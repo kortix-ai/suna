@@ -50,7 +50,6 @@ flow(
   "BILL-4",
   {
     domain: "billing",
-    serial: true,
     routes: [
       "POST /v1/billing/cancel-subscription",
       "POST /v1/billing/reactivate-subscription",
@@ -105,7 +104,6 @@ flow(
   "BILL-4b",
   {
     domain: "billing",
-    serial: true,
     routes: ["POST /v1/billing/cancel-subscription", "POST /v1/billing/sync-seat-quantity"],
   },
   async (ctx) => {
@@ -135,7 +133,6 @@ flow(
   "BILL-9",
   {
     domain: "billing",
-    serial: true,
     routes: [
       "POST /v1/billing/create-per-seat-checkout",
       "POST /v1/billing/cancel-subscription",
@@ -185,7 +182,6 @@ flow(
   "BILL-10",
   {
     domain: "billing",
-    serial: true,
     routes: ["POST /v1/billing/sync-seat-quantity", "POST /v1/billing/claim-per-seat"],
   },
   async (ctx) => {
@@ -213,8 +209,8 @@ flow(
   "BILL-3b",
   {
     domain: "billing",
-    requires: ["stripe"],
     serial: true,
+    requires: ["stripe"],
     timeoutMs: 60_000,
     routes: [
       "POST /v1/billing/create-checkout-session",
@@ -262,7 +258,6 @@ flow(
   {
     domain: "billing",
     requires: ["stripe"],
-    serial: true,
     routes: ["GET /v1/billing/checkout-session/:sessionId", "POST /v1/billing/confirm-checkout-session"],
   },
   async (ctx) => {
@@ -301,7 +296,6 @@ flow(
   "BILL-8",
   {
     domain: "billing",
-    serial: true,
     routes: [
       "POST /v1/billing/webhooks/stripe",
       "POST /v1/billing/webhook/stripe",
@@ -352,7 +346,6 @@ flow(
   "DEL-2",
   {
     domain: "billing",
-    serial: true,
     routes: [
       "POST /v1/account/request-deletion",
       "POST /v1/account/cancel-deletion",
@@ -403,7 +396,6 @@ flow(
   "DEL-2b",
   {
     domain: "billing",
-    serial: true,
     routes: ["POST /v1/billing/account/request-deletion", "POST /v1/billing/account/cancel-deletion"],
   },
   async (ctx) => {

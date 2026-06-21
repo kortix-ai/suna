@@ -15,7 +15,7 @@ import { flow } from "../core/flow";
 // can't guarantee.
 flow(
   "PROJ-2",
-  { domain: "projects", serial: true, routes: ["POST /v1/projects"] },
+  { domain: "projects", routes: ["POST /v1/projects"] },
   async (ctx) => {
     await ctx.step("non-GitHub repo_url → 400", async () => {
       const r = await ctx.client
@@ -47,7 +47,6 @@ flow(
   "PROJ-10",
   {
     domain: "projects",
-    serial: true,
     routes: [
       "POST /v1/projects/:projectId/cli-token",
       "GET /v1/projects/:projectId/cli-token",
@@ -96,7 +95,7 @@ flow(
 // metadata.onboarding_completed_at and echoes the serialized project (200).
 flow(
   "PROJ-11",
-  { domain: "projects", serial: true, routes: ["PATCH /v1/projects/:projectId/onboarding"] },
+  { domain: "projects", routes: ["PATCH /v1/projects/:projectId/onboarding"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("mark onboarding completed → 200", async () => {
@@ -161,7 +160,6 @@ flow(
   "PROJ-13",
   {
     domain: "projects",
-    serial: true,
     routes: [
       "POST /v1/projects/:projectId/oauth/:provider/start",
       "POST /v1/projects/:projectId/oauth/:provider/poll",
@@ -266,7 +264,7 @@ flow(
 // serial.
 flow(
   "PROJ-15",
-  { domain: "projects", serial: true, routes: ["POST /v1/projects/legacy-migration/start"] },
+  { domain: "projects", routes: ["POST /v1/projects/legacy-migration/start"] },
   async (ctx) => {
     await ctx.step("start without sandbox_id → 400", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/legacy-migration/start", {});

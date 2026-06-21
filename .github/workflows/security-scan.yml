@@ -156,4 +156,7 @@ jobs:
             | tar -xz -C /usr/local/bin gitleaks
           gitleaks version
       - name: Scan full history
-        run: gitleaks detect --source . --redact --no-banner --exit-code 1
+        run: |
+          # This workflow is report-oriented (see header). The blocking PR secret
+          # gate lives in secret-scan.yml and scans only the PR commit range.
+          gitleaks detect --source . --redact --no-banner --exit-code 0

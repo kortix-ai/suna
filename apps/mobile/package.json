@@ -14,7 +14,8 @@
     "android:emulator": "emulator -avd Kortix_Dev",
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
-    "clean": "rm -rf .expo node_modules"
+    "clean": "rm -rf .expo node_modules",
+    "test": "bun test"
   },
   "dependencies": {
     "@agentpress/shared": "file:./lib/agentpress-shared",

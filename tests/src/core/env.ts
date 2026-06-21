@@ -32,6 +32,8 @@ export interface Env {
   apiUrl: string;
   /** Dashboard/web origin (for CLI-login callback flows). */
   baseUrl: string;
+  /** LLM gateway base — separate host, NOT /v1-suffixed. e.g. https://gateway-dev.kortix.com */
+  gatewayUrl: string;
   supabaseUrl: string;
   supabaseAnonKey: string | null;
   supabaseServiceRoleKey: string | null;
@@ -121,6 +123,14 @@ export function loadEnv(): Env {
   const stripeWebhookSecret = pick("KE2E_STRIPE_WEBHOOK_SECRET");
   const liveConfirm = pick("KE2E_LIVE_CONFIRM");
   const target = inferTarget(apiUrl);
+  const gatewayUrl = stripTrailingSlash(
+    pick("KE2E_GATEWAY_URL") ||
+      (target === "prod"
+        ? "https://gateway.kortix.com"
+        : target === "dev"
+          ? "https://gateway-dev.kortix.com"
+          : "http://localhost:8009"),
+  );
 
   const capabilities: Capabilities = {
     daytona: pick("KE2E_CAP_DAYTONA") !== "0",
@@ -135,6 +145,7 @@ export function loadEnv(): Env {
   cached = {
     apiUrl,
     baseUrl,
+    gatewayUrl,
     supabaseUrl,
     supabaseAnonKey,
     supabaseServiceRoleKey,

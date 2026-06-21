@@ -1,0 +1,7 @@
+apiVersion: v2
+name: qa-portal
+description: Internal QA report portal — nginx serving the latest Allure static report, synced from S3 via an IRSA sidecar. ALB Ingress at qa.kortix.com.
+type: application
+# Chart version; container images are pinned per-env via values (image tags).
+version: 0.1.0
+appVersion: "1.0.0"

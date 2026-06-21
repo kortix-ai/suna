@@ -15,7 +15,7 @@ const COMMON = {
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
-  agentCliPath: 'kortix-agent-cli',
+  slackCliPath: 'kortix-slack-cli',
   executorSdkPath: 'kortix-executor-sdk',
 };
 
@@ -33,7 +33,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('COPY kortix.gz /tmp/kortix.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
-    expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
+    expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
     expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });

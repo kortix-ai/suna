@@ -1,3 +1,0 @@
--- Superseded before merge.
--- The previous draft created obsolete project channel tables. Channel runtime
--- wiring will be reintroduced on top of the current project/session model.
