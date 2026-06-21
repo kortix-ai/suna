@@ -1,5 +1,6 @@
 import {
   endComputeSession,
+  pauseComputeSession,
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
@@ -73,6 +74,7 @@ export async function resumeStoppedSandbox(row: {
       and(
         eq(sessionSandboxes.sandboxId, row.sandboxId),
         eq(sessionSandboxes.status, 'stopped'),
+        sql`NOT (coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) ? 'needsReprovision')`,
       ),
     )
     .returning();
@@ -112,6 +114,12 @@ export async function resumeStoppedSandbox(row: {
     }
     // Revert so a later open retries the resume instead of spinning the health
     // poll against a VM that never came up.
+    await pauseComputeSession(row.sandboxId).catch((billingErr) => {
+      console.warn(
+        `[projects] failed to close reopened compute after resume failure for ${row.sandboxId}:`,
+        billingErr,
+      );
+    });
     await db
       .update(sessionSandboxes)
       .set({ status: 'stopped', updatedAt: new Date() })
@@ -121,6 +129,11 @@ export async function resumeStoppedSandbox(row: {
           eq(sessionSandboxes.externalId, externalId),
         ),
       )
+      .catch(() => {});
+    await db
+      .update(projectSessions)
+      .set({ status: 'stopped', updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, row.sessionId))
       .catch(() => {});
   });
   return true;
@@ -171,6 +184,7 @@ export async function selectPreResumeTargets(
       eq(sessionSandboxes.status, 'stopped'),
       isNotNull(sessionSandboxes.externalId),
       isNull(sessionSandboxes.poolState),
+      sql`NOT (coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) ? 'needsReprovision')`,
       eq(projectSessions.createdBy, userId),
     ))
     .orderBy(desc(sessionSandboxes.lastUsedAt))

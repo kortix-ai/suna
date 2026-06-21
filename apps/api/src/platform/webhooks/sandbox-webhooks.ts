@@ -27,6 +27,7 @@ import {
 } from '../../projects/sandbox-reaper';
 
 export type SandboxLifecycleOutcome = 'stopped' | 'removed' | 'noop';
+const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
 
 /**
  * Map a provider state / event name to the billing action. Only the terminal
@@ -38,7 +39,7 @@ export function classifyLifecycle(state: string | undefined | null, eventType: s
   const e = (eventType ?? '').toLowerCase();
   if (e.includes('delet') || e.includes('destroy')) return 'removed';
   if (['destroyed', 'deleted', 'removed', 'lost', 'failed-start'].includes(s)) return 'removed';
-  if (['stopped', 'stopping', 'archived', 'archiving'].includes(s)) return 'stopped';
+  if (['stopped', 'archived'].includes(s)) return 'stopped';
   return 'noop';
 }
 
@@ -77,6 +78,10 @@ export function verifySvix(
 ): boolean {
   const { id, timestamp, signature } = parts;
   if (!id || !timestamp || !signature) return false;
+  const timestampSeconds = Number.parseInt(timestamp, 10);
+  if (!Number.isFinite(timestampSeconds)) return false;
+  const ageSeconds = Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds);
+  if (ageSeconds > SVIX_TIMESTAMP_TOLERANCE_SECONDS) return false;
   const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
   const signedContent = `${id}.${timestamp}.${rawBody}`;
   const expected = createHmac('sha256', key).update(signedContent, 'utf8').digest('base64');
@@ -136,8 +141,12 @@ export async function handleDaytonaWebhook(
   const newState: string | undefined = event?.newState ?? event?.state ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
-  const dedupId = `daytona:${getHeader('webhook-id') ?? `${externalId}:${newState}:${event?.updatedAt ?? ''}`}`;
-  const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch(() => true);
+  const dedupId = `daytona:${getHeader('webhook-id') ?? `${externalId}:${eventType}:${newState}:${event?.updatedAt ?? ''}`}`;
+  const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch((err) => {
+    console.warn('[sandbox-webhook] Daytona dedupe store unavailable:', err instanceof Error ? err.message : err);
+    return null;
+  });
+  if (fresh == null) return { status: 503, body: { error: 'webhook dedupe unavailable' } };
   if (!fresh) return { status: 200, body: { ok: true, deduped: true } };
 
   const outcome = classifyLifecycle(newState, eventType);
@@ -174,8 +183,13 @@ export async function handlePlatinumWebhook(
   const newState: string | undefined = event?.state ?? event?.new_state ?? event?.newState ?? event?.data?.state;
   if (!externalId) return { status: 200, body: { ok: true, ignored: 'no sandbox id' } };
 
-  const dedupId = `platinum:${event?.id ?? `${externalId}:${eventType}:${event?.timestamp ?? ''}`}`;
-  const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch(() => true);
+  const deliveryId: string | undefined = event?.event_id ?? event?.delivery_id ?? event?.webhook_id ?? event?.data?.event_id;
+  const dedupId = `platinum:${deliveryId ?? `${externalId}:${eventType}:${newState ?? ''}:${event?.timestamp ?? ''}`}`;
+  const fresh = await recordWebhookEvent(dedupId, eventType || 'sandbox.event').catch((err) => {
+    console.warn('[sandbox-webhook] Platinum dedupe store unavailable:', err instanceof Error ? err.message : err);
+    return null;
+  });
+  if (fresh == null) return { status: 503, body: { error: 'webhook dedupe unavailable' } };
   if (!fresh) return { status: 200, body: { ok: true, deduped: true } };
 
   const outcome = classifyLifecycle(newState, eventType);

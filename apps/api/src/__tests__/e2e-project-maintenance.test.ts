@@ -98,19 +98,6 @@ mock.module('../projects/git', () => ({
   invalidateProjectMirror: () => {},
 }));
 
-mock.module('../projects/sandbox-reaper', () => ({
-  reapAndReconcileSandboxes: async () => ({
-    candidates: 0,
-    stopped: 0,
-    reconciled: 0,
-    billingClosed: 0,
-    skipped: 0,
-    errors: 0,
-  }),
-  reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
-  countBillingInvariantViolations: async () => 0,
-}));
-
 const {
   hasOpenPullRequestMarker,
   postgresTimestampParam,

@@ -28,7 +28,7 @@
  * invariant rather than a best-effort.
  */
 
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
@@ -168,9 +168,7 @@ interface ReapCandidate {
 async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean, reprovision: boolean): Promise<void> {
   // Close billing FIRST (computes the wall-clock delta against the still-active
   // metering row), then flip status, so the final window is billed correctly.
-  await pauseComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-  );
+  await pauseComputeSession(row.sandboxId);
   const meta = buildIdleStopMetadata({ quiesce, reprovision, nowIso: now.toISOString() });
   await db
     .update(sessionSandboxes)
@@ -223,6 +221,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
       // Unclaimed warm-pool spares manage their own lifecycle.
       sql`${sessionSandboxes.poolState} IS NULL`,
     ))
+    .orderBy(asc(sessionSandboxes.createdAt))
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 
   const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
@@ -290,9 +289,7 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.billingClosed += 1;
             break;
           case 'reconcile-removed':
-            await endComputeSession(row.sandboxId).catch((err) =>
-              console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-            );
+            await endComputeSession(row.sandboxId);
             // Status MUST be 'stopped' (not 'archived'): openSession only honors
             // `needsReprovision` in its `row.status === 'stopped'` branch. An
             // 'archived' row would fall through to a terminal 'stopped' result and
@@ -415,6 +412,7 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .where(eq(sandboxComputeSessions.state, 'active'))
+    .orderBy(asc(sandboxComputeSessions.lastBilledAt))
     .limit(REAP_BATCH_SIZE);
 
   let closed = 0;
@@ -463,9 +461,7 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
     .limit(1);
   if (!row) return false;
   if (row.status === 'stopped' || row.status === 'archived') return false;
-  await pauseComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-  );
+  await pauseComputeSession(row.sandboxId);
   // Quiesce: a provider-confirmed stop must stay stopped — passive /v1/p traffic
   // (markSandboxUsed heal / wakeSandbox) must not resurrect it. Cleared on an
   // explicit open / real turn.
@@ -490,9 +486,7 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
-  await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-  );
+  await endComputeSession(row.sandboxId);
   // 'stopped' (not 'archived') + needsReprovision so openSession's stopped-branch
   // reprovisions a fresh box on the next open (an archived row would strand it).
   await db

@@ -12,12 +12,14 @@ let stops: string[] = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
+let throwPauseCompute = false;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
 /** A thenable that also exposes `.limit()` so both `await where()` (turn query)
  *  and `where().limit()` (candidate query) resolve to the same rows. */
 function hybrid(rows: any[], throwOnGroupBy = false) {
   const p: any = Promise.resolve(rows);
+  p.orderBy = () => p;
   p.limit = async () => rows;
   p.groupBy = async () => {
     if (throwOnGroupBy) throw new Error('db down');
@@ -78,6 +80,7 @@ mock.module('../sandbox-proxy', () => ({
 
 mock.module('../billing/services/compute-metering', () => ({
   pauseComputeSession: async (sandboxId: string) => {
+    if (throwPauseCompute) throw new Error('billing down');
     pausedCompute.push(sandboxId);
   },
   endComputeSession: async (sandboxId: string) => {
@@ -100,6 +103,7 @@ beforeEach(() => {
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
+  throwPauseCompute = false;
   updateCalls = [];
 });
 
@@ -229,6 +233,19 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // never poke a stopped box
     expect(pausedCompute).toEqual(['sb-1']);
     expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(true);
+  });
+
+  test('does not write stopped state if billing close fails', async () => {
+    candidates = [candidate()];
+    statusByExternal['ext-1'] = 'stopped';
+    throwPauseCompute = true;
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.errors).toBe(1);
+    expect(r.reconciled).toBe(0);
+    expect(r.billingClosed).toBe(0);
+    expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(false);
   });
 
   test('leaves a recently-active box running', async () => {

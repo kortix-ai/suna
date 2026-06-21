@@ -7,11 +7,12 @@
  * activity (see projects/sandbox-reaper.ts for the fix). This script makes the
  * affected accounts whole.
  *
- * Policy (decided): FULL refund of every AFFECTED (leaked) compute session —
- * not just the overage portion. A session is "affected" if it was billed past
+ * Policy (decided): FULL refund of every AFFECTED (leaked) compute window —
+ * not just the overage portion. A window is "affected" if it was billed past
  * `lastMeaningfulActivity + grace` (default 15 min), where lastMeaningful =
- * max(last LLM call in usage_events, the session's creation). That flags every
- * session the auto-stop bug touched (including the still-`active` phantom rows)
+ * max(last LLM call in usage_events during that compute window, the window's
+ * start). That flags every window the auto-stop bug touched (including still-
+ * `active` phantom rows)
  * while excluding clean short sessions. The refund for each is its FULL
  * `cost_usd`.
  *
@@ -80,11 +81,6 @@ async function loadAffected(args: Args): Promise<AffectedRow[]> {
     : sql``;
 
   const rows: any = await db.execute(sql`
-    WITH usage AS (
-      SELECT session_id, max(created_at) AS last_usage
-      FROM kortix.usage_events
-      GROUP BY session_id
-    )
     SELECT
       cs.id            AS compute_id,
       cs.account_id    AS account_id,
@@ -98,7 +94,13 @@ async function loadAffected(args: Args): Promise<AffectedRow[]> {
       ))::bigint AS over_seconds
     FROM kortix.sandbox_compute_sessions cs
     LEFT JOIN kortix.session_sandboxes ss ON ss.sandbox_id = cs.sandbox_id
-    LEFT JOIN usage u ON u.session_id = cs.session_id
+    LEFT JOIN LATERAL (
+      SELECT max(ue.created_at) AS last_usage
+      FROM kortix.usage_events ue
+      WHERE ue.session_id = cs.session_id
+        AND ue.created_at >= cs.started_at
+        AND ue.created_at <= coalesce(cs.ended_at, cs.last_billed_at)
+    ) u ON true
     WHERE cs.cost_usd > 0
       ${accountFilter}
       ${projectFilter}
