@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { AlertTriangle, Coins, DollarSign, Zap } from 'lucide-react';
+import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis } from 'recharts';
 
 import {
@@ -212,7 +212,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const models = breakdown?.models ?? [];
   const maxModelRequests = Math.max(1, ...models.map((m) => m.requests));
   const sessions = sessionsData?.sessions ?? [];
-  const maxSessionCost = Math.max(0.000001, ...sessions.map((s) => s.cost));
+  const maxSessionCost = Math.max(0.000001, ...sessions.map((s) => s.total_cost));
   const errorTypes = errorData?.errors ?? [];
   const maxErrorCount = Math.max(1, ...errorTypes.map((e) => e.count));
 
@@ -373,17 +373,17 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
         <SectionCard
           title="Top sessions"
           count={sessions.length}
-          description="Highest-spend sessions across this window"
+          description="Total cost per session — LLM + sandbox compute"
         >
           {sessions.length === 0 ? (
             <div className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               {sessions.map((s, i) => {
                 const accent = modelAccent(s.session_id);
                 return (
                   <div key={s.session_id} className="min-w-0">
-                    <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <div className="mb-1 flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
                         <span
                           className="flex size-5 shrink-0 items-center justify-center rounded-md text-xs font-semibold tabular-nums"
@@ -395,15 +395,29 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                           {s.session_id.slice(0, 8)}
                         </span>
                       </div>
-                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                        {s.requests.toLocaleString()} req · {s.models} model{s.models === 1 ? '' : 's'} ·{' '}
-                        {fmtUsd(s.cost)}
+                      <span className="shrink-0 tabular-nums text-sm font-semibold text-foreground">
+                        {fmtUsd(s.total_cost)}
                       </span>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-primary/[0.06]">
+                    <div className="mb-1.5 flex items-center gap-3 pl-7 text-xs tabular-nums text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Sparkles className="size-3 text-chart-1" />
+                        {fmtUsd(s.llm_cost)}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Cpu className="size-3 text-chart-4" />
+                        {fmtUsd(s.compute_cost)}
+                      </span>
+                      <span className="text-muted-foreground/70">{s.requests.toLocaleString()} req</span>
+                    </div>
+                    <div className="flex h-1.5 overflow-hidden rounded-full bg-primary/[0.06]">
                       <div
-                        className="h-full rounded-full transition-[width] duration-700 ease-out"
-                        style={{ width: `${(s.cost / maxSessionCost) * 100}%`, backgroundColor: accent }}
+                        className="h-full bg-chart-1 transition-[width] duration-700 ease-out"
+                        style={{ width: `${(s.llm_cost / maxSessionCost) * 100}%` }}
+                      />
+                      <div
+                        className="h-full bg-chart-4 transition-[width] duration-700 ease-out"
+                        style={{ width: `${(s.compute_cost / maxSessionCost) * 100}%` }}
                       />
                     </div>
                   </div>

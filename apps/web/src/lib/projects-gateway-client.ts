@@ -88,12 +88,15 @@ export interface GatewayBreakdown {
 
 export interface GatewaySessionStat {
   session_id: string;
+  llm_cost: number;
+  compute_cost: number;
+  total_cost: number;
   requests: number;
   errors: number;
-  cost: number;
   tokens: number;
   models: number;
-  last_at: string;
+  compute_seconds: number;
+  last_at: string | null;
 }
 
 export interface GatewaySessions {
