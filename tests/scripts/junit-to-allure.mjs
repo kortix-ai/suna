@@ -38,15 +38,10 @@ function attrs(raw = '') {
   return result;
 }
 
-function escapeHtml(value = '') {
-  return value.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
-}
-
 function stripTags(value = '') {
-  // Decode entities and drop tags for readability, then HTML-escape the result
-  // so the plain text can never re-form markup — escaping is the complete
-  // sanitizer (no '<' can reach the output).
-  return escapeHtml(decodeXml(value).replace(/<[^>]*>?/g, '')).trim();
+  // Decode entities first, then drop every tag (closing '>' optional, so an
+  // unclosed '<tag' is removed too). Plain text for the Allure report.
+  return decodeXml(value).replace(/<[^>]*>?/g, '').trim();
 }
 
 function statusFor(body) {
