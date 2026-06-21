@@ -9,7 +9,7 @@ import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import {
   ProjectRow,
@@ -61,7 +61,14 @@ export async function resumeStoppedSandbox(row: {
   // proceeds to start the VM. Concurrent polls see `active` and just return it.
   const [won] = await db
     .update(sessionSandboxes)
-    .set({ status: 'active', updatedAt: now })
+    .set({
+      status: 'active',
+      updatedAt: now,
+      // Explicit resume clears the reaper's idle-quiesce marker so the resumed
+      // box is treated normally again (passive traffic can keep it warm until
+      // the next idle window).
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'idleQuiesced' - 'idleQuiescedAt'`,
+    })
     .where(
       and(
         eq(sessionSandboxes.sandboxId, row.sandboxId),
@@ -441,6 +448,13 @@ export async function openSession(args: {
       row.provider,
     )
   ) {
+    // A box the reaper idle-stopped with `needsReprovision` cannot be safely
+    // resumed in place (Platinum's stop→resume wedges the guest — the CH
+    // resume-freeze). Replace it with a fresh box on open instead. This is an
+    // EXPLICIT open, so it clears the idle state by re-provisioning.
+    if ((row.metadata as Record<string, unknown> | null)?.needsReprovision) {
+      return replaceStaleRuntimeOnOpen(loaded, visible, projectId, sessionId, row, 'reprovision_on_open');
+    }
     await resumeStoppedSandbox({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
