@@ -281,7 +281,11 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             result.skipped += 1;
             break;
           case 'reconcile-stopped':
-            await reconcileRowToStopped(row, now, false, false);
+            // Quiesce even a provider-confirmed stop: a Daytona native auto-stop
+            // (or a webhook/reaper stop) must NOT be resurrected by passive /v1/p
+            // traffic (markSandboxUsed heals unflagged stopped rows). It comes
+            // back only on an explicit open / real turn, which clears the flag.
+            await reconcileRowToStopped(row, now, /* quiesce */ true, false);
             result.reconciled += 1;
             result.billingClosed += 1;
             break;
@@ -462,7 +466,13 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
   await pauseComputeSession(row.sandboxId).catch((err) =>
     console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
   );
-  await db.update(sessionSandboxes).set({ status: 'stopped', updatedAt: now }).where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  // Quiesce: a provider-confirmed stop must stay stopped — passive /v1/p traffic
+  // (markSandboxUsed heal / wakeSandbox) must not resurrect it. Cleared on an
+  // explicit open / real turn.
+  await db
+    .update(sessionSandboxes)
+    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso: now.toISOString() })) })
+    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
   return true;

@@ -31,7 +31,8 @@
  * compute rows + grants credits). Review the dry-run report first.
  */
 
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
+import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../shared/db';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { grantCredits } from '../billing/services/credits';
@@ -133,14 +134,46 @@ async function alreadyRefunded(accountId: string, key: string): Promise<boolean>
   return (res.rows ?? res).length > 0;
 }
 
+/** Re-sum cost_usd per account from a set of compute-session ids (post-settle). */
+async function settledTotalsByAccount(computeIds: string[]): Promise<Map<string, { count: number; refund: number }>> {
+  const out = new Map<string, { count: number; refund: number }>();
+  const CHUNK = 1000;
+  for (let i = 0; i < computeIds.length; i += CHUNK) {
+    const chunk = computeIds.slice(i, i + CHUNK);
+    if (chunk.length === 0) continue;
+    const rows = await db
+      .select({ accountId: sandboxComputeSessions.accountId, cost: sandboxComputeSessions.costUsd })
+      .from(sandboxComputeSessions)
+      .where(inArray(sandboxComputeSessions.id, chunk));
+    for (const r of rows) {
+      const acct = String(r.accountId);
+      const cur = out.get(acct) ?? { count: 0, refund: 0 };
+      cur.count += 1;
+      cur.refund += Number(r.cost ?? 0);
+      out.set(acct, cur);
+    }
+  }
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // A filtered --apply would write the account-wide idempotency key
+  // (compute_refund:v1:<account>) for only part of an account, making a later
+  // full-org reimbursement skip the rest of that account as "already refunded".
+  // Filters are for dry-run INSPECTION only; --apply is org-wide.
+  if (args.apply && (args.account || args.project)) {
+    console.error('[reimburse] REFUSING --apply with --account/--project — a partial apply would poison the account-wide idempotency key. Use filters for dry-run only; run --apply org-wide.');
+    process.exit(2);
+  }
+
   console.log(`[reimburse] mode=${args.apply ? 'APPLY' : 'dry-run'} grace=${args.ttlMinutes}m` +
     `${args.account ? ` account=${args.account}` : ''}${args.project ? ` project=${args.project}` : ''}`);
 
   const affected = await loadAffected(args);
 
-  // Aggregate per account.
+  // Pre-settle aggregate for the report (apply re-computes from settled rows).
   const byAccount = new Map<string, { count: number; refund: number; activeIds: string[] }>();
   for (const r of affected) {
     const agg = byAccount.get(r.accountId) ?? { count: 0, refund: 0, activeIds: [] };
@@ -149,45 +182,45 @@ async function main() {
     if (r.state === 'active') agg.activeIds.push(r.sandboxId);
     byAccount.set(r.accountId, agg);
   }
-
   const accounts = [...byAccount.entries()].sort((a, b) => b[1].refund - a[1].refund);
-  const totalRefund = accounts.reduce((s, [, v]) => s + v.refund, 0);
-  const totalSessions = affected.length;
 
-  console.log(`\n[reimburse] affected sessions: ${totalSessions} across ${accounts.length} accounts`);
-  console.log(`[reimburse] total refund: $${round2(totalRefund)}\n`);
+  console.log(`\n[reimburse] affected sessions: ${affected.length} across ${accounts.length} accounts`);
+  console.log(`[reimburse] total (pre-settle estimate): $${round2(accounts.reduce((s, [, v]) => s + v.refund, 0))}\n`);
   console.log('account                                 sessions   refund_usd   active_now');
   for (const [acct, v] of accounts) {
     console.log(`${acct}  ${String(v.count).padStart(8)}   ${String(round2(v.refund)).padStart(10)}   ${String(v.activeIds.length).padStart(9)}`);
   }
 
   if (!args.apply) {
-    console.log('\n[reimburse] DRY-RUN — no changes made. Re-run with --apply to close affected active rows + issue refunds.');
+    console.log('\n[reimburse] DRY-RUN — no changes. Amounts are pre-settle estimates; --apply settles affected active rows FIRST, then refunds the exact settled cost.');
     return;
   }
 
-  console.log('\n[reimburse] APPLY: closing affected active compute rows, then issuing idempotent refunds…');
+  // 1) Settle EVERY affected active row first so cost_usd includes the final
+  //    unbilled window — otherwise the refund under-counts (or never-ticked rows
+  //    would refund as $0).
+  console.log('\n[reimburse] APPLY 1/3: settling affected active compute rows…');
   let closed = 0;
+  const activeSandboxIds = [...new Set(affected.filter((a) => a.state === 'active').map((a) => a.sandboxId))];
+  for (const sid of activeSandboxIds) {
+    try { await pauseComputeSession(sid); closed += 1; }
+    catch (err) { console.warn(`[reimburse] settle failed for ${sid}:`, err instanceof Error ? err.message : err); }
+  }
+
+  // 2) Re-read the SETTLED cost per account from the affected rows.
+  console.log('[reimburse] APPLY 2/3: re-reading settled costs…');
+  const settled = await settledTotalsByAccount(affected.map((a) => a.computeId));
+
+  // 3) Idempotent full refund per account from the settled amounts.
+  console.log('[reimburse] APPLY 3/3: issuing refunds…');
   let refundedAccounts = 0;
   let refundedUsd = 0;
   let skippedAccounts = 0;
-
-  for (const [acct, v] of accounts) {
-    // 1) Stop further billing on affected rows that are still active.
-    for (const sandboxId of v.activeIds) {
-      try {
-        await pauseComputeSession(sandboxId);
-        closed += 1;
-      } catch (err) {
-        console.warn(`[reimburse] pauseComputeSession failed for ${sandboxId}:`, err instanceof Error ? err.message : err);
-      }
-    }
-
-    // 2) Idempotent full refund for the account.
+  for (const [acct, v] of settled) {
     const key = `compute_refund:v1:${acct}`;
     if (await alreadyRefunded(acct, key)) {
       skippedAccounts += 1;
-      console.log(`[reimburse] ${acct} already refunded (key ${key}) — skipping`);
+      console.log(`[reimburse] ${acct} already refunded — skipping`);
       continue;
     }
     const amount = round2(v.refund);
@@ -197,7 +230,7 @@ async function main() {
         acct,
         amount,
         'compute_refund',
-        `Compute over-billing reimbursement — full refund of ${v.count} session(s) affected by the sandbox auto-stop bug`,
+        `Compute over-billing reimbursement — full refund of ${v.count} affected session(s)`,
         false, // non-expiring
         key,   // → credit_ledger.stripe_event_id UNIQUE index = permanent idempotency
       );
@@ -209,7 +242,7 @@ async function main() {
     }
   }
 
-  console.log(`\n[reimburse] DONE. closed=${closed} compute rows | refunded ${refundedAccounts} accounts ($${round2(refundedUsd)}) | skipped ${skippedAccounts} already-refunded`);
+  console.log(`\n[reimburse] DONE. settled=${closed} | refunded ${refundedAccounts} accounts ($${round2(refundedUsd)}) | skipped ${skippedAccounts} already-refunded`);
 }
 
 main()
