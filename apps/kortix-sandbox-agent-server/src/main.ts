@@ -13,6 +13,7 @@ import {
 } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
+import { initialPromptAlreadyDelivered, markInitialPromptDelivered } from './initial-prompt'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
@@ -540,16 +541,18 @@ async function maybeCreateInitialOpencodeSession(
 
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
+  const promptDeliveredOnDisk = prompt.length > 0 && initialPromptAlreadyDelivered()
 
   const existing = await resolveExistingRoot(baseUrl, workspace)
   let sessionId: string
   let alreadyDelivered = false
   if (existing) {
     sessionId = existing.id
-    alreadyDelivered = existing.hasMessages
+    alreadyDelivered = existing.hasMessages || promptDeliveredOnDisk
     logger.info('[boot] reusing existing opencode root', {
       sessionId,
       alreadyDelivered,
+      promptDeliveredOnDisk,
       lastTurnIncomplete: existing.lastTurnIncomplete,
     })
     // A turn interrupted by the restart left a part stuck "running"; finalize it
@@ -565,6 +568,7 @@ async function maybeCreateInitialOpencodeSession(
     const session = (await sessionRes.json()) as { id?: string }
     if (!session.id) throw new Error('opencode session create returned no id')
     sessionId = session.id
+    alreadyDelivered = promptDeliveredOnDisk
   }
 
   pinOpencodeSessionFile(sessionId)
@@ -591,7 +595,10 @@ async function maybeCreateInitialOpencodeSession(
     if (!promptRes.ok) {
       throw new Error(`opencode prompt failed: ${promptRes.status} ${await promptRes.text()}`)
     }
+    markInitialPromptDelivered()
     logger.info('[boot] initial prompt delivered', { sessionId })
+  } else if (prompt && promptDeliveredOnDisk) {
+    logger.info('[boot] initial prompt already delivered on durable disk; not re-running', { sessionId })
   } else if (prompt) {
     logger.info('[boot] initial prompt already delivered to reused root; not re-running', { sessionId })
   } else {

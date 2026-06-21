@@ -112,7 +112,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
   })
 
   test('exposes AWS Bedrock models under the kortix provider', () => {
-    const config = JSON.parse(buildExecutorMcpConfigContent(GATEWAY_ENV)!)
+    const config = JSON.parse(buildOpencodeConfigContent(GATEWAY_ENV)!)
     const models = config.provider.kortix.models
     // bedrock/ prefixed ids are routed to the gateway's Bedrock backend.
     expect(models['bedrock/anthropic/claude-opus-4.8']).toBeDefined()
