@@ -21,7 +21,7 @@ awsCli:
 # ── S3 source ─────────────────────────────────────────────────────────────────
 # The sidecar runs `aws s3 sync s3://<bucket>/<prefix> /usr/share/nginx/html`.
 bucket: "" # REQUIRED — kortix-qa-reports (from terraform output bucket_name)
-s3Prefix: "reports/latest" # the generated static report to serve
+s3Prefix: "reports" # the generated static report to serve
 region: us-west-2
 
 # How often the sidecar re-syncs the latest report (seconds).

@@ -4,11 +4,34 @@ import { join } from 'node:path';
 
 const DIR = join(import.meta.dir, '..', 'migrations');
 const NAME_RE = /^\d{17}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/;
+const TS_RE = /^(\d{17})_/;
 const DOWN_MARKER = /^\s*--[\s-]*down\s+migration/im;
 
 export interface LintResult {
   errors: string[];
   warnings: string[];
+}
+
+// Set-level invariant: every migration's 17-digit timestamp must be unique.
+// (Ordering within a checkout is the sorted filename order; "a new migration
+// must come AFTER every merged one" is enforced by the git-aware sequence gate
+// in db-migrations.yml, which a single checkout can't see.)
+export function lintMigrationSet(filenames: string[]): string[] {
+  const errors: string[] = [];
+  const seen = new Map<string, string>();
+  for (const f of filenames) {
+    const ts = TS_RE.exec(f)?.[1];
+    if (!ts) continue;
+    const dup = seen.get(ts);
+    if (dup) {
+      errors.push(
+        `${f}: duplicate migration timestamp ${ts} (also ${dup}). Each migration needs a unique timestamp — regenerate with \`pnpm migrate:create\`.`,
+      );
+    } else {
+      seen.set(ts, f);
+    }
+  }
+  return errors;
 }
 
 function stripComments(text: string): string {
@@ -78,6 +101,7 @@ function main(): void {
     errors.push(...e);
     warnings.push(...w);
   }
+  errors.push(...lintMigrationSet(files));
 
   for (const w of warnings) console.log(`::warning::${w}`);
   for (const e of errors) console.error(`::error::${e}`);

@@ -7,7 +7,7 @@
 
 # S3 bucket holding the Allure results + generated reports (terraform output bucket_name).
 bucket: kortix-qa-reports
-s3Prefix: "reports/latest"
+s3Prefix: "reports"
 region: us-west-2
 
 # Resync the served report from S3 every 2 minutes.

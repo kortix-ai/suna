@@ -33,11 +33,17 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   full-suite:
     name: full suite + quality gates
     runs-on: ubuntu-latest
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+      QA_REPORTS_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+      QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
+      QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
     timeout-minutes: 180
     env:
       API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
@@ -102,6 +108,8 @@ jobs:
 
       - name: Install test dependencies
         run: cd tests && bun install --frozen-lockfile
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: Install Playwright Chromium
         run: cd tests && npx playwright install --with-deps chromium
 
@@ -126,11 +134,36 @@ jobs:
       - name: Build report artifacts
         if: always()
         run: |
+          # Co-located bun:test unit suites (~830) into the report.
+          bash tests/scripts/collect-bun-junit.sh || true
+          # vitest/pact/bun JUnit -> allure-results.
           npm --prefix tests run allure:junit
+          # ke2e API flows (283) -> allure-results (native exporter, same dir).
+          npm --prefix tests run allure || true
           cd tests
           rm -rf test-results/allure-report
           npx allure generate test-results/allure-results -o test-results/allure-report || true
           npm run catalog || true
+      - name: AWS auth for report publish
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Publish release Allure report
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        run: |
+          set -euo pipefail
+          run_key="release/${{ github.run_id }}"
+          aws s3 sync tests/test-results/allure-report \
+            "s3://${QA_REPORTS_BUCKET}/${QA_REPORTS_PREFIX}/${run_key}/" \
+            --delete --only-show-errors
+          url="${QA_REPORTS_PUBLIC_BASE_URL%/}/${QA_REPORTS_PREFIX}/${run_key}/index.html"
+          {
+            echo "### Full-suite Allure report"
+            echo ""
+            echo "Report: $url"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

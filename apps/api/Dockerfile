@@ -68,8 +68,12 @@ COPY packages/registry ./packages/registry
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
 # Include devDeps because the API runs TypeScript source directly under Bun.
+# Also install the root project's deps (--filter kortix) so the migration runner
+# (node-pg-migrate, pg) is bundled in the image — self-hosters apply migrations
+# with `bun packages/db/scripts/migrate.ts up`. node-pg-migrate lives at the root
+# (not @kortix/db) to keep the db package's drizzle-orm resolution single.
 RUN corepack enable pnpm && \
-    pnpm install --filter ./${SERVICE}... --shamefully-hoist --prod=false --ignore-scripts
+    pnpm install --filter ./${SERVICE}... --filter kortix --shamefully-hoist --prod=false --ignore-scripts
 
 # ---- Runner Stage ----
 FROM base AS runner
@@ -115,6 +119,11 @@ COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
 COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
+# Migrations + the node-pg-migrate runner — so the image can apply migrations.
+# Self-hosters (no CI pipeline): `docker run <image> bun packages/db/scripts/migrate.ts up`.
+# Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
+COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
+COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
 COPY --from=deps /app/packages/agent-tunnel/src ./packages/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel/package.json
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
@@ -132,8 +141,9 @@ COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
 
-# Copy SQL migrations used by ensureSchema() at runtime.
-COPY supabase/migrations ./supabase/migrations
+# Migrations are NOT bundled into the image: deployed ensureSchema() is warn-only
+# (it never applies at boot), and migrations run in the deploy pipeline's
+# migrate-db job (pnpm migrate, from the checkout) before the new code serves.
 
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
