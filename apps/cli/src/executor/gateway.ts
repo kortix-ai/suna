@@ -57,7 +57,7 @@ export function executorClient(projectOverride?: string): ExecutorClient {
  * management + setup-link minting. Resolves the sandbox env-token host
  * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
  */
-export function executorProjectContext(): { client: ApiClient; projectId: string } {
+export function executorProjectContext(projectOverride?: string): { client: ApiClient; projectId: string } {
   const auth = loadAuth();
   if (!auth?.token) {
     throw new CliError(
@@ -65,7 +65,7 @@ export function executorProjectContext(): { client: ApiClient; projectId: string
       'MISSING_ENV',
     );
   }
-  const projectId = resolveProjectId();
+  const projectId = resolveProjectId(projectOverride);
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
   return { client: clientFromAuth(auth), projectId };
 }
@@ -88,9 +88,10 @@ export interface SecretLinkResult {
 export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
+  projectOverride?: string;
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
-  const { client, projectId } = executorProjectContext();
+  const { client, projectId } = executorProjectContext(opts.projectOverride);
   return client.post<ConnectLinkResult>(`/projects/${projectId}/connect-requests`, {
     slug: opts.slug,
     ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
@@ -104,9 +105,10 @@ export async function mintSecretLink(opts: {
   expiresInMinutes?: number;
   labels?: Record<string, string>;
   descriptions?: Record<string, string>;
+  projectOverride?: string;
 }): Promise<SecretLinkResult> {
   if (opts.names.length === 0) throw new CliError('at least one secret name is required', 'USAGE');
-  const { client, projectId } = executorProjectContext();
+  const { client, projectId } = executorProjectContext(opts.projectOverride);
   return client.post<SecretLinkResult>(`/projects/${projectId}/secret-requests`, {
     names: opts.names,
     ...(opts.scope ? { scope: opts.scope } : {}),
@@ -125,8 +127,9 @@ export async function mintSecretLink(opts: {
  */
 export async function addConnector(
   draft: Record<string, unknown>,
+  projectOverride?: string,
 ): Promise<{ ok: boolean; sync?: unknown }> {
-  const { client, projectId } = executorProjectContext();
+  const { client, projectId } = executorProjectContext(projectOverride);
   return client.post<{ ok: boolean; sync?: unknown }>(
     `/executor/projects/${projectId}/connectors`,
     draft,
@@ -134,7 +137,7 @@ export async function addConnector(
 }
 
 /** Remove a connector from the project (kortix.toml on main + catalog). */
-export async function removeConnector(slug: string): Promise<void> {
-  const { client, projectId } = executorProjectContext();
+export async function removeConnector(slug: string, projectOverride?: string): Promise<void> {
+  const { client, projectId } = executorProjectContext(projectOverride);
   await client.delete(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);
 }
