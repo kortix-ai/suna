@@ -25,9 +25,11 @@ PSQL=(psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1)
 
 record_applied() {
   local version="$1"
-  "${PSQL[@]}" -v migration_version="$version" \
-    -c "INSERT INTO kortix.schema_migrations (version) VALUES (:'migration_version') ON CONFLICT DO NOTHING" \
-    >/dev/null
+  "${PSQL[@]}" -v migration_version="$version" >/dev/null <<'SQL'
+INSERT INTO kortix.schema_migrations (version)
+VALUES (:'migration_version')
+ON CONFLICT DO NOTHING;
+SQL
 }
 
 echo "[migrate] ensuring kortix.schema_migrations ledger…"
