@@ -41,12 +41,20 @@ collisions — pick a unique name.
 
 ```typescript
 #!/usr/bin/env bun
-import { parseArgs, out, handleError, requireEnv, CliError, validateRequired } from "../lib"
+import { parseArgs, out, handleError, CliError, validateRequired, kortixProjectId, getEnv } from "../lib"
+import { createExecutorClient } from "../../../../packages/executor-sdk/src/index"
 
 async function send(opts: { channel: string; text: string }) {
-  const token = requireEnv("SLACK_BOT_TOKEN")
-  // …call vendor API…
-  return { ok: true, ts: "1715000000.0001" }
+  // Vendor calls go through the Kortix Executor — the credential is resolved
+  // SERVER-SIDE, so there is NO vendor token (no SLACK_BOT_TOKEN etc.) in the
+  // sandbox. Authenticate to the gateway with the session token instead.
+  const client = createExecutorClient({
+    apiUrl: getEnv("KORTIX_API_URL")!,
+    token: getEnv("KORTIX_CLI_TOKEN")!,
+    projectId: kortixProjectId(),
+  })
+  const res = await client.call("slack", "send_message", { channel: opts.channel, text: opts.text })
+  return res.data
 }
 
 async function main(): Promise<void> {
@@ -72,8 +80,11 @@ Rules:
 
 - **JSON-only stdout**, exit 0 on success and 1 on failure. The agent parses
   results — never write progress to stdout.
-- **Auth via env.** Tokens such as `SLACK_BOT_TOKEN` are injected at sandbox
-  spawn from `project_secrets`. No per-sandbox state on disk.
+- **No vendor tokens in the sandbox.** Vendor calls (e.g. Slack) run through the
+  Kortix Executor, which resolves the credential server-side; the CLI auths to
+  apps/api with the per-session `KORTIX_CLI_TOKEN` (+ `KORTIX_API_URL`). Binary /
+  multipart vendor ops the JSON gateway can't carry (Slack file download/upload)
+  go through dedicated apps/api proxy routes — still token-free in the box.
 - **Every CLI exposes a `help` subcommand** printing its full surface so the
   agent can self-discover.
 
