@@ -34,10 +34,18 @@ package with `pnpm --filter <name> test`. The `package-tests` workflow runs them
 Run tests before pushing:
 
 ```bash
-pnpm test                      # all co-located unit suites
+pnpm ci:pr                     # run the FULL PR gate locally (mirrors .github/workflows) — push clean
+pnpm ci:release                # the full pre-prod gate (what runs on a PR into prod)
+pnpm test                      # just all co-located unit suites
 pnpm --filter <name> test      # just the package you touched
 make fast                      # lint + typecheck + unit + smoke (cross-cutting)
 ```
+
+`pnpm ci:pr` runs each GitHub check (tests-required, focused-test guard, unit
+suites, typecheck, biome, `make ci-pr`, terraform fmt/tflint, checkov/trivy,
+gitleaks) and prints a pass/fail/skip summary. Anything that needs Docker,
+`apps/api/.env.keys`, or terraform that you don't have locally is **skipped**
+(it still runs in CI) — so a green local run means the PR will be green too.
 
 ### Test review checklist (for PR authors and reviewers)
 

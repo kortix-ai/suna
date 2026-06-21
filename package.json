@@ -30,7 +30,10 @@
     "lint:biome": "biome check .",
     "lint:biome:fix": "biome check --write .",
     "format": "biome format --write .",
-    "format:check": "biome format ."
+    "format:check": "biome format .",
+    "ci": "bash scripts/ci-local.sh pr",
+    "ci:pr": "bash scripts/ci-local.sh pr",
+    "ci:release": "bash scripts/ci-local.sh release"
   },
   "devDependencies": {
     "@clack/prompts": "^0.7.0",
