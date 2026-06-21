@@ -1,7 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { config } from '../../config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
-import { handleDaytonaWebhook, handlePlatinumWebhook } from '../../platform/webhooks/sandbox-webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 
 export const webhooksRouter = makeOpenApiApp();
@@ -59,41 +58,5 @@ webhooksRouter.openapi(
   },
 );
 
-// Provider sandbox-lifecycle webhooks — deterministic billing close (the reaper
-// sweep is the backstop). Raw body is required for signature verification, so no
-// JSON body schema is declared. Inert (503) until the matching secret is set.
-webhooksRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/daytona',
-    tags: ['billing'],
-    summary: 'Daytona sandbox lifecycle webhook (Svix-signed, public)',
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
-      ...errors(400, 401, 503),
-    },
-  }),
-  async (c: any) => {
-    const rawBody = await c.req.text();
-    const { status, body } = await handleDaytonaWebhook(rawBody, (h: string) => c.req.header(h));
-    return c.json(body, status);
-  },
-);
-
-webhooksRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/platinum',
-    tags: ['billing'],
-    summary: 'Platinum sandbox lifecycle webhook (HMAC-SHA-256, public)',
-    responses: {
-      200: json(z.record(z.string(), z.any()), 'Webhook processing result'),
-      ...errors(400, 401, 503),
-    },
-  }),
-  async (c: any) => {
-    const rawBody = await c.req.text();
-    const { status, body } = await handlePlatinumWebhook(rawBody, (h: string) => c.req.header(h));
-    return c.json(body, status);
-  },
-);
+// Sandbox lifecycle webhooks (Daytona/Platinum) live at /v1/webhooks/sandbox/*
+// (platform/webhooks/routes.ts) — they're provider state events, not billing.
