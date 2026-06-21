@@ -39,6 +39,9 @@ spec:
         - name: landing
           configMap:
             name: {{ include "qa-portal.name" . }}-landing
+        - name: nginx-conf
+          configMap:
+            name: {{ include "qa-portal.name" . }}-nginx
       initContainers:
         # Prime the volume before nginx serves — readiness then gates the ALB on
         # the report (or a placeholder) being present.
@@ -82,6 +85,10 @@ spec:
           volumeMounts:
             - name: html
               mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
               readOnly: true
           readinessProbe:
             httpGet:
