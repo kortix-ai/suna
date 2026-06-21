@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 384,
+  "count": 385,
   "routes": [
     {
       "method": "GET",
@@ -9,6 +9,10 @@
     {
       "method": "GET",
       "path": "/health/live"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics"
     },
     {
       "method": "GET",
@@ -1207,6 +1211,10 @@
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/activation"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
@@ -1285,10 +1293,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/sync-opencode-sessions"
     },
     {
       "method": "POST",

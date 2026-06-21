@@ -88,6 +88,15 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   }
 }
 
+function refetchKortixSessionMirrors(queryClient: QueryClient): void {
+  // OpenCode title/tree mirroring is now owned by the API during project-session
+  // reads. When the sandbox emits a session title/tree change, force the active
+  // project-session reads to happen so the tabs/sidebar pick up the server-side
+  // mirror immediately without reintroducing the old browser-write endpoint.
+  void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
+  void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
+}
+
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
  * performs INCREMENTAL cache updates on React Query data.
@@ -677,6 +686,7 @@ export function useOpenCodeEventStream() {
               return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
             });
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
+            refetchKortixSessionMirrors(queryClient);
           }
           break;
         }
@@ -684,6 +694,15 @@ export function useOpenCodeEventStream() {
         case 'session.updated': {
           const info = readSessionInfo(event);
           if (info) {
+            // Did the title change? (opencode auto-titles after the first
+            // message via session.updated.) Capture BEFORE we overwrite caches.
+            const prevTitle =
+              queryClient
+                .getQueryData<Session[]>(opencodeKeys.sessions())
+                ?.find((s) => s.id === info.id)?.title ??
+              queryClient.getQueryData<Session>(opencodeKeys.session(info.id))?.title ??
+              null;
+            const titleChanged = !!info.title && info.title !== prevTitle;
             // Only update individual session cache (cheap, targeted)
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
             // Update session list only if the session actually changed
@@ -703,6 +722,7 @@ export function useOpenCodeEventStream() {
               next[idx] = info;
               return next.sort((a, b) => b.time.updated - a.time.updated);
             });
+            if (titleChanged) refetchKortixSessionMirrors(queryClient);
           }
           break;
         }
