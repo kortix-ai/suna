@@ -1,10 +1,11 @@
 /**
- * Dev-mode schema convenience: delegates to packages/db/scripts/migrate.ts.
+ * Local-dev schema convenience: delegates to packages/db/scripts/migrate.ts.
  *
- * Tracking lives in `kortix_migrations.applied` (see migration 094); each
- * file is applied once, transactionally, with a sha256 fingerprint. No-op in
- * prod — prod migrations run from the deploy pipeline BEFORE the new code
- * serves traffic (see scripts/deploy-zero-downtime.sh step 2.5).
+ * Tracking lives in `kortix_migrations.pgmigrations` (node-pg-migrate); each
+ * file is applied once, transactionally. ONLY local dev auto-applies at
+ * boot. Every deployed env (incl. preview branches sharing the dev DB) is
+ * warn-only — deployed migrations run from the deploy pipeline BEFORE the new
+ * code serves traffic (see scripts/deploy-zero-downtime.sh step 2.5).
  */
 
 import { join } from 'node:path';
@@ -17,27 +18,29 @@ export async function ensureSchema(): Promise<void> {
     return;
   }
 
-  if (process.env.KORTIX_SKIP_ENSURE_SCHEMA === '1') {
-    console.log('[schema] KORTIX_SKIP_ENSURE_SCHEMA=1 — skipping');
-    // Still probe the critical IAM surface so a stale dev DB shows up
-    // as a loud warning instead of opaque 500s on first request. Names
-    // listed here are the tables the IAM engine + auth middleware
-    // touch on every request — if they're missing, nothing in IAM
-    // works. We don't FAIL; the operator opted into skipping migrations.
-    await warnIfCriticalTablesMissing();
-    return;
-  }
+  const isLocalDev = process.env.KORTIX_LOCAL_DEV === '1' || process.env.ENV_MODE === 'local';
 
-  // Production: schema managed externally (CI/CD migrations)
-  if (config.INTERNAL_KORTIX_ENV === 'prod') {
-    console.log('[schema] Production mode — skipping auto-push (managed externally)');
+  // Only LOCAL development auto-applies at boot — its database is private to the
+  // developer. Every DEPLOYED environment must NOT migrate from app boot, even
+  // dev: preview branches SHARE the dev database, so a booting preview pod would
+  // apply its (possibly un-merged) migrations to the schema every other preview
+  // depends on, and concurrent pods would race a half-applied state. Deployed
+  // migrations run once, in the CI/CD pipeline, before the new code serves
+  // traffic. At boot we only surface drift loudly — we never mutate the DB.
+  if (!isLocalDev || process.env.KORTIX_SKIP_ENSURE_SCHEMA === '1') {
+    const reason =
+      process.env.KORTIX_SKIP_ENSURE_SCHEMA === '1'
+        ? 'KORTIX_SKIP_ENSURE_SCHEMA=1'
+        : `deployed env (INTERNAL_KORTIX_ENV=${config.INTERNAL_KORTIX_ENV})`;
+    console.log(`[schema] ${reason} — not auto-applying (migrations are managed by the deploy pipeline). Checking for drift...`);
+    await warnIfCriticalTablesMissing();
     return;
   }
 
   const dbPkgRoot = join(import.meta.dir, '../../../packages/db');
   const migratorPath = join(dbPkgRoot, 'scripts', 'migrate.ts');
 
-  console.log('[schema] Applying pending migrations via migrate.ts...');
+  console.log('[schema] Local dev — applying pending migrations via migrate.ts...');
   const bunBin = process.execPath;
   const proc = Bun.spawn(
     [bunBin, migratorPath, 'up'],
@@ -98,7 +101,7 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
       );
       for (const m of missing) console.warn(`[schema]   • kortix.${m}`);
       console.warn(
-        '[schema] Run `bun run --cwd packages/db db:migrate:up` or remove the env flag to auto-apply.',
+        '[schema] Run `pnpm migrate` or remove the env flag to auto-apply.',
       );
     }
   } catch (err) {

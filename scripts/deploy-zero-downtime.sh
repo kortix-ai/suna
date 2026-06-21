@@ -85,17 +85,24 @@ else
 fi
 
 # ── 2.5. Apply DB migrations (must succeed before the new code serves traffic) ─
-if [ -n "${DATABASE_URL:-}" ]; then
-  echo "[2.5/6] Applying DB migrations..."
-  docker run --rm \
-    --network host \
-    -e DATABASE_URL="$DATABASE_URL" \
-    "$IMAGE_TAG" \
-    bun /app/packages/db/scripts/migrate.ts up
-  echo "[2.5/6] Migrations applied."
-else
-  echo "[2.5/6] WARNING: DATABASE_URL not set — skipping migrations. Set it before next deploy."
+# Fail closed: a missing DATABASE_URL must ABORT the deploy, never silently ship
+# new code against an un-migrated database. The old version keeps serving because
+# we have not touched the standby slot yet.
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "[2.5/6] FATAL: DATABASE_URL is not set — refusing to deploy without applying migrations." >&2
+  echo "        Set DATABASE_URL for this environment and re-run. Active slot is untouched." >&2
+  exit 1
 fi
+echo "[2.5/6] Applying DB migrations..."
+if ! docker run --rm \
+  --network host \
+  -e DATABASE_URL="$DATABASE_URL" \
+  "$IMAGE_TAG" \
+  bun /app/packages/db/scripts/migrate.ts up; then
+  echo "[2.5/6] FATAL: migrations failed — aborting deploy. Active slot is untouched; on-call should investigate." >&2
+  exit 1
+fi
+echo "[2.5/6] Migrations applied."
 
 # ── 3. Start standby container ───────────────────────────────────────────────
 echo "[3/6] Starting $STANDBY_SLOT on port $STANDBY_PORT..."

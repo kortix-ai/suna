@@ -18,7 +18,11 @@
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "start": "bash scripts/start-local.sh",
     "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe",
-    "migrate": "bun packages/db/scripts/migrate.ts"
+    "migrate": "pnpm --filter @kortix/db migrate",
+    "migrate:status": "pnpm --filter @kortix/db migrate:status",
+    "migrate:create": "pnpm --filter @kortix/db migrate:create",
+    "migrate:generate": "pnpm --filter @kortix/db migrate:generate",
+    "migrate:lint": "pnpm --filter @kortix/db migrate:lint"
   },
   "devDependencies": {
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*"

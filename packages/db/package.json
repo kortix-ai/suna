@@ -16,15 +16,21 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:studio": "bunx drizzle-kit studio",
-    "db:migrate:new": "bun scripts/migrate.ts new",
-    "db:migrate:generate": "bun scripts/migrate.ts generate",
-    "db:migrate:status": "bun scripts/migrate.ts status",
-    "db:migrate:up": "bun scripts/migrate.ts up",
-    "db:migrate:verify": "bun scripts/migrate.ts verify"
+    "migrate": "bun scripts/migrate.ts up",
+    "migrate:status": "bun scripts/migrate.ts status",
+    "migrate:down": "bun scripts/migrate.ts down",
+    "migrate:fake": "bun scripts/migrate.ts fake",
+    "migrate:create": "node-pg-migrate create -m migrations -j sql --migration-filename-format utc",
+    "migrate:generate": "bun scripts/generate.ts",
+    "migrate:lint": "bun scripts/lint-migrations.ts"
   },
   "dependencies": {
+    "dotenv": "^16",
+    "dotenv-expand": "^12",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
+    "node-pg-migrate": "^8",
+    "pg": "^8",
     "postgres": "^3.4.0"
   },
   "devDependencies": {

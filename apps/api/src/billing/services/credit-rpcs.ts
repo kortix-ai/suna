@@ -6,13 +6,9 @@
  * intercepting `db.execute` globally (which would clash with all the other
  * code that uses Drizzle).
  *
- * The underlying functions are defined in packages/db/migrations/
- *   - 20240101000002_fn_atomic_use_credits.sql
- *   - 20240101000003_fn_atomic_add_credits.sql
- *   - 20240101000004_fn_atomic_reset_expiring_credits.sql
- *   - 20240101000133_atomic_use_credits_ledger_type.sql  (adds p_ledger_type)
- *
- * All three return JSONB.
+ * The underlying public.atomic_* functions live in the baseline migration
+ * (packages/db/migrations/<ts>_baseline.sql); their pre-baseline history is in
+ * packages/db/migrations/_archive/. All return JSONB.
  */
 
 import { sql } from 'drizzle-orm';
