@@ -1,4 +1,8 @@
-import { resolveCatalogUpstream, type AuthedPrincipal, type UpstreamDescriptor } from '@kortix/llm-gateway';
+import {
+  type AuthedPrincipal,
+  type UpstreamDescriptor,
+  resolveCatalogUpstream,
+} from '@kortix/llm-gateway';
 import { getManagedModel } from '@kortix/shared/llm-catalog';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
@@ -7,7 +11,10 @@ import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 
-export async function resolveCandidates(principal: AuthedPrincipal, model: string): Promise<UpstreamDescriptor[]> {
+export async function resolveCandidates(
+  principal: AuthedPrincipal,
+  model: string,
+): Promise<UpstreamDescriptor[]> {
   const provider = model.includes('/') ? model.split('/')[0] : '';
 
   if (provider === 'codex') {
