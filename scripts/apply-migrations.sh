@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS kortix.schema_migrations (
 );" || { echo "::error::[migrate] cannot create schema_migrations ledger"; exit 1; }
 
 # Snapshot already-applied versions.
-mapfile -t APPLIED < <(psql "$DATABASE_URL" -X -q -At -c "SELECT version FROM kortix.schema_migrations" 2>/dev/null)
+APPLIED_ROWS="$("${PSQL[@]}" -At -c "SELECT version FROM kortix.schema_migrations")"
+mapfile -t APPLIED <<< "$APPLIED_ROWS"
 declare -A SEEN=()
 for a in "${APPLIED[@]:-}"; do [ -n "$a" ] && SEEN["$a"]=1; done
 
@@ -52,7 +53,7 @@ for f in "$MIG_DIR"/*.sql; do
   if [ -n "${SEEN[$v]:-}" ]; then skipped=$((skipped + 1)); continue; fi
 
   echo "[migrate] applying $v"
-  if out="$(psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$f" 2>&1)"; then
+  if out="$("${PSQL[@]}" --single-transaction -f "$f" 2>&1)"; then
     record_applied "$v"
     applied=$((applied + 1))
   elif echo "$out" | grep -qiE "already exists|duplicate|already a member of"; then
