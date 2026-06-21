@@ -531,7 +531,11 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     }
     const gatewayEntitled = config.LLM_GATEWAY_ENABLED ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
     const gatewayLlmKey = config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
-    const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
+    const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
+    const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
+    const llmBaseUrl =
+      config.LLM_GATEWAY_BASE_URL ||
+      (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
 
     const fullEnv: Record<string, string> = {
       ...input.builtEnvVars,

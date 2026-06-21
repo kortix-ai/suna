@@ -1,0 +1,39 @@
+# Base values for an ephemeral per-PR gateway preview on dev-eks. Runs in the
+# SAME kortix-pr-<n> namespace as the API preview, reusing its ServiceAccount +
+# synced secret (kortix-api-env) — so the API preview must deploy alongside it
+# (the Argo CD ApplicationSet co-deploys both; Argo retries until the secret/SA
+# exist). The ApplicationSet overlays only image.tag (pr-<head_sha>) — the
+# gateway is internal-only, so there is no per-PR host to template.
+
+image:
+  tag: preview # overridden per-PR by the ApplicationSet → pr-<head_sha>
+
+# Own the kortix-pr-<n> namespace as a chart resource so Argo prunes it on PR
+# close. (Harmless if the API preview also declares it — same name, same owner.)
+createNamespace: true
+
+# Ephemeral + low-traffic: one small replica, no HPA/PDB/spread.
+replicas: 1
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+topologySpread:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# Internal-only. The gateway is NEVER publicly exposed: sandboxes reach it
+# through the API's origin (${pr-<n>.preview-api.kortix.com}/v1/llm-gateway/*),
+# which the API reverse-proxies to this in-cluster Service (kortix-gateway:8090
+# via LLM_GATEWAY_PROXY_TARGET). So a preview needs NO gateway host, cert, or
+# ALB — the API's existing per-PR host does all the routing, and dynamic
+# per-PR URLs never touch the gateway.
+ingress:
+  enabled: false

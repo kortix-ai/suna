@@ -19,6 +19,11 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
+import { useQuery } from '@tanstack/react-query';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
+import { listProjectSecrets } from '@/lib/projects-client';
+import { LLM_PROVIDERS } from '@/lib/llm-providers';
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
@@ -91,6 +96,23 @@ export function ManageModelsDialog({
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
 
+const SHOW_OPENCODE_ZEN = true;
+
+const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+
+// The gateway exposes its whole catalog through a single `kortix` provider, with
+// model ids namespaced as `<provider>/<model>`. For the picker we split that
+// back out: platform-managed defaults stay under the "Kortix" group, while every
+// BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) — so a
+// connected provider reads as its own section, not buried in Kortix.
+function pickerGroupId(model: FlatModel): string {
+  if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
+    return model.providerID;
+  }
+  const slash = model.modelID.indexOf('/');
+  return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
+}
+
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
 export interface ModelSelectorProps {
@@ -108,7 +130,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // superseded models in a family). Off by default to keep the picker tidy.
   const [showHidden, setShowHidden] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const modelStore = useModelStore(models);
+  const openGateway = useGatewayOverlayStore((s) => s.openGateway);
+  const baseModels = useMemo(
+    () => (SHOW_OPENCODE_ZEN ? models : models.filter((m) => m.providerID !== 'opencode')),
+    [models],
+  );
 
   // When mounted under /projects/[id]/..., route the action buttons to the
   // per-project provider modal so credentials land in `project_secrets`. On
@@ -120,6 +146,45 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
   );
+  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(undefined);
+
+  // Track project secrets whenever we're in a project (not only while the picker
+  // is open) so connecting/disconnecting a provider flips model visibility live —
+  // the connect mutation invalidates this exact key, and an always-subscribed
+  // query refetches immediately instead of waiting for the next picker open.
+  const secretsQuery = useQuery({
+    queryKey: ['project-secrets', projectId],
+    queryFn: () => listProjectSecrets(projectId as string),
+    enabled: !!projectId,
+    staleTime: 10_000,
+  });
+  const secretNames = useMemo(() => {
+    const data = secretsQuery.data;
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
+    return new Set(items.map((secret: { name: string }) => secret.name));
+  }, [secretsQuery.data]);
+  const openaiConnected = secretNames.has('OPENAI_API_KEY');
+
+  // Providers whose key(s) are present — drives which of the gateway's full
+  // baked catalog is shown by default in the picker (connected providers light
+  // up the instant their secret lands; everything else stays search-only).
+  const connectedProviderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const provider of LLM_PROVIDERS) {
+      if (provider.envVars.length > 0 && provider.envVars.every((v) => secretNames.has(v))) {
+        ids.add(provider.id);
+      }
+    }
+    // ChatGPT subscription (Codex) — its auth is a JSON blob, not an env var, so
+    // it isn't in LLM_PROVIDERS. Surface it so codex/* models light up the instant
+    // the subscription is connected (same live-reflection as BYOK keys).
+    if (secretNames.has('CODEX_AUTH_JSON') || secretNames.has('OPENCODE_AUTH_JSON')) {
+      ids.add('codex');
+    }
+    return ids;
+  }, [secretNames]);
+
+  const modelStore = useModelStore(baseModels, { connectedProviderIds });
 
   const current = models.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
@@ -172,13 +237,14 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
     for (const m of visibleModels) {
-      const existing = groups.get(m.providerID);
+      const groupID = pickerGroupId(m);
+      const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
       } else {
-        groups.set(m.providerID, {
-          providerID: m.providerID,
-          providerName: PROVIDER_LABELS[m.providerID] || m.providerName,
+        groups.set(groupID, {
+          providerID: groupID,
+          providerName: PROVIDER_LABELS[groupID] || m.providerName,
           models: [m],
         });
       }
@@ -209,16 +275,22 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     (tab: ProviderModalTab) => {
       setOpen(false);
       if (projectId) {
-        // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
-        // (the "add" view in the old modal) to our 'catalog' tab.
-        setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-        setProjectModalOpen(true);
+        openGateway({ section: tab === 'models' ? 'models' : 'providers' });
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, openProviderModal],
+    [projectId, openProviderModal, openGateway],
   );
+
+  const openConnectOpenAI = useCallback(() => {
+    setOpen(false);
+    if (projectId) {
+      openGateway({ section: 'providers' });
+      return;
+    }
+    openProviderModal('providers');
+  }, [projectId, openProviderModal, openGateway]);
 
   return (
     <>
@@ -330,13 +402,20 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       const isSelected =
                         selectedModel?.providerID === model.providerID &&
                         selectedModel?.modelID === model.modelID;
-                      const isFree =
-                        model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
+                      // Every opencode (Zen) model is free: it routes natively,
+                      // never through the gateway, so kortix never bills it.
+                      const isFree = model.providerID === 'opencode';
                       const modelKey = { providerID: model.providerID, modelID: model.modelID };
                       // "Latest" models are always shown; older ones get an
                       // activation switch so they can be pinned into the picker.
                       const isLatestModel = modelStore.isLatest(modelKey);
                       const isModelVisible = modelStore.isVisible(modelKey);
+                      // Under a BYOK provider group the `<provider>/` prefix is
+                      // redundant — show just the bare model id.
+                      const displayModelID =
+                        group.providerID !== model.providerID && model.modelID.includes('/')
+                          ? model.modelID.slice(model.modelID.indexOf('/') + 1)
+                          : model.modelID;
 
                       return (
                         <CommandItem
@@ -361,7 +440,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                               {model.modelName}
                             </div>
                             <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                              {model.modelID}
+                              {displayModelID}
                             </p>
                           </div>
                           {isFree && <Tag variant="free">Free</Tag>}

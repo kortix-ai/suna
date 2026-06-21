@@ -1,6 +1,6 @@
 {
   "id": "44e619b1-54cc-44ba-a777-6cd045e8eaec",
-  "prevId": "789da4b3-63fc-402b-9529-0c74741ea2f4",
+  "prevId": "8b315311-57d0-4f17-a274-ef2f7161333a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -59,9 +59,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -135,9 +135,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_access_requests_status": {
           "name": "idx_access_requests_status",
@@ -150,9 +150,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -292,9 +292,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_github_installation_states_expires_at": {
           "name": "idx_account_github_installation_states_expires_at",
@@ -307,25 +307,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_github_installation_states_account_id_accounts_account_id_fk": {
           "name": "account_github_installation_states_account_id_accounts_account_id_fk",
           "tableFrom": "account_github_installation_states",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -417,9 +417,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_github_installations_account_installation": {
           "name": "idx_account_github_installations_account_installation",
@@ -438,9 +438,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_github_installations_owner": {
           "name": "idx_account_github_installations_owner",
@@ -453,25 +453,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_github_installations_account_id_accounts_account_id_fk": {
           "name": "account_github_installations_account_id_accounts_account_id_fk",
           "tableFrom": "account_github_installations",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -522,25 +522,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_group_members_group_id_account_groups_group_id_fk": {
           "name": "account_group_members_group_id_account_groups_group_id_fk",
           "tableFrom": "account_group_members",
+          "tableTo": "account_groups",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "group_id"
           ],
-          "tableTo": "account_groups",
-          "schemaTo": "kortix",
           "columnsTo": [
             "group_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -633,9 +633,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_groups_account_name": {
           "name": "idx_account_groups_account_name",
@@ -654,25 +654,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_groups_account_id_accounts_account_id_fk": {
           "name": "account_groups_account_id_accounts_account_id_fk",
           "tableFrom": "account_groups",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -757,9 +757,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_invitations_account": {
           "name": "idx_account_invitations_account",
@@ -772,9 +772,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_invitations_expires_at": {
           "name": "idx_account_invitations_expires_at",
@@ -787,9 +787,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_invitations_pending": {
           "name": "idx_account_invitations_pending",
@@ -808,25 +808,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_invitations_account_id_accounts_account_id_fk": {
           "name": "account_invitations_account_id_accounts_account_id_fk",
           "tableFrom": "account_invitations",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -892,9 +892,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_members_account_id": {
           "name": "idx_account_members_account_id",
@@ -907,9 +907,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_members_user_account": {
           "name": "idx_account_members_user_account",
@@ -928,25 +928,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_members_account_id_accounts_account_id_fk": {
           "name": "account_members_account_id_accounts_account_id_fk",
           "tableFrom": "account_members",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -1042,9 +1042,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_session_activity_user": {
           "name": "idx_account_session_activity_user",
@@ -1063,25 +1063,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_session_activity_account_id_accounts_account_id_fk": {
           "name": "account_session_activity_account_id_accounts_account_id_fk",
           "tableFrom": "account_session_activity",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -1166,9 +1166,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_sso_mappings_provider": {
           "name": "idx_account_sso_mappings_provider",
@@ -1181,9 +1181,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_sso_mappings_group": {
           "name": "idx_account_sso_mappings_group",
@@ -1196,53 +1196,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_sso_group_mappings_account_id_accounts_account_id_fk": {
           "name": "account_sso_group_mappings_account_id_accounts_account_id_fk",
           "tableFrom": "account_sso_group_mappings",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "account_sso_group_mappings_sso_provider_id_account_sso_providers_sso_provider_id_fk": {
           "name": "account_sso_group_mappings_sso_provider_id_account_sso_providers_sso_provider_id_fk",
           "tableFrom": "account_sso_group_mappings",
+          "tableTo": "account_sso_providers",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sso_provider_id"
           ],
-          "tableTo": "account_sso_providers",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sso_provider_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "account_sso_group_mappings_group_id_account_groups_group_id_fk": {
           "name": "account_sso_group_mappings_group_id_account_groups_group_id_fk",
           "tableFrom": "account_sso_group_mappings",
+          "tableTo": "account_groups",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "group_id"
           ],
-          "tableTo": "account_groups",
-          "schemaTo": "kortix",
           "columnsTo": [
             "group_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1333,9 +1333,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_sso_providers_supabase": {
           "name": "idx_account_sso_providers_supabase",
@@ -1348,9 +1348,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_sso_providers_domain": {
           "name": "idx_account_sso_providers_domain",
@@ -1363,25 +1363,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_sso_providers_account_id_accounts_account_id_fk": {
           "name": "account_sso_providers_account_id_accounts_account_id_fk",
           "tableFrom": "account_sso_providers",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1483,9 +1483,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_tokens_secret_hash": {
           "name": "idx_account_tokens_secret_hash",
@@ -1498,9 +1498,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_tokens_account": {
           "name": "idx_account_tokens_account",
@@ -1513,9 +1513,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_tokens_user": {
           "name": "idx_account_tokens_user",
@@ -1528,9 +1528,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_account_tokens_project": {
           "name": "idx_account_tokens_project",
@@ -1543,39 +1543,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "account_tokens_account_id_accounts_account_id_fk": {
           "name": "account_tokens_account_id_accounts_account_id_fk",
           "tableFrom": "account_tokens",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "account_tokens_project_id_projects_project_id_fk": {
           "name": "account_tokens_project_id_projects_project_id_fk",
           "tableFrom": "account_tokens",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1773,9 +1773,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_audit_events_actor_time": {
           "name": "idx_audit_events_actor_time",
@@ -1794,9 +1794,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_audit_events_resource": {
           "name": "idx_audit_events_resource",
@@ -1815,25 +1815,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "audit_events_account_id_accounts_account_id_fk": {
           "name": "audit_events_account_id_accounts_account_id_fk",
           "tableFrom": "audit_events",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1941,9 +1941,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_audit_webhooks_enabled": {
           "name": "idx_audit_webhooks_enabled",
@@ -1962,25 +1962,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "audit_webhooks_account_id_accounts_account_id_fk": {
           "name": "audit_webhooks_account_id_accounts_account_id_fk",
           "tableFrom": "audit_webhooks",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2036,9 +2036,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -2198,9 +2198,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_change_requests_project": {
           "name": "idx_change_requests_project",
@@ -2213,9 +2213,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_change_requests_project_status": {
           "name": "idx_change_requests_project_status",
@@ -2234,9 +2234,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_change_requests_project_number": {
           "name": "idx_change_requests_project_number",
@@ -2255,53 +2255,53 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "change_requests_account_id_accounts_account_id_fk": {
           "name": "change_requests_account_id_accounts_account_id_fk",
           "tableFrom": "change_requests",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "change_requests_project_id_projects_project_id_fk": {
           "name": "change_requests_project_id_projects_project_id_fk",
           "tableFrom": "change_requests",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "change_requests_origin_session_id_project_sessions_session_id_fk": {
           "name": "change_requests_origin_session_id_project_sessions_session_id_fk",
           "tableFrom": "change_requests",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "origin_session_id"
           ],
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
           "columnsTo": [
             "session_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2407,9 +2407,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_channel_bindings_project": {
           "name": "idx_chat_channel_bindings_project",
@@ -2422,25 +2422,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "chat_channel_bindings_project_id_projects_project_id_fk": {
           "name": "chat_channel_bindings_project_id_projects_project_id_fk",
           "tableFrom": "chat_channel_bindings",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2478,9 +2478,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -2551,9 +2551,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_installs_workspace": {
           "name": "idx_chat_installs_workspace",
@@ -2572,9 +2572,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_installs_project": {
           "name": "idx_chat_installs_project",
@@ -2587,25 +2587,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "chat_installs_project_id_projects_project_id_fk": {
           "name": "chat_installs_project_id_projects_project_id_fk",
           "tableFrom": "chat_installs",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2694,9 +2694,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_threads_project": {
           "name": "idx_chat_threads_project",
@@ -2709,9 +2709,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_chat_threads_session": {
           "name": "idx_chat_threads_session",
@@ -2724,39 +2724,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "chat_threads_project_id_projects_project_id_fk": {
           "name": "chat_threads_project_id_projects_project_id_fk",
           "tableFrom": "chat_threads",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "chat_threads_session_id_project_sessions_session_id_fk": {
           "name": "chat_threads_session_id_project_sessions_session_id_fk",
           "tableFrom": "chat_threads",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "session_id"
           ],
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
           "columnsTo": [
             "session_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2865,9 +2865,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3234,9 +3234,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_credit_accounts_billing_model": {
           "name": "idx_credit_accounts_billing_model",
@@ -3249,9 +3249,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3378,10 +3378,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"credit_ledger\".\"idempotency_key\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3389,10 +3389,10 @@
       "uniqueConstraints": {
         "kortix_unique_stripe_event": {
           "name": "kortix_unique_stripe_event",
+          "nullsNotDistinct": false,
           "columns": [
             "stripe_event_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -3713,9 +3713,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_deployments_sandbox": {
           "name": "idx_deployments_sandbox",
@@ -3728,9 +3728,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_deployments_status": {
           "name": "idx_deployments_status",
@@ -3743,9 +3743,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_deployments_live_url": {
           "name": "idx_deployments_live_url",
@@ -3758,9 +3758,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_deployments_created": {
           "name": "idx_deployments_created",
@@ -3773,9 +3773,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_deployments_project_app": {
           "name": "idx_deployments_project_app",
@@ -3800,25 +3800,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "deployments_sandbox_id_sandboxes_sandbox_id_fk": {
           "name": "deployments_sandbox_id_sandboxes_sandbox_id_fk",
           "tableFrom": "deployments",
+          "tableTo": "sandboxes",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sandbox_id"
           ],
-          "tableTo": "sandboxes",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sandbox_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3916,9 +3916,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_connector_actions_path": {
           "name": "idx_executor_connector_actions_path",
@@ -3937,25 +3937,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_connector_actions_connector_id_executor_connectors_connector_id_fk": {
           "name": "executor_connector_actions_connector_id_executor_connectors_connector_id_fk",
           "tableFrom": "executor_connector_actions",
+          "tableTo": "executor_connectors",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "connector_id"
           ],
-          "tableTo": "executor_connectors",
-          "schemaTo": "kortix",
           "columnsTo": [
             "connector_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4014,9 +4014,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_connector_grants_unique": {
           "name": "idx_executor_connector_grants_unique",
@@ -4041,25 +4041,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_connector_grants_connector_id_executor_connectors_connector_id_fk": {
           "name": "executor_connector_grants_connector_id_executor_connectors_connector_id_fk",
           "tableFrom": "executor_connector_grants",
+          "tableTo": "executor_connectors",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "connector_id"
           ],
-          "tableTo": "executor_connectors",
-          "schemaTo": "kortix",
           "columnsTo": [
             "connector_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4125,25 +4125,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_connector_policies_connector_id_executor_connectors_connector_id_fk": {
           "name": "executor_connector_policies_connector_id_executor_connectors_connector_id_fk",
           "tableFrom": "executor_connector_policies",
+          "tableTo": "executor_connectors",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "connector_id"
           ],
-          "tableTo": "executor_connectors",
-          "schemaTo": "kortix",
           "columnsTo": [
             "connector_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4283,9 +4283,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_connectors_account": {
           "name": "idx_executor_connectors_account",
@@ -4298,9 +4298,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_connectors_project_slug": {
           "name": "idx_executor_connectors_project_slug",
@@ -4319,39 +4319,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_connectors_account_id_accounts_account_id_fk": {
           "name": "executor_connectors_account_id_accounts_account_id_fk",
           "tableFrom": "executor_connectors",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "executor_connectors_project_id_projects_project_id_fk": {
           "name": "executor_connectors_project_id_projects_project_id_fk",
           "tableFrom": "executor_connectors",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4429,9 +4429,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_credentials_connector_user": {
           "name": "idx_executor_credentials_connector_user",
@@ -4450,25 +4450,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_credentials_connector_id_executor_connectors_connector_id_fk": {
           "name": "executor_credentials_connector_id_executor_connectors_connector_id_fk",
           "tableFrom": "executor_credentials",
+          "tableTo": "executor_connectors",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "connector_id"
           ],
-          "tableTo": "executor_connectors",
-          "schemaTo": "kortix",
           "columnsTo": [
             "connector_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4582,9 +4582,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_executions_connector": {
           "name": "idx_executor_executions_connector",
@@ -4597,9 +4597,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_executor_executions_status": {
           "name": "idx_executor_executions_status",
@@ -4612,53 +4612,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_executions_account_id_accounts_account_id_fk": {
           "name": "executor_executions_account_id_accounts_account_id_fk",
           "tableFrom": "executor_executions",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "executor_executions_project_id_projects_project_id_fk": {
           "name": "executor_executions_project_id_projects_project_id_fk",
           "tableFrom": "executor_executions",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "executor_executions_connector_id_executor_connectors_connector_id_fk": {
           "name": "executor_executions_connector_id_executor_connectors_connector_id_fk",
           "tableFrom": "executor_executions",
+          "tableTo": "executor_connectors",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "connector_id"
           ],
-          "tableTo": "executor_connectors",
-          "schemaTo": "kortix",
           "columnsTo": [
             "connector_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4724,25 +4724,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "executor_project_policies_project_id_projects_project_id_fk": {
           "name": "executor_project_policies_project_id_projects_project_id_fk",
           "tableFrom": "executor_project_policies",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4782,16 +4782,16 @@
         "executor_project_settings_project_id_projects_project_id_fk": {
           "name": "executor_project_settings_project_id_projects_project_id_fk",
           "tableFrom": "executor_project_settings",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4895,9 +4895,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_kortix_api_keys_secret_hash": {
           "name": "idx_kortix_api_keys_secret_hash",
@@ -4910,9 +4910,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_kortix_api_keys_sandbox": {
           "name": "idx_kortix_api_keys_sandbox",
@@ -4925,9 +4925,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_kortix_api_keys_account": {
           "name": "idx_kortix_api_keys_account",
@@ -4940,9 +4940,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -5110,9 +5110,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_legacy_sandbox_migrations_sandbox": {
           "name": "idx_legacy_sandbox_migrations_sandbox",
@@ -5125,9 +5125,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_legacy_sandbox_migrations_status": {
           "name": "idx_legacy_sandbox_migrations_status",
@@ -5140,9 +5140,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_legacy_sandbox_migrations_account": {
           "name": "idx_legacy_sandbox_migrations_account",
@@ -5155,9 +5155,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_legacy_sandbox_migrations_heartbeat": {
           "name": "idx_legacy_sandbox_migrations_heartbeat",
@@ -5176,9 +5176,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -5262,9 +5262,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_oauth_access_tokens_client": {
           "name": "idx_oauth_access_tokens_client",
@@ -5277,9 +5277,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_oauth_access_tokens_user": {
           "name": "idx_oauth_access_tokens_user",
@@ -5292,25 +5292,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "oauth_access_tokens_client_id_oauth_clients_client_id_fk": {
           "name": "oauth_access_tokens_client_id_oauth_clients_client_id_fk",
           "tableFrom": "oauth_access_tokens",
+          "tableTo": "oauth_clients",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "oauth_clients",
-          "schemaTo": "kortix",
           "columnsTo": [
             "client_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5412,9 +5412,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_oauth_codes_client": {
           "name": "idx_oauth_codes_client",
@@ -5427,9 +5427,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_oauth_codes_expires": {
           "name": "idx_oauth_codes_expires",
@@ -5442,25 +5442,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "oauth_authorization_codes_client_id_oauth_clients_client_id_fk": {
           "name": "oauth_authorization_codes_client_id_oauth_clients_client_id_fk",
           "tableFrom": "oauth_authorization_codes",
+          "tableTo": "oauth_clients",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "oauth_clients",
-          "schemaTo": "kortix",
           "columnsTo": [
             "client_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5602,9 +5602,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_oauth_refresh_tokens_client": {
           "name": "idx_oauth_refresh_tokens_client",
@@ -5617,39 +5617,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "oauth_refresh_tokens_access_token_id_oauth_access_tokens_id_fk": {
           "name": "oauth_refresh_tokens_access_token_id_oauth_access_tokens_id_fk",
           "tableFrom": "oauth_refresh_tokens",
+          "tableTo": "oauth_access_tokens",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "access_token_id"
           ],
-          "tableTo": "oauth_access_tokens",
-          "schemaTo": "kortix",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk": {
           "name": "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk",
           "tableFrom": "oauth_refresh_tokens",
+          "tableTo": "oauth_clients",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "oauth_clients",
-          "schemaTo": "kortix",
           "columnsTo": [
             "client_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5741,9 +5741,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_platform_user_roles_role": {
           "name": "idx_platform_user_roles_role",
@@ -5756,9 +5756,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -5851,9 +5851,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -5958,9 +5958,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_pool_sandboxes_external_id_active": {
           "name": "idx_pool_sandboxes_external_id_active",
@@ -5973,25 +5973,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "pool_sandboxes_resource_id_pool_resources_id_fk": {
           "name": "pool_sandboxes_resource_id_pool_resources_id_fk",
           "tableFrom": "pool_sandboxes",
+          "tableTo": "pool_resources",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "resource_id"
           ],
-          "tableTo": "pool_resources",
-          "schemaTo": "kortix",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6169,9 +6169,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_git_connections_project": {
           "name": "idx_project_git_connections_project",
@@ -6184,9 +6184,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_git_connections_provider_repo": {
           "name": "idx_project_git_connections_provider_repo",
@@ -6205,9 +6205,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_git_connections_status": {
           "name": "idx_project_git_connections_status",
@@ -6220,39 +6220,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_git_connections_account_id_accounts_account_id_fk": {
           "name": "project_git_connections_account_id_accounts_account_id_fk",
           "tableFrom": "project_git_connections",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_git_connections_project_id_projects_project_id_fk": {
           "name": "project_git_connections_project_id_projects_project_id_fk",
           "tableFrom": "project_git_connections",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6336,9 +6336,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_git_credentials_project_provider": {
           "name": "idx_project_git_credentials_project_provider",
@@ -6357,39 +6357,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_git_credentials_account_id_accounts_account_id_fk": {
           "name": "project_git_credentials_account_id_accounts_account_id_fk",
           "tableFrom": "project_git_credentials",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_git_credentials_project_id_projects_project_id_fk": {
           "name": "project_git_credentials_project_id_projects_project_id_fk",
           "tableFrom": "project_git_credentials",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6467,9 +6467,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_group_grants_group": {
           "name": "idx_project_group_grants_group",
@@ -6482,9 +6482,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_group_grants_account": {
           "name": "idx_project_group_grants_account",
@@ -6497,53 +6497,53 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_group_grants_project_id_projects_project_id_fk": {
           "name": "project_group_grants_project_id_projects_project_id_fk",
           "tableFrom": "project_group_grants",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_group_grants_group_id_account_groups_group_id_fk": {
           "name": "project_group_grants_group_id_account_groups_group_id_fk",
           "tableFrom": "project_group_grants",
+          "tableTo": "account_groups",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "group_id"
           ],
-          "tableTo": "account_groups",
-          "schemaTo": "kortix",
           "columnsTo": [
             "group_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_group_grants_account_id_accounts_account_id_fk": {
           "name": "project_group_grants_account_id_accounts_account_id_fk",
           "tableFrom": "project_group_grants",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -6635,9 +6635,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_members_project": {
           "name": "idx_project_members_project",
@@ -6650,9 +6650,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_members_project_user": {
           "name": "idx_project_members_project_user",
@@ -6671,39 +6671,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_members_account_id_accounts_account_id_fk": {
           "name": "project_members_account_id_accounts_account_id_fk",
           "tableFrom": "project_members",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_members_project_id_projects_project_id_fk": {
           "name": "project_members_project_id_projects_project_id_fk",
           "tableFrom": "project_members",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6762,9 +6762,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_secret_grants_unique": {
           "name": "idx_project_secret_grants_unique",
@@ -6789,25 +6789,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_secret_grants_secret_id_project_secrets_secret_id_fk": {
           "name": "project_secret_grants_secret_id_project_secrets_secret_id_fk",
           "tableFrom": "project_secret_grants",
+          "tableTo": "project_secrets",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "secret_id"
           ],
-          "tableTo": "project_secrets",
-          "schemaTo": "kortix",
           "columnsTo": [
             "secret_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6907,9 +6907,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_secrets_project_name_shared": {
           "name": "idx_project_secrets_project_name_shared",
@@ -6928,10 +6928,10 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"project_secrets\".\"owner_user_id\" is null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_project_secrets_project_name_owner": {
           "name": "idx_project_secrets_project_name_owner",
@@ -6956,26 +6956,26 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"project_secrets\".\"owner_user_id\" is not null",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_secrets_project_id_projects_project_id_fk": {
           "name": "project_secrets_project_id_projects_project_id_fk",
           "tableFrom": "project_secrets",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7034,9 +7034,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_session_grants_unique": {
           "name": "idx_project_session_grants_unique",
@@ -7061,25 +7061,243 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_session_grants_session_id_project_sessions_session_id_fk": {
           "name": "project_session_grants_session_id_project_sessions_session_id_fk",
           "tableFrom": "project_session_grants",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "session_id"
           ],
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
           "columnsTo": [
             "session_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_session_public_shares": {
+      "name": "project_session_public_shares",
+      "schema": "kortix",
+      "columns": {
+        "share_id": {
+          "name": "share_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resource_type": {
+          "name": "resource_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'preview'"
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'App preview'"
+        },
+        "port": {
+          "name": "port",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'/'"
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'view'"
+        },
+        "allow_websocket": {
+          "name": "allow_websocket",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_session_public_shares_token_hash": {
+          "name": "idx_project_session_public_shares_token_hash",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_session_public_shares_session": {
+          "name": "idx_project_session_public_shares_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_session_public_shares_project": {
+          "name": "idx_project_session_public_shares_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_session_public_shares_session_id_project_sessions_session_id_fk": {
+          "name": "project_session_public_shares_session_id_project_sessions_session_id_fk",
+          "tableFrom": "project_session_public_shares",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_session_public_shares_project_id_projects_project_id_fk": {
+          "name": "project_session_public_shares_project_id_projects_project_id_fk",
+          "tableFrom": "project_session_public_shares",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_session_public_shares_account_id_accounts_account_id_fk": {
+          "name": "project_session_public_shares_account_id_accounts_account_id_fk",
+          "tableFrom": "project_session_public_shares",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7218,9 +7436,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_sessions_project": {
           "name": "idx_project_sessions_project",
@@ -7233,9 +7451,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_sessions_status": {
           "name": "idx_project_sessions_status",
@@ -7248,9 +7466,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_sessions_created_by": {
           "name": "idx_project_sessions_created_by",
@@ -7263,9 +7481,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_sessions_project_branch": {
           "name": "idx_project_sessions_project_branch",
@@ -7284,39 +7502,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_sessions_account_id_accounts_account_id_fk": {
           "name": "project_sessions_account_id_accounts_account_id_fk",
           "tableFrom": "project_sessions",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_sessions_project_id_projects_project_id_fk": {
           "name": "project_sessions_project_id_projects_project_id_fk",
           "tableFrom": "project_sessions",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7430,9 +7648,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_project_snapshot_builds_status": {
           "name": "idx_project_snapshot_builds_status",
@@ -7457,39 +7675,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "project_snapshot_builds_account_id_accounts_account_id_fk": {
           "name": "project_snapshot_builds_account_id_accounts_account_id_fk",
           "tableFrom": "project_snapshot_builds",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "project_snapshot_builds_project_id_projects_project_id_fk": {
           "name": "project_snapshot_builds_project_id_projects_project_id_fk",
           "tableFrom": "project_snapshot_builds",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7533,16 +7751,16 @@
         "project_trigger_runtime_project_id_projects_project_id_fk": {
           "name": "project_trigger_runtime_project_id_projects_project_id_fk",
           "tableFrom": "project_trigger_runtime",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -7650,9 +7868,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_projects_status": {
           "name": "idx_projects_status",
@@ -7665,9 +7883,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_projects_updated": {
           "name": "idx_projects_updated",
@@ -7680,9 +7898,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_projects_account_repo": {
           "name": "idx_projects_account_repo",
@@ -7701,25 +7919,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "projects_account_id_accounts_account_id_fk": {
           "name": "projects_account_id_accounts_account_id_fk",
           "tableFrom": "projects",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7827,9 +8045,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_provider_events_kind": {
           "name": "idx_provider_events_kind",
@@ -7842,9 +8060,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_provider_events_outcome": {
           "name": "idx_provider_events_outcome",
@@ -7857,9 +8075,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_provider_events_created": {
           "name": "idx_provider_events_created",
@@ -7872,9 +8090,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -8024,9 +8242,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_compute_sessions_open": {
           "name": "idx_sandbox_compute_sessions_open",
@@ -8039,10 +8257,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"sandbox_compute_sessions\".\"ended_at\" IS NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_sandbox_compute_sessions_last_billed": {
           "name": "idx_sandbox_compute_sessions_last_billed",
@@ -8055,10 +8273,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"sandbox_compute_sessions\".\"state\" = 'active'",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -8144,9 +8362,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_invites_sandbox": {
           "name": "idx_sandbox_invites_sandbox",
@@ -8159,9 +8377,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_invites_expires_at": {
           "name": "idx_sandbox_invites_expires_at",
@@ -8174,25 +8392,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sandbox_invites_sandbox_id_sandboxes_sandbox_id_fk": {
           "name": "sandbox_invites_sandbox_id_sandboxes_sandbox_id_fk",
           "tableFrom": "sandbox_invites",
+          "tableTo": "sandboxes",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sandbox_id"
           ],
-          "tableTo": "sandboxes",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sandbox_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8268,9 +8486,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_member_scopes_lookup": {
           "name": "idx_sandbox_member_scopes_lookup",
@@ -8289,25 +8507,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sandbox_member_scopes_sandbox_id_sandboxes_sandbox_id_fk": {
           "name": "sandbox_member_scopes_sandbox_id_sandboxes_sandbox_id_fk",
           "tableFrom": "sandbox_member_scopes",
+          "tableTo": "sandboxes",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sandbox_id"
           ],
-          "tableTo": "sandboxes",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sandbox_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8383,9 +8601,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_members_user": {
           "name": "idx_sandbox_members_user",
@@ -8398,9 +8616,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_members_sandbox": {
           "name": "idx_sandbox_members_sandbox",
@@ -8413,25 +8631,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sandbox_members_sandbox_id_sandboxes_sandbox_id_fk": {
           "name": "sandbox_members_sandbox_id_sandboxes_sandbox_id_fk",
           "tableFrom": "sandbox_members",
+          "tableTo": "sandboxes",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sandbox_id"
           ],
-          "tableTo": "sandboxes",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sandbox_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8603,9 +8821,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_templates_shared": {
           "name": "idx_sandbox_templates_shared",
@@ -8618,9 +8836,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandbox_templates_project_slug": {
           "name": "idx_sandbox_templates_project_slug",
@@ -8639,39 +8857,39 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sandbox_templates_project_id_projects_project_id_fk": {
           "name": "sandbox_templates_project_id_projects_project_id_fk",
           "tableFrom": "sandbox_templates",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "sandbox_templates_account_id_accounts_account_id_fk": {
           "name": "sandbox_templates_account_id_accounts_account_id_fk",
           "tableFrom": "sandbox_templates",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8791,9 +9009,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandboxes_external_id": {
           "name": "idx_sandboxes_external_id",
@@ -8806,9 +9024,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_sandboxes_status": {
           "name": "idx_sandboxes_status",
@@ -8821,9 +9039,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -8912,9 +9130,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_scim_tokens_secret_hash": {
           "name": "idx_scim_tokens_secret_hash",
@@ -8927,25 +9145,25 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "scim_tokens_account_id_accounts_account_id_fk": {
           "name": "scim_tokens_account_id_accounts_account_id_fk",
           "tableFrom": "scim_tokens",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9042,9 +9260,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_server_entries_account": {
           "name": "idx_server_entries_account",
@@ -9057,9 +9275,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_server_entries_account_id": {
           "name": "idx_server_entries_account_id",
@@ -9078,9 +9296,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9188,9 +9406,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_service_accounts_secret_hash": {
           "name": "idx_service_accounts_secret_hash",
@@ -9203,9 +9421,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_service_accounts_account_name": {
           "name": "idx_service_accounts_account_name",
@@ -9224,25 +9442,280 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "service_accounts_account_id_accounts_account_id_fk": {
           "name": "service_accounts_account_id_accounts_account_id_fk",
           "tableFrom": "service_accounts",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.session_lifecycle_commands": {
+      "name": "session_lifecycle_commands",
+      "schema": "kortix",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "command_type": {
+          "name": "command_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "session_lifecycle_command_status",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'queued'"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "locked_by": {
+          "name": "locked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_session_lifecycle_commands_idempotency": {
+          "name": "idx_session_lifecycle_commands_idempotency",
+          "columns": [
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_lifecycle_commands_due": {
+          "name": "idx_session_lifecycle_commands_due",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_lifecycle_commands_project": {
+          "name": "idx_session_lifecycle_commands_project",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_lifecycle_commands_session": {
+          "name": "idx_session_lifecycle_commands_session",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_lifecycle_commands_locked": {
+          "name": "idx_session_lifecycle_commands_locked",
+          "columns": [
+            {
+              "expression": "locked_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_lifecycle_commands_project_id_projects_project_id_fk": {
+          "name": "session_lifecycle_commands_project_id_projects_project_id_fk",
+          "tableFrom": "session_lifecycle_commands",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "session_lifecycle_commands_session_id_project_sessions_session_id_fk": {
+          "name": "session_lifecycle_commands_session_id_project_sessions_session_id_fk",
+          "tableFrom": "session_lifecycle_commands",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "session_lifecycle_commands_account_id_accounts_account_id_fk": {
+          "name": "session_lifecycle_commands_account_id_accounts_account_id_fk",
+          "tableFrom": "session_lifecycle_commands",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9360,9 +9833,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_session_sandboxes_project": {
           "name": "idx_session_sandboxes_project",
@@ -9375,9 +9848,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_session_sandboxes_account": {
           "name": "idx_session_sandboxes_account",
@@ -9390,9 +9863,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_session_sandboxes_status": {
           "name": "idx_session_sandboxes_status",
@@ -9405,9 +9878,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_session_sandboxes_external_id": {
           "name": "idx_session_sandboxes_external_id",
@@ -9420,9 +9893,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_session_sandboxes_pool": {
           "name": "idx_session_sandboxes_pool",
@@ -9441,9 +9914,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9451,10 +9924,10 @@
       "uniqueConstraints": {
         "session_sandboxes_session_id_unique": {
           "name": "session_sandboxes_session_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "session_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -9497,9 +9970,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9636,9 +10109,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_suna_account_migrations_account": {
           "name": "idx_suna_account_migrations_account",
@@ -9651,9 +10124,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_suna_account_migrations_heartbeat": {
           "name": "idx_suna_account_migrations_heartbeat",
@@ -9672,9 +10145,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9771,9 +10244,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_audit_account": {
           "name": "idx_tunnel_audit_account",
@@ -9786,9 +10259,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_audit_capability": {
           "name": "idx_tunnel_audit_capability",
@@ -9801,9 +10274,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_audit_created": {
           "name": "idx_tunnel_audit_created",
@@ -9816,25 +10289,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "tunnel_audit_logs_tunnel_id_tunnel_connections_tunnel_id_fk": {
           "name": "tunnel_audit_logs_tunnel_id_tunnel_connections_tunnel_id_fk",
           "tableFrom": "tunnel_audit_logs",
+          "tableTo": "tunnel_connections",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "tunnel_id"
           ],
-          "tableTo": "tunnel_connections",
-          "schemaTo": "kortix",
           "columnsTo": [
             "tunnel_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -9933,9 +10406,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_connections_sandbox": {
           "name": "idx_tunnel_connections_sandbox",
@@ -9948,9 +10421,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_connections_status": {
           "name": "idx_tunnel_connections_status",
@@ -9963,25 +10436,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "tunnel_connections_sandbox_id_sandboxes_sandbox_id_fk": {
           "name": "tunnel_connections_sandbox_id_sandboxes_sandbox_id_fk",
           "tableFrom": "tunnel_connections",
+          "tableTo": "sandboxes",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "sandbox_id"
           ],
-          "tableTo": "sandboxes",
-          "schemaTo": "kortix",
           "columnsTo": [
             "sandbox_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10078,9 +10551,9 @@
             }
           ],
           "isUnique": true,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_device_auth_status": {
           "name": "idx_tunnel_device_auth_status",
@@ -10093,9 +10566,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_device_auth_expires": {
           "name": "idx_tunnel_device_auth_expires",
@@ -10108,25 +10581,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "tunnel_device_auth_requests_tunnel_id_tunnel_connections_tunnel_id_fk": {
           "name": "tunnel_device_auth_requests_tunnel_id_tunnel_connections_tunnel_id_fk",
           "tableFrom": "tunnel_device_auth_requests",
+          "tableTo": "tunnel_connections",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "tunnel_id"
           ],
-          "tableTo": "tunnel_connections",
-          "schemaTo": "kortix",
           "columnsTo": [
             "tunnel_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10213,9 +10686,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_perm_requests_account": {
           "name": "idx_tunnel_perm_requests_account",
@@ -10228,9 +10701,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_perm_requests_status": {
           "name": "idx_tunnel_perm_requests_status",
@@ -10243,25 +10716,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "tunnel_permission_requests_tunnel_id_tunnel_connections_tunnel_id_fk": {
           "name": "tunnel_permission_requests_tunnel_id_tunnel_connections_tunnel_id_fk",
           "tableFrom": "tunnel_permission_requests",
+          "tableTo": "tunnel_connections",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "tunnel_id"
           ],
-          "tableTo": "tunnel_connections",
-          "schemaTo": "kortix",
           "columnsTo": [
             "tunnel_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10348,9 +10821,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_permissions_account": {
           "name": "idx_tunnel_permissions_account",
@@ -10363,9 +10836,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_permissions_capability": {
           "name": "idx_tunnel_permissions_capability",
@@ -10378,9 +10851,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_tunnel_permissions_status": {
           "name": "idx_tunnel_permissions_status",
@@ -10393,25 +10866,25 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "tunnel_permissions_tunnel_id_tunnel_connections_tunnel_id_fk": {
           "name": "tunnel_permissions_tunnel_id_tunnel_connections_tunnel_id_fk",
           "tableFrom": "tunnel_permissions",
+          "tableTo": "tunnel_connections",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "tunnel_id"
           ],
-          "tableTo": "tunnel_connections",
-          "schemaTo": "kortix",
           "columnsTo": [
             "tunnel_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10554,9 +11027,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_usage_events_project_time": {
           "name": "idx_usage_events_project_time",
@@ -10575,9 +11048,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_usage_events_session": {
           "name": "idx_usage_events_session",
@@ -10590,9 +11063,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_usage_events_model": {
           "name": "idx_usage_events_model",
@@ -10611,39 +11084,39 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "usage_events_account_id_accounts_account_id_fk": {
           "name": "usage_events_account_id_accounts_account_id_fk",
           "tableFrom": "usage_events",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "account_id"
           ],
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
           "columnsTo": [
             "account_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "usage_events_project_id_projects_project_id_fk": {
           "name": "usage_events_project_id_projects_project_id_fk",
           "tableFrom": "usage_events",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
           "columnsFrom": [
             "project_id"
           ],
-          "tableTo": "projects",
-          "schemaTo": "kortix",
           "columnsTo": [
             "project_id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10750,10 +11223,10 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "\"kortix\".\"yolo_member_tokens\".\"revoked_at\" IS NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_yolo_member_tokens_account": {
           "name": "idx_yolo_member_tokens_account",
@@ -10766,9 +11239,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -11029,6 +11502,17 @@
         "restricted"
       ]
     },
+    "kortix.session_lifecycle_command_status": {
+      "name": "session_lifecycle_command_status",
+      "schema": "kortix",
+      "values": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "dead_lettered"
+      ]
+    },
     "kortix.session_sandbox_status": {
       "name": "session_sandbox_status",
       "schema": "kortix",
@@ -11095,10 +11579,10 @@
   "schemas": {
     "kortix": "kortix"
   },
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

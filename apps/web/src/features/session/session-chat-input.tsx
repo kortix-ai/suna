@@ -51,7 +51,7 @@ import type {
   ProviderListResponse,
   PromptPart,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodeSessions, useOpenCodeSessionTodo } from '@/hooks/opencode/use-opencode-sessions';
+import { useOpenCodeSessions, useOpenCodeSessionTodo, GATEWAY_PROVIDER_IDS } from '@/hooks/opencode/use-opencode-sessions';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -119,6 +119,9 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
   const result: FlatModel[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
+    // Defense in depth: the provider list is already source-filtered to the
+    // gateway, but never render a native (bypass) provider even if one slips in.
+    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models)) {
       const caps = (model as any).capabilities;
       const modalities = (model as any).modalities;

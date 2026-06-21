@@ -1,3 +1,8 @@
-Session reliability: drain stuck-active cap leak + /sessions 500 resilience + Daytona billing reaper
+Reliable scheduled triggers
 
-Fixes the production incident where sessions stuck in an active status with no live box ate the per-account concurrent-session cap — wedging Slack ("queued behind other project work") and 429'ing new sessions. Adds a DB-only reconcileStuckActiveSessions maintenance pass (immune to Daytona throttling) with a real-DB e2e, plus the already-merged /sessions list resilience (#3567) and the provider-agnostic Daytona billing reaper + orphan-box reaper. Also: honest, reason-aware Slack status messages (out-of-credits / at-cap / not-found).
+**Scheduled triggers (crons) are now resilient — no single trigger can hold up the rest.**
+
+- A slow or stuck trigger fire (e.g. resuming a sandbox) no longer blocks the scheduler: each fire is time-bounded and isolated, so one trigger can fail and retry while every other trigger keeps firing on schedule.
+- The scheduler self-heals — a stalled sweep is automatically reclaimed, so automations can't silently stop.
+- Hardened background-worker leadership so an API-only node can never sit on the scheduler lease without running it.
+- Added a stall watchdog + health signal so a frozen scheduler is surfaced immediately instead of going unnoticed.
