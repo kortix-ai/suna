@@ -1,3 +1,5 @@
+import { resolveBedrockModel } from './bedrock-models';
+
 interface PriceEntry {
   inputPerMillion: number;
   outputPerMillion: number;
@@ -21,6 +23,15 @@ const FALLBACK_PRICING: Record<string, PriceEntry> = {
 const DEFAULT_PRICING: PriceEntry = { inputPerMillion: 2, outputPerMillion: 10 };
 
 function getPricing(model: string): PriceEntry {
+  // Bedrock models carry their own pricing in the model registry.
+  const bedrock = resolveBedrockModel(model);
+  if (bedrock) {
+    return {
+      inputPerMillion: bedrock.inputPerMillion,
+      outputPerMillion: bedrock.outputPerMillion,
+      cachedInputPerMillion: bedrock.cachedInputPerMillion,
+    };
+  }
   if (FALLBACK_PRICING[model]) return FALLBACK_PRICING[model];
   for (const [key, pricing] of Object.entries(FALLBACK_PRICING)) {
     if (model.startsWith(key)) return pricing;
