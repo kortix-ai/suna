@@ -36,6 +36,9 @@ spec:
         - name: html
           emptyDir:
             sizeLimit: {{ .Values.htmlVolumeSizeLimit }}
+        - name: landing
+          configMap:
+            name: {{ include "qa-portal.name" . }}-landing
       initContainers:
         # Prime the volume before nginx serves — readiness then gates the ALB on
         # the report (or a placeholder) being present.
@@ -49,20 +52,23 @@ spec:
               # Sync the whole reports/ tree so per-PR reports (reports/pr/<n>/<run>/)
               # and history are served too, not just latest/.
               aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }}
-              # Root redirects to the latest report; the qa-pr comment links deep to
-              # /{{ .Values.s3Prefix }}/pr/<n>/<run>/index.html.
-              printf '<!doctype html><meta http-equiv="refresh" content="0; url=/{{ .Values.s3Prefix }}/latest/">\n' > /html/index.html
               # First-run safety: placeholder so nginx is healthy before any publish.
               if [ -z "$(ls -A "/html/{{ .Values.s3Prefix }}/latest" 2>/dev/null)" ]; then
                 mkdir -p "/html/{{ .Values.s3Prefix }}/latest"
                 echo "<h1>QA report portal</h1><p>No report has been published yet.</p>" > "/html/{{ .Values.s3Prefix }}/latest/index.html"
               fi
+              # Build the landing page (/) listing every lane's reports. The qa-pr
+              # comment still links deep to /{{ .Values.s3Prefix }}/pr/<n>/<run>/.
+              sh /scripts/gen-index.sh /html
           env:
             - name: AWS_REGION
               value: {{ .Values.region | quote }}
           volumeMounts:
             - name: html
               mountPath: /html
+            - name: landing
+              mountPath: /scripts
+              readOnly: true
           resources:
             {{- toYaml .Values.resources.sync | nindent 12 }}
       containers:
@@ -103,6 +109,7 @@ spec:
               while true; do
                 sleep {{ .Values.syncIntervalSeconds }}
                 aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }} || true
+                sh /scripts/gen-index.sh /html || true
               done
           env:
             - name: AWS_REGION
@@ -110,5 +117,8 @@ spec:
           volumeMounts:
             - name: html
               mountPath: /html
+            - name: landing
+              mountPath: /scripts
+              readOnly: true
           resources:
             {{- toYaml .Values.resources.sync | nindent 12 }}
