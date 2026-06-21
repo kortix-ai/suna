@@ -61,6 +61,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: Run migration tests
         run: make migration
       - uses: actions/upload-artifact@v4
