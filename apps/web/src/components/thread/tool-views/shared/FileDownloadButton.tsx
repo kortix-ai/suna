@@ -36,7 +36,7 @@ interface FileDownloadButtonProps {
  * A reusable file download button that:
  * - For markdown files: Shows a dropdown with PDF, Word, HTML, Markdown export options
  * - For other files: Shows a simple download button
- * 
+ *
  * This component is used in FileOperationToolView and file viewer components
  * to ensure consistent download/export behavior.
  */
@@ -50,7 +50,7 @@ export function FileDownloadButton({
 }: FileDownloadButtonProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'files',

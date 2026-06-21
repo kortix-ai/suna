@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { KeyRound, Plug, Wrench } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +41,7 @@ export function AddToProjectDialog({
   fixedProjectId?: string;
   fixedProjectName?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user } = useAuth();
   const usePicker = !fixedProjectId;
   const [pickedProjectId, setPickedProjectId] = useState('');
@@ -79,24 +81,31 @@ export function AddToProjectDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
           <DialogTitle>
             Add {item?.title}
             {fixedProjectName ? ` to ${fixedProjectName}` : ''}
           </DialogTitle>
           <DialogDescription>
-            Commits this {typeMeta(item?.type ?? '').label.toLowerCase()} into the repo —
-            available in the next session.
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddToProjectDialogJsxTextCommitsThis7b891a43',
+            )}
+            {typeMeta(item?.type ?? '').label.toLowerCase()}{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddToProjectDialogJsxTextIntoThe7714c57a',
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 px-6 py-5">
           {usePicker && (
             <div className="space-y-1.5">
-              <span className="text-sm font-medium text-foreground">Project</span>
+              <span className="text-foreground text-sm font-medium">Project</span>
               <Select value={pickedProjectId} onValueChange={setPickedProjectId}>
                 <SelectTrigger>
-                  <SelectValue placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'} />
+                  <SelectValue
+                    placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((p) => (
@@ -107,21 +116,32 @@ export function AddToProjectDialog({
                 </SelectContent>
               </Select>
               {!projectsQuery.isLoading && projects.length === 0 && (
-                <p className="text-xs text-muted-foreground">You have no projects yet — create one first.</p>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsMarketplaceAddToProjectDialogJsxTextYouHavec6bfb213',
+                  )}
+                </p>
               )}
             </div>
           )}
 
           {item && item.dependencies.length > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Also installs: <span className="text-foreground">{item.dependencies.join(', ')}</span>
+            <p className="text-muted-foreground text-sm">
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceAddToProjectDialogJsxTextAlsoInstallsac6dcc9a',
+              )}
+              <span className="text-foreground">{item.dependencies.join(', ')}</span>
             </p>
           )}
 
           {hasCaps ? (
-            <div className="rounded-2xl border border-border bg-muted/30 p-3">
-              <p className="text-xs font-medium text-foreground">This item will be able to use:</p>
-              <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+            <div className="border-border bg-muted/30 rounded-2xl border p-3">
+              <p className="text-foreground text-xs font-medium">
+                {tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceAddToProjectDialogJsxTextThisItem2bb697bd',
+                )}
+              </p>
+              <ul className="text-muted-foreground mt-2 space-y-1.5 text-sm">
                 {caps!.secrets.map((s) => (
                   <li key={s} className="flex items-center gap-2">
                     <KeyRound className="size-3.5 shrink-0" />
@@ -143,11 +163,15 @@ export function AddToProjectDialog({
               </ul>
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">No special permissions required.</p>
+            <p className="text-muted-foreground text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceAddToProjectDialogJsxTextNoSpecial521751ba',
+              )}
+            </p>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+        <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

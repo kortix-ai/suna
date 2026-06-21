@@ -188,7 +188,7 @@ export function maybeNormalizeOpenAIResponsesInput(
   }
 }
 
-export function extractText(value: unknown): string {
+function extractText(value: unknown): string {
   if (value == null) return '';
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -347,7 +347,7 @@ export async function reserveToolProxyCredits(
   };
 }
 
-export async function reserveActorCost(
+async function reserveActorCost(
   actor: ActorContext | null,
   cost: number,
   refundCredits: () => Promise<unknown>,

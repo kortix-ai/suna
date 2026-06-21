@@ -14,6 +14,7 @@ export {
 	  projectSessionStatusEnum,
 	  sessionLifecycleCommandStatusEnum,
 	  projectRoleEnum,
+  projectAccessRequestStatusEnum,
   apiKeyStatusEnum,
   apiKeyTypeEnum,
   // Kortix tables — accounts
@@ -36,6 +37,7 @@ export {
   projectGitConnections,
   projectGitCredentials,
   projectMembers,
+  projectAccessRequests,
   projectSecrets,
   projectSecretGrants,
   secretShareScopeEnum,

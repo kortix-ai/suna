@@ -69,7 +69,7 @@ export default function NotificationManagementPage() {
       });
     }
   });
-  
+
   const workflows = workflowsData?.workflows || [];
   const selectedWorkflow = workflows.find(w => w.workflow_id === workflowId);
 

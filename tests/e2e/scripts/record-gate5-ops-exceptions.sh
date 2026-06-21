@@ -10,14 +10,14 @@ usage() {
 Usage:
   GATE5_OPS_EXCEPTIONS_CONFIRM=I_ACCEPT_TARGET_OPS_EXCEPTIONS \
   GATE5_TARGET_EVIDENCE_DIR=test-results/gate5-rehearsal/<timestamp> \
-  GATE5_OPS_EXCEPTION_ITEMS=$'queues.queued_total|Backpressure queue from rehearsal is expected and tracked.|queue-ticket.txt\nsessions.errored|Known failed session from provider drill.|incident-log.txt' \
+  GATE5_OPS_EXCEPTION_ITEMS=$'sessions.errored|Known failed session from provider drill.|incident-log.txt' \
   bash tests/e2e/scripts/record-gate5-ops-exceptions.sh
 
 Each item is:
   signal|summary|evidence1,evidence2
 
 Allowed signals:
-  sessions.errored, sandboxes.errored, queues.queued_total
+  sessions.errored, sandboxes.errored
 
 Reads:
   $GATE5_TARGET_EVIDENCE_DIR/summary.json
@@ -107,8 +107,7 @@ fi
 required_signals="$(jq -c '
   [
     (if (.sessions.errored // 0) > 0 then "sessions.errored" else empty end),
-    (if (.sandboxes.errored // 0) > 0 then "sandboxes.errored" else empty end),
-    (if (.queues.queued_total // 0) > 0 then "queues.queued_total" else empty end)
+    (if (.sandboxes.errored // 0) > 0 then "sandboxes.errored" else empty end)
   ]
 ' "$ops_file")"
 
@@ -145,7 +144,7 @@ jq -Rn \
       )
     }
     | if ((.exceptions | length) == 0) then error("no exceptions were provided") else . end
-    | if (all(.exceptions[]; (.signal | IN("sessions.errored", "sandboxes.errored", "queues.queued_total")))) then . else error("invalid exception signal") end
+    | if (all(.exceptions[]; (.signal | IN("sessions.errored", "sandboxes.errored")))) then . else error("invalid exception signal") end
     | if (all(.exceptions[]; (.summary | length > 0) and (.evidence | length > 0))) then . else error("each exception needs summary and evidence") end
     | if (($required_signals - ([.exceptions[].signal] | unique)) | length == 0) then . else error("missing required ops exception signal") end
   ' >"$tmp_file"

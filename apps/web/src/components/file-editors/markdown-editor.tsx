@@ -555,7 +555,7 @@ export function MarkdownEditor({
                KORTIX TIPTAP EDITOR STYLES
                Matches UnifiedMarkdown for consistent rendering
                ═══════════════════════════════════════════════════════════════ */
-            
+
             /* Headings - Clean hierarchy with proper weight */
             .tiptap-editor h1 {
               font-size: 1.5rem;
@@ -569,7 +569,7 @@ export function MarkdownEditor({
               border-bottom: 1px solid hsl(var(--border) / 0.4);
             }
             .tiptap-editor h1:first-child { margin-top: 0; }
-            
+
             .tiptap-editor h2 {
               font-size: 1.25rem;
               line-height: 1.75rem;
@@ -580,7 +580,7 @@ export function MarkdownEditor({
               margin-bottom: 0.75rem;
             }
             .tiptap-editor h2:first-child { margin-top: 0; }
-            
+
             .tiptap-editor h3 {
               font-size: 1.125rem;
               line-height: 1.75rem;
@@ -590,7 +590,7 @@ export function MarkdownEditor({
               margin-bottom: 0.5rem;
             }
             .tiptap-editor h3:first-child { margin-top: 0; }
-            
+
             .tiptap-editor h4 {
               font-size: 1rem;
               line-height: 1.5rem;
@@ -600,7 +600,7 @@ export function MarkdownEditor({
               margin-bottom: 0.5rem;
             }
             .tiptap-editor h4:first-child { margin-top: 0; }
-            
+
             .tiptap-editor h5 {
               font-size: 0.875rem;
               line-height: 1.25rem;
@@ -610,7 +610,7 @@ export function MarkdownEditor({
               margin-bottom: 0.25rem;
             }
             .tiptap-editor h5:first-child { margin-top: 0; }
-            
+
             .tiptap-editor h6 {
               font-size: 0.875rem;
               line-height: 1.25rem;
@@ -622,7 +622,7 @@ export function MarkdownEditor({
               margin-bottom: 0.25rem;
             }
             .tiptap-editor h6:first-child { margin-top: 0; }
-            
+
             /* Text formatting */
             .tiptap-editor strong {
               font-weight: 600;
@@ -637,7 +637,7 @@ export function MarkdownEditor({
               color: hsl(var(--muted-foreground));
               text-decoration-color: hsl(var(--muted-foreground) / 0.5);
             }
-            
+
             /* Inline code - subtle pill style */
             .tiptap-editor code {
               padding: 0.125rem 0.375rem;
@@ -647,7 +647,7 @@ export function MarkdownEditor({
               background-color: hsl(var(--muted));
               color: hsl(var(--foreground));
             }
-            
+
             /* Pre block - code container (light mode default) */
             .tiptap-editor pre {
               background-color: #f4f4f5;
@@ -674,7 +674,7 @@ export function MarkdownEditor({
               border-radius: 0;
               font-size: inherit;
             }
-            
+
             /* Placeholder styling */
             .tiptap-editor .is-editor-empty:first-child::before {
               color: hsl(var(--muted-foreground) / 0.5);
@@ -683,7 +683,7 @@ export function MarkdownEditor({
               height: 0;
               pointer-events: none;
             }
-            
+
             /* ═══════════════════════════════════════════════════════════════
                TASK LIST STYLES - Checkbox and text on same line
                ═══════════════════════════════════════════════════════════════ */
@@ -720,7 +720,7 @@ export function MarkdownEditor({
             .tiptap-editor ul[data-type="taskList"] ul[data-type="taskList"] {
               margin: 0.25rem 0 0.25rem 1.5rem;
             }
-            
+
             /* ═══════════════════════════════════════════════════════════════
                TABLE STYLES - Clean, minimal table editing
                ═══════════════════════════════════════════════════════════════ */
@@ -793,4 +793,3 @@ export function MarkdownEditor({
     </div>
   );
 }
-

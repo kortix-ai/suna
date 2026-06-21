@@ -70,4 +70,3 @@ export function normalizeIconName(iconName: string | null | undefined): string |
 
   return null;
 }
-

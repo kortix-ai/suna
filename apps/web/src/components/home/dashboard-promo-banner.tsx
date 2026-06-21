@@ -23,11 +23,11 @@ export function DashboardPromoBanner() {
   const pathname = usePathname();
   const { setIsVisible } = useWelcomeBannerStore();
   const promo = usePromo();
-  
+
   const tierKey = accountStateSelectors.tierKey(accountState)?.toLowerCase();
   const isFreeTier = !tierKey || tierKey === 'free' || tierKey === 'none';
   const isProjectsPage = pathname === '/projects';
-  
+
   // Show Welcome Bonus promo or KORTIX26 for free tier users
   const shouldShowPromo = promo?.isActive && (promo.promoId === 'welcome-bonus' || promo.promoCode === 'KORTIX26');
 
@@ -81,7 +81,7 @@ export function DashboardPromoBanner() {
               </div>
 
               <span className="text-muted-foreground hidden sm:inline">{tHardcodedUi.raw('componentsHomeDashboardPromoBanner.line82JsxTextMiddot')}</span>
-              
+
               {/* Countdown */}
               <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
                 {promo.timeLabel}

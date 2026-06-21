@@ -93,7 +93,7 @@ export function useStressTest() {
     totalBatches: 0,
     error: null,
   });
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Abort any in-flight run when the panel unmounts so the streaming fetch and
@@ -165,10 +165,10 @@ export function useStressTest() {
 
         for (const line of lines) {
           if (!line.trim()) continue;
-          
+
           try {
             const event = JSON.parse(line);
-            
+
             switch (event.type) {
               case 'config':
                 setState(prev => ({
@@ -176,14 +176,14 @@ export function useStressTest() {
                   totalBatches: event.num_batches,
                 }));
                 break;
-                
+
               case 'batch_start':
                 setState(prev => ({
                   ...prev,
                   currentBatch: event.batch_num,
                 }));
                 break;
-                
+
               case 'status':
                 setState(prev => ({
                   ...prev,
@@ -194,7 +194,7 @@ export function useStressTest() {
                   ),
                 }));
                 break;
-                
+
               case 'result':
                 setState(prev => ({
                   ...prev,
@@ -217,7 +217,7 @@ export function useStressTest() {
                   ),
                 }));
                 break;
-                
+
               case 'summary':
                 setState(prev => ({
                   ...prev,

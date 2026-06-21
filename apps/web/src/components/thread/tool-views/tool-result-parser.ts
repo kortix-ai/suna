@@ -1,6 +1,6 @@
 /**
  * Tool Result Parser for handling both old and new tool result formats
- * 
+ *
  * Supports:
  * - New structured format with tool_execution
  * - Legacy XML-wrapped format
@@ -36,8 +36,8 @@ export function parseToolResult(content: any): ParsedToolResult | null {
 export function isToolResult(message: any): boolean {
   if (!message || !message.metadata) return false;
   try {
-    const metadata = typeof message.metadata === 'string' 
-      ? JSON.parse(message.metadata) 
+    const metadata = typeof message.metadata === 'string'
+      ? JSON.parse(message.metadata)
       : message.metadata;
     return !!metadata.result;
   } catch {
@@ -53,4 +53,4 @@ export function formatToolNameForDisplay(toolName: string): string {
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-} 
+}

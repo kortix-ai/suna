@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Full-page detail for a marketplace item, modeled on Customize → Skills:
  *   • a fixed top bar (back · identity · install actions),
@@ -9,11 +10,21 @@
  * It fills its container edge-to-edge so it matches the rest of the surface.
  */
 
+import {
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  FileText,
+  KeyRound,
+  Plug,
+  Plus,
+  Trash2,
+  Wrench,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Check, ExternalLink, FileText, KeyRound, Plug, Plus, Trash2, Wrench } from 'lucide-react';
 
-import { UnifiedMarkdown } from '@/components/markdown';
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -27,7 +38,9 @@ import { typeMeta } from './marketplace-meta';
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-muted-foreground/50 mb-2 text-[11px] font-medium tracking-wide uppercase">{children}</div>
+    <div className="text-muted-foreground/50 mb-2 text-[11px] font-medium tracking-wide uppercase">
+      {children}
+    </div>
   );
 }
 
@@ -59,9 +72,23 @@ function stripFrontmatter(md: string): string {
 }
 
 const LANG: Record<string, string> = {
-  py: 'python', js: 'javascript', ts: 'typescript', tsx: 'tsx', jsx: 'jsx', sh: 'bash', bash: 'bash',
-  rb: 'ruby', go: 'go', rs: 'rust', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-  html: 'html', css: 'css', sql: 'sql',
+  py: 'python',
+  js: 'javascript',
+  ts: 'typescript',
+  tsx: 'tsx',
+  jsx: 'jsx',
+  sh: 'bash',
+  bash: 'bash',
+  rb: 'ruby',
+  go: 'go',
+  rs: 'rust',
+  json: 'json',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  html: 'html',
+  css: 'css',
+  sql: 'sql',
 };
 const extOf = (p: string) => p.split('.').pop()?.toLowerCase() ?? '';
 const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
@@ -105,6 +132,7 @@ export function MarketplaceItemDetail({
   addLabel?: string;
   installedNames?: Set<string>;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const { data, isLoading } = useMarketplaceItem(openId);
   const tm = data ? typeMeta(data.type) : null;
@@ -146,7 +174,12 @@ export function MarketplaceItemDetail({
   const actions = !data ? null : isInstalled ? (
     <div className="flex shrink-0 items-center gap-1.5">
       {onRemove && (
-        <Button variant="ghost" size="sm" onClick={() => onRemove(data)} className="text-muted-foreground hover:text-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onRemove(data)}
+          className="text-muted-foreground hover:text-foreground"
+        >
           <Trash2 className="size-4" />
           Remove
         </Button>
@@ -166,15 +199,23 @@ export function MarketplaceItemDetail({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Fixed top bar — flush to the top, no scroll gap. */}
-      <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/60 pr-3 pl-2">
-        <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back" className="text-muted-foreground hover:text-foreground">
+      <div className="border-border/60 flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onBack}
+          aria-label="Back"
+          className="text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="size-4" />
         </Button>
         {data && tm ? (
           <>
             <MarketplaceItemAvatar item={data} size="sm" showSource={false} />
             <div className="min-w-0 flex-1">
-              <div className="text-foreground truncate text-sm font-semibold leading-tight">{data.title}</div>
+              <div className="text-foreground truncate text-sm leading-tight font-semibold">
+                {data.title}
+              </div>
               <div className="text-muted-foreground truncate text-[11px] leading-tight">
                 {tm.label} · {data.registry}
               </div>
@@ -188,7 +229,7 @@ export function MarketplaceItemDetail({
 
       {/* Body: meta + tree (left) · content (right). */}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <aside className="flex max-h-[38vh] w-full shrink-0 flex-col overflow-y-auto border-b border-border/60 bg-muted/10 md:max-h-none md:w-[320px] md:border-b-0 md:border-r">
+        <aside className="border-border/60 bg-muted/10 flex max-h-[38vh] w-full shrink-0 flex-col overflow-y-auto border-b md:max-h-none md:w-[320px] md:border-r md:border-b-0">
           {isLoading || !data || !tm ? (
             <div className="space-y-2 p-3">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -198,13 +239,13 @@ export function MarketplaceItemDetail({
           ) : (
             <>
               {data.description && (
-                <p className="text-foreground/80 border-b border-border/40 px-4 py-3.5 text-xs leading-relaxed">
+                <p className="text-foreground/80 border-border/40 border-b px-4 py-3.5 text-xs leading-relaxed">
                   {data.description}
                 </p>
               )}
 
               {categories.length > 0 && (
-                <div className="border-b border-border/40 px-4 py-3.5">
+                <div className="border-border/40 border-b px-4 py-3.5">
                   <SectionLabel>Categories</SectionLabel>
                   <div className="flex flex-wrap gap-1.5">
                     {categories.map((c) => (
@@ -216,7 +257,7 @@ export function MarketplaceItemDetail({
                 </div>
               )}
 
-              <div className="border-b border-border/40 px-4 py-3.5">
+              <div className="border-border/40 border-b px-4 py-3.5">
                 <SectionLabel>Details</SectionLabel>
                 <div className="space-y-2">
                   <InfoRow label="Source">
@@ -255,7 +296,7 @@ export function MarketplaceItemDetail({
               </div>
 
               {hasCaps && (
-                <div className="border-b border-border/40 px-4 py-3.5">
+                <div className="border-border/40 border-b px-4 py-3.5">
                   <SectionLabel>Permissions</SectionLabel>
                   <ul className="text-muted-foreground space-y-1.5 text-xs">
                     {caps!.secrets.map((s) => (
@@ -281,7 +322,10 @@ export function MarketplaceItemDetail({
               )}
 
               <div className="text-muted-foreground/50 px-4 pt-3.5 pb-1.5 text-[11px] font-medium tracking-wide uppercase">
-                Files ({data.files.length})
+                {tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceMarketplaceItemDetailJsxTextFilesb52a4869',
+                )}
+                {data.files.length})
               </div>
               <div className="relative pb-3">
                 <FileTreeSprite />
@@ -297,7 +341,7 @@ export function MarketplaceItemDetail({
           )}
         </aside>
 
-        <section className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-background">
+        <section className="bg-background min-h-0 min-w-0 flex-1 overflow-y-auto">
           {isLoading || !data ? (
             <div className="space-y-3 p-6">
               <Skeleton className="h-6 w-1/3 rounded-lg" />
@@ -309,7 +353,15 @@ export function MarketplaceItemDetail({
                 <UnifiedMarkdown content={readme} allowHtml={false} />
               </div>
             ) : (
-              <EmptyState icon={FileText} title="No README" description="This skill doesn't ship a SKILL.md description." />
+              <EmptyState
+                icon={FileText}
+                title={tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrTitleNoREADME4966916b',
+                )}
+                description={tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrDescriptionThisSkill2316ce31',
+                )}
+              />
             )
           ) : fileQuery.isLoading ? (
             <div className="space-y-3 p-6">
@@ -321,8 +373,12 @@ export function MarketplaceItemDetail({
           ) : (
             <EmptyState
               icon={FileText}
-              title="Couldn’t load this file"
-              description="It will still be committed to your repo on install. View the source on GitHub for now."
+              title={tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrTitleCouldnT6f110527',
+              )}
+              description={tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrDescriptionItWill4708a76f',
+              )}
             />
           )}
         </section>

@@ -27,10 +27,6 @@ export function allFlows(): RegisteredFlow[] {
   return [...registry.values()];
 }
 
-export function getFlow(id: string): RegisteredFlow | undefined {
-  return registry.get(id);
-}
-
 export function clearRegistry(): void {
   registry.clear();
 }

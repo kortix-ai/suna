@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * "Download apps" — a full-screen surface (like the Customize overlay) that
  * advertises every way to run Kortix beyond the web app. Desktop + Local
@@ -104,6 +105,7 @@ function AppCard({
 
 /* ─── Mockups ────────────────────────────────────────────────────────────── */
 function DesktopMockup() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border/60 bg-background absolute inset-x-6 top-2 bottom-0 translate-y-1 rounded-t-xl border border-b-0 shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.25)]">
       <div className="border-border/50 flex items-center gap-2 border-b px-3 py-2">
@@ -118,10 +120,10 @@ function DesktopMockup() {
         </div>
         <div className="flex-1 space-y-2 p-3">
           <div className="bg-foreground/90 text-background ml-auto w-2/3 rounded-2xl rounded-br-sm px-3 py-1.5 text-[9px]">
-            Plan my week and draft the emails
+            {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextPlanMyWeek142b5d17')}
           </div>
           <div className="bg-muted text-foreground/70 w-3/4 rounded-2xl rounded-bl-sm px-3 py-1.5 text-[9px]">
-            On it — drafting 3 emails now…
+            {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextOnItDrafting85ec739b')}
           </div>
         </div>
       </div>
@@ -130,6 +132,7 @@ function DesktopMockup() {
 }
 
 function TerminalMockup() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border/60 absolute inset-x-6 top-2 bottom-0 translate-y-1 overflow-hidden rounded-t-xl border border-b-0 bg-[#0c0c0d] shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.4)]">
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
@@ -137,14 +140,19 @@ function TerminalMockup() {
       </div>
       <div className="space-y-1 p-3 font-mono text-[9px] leading-relaxed text-zinc-300">
         <div>
-          <span className="text-emerald-400">$</span> curl -fsSL kortix.com/install | bash
-        </div>
-        <div className="text-zinc-500">✓ Installed kortix</div>
-        <div>
-          <span className="text-emerald-400">$</span> kortix my-project
+          <span className="text-emerald-400">$</span>{' '}
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextCurlFsSLKortix0e6a96da')}
         </div>
         <div className="text-zinc-500">
-          ▸ scaffolding…<span className="animate-pulse">▋</span>
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextInstalledKortix44ca8439')}
+        </div>
+        <div>
+          <span className="text-emerald-400">$</span>{' '}
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextKortixMyProjectdd5d950f')}
+        </div>
+        <div className="text-zinc-500">
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextScaffolding6a800c2c')}
+          <span className="animate-pulse">▋</span>
         </div>
       </div>
     </div>
@@ -152,6 +160,7 @@ function TerminalMockup() {
 }
 
 function BrowserMockup() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border/60 bg-background absolute inset-x-6 top-2 bottom-0 translate-y-1 overflow-hidden rounded-t-xl border border-b-0 shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.25)]">
       <div className="border-border/50 flex items-center gap-2 border-b px-3 py-2">
@@ -164,7 +173,7 @@ function BrowserMockup() {
         <div className="bg-muted h-2 w-1/2 rounded" />
         <div className="bg-muted/60 mt-2 h-2 w-2/3 rounded" />
         <div className="bg-foreground text-background mt-3 inline-flex items-center rounded-md px-2 py-1 text-[8px]">
-          Start a return
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextStartAReturne3430bb5')}
         </div>
         <div className="bg-primary text-primary-foreground absolute top-6 right-5 rounded-md px-1.5 py-0.5 text-[8px] font-medium shadow">
           You
@@ -175,6 +184,7 @@ function BrowserMockup() {
 }
 
 function MobileMockup() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border/60 bg-background absolute top-2 bottom-0 left-1/2 w-[112px] -translate-x-1/2 translate-y-1 overflow-hidden rounded-t-[20px] border border-b-0 shadow-[0_-1px_24px_-12px_rgba(0,0,0,0.25)]">
       <div className="flex justify-center py-1.5">
@@ -182,7 +192,7 @@ function MobileMockup() {
       </div>
       <div className="space-y-2 px-3">
         <div className="bg-foreground/90 text-background ml-auto w-2/3 rounded-2xl rounded-br-sm px-2 py-1 text-[8px]">
-          Summarize my day
+          {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextSummarizeMyDaya3202c71')}
         </div>
         <div className="flex items-end gap-1 pt-1">
           {[5, 9, 6, 11, 7, 12, 8].map((h, i) => (
@@ -201,6 +211,7 @@ export function DownloadAppsModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [platformId, setPlatformId] = useState<PlatformId>('macos');
   const [copied, setCopied] = useState(false);
 
@@ -234,10 +245,12 @@ export function DownloadAppsModal({
             <div className="mb-10 flex flex-col items-center text-center sm:mb-14">
               <KortixLogo variant="symbol" size={34} className="mb-5" />
               <DialogTitle className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
-                Do more with Kortix, everywhere you work
+                {tI18nHardcoded.raw('autoFeaturesLayoutDownloadAppsModalJsxTextDoMoreWith33a6da8d')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground mt-3 max-w-xl text-sm sm:text-base">
-                Run Kortix natively, in your terminal, in your browser, and on the go.
+                {tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxTextRunKortixNatively85de8599',
+                )}
               </DialogDescription>
             </div>
 
@@ -247,8 +260,12 @@ export function DownloadAppsModal({
               <AppCard
                 icon={<Monitor className="size-4.5" />}
                 title="Desktop"
-                description="Chat, cowork, and code in one app. Kortix runs natively with your files, apps, and browser tabs."
-                tint="bg-gradient-to-b from-muted/40 to-card"
+                description={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrDescriptionChatCowork8b4379e0',
+                )}
+                tint={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrTintBgGradient25efe36b',
+                )}
                 action={
                   <div className="flex flex-col items-start gap-2.5">
                     <Button
@@ -256,10 +273,17 @@ export function DownloadAppsModal({
                       className="rounded-xl"
                     >
                       <primary.Mark className="mr-1.5 size-4" />
-                      Download for {primary.label}
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesLayoutDownloadAppsModalJsxTextDownloadFor926941d2',
+                      )}
+                      {primary.label}
                     </Button>
                     <div className="text-muted-foreground flex items-center gap-2">
-                      <span className="text-[11px]">Also for</span>
+                      <span className="text-[11px]">
+                        {tI18nHardcoded.raw(
+                          'autoFeaturesLayoutDownloadAppsModalJsxTextAlsoForff95d8c9',
+                        )}
+                      </span>
                       {others.map((p) => (
                         <button
                           key={p.id}
@@ -281,14 +305,20 @@ export function DownloadAppsModal({
               {/* Local Development — Kortix CLI, available */}
               <AppCard
                 icon={<Terminal className="size-4.5" />}
-                title="Local Development"
-                description="Build, run, and self-host Kortix from your terminal with the Kortix CLI."
+                title={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrTitleLocalDevelopment31cefec4',
+                )}
+                description={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrDescriptionBuildRun4761ab6f',
+                )}
                 action={
                   <button
                     type="button"
                     onClick={copyCli}
                     className="group/cmd border-border/60 bg-muted/50 text-foreground hover:bg-muted flex w-full max-w-sm items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left font-mono text-[11px] transition-colors"
-                    title="Click to copy"
+                    title={tI18nHardcoded.raw(
+                      'autoFeaturesLayoutDownloadAppsModalJsxAttrTitleClickTob497d6e9',
+                    )}
                   >
                     <span className="truncate">{CLI_INSTALL_CMD}</span>
                     {copied ? (
@@ -305,11 +335,17 @@ export function DownloadAppsModal({
               <AppCard
                 icon={<ChromeMark className="size-[18px]" />}
                 title="Chrome"
-                description="Kortix navigates, clicks buttons, and fills out forms right inside your browser."
-                badge="Coming soon"
+                description={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrDescriptionKortixNavigates015d9350',
+                )}
+                badge={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrBadgeComingSoon291caabf',
+                )}
                 action={
                   <Button variant="outline" className="rounded-xl" disabled>
-                    Coming soon
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesLayoutDownloadAppsModalJsxTextComingSoon89fd3230',
+                    )}
                   </Button>
                 }
                 mockup={<BrowserMockup />}
@@ -319,11 +355,17 @@ export function DownloadAppsModal({
               <AppCard
                 icon={<Smartphone className="size-4.5" />}
                 title="Mobile"
-                description="Chat hands-free, connect your favorite apps, and kick off tasks on the go."
-                badge="Coming soon"
+                description={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrDescriptionChatHandsd5b305fb',
+                )}
+                badge={tI18nHardcoded.raw(
+                  'autoFeaturesLayoutDownloadAppsModalJsxAttrBadgeComingSoon291caabf',
+                )}
                 action={
                   <Button variant="outline" className="rounded-xl" disabled>
-                    Coming soon
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesLayoutDownloadAppsModalJsxTextComingSoon89fd3230',
+                    )}
                   </Button>
                 }
                 mockup={<MobileMockup />}

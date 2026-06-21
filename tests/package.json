@@ -3,11 +3,28 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "ke2e — Kortix end-to-end REST API test suite (black-box, live services, one source of truth)",
+  "description": "Unified Kortix test suite: Playwright, Gate 5, and ke2e live API verification",
   "bin": {
     "ke2e": "bin/ke2e.ts"
   },
   "scripts": {
+    "test": "playwright test -c playwright.config.ts",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "test:e2e:browser": "playwright test -c playwright.config.ts",
+    "test:e2e:gate5:preflight": "GATE5_PREFLIGHT_ONLY=1 bash e2e/scripts/run-gate5-target-rehearsal.sh",
+    "test:e2e:gate5:target": "bash e2e/scripts/run-gate5-target-rehearsal.sh",
+    "test:e2e:gate5:local": "bash e2e/scripts/run-gate5-local-verification.sh",
+    "test:e2e:gate5:record-drill": "bash e2e/scripts/record-gate5-runbook-drill.sh",
+    "test:e2e:gate5:record-observability": "bash e2e/scripts/record-gate5-observability-proof.sh",
+    "test:e2e:gate5:record-api-curl": "bash e2e/scripts/record-gate5-api-curl-proof.sh",
+    "test:e2e:gate5:record-slo": "bash e2e/scripts/record-gate5-slo-proof.sh",
+    "test:e2e:gate5:record-concurrency": "bash e2e/scripts/record-gate5-concurrency-proof.sh",
+    "test:e2e:gate5:record-negative": "bash e2e/scripts/record-gate5-negative-space-proof.sh",
+    "test:e2e:gate5:record-ops-exceptions": "bash e2e/scripts/record-gate5-ops-exceptions.sh",
+    "test:e2e:gate5:verify-evidence": "bash e2e/scripts/verify-gate5-release-evidence.sh",
+    "test:e2e:browser:headed": "playwright test -c playwright.config.ts --headed",
+    "test:shell:vps": "bash shell/vps/test-vps-e2e.sh",
+    "playwright:install": "playwright install chromium",
     "ke2e": "bun bin/ke2e.ts",
     "e2e": "bun bin/ke2e.ts run",
     "coverage": "bun bin/ke2e.ts coverage",
@@ -16,10 +33,8 @@
     "list": "bun bin/ke2e.ts list",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "zod": "^3.23.8"
-  },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/bun": "latest",
     "typescript": "^5.5.0"
   }

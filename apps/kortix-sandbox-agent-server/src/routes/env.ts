@@ -17,10 +17,10 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
   let syncInFlight: Promise<Response> | null = null
 
   router.post('/', async (c) => {
-    if (!cfg.kortixToken) {
+    if (!cfg.sandboxToken) {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
-    if (bearerToken(c.req.header('Authorization')) !== cfg.kortixToken) {
+    if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken) {
       return c.json({ error: 'unauthorized' }, 401)
     }
     // Defense in depth: this is a server-to-server control endpoint. The API's

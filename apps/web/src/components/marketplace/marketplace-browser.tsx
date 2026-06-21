@@ -1,6 +1,7 @@
 'use client';
 
 import { ExternalLink, Loader2, PackageSearch, Plus, Search, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ export function MarketplaceBrowser({
   source?: string;
   onSourceChange?: (source: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [type, setType] = useState('all');
@@ -50,7 +52,10 @@ export function MarketplaceBrowser({
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
 
   const marketplacesQuery = useMarketplaces();
-  const marketplaces = useMemo(() => marketplacesQuery.data?.marketplaces ?? [], [marketplacesQuery.data]);
+  const marketplaces = useMemo(
+    () => marketplacesQuery.data?.marketplaces ?? [],
+    [marketplacesQuery.data],
+  );
   // Sources still resolving (cold load) that aren't yet a ready facet — shown as
   // spinner pills next to the real source pills.
   const pendingSources = useMemo(() => {
@@ -72,7 +77,8 @@ export function MarketplaceBrowser({
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     const list = source === 'all' ? marketplaces : marketplaces.filter((m) => m.id === source);
-    for (const m of list) for (const [k, v] of Object.entries(m.types ?? {})) counts[k] = (counts[k] ?? 0) + v;
+    for (const m of list)
+      for (const [k, v] of Object.entries(m.types ?? {})) counts[k] = (counts[k] ?? 0) + v;
     return counts;
   }, [marketplaces, source]);
 
@@ -106,7 +112,10 @@ export function MarketplaceBrowser({
   const selected = source === 'all' ? null : marketplaces.find((m) => m.id === source);
   const ghUrl = selected?.sourceUrl;
   // Exact match on the source id the API hands us — ref/subdir/name-proof.
-  const removableId = selected?.sourceId && sources.some((s) => s.id === selected.sourceId) ? selected.sourceId : null;
+  const removableId =
+    selected?.sourceId && sources.some((s) => s.id === selected.sourceId)
+      ? selected.sourceId
+      : null;
 
   const onRemoveSource = () => {
     if (!removableId) return;
@@ -127,7 +136,10 @@ export function MarketplaceBrowser({
     />
   );
 
-  const pills = [{ id: 'all', label: 'All sources', count: total, types: {}, external: false }, ...marketplaces];
+  const pills = [
+    { id: 'all', label: 'All sources', count: total, types: {}, external: false },
+    ...marketplaces,
+  ];
 
   return (
     <div className="space-y-4">
@@ -138,7 +150,9 @@ export function MarketplaceBrowser({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search the marketplace"
+            placeholder={tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceBrowserJsxAttrPlaceholderSearchTheMarketplace188bc1ee',
+            )}
             className="pl-9"
           />
         </div>
@@ -153,7 +167,9 @@ export function MarketplaceBrowser({
                 >
                   {f.label}
                   {f.value !== 'all' && (
-                    <span className="text-muted-foreground/50 ml-1 tabular-nums">{typeCounts[f.value]}</span>
+                    <span className="text-muted-foreground/50 ml-1 tabular-nums">
+                      {typeCounts[f.value]}
+                    </span>
                   )}
                 </FilterBarItem>
               ))}
@@ -161,7 +177,9 @@ export function MarketplaceBrowser({
           )}
           <Button variant="outline" size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
-            Add source
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceBrowserJsxTextAddSource8387392e',
+            )}
           </Button>
         </div>
       </div>
@@ -182,7 +200,13 @@ export function MarketplaceBrowser({
             )}
           >
             {m.id !== 'all' && (
-              <MarketplaceAvatar id={m.id} owner={m.owner} sourceUrl={m.sourceUrl} label={m.label} size="xs" />
+              <MarketplaceAvatar
+                id={m.id}
+                owner={m.owner}
+                sourceUrl={m.sourceUrl}
+                label={m.label}
+                size="xs"
+              />
             )}
             {m.label}
             <span className="text-muted-foreground/50 tabular-nums">{m.count}</span>
@@ -196,7 +220,13 @@ export function MarketplaceBrowser({
             title={`Loading ${s.label}…`}
             className="border-border/60 text-muted-foreground/70 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-xs"
           >
-            <MarketplaceAvatar id={s.id} owner={s.owner} sourceUrl={s.sourceUrl} label={s.label} size="xs" />
+            <MarketplaceAvatar
+              id={s.id}
+              owner={s.owner}
+              sourceUrl={s.sourceUrl}
+              label={s.label}
+              size="xs"
+            />
             {s.label}
             <Loader2 className="size-3 animate-spin" />
           </span>
@@ -216,7 +246,9 @@ export function MarketplaceBrowser({
               className="shrink-0"
             />
             <span className="text-foreground truncate font-medium">{selected.label}</span>
-            <span className="text-muted-foreground/60 shrink-0 text-xs">{selected.count} items</span>
+            <span className="text-muted-foreground/60 shrink-0 text-xs">
+              {selected.count} items
+            </span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {ghUrl && (
@@ -255,7 +287,9 @@ export function MarketplaceBrowser({
       ) : itemsQuery.isError ? (
         <EmptyState
           icon={PackageSearch}
-          title="Couldn’t load the marketplace"
+          title={tI18nHardcoded.raw(
+            'autoComponentsMarketplaceMarketplaceBrowserJsxAttrTitleCouldnTLoad660e12ab',
+          )}
           description={(itemsQuery.error as Error)?.message ?? 'Something went wrong.'}
           action={
             <Button variant="outline" size="sm" onClick={() => itemsQuery.refetch()}>
@@ -271,14 +305,23 @@ export function MarketplaceBrowser({
             ))}
           </div>
         ) : (
-          <EmptyState icon={PackageSearch} title="Nothing matches" description="Try a different search or filter." />
+          <EmptyState
+            icon={PackageSearch}
+            title={tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceBrowserJsxAttrTitleNothingMatches64177fc9',
+            )}
+            description={tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceBrowserJsxAttrDescriptionTryADifferentdd8061ac',
+            )}
+          />
         )
       ) : grouped && sections.length > 1 ? (
         <div className="space-y-6">
           {sections.map((section) => (
             <div key={section.label}>
               <h2 className="text-foreground mb-2.5 text-sm font-semibold">
-                {section.label} <span className="text-muted-foreground/60 font-normal">{section.items.length}</span>
+                {section.label}{' '}
+                <span className="text-muted-foreground/60 font-normal">{section.items.length}</span>
               </h2>
               <div className="grid gap-3 sm:grid-cols-2">{section.items.map(renderCard)}</div>
             </div>
@@ -291,7 +334,9 @@ export function MarketplaceBrowser({
       {streaming && items.length > 0 && (
         <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-1 text-xs">
           <Loader2 className="size-3.5 animate-spin" />
-          Loading more sources…
+          {tI18nHardcoded.raw(
+            'autoComponentsMarketplaceMarketplaceBrowserJsxTextLoadingMoreSourcese06aa650',
+          )}
         </div>
       )}
 

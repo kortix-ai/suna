@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import {
   directSubsessions,
   matchesSessionFilter,
-  rootOpenCodeSession,
   sessionSource,
   type SessionFilterValue,
   type SessionSourceKind,
@@ -66,6 +65,7 @@ function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): bool
 }
 
 export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -136,7 +136,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   if (visibleSessions.length === 0) {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        No sessions match this filter.
+        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
       </div>
     );
   }
@@ -147,7 +147,6 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         {visibleSessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          const root = rootOpenCodeSession(session);
           const children = directSubsessions(session);
           return (
             <div key={session.session_id} className="space-y-px">
@@ -155,7 +154,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 session={session}
                 href={href}
                 isActive={!!isActive && !activeOpenCodeSessionId}
-                displayTitle={getSessionDisplayTitle(session, root?.title ?? undefined)}
+                displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
@@ -421,7 +420,7 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
           height="16"
           viewBox="0 0 16 16"
           width="16"
-          stroke-linejoin="round"
+          strokeLinejoin="round"
           style={{
             color: isProvisioning
               ? 'var(--kortix-yellow)'
@@ -456,14 +455,13 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
   );
 }
 
-function getSessionDisplayTitle(session: ProjectSession, titleOverride?: string): string {
+function getSessionDisplayTitle(session: ProjectSession): string {
   const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
   const titleCandidate =
     session.custom_name?.trim() ||
-    titleOverride?.trim() ||
     session.name?.trim() ||
     legacyMetadataName?.trim();
 

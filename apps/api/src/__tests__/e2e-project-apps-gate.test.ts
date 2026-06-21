@@ -101,7 +101,10 @@ mock.module("../snapshots/builder", () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => '',
+  createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
@@ -109,10 +112,14 @@ mock.module('../projects/github', () => ({
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   commitFile: async () => {},
   createInstallationToken: async () => ({ token: 't' }),
   createRepo: async () => { throw new Error('not used'); },
   deleteFile: async () => {},
+  deleteRepo: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
   getRepo: async () => ({
@@ -147,8 +154,10 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v,
   isValidSecretName: () => true,
   listProjectSecrets: async () => ({}),
+  listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  projectSecretsRevision: () => 'empty',
   getProjectSecretValue: async () => null,
 }));
 

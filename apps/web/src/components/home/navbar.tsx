@@ -87,6 +87,7 @@ interface NavbarProps {
 }
 
 export function Navbar({ isAbsolute = false }: NavbarProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -508,7 +509,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                       }}
                       suppressHydrationWarning
                     >
-                      Launch Kortix
+                      {tI18nHardcoded.raw('autoComponentsHomeNavbarJsxTextLaunchKortix5c2db556')}
                     </Link>
                   </Button>
                 )}

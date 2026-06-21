@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { MdShield } from 'react-icons/md';
 import { MEMBERS, POLICIES, SECRETS, type Policy } from '../data';
 import { BrandLogo, PageHead, Panel, Row } from '../primitives';
@@ -40,6 +41,7 @@ function PolicyRow({ policy }: { policy: Policy }) {
 }
 
 export function SecurityPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const stats: [string, string][] = [
     [String(MEMBERS.length), 'Members'],
     [String(SECRETS.length), 'Secrets'],
@@ -49,8 +51,12 @@ export function SecurityPage() {
   return (
     <div>
       <PageHead
-        title="Security & access"
-        sub="Roles, an encrypted secrets vault and per-tool permissions — with a full audit trail"
+        title={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrTitlec9466a0c',
+        )}
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrSubc5d3486d',
+        )}
       />
 
       <div className="space-y-4">
@@ -65,7 +71,9 @@ export function SecurityPage() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel
-            title="Members & roles"
+            title={tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrTitle2f1b9a17',
+            )}
             count="· 3"
             action={
               <Button variant="outline" size="sm">
@@ -88,7 +96,9 @@ export function SecurityPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex dark:text-emerald-500"
-                      title="Two-factor enabled"
+                      title={tI18nHardcoded.raw(
+                        'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrTitle598e17c4',
+                      )}
                     >
                       <MdShield className="size-3.5" /> 2FA
                     </span>
@@ -101,7 +111,14 @@ export function SecurityPage() {
             ))}
           </Panel>
 
-          <Panel title="Secrets vault" count="· 5 encrypted">
+          <Panel
+            title={tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrTitle875b7322',
+            )}
+            count={tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrCountec89f018',
+            )}
+          >
             {SECRETS.map((sec) => (
               <Row
                 key={sec.name}
@@ -123,7 +140,14 @@ export function SecurityPage() {
           </Panel>
         </div>
 
-        <Panel title="Tool permissions" count="· scoped per connector">
+        <Panel
+          title={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrTitle66f39a9b',
+          )}
+          count={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxAttrCount5dd733e2',
+          )}
+        >
           {POLICIES.map((p) => (
             <PolicyRow key={p.name} policy={p} />
           ))}
@@ -132,8 +156,9 @@ export function SecurityPage() {
         <div className="border-border/60 bg-muted/20 text-muted-foreground flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs">
           <MdShield className="size-4 shrink-0" />
           <span>
-            SSO + 2FA enforced · secrets injected at sandbox boot, never exposed to agents · every
-            tool call logged.
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSecurityPageJsxTextSSOece1ed9f',
+            )}
           </span>
         </div>
       </div>

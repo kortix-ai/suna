@@ -17,7 +17,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
 
-export type ChangeRequestStatus = 'open' | 'merged' | 'closed';
+type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 

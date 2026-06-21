@@ -280,4 +280,4 @@ export default function CreditTransactions({ accountId }: Props) {
       </Card>
     </div>
   );
-} 
+}

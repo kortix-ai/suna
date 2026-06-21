@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -87,6 +88,7 @@ export function ProjectTopBar({
   projectId: string;
   hideTabSelector?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { state: sidebarState, toggleSidebar } = useSidebar();
   const router = useRouter();
   const pathname = usePathname();
@@ -161,7 +163,9 @@ export function ProjectTopBar({
             type="button"
             variant="ghost"
             size="icon"
-            aria-label="Toggle sidebar"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f',
+            )}
             onClick={toggleSidebar}
             className="size-8"
           >
@@ -169,13 +173,13 @@ export function ProjectTopBar({
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              stroke-width="1.5"
+              strokeWidth="1.5"
               stroke="currentColor"
               className="size-5!"
             >
               <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 d="M3.75 9h16.5m-16.5 6.75h16.5"
               ></path>
             </svg>

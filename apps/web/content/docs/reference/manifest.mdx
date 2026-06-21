@@ -65,7 +65,7 @@ User said: {{ body.text }}
 kortix_version = 1
 ```
 
-`kortix_version` is the schema version. Manifests without it are treated as v1 for backward compatibility (`null`, `1`, and `"1"` all decode to v1). A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
+`kortix_version` is the required schema version. A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
 
 ## What's parsed where
 
@@ -201,14 +201,14 @@ prompt  = "Summarize yesterday's commits."
 | --------- | -------- | ------ | ----------- | -------------------------------------------------------------- |
 | `slug`    | yes      | string | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
 | `type`    | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
-| `prompt`  | yes      | string | —           | Mustache-style template. Alias: `prompt_template`.            |
+| `prompt`  | yes      | string | —           | Mustache-style template.                                      |
 | `name`    | no       | string | `slug`      | Human label.                                                  |
-| `agent`   | no       | string | `"default"` | OpenCode agent name. Alias: `agent_name`.                     |
-| `enabled` | no       | bool   | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `agent`   | no       | string | `"default"` | OpenCode agent name.                                          |
+| `enabled` | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
 
-Cron-only: `cron` (6-field croner `second minute hour day month weekday`, alias `schedule`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret, alias `secretEnv`).
+Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 
-The parser accepts both alias forms (`prompt` / `prompt_template`, `agent` / `agent_name`, `cron` / `schedule`, `secret_env` / `secretEnv`). The platform serializes back with the canonical names, so editing-then-saving from the UI normalizes aliases away. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
+The parser accepts only canonical trigger field names. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
 
 ## `[[connectors]]`
 
@@ -242,14 +242,14 @@ Provider-specific fields:
 - **mcp** — `url` (required), `transport` = `http` (default) or `sse`.
 - **openapi** — `spec` (required: URL or repo-relative path).
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
-- **http** — `base_url` (required, alias `baseUrl`), `spec` (optional).
+- **http** — `base_url` (required), `spec` (optional).
 
 ### `[connectors.auth]`
 
 Optional. `type` = `bearer | basic | custom | none` (default `none`); `in` =
 `header` (default) or `query`; `name` (required when `type = "custom"`); `prefix`
-(optional); `secret` (optional secret name, `^[A-Z_][A-Z0-9_]{0,63}$`). Not
-allowed with `provider = "pipedream"`.
+(optional). The credential value is stored in the platform connector credential
+store, not in `kortix.toml`. Auth is not allowed with `provider = "pipedream"`.
 
 ### `[[connectors.policies]]`
 

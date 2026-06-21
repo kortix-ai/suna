@@ -1,14 +1,13 @@
 /**
  * Warm sandbox pre-warm — API driver for the daemon's KORTIX_WARM_POOL mode.
  *
- * AVAILABLE BY DEFAULT but off per-template: KORTIX_WARM_POOL_ENABLED defaults
- * on, so the per-template opt-in toggles render — yet every template starts OFF,
- * so nothing warms (and nothing is billed) until a template is opted in. Set
- * KORTIX_WARM_POOL_ENABLED=false to make every exported entry point inert: the
- * allocator skips the claim path and cold-provisions byte-identically to today,
- * and reconcile only reaps stray pool rows. There is no global cap — cost is
- * bounded per-account (billing gate), per-template (size), by presence-reap, and
- * by the provider's autoStop clamp.
+ * FAIL-SAFE OFF by default: the DB-backed warm_pool setting is the master gate.
+ * When it is off, every exported entry point is inert: the allocator skips the
+ * claim path, every create cold-provisions byte-identically to today, and
+ * reconcile only reaps stray pool rows. When operators enable the gate, each
+ * sandbox template still has to opt in separately. There is no global cap —
+ * cost is bounded per-account (billing gate), per-template (size), by
+ * presence-reap, and by the provider's autoStop clamp.
  *
  * Design (decoupled from the durable session id — unlike the retired pool):
  *   - spawnSpare:  provision a SESSION-LESS box with env KORTIX_WARM_POOL=1 so the

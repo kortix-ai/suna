@@ -29,14 +29,9 @@ Reports use standard GitHub-Flavored Markdown:
 
 When charts, plots, or diagrams help the analysis:
 
-```markdown
-![revenue-growth-chart](./revenue-growth-chart.png)
-```
-
-Rules:
 - generate the image with real commands such as `python3`, `bash`, or a project script
 - save the image next to the report file
-- reference it with a relative path like `./chart.png`
+- reference it with Markdown image syntax using a relative path to the generated file
 - use meaningful filenames and meaningful alt text
 - place the image near the paragraph it supports
 

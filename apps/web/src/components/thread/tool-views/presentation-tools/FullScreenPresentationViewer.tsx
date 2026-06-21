@@ -74,15 +74,15 @@ export function FullScreenPresentationViewer({
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
   const [isDownloadingGoogleSlides, setIsDownloadingGoogleSlides] = useState(false);
-  
+
   // Track the previous isOpen state to detect when modal opens
   const wasOpenRef = useRef(false);
-  
+
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'presentations',
   });
-  
+
   // Create a stable refresh timestamp when metadata changes (like PresentationViewer)
   const refreshTimestamp = useMemo(() => metadata?.updated_at || Date.now(), [metadata?.updated_at]);
 
@@ -103,67 +103,67 @@ export function FullScreenPresentationViewer({
     if (hasLoadedRef.current) {
       return;
     }
-    
+
     // If sandbox URL isn't available yet, wait and don't set loading state
     if (!presentationName || !sandboxUrl) {
       setIsLoading(false);
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
     setRetryAttempt(retryCount);
-    
+
     try {
       // Sanitize the presentation name to match backend directory creation
       const sanitizedPresentationName = sanitizeFilename(presentationName);
-      
+
       const metadataUrl = constructHtmlPreviewUrl(
         `presentations/${sanitizedPresentationName}/metadata.json`,
         subdomainOpts,
       );
-      
+
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
       console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
-      
+
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: { 'Cache-Control': 'no-cache' }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setMetadata(data);
         hasLoadedRef.current = true; // Mark as successfully loaded
         console.log('Successfully loaded presentation metadata:', data);
         setIsLoading(false);
-        
+
         // Clear any pending retry timeout on success
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
-        
+
         return; // Success, exit early
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (err) {
       console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
-      
+
       // Calculate delay with exponential backoff, capped at 10 seconds
       // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
-      const delay = retryCount < 5 
+      const delay = retryCount < 5
         ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
         : 5000; // Consistent 5 second intervals after that
-      
+
       console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
-      
+
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
         loadMetadata(retryCount + 1, maxRetries);
       }, delay);
-      
+
       return; // Keep loading state, don't set error
     }
   }, [presentationName, sandboxUrl, subdomainOpts]);
@@ -172,20 +172,20 @@ export function FullScreenPresentationViewer({
   useEffect(() => {
     const justOpened = isOpen && !wasOpenRef.current;
     wasOpenRef.current = isOpen;
-    
+
     if (justOpened) {
       // Modal just opened - set the slide to the requested initial slide
       setCurrentSlide(initialSlide);
-      
+
       // Reset loaded flag when opening (so we can reload if needed)
       hasLoadedRef.current = false;
-      
+
       // Clear any existing retry timeout when opening
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
       }
-      
+
       // Only start loading if we have the required data
       if (presentationName && sandboxUrl) {
         loadMetadata();
@@ -213,17 +213,17 @@ export function FullScreenPresentationViewer({
   // Reload metadata when exiting editor mode to refresh with latest changes
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
-    
+
     if (!showEditor && isOpen) {
       // Reset loaded flag so we can reload after editor changes
       hasLoadedRef.current = false;
-      
+
       // Add a small delay to allow the editor to save changes
       timeoutId = setTimeout(() => {
         loadMetadata();
       }, 300);
     }
-    
+
     return () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
@@ -250,7 +250,7 @@ export function FullScreenPresentationViewer({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      
+
       // Prevent default for all our handled keys
       const handledKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Home', 'End', 'Escape'];
       if (handledKeys.includes(e.key)) {
@@ -309,8 +309,8 @@ export function FullScreenPresentationViewer({
     // Use sanitized name for the path (matching backend directory structure)
     const sanitizedName = sanitizeFilename(presentationName);
 
-    const setDownloadState = format === DownloadFormat.PDF ? setIsDownloadingPDF : 
-                           format === DownloadFormat.PPTX ? setIsDownloadingPPTX : 
+    const setDownloadState = format === DownloadFormat.PDF ? setIsDownloadingPDF :
+                           format === DownloadFormat.PPTX ? setIsDownloadingPPTX :
                            setIsDownloadingGoogleSlides;
 
     setDownloadState(true);
@@ -344,12 +344,12 @@ export function FullScreenPresentationViewer({
           const updateScale = () => {
             const containerWidth = containerRef.offsetWidth;
             const containerHeight = containerRef.offsetHeight;
-            
+
             // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
             const scaleX = containerWidth / 1920;
             const scaleY = containerHeight / 1080;
             const newScale = Math.min(scaleX, scaleY);
-            
+
             // Only update if scale actually changed to prevent unnecessary re-renders
             if (Math.abs(newScale - scale) > 0.001) {
               setScale(newScale);
@@ -389,7 +389,7 @@ export function FullScreenPresentationViewer({
 
       return (
         <div className="w-full h-full flex items-center justify-center bg-transparent">
-          <div 
+          <div
             ref={setContainerRef}
             className="relative bg-transparent rounded-lg overflow-hidden"
             style={{
@@ -427,10 +427,10 @@ export function FullScreenPresentationViewer({
       );
     }, (prevProps, nextProps) => {
       // Custom comparison function - only re-render if slide number or file_path changes
-      return prevProps.slide.number === nextProps.slide.number && 
+      return prevProps.slide.number === nextProps.slide.number &&
              prevProps.slide.file_path === nextProps.slide.file_path;
     });
-    
+
     SlideIframeComponent.displayName = 'SlideIframeComponent';
     return SlideIframeComponent;
   }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts]);
@@ -453,7 +453,7 @@ export function FullScreenPresentationViewer({
             <div className="relative p-2 rounded-2xl border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
-            
+
             {metadata && (
               <div>
                 <h1 className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -468,9 +468,9 @@ export function FullScreenPresentationViewer({
 
           <div className="flex items-center gap-2">
             {/* Edit button */}
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               className="w-8 p-0"
               title={showEditor ? "Close editor" : "Edit presentation"}
               onClick={() => setShowEditor(!showEditor)}
@@ -481,9 +481,9 @@ export function FullScreenPresentationViewer({
             {/* Export dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="w-8 p-0"
                   title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line485JsxAttrTitleExportPresentation')}
                   disabled={isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides}
@@ -496,25 +496,25 @@ export function FullScreenPresentationViewer({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-32">
-                <DropdownMenuItem 
-                  className="cursor-pointer" 
-                  onClick={() => handleDownload(DownloadFormat.PDF)} 
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => handleDownload(DownloadFormat.PDF)}
                   disabled={isDownloadingPDF}
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem 
-                  className="cursor-pointer" 
-                  onClick={() => handleDownload(DownloadFormat.PPTX)} 
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => handleDownload(DownloadFormat.PPTX)}
                   disabled={isDownloadingPPTX}
                 >
                   <Presentation className="h-4 w-4 mr-2" />
                   PPTX
                 </DropdownMenuItem>
-                <DropdownMenuItem 
-                  className="cursor-pointer" 
-                  onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)} 
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)}
                   disabled={isDownloadingGoogleSlides}
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsFullscreenpresentationviewer.line518JsxTextGoogleSlides')}</DropdownMenuItem>
@@ -550,7 +550,7 @@ export function FullScreenPresentationViewer({
             <div className="flex-1 bg-transparent rounded-xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
               {renderSlide}
             </div>
-            
+
             {/* Controls below presentation */}
             <div className="flex items-center justify-between mt-3 px-4">
               {/* Left Controls */}
@@ -564,7 +564,7 @@ export function FullScreenPresentationViewer({
                 >
                   <SkipBack className="h-3.5 w-3.5" />
                 </Button>
-                
+
                 <Button
                   variant="ghost"
                   size="sm"
@@ -583,7 +583,7 @@ export function FullScreenPresentationViewer({
                     <button
                       key={slide.number}
                       onClick={() => setCurrentSlide(slide.number)}
-                      className={cn('w-2.5 h-2.5 rounded-full transition-colors duration-200', 
+                      className={cn('w-2.5 h-2.5 rounded-full transition-colors duration-200',
                         slide.number === currentSlide
                           ? 'bg-black dark:bg-white'
                           : 'bg-zinc-300 dark:bg-zinc-600 hover:bg-zinc-400 dark:hover:bg-zinc-500'

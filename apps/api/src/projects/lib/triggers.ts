@@ -4,15 +4,15 @@ import { db } from '../../shared/db';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
-import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSpec, type ParsedManifest } from '../triggers';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSessionMode, type GitTriggerSpec, type ParsedManifest } from '../triggers';
+import { projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { Cron } from 'croner';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
-import { createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
+import { continueSession, createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -148,6 +148,28 @@ export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
 
+// In-memory heartbeat for the trigger scheduler, surfaced at /health so an
+// operator can tell at a glance whether the leader's sweep is alive and what
+// the last pass did. Lives on the leader pod; resets on restart. This is the
+// answer to "how would anyone know the scheduler stopped firing?".
+export interface TriggerSchedulerHealth {
+  lastSweepStartedAt: string | null;
+  lastSweepCompletedAt: string | null;
+  lastSweepDurationMs: number | null;
+  lastResult: { scanned: number; fired: number; queued: number; failed: number; skipped: number } | null;
+  lastError: string | null;
+}
+const schedulerHealth: TriggerSchedulerHealth = {
+  lastSweepStartedAt: null,
+  lastSweepCompletedAt: null,
+  lastSweepDurationMs: null,
+  lastResult: null,
+  lastError: null,
+};
+export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
+  return schedulerHealth;
+}
+
 // Connector reconcile sweep — runs on a slower cadence than the trigger sweep.
 
 export let connectorSweepRunning = false;
@@ -172,6 +194,28 @@ export function nextCronRun(schedule: string, from: Date, timezone?: string): Da
 }
 
 /**
+ * Server-side, per-project trigger kill-switch (`projects.metadata.triggers_paused`).
+ * When paused, the platform does NOT auto-run any of the project's triggers —
+ * the cron sweep skips it and inbound webhooks are ignored — even though each
+ * trigger is still `enabled` in the repo. This is how you stop ONE repo
+ * deployed to TWO independent control planes (e.g. dev.kortix.com + kortix.com,
+ * separate DBs/schedulers with no cross-platform dedup) from double-firing every
+ * cron: pause it on the deployment you don't want firing. A manual
+ * `…/triggers/:slug/fire` is an explicit action and still runs. Toggle via
+ * `PATCH /:projectId/triggers/activation`.
+ */
+export function triggersPausedForProject(metadata: unknown): boolean {
+  return isPlainObject(metadata) && (metadata as Record<string, unknown>).triggers_paused === true;
+}
+
+export function withTriggersPaused(metadata: unknown, paused: boolean): Record<string, unknown> {
+  const base = isPlainObject(metadata) ? { ...(metadata as Record<string, unknown>) } : {};
+  if (paused) base.triggers_paused = true;
+  else delete base.triggers_paused;
+  return base;
+}
+
+/**
  * Walks every active project's git repo for `.opencode/triggers/*.md` and
  * fires due cron triggers. Triggers are 100% file-defined now (kortix.toml);
  * the old DB-backed trigger tables have been removed.
@@ -186,14 +230,21 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
 }> {
   if (triggerSweepRunning) return { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
   triggerSweepRunning = true;
+  const startedMs = Date.now();
+  schedulerHealth.lastSweepStartedAt = now.toISOString();
   const result = { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
   try {
     await runGitTriggerSweep(now, result);
+    schedulerHealth.lastError = null;
     return result;
   } catch (err) {
+    schedulerHealth.lastError = err instanceof Error ? err.message : String(err);
     console.error('[project-triggers/git] sweep failed', err);
     return result;
   } finally {
+    schedulerHealth.lastSweepCompletedAt = new Date().toISOString();
+    schedulerHealth.lastSweepDurationMs = Date.now() - startedMs;
+    schedulerHealth.lastResult = result;
     triggerSweepRunning = false;
   }
 }
@@ -208,17 +259,35 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
  * so unchanged connectors cost a manifest read, not a catalog re-fetch.
  */
 
+/**
+ * Page through EVERY active project. The sweeps used to `LIMIT 200`, which
+ * silently dropped every active project past the 200th once the platform grew
+ * beyond that many — their triggers / connectors just never ran, with no error
+ * and no log. Paging keeps coverage complete while bounding each query.
+ */
+async function selectActiveProjects(pageSize = 500): Promise<ProjectRow[]> {
+  const all: ProjectRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const batch = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.status, 'active'))
+      .orderBy(projects.projectId)
+      .limit(pageSize)
+      .offset(offset);
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return all;
+}
+
 export async function runProjectConnectorSweep(): Promise<{ scanned: number; synced: number; errors: number }> {
   if (connectorSweepRunning) return { scanned: 0, synced: 0, errors: 0 };
   connectorSweepRunning = true;
   const out = { scanned: 0, synced: 0, errors: 0 };
   try {
     const { syncProjectConnectors } = await import('../../executor/sync');
-    const projectsForSweep = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.status, 'active'))
-      .limit(200);
+    const projectsForSweep = await selectActiveProjects();
     for (const project of projectsForSweep) {
       out.scanned += 1;
       try {
@@ -290,14 +359,67 @@ export async function getGitTriggerRuntime(projectId: string, slug: string) {
 }
 
 
-export async function markGitTriggerFired(projectId: string, slug: string, when: Date) {
+export async function markGitTriggerFired(
+  projectId: string,
+  slug: string,
+  when: Date,
+  status: 'fired' | 'queued' = 'fired',
+) {
   await db
     .insert(projectTriggerRuntime)
-    .values({ projectId, slug, lastFiredAt: when, updatedAt: when })
+    .values({ projectId, slug, lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when })
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastFiredAt: when, updatedAt: when },
+      set: { lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when },
     });
+}
+
+/**
+ * Record a failed attempt (fire error or parse error) WITHOUT advancing
+ * `last_fired_at`, so the trigger is still due and retries next sweep — but the
+ * reason is now visible in the triggers API/UI instead of vanishing into a log.
+ */
+export async function markGitTriggerAttemptFailed(
+  projectId: string,
+  slug: string,
+  when: Date,
+  error: string,
+) {
+  const lastError = error.slice(0, 1000);
+  await db
+    .insert(projectTriggerRuntime)
+    .values({ projectId, slug, lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: { lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when },
+    });
+}
+
+/**
+ * Find the canonical session to reuse for a `session_mode = "reuse"` trigger:
+ * the most recent NON-failed session this trigger created. Sessions are matched
+ * via the `trigger_slug` + `trigger_kind` we stamp into `project_sessions.metadata`
+ * at fire time (no extra column / migration needed). Failed sessions are skipped
+ * so a dead run is abandoned in favor of a freshly-created canonical session.
+ */
+export async function findReusableTriggerSession(
+  projectId: string,
+  slug: string,
+): Promise<{ sessionId: string } | null> {
+  const [row] = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        ne(projectSessions.status, 'failed'),
+        sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
+        sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+      ),
+    )
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  return row ?? null;
 }
 
 /**
@@ -319,6 +441,35 @@ export async function fireGitTrigger(input: {
   const actor = await resolveGitTriggerActor(project.accountId);
   if (!actor) {
     return { status: 'failed', error: 'No account owner available to own the session' };
+  }
+
+  // Session reuse — when a trigger opts into `session_mode = "reuse"`, re-prompt
+  // the canonical session this trigger already created (resuming its sandbox +
+  // opencode root) so ONE long-lived session accumulates context across fires,
+  // instead of minting a brand-new session every time. If no reusable session
+  // exists yet, or the last one is gone/failed, we fall through to createSession
+  // below and that fresh session becomes the canonical one for next time.
+  if (spec.sessionMode === 'reuse') {
+    const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
+    if (reusable) {
+      const outcome = await continueSession({
+        source: `trigger:${source}`,
+        sessionId: reusable.sessionId,
+        text: renderedPrompt,
+        userId: actor,
+      });
+      if (outcome === 'delivered') {
+        return { status: 'fired', sessionId: reusable.sessionId };
+      }
+      if (outcome === 'pending') {
+        // Runtime still spinning up (e.g. resuming an archived sandbox). The
+        // prompt will land once it's ready — treat as a successful fire so the
+        // scheduler records last_fired_at and doesn't immediately create a dupe.
+        return { status: 'queued', sessionId: reusable.sessionId, reason: 'session resuming' };
+      }
+      // outcome === 'no-session' | 'failed' → canonical session is unusable;
+      // fall through to create a fresh one below.
+    }
   }
 
   const sessionResult = await createSession({
@@ -395,17 +546,26 @@ export function summarizeTriggerPayload(payload: Record<string, unknown>): Recor
 export async function runGitTriggerSweep(now: Date, accumulator: {
   scanned: number; fired: number; queued: number; failed: number; skipped: number;
 }): Promise<void> {
-  const projectsForSweep = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.status, 'active'))
-    .limit(200);
+  const projectsForSweep = await selectActiveProjects();
 
   for (const project of projectsForSweep) {
+    // Server-side per-project kill-switch — skip the whole project (no manifest
+    // read, no session spin) when its triggers are paused, so a repo deployed
+    // to two control planes only fires on the un-paused one. See
+    // triggersPausedForProject.
+    if (triggersPausedForProject(project.metadata)) continue;
     let specs: GitTriggerSpec[];
     try {
       const loaded = await loadProjectTriggers(await withProjectGitAuth(project));
       specs = loaded.specs;
+      // Surface parse errors instead of dropping them: record each bad entry
+      // against its slug so it shows up in the triggers API/UI, and log it.
+      // Previously a malformed `[[triggers]]` entry just vanished from the
+      // sweep with zero feedback — a prime "my trigger isn't running" trap.
+      for (const e of loaded.errors) {
+        console.warn('[project-triggers/git] parse error', project.projectId, e.slug, e.error);
+        await markGitTriggerAttemptFailed(project.projectId, e.slug, now, `parse error: ${e.error}`);
+      }
     } catch (err) {
       console.warn('[project-triggers/git] load failed', project.projectId, err instanceof Error ? err.message : err);
       continue;
@@ -443,14 +603,22 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${scheduledAt}`,
       });
       if (result.status === 'fired') {
-        await markGitTriggerFired(project.projectId, spec.slug, now);
+        await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
         accumulator.fired += 1;
       }
       else if (result.status === 'queued') {
-        await markGitTriggerFired(project.projectId, spec.slug, now);
+        await markGitTriggerFired(project.projectId, spec.slug, now, 'queued');
         accumulator.queued += 1;
       }
-      else accumulator.failed += 1;
+      else {
+        // A failed fire is NOT stamped as fired, so it retries next tick — but
+        // we record why so "trigger isn't running" is diagnosable from the API.
+        await markGitTriggerAttemptFailed(
+          project.projectId, spec.slug, now,
+          result.error ?? result.reason ?? 'trigger fire failed',
+        );
+        accumulator.failed += 1;
+      }
     }
   }
 }
@@ -541,9 +709,7 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
         .select()
         .from(projectTriggerRuntime)
         .where(eq(projectTriggerRuntime.projectId, projectId));
-  const lastFiredBySlug = new Map(
-    runtimeRows.map((row) => [row.slug, row.lastFiredAt?.toISOString() ?? null]),
-  );
+  const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
 
   return {
     triggers: specs.map((spec) => ({
@@ -558,12 +724,20 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
-      last_fired_at: lastFiredBySlug.get(spec.slug) ?? null,
+      session_mode: spec.sessionMode,
+      last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
+      last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
+      last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
+      last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
       webhook_url:
         spec.type === 'webhook'
           ? buildPublicWebhookUrl(projectId, spec.slug)
           : null,
     })),
+    // Server-side activation state for this project's whole trigger set. When
+    // true, the platform won't auto-run any of them (cron sweep skips, webhooks
+    // ignored), regardless of each trigger's own `enabled`.
+    triggers_paused: triggersPausedForProject(project.metadata),
     errors,
   };
 }
@@ -580,6 +754,7 @@ export interface TriggerDraft {
   runAt: string | null;
   timezone: string;
   secretEnv: string | null;
+  sessionMode: GitTriggerSessionMode;
 }
 
 
@@ -607,6 +782,12 @@ export function parseTriggerDraft(
   const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
+  const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
+  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
+    return { error: 'session_mode must be "fresh" or "reuse"' };
+  }
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
@@ -627,6 +808,7 @@ export function parseTriggerDraft(
         runAt: new Date(parsed).toISOString(),
         timezone,
         secretEnv: null,
+        sessionMode,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -642,6 +824,7 @@ export function parseTriggerDraft(
       runAt: null,
       timezone,
       secretEnv: null,
+      sessionMode,
     };
   }
 
@@ -661,6 +844,7 @@ export function parseTriggerDraft(
     runAt: null,
     timezone: 'UTC',
     secretEnv,
+    sessionMode,
   };
 }
 
@@ -678,6 +862,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     cron: spec.cron,
     timezone: spec.timezone,
     secret_env: spec.secretEnv,
+    session_mode: spec.sessionMode,
   };
 }
 
@@ -705,6 +890,7 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
     runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
+    sessionMode: draft.sessionMode,
   };
 }
 

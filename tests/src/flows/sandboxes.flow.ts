@@ -120,26 +120,19 @@ flow(
   },
 );
 
-// ─── SBX-3: read sandboxes / health / templates ───────────────────────────
+// ─── SBX-3: read sandbox health / templates ────────────────────────────────
 flow(
   "SBX-3",
   {
     domain: "sandboxes",
     tags: ["smoke"],
     routes: [
-      "GET /v1/projects/:projectId/sandboxes",
       "GET /v1/projects/:projectId/sandbox-health",
       "GET /v1/projects/:projectId/sandbox-templates",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("GET sandboxes → 200 with items", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.items");
-    });
     await ctx.step("GET sandbox-health → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -151,12 +144,6 @@ flow(
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/sandbox-templates", { params: { projectId: p.id } });
       r.status(200).body().exists("$.items");
-    });
-    await ctx.step("NONMEMBER sandboxes → 403/404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
-      r.status([403, 404]);
     });
     await ctx.step("ANON sandbox-health → 401", async () => {
       const r = await ctx.client

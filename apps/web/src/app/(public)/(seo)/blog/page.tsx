@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
+import { useTranslations } from 'next-intl';
 
-import { Reveal } from '@/components/home/reveal';
 import { PostCard } from '@/components/blog/post-card';
+import { Reveal } from '@/components/home/reveal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { getAllPosts } from '@/lib/blog';
 import { siteMetadata } from '@/lib/site-metadata';
@@ -36,6 +37,7 @@ export const metadata: Metadata = {
 };
 
 export default function BlogIndexPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const posts = getAllPosts();
   const [featured, ...rest] = posts;
 
@@ -62,26 +64,26 @@ export default function BlogIndexPage() {
   };
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="bg-background min-h-screen">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <div className="mx-auto max-w-5xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
         <Reveal>
-          <h1 className="mb-3 text-3xl font-medium tracking-tight text-foreground sm:text-4xl md:text-5xl">
+          <h1 className="text-foreground mb-3 text-3xl font-medium tracking-tight sm:text-4xl md:text-5xl">
             {TITLE}
           </h1>
-          <p className="max-w-xl text-base leading-relaxed text-muted-foreground">
-            {DESCRIPTION}
-          </p>
+          <p className="text-muted-foreground max-w-xl text-base leading-relaxed">{DESCRIPTION}</p>
         </Reveal>
 
         {posts.length === 0 ? (
           <div className="mt-16">
             <EmptyState
-              title="No posts yet"
-              description="We're writing the first one. Check back soon."
+              title={tI18nHardcoded.raw('autoAppPublicSeoBlogPageJsxAttrTitleNoPosts340caa81')}
+              description={tI18nHardcoded.raw(
+                'autoAppPublicSeoBlogPageJsxAttrDescriptionWeRecebec139',
+              )}
             />
           </div>
         ) : (

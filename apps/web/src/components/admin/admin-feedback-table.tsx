@@ -25,7 +25,7 @@ export function AdminFeedbackTable() {
   const [hasTextFilter, setHasTextFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
+
   const { data: feedbackListResponse, isLoading, error } = useAdminFeedbackList({
     page,
     page_size: pageSize,
@@ -48,7 +48,7 @@ export function AdminFeedbackTable() {
   const renderStars = (rating: number) => {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
-    
+
     return (
       <div className="flex items-center gap-1">
         {[...Array(5)].map((_, i) => {
@@ -274,4 +274,3 @@ export function AdminFeedbackTable() {
     </div>
   );
 }
-

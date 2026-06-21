@@ -22,9 +22,9 @@ interface AlertBannerProps {
   onDismiss?: () => void;
 }
 
-const variantStyles: Record<AlertBannerVariant, { 
-  iconBg: string; 
-  iconBorder: string; 
+const variantStyles: Record<AlertBannerVariant, {
+  iconBg: string;
+  iconBorder: string;
   iconColor: string;
 }> = {
   warning: {

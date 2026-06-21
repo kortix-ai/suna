@@ -217,16 +217,16 @@ export function __clearCloneTokenCacheForTests(): void {
 }
 
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
-  if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
   // Universal proxy origin: when the repo is served by the Kortix git proxy
   // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
   // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
   // the real upstream + host credential server-side. No clone-credential round
   // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return cfg.kortixToken
+    return cfg.sandboxToken
   }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.kortixToken}`
+  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
@@ -250,7 +250,7 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
       const res = await fetch(url, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${cfg.kortixToken}`,
+          Authorization: `Bearer ${cfg.sandboxToken}`,
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(CLONE_CRED_TIMEOUT_MS),
@@ -334,7 +334,7 @@ export async function configureGitCredentialHelper(
   cfg: Config,
   home: string,
 ): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
 
@@ -371,7 +371,7 @@ export async function configureGitCredentialHelper(
  * after the repo is materialized.
  */
 export async function configureRepoCredentialHelper(cfg: Config, target: string): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
@@ -858,7 +858,7 @@ export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   }
 }
 
-export type CommitPushResult = {
+type CommitPushResult = {
   /** A new commit was created from dirty working-tree changes. */
   committed: boolean
   /** New commits were pushed to origin (false when the remote was already up to date). */

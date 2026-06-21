@@ -1,22 +1,24 @@
-import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import Image from 'next/image';
+import Link from 'next/link';
 
-import { Badge } from '@/components/ui/badge';
 import { PostByline } from '@/components/blog/post-byline';
+import { Badge } from '@/components/ui/badge';
 import type { Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
 
 /** Cover image, or a clean branded gradient when a post has none. */
 function Cover({ post, className }: { post: Post; className?: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   if (post.data.cover) {
     return (
-      <div className={cn('relative overflow-hidden bg-muted', className)}>
+      <div className={cn('bg-muted relative overflow-hidden', className)}>
         <Image
           src={post.data.cover}
           alt={post.data.title}
           fill
           className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          sizes="(max-width: 768px) 100vw, 50vw"
+          sizes={tI18nHardcoded.raw('autoComponentsBlogPostCardJsxAttrSizesMaxWidth768pxed275b7f')}
         />
       </div>
     );
@@ -24,13 +26,13 @@ function Cover({ post, className }: { post: Post; className?: string }) {
   return (
     <div
       className={cn(
-        'relative overflow-hidden bg-gradient-to-br from-muted/70 via-background to-primary/[0.07]',
+        'from-muted/70 via-background to-primary/[0.07] relative overflow-hidden bg-gradient-to-br',
         className,
       )}
     >
       <div className="absolute inset-0 bg-[url('/grain-texture.png')] bg-repeat opacity-[0.12]" />
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-xs font-medium uppercase tracking-[0.25em] text-muted-foreground/45">
+        <span className="text-muted-foreground/45 text-xs font-medium tracking-[0.25em] uppercase">
           Kortix
         </span>
       </div>
@@ -43,7 +45,7 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
     <Link
       href={post.url}
       className={cn(
-        'group flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card transition-colors hover:border-border',
+        'group border-border/60 bg-card hover:border-border flex flex-col overflow-hidden rounded-2xl border transition-colors',
         featured && 'md:flex-row',
       )}
     >
@@ -54,7 +56,7 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
           featured ? 'aspect-[16/10] md:aspect-auto md:w-1/2' : 'aspect-[16/9]',
         )}
       />
-      <div className={cn('flex flex-1 flex-col p-6', featured && 'md:p-8 md:justify-center')}>
+      <div className={cn('flex flex-1 flex-col p-6', featured && 'md:justify-center md:p-8')}>
         {post.data.tags.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-1.5">
             {post.data.tags.slice(0, 3).map((tag) => (
@@ -66,7 +68,7 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
         )}
         <h3
           className={cn(
-            'font-medium tracking-tight text-foreground transition-colors group-hover:text-foreground',
+            'text-foreground group-hover:text-foreground font-medium tracking-tight transition-colors',
             featured ? 'text-2xl md:text-3xl' : 'text-lg',
           )}
         >
@@ -75,8 +77,8 @@ export function PostCard({ post, featured = false }: { post: Post; featured?: bo
         {post.data.description && (
           <p
             className={cn(
-              'mt-2 text-muted-foreground',
-              featured ? 'text-base line-clamp-3' : 'text-sm line-clamp-2',
+              'text-muted-foreground mt-2',
+              featured ? 'line-clamp-3 text-base' : 'line-clamp-2 text-sm',
             )}
           >
             {post.data.description}

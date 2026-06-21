@@ -107,4 +107,3 @@ export const referralsApi = {
     return response.data;
   },
 };
-

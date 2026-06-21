@@ -604,19 +604,19 @@ export const getAccountState = (skipCache?: boolean) => billingApi.getAccountSta
 export const deductUsage = (params: { amount: number; description?: string }) =>
   billingApi.deductUsage(params);
 export const deductTokenUsage = (usage: TokenUsage) => billingApi.deductTokenUsage(usage);
-export const createCheckoutSession = (request: CreateCheckoutSessionRequest) => 
+export const createCheckoutSession = (request: CreateCheckoutSessionRequest) =>
   billingApi.createCheckoutSession(request);
-export const createPortalSession = (request: CreatePortalSessionRequest) => 
+export const createPortalSession = (request: CreatePortalSessionRequest) =>
   billingApi.createPortalSession(request);
-export const cancelSubscription = (feedback?: string) => 
+export const cancelSubscription = (feedback?: string) =>
   billingApi.cancelSubscription(feedback ? { feedback } : undefined);
 export const reactivateSubscription = () => billingApi.reactivateSubscription();
-export const purchaseCredits = (request: PurchaseCreditsRequest) => 
+export const purchaseCredits = (request: PurchaseCreditsRequest) =>
   billingApi.purchaseCredits(request);
-export const getTransactions = (limit?: number, offset?: number) => 
+export const getTransactions = (limit?: number, offset?: number) =>
   billingApi.getTransactions(limit, offset);
 export const getUsageHistory = (days?: number) => billingApi.getUsageHistory(days);
-export const scheduleDowngrade = (request: ScheduleDowngradeRequest) => 
+export const scheduleDowngrade = (request: ScheduleDowngradeRequest) =>
   billingApi.scheduleDowngrade(request);
 export const cancelScheduledChange = () => billingApi.cancelScheduledChange();
 export const syncSubscription = () => billingApi.syncSubscription();

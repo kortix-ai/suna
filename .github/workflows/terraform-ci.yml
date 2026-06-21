@@ -1,0 +1,134 @@
+name: Terraform CI
+
+# Static analysis gate for all IaC. fmt/validate/tflint are hard gates (cloud-free,
+# deterministic). Checkov reports to the Security tab. A scheduled drift job runs a
+# read-only plan against every root and flags diffs — it is skipped unless the repo
+# variable TF_PLAN_ROLE_ARN is set, so it can't fail before that role is provisioned.
+
+on:
+  pull_request:
+    branches: [main, prod]
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform-ci.yml"
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: 1.9.8
+
+jobs:
+  validate:
+    name: fmt + validate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra/terraform
+      - name: terraform validate (every root)
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r backend; do
+            dir="$(dirname "$backend")"
+            echo "::group::validate $dir"
+            if terraform -chdir="$dir" init -backend=false -input=false -no-color >/dev/null \
+               && terraform -chdir="$dir" validate -no-color; then
+              echo "ok: $dir"
+            else
+              echo "::error::terraform validate failed in $dir"; fail=1
+            fi
+            echo "::endgroup::"
+          done < <(find infra/terraform -name backend.tf)
+          exit $fail
+
+  tflint:
+    name: tflint
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
+        with:
+          tflint_version: v0.54.0
+      - name: tflint
+        run: |
+          set -euo pipefail
+          cd infra/terraform
+          tflint --init
+          tflint --recursive --format compact
+
+  checkov:
+    name: checkov
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@0f121ac57605f6e7f8cb145ad2ea49722232ff73 # v12.2980.0
+        with:
+          directory: infra/terraform
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov.sarif
+          soft_fail: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88 # v3.27.5
+        with:
+          sarif_file: checkov.sarif/results_sarif.sarif
+          category: checkov-terraform
+
+  drift:
+    name: drift detection
+    if: github.event_name != 'pull_request' && vars.TF_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - infra/terraform/environments/prod-eks/cluster
+          - infra/terraform/environments/prod-eks/platform
+          - infra/terraform/environments/dev-eks/cluster
+          - infra/terraform/environments/dev-eks/platform
+          - infra/terraform/environments/security-baseline
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: plan -detailed-exitcode
+        run: |
+          set -uo pipefail
+          terraform -chdir="${{ matrix.root }}" init -input=false -no-color
+          terraform -chdir="${{ matrix.root }}" plan -detailed-exitcode -lock=false -input=false -no-color
+          code=$?
+          if [ "$code" = "2" ]; then
+            echo "::warning title=Drift detected::${{ matrix.root }} has drifted from its Terraform state"
+          fi
+          exit $([ "$code" = "1" ] && echo 1 || echo 0)

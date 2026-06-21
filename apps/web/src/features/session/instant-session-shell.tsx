@@ -1,19 +1,17 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
-import {
-  ComposerChatInput,
-  type ComposerOptions,
-} from '@/features/session/composer-chat-input';
+import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
-import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import type { SessionStartStage } from '@/lib/projects-client';
 import { playSound } from '@/lib/sounds';
@@ -59,6 +57,7 @@ export function InstantSessionShell({
    *  the handed-off prompt) and crossfade it in. */
   onSubmit?: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
   // Once ready, we drop boot mode so nothing is stuck on "Connecting" — even with
@@ -121,7 +120,9 @@ export function InstantSessionShell({
 
       <SessionSiteHeader
         sessionId={sessionId}
-        sessionTitle="New session"
+        sessionTitle={tI18nHardcoded.raw(
+          'autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00',
+        )}
         isSidePanelOpen={isSidePanelOpen}
         onToggleSidePanel={() => {
           const s = useKortixComputerStore.getState();
@@ -133,7 +134,7 @@ export function InstantSessionShell({
 
       <div className="relative z-10 min-h-0 flex-1">
         <div className="scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto px-4 py-4">
-          <div className="mx-auto w-full min-w-0 max-w-3xl px-3 sm:px-6">
+          <div className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6">
             {submitted && (
               <div className="flex min-w-0 flex-col">
                 {/* Optimistic turn — the EXACT same DOM shape + spacing as
@@ -142,8 +143,8 @@ export function InstantSessionShell({
                     across the shell → chat crossfade. */}
                 <div className="mt-12 first:mt-0">
                   <div className="flex justify-end">
-                    <div className="flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border bg-card">
-                      <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed">
+                    <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
+                      <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
                         {submitted}
                       </p>
                     </div>

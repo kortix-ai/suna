@@ -9,5 +9,3 @@ export const useWelcomeBannerStore = create<WelcomeBannerState>((set) => ({
   isVisible: false,
   setIsVisible: (visible) => set({ isVisible: visible }),
 }));
-
-

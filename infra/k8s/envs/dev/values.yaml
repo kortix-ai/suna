@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-7f557d46"
+  tag: "dev-fd3be7d4"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -72,6 +72,8 @@ resources:
   limits:
     cpu: "1"
     memory: "512Mi"
+health:
+  livenessPath: /health/live
 serviceAccount:
   name: kortix-api
   # IRSA role from the dev-eks cluster layer (module.app_irsa, name

@@ -59,4 +59,3 @@ export function ToolViewHeader({
     </CardHeader>
   );
 }
-

@@ -8,6 +8,7 @@
     "agents",
     "secrets",
     "triggers",
+    "apps",
     "connections",
     "channels",
     "accounts"

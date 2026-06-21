@@ -34,7 +34,7 @@ function baseConfig(): Config {
     branchName: undefined,
     sessionFresh: false,
     baseSha: undefined,
-    kortixToken: TEST_TOKEN,
+    sandboxToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',

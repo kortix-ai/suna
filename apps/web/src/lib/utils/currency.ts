@@ -31,11 +31,11 @@ export function convertPriceString(
 ): string {
   // Extract numeric value (works for "$20", "€20", "$20/mo", etc.)
   const amount = parseFloat(priceStr.replace(/[^\d.]/g, ''));
-  
+
   if (isNaN(amount)) {
     return priceStr; // Return original if parsing fails
   }
-  
+
   return formatPrice(amount, toCurrency);
 }
 
@@ -59,4 +59,3 @@ export function convertTierPrices(
     yearlyPrice: tier.yearlyPrice ? convertPriceString(tier.yearlyPrice, currency) : undefined,
   };
 }
-

@@ -11,7 +11,7 @@ export interface ValidationResult {
 export class FileNameValidator {
   // Illegal characters for file/folder names (Windows + additional safety)
   private static readonly ILLEGAL_CHARS = /[<>:"/\\|?*\x00-\x1f]/;
-  
+
   // Reserved names (Windows)
   private static readonly RESERVED_NAMES = new Set([
     'CON', 'PRN', 'AUX', 'NUL',
@@ -161,7 +161,7 @@ export class FileNameValidator {
   static generateUniqueNameSync(baseName: string, existingNames: string[], itemType: 'file' | 'folder' = 'file'): string {
     // First, sanitize the base name
     const sanitizedBase = this.sanitizeName(baseName);
-    
+
     // Check if base name is already unique
     if (!this.checkNameConflict(sanitizedBase, existingNames)) {
       return sanitizedBase;
@@ -170,7 +170,7 @@ export class FileNameValidator {
     // Split name and extension for files
     let namePart: string;
     let ext: string;
-    
+
     if (itemType === "file" && sanitizedBase.includes('.')) {
       const lastDotIndex = sanitizedBase.lastIndexOf('.');
       namePart = sanitizedBase.substring(0, lastDotIndex);
@@ -188,7 +188,7 @@ export class FileNameValidator {
         return newName;
       }
       counter++;
-      
+
       // Safety break (shouldn't happen in normal use)
       if (counter > 1000) {
         const uniqueId = Math.random().toString(36).substring(2, 10);
@@ -204,10 +204,10 @@ export class FileNameValidator {
 export function useNameValidation(name: string, itemType: 'file' | 'folder' = 'file', existingNames: string[] = []) {
   const validation = FileNameValidator.validateName(name, itemType);
   const hasConflict = validation.isValid && FileNameValidator.checkNameConflict(name, existingNames);
-  
+
   return {
     isValid: validation.isValid && !hasConflict,
-    error: hasConflict 
+    error: hasConflict
       ? `A ${itemType} with this name already exists`
       : validation.error,
     friendlyError: hasConflict

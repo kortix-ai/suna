@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { AGENTS, favicon, type AgentDef } from '../data';
 import { PageHead, StatusDot } from '../primitives';
 
@@ -51,6 +52,7 @@ function AgentCard({ agent }: { agent: AgentDef }) {
 }
 
 export function AgentsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const running = AGENTS.filter((a) => a.on).length;
   const triggered = AGENTS.filter((a) => a.trigger !== 'manual' && a.trigger !== 'primary').length;
   const stats: [string, string][] = [
@@ -63,10 +65,15 @@ export function AgentsPage() {
     <div>
       <PageHead
         title="Agents"
-        sub="Each agent is its own worker — defined in .kortix/opencode/agents"
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesAgentsPageJsxAttrSub31719801',
+        )}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> New agent
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesAgentsPageJsxTextNew96418b4c',
+            )}
           </Button>
         }
       />

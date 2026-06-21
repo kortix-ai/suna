@@ -115,31 +115,31 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const projections = useMemo((): SimulationMonth[] => {
     const months: SimulationMonth[] = [];
     const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026'];
-    
+
     let totalSubs = startingSubs;
-    
+
     for (let i = 0; i < 6; i++) {
       // Monthly views = weekly views * 4.33 weeks per month, with compound growth
       const monthlyViews = Math.round(weeklyVisitors * 4.33 * Math.pow(1 + visitorGrowth / 100, i));
-      
+
       // Signups from landing page
       const signups = Math.round(monthlyViews * (landingConversion / 100));
-      
+
       // New paid customers
       const newPaid = Math.round(signups * (signupToPaid / 100));
-      
+
       // Churned customers (from current total before adding new)
       const churned = Math.round(totalSubs * (monthlyChurn / 100));
-      
+
       // Update subscriber count
       totalSubs = Math.max(0, totalSubs + newPaid - churned);
-      
+
       // MRR = total subs * ARPU
       const mrr = totalSubs * arpu;
-      
+
       // ARR = MRR * 12
       const arr = mrr * 12;
-      
+
       months.push({
         month: monthNames[i],
         monthIndex: i,
@@ -152,7 +152,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         arr,
       });
     }
-    
+
     return months;
   }, [startingSubs, weeklyVisitors, landingConversion, signupToPaid, arpu, monthlyChurn, visitorGrowth]);
 
@@ -172,22 +172,22 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Date range for fetching signups (Dec 15, 2025 to Jun 15, 2026)
   const signupsDateFrom = '2025-12-15';
   const signupsDateTo = '2026-06-15';
-  
+
   // Calculate current week number and month index for filtering chart data (Berlin timezone)
   const { currentWeekNumber, currentMonthIndex } = useMemo(() => {
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
     const today = getBerlinToday();
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const weekNum = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
-    
+
     // Month index: Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
-    const monthIdx = today.getFullYear() === 2025 && today.getMonth() === 11 ? 0 
-      : today.getFullYear() === 2026 ? today.getMonth() + 1 
+    const monthIdx = today.getFullYear() === 2025 && today.getMonth() === 11 ? 0
+      : today.getFullYear() === 2026 ? today.getMonth() + 1
       : 0;
-    
+
     return { currentWeekNumber: weekNum, currentMonthIndex: monthIdx };
   }, []);
-  
+
   // Week 0 (Dec 8-14) baseline data for Week 1 growth calculation
   // From spreadsheet: used only for % Growth, not displayed
   const week0Baseline = {
@@ -195,26 +195,26 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     signups: 10056,  // 1171+1191+1046+2058+2101+1289+1200
     newPaid: 120,    // 9+14+15+17+26+22+17
   };
-  
+
   // Fetch signups grouped by date
   const { data: signupsByDateData } = useSignupsByDate(signupsDateFrom, signupsDateTo);
-  
+
   // Fetch views (unique visitors) from analytics source
   const { data: viewsByDateData } = useViewsByDate(signupsDateFrom, signupsDateTo, analyticsSource);
-  
+
   // Fetch new paid subscriptions from Stripe (excludes free tier)
   const { data: newPaidByDateData } = useNewPaidByDate(signupsDateFrom, signupsDateTo);
-  
+
   // Fetch churn data from Stripe Events
   const { data: churnByDateData } = useChurnByDate(signupsDateFrom, signupsDateTo);
-  
+
   // Group signups by week number (frontend owns week logic)
   const signupsByWeek = useMemo((): Record<number, number> => {
     if (!signupsByDateData?.signups_by_date) return {};
-    
+
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
     const result: Record<number, number> = {};
-    
+
     Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
       const date = new Date(dateStr);
       const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -223,17 +223,17 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[weekNum] = (result[weekNum] || 0) + count;
       }
     });
-    
+
     return result;
   }, [signupsByDateData]);
 
   // Group views by week number (same logic as signups)
   const viewsByWeek = useMemo((): Record<number, number> => {
     if (!viewsByDateData?.views_by_date) return {};
-    
+
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
     const result: Record<number, number> = {};
-    
+
     Object.entries(viewsByDateData.views_by_date).forEach(([dateStr, count]) => {
       const date = new Date(dateStr);
       const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -242,17 +242,17 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[weekNum] = (result[weekNum] || 0) + count;
       }
     });
-    
+
     return result;
   }, [viewsByDateData]);
 
   // Group new paid subscriptions by week number (from Stripe, excludes free tier)
   const newPaidByWeek = useMemo((): Record<number, number> => {
     if (!newPaidByDateData?.new_paid_by_date) return {};
-    
+
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
     const result: Record<number, number> = {};
-    
+
     Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
       const date = new Date(dateStr);
       const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -261,17 +261,17 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[weekNum] = (result[weekNum] || 0) + count;
       }
     });
-    
+
     return result;
   }, [newPaidByDateData]);
 
   // Group churn by week number (from Stripe Events)
   const churnByWeek = useMemo((): Record<number, number> => {
     if (!churnByDateData?.churn_by_date) return {};
-    
+
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025
     const result: Record<number, number> = {};
-    
+
     Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
       const date = new Date(dateStr);
       const daysSinceStart = Math.floor((date.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -280,7 +280,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[weekNum] = (result[weekNum] || 0) + count;
       }
     });
-    
+
     return result;
   }, [churnByDateData]);
 
@@ -289,25 +289,25 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const actualSubsByWeek = useMemo((): Record<number, number> => {
     const DEC_14_SUBSCRIBERS = 709;
     const result: Record<number, number> = {};
-    
+
     // Get max week from either newPaid or churn data
     const maxWeek = Math.max(
       ...Object.keys(newPaidByWeek).map(Number),
       ...Object.keys(churnByWeek).map(Number),
       0
     );
-    
+
     if (maxWeek === 0) return result;
-    
+
     let currentSubs = DEC_14_SUBSCRIBERS;
-    
+
     for (let week = 1; week <= maxWeek; week++) {
       const weekNewPaid = newPaidByWeek[week] || 0;
       const weekChurn = churnByWeek[week] || 0;
       currentSubs = currentSubs + weekNewPaid - weekChurn;
       result[week] = currentSubs;
     }
-    
+
     return result;
   }, [newPaidByWeek, churnByWeek]);
 
@@ -315,41 +315,41 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const weeklyProjections = useMemo((): SimulationWeek[] => {
     const weeks: SimulationWeek[] = [];
     const startDate = new Date(2025, 11, 15); // Dec 15, 2025 (Monday)
-    
+
     let weekNum = 1;
     const currentDate = new Date(startDate);
     let totalSubs = startingSubs;
-    
+
     projections.forEach((month, monthIdx) => {
       // HTML logic: every 3rd month (index 2, 5, ...) has 5 weeks, others have 4
       const weeksInMonth = monthIdx % 3 === 2 ? 5 : 4;
-      
+
       // Split monthly data evenly across weeks
       const weeklyViews = Math.round(month.visitors / weeksInMonth);
       const weeklySignups = Math.round(month.signups / weeksInMonth);
       const weeklyNewPaid = Math.round(month.newPaid / weeksInMonth);
       const weeklyChurned = Math.round(month.churned / weeksInMonth);
-      
+
       for (let w = 0; w < weeksInMonth; w++) {
         const weekStart = new Date(currentDate);
         const weekEnd = new Date(currentDate);
         weekEnd.setDate(weekEnd.getDate() + 6);
-        
+
         // Determine actual calendar month index based on week END date (with 1-day buffer)
         // A week belongs to the month where it ends (last complete week logic)
         // Buffer of 1 day: if week ends on 1st of month, count it as previous month
         // Dec 2025 = 0, Jan 2026 = 1, Feb 2026 = 2, etc.
         const weekEndWithBuffer = new Date(weekEnd);
         weekEndWithBuffer.setDate(weekEndWithBuffer.getDate() - 1);
-        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11 
+        const calendarMonthIndex = weekEndWithBuffer.getMonth() === 11
           ? 0  // December 2025
           : weekEndWithBuffer.getMonth() + 1;  // Jan=1, Feb=2, etc.
-        
+
         // Update running subscriber count (matching HTML logic)
         totalSubs = Math.max(0, totalSubs + weeklyNewPaid - weeklyChurned);
         const weeklyMRR = totalSubs * arpu;
         const weeklyARR = weeklyMRR * 12;
-        
+
         weeks.push({
           week: weekNum,
           dateRange: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
@@ -361,12 +361,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           mrr: Math.round(weeklyMRR),
           arr: Math.round(weeklyARR),
         });
-        
+
         weekNum++;
         currentDate.setDate(currentDate.getDate() + 7);
       }
     });
-    
+
     return weeks;
   }, [projections, startingSubs, arpu]);
 
@@ -375,7 +375,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const updateActualMutation = useUpdateARRWeeklyActual();
   const deleteActualMutation = useDeleteARRWeeklyActual();
   const toggleOverrideMutation = useToggleFieldOverride();
-  
+
   // Actual monthly data (persisted to database - direct monthly overrides)
   const { data: arrMonthlyActualsData } = useARRMonthlyActuals();
   const updateMonthlyActualMutation = useUpdateARRMonthlyActual();
@@ -410,10 +410,10 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
 
   // Local state for pending edits (so we don't call API on every keystroke)
   const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
-  
+
   // Local state for optimistic override updates (shows input immediately without waiting for API)
   const [pendingOverrides, setPendingOverrides] = useState<Record<string, boolean>>({});
-  
+
   // Clear pending overrides when actual data updates (API call completed)
   useEffect(() => {
     if (arrActualsData) {
@@ -448,19 +448,19 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const parseShorthand = (input: string): number => {
     if (!input || input.trim() === '') return 0;
     const cleaned = input.trim().toLowerCase();
-    
+
     // Check for million suffix (M or m)
     if (cleaned.endsWith('m')) {
       const num = parseFloat(cleaned.slice(0, -1));
       return isNaN(num) ? 0 : Math.round(num * 1_000_000);
     }
-    
+
     // Check for thousand suffix (K or k)
     if (cleaned.endsWith('k')) {
       const num = parseFloat(cleaned.slice(0, -1));
       return isNaN(num) ? 0 : Math.round(num * 1_000);
     }
-    
+
     // Plain number
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : Math.round(num);
@@ -485,18 +485,18 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const handleInputBlur = (week: number, platform: Platform, field: keyof WeeklyActual) => {
     const key = `${week}-${platform}-${field}`;
     const pendingValue = pendingEdits[key];
-    
+
     // If no pending edit, nothing to save
     if (pendingValue === undefined) return;
-    
+
     const weekProjection = weeklyProjections.find(w => w.week === week);
     if (!weekProjection) return;
-    
+
     // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
     const value = parseShorthand(pendingValue);
     const currentData = getActualData(week, platform) || { platform, views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
-    
+
     // Build overrides - mark this field as overridden since it was manually edited
     // Map field name to override key (newPaid -> new_paid)
     const currentOverrides = currentData.overrides || {};
@@ -505,7 +505,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       ...currentOverrides,
       [overrideKey]: true,  // Mark this field as locked/overridden
     };
-    
+
     // Map field names for API
     const apiData: WeeklyActualData = {
       week_number: week,
@@ -520,7 +520,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       arr: updatedData.arr,
       overrides: updatedOverrides,
     };
-    
+
     updateActualMutation.mutate(apiData);
   };
 
@@ -529,10 +529,10 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const pendingKey = `${week}-${platform}-${field}`;
     const currentOverride = isFieldOverridden(week, platform, field);
     const newOverrideState = !currentOverride;
-    
+
     // Optimistic update for instant UI feedback
     setPendingOverrides(prev => ({ ...prev, [pendingKey]: newOverrideState }));
-    
+
     // Call API in background
     toggleOverrideMutation.mutate({
       weekNumber: week,
@@ -556,13 +556,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const enableOverrideInstantly = (week: number, platform: Platform, field: keyof WeeklyActual, currentValue: number) => {
     const overrideKey = fieldToOverrideKey(field);
     const pendingKey = `${week}-${platform}-${overrideKey}`;
-    
+
     // 1. Set pending override immediately for instant UI update
     setPendingOverrides(prev => ({ ...prev, [pendingKey]: true }));
-    
+
     // 2. Set the value in pending edits
     handleInputChange(week, platform, field, String(currentValue));
-    
+
     // 3. Save to API in background
     handleInputBlur(week, platform, field);
   };
@@ -609,18 +609,18 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const getMonthlyActualData = (monthIndex: number, platform: Platform): MonthlyActual | undefined => {
     return monthlyActualData[`${monthIndex}_${platform}`];
   };
-  
+
   // Local state for pending monthly edits
   const [pendingMonthlyEdits, setPendingMonthlyEdits] = useState<Record<string, string>>({});
   const [pendingMonthlyOverrides, setPendingMonthlyOverrides] = useState<Record<string, boolean>>({});
-  
+
   // Clear pending monthly overrides when data updates
   useEffect(() => {
     if (arrMonthlyActualsData) {
       setPendingMonthlyOverrides({});
     }
   }, [arrMonthlyActualsData]);
-  
+
   // Get display value for monthly input (shorthand format)
   const getMonthlyInputValue = (monthIndex: number, platform: Platform, field: keyof MonthlyActual): string => {
     const key = `${monthIndex}-${platform}-${field}`;
@@ -631,32 +631,32 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const saved = actual?.[field];
     return saved ? toShorthand(Number(saved)) : '';
   };
-  
+
   // Handle monthly input change
   const handleMonthlyInputChange = (monthIndex: number, platform: Platform, field: keyof MonthlyActual, value: string) => {
     const key = `${monthIndex}-${platform}-${field}`;
     setPendingMonthlyEdits(prev => ({ ...prev, [key]: value }));
   };
-  
+
   // Save monthly to API on blur (with shorthand parsing)
   const handleMonthlyInputBlur = (monthIndex: number, platform: Platform, monthName: string, field: keyof MonthlyActual) => {
     const key = `${monthIndex}-${platform}-${field}`;
     const pendingValue = pendingMonthlyEdits[key];
-    
+
     if (pendingValue === undefined) return;
-    
+
     // Parse shorthand: "25.5k" → 25500, "1M" → 1000000
     const value = parseShorthand(pendingValue);
     const currentData = getMonthlyActualData(monthIndex, platform) || { platform, views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0, overrides: {} };
     const updatedData = { ...currentData, [field]: value };
-    
+
     const currentOverrides = currentData.overrides || {};
     const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
     const updatedOverrides: FieldOverrides = {
       ...currentOverrides,
       [overrideKey]: true,
     };
-    
+
     const apiData: MonthlyActualData = {
       month_index: monthIndex,
       month_name: monthName,
@@ -670,7 +670,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       arr: updatedData.arr,
       overrides: updatedOverrides,
     };
-    
+
     updateMonthlyActualMutation.mutate(apiData, {
       onSuccess: () => {
         setPendingMonthlyEdits(prev => {
@@ -685,13 +685,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       },
     });
   };
-  
+
   // Toggle monthly override
   const handleToggleMonthlyOverride = (monthIndex: number, platform: Platform, field: keyof MonthlyActual) => {
     const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
     const actual = getMonthlyActualData(monthIndex, platform);
     const currentOverride = actual?.overrides?.[overrideKey] || false;
-    
+
     toggleMonthlyOverrideMutation.mutate({
       monthIndex,
       platform: platform,
@@ -703,7 +703,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       },
     });
   };
-  
+
   // Check if monthly field is overridden
   const isMonthlyFieldOverridden = (monthIndex: number, platform: Platform, field: keyof MonthlyActual): boolean => {
     const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
@@ -714,12 +714,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const actual = getMonthlyActualData(monthIndex, platform);
     return actual?.overrides?.[overrideKey] || false;
   };
-  
+
   // Enable monthly override instantly (for clicking on auto-fetched value)
   const enableMonthlyOverrideInstantly = (monthIndex: number, platform: Platform, monthName: string, field: keyof MonthlyActual, currentValue: number) => {
     const overrideKey = fieldToOverrideKey(field as keyof WeeklyActual);
     const pendingKey = `${monthIndex}-${platform}-${overrideKey}`;
-    
+
     setPendingMonthlyOverrides(prev => ({ ...prev, [pendingKey]: true }));
     handleMonthlyInputChange(monthIndex, platform, field, String(currentValue));
     handleMonthlyInputBlur(monthIndex, platform, monthName, field);
@@ -740,12 +740,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Aggregates both web and app platform data
   const weeklyChartData = weeklyProjections.map(w => {
     const isFutureWeek = w.week > currentWeekNumber;
-    
+
     // Get data for both platforms
     const webData = getActualData(w.week, 'web');
     const appData = getActualData(w.week, 'app');
     const webOverrides = webData?.overrides || {};
-    
+
     // Web: Use overridden value if locked, otherwise use auto-fetched data
     const webViews = webOverrides.views ? (webData?.views || 0) : (viewsByWeek[w.week] || 0);
     const webSignups = webOverrides.signups ? (webData?.signups || 0) : (signupsByWeek[w.week] || 0);
@@ -753,7 +753,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : (actualSubsByWeek[w.week] || 0);
     const webMRR = webData?.mrr || 0;
     const webARR = webData?.arr || 0;
-    
+
     // App: Always use manual data (no auto-fetch)
     const appViews = appData?.views || 0;
     const appSignups = appData?.signups || 0;
@@ -761,7 +761,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const appSubs = appData?.subscribers || 0;
     const appMRR = appData?.mrr || 0;
     const appARR = appData?.arr || 0;
-    
+
     // Combined totals (web + app)
     const totalViews = webViews + appViews;
     const totalSignups = webSignups + appSignups;
@@ -769,7 +769,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const totalSubs = webSubs + appSubs;
     const totalMRR = webMRR + appMRR;
     const totalARR = webARR + appARR;
-    
+
     return {
       week: `W${w.week}`,
       goalViews: w.visitors,
@@ -792,29 +792,29 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Combines both web and app platform data
   const monthlyActuals = useMemo(() => {
     const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
-    
+
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
-      
+
       // Get data for both platforms
       const webData = getActualData(week.week, 'web');
       const appData = getActualData(week.week, 'app');
       const webOverrides = webData?.overrides || {};
-      
+
       // Web: Use overridden value if locked, otherwise use auto-fetched data
       const webViews = webOverrides.views ? (webData?.views || 0) : (viewsByWeek[week.week] || 0);
       const webSignups = webOverrides.signups ? (webData?.signups || 0) : (signupsByWeek[week.week] || 0);
       const webNewPaid = webOverrides.new_paid ? (webData?.newPaid || 0) : (newPaidByWeek[week.week] || webData?.newPaid || 0);
       const webChurn = webOverrides.churn ? (webData?.churn || 0) : (churnByWeek[week.week] || 0);
       const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : (actualSubsByWeek[week.week] || 0);
-      
+
       // App: Always use manual data
       const appViews = appData?.views || 0;
       const appSignups = appData?.signups || 0;
       const appNewPaid = appData?.newPaid || 0;
       const appChurn = appData?.churn || 0;
       const appSubs = appData?.subscribers || 0;
-      
+
       // Combined totals
       const totalViews = webViews + appViews;
       const totalSignups = webSignups + appSignups;
@@ -823,22 +823,22 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const totalSubs = webSubs + appSubs;
       const totalMRR = (webData?.mrr || 0) + (appData?.mrr || 0);
       const totalARR = (webData?.arr || 0) + (appData?.arr || 0);
-      
+
       if (!result[monthIdx]) {
         result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
-      
+
       // Use effective values (respecting overrides)
       result[monthIdx].signups += totalSignups;
       result[monthIdx].views += totalViews;
       result[monthIdx].newPaid += totalNewPaid;
       result[monthIdx].churn += totalChurn;
-      
+
       // Take last week's value as end-of-month subscribers
       if (totalSubs > 0) {
         result[monthIdx].subscribers = totalSubs;
       }
-      
+
         // For MRR, ARR - take the last week's value as end-of-month value
       if (totalMRR > 0) {
         result[monthIdx].mrr = totalMRR;
@@ -847,7 +847,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[monthIdx].arr = totalARR;
       }
     });
-    
+
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
@@ -858,43 +858,43 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   const subsAtMonthStart = useMemo((): Record<number, number> => {
     const DEC_1_SUBSCRIBERS = 548;
     const result: Record<number, number> = { 0: DEC_1_SUBSCRIBERS }; // monthIndex 0 = December
-    
+
     // Build daily new paid and churn maps
     const dailyNewPaid: Record<string, number> = {};
     const dailyChurn: Record<string, number> = {};
-    
+
     if (newPaidByDateData?.new_paid_by_date) {
       Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
         dailyNewPaid[dateStr] = count;
       });
     }
-    
+
     if (churnByDateData?.churn_by_date) {
       Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
         dailyChurn[dateStr] = count;
       });
     }
-    
+
     // Calculate subs at 1st of each month by iterating through days
     // Start from Dec 1, 2025 (use Dec 1 subs as starting point)
     let currentSubs = DEC_1_SUBSCRIBERS;
-    
+
     // Iterate from Dec 1 to Jun 30
     const startDate = new Date(2025, 11, 1); // Dec 1, 2025
     const endDate = new Date(2026, 5, 30); // Jun 30, 2026
-    
+
     // Dec 1-14 daily averages (233 new paid, 98 churn over 14 days)
     const DEC_1_14_DAILY_NEW_PAID = 233 / 14;
     const DEC_1_14_DAILY_CHURN = 98 / 14;
-    
+
     const currentDate = new Date(startDate);
     while (currentDate <= endDate) {
       const dateStr = formatDateBerlin(currentDate);
-      
+
       // For Dec 1-14, use hardcoded daily averages; for Dec 15+, use API data
       let dayNewPaid: number;
       let dayChurn: number;
-      
+
       if (currentDate.getFullYear() === 2025 && currentDate.getMonth() === 11 && currentDate.getDate() <= 14) {
         // Dec 1-14: use hardcoded daily averages
         dayNewPaid = DEC_1_14_DAILY_NEW_PAID;
@@ -904,21 +904,21 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         dayNewPaid = dailyNewPaid[dateStr] || 0;
         dayChurn = dailyChurn[dateStr] || 0;
       }
-      
+
       // Update running subs count
       currentSubs = currentSubs + dayNewPaid - dayChurn;
-      
+
       // Check if this is the 1st of a month (after applying that day's activity)
       if (currentDate.getDate() === 1 && !(currentDate.getMonth() === 11 && currentDate.getFullYear() === 2025)) {
         // Determine monthIndex: Jan = 1, Feb = 2, etc.
         const monthIdx = currentDate.getMonth() + 1; // Jan=1, Feb=2, Mar=3, Apr=4, May=5, Jun=6
         result[monthIdx] = Math.round(currentSubs);
       }
-      
+
       // Move to next day
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
+
     return result;
   }, [newPaidByDateData, churnByDateData]);
 
@@ -934,13 +934,13 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     const signups: Record<number, number> = {};
     const newPaid: Record<number, number> = {};
     const churn: Record<number, number> = {};
-    
+
     // Add Dec 1-14 adjustments to December
     views[0] = 78313;
     signups[0] = 18699;
     newPaid[0] = 233;
     churn[0] = 98;
-    
+
     // Aggregate daily views by calendar month
     if (viewsByDateData?.views_by_date) {
       Object.entries(viewsByDateData.views_by_date).forEach(([dateStr, count]) => {
@@ -948,7 +948,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         views[monthIdx] = (views[monthIdx] || 0) + count;
       });
     }
-    
+
     // Aggregate daily signups by calendar month
     if (signupsByDateData?.signups_by_date) {
       Object.entries(signupsByDateData.signups_by_date).forEach(([dateStr, count]) => {
@@ -956,7 +956,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         signups[monthIdx] = (signups[monthIdx] || 0) + count;
       });
     }
-    
+
     // Aggregate daily new paid by calendar month
     if (newPaidByDateData?.new_paid_by_date) {
       Object.entries(newPaidByDateData.new_paid_by_date).forEach(([dateStr, count]) => {
@@ -964,7 +964,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         newPaid[monthIdx] = (newPaid[monthIdx] || 0) + count;
       });
     }
-    
+
     // Aggregate daily churn by calendar month
     if (churnByDateData?.churn_by_date) {
       Object.entries(churnByDateData.churn_by_date).forEach(([dateStr, count]) => {
@@ -972,7 +972,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         churn[monthIdx] = (churn[monthIdx] || 0) + count;
       });
     }
-    
+
     return { views, signups, newPaid, churn };
   }, [viewsByDateData, signupsByDateData, newPaidByDateData, churnByDateData]);
 
@@ -980,18 +980,18 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // This ensures the monthly table shows all months that have weeks, including June
   const monthlyFromWeekly = useMemo(() => {
     const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
-    const result: Record<number, { 
+    const result: Record<number, {
       month: string;
       monthIndex: number;
-      visitors: number; 
-      signups: number; 
+      visitors: number;
+      signups: number;
       newPaid: number;
       churned: number;
-      totalSubs: number; 
-      mrr: number; 
+      totalSubs: number;
+      mrr: number;
       arr: number;
     }> = {};
-    
+
     // Also calculate churned per month from projections
     const churnedByMonth: Record<number, number> = {};
     projections.forEach((proj, projIdx) => {
@@ -999,7 +999,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       // We need to map this to monthIndex based on the month name
       churnedByMonth[projIdx] = proj.churned;
     });
-    
+
     weeklyProjections.forEach((week) => {
       const idx = week.monthIndex;
       if (!result[idx]) {
@@ -1024,14 +1024,14 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       result[idx].mrr = week.mrr;
       result[idx].arr = week.arr;
     });
-    
+
     // Add churned data from projections (mapped by monthIndex)
     Object.keys(result).forEach((key) => {
       const idx = Number(key);
       // projections[0] = Dec (monthIndex 0), projections[1] = Jan (monthIndex 1), etc.
       result[idx].churned = churnedByMonth[idx] || 0;
     });
-    
+
     // Convert to sorted array
     return Object.values(result).sort((a, b) => a.monthIndex - b.monthIndex);
   }, [weeklyProjections, projections]);
@@ -1045,17 +1045,17 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
     monthlyFromWeekly.forEach((m) => {
       goalsByMonth[m.monthIndex] = m;
     });
-    
+
     const monthNames = ['Dec 2025', 'Jan 2026', 'Feb 2026', 'Mar 2026', 'Apr 2026', 'May 2026', 'Jun 2026'];
     return monthNames.map((month, idx) => {
       const isFutureMonth = idx > currentMonthIndex;
       const goal = goalsByMonth[idx];
-      
+
       // Get data for both platforms
       const webData = getMonthlyActualData(idx, 'web');
       const appData = getMonthlyActualData(idx, 'app');
       const webOverrides = webData?.overrides || {};
-      
+
       // Web: Use overridden value if locked, otherwise auto-fetched
       const webViews = webOverrides.views ? (webData?.views || 0) : (metricsByCalendarMonth.views[idx] || 0);
       const webSignups = webOverrides.signups ? (webData?.signups || 0) : (metricsByCalendarMonth.signups[idx] || 0);
@@ -1064,7 +1064,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : (monthlyActuals[idx]?.subscribers || 0);
       const webMrr = webOverrides.mrr ? (webData?.mrr || 0) : (monthlyActuals[idx]?.mrr || 0);
       const webArr = webOverrides.arr ? (webData?.arr || 0) : (monthlyActuals[idx]?.arr || 0);
-      
+
       // App: Always use manual data
       const appViews = appData?.views || 0;
       const appSignups = appData?.signups || 0;
@@ -1073,7 +1073,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const appSubs = appData?.subscribers || 0;
       const appMrr = appData?.mrr || 0;
       const appArr = appData?.arr || 0;
-      
+
       // Combined totals
       const effectiveViews = webViews + appViews;
       const effectiveSignups = webSignups + appSignups;
@@ -1082,7 +1082,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const effectiveSubs = webSubs + appSubs;
       const effectiveMrr = webMrr + appMrr;
       const effectiveArr = webArr + appArr;
-      
+
       return {
         month,
         monthIndex: idx,
@@ -1262,7 +1262,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
             <div className="text-2xl font-bold">{progressPercent.toFixed(1)}%</div>
             <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminAnalyticsComponentsArrSimulatorIndex.line1261JsxTextProgressToGoal')}</p>
             <div className="mt-2 h-2 bg-muted rounded-full overflow-hidden">
-              <div 
+              <div
                 className={cn('h-full transition-colors', progressPercent >= 100 ? 'bg-green-500' : 'bg-primary')}
                 style={{ width: `${Math.min(100, progressPercent)}%` }}
               />
@@ -1296,7 +1296,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 />
               );
             })}
-            <div 
+            <div
               className="absolute h-full border-r-2 border-dashed border-green-500"
               style={{ left: '100%' }}
             />
@@ -1337,46 +1337,46 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
                     domain={[0, Math.max(targetARR * 1.1, (finalMonth?.arr || 0) * 1.2)]}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={((value: number, name: string) => [formatCurrency(value), name]) as any}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px'
                     }}
                   />
                   <Legend />
-                  <ReferenceLine 
-                    y={targetARR} 
-                    stroke="#10b981" 
-                    strokeDasharray="5 5" 
+                  <ReferenceLine
+                    y={targetARR}
+                    stroke="#10b981"
+                    strokeDasharray="5 5"
                     label={{ value: '$10M Target', position: 'right', fill: '#10b981', fontSize: 12 }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="goalArr" 
+                  <Line
+                    type="monotone"
+                    dataKey="goalArr"
                     name="Goal"
-                    stroke="#10b981" 
+                    stroke="#10b981"
                     strokeWidth={2}
                     strokeDasharray="5 5"
                     dot={false}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="actualArr" 
+                  <Line
+                    type="monotone"
+                    dataKey="actualArr"
                     name="Actual"
-                    stroke="hsl(var(--primary))" 
+                    stroke="hsl(var(--primary))"
                     strokeWidth={3}
                     dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 5 }}
                     activeDot={{ r: 7 }}
@@ -1397,39 +1397,39 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => formatNumber(value)}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={((value: number, name: string) => [formatNumber(value), name]) as any}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px'
                     }}
                   />
                   <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="goalSubs" 
+                  <Line
+                    type="monotone"
+                    dataKey="goalSubs"
                     name="Goal"
-                    stroke="#10b981" 
+                    stroke="#10b981"
                     strokeWidth={2}
                     strokeDasharray="5 5"
                     dot={false}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="actualSubs" 
+                  <Line
+                    type="monotone"
+                    dataKey="actualSubs"
                     name="Actual"
-                    stroke="#8b5cf6" 
+                    stroke="#8b5cf6"
                     strokeWidth={3}
                     dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 5 }}
                   />
@@ -1449,39 +1449,39 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={((value: number, name: string) => [formatCurrency(value), name]) as any}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px'
                     }}
                   />
                   <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="goalMrr" 
+                  <Line
+                    type="monotone"
+                    dataKey="goalMrr"
                     name="Goal"
-                    stroke="#10b981" 
+                    stroke="#10b981"
                     strokeWidth={2}
                     strokeDasharray="5 5"
                     dot={false}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="actualMrr" 
+                  <Line
+                    type="monotone"
+                    dataKey="actualMrr"
                     name="Actual"
-                    stroke="#f59e0b" 
+                    stroke="#f59e0b"
                     strokeWidth={3}
                     dot={{ fill: '#f59e0b', strokeWidth: 2, r: 5 }}
                   />
@@ -1501,45 +1501,45 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => value.replace(/ \d{4}$/, '')}
                   />
-                  <YAxis 
+                  <YAxis
                     tick={{ fontSize: 12 }}
                     tickFormatter={(value) => formatNumber(Math.abs(value))}
                   />
-                  <Tooltip 
+                  <Tooltip
                     formatter={((value: number, name: string) => [
-                      formatNumber(Math.abs(value)), 
+                      formatNumber(Math.abs(value)),
                       name
                     ]) as any}
                     labelStyle={{ color: 'hsl(var(--foreground))' }}
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '8px'
                     }}
                   />
                   <Legend />
-                  <Bar 
-                    dataKey="goalNewPaid" 
+                  <Bar
+                    dataKey="goalNewPaid"
                     name="New Paid (Goal)"
-                    fill="#10b981" 
+                    fill="#10b981"
                     opacity={0.3}
                     radius={[4, 4, 0, 0]}
                   />
-                  <Bar 
-                    dataKey="actualNewPaid" 
+                  <Bar
+                    dataKey="actualNewPaid"
                     name="New Paid (Actual)"
-                    fill="#10b981" 
+                    fill="#10b981"
                     radius={[4, 4, 0, 0]}
                   />
-                  <Bar 
-                    dataKey="negativeActualChurned" 
+                  <Bar
+                    dataKey="negativeActualChurned"
                     name="Churn (Actual)"
-                    fill="#ef4444" 
+                    fill="#ef4444"
                     radius={[0, 0, 4, 4]}
                   />
                 </BarChart>
@@ -1602,15 +1602,15 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                 {monthlyFromWeekly.map((month, idx) => {
                   const actual = monthlyActuals[month.monthIndex] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
                   const isLastMonth = idx === monthlyFromWeekly.length - 1;
-                  
+
                   // Platforms to render
                   const platforms: Platform[] = ['web', 'app'];
-                  
+
                   // Calculate totals for web + app
                   const webData = getMonthlyActualData(month.monthIndex, 'web');
                   const appData = getMonthlyActualData(month.monthIndex, 'app');
                   const webOverrides = webData?.overrides || {};
-                  
+
                   // Web effective values
                   const webViews = webOverrides.views ? (webData?.views || 0) : (metricsByCalendarMonth.views[month.monthIndex] || 0);
                   const webSignups = webOverrides.signups ? (webData?.signups || 0) : (metricsByCalendarMonth.signups[month.monthIndex] || 0);
@@ -1619,7 +1619,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : actual.subscribers;
                   const webMRR = webOverrides.mrr ? (webData?.mrr || 0) : actual.mrr;
                   const webARR = webOverrides.arr ? (webData?.arr || 0) : actual.arr;
-                  
+
                   // App values (always manual)
                   const appViews = appData?.views || 0;
                   const appSignups = appData?.signups || 0;
@@ -1628,7 +1628,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const appSubs = appData?.subscribers || 0;
                   const appMRR = appData?.mrr || 0;
                   const appARR = appData?.arr || 0;
-                  
+
                   // Totals
                   const totalViews = webViews + appViews;
                   const totalSignups = webSignups + appSignups;
@@ -1637,22 +1637,22 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const totalSubs = webSubs + appSubs;
                   const totalMRR = webMRR + appMRR;
                   const totalARR = webARR + appARR;
-                  
+
                   // Total conversion rates
                   const totalSignupConvRate = totalViews > 0 && totalSignups > 0 ? (totalSignups / totalViews) * 100 : null;
                   const totalPaidConvRate = totalSignups > 0 && totalNewPaid > 0 ? (totalNewPaid / totalSignups) * 100 : null;
                   const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
                   const totalChurnRate = monthStartSubs > 0 && totalChurn > 0 ? (totalChurn / monthStartSubs) * 100 : null;
-                  
+
                   const platformRows = platforms.map((platform, platformIdx) => {
                   const monthlyOverride = getMonthlyActualData(month.monthIndex, platform);
-                  
+
                   // Use calendar month aggregations (from daily data) - only for web
                   const autoViews = platform === 'web' ? (metricsByCalendarMonth.views[month.monthIndex] || 0) : 0;
                   const autoSignups = platform === 'web' ? (metricsByCalendarMonth.signups[month.monthIndex] || 0) : 0;
                   const autoNewPaid = platform === 'web' ? (metricsByCalendarMonth.newPaid[month.monthIndex] || 0) : 0;
                   const autoChurn = platform === 'web' ? (metricsByCalendarMonth.churn[month.monthIndex] || 0) : 0;
-                  
+
                   // Effective values: use override if locked, otherwise auto-fetched (web) or 0 (app)
                   const effectiveViews = platform === 'app' ? (monthlyOverride?.views || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'views') ? (monthlyOverride?.views || 0) : autoViews);
                   const effectiveSignups = platform === 'app' ? (monthlyOverride?.signups || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'signups') ? (monthlyOverride?.signups || 0) : autoSignups);
@@ -1661,42 +1661,42 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const effectiveSubs = platform === 'app' ? (monthlyOverride?.subscribers || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'subscribers') ? (monthlyOverride?.subscribers || 0) : actual.subscribers);
                   const effectiveMRR = platform === 'app' ? (monthlyOverride?.mrr || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'mrr') ? (monthlyOverride?.mrr || 0) : actual.mrr);
                   const effectiveARR = platform === 'app' ? (monthlyOverride?.arr || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'arr') ? (monthlyOverride?.arr || 0) : actual.arr);
-                  
+
                   // Previous month values for growth calculation (only for web row)
                   const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
                   const prevEffectiveViews = platform === 'web' && prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, platform, 'views') ? (getMonthlyActualData(prevMonthIdx, platform)?.views || 0) : (metricsByCalendarMonth.views[prevMonthIdx] || 0)) : 0;
                   const prevEffectiveSignups = platform === 'web' && prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, platform, 'signups') ? (getMonthlyActualData(prevMonthIdx, platform)?.signups || 0) : (metricsByCalendarMonth.signups[prevMonthIdx] || 0)) : 0;
                   const prevEffectiveNewPaid = platform === 'web' && prevMonthIdx >= 0 ? (isMonthlyFieldOverridden(prevMonthIdx, platform, 'newPaid') ? (getMonthlyActualData(prevMonthIdx, platform)?.newPaid || 0) : (metricsByCalendarMonth.newPaid[prevMonthIdx] || 0)) : 0;
-                  
+
                   const hasActual = effectiveViews > 0 || effectiveSignups > 0 || effectiveSubs > 0;
-                  
+
                   // Calculate growth rates (month-over-month) - only for web row
                   const viewsGrowth = platform === 'web' && prevEffectiveViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevEffectiveViews) - 1) * 100 : null;
                   const signupsGrowth = platform === 'web' && prevEffectiveSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevEffectiveSignups) - 1) * 100 : null;
                   const newPaidGrowth = platform === 'web' && prevEffectiveNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevEffectiveNewPaid) - 1) * 100 : null;
-                  
+
                   // Calculate signup conversion rate (signups / views)
                   const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
-                  
+
                   // Calculate new paid conversion rate (new paid / signups)
                   const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
-                  
+
                   // Churn rate (only for web)
                   const monthStartSubs = subsAtMonthStart[month.monthIndex] || 0;
                   const churnRate = platform === 'web' && monthStartSubs > 0 && effectiveChurn > 0 ? (effectiveChurn / monthStartSubs) * 100 : null;
-                  
+
                   // Helper to format growth
                   const formatGrowth = (value: number | null) => {
                     if (value === null) return '—';
                     const sign = value >= 0 ? '+' : '';
                     return `${sign}${value.toFixed(1)}%`;
                   };
-                  
+
                   const getGrowthColor = (value: number | null) => {
                     if (value === null) return 'text-muted-foreground';
                     return value >= 0 ? 'text-green-600' : 'text-red-500';
                   };
-                  
+
                   // Editable cell helper for monthly data
                   const renderEditableMonthlyCell = (
                     field: keyof MonthlyActual,
@@ -1708,7 +1708,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const effectiveValue = platform === 'app' ? (monthlyOverride?.[field] || 0) : (isOverridden ? (monthlyOverride?.[field] || 0) : autoValue);
                     const displayValue = isCurrency ? formatCurrency(effectiveValue as number) : formatNumber(effectiveValue as number);
                     const meetsGoal = (effectiveValue as number) >= goalValue;
-                    
+
                     // For app rows: always show input fields for manual entry
                     // For web rows: show auto-fetched value that can be clicked to override
                     if (platform === 'app') {
@@ -1727,7 +1727,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         </td>
                       );
                     }
-                    
+
                     // Web platform: show auto-fetched with lock override capability
                     return (
                       <td className="text-right p-1">
@@ -1763,7 +1763,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </td>
                     );
                   };
-                  
+
                   return (
                     <tr key={`${month.month}-${platform}`} className={cn('border-b', isLastMonth ? 'bg-primary/5 font-medium' : '')}>
                       <td className="p-3">
@@ -1820,7 +1820,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     </tr>
                   );
                   });
-                  
+
                   // Total row
                   const totalRow = (
                     <tr key={`${month.month}-total`} className={cn('border-b bg-muted/30 font-medium', isLastMonth ? 'bg-primary/10' : '')}>
@@ -1878,7 +1878,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       <td className="text-right p-2 font-semibold">{totalARR > 0 ? formatCurrency(totalARR) : '—'}</td>
                     </tr>
                   );
-                  
+
                   return [...platformRows, totalRow];
                 })}
               </tbody>
@@ -2043,12 +2043,12 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   {weeklyProjections.map((week) => {
                     // Platforms to render
                     const platforms: Platform[] = ['web', 'app'];
-                    
+
                     // Calculate totals for web + app
                     const webActual = getActualData(week.week, 'web');
                     const appActual = getActualData(week.week, 'app');
                     const webOverrides = webActual?.overrides || {};
-                    
+
                     // Web effective values
                     const webViews = webOverrides.views ? (webActual?.views || 0) : (viewsByWeek[week.week] ?? 0);
                     const webSignups = webOverrides.signups ? (webActual?.signups || 0) : (signupsByWeek[week.week] ?? 0);
@@ -2057,7 +2057,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const webSubs = webOverrides.subscribers ? (webActual?.subscribers || 0) : (actualSubsByWeek[week.week] ?? 0);
                     const webMRR = webActual?.mrr || 0;
                     const webARR = webActual?.arr || 0;
-                    
+
                     // App values (always manual)
                     const appViews = appActual?.views || 0;
                     const appSignups = appActual?.signups || 0;
@@ -2066,7 +2066,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const appSubs = appActual?.subscribers || 0;
                     const appMRR = appActual?.mrr || 0;
                     const appARR = appActual?.arr || 0;
-                    
+
                     // Totals
                     const totalViews = webViews + appViews;
                     const totalSignups = webSignups + appSignups;
@@ -2075,36 +2075,36 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const totalSubs = webSubs + appSubs;
                     const totalMRR = webMRR + appMRR;
                     const totalARR = webARR + appARR;
-                    
+
                     // Total conversion rates
                     const totalSignupConvRate = totalViews > 0 && totalSignups > 0 ? (totalSignups / totalViews) * 100 : null;
                     const totalPaidConvRate = totalSignups > 0 && totalNewPaid > 0 ? (totalNewPaid / totalSignups) * 100 : null;
-                    
+
                     // Total variances
                     const totalSubsVar = getVariance(totalSubs, week.subscribers);
                     const totalMrrVar = getVariance(totalMRR, week.mrr);
                     const totalArrVar = getVariance(totalARR, week.arr);
-                    
+
                     const platformRows = platforms.map((platform, platformIdx) => {
                     const actual = getActualData(week.week, platform);
-                    
+
                     // Get auto-fetched data (only for web platform)
                     const autoViews = platform === 'web' ? (viewsByWeek[week.week] ?? 0) : 0;
                     const autoSignups = platform === 'web' ? (signupsByWeek[week.week] ?? 0) : 0;
                     const autoNewPaid = platform === 'web' ? (newPaidByWeek[week.week] ?? 0) : 0;
                     const calcSubs = platform === 'web' ? (actualSubsByWeek[week.week] ?? 0) : 0;
-                    
+
                     // Check if fields are overridden (locked) - use manual value instead of API
                     const viewsOverridden = isFieldOverridden(week.week, platform, 'views');
                     const signupsOverridden = isFieldOverridden(week.week, platform, 'signups');
                     const newPaidOverridden = isFieldOverridden(week.week, platform, 'new_paid');
                     const subscribersOverridden = isFieldOverridden(week.week, platform, 'subscribers');
-                    
+
                     // Churn override check
                     const churnOverridden = isFieldOverridden(week.week, platform, 'churn');
                     const autoChurn = platform === 'web' ? (churnByWeek[week.week] || 0) : 0;
                     const effectiveChurn = churnOverridden ? (actual?.churn || 0) : autoChurn;
-                    
+
                     // Use overridden value if locked, otherwise use auto-fetched data
                     // For app platform, always use overridden value (no auto-sync)
                     const effectiveViews = platform === 'app' ? (actual?.views || 0) : (viewsOverridden ? (actual?.views || 0) : autoViews);
@@ -2114,45 +2114,45 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                     const subsVar = getVariance(effectiveSubs, week.subscribers);
                     const mrrVar = getVariance(actual?.mrr, week.mrr);
                     const arrVar = getVariance(actual?.arr, week.arr);
-                    
+
                     // Get previous week's data for Growth calculations
                     const prevWeekNum = week.week - 1;
                     const prevActual = getActualData(prevWeekNum, platform);
                     const prevViewsOverridden = prevActual?.overrides?.views || false;
                     const prevSignupsOverridden = prevActual?.overrides?.signups || false;
                     const prevNewPaidOverridden = prevActual?.overrides?.new_paid || false;
-                    
+
                     // For Week 1, use week0Baseline (only for web); otherwise use fetched data or overridden data
-                    const prevAutoViews = prevWeekNum === 0 && platform === 'web' ? week0Baseline.views : 
+                    const prevAutoViews = prevWeekNum === 0 && platform === 'web' ? week0Baseline.views :
                       (prevViewsOverridden ? (prevActual?.views || 0) : (platform === 'web' ? (viewsByWeek[prevWeekNum] ?? 0) : 0));
-                    const prevAutoSignups = prevWeekNum === 0 && platform === 'web' ? week0Baseline.signups : 
+                    const prevAutoSignups = prevWeekNum === 0 && platform === 'web' ? week0Baseline.signups :
                       (prevSignupsOverridden ? (prevActual?.signups || 0) : (platform === 'web' ? (signupsByWeek[prevWeekNum] ?? 0) : 0));
-                    const prevAutoNewPaid = prevWeekNum === 0 && platform === 'web' ? week0Baseline.newPaid : 
+                    const prevAutoNewPaid = prevWeekNum === 0 && platform === 'web' ? week0Baseline.newPaid :
                       (prevNewPaidOverridden ? (prevActual?.newPaid || 0) : (platform === 'web' ? (newPaidByWeek[prevWeekNum] ?? 0) : 0));
-                    
+
                     // Calculate growth rates (week-over-week) using effective values
                     const viewsGrowth = prevAutoViews > 0 && effectiveViews > 0 ? ((effectiveViews / prevAutoViews) - 1) * 100 : null;
                     const signupsGrowth = prevAutoSignups > 0 && effectiveSignups > 0 ? ((effectiveSignups / prevAutoSignups) - 1) * 100 : null;
                     const newPaidGrowth = prevAutoNewPaid > 0 && effectiveNewPaid > 0 ? ((effectiveNewPaid / prevAutoNewPaid) - 1) * 100 : null;
-                    
+
                     // Calculate signup conversion rate (signups / views) using effective values
                     const signupConvRate = effectiveViews > 0 && effectiveSignups > 0 ? (effectiveSignups / effectiveViews) * 100 : null;
-                    
+
                     // Calculate new paid conversion rate (new paid / signups) using effective values
                     const paidConvRate = effectiveSignups > 0 && effectiveNewPaid > 0 ? (effectiveNewPaid / effectiveSignups) * 100 : null;
-                    
+
                     // Helper to format growth
                     const formatGrowth = (value: number | null) => {
                       if (value === null) return '—';
                       const sign = value >= 0 ? '+' : '';
                       return `${sign}${value.toFixed(0)}%`;
                     };
-                    
+
                     const getGrowthColor = (value: number | null) => {
                       if (value === null) return 'text-muted-foreground';
                       return value >= 0 ? 'text-green-600' : 'text-red-500';
                     };
-                    
+
                     return (
                       <tr key={`${week.week}_${platform}`} className={`border-b hover:bg-muted/30 ${week.week === weeklyProjections.length ? 'bg-primary/5 font-medium' : ''} ${platform === 'app' ? 'bg-purple-50/50 dark:bg-purple-950/20' : ''}`}>
                         <td className="p-2 font-medium">
@@ -2321,8 +2321,8 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           const weekStartDate = new Date(2025, 11, 15 + (week.week - 1) * 7);
                           const monthIdx = weekStartDate.getMonth() === 11 ? 0 : weekStartDate.getMonth() + 1;
                           const monthStartSubs = subsAtMonthStart[monthIdx] || 0;
-                          const churnRate = monthStartSubs > 0 && weekChurn > 0 
-                            ? (weekChurn / monthStartSubs) * 100 
+                          const churnRate = monthStartSubs > 0 && weekChurn > 0
+                            ? (weekChurn / monthStartSubs) * 100
                             : null;
                           return (
                             <td className={cn('text-right p-1 text-xs font-medium', churnRate !== null && churnRate > 0 ? 'text-red-500' : 'text-muted-foreground')}>
@@ -2444,7 +2444,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                       </tr>
                     );
                     }); // end platforms.map
-                    
+
                     // Total row
                     const totalRow = (
                       <tr key={`${week.week}_total`} className={cn('border-b bg-muted/30 font-medium', week.week === weeklyProjections.length ? 'bg-primary/10' : '')}>
@@ -2513,7 +2513,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                         <td className="p-1"></td>
                       </tr>
                     );
-                    
+
                     return [...platformRows, totalRow];
                   })}
                 </tbody>

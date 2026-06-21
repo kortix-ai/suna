@@ -23,6 +23,7 @@ import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 import { Check, Minus } from 'lucide-react';
 import type { Metadata } from 'next';
+import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fragment } from 'react';
@@ -83,6 +84,7 @@ function LeanMark({ side, lean }: { side: 'them' | 'kortix'; lean: RowLean }) {
 }
 
 export default async function ComparePage(props: PageProps) {
+  const tI18nHardcoded = await getTranslations('hardcodedUi');
   const { slug } = await props.params;
   const c = COMPETITORS.find((x) => x.slug === slug);
   if (!c) notFound();
@@ -107,7 +109,9 @@ export default async function ComparePage(props: PageProps) {
       <section className="mx-auto max-w-6xl px-6 lg:px-0">
         <Reveal>
           <h1 className="text-foreground mt-5 flex max-w-4xl flex-wrap items-center gap-x-3 gap-y-2 text-4xl leading-tight font-medium tracking-tight text-balance md:text-5xl lg:text-6xl">
-            <span>Kortix vs</span>
+            <span>
+              {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextKortixVs7d03d509')}
+            </span>
             <CompareSwitcher
               current={{ slug: c.slug, name: c.name }}
               options={COMPETITORS.map((x) => ({ slug: x.slug, name: x.name }))}
@@ -119,7 +123,10 @@ export default async function ComparePage(props: PageProps) {
           <div className="mt-8 flex flex-wrap gap-3">
             <Button size="xl" asChild>
               <Link href="/auth">
-                Start free <HiArrowRight className="size-4" />
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingCompareSlugPageJsxTextStartFree05549e67',
+                )}
+                <HiArrowRight className="size-4" />
               </Link>
             </Button>
             <Button size="xl" variant="secondary" asChild>
@@ -128,7 +135,7 @@ export default async function ComparePage(props: PageProps) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Run it yourself
+                {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextRunIt7c6d52d5')}
               </Link>
             </Button>
           </div>
@@ -138,23 +145,29 @@ export default async function ComparePage(props: PageProps) {
       <section className="mx-auto mt-24 max-w-6xl px-6 lg:px-0">
         <Reveal>
           <h2 className="text-foreground text-2xl font-medium tracking-tight sm:text-3xl">
-            The short version
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextTheShorta0fe796a')}
           </h2>
           <p className="text-muted-foreground mt-3 max-w-2xl text-base leading-relaxed">
-            No fence-sitting — here&apos;s exactly when each one is the right call.
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextNoFence7e04b210')}
           </p>
         </Reveal>
         <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Reveal>
             <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6">
-              <span className="text-muted-foreground text-sm font-medium">Choose {c.name} if…</span>
+              <span className="text-muted-foreground text-sm font-medium">
+                Choose {c.name}{' '}
+                {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextIf9b282c07')}
+              </span>
               <p className="text-foreground mt-4 text-base leading-relaxed">{c.verdictThem}</p>
             </div>
           </Reveal>
           <Reveal delay={0.08}>
             <div className="border-kortix-green/30 bg-kortix-green/[0.06] flex h-full flex-col rounded-sm border p-6">
               <span className="text-foreground flex items-center gap-2 text-sm font-semibold">
-                <span className="bg-kortix-green size-2 rounded-full" /> Choose Kortix if…
+                <span className="bg-kortix-green size-2 rounded-full" />{' '}
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingCompareSlugPageJsxTextChooseKortix0f7f6aec',
+                )}
               </span>
               <p className="text-foreground mt-4 text-base leading-relaxed">{c.verdictKortix}</p>
             </div>
@@ -165,11 +178,11 @@ export default async function ComparePage(props: PageProps) {
       <section className="mx-auto mt-24 max-w-6xl px-6 lg:px-0">
         <Reveal>
           <h2 className="text-foreground text-2xl font-medium tracking-tight sm:text-3xl">
-            Side by side
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextSideByffb7ae99')}
           </h2>
           <p className="text-muted-foreground mt-3 mb-8 max-w-2xl text-base leading-relaxed">
-            An honest, like-for-like look. A green check marks the better fit for each row — even
-            when that&apos;s {c.name}.
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextAnHonest49ef79d5')}
+            {c.name}.
           </p>
           <div className="grid grid-cols-[1.3fr_1fr_1fr] sm:grid-cols-[1.2fr_1fr_1fr]">
             <div className="px-2.5 pb-4 sm:px-5" />
@@ -224,7 +237,7 @@ export default async function ComparePage(props: PageProps) {
       <section className="mx-auto mt-24 max-w-6xl px-6 lg:px-0">
         <Reveal>
           <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight sm:text-3xl">
-            What each is built for
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextWhatEachaf7a1d83')}
           </h2>
         </Reveal>
         <div className="md:divide-border grid grid-cols-1 gap-x-12 gap-y-8 md:grid-cols-2 md:divide-x">
@@ -252,7 +265,7 @@ export default async function ComparePage(props: PageProps) {
       <section className="mx-auto mt-24 w-full max-w-6xl px-6 lg:px-0">
         <Reveal>
           <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight sm:text-3xl">
-            Where Kortix is different
+            {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextWhereKortixa82be965')}
           </h2>
         </Reveal>
         <div className="w-full overflow-hidden">
@@ -291,7 +304,7 @@ export default async function ComparePage(props: PageProps) {
         <Reveal className="grid w-full grid-cols-12">
           <div className="lg:col-span-4">
             <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight sm:text-3xl">
-              When to choose which
+              {tI18nHardcoded.raw('autoAppPublicMarketingCompareSlugPageJsxTextWhenTo67e7041d')}
             </h2>
           </div>
           <div className="border-border bg-card overflow-hidden rounded-2xl border lg:col-span-8">
@@ -325,7 +338,9 @@ export default async function ComparePage(props: PageProps) {
         <Reveal className="grid w-full grid-cols-12">
           <div className="lg:col-span-4">
             <h2 className="text-foreground mb-8 text-2xl font-medium tracking-tight sm:text-3xl">
-              Frequently asked
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingCompareSlugPageJsxTextFrequentlyAsked2adb2de4',
+              )}
             </h2>
           </div>
           <div className="border-border bg-card overflow-hidden rounded-2xl border lg:col-span-8">
@@ -362,7 +377,10 @@ export default async function ComparePage(props: PageProps) {
                 <div className="mt-auto grid w-full grid-cols-1 gap-2">
                   <Button size="lg" className="w-full" asChild>
                     <Link href="/auth">
-                      Start free <HiArrowRight className="size-4" />
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingCompareSlugPageJsxTextStartFree05549e67',
+                      )}
+                      <HiArrowRight className="size-4" />
                     </Link>
                   </Button>
                   <Button asChild size="lg" className="w-full" variant="accent">
@@ -371,7 +389,9 @@ export default async function ComparePage(props: PageProps) {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Run it yourself
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingCompareSlugPageJsxTextRunIt7c6d52d5',
+                      )}
                     </Link>
                   </Button>
                 </div>

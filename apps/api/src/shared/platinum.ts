@@ -18,7 +18,7 @@ function platinumBase(): string {
   return url.replace(/\/+$/, '');
 }
 
-export async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
   return fetch(`${platinumBase()}${path}`, {
     ...init,
@@ -39,4 +39,3 @@ export async function platinumJson<T>(path: string, init: RequestInit = {}): Pro
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
-

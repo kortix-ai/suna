@@ -14,7 +14,6 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import {
-  getActiveYoloTokenRow,
   revokeYoloToken,
 } from '../repositories/yolo-tokens';
 
@@ -86,45 +85,6 @@ export async function revokeYoloTokenForMember(
 ): Promise<void> {
   await revokeYoloToken(userId, accountId);
   plaintextCache.delete(cacheKey(userId, accountId));
-}
-
-/**
- * Fetch the plaintext for sandbox bootstrap. If no active row exists OR the
- * cached plaintext is gone (e.g. server restart), mints a fresh token and
- * returns the new plaintext.
- *
- * Returns null only if the underlying DB operations fail — callers should
- * fall back to the existing account-wide token so the sandbox boot doesn't
- * break on a transient DB error.
- */
-export async function resolveYoloTokenForMember(
-  userId: string,
-  accountId: string,
-): Promise<string | null> {
-  try {
-    const key = cacheKey(userId, accountId);
-    const cached = plaintextCache.get(key);
-    if (cached) {
-      const existing = await getActiveYoloTokenRow(userId, accountId);
-      if (existing && existing.tokenHash === hashToken(cached)) {
-        return cached;
-      }
-      // Cache and DB diverged (token was revoked elsewhere). Re-mint.
-      plaintextCache.delete(key);
-    }
-
-    // No cache hit: we can't recover the plaintext (we only stored a hash).
-    // Mint a fresh token. Any sandbox still holding the old plaintext will
-    // fail its next YOLO call — same UX as a token rotation, and the
-    // bootstrap will refresh on the next sandbox start.
-    return await mintYoloTokenForMember(userId, accountId);
-  } catch (err) {
-    console.warn(
-      `[yolo-tokens] failed to resolve token for ${userId}@${accountId}:`,
-      err instanceof Error ? err.message : String(err),
-    );
-    return null;
-  }
 }
 
 /**

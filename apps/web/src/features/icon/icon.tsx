@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import { CgClose } from 'react-icons/cg';
 import { PiSmileyMeltingFill } from 'react-icons/pi';
 
@@ -22,6 +23,7 @@ export const Icon = {
   },
 
   NewGoogle: ({ className }: { className?: string }) => {
+    const tI18nHardcoded = useTranslations('hardcodedUi');
     return (
       <svg
         version="1.1"
@@ -112,7 +114,9 @@ export const Icon = {
             xlinkHref="#b"
             id="m"
             gradientUnits="userSpaceOnUse"
-            gradientTransform="matrix(-1.936885,1.043001,1.455731,2.555422,290.5254,-400.6338)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix193688518debb5b5',
+            )}
             cx="109.6267"
             cy="135.8619"
             fx="109.6267"
@@ -123,7 +127,9 @@ export const Icon = {
             xlinkHref="#c"
             id="n"
             gradientUnits="userSpaceOnUse"
-            gradientTransform="matrix(-3.512595,-4.45809,-1.692547,1.260616,870.8006,191.554)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix35125954e5619e4d',
+            )}
             cx="45.25866"
             cy="279.2738"
             fx="45.25866"
@@ -138,14 +144,18 @@ export const Icon = {
             fx="304.0166"
             fy="118.0089"
             r="47.85445"
-            gradientTransform="matrix(2.064353,-4.926832e-6,-2.901531e-6,2.592041,-297.6788,-151.7469)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix20643534620b14ef',
+            )}
             gradientUnits="userSpaceOnUse"
           />
           <radialGradient
             xlinkHref="#e"
             id="o"
             gradientUnits="userSpaceOnUse"
-            gradientTransform="matrix(-0.2485783,2.083138,2.962486,0.3341668,-255.1463,-331.1636)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix024857832979fd706',
+            )}
             cx="181.001"
             cy="177.2013"
             fx="181.001"
@@ -160,14 +170,18 @@ export const Icon = {
             fx="207.6733"
             fy="108.0972"
             r="41.1025"
-            gradientTransform="matrix(-1.249206,1.343263,-3.896837,-3.425693,880.5011,194.9051)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix1249206127d8954d',
+            )}
             gradientUnits="userSpaceOnUse"
           />
           <radialGradient
             xlinkHref="#g"
             id="r"
             gradientUnits="userSpaceOnUse"
-            gradientTransform="matrix(-1.936885,-1.043001,1.455731,-2.555422,290.5254,838.6834)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix19368851b3aa9e38',
+            )}
             cx="109.6267"
             cy="135.8619"
             fx="109.6267"
@@ -178,7 +192,9 @@ export const Icon = {
             xlinkHref="#h"
             id="j"
             gradientUnits="userSpaceOnUse"
-            gradientTransform="matrix(-0.081402,-1.93722,2.926737,-0.1162508,-215.1345,632.8606)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix008140216c322569',
+            )}
             cx="154.8697"
             cy="145.9691"
             fx="154.8697"
@@ -212,7 +228,11 @@ export const Icon = {
             />
           </clipPath>
         </defs>
-        <g transform="matrix(0.957922,0,0,0.985255,-90.17436,-78.85577)">
+        <g
+          transform={tI18nHardcoded.raw(
+            'autoFeaturesIconIconJsxAttrTransformMatrix09579220ee393908',
+          )}
+        >
           <g clipPath="url(#i)">
             <path
               d="M92.07563 219.9585c.14844 22.14 6.5014 44.983 16.11767 63.4234v.1269c6.9482 13.3919 16.4444 23.9704 27.2604 34.4518l65.326-23.67c-12.3593-6.2344-14.2452-10.0546-23.1048-17.0253-9.0537-9.0658-15.8015-19.4735-20.0038-31.677h-.1693l.1693-.1269c-2.7646-8.0587-3.0373-16.6129-3.1393-25.5029Z"
@@ -1007,6 +1027,7 @@ export const Icon = {
   },
 
   MicrosoftTeams: ({ className }: { className?: string }) => {
+    const tI18nHardcoded = useTranslations('hardcodedUi');
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -1072,7 +1093,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="matrix(13.4784 0 0 33.2694 39.7967 22.1739)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix134784080dcd1a2',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop stop-color="#a98aff" />
@@ -1085,7 +1108,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(68.1539 -7.71566095 14.71355834)scale(32.752 33.1231)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate681539705bbe58f',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop stop-color="#85c2ff" />
@@ -1097,7 +1122,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(113.326 8.09285255 17.64474501)scale(19.2186 15.4273)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate11332682d9828e3',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop stop-color="#bd96ff" />
@@ -1108,7 +1135,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="matrix(0 -10 12.6216 0 32.9999 11.5714)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix01012f866ac38',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".268201" stop-color="#6868f7" />
@@ -1119,7 +1148,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(40.0516 -.03068196 44.8729095)scale(7.14629 10.3363)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate40051603068196b1fe2992',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".270711" stop-color="#a1d3ff" />
@@ -1130,7 +1161,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(-41.6581 32.11799918 -43.41948423)scale(8.51275 20.8824)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate416581323f58d687',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop stop-color="#e3acfd" />
@@ -1141,7 +1174,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="matrix(0 -12 15.146 0 17.9999 8.28571)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix01215c59ab36f',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".268201" stop-color="#8282ff" />
@@ -1152,7 +1187,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(40.0516 -3.15465147 21.41641466)scale(8.57554 12.4035)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate4005163c117110d',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".270711" stop-color="#a1d3ff" />
@@ -1163,7 +1200,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(-41.6581 20.38180375 -26.51566158)scale(10.2153 25.0589)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate4165812089e5adbd',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop stop-color="#e3acfd" />
@@ -1174,7 +1213,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="rotate(45 -25.76345597 16.32842712)scale(22.6274)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformRotate452576345597a649bf7b',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".046875" stop-color="#688eff" />
@@ -1185,7 +1226,9 @@ export const Icon = {
             cx="0"
             cy="0"
             r="1"
-            gradientTransform="matrix(0 11.2 -13.0702 0 12 32.6)"
+            gradientTransform={tI18nHardcoded.raw(
+              'autoFeaturesIconIconJsxAttrGradientTransformMatrix01122d674bc1',
+            )}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset=".570647" stop-color="#6965f6" stop-opacity="0" />
@@ -1498,6 +1541,7 @@ export const Icon = {
   },
 
   AppleCursor: ({ className }: { className?: string }) => {
+    const tI18nHardcoded = useTranslations('hardcodedUi');
     return (
       <svg
         version="1.1"
@@ -1507,7 +1551,9 @@ export const Icon = {
         x="0px"
         y="0px"
         viewBox="0 0 32 32"
-        enableBackground="new 0 0 32 32"
+        enableBackground={tI18nHardcoded.raw(
+          'autoFeaturesIconIconJsxAttrEnableBackgroundNew00322530287f',
+        )}
         xmlSpace="preserve"
         className={cn('size-10', className)}
       >
@@ -1613,6 +1659,7 @@ export const Icon = {
   },
 
   Facebook: ({ className }: { className?: string }) => {
+    const tI18nHardcoded = useTranslations('hardcodedUi');
     return (
       <svg
         version="1.1"
@@ -1628,17 +1675,32 @@ export const Icon = {
             <path d="M 0,700 H 700 V 0 H 0 Z" id="path23" />
           </clipPath>
         </defs>
-        <g id="g17" transform="matrix(1.3333333,0,0,-1.3333333,-133.33333,799.99999)">
+        <g
+          id="g17"
+          transform={tI18nHardcoded.raw(
+            'autoFeaturesIconIconJsxAttrTransformMatrix133333330f9d3080d',
+          )}
+        >
           <g id="g19">
             <g id="g21" clipPath="url(#clipPath25)">
-              <g id="g27" transform="translate(600,350)">
+              <g
+                id="g27"
+                transform={tI18nHardcoded.raw(
+                  'autoFeaturesIconIconJsxAttrTransformTranslate600350958bc249',
+                )}
+              >
                 <path
                   d="m 0,0 c 0,138.071 -111.929,250 -250,250 -138.071,0 -250,-111.929 -250,-250 0,-117.245 80.715,-215.622 189.606,-242.638 v 166.242 h -51.552 V 0 h 51.552 v 32.919 c 0,85.092 38.508,124.532 122.048,124.532 15.838,0 43.167,-3.105 54.347,-6.211 V 81.986 c -5.901,0.621 -16.149,0.932 -28.882,0.932 -40.993,0 -56.832,-15.528 -56.832,-55.9 V 0 h 81.659 l -14.028,-76.396 h -67.631 V -248.169 C -95.927,-233.218 0,-127.818 0,0"
                   style={{ fill: '#0866ff', fillOpacity: 1, fillRule: 'nonzero', stroke: 'none' }}
                   id="path29"
                 />
               </g>
-              <g id="g31" transform="translate(447.9175,273.6036)">
+              <g
+                id="g31"
+                transform={tI18nHardcoded.raw(
+                  'autoFeaturesIconIconJsxAttrTransformTranslate447917527396b8cb72',
+                )}
+              >
                 <path
                   d="M 0,0 14.029,76.396 H -67.63 v 27.019 c 0,40.372 15.838,55.899 56.831,55.899 12.733,0 22.981,-0.31 28.882,-0.931 v 69.253 c -11.18,3.106 -38.509,6.212 -54.347,6.212 -83.539,0 -122.048,-39.441 -122.048,-124.533 V 76.396 h -51.552 V 0 h 51.552 v -166.242 c 19.343,-4.798 39.568,-7.362 60.394,-7.362 10.254,0 20.358,0.632 30.288,1.831 L -67.63,0 Z"
                   style={{ fill: '#ffffff', fillOpacity: 1, fillRule: 'nonzero', stroke: 'none' }}
@@ -1849,6 +1911,7 @@ export const Icon = {
   },
 
   Outlook: ({ className }: { className?: string }) => {
+    const tI18nHardcoded = useTranslations('hardcodedUi');
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -1876,7 +1939,9 @@ export const Icon = {
           x2="1128.458"
           y1="811.083"
           y2="1.998"
-          gradientTransform="matrix(1 0 0 -1 0 1705.333)"
+          gradientTransform={tI18nHardcoded.raw(
+            'autoFeaturesIconIconJsxAttrGradientTransformMatrix100276a42f8',
+          )}
           gradientUnits="userSpaceOnUse"
         >
           <stop offset="0" stopColor="#35b8f1" />
@@ -1929,7 +1994,9 @@ export const Icon = {
           x2="774.086"
           y1="1383.074"
           y2="324.259"
-          gradientTransform="matrix(1 0 0 -1 0 1705.333)"
+          gradientTransform={tI18nHardcoded.raw(
+            'autoFeaturesIconIconJsxAttrGradientTransformMatrix100276a42f8',
+          )}
           gradientUnits="userSpaceOnUse"
         >
           <stop offset="0" stopColor="#1784d9" />

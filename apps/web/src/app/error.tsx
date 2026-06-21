@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import * as Sentry from '@sentry/nextjs';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useEffect } from 'react';
 
@@ -11,6 +12,7 @@ export default function Error({
 }: {
   error: Error & { digest?: string; statusCode?: number };
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const handleReset = () => {
     try {
       window.location.reload();
@@ -30,7 +32,9 @@ export default function Error({
         <KortixHyperLogo size={50} />
 
         <div className="space-y-4">
-          <h1 className="text-base-900 text-base sm:text-lg md:text-xl">Something went wrong</h1>
+          <h1 className="text-base-900 text-base sm:text-lg md:text-xl">
+            {tI18nHardcoded.raw('autoAppErrorJsxTextSomethingWentWrong493afd7e')}
+          </h1>
 
           {error.message && <p className="text-base-500 text-base text-balance">{error.message}</p>}
         </div>
@@ -40,7 +44,7 @@ export default function Error({
             <Link href="/">Home</Link>
           </Button>
           <Button onClick={handleReset} size="sm" variant="secondary">
-            Try again
+            {tI18nHardcoded.raw('autoAppErrorJsxTextTryAgain3351b1d3')}
           </Button>
         </div>
       </div>

@@ -26,7 +26,7 @@ async function probe(): Promise<MembersTable> {
   }
 }
 
-export async function resolveMembersTable(): Promise<MembersTable> {
+async function resolveMembersTable(): Promise<MembersTable> {
   if (cached) return cached;
   if (!probing) {
     probing = probe().then((t) => {

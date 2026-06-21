@@ -235,7 +235,7 @@ export function PhoneVerificationPage({
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-accent/10 pointer-events-none" />
-      
+
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <Suspense fallback={null}>
           <AnimatedBg

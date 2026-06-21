@@ -56,7 +56,7 @@ export function extractSpreadsheetData(
   }
 
   const args = toolCall.arguments || {};
-  
+
   let headers = args.headers || [];
   let rows = args.rows || [];
   let sheetIndex = args.sheet_index || 0;
@@ -138,4 +138,3 @@ export function buildSheetsFromData(data: ExtractedSpreadsheetData): any[] {
     frozenRows: data.headers.length > 0 ? 1 : 0,
   }];
 }
-

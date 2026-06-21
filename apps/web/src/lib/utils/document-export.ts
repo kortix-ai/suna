@@ -16,7 +16,7 @@ export interface DocumentExportOptions {
 /**
  * Professional document styles for PDF and HTML export
  * Designed to match UnifiedMarkdown rendering and sync with Word export styles
- * 
+ *
  * Typography: System fonts for web, proper heading hierarchy
  * Colors: Dark gray text (#1a1a1a), subtle borders (#e0e0e0)
  * Spacing: Consistent margins matching app rendering
@@ -25,13 +25,13 @@ const DOCUMENT_STYLES = `
   /* ═══════════════════════════════════════════════════════════════
      BASE RESET & DOCUMENT STYLES
      ═══════════════════════════════════════════════════════════════ */
-  * { 
-    margin: 0; 
-    padding: 0; 
-    box-sizing: border-box; 
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
-  
-  body { 
+
+  body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     font-size: 16px;
     line-height: 1.65;
@@ -53,41 +53,41 @@ const DOCUMENT_STYLES = `
     color: #111;
     letter-spacing: -0.02em;
   }
-  
-  h1 { 
-    font-size: 2em; 
+
+  h1 {
+    font-size: 2em;
     margin: 1.5em 0 0.75em 0;
     padding-bottom: 0.4em;
     border-bottom: 1px solid #e0e0e0;
   }
   h1:first-child { margin-top: 0; }
-  
-  h2 { 
-    font-size: 1.5em; 
+
+  h2 {
+    font-size: 1.5em;
     margin: 1.5em 0 0.6em 0;
   }
   h2:first-child { margin-top: 0; }
-  
-  h3 { 
-    font-size: 1.25em; 
+
+  h3 {
+    font-size: 1.25em;
     margin: 1.25em 0 0.5em 0;
   }
   h3:first-child { margin-top: 0; }
-  
-  h4 { 
-    font-size: 1.1em; 
+
+  h4 {
+    font-size: 1.1em;
     margin: 1.1em 0 0.4em 0;
   }
   h4:first-child { margin-top: 0; }
-  
-  h5 { 
-    font-size: 1em; 
+
+  h5 {
+    font-size: 1em;
     margin: 1em 0 0.3em 0;
   }
   h5:first-child { margin-top: 0; }
-  
-  h6 { 
-    font-size: 0.9em; 
+
+  h6 {
+    font-size: 0.9em;
     margin: 1em 0 0.3em 0;
     color: #555;
     text-transform: uppercase;
@@ -98,18 +98,18 @@ const DOCUMENT_STYLES = `
   /* ═══════════════════════════════════════════════════════════════
      PARAGRAPHS & TEXT
      ═══════════════════════════════════════════════════════════════ */
-  p { 
-    margin: 1em 0; 
+  p {
+    margin: 1em 0;
     line-height: 1.7;
   }
   p:first-child { margin-top: 0; }
   p:last-child { margin-bottom: 0; }
-  
+
   /* Text formatting */
   strong, b { font-weight: 600; }
   em, i { font-style: italic; }
   u { text-decoration: underline; }
-  s, strike, del { 
+  s, strike, del {
     text-decoration: line-through;
     color: #666;
   }
@@ -117,40 +117,40 @@ const DOCUMENT_STYLES = `
   /* ═══════════════════════════════════════════════════════════════
      LINKS - Professional blue styling
      ═══════════════════════════════════════════════════════════════ */
-  a { 
-    color: #0066cc; 
+  a {
+    color: #0066cc;
     text-decoration: underline;
     text-decoration-color: rgba(0, 102, 204, 0.4);
     text-underline-offset: 2px;
   }
-  a:hover { 
+  a:hover {
     text-decoration-color: rgba(0, 102, 204, 0.8);
   }
 
   /* ═══════════════════════════════════════════════════════════════
      LISTS - Proper indentation and spacing
      ═══════════════════════════════════════════════════════════════ */
-  ul, ol { 
-    margin: 1em 0; 
-    padding-left: 2em; 
+  ul, ol {
+    margin: 1em 0;
+    padding-left: 2em;
   }
   ul:first-child, ol:first-child { margin-top: 0; }
   ul:last-child, ol:last-child { margin-bottom: 0; }
-  
-  li { 
-    margin: 0.4em 0; 
+
+  li {
+    margin: 0.4em 0;
     line-height: 1.6;
   }
-  
+
   /* Nested lists */
-  li > ul, li > ol { 
-    margin: 0.4em 0; 
+  li > ul, li > ol {
+    margin: 0.4em 0;
   }
 
   /* ═══════════════════════════════════════════════════════════════
      BLOCKQUOTES - Left border with muted styling
      ═══════════════════════════════════════════════════════════════ */
-  blockquote { 
+  blockquote {
     margin: 1.5em 0;
     padding: 0.75em 1em;
     border-left: 4px solid #e0e0e0;
@@ -159,8 +159,8 @@ const DOCUMENT_STYLES = `
     font-style: italic;
     border-radius: 0 4px 4px 0;
   }
-  blockquote p { 
-    margin: 0.5em 0; 
+  blockquote p {
+    margin: 0.5em 0;
   }
   blockquote p:first-child { margin-top: 0; }
   blockquote p:last-child { margin-bottom: 0; }
@@ -178,7 +178,7 @@ const DOCUMENT_STYLES = `
     border-radius: 4px;
     color: #1a1a1a;
   }
-  
+
   /* Code blocks */
   pre {
     margin: 1.5em 0;
@@ -191,7 +191,7 @@ const DOCUMENT_STYLES = `
     line-height: 1.5;
   }
   pre:first-child { margin-top: 0; }
-  
+
   pre code {
     background: none;
     padding: 0;
@@ -203,19 +203,19 @@ const DOCUMENT_STYLES = `
   /* ═══════════════════════════════════════════════════════════════
      TABLES - Clean borders with header styling
      ═══════════════════════════════════════════════════════════════ */
-  table { 
+  table {
     width: 100%;
     margin: 1.5em 0;
-    border-collapse: collapse; 
+    border-collapse: collapse;
     font-size: 0.95em;
   }
   table:first-child { margin-top: 0; }
-  
+
   thead {
     background: #f8f9fa;
   }
-  
-  th { 
+
+  th {
     padding: 0.75em 1em;
     border: 1px solid #e0e0e0;
     text-align: left;
@@ -226,16 +226,16 @@ const DOCUMENT_STYLES = `
     color: #333;
     background: #f8f9fa;
   }
-  
-  td { 
+
+  td {
     padding: 0.75em 1em;
     border: 1px solid #e0e0e0;
     text-align: left;
     vertical-align: top;
   }
-  
-  tr:nth-child(even) td { 
-    background: #fafafa; 
+
+  tr:nth-child(even) td {
+    background: #fafafa;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -262,20 +262,20 @@ const DOCUMENT_STYLES = `
      TASK LISTS (checkboxes)
      ═══════════════════════════════════════════════════════════════ */
   ul.task-list,
-  ul.contains-task-list { 
-    list-style: none; 
-    padding-left: 0; 
+  ul.contains-task-list {
+    list-style: none;
+    padding-left: 0;
   }
-  
-  li.task-list-item { 
-    display: flex; 
-    align-items: flex-start; 
+
+  li.task-list-item {
+    display: flex;
+    align-items: flex-start;
     gap: 0.5em;
     padding-left: 0;
   }
-  
-  li.task-list-item input { 
-    margin-top: 0.35em; 
+
+  li.task-list-item input {
+    margin-top: 0.35em;
   }
 
   /* ═══════════════════════════════════════════════════════════════
@@ -284,13 +284,13 @@ const DOCUMENT_STYLES = `
   dl {
     margin: 1em 0;
   }
-  
+
   dt {
     font-weight: 600;
     margin-top: 1em;
   }
   dt:first-child { margin-top: 0; }
-  
+
   dd {
     margin-left: 1.5em;
     margin-bottom: 0.5em;
@@ -324,7 +324,7 @@ const DOCUMENT_STYLES = `
   figure {
     margin: 1.5em 0;
   }
-  
+
   figcaption {
     font-size: 0.9em;
     color: #666;
@@ -337,13 +337,13 @@ const DOCUMENT_STYLES = `
      PRINT STYLES - Optimize for PDF export
      ═══════════════════════════════════════════════════════════════ */
   @media print {
-    body { 
-      max-width: none; 
+    body {
+      max-width: none;
       padding: 0;
       font-size: 11pt;
     }
-    pre { 
-      white-space: pre-wrap; 
+    pre {
+      white-space: pre-wrap;
       word-wrap: break-word;
       page-break-inside: avoid;
     }
@@ -364,10 +364,10 @@ const DOCUMENT_STYLES = `
  */
 function normalizeHtmlContent(content: string): string {
   if (typeof content !== 'string' || !content.trim()) return '<p></p>';
-  
+
   // If it looks like HTML, return as-is
   if (content.includes('<')) return content;
-  
+
   // Otherwise wrap plain text in paragraphs
   return content
     .split('\n')
@@ -418,9 +418,9 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
     switch (format) {
       case 'pdf': {
         console.log('[Document Export] Sending to backend PDF API...');
-        
+
         const toastId = toast.loading('Exporting to PDF...');
-        
+
         try {
           const backendUrl = getEnv().BACKEND_URL;
           if (!backendUrl) {
@@ -462,7 +462,7 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
 
           const blob = await response.blob();
           console.log('[Document Export] PDF blob size:', blob.size, 'bytes');
-          
+
           saveAs(blob, `${safeFileName}.pdf`);
           toast.success('PDF exported', { id: toastId });
         } catch (error) {
@@ -474,9 +474,9 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
 
       case 'docx': {
         console.log('[Document Export] Sending to backend DOCX API...');
-        
+
         const toastId = toast.loading('Exporting to Word...');
-        
+
         try {
           const backendUrl = getEnv().BACKEND_URL;
           if (!backendUrl) {
@@ -518,7 +518,7 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
 
           const blob = await response.blob();
           console.log('[Document Export] DOCX blob size:', blob.size, 'bytes');
-          
+
           saveAs(blob, `${safeFileName}.docx`);
           toast.success('Word document exported', { id: toastId });
         } catch (error) {
@@ -530,12 +530,12 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
 
       case 'html': {
         console.log('[Document Export] Creating HTML file...');
-        
+
         const fullHtml = createHtmlDocument(htmlContent, safeFileName);
         const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-        
+
         console.log('[Document Export] HTML blob size:', blob.size, 'bytes');
-        
+
         saveAs(blob, `${safeFileName}.html`);
         toast.success('HTML exported');
         break;
@@ -543,7 +543,7 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
 
       case 'markdown': {
         console.log('[Document Export] Converting to Markdown...');
-        
+
         const turndown = new TurndownService({
           headingStyle: 'atx',
           hr: '---',
@@ -554,13 +554,13 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
           strongDelimiter: '**',
           linkStyle: 'inlined',
         });
-        
+
         turndown.use(gfm);
-        
+
         // Preserve code block languages
         turndown.addRule('fencedCodeBlock', {
-          filter: (node) => 
-            node.nodeName === 'PRE' && 
+          filter: (node) =>
+            node.nodeName === 'PRE' &&
             node.firstChild?.nodeName === 'CODE',
           replacement: (_content, node) => {
             const codeEl = node.firstChild as HTMLElement;
@@ -570,12 +570,12 @@ export async function exportDocument({ content, fileName, format }: DocumentExpo
             return `\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
           },
         });
-        
+
         let md = turndown.turndown(htmlContent);
         md = md.replace(/\n{3,}/g, '\n\n').trim();
-        
+
         console.log('[Document Export] Markdown length:', md.length);
-        
+
         const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
         saveAs(blob, `${safeFileName}.md`);
         toast.success('Markdown exported');

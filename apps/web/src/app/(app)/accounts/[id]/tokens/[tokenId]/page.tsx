@@ -25,6 +25,7 @@ function formatDate(iso: string | null | undefined) {
 }
 
 export default function TokenDetailPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; tokenId: string }>();
@@ -141,9 +142,11 @@ export default function TokenDetailPage() {
         )}
 
         {token && accountId && (
-          <InfoBanner tone="info" title="Token permissions">
-            Tokens inherit their creator&apos;s account-role and group memberships at request time.
-            To narrow what a token can reach, scope it to a single project when minting.
+          <InfoBanner
+            tone="info"
+            title={tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxAttrTitle403e73a7')}
+          >
+            {tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc')}
           </InfoBanner>
         )}
       </div>

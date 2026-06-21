@@ -53,6 +53,11 @@ mock.module('../channels/slack/selection', () => ({
   // module shape stays complete for any other importer in the graph.
   setChannelAgent: async () => true,
   setChannelModel: async () => true,
+  listProjectAgents: async () => [],
+  RECOMMENDED_MODELS: [
+    { id: 'anthropic/claude-opus-4-8', label: 'Claude Opus 4.8', hint: 'Most capable' },
+  ],
+  isValidModelId: (id: string) => id.includes('/'),
   modelLabel: (id: string) => id,
 }));
 

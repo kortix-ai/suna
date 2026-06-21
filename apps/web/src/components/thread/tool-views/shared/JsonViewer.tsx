@@ -12,11 +12,11 @@ interface JsonViewerProps {
   className?: string;
 }
 
-export const JsonViewer: React.FC<JsonViewerProps> = ({ 
-  data, 
-  title, 
-  defaultExpanded = false, 
-  className = "" 
+export const JsonViewer: React.FC<JsonViewerProps> = ({
+  data,
+  title,
+  defaultExpanded = false,
+  className = ""
 }) => {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -35,22 +35,22 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   const formatJson = (obj: any, indent = 0): React.ReactNode => {
     if (obj === null) return <span className="text-gray-500">null</span>;
     if (obj === undefined) return <span className="text-gray-500">undefined</span>;
-    
+
     if (typeof obj === 'string') {
       return <span className="text-muted-foreground">"{obj}"</span>;
     }
-    
+
     if (typeof obj === 'number') {
       return <span className="text-muted-foreground">{obj}</span>;
     }
-    
+
     if (typeof obj === 'boolean') {
       return <span className="text-muted-foreground">{obj.toString()}</span>;
     }
-    
+
     if (Array.isArray(obj)) {
       if (obj.length === 0) return <span>[]</span>;
-      
+
       return (
         <div>
           <span>[</span>
@@ -66,11 +66,11 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
         </div>
       );
     }
-    
+
     if (typeof obj === 'object') {
       const keys = Object.keys(obj);
       if (keys.length === 0) return <span>{'{}'}</span>;
-      
+
       return (
         <div>
           <span>{'{'}</span>
@@ -89,7 +89,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
         </div>
       );
     }
-    
+
     return <span>{String(obj)}</span>;
   };
 
@@ -127,7 +127,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
           )}
         </Button>
       </div>
-      
+
       {isExpanded && (
         <div className="p-3">
           <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-background/50 p-3 rounded-2xl border max-h-24 md:max-h-48">

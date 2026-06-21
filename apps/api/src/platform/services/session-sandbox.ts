@@ -120,6 +120,8 @@ async function mintExecutorToken(opts: {
       accountId: opts.accountId,
       userId: opts.userId,
       projectId: opts.projectId,
+      // session_id == sandbox_id by construction — lets the LLM gateway attribute
+      // usage_events to this session (the reaper's reliable activity signal).
       sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
@@ -359,15 +361,27 @@ export async function provisionSessionSandbox(opts: {
     location,
     envVars: {
       ...(opts.extraEnvVars ?? {}),
+      // ── Sandbox token model — TWO credentials, two principals ──────────────
+      // 1) The SANDBOX credential (`kortix_sb_…`): the daemon's identity. It is
+      //    the HMAC key the API signs `X-Kortix-User-Context` with (the daemon
+      //    verifies it) AND the bearer for the 3 sandbox-identity routes
+      //    (/git/clone-credential, /turn-stream, /turn-question). It carries NO
+      //    user identity, so project-scoped routes reject it. Injected under the
+      //    self-documenting `KORTIX_SANDBOX_TOKEN`; `KORTIX_TOKEN` is kept as a
+      //    back-compat alias for daemons baked before the rename.
+      // 2) The SESSION credential (`kortix_pat_…`, `executorToken`): acts AS the
+      //    launching user, scoped by the agent grant. It backs the Executor
+      //    gateway AND the in-sandbox `kortix` CLI. Injected under
+      //    `KORTIX_CLI_TOKEN` (+ `KORTIX_EXECUTOR_TOKEN` alias for the executor).
+      // The agent never needs the sandbox credential — see apps/cli config.ts
+      // (activeHost() resolves only the session token).
+      // Phase 2 (after baked images cycle): drop the `KORTIX_TOKEN` /
+      // `KORTIX_EXECUTOR_TOKEN` aliases and let `KORTIX_TOKEN` MEAN the session
+      // token, so the agent world has exactly one obvious var.
+      KORTIX_SANDBOX_TOKEN: sandboxKey.secretKey,
       KORTIX_TOKEN: sandboxKey.secretKey,
-      // The project-scoped PAT does double duty: it backs the executor MCP
-      // gateway AND the in-sandbox `kortix` CLI. KORTIX_TOKEN (the sandbox
-      // service key) is rejected by the project-scoped routes the CLI hits
-      // (change-requests, secrets, …) — only this account token authenticates
-      // there. Inject it under KORTIX_CLI_TOKEN so `kortix …` is pre-authed
-      // with zero setup; see apps/cli/src/api/config.ts (activeHost()).
       ...(executorToken
-        ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken }
+        ? { KORTIX_CLI_TOKEN: executorToken, KORTIX_EXECUTOR_TOKEN: executorToken }
         : {}),
       ...(gatewayLlmKey
         ? {
@@ -378,15 +392,17 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Session sandboxes auto-stop on idle at the PROVIDER level (Platinum
-    // enforces auto_stop_minutes; the in-repo hibernate sweep is never
-    // scheduled, which left session VMs running for days — caught live
-    // 2026-06-10). Stopped sandboxes keep their disk and wake automatically
-    // on inbound preview traffic, so the UX cost is one ~2s resume after an
-    // idle gap. Warm-pool boxes (legacy; pool is disabled) opt out.
-    ...(opts.poolState
-      ? { autoStopInterval: 0 }
-      : { autoStopInterval: Math.max(0, Number(process.env.KORTIX_SANDBOX_AUTO_STOP_MIN ?? 30) || 0) }),
+    // Idle lifecycle is owned by the provider-agnostic reaper (projects/
+    // sandbox-reaper.ts), keyed off MEANINGFUL activity (real turns), with each
+    // provider's native auto-stop as a secondary backstop. We pass NO explicit
+    // autoStopInterval for a normal session so each provider applies its own
+    // policy via daytonaLifecycle(): Daytona → KORTIX_SANDBOX_AUTOSTOP_MINUTES
+    // (default 15); Platinum → persistent (autoStop=0) because its stop→resume
+    // is broken (CH resume-freeze) — the reaper stops idle Platinum boxes and
+    // flags reprovision-on-open instead. (The old divergent KORTIX_SANDBOX_AUTO_
+    // STOP_MIN env, default 30, also wrongly made Platinum ephemeral — removed.)
+    // Warm-pool spares (legacy; pool disabled) stay persistent until claimed.
+    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately

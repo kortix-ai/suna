@@ -1,0 +1,57 @@
+# OpenCost — cost allocation/visibility, queries the kube-prometheus-stack
+# Prometheus. On-cluster allocation needs no cloud billing keys; AWS billing
+# integration (real $ rates) is an optional follow-up via a cloud-cost secret.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-cost
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://opencost.github.io/opencost-helm-chart
+    chart: opencost
+    targetRevision: 2.5.23
+    helm:
+      releaseName: opencost
+      values: |
+        opencost:
+          prometheus:
+            internal:
+              enabled: true
+              serviceName: kps-prometheus
+              namespaceName: monitoring
+              port: 9090
+          exporter:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 256Mi
+          ui:
+            enabled: true
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencost
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

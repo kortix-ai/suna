@@ -707,23 +707,6 @@ async function handleExistingSchedule(
   }
 }
 
-export async function releaseSubscriptionSchedule(subscriptionId: string): Promise<void> {
-  const stripe = getStripe();
-  try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const scheduleId = typeof subscription.schedule === 'string'
-      ? subscription.schedule
-      : (subscription.schedule as any)?.id;
-
-    if (scheduleId) {
-      await stripe.subscriptionSchedules.release(scheduleId);
-      console.log(`[Billing] Released schedule ${scheduleId} before subscription update`);
-    }
-  } catch (err) {
-    console.warn(`[Billing] Could not release schedule for ${subscriptionId}:`, err);
-  }
-}
-
 export async function syncSubscription(accountId: string) {
   let account = await getCreditAccount(accountId);
   if (!account?.stripeSubscriptionId) {

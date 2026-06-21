@@ -75,13 +75,13 @@ export function buildOpencodeApp(
     const path = new URL(c.req.url).pathname
     if (path.startsWith('/kortix/')) return next()
 
-    if (!cfg.kortixToken) {
+    if (!cfg.sandboxToken) {
       logger.warn('[proxy] rejecting request: KORTIX_TOKEN not configured')
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
 
     const header = c.req.header(KORTIX_USER_CONTEXT_HEADER)
-    const result = verifyKortixUserContext(header, cfg.kortixToken)
+    const result = verifyKortixUserContext(header, cfg.sandboxToken)
     if (!result.ok) {
       logger.warn('[proxy] reject', { reason: result.reason, path })
       return c.json({ error: 'unauthorized', reason: result.reason }, 401)

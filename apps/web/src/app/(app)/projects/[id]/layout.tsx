@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
+import { ProjectAccessBoundary } from '@/components/projects/project-access-boundary';
 import { createClient } from '@/lib/supabase/server';
 
 interface ProjectLayoutProps {
@@ -21,9 +22,9 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
   const { id: projectId } = await params;
 
   return (
-    <>
+    <ProjectAccessBoundary projectId={projectId}>
       <SessionStreamKeeper projectId={projectId} />
       {children}
-    </>
+    </ProjectAccessBoundary>
   );
 }

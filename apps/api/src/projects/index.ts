@@ -64,6 +64,7 @@ export {
   resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
   loadManifestForEdit,
   commitManifest,
 } from './lib/triggers';

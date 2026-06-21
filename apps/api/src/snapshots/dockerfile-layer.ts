@@ -87,8 +87,9 @@ export interface BuildLayeredDockerfileOpts {
    * (apps/sandbox/agent-cli). The layer COPYs it into
    * /opt/kortix/apps/sandbox/agent-cli
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
-   * /usr/local/bin/<name> shim — that's how `slack`, `kchannel`, … land on
-   * PATH for the agent to invoke from inside the sandbox.
+   * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
+   * agent to invoke from inside the sandbox. (The Executor moved into the
+   * `kortix` CLI as `kortix executor` / `kortix executor mcp`.)
    */
   agentCliPath: string;
   /**
@@ -177,7 +178,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\',
     '    rm -f /tmp/oc-bake.log; true',
     '',
-    // bun runtime for the agent CLIs (slack, kchannel, …).
+    // bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
     'RUN curl -fsSL https://bun.com/install | bash \\',
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
@@ -395,11 +396,6 @@ export const SANDBOX_SPEC_LIMITS = {
   memory: { min: 1, max: 128 }, // GiB
   disk: { min: 1, max: 500 }, // GiB
 } as const;
-
-/** True when no spec field is set — i.e. boot at the platform default size. */
-export function sandboxSpecIsEmpty(spec: SandboxSpec): boolean {
-  return spec.cpu === undefined && spec.memory === undefined && spec.disk === undefined;
-}
 
 function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
   let n: number | undefined;

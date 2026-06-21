@@ -45,7 +45,7 @@ export function pipedreamConfigured(): boolean {
  * user so each member's connection is isolated; for shared it's connector-wide.
  * The webhook parses this back as `projectId:slug[:userId]`.
  */
-export function externalUserId(projectId: string, slug: string, userId?: string | null): string {
+function externalUserId(projectId: string, slug: string, userId?: string | null): string {
   return userId ? `${projectId}:${slug}:${userId}` : `${projectId}:${slug}`;
 }
 

@@ -17,8 +17,8 @@ export function TechnicalIssueBanner({
   updatedAt,
 }: TechnicalIssueBannerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const dismissKey = updatedAt 
-    ? `technical-issue-${updatedAt}` 
+  const dismissKey = updatedAt
+    ? `technical-issue-${updatedAt}`
     : `technical-issue-${message.slice(0, 20)}`;
 
   return (

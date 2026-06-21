@@ -279,10 +279,11 @@ locals {
       } : {}
     )
     configs = {
-      # server.insecure: HTTP behind the TLS-terminating ALB (UI mode).
-      params = var.argocd_ui_enabled ? { "server.insecure" = true } : {}
+      # server.insecure: HTTP behind the TLS-terminating ALB — needed whether Argo
+      # is exposed via its own ALB (ui_enabled) or the shared DevOps gateway (SSO).
+      params = (var.argocd_ui_enabled || var.argocd_github_sso_enabled) ? { "server.insecure" = true } : {}
       cm = merge(
-        var.argocd_ui_enabled ? { url = "https://${var.argocd_domain}" } : {},
+        (var.argocd_ui_enabled || var.argocd_github_sso_enabled) ? { url = "https://${var.argocd_domain}" } : {},
         var.argocd_github_sso_enabled ? {
           "dex.config"    = local.argocd_dex_config
           "admin.enabled" = tostring(!var.argocd_disable_admin)
@@ -293,7 +294,11 @@ locals {
       # so the admin team maps via "org:team". Tighten/expand later.
       rbac = var.argocd_github_sso_enabled ? {
         "policy.default" = "role:readonly"
-        "policy.csv"     = "g, ${var.argocd_github_org}:${var.argocd_admin_team}, role:admin\n"
+        "policy.csv" = var.argocd_admin_team != "" ? (
+          "g, ${var.argocd_github_org}:${var.argocd_admin_team}, role:admin\n"
+          ) : (
+          "g, ${var.argocd_github_org}, role:admin\n"
+        )
       } : {}
       secret = var.argocd_github_sso_enabled ? {
         extra = { "dex.github.clientSecret" = var.argocd_github_client_secret }

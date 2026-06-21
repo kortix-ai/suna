@@ -1,18 +1,15 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
+import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
-import {
-  useOpenCodePtyList,
-  useCreatePty,
-  type Pty,
-} from '@/hooks/opencode/use-opencode-pty';
-import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
+import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import dynamic from 'next/dynamic';
+import React, { useCallback, useEffect, useRef } from 'react';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
@@ -46,6 +43,7 @@ export function SessionTerminalPanel({
   sessionId: string;
   hidden?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
   const serverUrl = useServerStore((s) => {
     const server = s.servers.find((srv) => srv.id === s.activeServerId);
@@ -66,7 +64,8 @@ export function SessionTerminalPanel({
   const setTerminalPty = useSessionBrowserStore((s) => s.setTerminalPty);
   const [optimisticPty, setOptimisticPty] = React.useState<Pty | null>(null);
 
-  const listedPty = terminalPtyId && ptys ? ptys.find((item) => item.id === terminalPtyId) ?? null : null;
+  const listedPty =
+    terminalPtyId && ptys ? (ptys.find((item) => item.id === terminalPtyId) ?? null) : null;
   const pty = listedPty ?? (optimisticPty?.id === terminalPtyId ? optimisticPty : null);
 
   // Lazily spawn a shell the first time the panel has no PTY to show.
@@ -76,15 +75,18 @@ export function SessionTerminalPanel({
   const ensurePty = useCallback(() => {
     if (ensuringRef.current) return;
     ensuringRef.current = true;
-    createPty.mutateAsync({
-      title: 'Session terminal',
-      env: { ...PTY_ENV },
-    }).then((created) => {
-      setOptimisticPty(created);
-      setTerminalPty(sessionId, created.id);
-    }).catch(() => {
-      ensuringRef.current = false;
-    });
+    createPty
+      .mutateAsync({
+        title: 'Session terminal',
+        env: { ...PTY_ENV },
+      })
+      .then((created) => {
+        setOptimisticPty(created);
+        setTerminalPty(sessionId, created.id);
+      })
+      .catch(() => {
+        ensuringRef.current = false;
+      });
   }, [createPty, sessionId, setTerminalPty]);
 
   useEffect(() => {
@@ -122,9 +124,11 @@ export function SessionTerminalPanel({
   // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
   if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center bg-[#0f0f14]">
-        <CircleDashed className="h-4 w-4 text-muted-foreground animate-spin" />
-        <span className="text-xs text-muted-foreground mt-2">Connecting…</span>
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[#0f0f14]">
+        <CircleDashed className="text-muted-foreground h-4 w-4 animate-spin" />
+        <span className="text-muted-foreground mt-2 text-xs">
+          {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70')}
+        </span>
       </div>
     );
   }
@@ -132,23 +136,18 @@ export function SessionTerminalPanel({
   // No PTY and not (re)spawning — offer to start one.
   if (!pty) {
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center bg-[#0f0f14] gap-3">
-        <Terminal className="h-8 w-8 text-muted-foreground/30" />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={ensurePty}
-          className="gap-1.5"
-        >
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0f0f14]">
+        <Terminal className="text-muted-foreground/30 h-8 w-8" />
+        <Button variant="outline" size="sm" onClick={ensurePty} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
-          New terminal
+          {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextNewTerminaleeb6bbb9')}
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full relative bg-[#0f0f14]">
+    <div className="relative h-full w-full bg-[#0f0f14]">
       <PtyTerminal
         pty={pty}
         serverUrl={serverUrl}

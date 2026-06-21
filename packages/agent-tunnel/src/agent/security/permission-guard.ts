@@ -18,7 +18,6 @@ export interface LocalPermission {
 
 export class PermissionGuard {
   private permissions = new Map<string, LocalPermission>();
-  private hasSynced = false;
 
   /** Bulk-load permissions from server sync notification. */
   syncPermissions(permissions: LocalPermission[]): void {
@@ -26,7 +25,6 @@ export class PermissionGuard {
     for (const perm of permissions) {
       this.permissions.set(perm.permissionId, perm);
     }
-    this.hasSynced = true;
   }
 
   addPermission(permission: LocalPermission): void {
@@ -62,6 +60,5 @@ export class PermissionGuard {
 
   clear(): void {
     this.permissions.clear();
-    this.hasSynced = false;
   }
 }

@@ -3,6 +3,7 @@ import {
   extractTriggers,
   parseManifestString,
   serializeManifest,
+  triggerSpecToTomlEntry,
   KNOWN_SCHEMA_VERSION,
 } from '../projects/triggers';
 
@@ -126,6 +127,34 @@ prompt = "x"
     const { errors } = extractTriggers(parsed);
     expect(errors).toHaveLength(1);
     expect(errors[0]!.error).toMatch(/expression or a one-off/);
+  });
+
+  test('a bad IANA timezone is rejected at parse time', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "bad-tz"
+type = "cron"
+cron = "0 0 9 * * 1"
+timezone = "Not/AZone"
+prompt = "x"
+`));
+    const { errors } = extractTriggers(parsed);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error).toMatch(/timezone must be a valid IANA name/);
+  });
+
+  test('a valid named timezone is accepted', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "good-tz"
+type = "cron"
+cron = "0 0 9 * * 1"
+timezone = "America/New_York"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.timezone).toBe('America/New_York');
   });
 
   test('parses a webhook trigger with secret_env reference', () => {
@@ -318,6 +347,84 @@ prompt = "x"
 `));
     const { errors } = extractTriggers(parsed);
     expect(errors[0]!.error).toMatch(/missing a slug/);
+  });
+});
+
+describe('[[triggers]] — session_mode (session reuse)', () => {
+  test('defaults to "fresh" when session_mode is absent', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "no-mode"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+`));
+    const { specs } = extractTriggers(parsed);
+    expect(specs[0]!.sessionMode).toBe('fresh');
+  });
+
+  test('parses session_mode = "reuse" on a cron trigger', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "error-sweep"
+type = "cron"
+cron = "0 0 */6 * * *"
+session_mode = "reuse"
+prompt = "sweep"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.sessionMode).toBe('reuse');
+  });
+
+  test('rejects an invalid session_mode', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "bad-mode"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "persistent"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/session_mode must be "fresh" or "reuse"/);
+  });
+
+  test('session_mode = "reuse" round-trips through serialize', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "rt-reuse"
+type = "cron"
+cron = "0 0 */6 * * *"
+session_mode = "reuse"
+prompt = "x"
+`));
+    const out = serializeManifest(parsed);
+    expect(out).toContain('session_mode');
+    const reparsed = extractTriggers(parseManifestString(out)).specs;
+    expect(reparsed[0]!.sessionMode).toBe('reuse');
+  });
+
+  test('triggerSpecToTomlEntry omits the default "fresh" but writes "reuse"', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "fresh-one"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+
+[[triggers]]
+slug = "reuse-one"
+type = "cron"
+cron = "* * * * * *"
+session_mode = "reuse"
+prompt = "x"
+`)));
+    const fresh = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'fresh-one')!);
+    const reuse = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'reuse-one')!);
+    expect(fresh.session_mode).toBeUndefined();
+    expect(reuse.session_mode).toBe('reuse');
   });
 });
 

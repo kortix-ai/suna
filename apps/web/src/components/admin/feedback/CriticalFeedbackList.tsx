@@ -20,7 +20,7 @@ export function CriticalFeedbackList() {
   const renderStars = (rating: number) => {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(5)].map((_, i) => {
@@ -62,8 +62,8 @@ export function CriticalFeedbackList() {
           <ScrollArea className="h-[350px]">
             <div className="divide-y">
               {criticalFeedback.map((feedback) => (
-                <div 
-                  key={feedback.feedback_id} 
+                <div
+                  key={feedback.feedback_id}
                   className="p-4 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">

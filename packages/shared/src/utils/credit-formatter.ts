@@ -5,7 +5,7 @@
  * Robust version with null handling from mobile implementation
  */
 
-export const CREDITS_PER_DOLLAR = 100;
+const CREDITS_PER_DOLLAR = 100;
 
 /**
  * Convert dollars to credits
@@ -14,15 +14,6 @@ export const CREDITS_PER_DOLLAR = 100;
  */
 export function dollarsToCredits(dollars: number): number {
   return Math.round(dollars * CREDITS_PER_DOLLAR);
-}
-
-/**
- * Convert credits to dollars
- * @param credits - The credit amount to convert
- * @returns The equivalent dollar amount
- */
-export function creditsToDollars(credits: number): number {
-  return credits / CREDITS_PER_DOLLAR;
 }
 
 /**
@@ -37,7 +28,9 @@ export function formatCredits(credits: number | null | undefined, options?: { sh
     return '0';
   }
   
-  const rounded = Math.round(credits);
+  // `+ 0` normalizes negative zero (e.g. Math.round(-0.4) === -0) so it never
+  // renders as the string "-0".
+  const rounded = Math.round(credits) + 0;
   
   if (options?.showDecimals) {
     // Format with decimals and thousand separators
@@ -64,16 +57,9 @@ export function formatCreditsWithSign(credits: number | null | undefined, option
   }
   
   const formatted = formatCredits(Math.abs(credits), options);
-  return credits >= 0 ? `+${formatted}` : `-${formatted}`;
-}
-
-/**
- * Format dollars as credits
- * @param dollars - The dollar amount to format as credits
- * @returns Formatted credit string
- */
-export function formatDollarsAsCredits(dollars: number): string {
-  const credits = dollarsToCredits(dollars);
-  return formatCredits(credits);
+  // Base the sign on the displayed magnitude: a tiny negative that rounds to 0
+  // (e.g. -0.4) should read "+0", never "-0".
+  const isNegative = credits < 0 && parseFloat(formatted.replace(/,/g, '')) !== 0;
+  return isNegative ? `-${formatted}` : `+${formatted}`;
 }
 

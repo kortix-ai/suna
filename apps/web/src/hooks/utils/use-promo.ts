@@ -126,4 +126,3 @@ export function usePromo(pollInterval = 1000): PromoState | null {
     };
   }, [now]);
 }
-

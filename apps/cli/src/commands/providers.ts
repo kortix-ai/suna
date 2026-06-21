@@ -11,7 +11,6 @@ import {
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 import type {
-  OauthCredentialSummary,
   OauthFlowStartResponse,
   OauthListResponse,
   OauthPollResponse,

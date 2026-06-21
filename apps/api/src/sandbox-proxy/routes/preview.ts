@@ -34,6 +34,22 @@ function jsonProxyError(body: Record<string, unknown>, status: number): Response
   });
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : String(error || fallback);
+}
+
+const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
+  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+
+function isRetryableEnvSyncFailure(message: string): boolean {
+  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
+  // Fetch rejections are bare network errors. HTTP failures include the daemon
+  // response body, so don't classify a non-retryable status as transient just
+  // because its JSON/body happens to mention a connection failure.
+  if (/^env sync failed:/i.test(message)) return false;
+  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
+}
+
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
 function stripFrameAncestors(csp: string): string | null {
@@ -330,7 +346,7 @@ export async function forwardToSandbox(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, port);
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -343,9 +359,17 @@ export async function forwardToSandbox(
             previewToken,
           });
         } catch (err) {
-          throw new HTTPException(502, {
-            message: (err as Error).message || 'project env sync failed',
-          });
+          const message = errorMessage(err, 'project env sync failed');
+          if (isRetryableEnvSyncFailure(message)) {
+            // Treat daemon/preview-transient env-sync failures like any other
+            // sandbox-port reachability miss: retry/wake in the outer loop, then
+            // return the friendly port-unreachable response if the sandbox never
+            // recovers. Throwing HTTPException here bypassed that retry path and
+            // turned expected 502/timeouts from Daytona into Better Stack errors.
+            throw new Error(message);
+          }
+          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
+          return jsonProxyError({ error: message }, 502);
         }
       }
 
@@ -607,7 +631,7 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, upstreamPort);
+  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')

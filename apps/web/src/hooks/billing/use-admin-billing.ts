@@ -45,11 +45,11 @@ export function useAdminUserTransactions(params: TransactionParams) {
     queryKey: ['admin', 'billing', 'transactions', params.userId, params.page, params.page_size, params.type_filter],
     queryFn: async () => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.type_filter) searchParams.append('type_filter', params.type_filter);
-      
+
       const response = await backendApi.get(`/billing/admin/user/${params.userId}/transactions?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);

@@ -100,6 +100,7 @@ function upsertProject(projects: KortixProject[] | undefined, project: KortixPro
 }
 
 export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCreateModalProps) => {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -614,7 +615,9 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                   className="w-full sm:w-auto"
                   onClick={switchToManagedMode}
                 >
-                  Go back
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesProjectsModalProjectCreateModalJsxTextGoBack8b169f5b',
+                  )}
                 </Button>
                 <Button
                   type="submit"

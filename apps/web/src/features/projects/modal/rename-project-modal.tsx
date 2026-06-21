@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +35,7 @@ export const RenameProjectDialog = ({
   onOpenChange,
   onSaved,
 }: RenameProjectDialogProps) => {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [value, setValue] = useState(currentName ?? '');
 
@@ -73,15 +75,25 @@ export const RenameProjectDialog = ({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>Rename project</ModalTitle>
-          <ModalDescription>Give this project a new name.</ModalDescription>
+          <ModalTitle>
+            {tI18nHardcoded.raw(
+              'autoFeaturesProjectsModalRenameProjectModalJsxTextRenameProjectcbab96f4',
+            )}
+          </ModalTitle>
+          <ModalDescription>
+            {tI18nHardcoded.raw(
+              'autoFeaturesProjectsModalRenameProjectModalJsxTextGiveThis9af13124',
+            )}
+          </ModalDescription>
         </ModalHeader>
         <ModalBody>
           <Input
             autoFocus
             value={value}
             maxLength={MAX_NAME_LENGTH}
-            placeholder="Project name"
+            placeholder={tI18nHardcoded.raw(
+              'autoFeaturesProjectsModalRenameProjectModalJsxAttrPlaceholderProjectac0cf289',
+            )}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -91,7 +103,7 @@ export const RenameProjectDialog = ({
             }}
           />
         </ModalBody>
-        <ModalFooter className='sm:justify-between'>
+        <ModalFooter className="sm:justify-between">
           <Button variant="outline-ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

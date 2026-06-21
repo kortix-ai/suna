@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-import { backendApi } from '@/lib/api-client';
+import { backendApi, type ApiClientOptions } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
@@ -131,6 +131,25 @@ export interface ProjectAccessResponse {
   viewer_user_id: string;
   members: ProjectAccessMember[];
 }
+
+export interface ProjectAccessRequest {
+  request_id: string;
+  account_id: string;
+  project_id: string;
+  requester_user_id: string;
+  requester_email: string;
+  message: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RequestProjectAccessResult =
+  | { status: 'created'; request: ProjectAccessRequest }
+  | { status: 'pending'; request: ProjectAccessRequest }
+  | { status: 'already_has_access'; project_id: string };
 
 export type InviteMemberResult =
   | {
@@ -501,8 +520,8 @@ export async function leaveAccount(accountId: string) {
   );
 }
 
-export async function getProject(projectId: string) {
-  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`));
+export async function getProject(projectId: string, options?: ApiClientOptions) {
+  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
 }
 
 export interface RepoCollaboratorInvite {
@@ -536,9 +555,49 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
   return git?.provider === 'github' && git?.managed === true;
 }
 
-export async function getProjectDetail(projectId: string) {
+export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`),
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+  );
+}
+
+export async function requestProjectAccess(projectId: string, message?: string) {
+  return unwrap(
+    await backendApi.post<RequestProjectAccessResult>(
+      `/projects/${projectId}/access-requests`,
+      { message: message?.trim() || undefined },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listProjectAccessRequests(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ requests: ProjectAccessRequest[] }>(
+      `/projects/${projectId}/access-requests`,
+    ),
+  );
+}
+
+export async function approveProjectAccessRequest(
+  projectId: string,
+  requestId: string,
+  role: ProjectRole = 'viewer',
+) {
+  return unwrap(
+    await backendApi.post<{
+      request: ProjectAccessRequest;
+      member: ProjectAccessMember;
+    }>(`/projects/${projectId}/access-requests/${requestId}/approve`, { role }),
+  );
+}
+
+export async function rejectProjectAccessRequest(projectId: string, requestId: string) {
+  return unwrap(
+    await backendApi.post<{ request: ProjectAccessRequest }>(
+      `/projects/${projectId}/access-requests/${requestId}/reject`,
+      {},
+    ),
   );
 }
 
@@ -1810,13 +1869,12 @@ export interface ProjectSession {
   opencode_session_id: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-sessions (metadata.name in the DB).
+   * auto title mirrored from OpenCode server-side during project session reads.
    */
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the live opencode root title. null = no
+   * present it always wins over the server-mirrored OpenCode title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -2038,28 +2096,6 @@ export async function restartProjectSession(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
       {},
-    ),
-  );
-}
-
-export interface SyncOpencodeSessionEntry {
-  opencode_session_id: string;
-  title: string | null;
-  parent_id?: string | null;
-  project_id?: string | null;
-  created_at?: number | null;
-  updated_at?: number | null;
-  archived_at?: number | null;
-}
-
-export async function syncOpencodeSessionData(
-  entries: SyncOpencodeSessionEntry[],
-) {
-  if (entries.length === 0) return { updated: 0 };
-  return unwrap(
-    await backendApi.post<{ updated: number }>(
-      `/projects/sync-opencode-sessions`,
-      { entries },
     ),
   );
 }

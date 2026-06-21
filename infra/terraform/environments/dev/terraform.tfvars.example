@@ -17,7 +17,6 @@ container_port = 8000
 
 # Non-secret config (mirror the env-agnostic + dev-specific keys from .env).
 api_environment = {
-  ENV_MODE                  = "cloud"
   KORTIX_URL                = "https://dev-api.kortix.com"
   ALLOWED_SANDBOX_PROVIDERS = "daytona"
   # DATABASE host, SUPABASE_URL, etc. (non-secret parts) ...

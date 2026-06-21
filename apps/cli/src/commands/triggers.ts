@@ -13,7 +13,6 @@ import {
 } from '../manifest-edit.ts';
 import { C, pad, status } from '../style.ts';
 import type {
-  ProjectTrigger,
   ProjectTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
@@ -23,7 +22,8 @@ const HELP = `Usage: kortix triggers <subcommand> [options]
 Manage the [[triggers]] declared in your project's kortix.toml — cron
 schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.toml
 (the source of truth); \`kortix ship\` applies them. ls/fire/info read live
-state from the cloud.
+state from the cloud. pause/resume are a SERVER-SIDE activation switch
+(cloud state, not the manifest).
 
 Subcommands:
   ls [--json]              List triggers + runtime state.
@@ -32,6 +32,11 @@ Subcommands:
   fire <slug>              Manually fire a trigger now.
   enable <slug>            Set enabled = true on a trigger.
   disable <slug>           Set enabled = false on a trigger.
+  pause                    Deactivate ALL of this project's triggers server-side
+                           (crons + webhooks stop auto-running). Use it on one
+                           of two deployments of the same repo to stop double-
+                           firing. Manual \`fire\` still works.
+  resume                   Re-activate this project's triggers server-side.
   info <slug> [--json]     Show one trigger in full.
 
 Add options:
@@ -101,6 +106,10 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return triggersToggle(rest[0], true);
     case 'disable':
       return triggersToggle(rest[0], false);
+    case 'pause':
+      return triggersActivation(ctxOpts, true);
+    case 'resume':
+      return triggersActivation(ctxOpts, false);
     case 'info':
     case 'show':
       return triggersInfo(rest[0], ctxOpts, json);
@@ -128,6 +137,12 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   if (json) {
     emitJson(resp);
     return 0;
+  }
+
+  if (resp.triggers_paused) {
+    process.stdout.write(
+      `\n  ${status.warn('Triggers are PAUSED server-side for this project')} ${C.dim}— crons + webhooks won't auto-run (manual \`fire\` still works). \`kortix triggers resume\` to re-activate.${C.reset}\n`,
+    );
   }
 
   if (resp.triggers.length === 0) {
@@ -187,6 +202,29 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
   } else {
     process.stdout.write(`${status.ok(`Fired ${C.bold}${slug}${C.reset}`)}\n`);
   }
+  return 0;
+}
+
+// Server-side activation switch (cloud state in projects.metadata, NOT the
+// manifest). Pause = the platform stops auto-running this project's triggers.
+async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<number> {
+  const ctx = resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  try {
+    await ctx.client.patch<ProjectTriggersResponse>(
+      `/projects/${ctx.projectId}/triggers/activation`,
+      { paused },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  process.stdout.write(
+    paused
+      ? `${status.ok('Triggers PAUSED server-side')} ${C.dim}— this project's crons + webhooks won't auto-run. Manual \`fire\` still works.${C.reset}\n`
+      : `${status.ok('Triggers RESUMED server-side')} ${C.dim}— this project's triggers will auto-run again.${C.reset}\n`,
+  );
   return 0;
 }
 

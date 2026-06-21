@@ -4,7 +4,7 @@ export const FETCH_TIMEOUT_MS = 30_000
 export const MAX_RETRIES = 2
 export const RETRY_DELAY_MS = 300
 
-export const TRANSIENT_ERROR_PATTERNS = [
+const TRANSIENT_ERROR_PATTERNS = [
   'ECONNRESET', 'EPIPE', 'ECONNABORTED',
   'ERR_STREAM_DESTROYED', 'socket hang up',
 ]
@@ -21,7 +21,7 @@ export function isConnectionRefused(errMsg: string): boolean {
   )
 }
 
-export const STRIP_REQUEST_HEADERS_BASE = new Set([
+const STRIP_REQUEST_HEADERS_BASE = new Set([
   'host',
   'service-worker',
   'connection',

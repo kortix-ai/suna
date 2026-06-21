@@ -1,12 +1,10 @@
 /**
  * Projects — miscellaneous project-scoped surfaces that don't fit the core CRUD
- * flow: BYO-repo create, manifest validation, the CLI-token (project PAT)
+ * flow: BYO-repo create, the CLI-token (project PAT)
  * lifecycle, onboarding state, version-diff preview, ChatGPT headless provider
- * auth, the lazy legacy-migration pipeline, OpenCode session sync, and the
- * Slack-relay turn endpoints.
+ * auth, the lazy legacy-migration pipeline, and the Slack-relay turn endpoints.
  *
- * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here) and
- * reuses SESS-10 for sync-opencode-sessions.
+ * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from "../core/flow";
 
@@ -38,41 +36,6 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/projects", { name: ctx.fixtures.name("byo"), repo_url: "https://github.com/acme/widget" });
       r.status(401);
-    });
-  },
-);
-
-// PROJ-9 — manifest validation. Body key is `raw` (a TOML string). Valid TOML
-// → 200 with `valid:true`; missing `raw` → 400; garbage TOML → 200 with
-// `valid:false` + issues (the validator reports, it does not 400 on bad TOML).
-flow(
-  "PROJ-9",
-  { domain: "projects", routes: ["POST /v1/projects/:projectId/manifest/validate"] },
-  async (ctx) => {
-    const p = await ctx.fixtures.project();
-    await ctx.step("valid manifest → 200 valid:true", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/manifest/validate", { raw: '[project]\nname = "ok"\n' }, { params: { projectId: p.id } });
-      r.status(200).body().exists("$.valid");
-    });
-    await ctx.step("invalid TOML syntax → 200 valid:false", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/manifest/validate", { raw: "this = = not toml [[" }, { params: { projectId: p.id } });
-      r.status(200).body().has("$.valid", false);
-    });
-    await ctx.step("missing raw → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/manifest/validate", {}, { params: { projectId: p.id } });
-      r.status(400);
-    });
-    await ctx.step("NONMEMBER → 404", async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/manifest/validate", { raw: "[project]" }, { params: { projectId: p.id } });
-      r.status([403, 404]);
     });
   },
 );
@@ -314,29 +277,6 @@ flow(
         .as(ctx.P.OWNER)
         .post("/v1/projects/legacy-migration/start", { sandbox_id: "00000000-0000-4000-a000-000000000000" });
       r.status(404);
-    });
-  },
-);
-
-// SESS-10 — sync-opencode-sessions. Spec lists the path as
-// `sync-opencode-titles`; the implemented route is `sync-opencode-sessions`
-// with the same `{entries[]}` body. Empty array → 200 {updated:0}; a non-array
-// `entries` → 400.
-flow(
-  "SESS-10",
-  { domain: "projects", routes: ["POST /v1/projects/sync-opencode-sessions"] },
-  async (ctx) => {
-    await ctx.step("empty entries → 200 updated:0", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/sync-opencode-sessions", { entries: [] });
-      r.status(200).body().has("$.updated", 0);
-    });
-    await ctx.step("entries not an array → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/sync-opencode-sessions", { entries: "nope" });
-      r.status(400);
-    });
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/projects/sync-opencode-sessions", { entries: [] });
-      r.status(401);
     });
   },
 );

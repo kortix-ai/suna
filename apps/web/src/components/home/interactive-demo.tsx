@@ -42,6 +42,21 @@ type PageIcon = LucideIcon | IconType;
 const RAIL_ICON = 'size-[1.05rem] lg:size-[1.2rem]';
 const TAB_ICON = 'size-4';
 
+function browserSupportsWebGL(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  try {
+    const canvas = document.createElement('canvas');
+    return Boolean(
+      canvas.getContext('webgl2') ??
+      canvas.getContext('webgl') ??
+      canvas.getContext('experimental-webgl'),
+    );
+  } catch {
+    return false;
+  }
+}
+
 type DemoExtras = {
   focusedSkill: string | null;
   onSkillClick: (name: string) => void;
@@ -156,6 +171,7 @@ function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
 }
 
 function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
     ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
     ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
@@ -174,7 +190,9 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
 
           <div>
             <div className="text-muted-foreground/70 mb-2 px-0.5 text-xs font-medium tracking-wider uppercase">
-              Build out your project
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoJsxTextBuildOutYourProject01488f98',
+              )}
             </div>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {cards.map(([title, sub, Icon, count, target]) => (
@@ -251,6 +269,7 @@ export function InteractiveDemo({
     if (isDemoPageEnabled(page)) setActiveRaw(page);
   }, []);
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
+  const [webGLReady, setWebGLReady] = useState(false);
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const rootRef = useRef<HTMLDivElement>(null);
   const autoStarted = useRef(false);
@@ -264,6 +283,11 @@ export function InteractiveDemo({
   useEffect(() => {
     if (active !== 'skills') setFocusedSkill(null);
   }, [active]);
+
+  useEffect(() => {
+    setWebGLReady(browserSupportsWebGL());
+  }, []);
+
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
@@ -341,7 +365,7 @@ export function InteractiveDemo({
           aside && 'rounded sm:rounded-sm',
         )}
       >
-        {gradientbg && (
+        {gradientbg && webGLReady && (
           <div className="absolute inset-0">
             <Warp
               speed={4.3}

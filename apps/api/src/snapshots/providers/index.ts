@@ -13,7 +13,7 @@
 import { daytonaProvider } from './daytona';
 import { platinumProvider } from './platinum';
 
-export interface SandboxResourceSpec {
+interface SandboxResourceSpec {
   cpu?: number;
   memoryGb?: number;
   diskGb?: number;
@@ -92,8 +92,4 @@ export function getSandboxProvider(id: string): SandboxProviderAdapter {
     throw new Error(`Unknown sandbox provider: ${id}`);
   }
   return adapter;
-}
-
-export function listSandboxProviders(): SandboxProviderAdapter[] {
-  return [...ADAPTERS.values()];
 }

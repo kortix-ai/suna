@@ -37,10 +37,12 @@ export const SCENARIOS: DemoScenario[] = [
       {
         id: 'deck-result',
         kind: 'result',
-        render: () => (
+        render: (tHardcodedUi) => (
           <FileResult
             name="Q3-board-deck.pptx"
-            meta="12 slides · ready in 4 min"
+            meta={tHardcodedUi.raw(
+              'autoComponentsHomeInteractiveDemoChatScenariosJsxAttrMeta125fff632b',
+            )}
             icon={FileText}
             action={Download}
           />
@@ -89,9 +91,11 @@ export const SCENARIOS: DemoScenario[] = [
       {
         id: 'repo-result',
         kind: 'result',
-        render: () => (
+        render: (tHardcodedUi) => (
           <ListResult
-            title="34 commits across 5 repos"
+            title={tHardcodedUi.raw(
+              'autoComponentsHomeInteractiveDemoChatScenariosJsxAttrTitle34fb62bedd',
+            )}
             items={[
               'feat(api): streaming tool results',
               'fix(web): hydration noise on demo',
@@ -128,8 +132,15 @@ export const SCENARIOS: DemoScenario[] = [
       {
         id: 'fin-result',
         kind: 'result',
-        render: () => (
-          <SentResult title="Weekly finance report sent" meta="to finance@acme.ai · 6 recipients" />
+        render: (tHardcodedUi) => (
+          <SentResult
+            title={tHardcodedUi.raw(
+              'autoComponentsHomeInteractiveDemoChatScenariosJsxAttrTitleWeeklycf8e6ca6',
+            )}
+            meta={tHardcodedUi.raw(
+              'autoComponentsHomeInteractiveDemoChatScenariosJsxAttrMetaToce363a2c',
+            )}
+          />
         ),
       },
     ],

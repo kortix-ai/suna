@@ -2,13 +2,7 @@
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import {
-  getBrowserLocale,
-  hasExplicitBrowserLocalePreference,
-  LOCALE_CHANGE_EVENT,
-  persistBrowserLocale,
-} from '@/i18n/locale';
-import { detectBestLocale } from '@/lib/utils/geo-detection';
+import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
 import { NextIntlClientProvider } from 'next-intl';
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -35,7 +29,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
   // Initialize with preloaded English translations to prevent blocking FCP
   const [messages, setMessages] = useState<any>(defaultTranslations);
-  const [isLoading, setIsLoading] = useState(false);
   const localeRef = useRef(locale);
 
   // Update ref and <html lang> when locale changes.
@@ -52,7 +45,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // Load translations for a given locale - memoized to avoid stale closures
   const loadTranslations = useCallback(async (targetLocale: Locale) => {
-    setIsLoading(true);
     try {
       const translations = await getTranslations(targetLocale);
       // Verify critical sections exist
@@ -84,27 +76,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocale(defaultLocale);
         localeRef.current = defaultLocale;
       }
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
-  // Initial load - check user metadata, then cookie/localStorage, then geo-detect
+  // Initial load - only user metadata can move the app away from English.
   useEffect(() => {
     let mounted = true;
 
     function initializeLocale() {
-      const currentLocale = getBrowserLocale(user, detectBestLocale);
-
-      if (!mounted) return;
-
-      // Only auto-save geo-detected locale if:
-      // 1. User has NO explicit preference (no metadata, cookie, or localStorage)
-      // 2. Geo-detected locale is different from default
-      // 3. User is NOT authenticated OR authenticated but has no locale in metadata
-      if (!hasExplicitBrowserLocalePreference(user) && currentLocale !== defaultLocale) {
-        persistBrowserLocale(currentLocale);
-      }
+      const currentLocale = getExplicitLocale(user);
 
       if (mounted) {
         setLocale(currentLocale);
@@ -133,21 +113,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
     return () => {
       window.removeEventListener(LOCALE_CHANGE_EVENT as any, handleLocaleChange as EventListener);
-    };
-  }, [loadTranslations]);
-
-  // Listen for storage changes (when language is changed in another tab/window)
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'locale' && e.newValue && locales.includes(e.newValue as Locale)) {
-        loadTranslations(e.newValue as Locale);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, [loadTranslations]);
 

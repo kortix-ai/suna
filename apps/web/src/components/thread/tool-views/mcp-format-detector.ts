@@ -21,7 +21,7 @@ const FORMAT_PATTERNS = {
     /^\s*\{[\s\S]*\}\s*$/,
     /^\s*\[[\s\S]*\]\s*$/
   ],
-  
+
   // Search result patterns
   searchResults: [
     /\d+\.\s+.*\n\s*(URL|url|Url):\s*/,
@@ -30,20 +30,20 @@ const FORMAT_PATTERNS = {
     /"results"\s*:\s*\[/,
     /found \d+ (result|match)/i
   ],
-  
+
   // Table patterns (ASCII tables, markdown tables)
   table: [
     /[|\+\-]{3,}/,
     /\|.*\|.*\|/,
     /^[\s\S]*\|\s*\w+\s*\|[\s\S]*$/m
   ],
-  
+
   // CSV patterns
   csv: [
     /^[^,\n]+,[^,\n]+/m,
     /^"[^"]+","[^"]+"/m
   ],
-  
+
   // Markdown patterns
   markdown: [
     /^#{1,6}\s+/m,
@@ -53,38 +53,38 @@ const FORMAT_PATTERNS = {
     /^>\s+/m,
     /```[\s\S]*```/
   ],
-  
+
   // XML/HTML patterns
   xml: [
     /^<\?xml/,
     /<[^>]+>[\s\S]*<\/[^>]+>/
   ],
-  
+
   html: [
     /<!DOCTYPE html/i,
     /<html[\s>]/i,
     /<(div|span|p|h[1-6]|table|ul|ol)[\s>]/i
   ],
-  
+
   // Code patterns
   code: [
     /^(function|class|const|let|var|def|import|export)\s+/m,
     /^(if|else|for|while|switch)\s*\(/m,
     /[{}();]\s*$/m
   ],
-  
+
   // URL list patterns
   urlList: [
     /^https?:\/\/\S+$/m,
     /(https?:\/\/\S+\s*\n){2,}/
   ],
-  
+
   // Key-value patterns
   keyValue: [
     /^\s*\w+\s*:\s*.+$/m,
     /^\s*"[^"]+"\s*:\s*.+$/m
   ],
-  
+
   // Error patterns
   error: [
     /error|exception|failed|failure/i,
@@ -123,15 +123,15 @@ export class MCPFormatDetector {
         metadata: { lineCount: 0, wordCount: 0 }
       };
     }
-    
+
     // If already an object, check its structure
     if (typeof content === 'object') {
       return this.detectObjectFormat(content);
     }
-    
+
     // Convert to string for analysis
     const text = String(content).trim();
-    
+
     // Try JSON parsing first
     try {
       const parsed = JSON.parse(text);
@@ -139,11 +139,11 @@ export class MCPFormatDetector {
     } catch {
       // Not JSON, continue with text analysis
     }
-    
+
     // Analyze text patterns
     return this.detectTextFormat(text);
   }
-  
+
   /**
    * Detect format of parsed objects
    */
@@ -160,7 +160,7 @@ export class MCPFormatDetector {
         }
       };
     }
-    
+
     // Check for table-like structure (array of similar objects)
     if (Array.isArray(obj) && obj.length > 0 && this.isTableLike(obj)) {
       return {
@@ -173,7 +173,7 @@ export class MCPFormatDetector {
         }
       };
     }
-    
+
     // Generic JSON object
     return {
       format: ContentFormat.JSON,
@@ -184,7 +184,7 @@ export class MCPFormatDetector {
       }
     };
   }
-  
+
   /**
    * Detect format of text content
    */
@@ -203,7 +203,7 @@ export class MCPFormatDetector {
       [ContentFormat.ERROR]: 0,
       [ContentFormat.PLAIN_TEXT]: 0.1 // Base score
     };
-    
+
     // Calculate pattern matches
     for (const [format, patterns] of Object.entries(FORMAT_PATTERNS)) {
       for (const pattern of patterns) {
@@ -213,7 +213,7 @@ export class MCPFormatDetector {
         }
       }
     }
-    
+
     // Additional heuristics
     const lines = text.split('\n');
     const metadata: any = {
@@ -222,72 +222,72 @@ export class MCPFormatDetector {
       hasUrls: /https?:\/\/\S+/.test(text),
       hasCode: /[{}();]/.test(text)
     };
-    
+
     // Boost scores based on content characteristics
     if (metadata.hasUrls && scores[ContentFormat.SEARCH_RESULTS] > 0) {
       scores[ContentFormat.SEARCH_RESULTS] += 0.2;
     }
-    
+
     if (lines.length > 5 && this.hasConsistentStructure(lines)) {
       scores[ContentFormat.TABLE] += 0.2;
       scores[ContentFormat.CSV] += 0.1;
     }
-    
+
     // Find highest scoring format
     let bestFormat = ContentFormat.PLAIN_TEXT;
     let highestScore = scores[ContentFormat.PLAIN_TEXT];
-    
+
     for (const [format, score] of Object.entries(scores)) {
       if (score > highestScore) {
         highestScore = score;
         bestFormat = format as ContentFormat;
       }
     }
-    
+
     return {
       format: bestFormat,
       confidence: Math.min(highestScore, 1),
       metadata
     };
   }
-  
+
   /**
    * Check if object looks like search results
    */
   private static isSearchResultStructure(obj: any): boolean {
     // Direct results array
     if (obj.results && Array.isArray(obj.results)) {
-      return obj.results.some((item: any) => 
+      return obj.results.some((item: any) =>
         item.title && (item.url || item.link)
       );
     }
-    
+
     // Data array
     if (obj.data && Array.isArray(obj.data)) {
-      return obj.data.some((item: any) => 
+      return obj.data.some((item: any) =>
         item.title && (item.url || item.link)
       );
     }
-    
+
     // Direct array
     if (Array.isArray(obj)) {
-      return obj.some((item: any) => 
+      return obj.some((item: any) =>
         item.title && (item.url || item.link)
       );
     }
-    
+
     return false;
   }
-  
+
   /**
    * Check if array of objects has table-like structure
    */
   private static isTableLike(arr: any[]): boolean {
     if (arr.length < 2) return false;
-    
+
     // Get keys from first object
     const firstKeys = Object.keys(arr[0]).sort();
-    
+
     // Check if all objects have similar structure
     return arr.every(item => {
       const keys = Object.keys(item).sort();
@@ -295,14 +295,14 @@ export class MCPFormatDetector {
              keys.every((key, i) => key === firstKeys[i]);
     });
   }
-  
+
   /**
    * Check if lines have consistent structure (for tables)
    */
   private static hasConsistentStructure(lines: string[]): boolean {
     const nonEmptyLines = lines.filter(l => l.trim());
     if (nonEmptyLines.length < 3) return false;
-    
+
     // Check for consistent delimiters
     const delimiterCounts = nonEmptyLines.map(line => {
       const pipes = (line.match(/\|/g) || []).length;
@@ -310,7 +310,7 @@ export class MCPFormatDetector {
       const tabs = (line.match(/\t/g) || []).length;
       return { pipes, commas, tabs };
     });
-    
+
     // Check if any delimiter is consistent
     return ['pipes', 'commas', 'tabs'].some(delim => {
       const counts = delimiterCounts.map(c => c[delim as keyof typeof c]);
@@ -318,7 +318,7 @@ export class MCPFormatDetector {
       return first > 0 && counts.every(c => Math.abs(c - first) <= 1);
     });
   }
-  
+
   /**
    * Convert pattern key to ContentFormat enum
    */
@@ -336,7 +336,7 @@ export class MCPFormatDetector {
       keyValue: ContentFormat.KEY_VALUE,
       error: ContentFormat.ERROR
     };
-    
+
     return mapping[key] || ContentFormat.PLAIN_TEXT;
   }
 }
@@ -344,4 +344,4 @@ export class MCPFormatDetector {
 // Export utility function for easy use
 export function detectMCPFormat(content: any): FormatDetectionResult {
   return MCPFormatDetector.detect(content);
-} 
+}

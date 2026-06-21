@@ -10,7 +10,6 @@ import { useTranslations } from 'next-intl';
  * the agent runs when the user invokes `/<slug>`.
  */
 
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Copy,
@@ -22,35 +21,31 @@ import {
   ShieldAlert,
   TerminalSquare,
 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
+import {
+  editConfigPrompt,
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/components/projects/customize/use-configure-thread';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   getProjectDetail,
   readProjectFile,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
-import {
-  useConfigureThread,
-  newConfigPrompt,
-  editConfigPrompt,
-} from '@/components/projects/customize/use-configure-thread';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 type Command = ProjectConfigSummary['commands'][number];
-
 
 export function CommandsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -62,8 +57,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
 
   const commands = detailQuery.data?.config?.commands ?? [];
   const isForbidden =
-    detailQuery.isError &&
-    /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
+    detailQuery.isError && /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -79,8 +73,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
     if (!q) return commands;
     return commands.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description?.toLowerCase().includes(q) ?? false),
+        c.name.toLowerCase().includes(q) || (c.description?.toLowerCase().includes(q) ?? false),
     );
   }, [commands, query]);
 
@@ -89,7 +82,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[240px] md:border-b-0 md:border-r">
+      <aside className="border-border/60 bg-background flex max-h-[42vh] w-full shrink-0 flex-col border-b md:max-h-none md:w-[240px] md:border-r md:border-b-0">
         <CustomizeSectionHeader
           icon={TerminalSquare}
           title="Commands"
@@ -115,14 +108,16 @@ export function CommandsView({ projectId }: { projectId: string }) {
           }
         />
 
-        <div className="border-b border-border/40 px-3 py-2.5">
+        <div className="border-border/40 border-b px-3 py-2.5">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
             <Input
-              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line107JsxAttrPlaceholderSearchCommands')}
+              placeholder={tHardcodedUi.raw(
+                'appProjectsIdCustomizeCommandsPage.line107JsxAttrPlaceholderSearchCommands',
+              )}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
+              className="placeholder:text-muted-foreground/60 h-8 pl-8 text-sm"
             />
           </div>
         </div>
@@ -160,7 +155,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-background">
+      <section className="bg-background flex min-w-0 flex-1 flex-col">
         {selected ? (
           <CommandDetail projectId={projectId} command={selected} />
         ) : detailQuery.isLoading ? (
@@ -197,7 +192,7 @@ function CommandRow({
     >
       <span
         className={cn(
-          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded text-xs font-mono font-medium',
+          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded font-mono text-xs font-medium',
           active ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground/80',
         )}
         aria-hidden
@@ -211,13 +206,7 @@ function CommandRow({
 
 /* ─── Detail ────────────────────────────────────────────────────────────── */
 
-function CommandDetail({
-  projectId,
-  command,
-}: {
-  projectId: string;
-  command: Command;
-}) {
+function CommandDetail({ projectId, command }: { projectId: string; command: Command }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const configure = useConfigureThread(projectId);
   const fileQuery = useQuery({
@@ -245,10 +234,10 @@ function CommandDetail({
 
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <span className="truncate text-sm font-mono text-foreground">{fileName}</span>
+      <header className="border-border/60 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <span className="text-foreground truncate font-mono text-sm">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
+        <span className="text-muted-foreground/70 min-w-0 flex-1 truncate font-mono text-xs">
           {command.path}
         </span>
         <DetailToolbarActions
@@ -262,15 +251,15 @@ function CommandDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-6 py-8">
           <div className="space-y-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
               Command
             </div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
+            <h1 className="text-foreground flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <span className="text-muted-foreground/40">/</span>
               <span>{command.name}</span>
             </h1>
             {command.description && (
-              <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
                 {command.description}
               </p>
             )}
@@ -281,16 +270,17 @@ function CommandDetail({
               <DetailBodySkeleton />
             ) : fileQuery.isError ? (
               <DetailError
-                message={
-                  (fileQuery.error as Error)?.message ??
-                  'Failed to read command source'
-                }
+                message={(fileQuery.error as Error)?.message ?? 'Failed to read command source'}
                 onRetry={() => fileQuery.refetch()}
               />
             ) : body.trim() ? (
               <UnifiedMarkdown content={body} />
             ) : (
-              <p className="text-sm italic text-muted-foreground/60">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line276JsxTextCommandBodyIsEmptyAddThePromptContent')}</p>
+              <p className="text-muted-foreground/60 text-sm italic">
+                {tHardcodedUi.raw(
+                  'appProjectsIdCustomizeCommandsPage.line276JsxTextCommandBodyIsEmptyAddThePromptContent',
+                )}
+              </p>
             )}
           </div>
         </div>
@@ -310,6 +300,7 @@ function DetailToolbarActions({
   editing: boolean;
   copyDisabled: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-1">
@@ -318,14 +309,16 @@ function DetailToolbarActions({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground h-7 w-7"
             onClick={onCopy}
             disabled={copyDisabled}
           >
             <Copy className="h-3.5 w-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}</TooltipContent>
+        <TooltipContent side="bottom" className="text-xs">
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}
+        </TooltipContent>
       </Tooltip>
       <Button
         variant="outline"
@@ -339,7 +332,9 @@ function DetailToolbarActions({
         ) : (
           <Pencil className="h-3.5 w-3.5" />
         )}
-        Edit with agent
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextEditWithec0f2ca8',
+        )}
       </Button>
     </div>
   );
@@ -360,7 +355,7 @@ function ListSkeleton() {
 function DetailSkeleton() {
   return (
     <>
-      <div className="h-12 border-b border-border/60" />
+      <div className="border-border/60 h-12 border-b" />
       <div className="mx-auto w-full max-w-3xl space-y-3 px-6 py-8">
         <Skeleton className="h-3 w-16" />
         <Skeleton className="h-7 w-48" />
@@ -389,8 +384,12 @@ function DetailEmpty() {
   return (
     <EmptyState
       icon={TerminalSquare}
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line393JsxAttrTitleSelectACommand')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line394JsxAttrDescriptionPickACommandFromTheListToPreview')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line393JsxAttrTitleSelectACommand',
+      )}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line394JsxAttrDescriptionPickACommandFromTheListToPreview',
+      )}
     />
   );
 }
@@ -399,23 +398,34 @@ function NoMatches({ query }: { query: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line403JsxTextNoMatchesFor')}{' '}
-        <span className="font-mono text-foreground">{query}</span>.
+      <p className="text-muted-foreground text-xs">
+        {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line403JsxTextNoMatchesFor')}{' '}
+        <span className="text-foreground font-mono">{query}</span>.
       </p>
     </div>
   );
 }
 
 function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boolean }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
       icon={TerminalSquare}
       size="sm"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet',
+      )}
       description={
-        <>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line418JsxTextCommitA')}{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}</>
+        <>
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line418JsxTextCommitA')}{' '}
+          <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
+            {tHardcodedUi.raw(
+              'appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd',
+            )}
+          </code>{' '}
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}
+        </>
       }
       action={
         <div className="flex flex-col items-center gap-2">
@@ -431,14 +441,12 @@ function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boo
             ) : (
               <Plus className="h-3.5 w-3.5" />
             )}
-            Create a command
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f',
+            )}
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <a
-              href="https://opencode.ai/docs/commands/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a href="https://opencode.ai/docs/commands/" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-3 w-3" />
               Docs
             </a>
@@ -449,18 +457,14 @@ function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boo
   );
 }
 
-function DetailError({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
+function DetailError({ message, onRetry }: { message: string; onRetry: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <InfoBanner
       tone="destructive"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line451JsxAttrTitleCouldnTLoadSource')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line451JsxAttrTitleCouldnTLoadSource',
+      )}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry
@@ -475,22 +479,27 @@ function DetailError({
 function ForbiddenNotice() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line465JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line466JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
+    <InfoBanner
+      icon={ShieldAlert}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line465JsxAttrTitleAccessRequired',
+      )}
+    >
+      {tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line466JsxTextNoPermissionToReadThisRepo',
+      )}
+    </InfoBanner>
   );
 }
 
-function ErrorNotice({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
+function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line480JsxTextFailedToLoad')}</p>
-      <p className="mt-1 text-xs text-destructive/80">{message}</p>
+      <p className="text-destructive text-sm font-medium">
+        {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line480JsxTextFailedToLoad')}
+      </p>
+      <p className="text-destructive/80 mt-1 text-xs">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

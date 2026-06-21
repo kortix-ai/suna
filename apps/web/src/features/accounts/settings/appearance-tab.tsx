@@ -68,6 +68,7 @@ function WallpaperCard({
 const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
 
 export function AppearanceTab() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
   const wallpaperId = useUserPreferencesStore(
@@ -106,7 +107,9 @@ export function AppearanceTab() {
         </label>
         <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
           <button
-            aria-label="Light theme"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707',
+            )}
             className="[&amp;&gt;svg]:size-4 text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
             style={{ backgroundColor: theme === 'light' ? 'var(--background)' : 'transparent' }}
             type="button"
@@ -116,7 +119,9 @@ export function AppearanceTab() {
             <span className="text-sm font-medium">Light</span>
           </button>
           <button
-            aria-label="Dark theme"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelDark294ccd51',
+            )}
             className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
             type="button"
             style={{ backgroundColor: theme === 'dark' ? 'var(--background)' : 'transparent' }}
@@ -126,7 +131,9 @@ export function AppearanceTab() {
             <span className="text-sm font-medium">Dark</span>
           </button>
           <button
-            aria-label="System theme"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelSystem89196afd',
+            )}
             className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
             type="button"
             style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}

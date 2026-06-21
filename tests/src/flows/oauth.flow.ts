@@ -1,7 +1,7 @@
 /**
  * OAuth2 provider surface (apps/api/src/oauth/index.ts, mounted at /v1/oauth).
  * Public endpoints: /authorize, /token. Auth (supabase JWT): consent.
- * Auth (oauthTokenAuth bearer access-token): /userinfo, /claimable-machines.
+ * Auth (oauthTokenAuth bearer access-token): /userinfo.
  *
  * We have no real oauth_clients row or issued access token in the e2e DB, so
  * these exercise the validation + auth boundaries (the deterministic, real
@@ -129,12 +129,12 @@ flow("OAU-3", { domain: "oauth", routes: ["POST /v1/oauth/token"] }, async (ctx)
   });
 });
 
-// ── OAU-4: userinfo + claimable-machines (oauthTokenAuth bearer) ─────────────
+// ── OAU-4: userinfo (oauthTokenAuth bearer) ──────────────────────────────────
 flow(
   "OAU-4",
   {
     domain: "oauth",
-    routes: ["GET /v1/oauth/userinfo", "GET /v1/oauth/claimable-machines"],
+    routes: ["GET /v1/oauth/userinfo"],
   },
   async (ctx) => {
     await ctx.step("userinfo: no bearer → 401", async () => {
@@ -145,14 +145,6 @@ flow(
       // oauthTokenAuth only accepts hashed oauth_access_tokens rows; a normal
       // user JWT won't match, so it's rejected the same as anon.
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/userinfo");
-      r.status(401);
-    });
-    await ctx.step("claimable-machines: no bearer → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/claimable-machines");
-      r.status(401);
-    });
-    await ctx.step("claimable-machines: supabase JWT is not an oauth token → 401", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/claimable-machines");
       r.status(401);
     });
   },

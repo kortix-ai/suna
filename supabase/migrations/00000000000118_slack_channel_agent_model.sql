@@ -7,4 +7,3 @@
 ALTER TABLE "kortix"."chat_channel_bindings"
   ADD COLUMN IF NOT EXISTS "agent_name" varchar(128),
   ADD COLUMN IF NOT EXISTS "opencode_model" varchar(128);
-

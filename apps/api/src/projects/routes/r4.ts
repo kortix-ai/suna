@@ -8,14 +8,14 @@ import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, projectTriggerRuntime, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projectTriggerRuntime, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
 import { APPS_DISABLED_BODY, SlackAuthTest, draftToAppSpec, loadAppsForResponse, parseAppDraft, projectAppsEnabled, removeAppFromManifest, specToAppBody, upsertAppInManifest } from '../lib/apps-helpers';
 import { withProjectGitAuth } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
-import { commitManifest, draftToSpec, fireGitTrigger, loadManifestForEdit, loadTriggersForResponse, markGitTriggerFired, parseTriggerDraft, removeTriggerFromManifest, renderPromptTemplate, specToBody, upsertTriggerInManifest } from '../lib/triggers';
+import { commitManifest, draftToSpec, fireGitTrigger, loadManifestForEdit, loadTriggersForResponse, markGitTriggerFired, parseTriggerDraft, removeTriggerFromManifest, renderPromptTemplate, specToBody, triggersPausedForProject, upsertTriggerInManifest, withTriggersPaused } from '../lib/triggers';
 
 projectsApp.openapi(
   createRoute({
@@ -663,6 +663,48 @@ projectsApp.openapi(
     deduped: result.deduped ?? false,
   }, 202);
 },
+);
+
+// PATCH /:projectId/triggers/activation — server-side, per-project trigger
+// kill-switch. Body { paused: boolean }. When paused, the platform won't
+// auto-run any of this project's triggers (the cron sweep skips it, inbound
+// webhooks are ignored) regardless of each trigger's repo `enabled`. Use it to
+// stop ONE repo deployed to TWO control planes (e.g. dev + prod) from
+// double-firing every cron — pause the deployment you don't want firing. A
+// manual `…/triggers/:slug/fire` is explicit and still runs.
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/triggers/activation',
+    tags: ['triggers'],
+    summary: 'Pause or resume all of a project\'s triggers server-side',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const paused = body.paused;
+    if (typeof paused !== 'boolean') {
+      return c.json({ error: 'paused must be a boolean' }, 400);
+    }
+    const [row] = await db
+      .update(projects)
+      .set({ metadata: withTriggersPaused(loaded.row.metadata, paused), updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    return c.json(await loadTriggersForResponse(projectId, row));
+  },
 );
 
 // ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────

@@ -16,6 +16,7 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
@@ -34,7 +35,9 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
     return (
       <div className="bg-foreground/10 shadow-custom flex items-center gap-0.5 rounded-sm p-0.5">
         <button
-          aria-label="Light theme"
+          aria-label={tI18nHardcoded.raw(
+            'autoComponentsHomeThemeToggleJsxAttrAriaLabelLightTheme26963d69',
+          )}
           className="[&amp;&gt;svg]:size-4 text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
           style={{ backgroundColor: theme === 'light' ? 'var(--background)' : 'transparent' }}
           type="button"
@@ -87,7 +90,9 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
           </svg>
         </button>
         <button
-          aria-label="Dark theme"
+          aria-label={tI18nHardcoded.raw(
+            'autoComponentsHomeThemeToggleJsxAttrAriaLabelDarkThemebf1de1f0',
+          )}
           className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
           type="button"
           style={{ backgroundColor: theme === 'dark' ? 'var(--background)' : 'transparent' }}
@@ -108,7 +113,9 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
           </svg>
         </button>
         <button
-          aria-label="System theme"
+          aria-label={tI18nHardcoded.raw(
+            'autoComponentsHomeThemeToggleJsxAttrAriaLabelSystemThemeb9e760e3',
+          )}
           className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-sm transition-colors duration-150 ease-out"
           type="button"
           style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}

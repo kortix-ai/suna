@@ -82,6 +82,12 @@ export const projectRoleEnum = kortixSchema.enum('project_role', [
   'viewer',
 ]);
 
+export const projectAccessRequestStatusEnum = kortixSchema.enum('project_access_request_status', [
+  'pending',
+  'approved',
+  'rejected',
+]);
+
 export const apiKeyStatusEnum = kortixSchema.enum('api_key_status', [
   'active',
   'revoked',
@@ -380,6 +386,36 @@ export const projectMembers = kortixSchema.table(
   ],
 );
 
+export const projectAccessRequests = kortixSchema.table(
+  'project_access_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    requesterUserId: uuid('requester_user_id').notNull(),
+    requesterEmail: varchar('requester_email', { length: 255 }).notNull(),
+    message: text('message'),
+    status: projectAccessRequestStatusEnum('status').default('pending').notNull(),
+    reviewedBy: uuid('reviewed_by'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_access_requests_project').on(table.projectId),
+    index('idx_project_access_requests_account').on(table.accountId),
+    index('idx_project_access_requests_requester').on(table.requesterUserId),
+    index('idx_project_access_requests_status').on(table.status),
+    uniqueIndex('idx_project_access_requests_pending_unique')
+      .on(table.projectId, table.requesterUserId)
+      .where(sql`${table.status} = 'pending'`),
+  ],
+);
+
 /**
  * Sharing scope of a project secret. `project` = every project member (default).
  * `restricted` = only the principals (members/groups) in `project_secret_grants`.
@@ -598,6 +634,13 @@ export const projectTriggerRuntime = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 128 }).notNull(),
     lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+    // Observability for "why isn't my trigger running": outcome of the most
+    // recent attempt ('fired' | 'queued' | 'failed'), the error if it failed
+    // (or a parse error), and when that attempt happened (distinct from
+    // last_fired_at, which only advances on a successful/queued fire).
+    lastStatus: varchar('last_status', { length: 32 }),
+    lastError: text('last_error'),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1223,7 +1266,7 @@ export const deployments = kortixSchema.table(
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     // Optional link back to a Git-backed project + the [[apps]] slug inside
     // its kortix.toml. Populated by the /v1/projects/:id/apps path; nullable
-    // because the legacy /v1/deployments path doesn't carry these.
+    // for historical deployment rows and future non-project deployment sources.
     projectId: uuid('project_id'),
     appSlug: varchar('app_slug', { length: 128 }),
     // Provider that produced this deployment ("freestyle" today; future:
@@ -1339,6 +1382,10 @@ export const accountTokens = kortixSchema.table(
      *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
      *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
     agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
+    /** Session this token belongs to (sandbox executor token, session_id =
+     *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —
+     *  the reaper's reliable activity signal + precise billing. Null for
+     *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
     sessionId: text('session_id'),
   },
   (table) => [

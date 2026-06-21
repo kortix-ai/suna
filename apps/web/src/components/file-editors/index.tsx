@@ -115,9 +115,9 @@ export function getEditableFileType(fileName: string): EditableFileType {
   if (codeExtensions.includes(extension)) return 'code';
   if (textExtensions.includes(extension)) return 'text';
   if (canvasExtensions.includes(extension)) return 'canvas';
-  
+
   // Check for common plain text file patterns (e.g., .env.example, .env.local, .gitignore, etc.)
-  if (fileNameLower.includes('.env') || 
+  if (fileNameLower.includes('.env') ||
       fileNameLower.startsWith('.env') ||
       fileNameLower.includes('gitignore') ||
       fileNameLower.includes('editorconfig') ||
@@ -127,7 +127,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
       fileNameLower.includes('eslintignore')) {
     return 'text';
   }
-  
+
   if (imageExtensions.includes(extension)) return 'image';
   if (videoExtensions.includes(extension)) return 'video';
   if (pdfExtensions.includes(extension)) return 'pdf';
@@ -135,7 +135,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   if (xlsxExtensions.includes(extension)) return 'xlsx';
   if (docxExtensions.includes(extension)) return 'docx';
   if (pptxExtensions.includes(extension)) return 'pptx';
-  
+
   return 'binary';
 }
 
@@ -198,11 +198,11 @@ export function EditableFileRenderer({
     <div className={cn('w-full h-full max-w-full max-h-full overflow-hidden min-w-0', className)} style={{ contain: 'strict' }}>
       {/* Binary files - not editable, unless we have text content */}
       {fileType === 'binary' && !shouldRenderAsText ? (
-        <BinaryRenderer 
-          url={binaryUrl || ''} 
-          fileName={fileName} 
-          onDownload={onDownload} 
-          isDownloading={isDownloading} 
+        <BinaryRenderer
+          url={binaryUrl || ''}
+          fileName={fileName}
+          onDownload={onDownload}
+          isDownloading={isDownloading}
         />
       ) : shouldRenderAsText ? (
         // Render as plain text with CodeMirror when we have text content but fileType is binary

@@ -1,8 +1,9 @@
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
+  candidateSecretKeyHashes,
   generateAccountTokenPair,
   isApiKeySecretConfigured,
   isAccountToken,
@@ -19,7 +20,8 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token is scoped to one project; the auth
    *  middleware enforces URL :projectId === this value. */
   projectId?: string | null;
-  /** Non-null = the project session id this token was minted for. */
+  /** Non-null = this token belongs to a specific session (sandbox executor
+   *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
    *  authorization (which Kortix CLI/API actions + connectors it may use,
@@ -35,7 +37,8 @@ export interface CreateAccountTokenParams {
   /** Non-null = project-scoped token (sandbox injection). Null/undefined
    *  = user-scoped (laptop CLI). */
   projectId?: string;
-  /** The project session id this token is minted for (sandbox/session id). */
+  /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
+   *  through the gateway is attributed to the session. */
   sessionId?: string | null;
   expiresAt?: Date;
   /** Set for agent-session tokens — the resolved per-agent grant to stamp
@@ -243,7 +246,7 @@ export async function validateAccountToken(
   }
 
   try {
-    const secretKeyHash = hashSecretKey(secretKey);
+    const secretKeyHashes = candidateSecretKeyHashes(secretKey);
 
     // Join the owning account so we can apply idle-revoke without a
     // second round-trip on the hot path.
@@ -265,7 +268,7 @@ export async function validateAccountToken(
       .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
-          eq(accountTokens.secretKeyHash, secretKeyHash),
+          inArray(accountTokens.secretKeyHash, secretKeyHashes),
           eq(accountTokens.status, 'active'),
         ),
       )

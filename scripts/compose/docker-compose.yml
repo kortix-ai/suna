@@ -1,5 +1,5 @@
-# Production compose — used by deploy-api.yml CI workflow on the VPS.
-# Build from repo root: docker compose --profile backend up -d
+# Local compose helper. Build from repo root:
+# docker compose -f scripts/compose/docker-compose.yml --profile backend up -d
 
 services:
   frontend:

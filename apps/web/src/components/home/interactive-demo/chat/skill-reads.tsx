@@ -77,7 +77,7 @@ export function SkillsRead({
                     <span className="border-muted-foreground/40 border-t-foreground ml-auto size-3.5 shrink-0 animate-spin rounded-full border-[1.5px]" />
                   )}
                 </div>
-                
+
               </button>
             </motion.div>
           );

@@ -50,8 +50,8 @@ request_secret({ names: ["APOLLO_API_KEY", "SMARTLEAD_API_KEY"],
 **Or from a shell** (equivalent):
 
 ```sh
-secrets request APOLLO_API_KEY SMARTLEAD_API_KEY          # the in-sandbox shim
-kortix secrets request APOLLO_API_KEY --scope connector   # the kortix CLI
+kortix secrets request APOLLO_API_KEY SMARTLEAD_API_KEY     # several keys, one link
+kortix secrets request APOLLO_API_KEY --scope connector     # server-side only
 ```
 
 Then **surface the `url`** to the human: *"Add your Apollo key here (expires in
@@ -71,7 +71,7 @@ single message.
 
 For an app you connect via Pipedream, mint a 1-click connect link. If the
 connector isn't on the project yet, **add it instantly first — no change
-request**: the `add_connector` tool / `executor add <slug> --provider pipedream
+request**: the `add_connector` tool / `kortix executor add <slug> --provider pipedream
 --app <app>` (humans: `kortix connectors add … --apply`). That commits it to
 `kortix.toml` on main and syncs the catalog server-side, exactly like the
 dashboard's "Add app" — it's live this session. Then mint the connect link.
@@ -86,8 +86,8 @@ connect({ slug: "smartlead" })
 **Or from a shell:**
 
 ```sh
-executor connect smartlead           # the in-sandbox shim
-kortix connectors link smartlead     # the kortix CLI (durable, shareable link)
+kortix executor connect smartlead    # the executor CLI (matches the MCP `connect` tool)
+kortix connectors link smartlead     # the management CLI (durable, shareable link)
 ```
 
 Then **surface the `url`**. The human clicks → authorizes the app (1-click, or
@@ -114,7 +114,7 @@ You don't have a live callback. The smooth flow is:
      it in `KORTIX_PROJECT_SECRET_NAMES`). A fresh `runtime` value is live in the
      session env immediately (it's hot-synced; no restart needed).
    - **Connector:** check it now appears in your usable catalog —
-     `executor connectors` (the `connectors` MCP tool). Unconnected connectors are
+     `kortix executor connectors` (the `connectors` MCP tool). Unconnected connectors are
      filtered out, so its presence means the credential landed.
 
 If it isn't there yet, the human may not have finished — say so and wait.
@@ -143,13 +143,13 @@ This beats the alternatives you might be tempted by:
 
 ## Quick reference
 
-| Goal | MCP tool | Shell (sandbox shim) | `kortix` CLI |
-| --- | --- | --- | --- |
-| Ask the human for a secret value | `request_secret` | `secrets request <NAME…>` | `kortix secrets request <NAME…>` |
-| Get an app connected (Pipedream) | `connect` | `executor connect <slug>` | `kortix connectors link <slug>` |
-| Verify a secret arrived | — | — | `kortix secrets ls` |
-| Verify a connector connected | `connectors` | `executor connectors` | `kortix connectors ls` |
+| Goal | MCP tool | `kortix` CLI |
+| --- | --- | --- |
+| Ask the human for a secret value | `request_secret` | `kortix secrets request <NAME…>` |
+| Get an app connected (Pipedream) | `connect` | `kortix executor connect <slug>` · `kortix connectors link <slug>` |
+| Verify a secret arrived | — | `kortix secrets ls` |
+| Verify a connector connected | `connectors` | `kortix executor connectors` · `kortix connectors ls` |
 
-All three surfaces hit the same endpoints and return the same kind of link —
-use whichever fits your flow. The MCP tools are always loaded, so they're the
-default.
+Both surfaces hit the same endpoints and return the same kind of link — use
+whichever fits your flow. The MCP tools are always loaded, so they're the
+default; the `kortix executor` CLI is the same Executor core exposed for shell use.

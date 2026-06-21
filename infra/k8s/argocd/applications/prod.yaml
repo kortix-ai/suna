@@ -1,14 +1,14 @@
 # Argo CD Application for EKS prod (api-eks.kortix.com).
 #
-# Multi-source: render the kortix-api Helm chart with the prod env value file
-# from the same repo. The deploy is whatever this revision of
-# infra/k8s/envs/prod/values.yaml says — a PR bumping image.tag IS the release;
-# git revert is the rollback. Argo CD continuously reconciles + self-heals drift.
+# SINGLE source: render the kortix-api Helm chart with the prod env values via a
+# relative path in the SAME repo. (Deliberately NOT multi-source with $values —
+# that resolves each source's revision independently and, while the prod branch
+# is moving across rapid releases, the two can land on different commits →
+# "cannot reference a different revision of the same repository" and a stuck
+# sync. A single source has one revision, so it can't race.)
 #
-# repoURL/targetRevision point at the canonical steady state. BOOTSTRAP: until
-# these manifests are merged to kortix-ai/suna, create this app with an override
-# (--repo https://github.com/lillyboga/suna.git --revision eks-migration), then
-# drop the override once merged. See infra/GITOPS.md.
+# The deploy is whatever this revision of infra/k8s/envs/prod/values.yaml says —
+# a PR bumping image.tag IS the release; git revert is the rollback.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -18,16 +18,14 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: kortix
-  sources:
-    - repoURL: https://github.com/kortix-ai/suna.git
-      targetRevision: prod
-      path: infra/k8s/charts/kortix-api
-      helm:
-        valueFiles:
-          - $values/infra/k8s/envs/prod/values.yaml
-    - repoURL: https://github.com/kortix-ai/suna.git
-      targetRevision: prod
-      ref: values
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: prod
+    path: infra/k8s/charts/kortix-api
+    helm:
+      releaseName: kortix-api
+      valueFiles:
+        - ../../envs/prod/values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: kortix-prod

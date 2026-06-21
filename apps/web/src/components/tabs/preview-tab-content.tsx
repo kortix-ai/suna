@@ -2,34 +2,34 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
+import { Button } from '@/components/ui/button';
+import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import type { CreateSessionPublicShareInput } from '@/lib/projects-client';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { cn } from '@/lib/utils';
 import {
+  buildWebProxyUrl,
+  isExternalUrl,
+  isWebProxyUrl,
+  normalizeExternalInput,
+  parseLocalhostUrl,
+  parseWebProxyUrl,
+  proxyUrlToInternal,
+  toInternalUrl,
+} from '@/lib/utils/sandbox-url';
+import { useTabStore } from '@/stores/tab-store';
+import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   ExternalLink,
   Globe,
-  RefreshCw,
-  AlertTriangle,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
-import { useTabStore } from '@/stores/tab-store';
-import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import type { CreateSessionPublicShareInput } from '@/lib/projects-client';
-import {
-  parseLocalhostUrl,
-  toInternalUrl,
-  proxyUrlToInternal,
-  buildWebProxyUrl,
-  parseWebProxyUrl,
-  isWebProxyUrl,
-  isExternalUrl,
-  normalizeExternalInput,
-} from '@/lib/utils/sandbox-url';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface PreviewTabContentProps {
   tabId: string;
@@ -60,6 +60,7 @@ function previewDisplayLabel(path: string, isEditing: boolean, addressValue: str
  * any localhost:PORT address to navigate within the sandbox.
  */
 export function PreviewTabContent({ tabId, projectId, projectSessionId }: PreviewTabContentProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tab = useTabStore((s) => s.tabs[tabId]);
   const updateTabMetadata = useTabStore((s) => s.openTab);
@@ -78,12 +79,19 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
   const originalUrl = (tab?.metadata?.originalUrl as string) || '';
 
   // Address bar state — shows the internal localhost URL
-  const [addressValue, setAddressValue] = useState(originalUrl || (port ? `http://localhost:${port}/` : ''));
+  const [addressValue, setAddressValue] = useState(
+    originalUrl || (port ? `http://localhost:${port}/` : ''),
+  );
   const [isAddressEditing, setIsAddressEditing] = useState(false);
   const addressInputRef = useRef<HTMLInputElement>(null);
 
   const isExternalBrowsing = useMemo(() => {
-    return !port && !!originalUrl && !originalUrl.startsWith('http://localhost') && !originalUrl.startsWith('http://127.0.0.1');
+    return (
+      !port &&
+      !!originalUrl &&
+      !originalUrl.startsWith('http://localhost') &&
+      !originalUrl.startsWith('http://127.0.0.1')
+    );
   }, [port, originalUrl]);
 
   const { activeServer, subdomainOpts, proxyUrl, rewritePortPath } = useSandboxProxy();
@@ -150,24 +158,58 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
   }, [previewUrl]);
 
   /** Navigate to a new URL within the sandbox. */
-  const navigateTo = useCallback((url: string) => {
-    const externalUrl = normalizeExternalInput(url);
-    if (externalUrl && isExternalUrl(externalUrl)) {
-      const newProxyUrl = buildWebProxyUrl(externalUrl, subdomainOpts);
-      if (!newProxyUrl) return;
+  const navigateTo = useCallback(
+    (url: string) => {
+      const externalUrl = normalizeExternalInput(url);
+      if (externalUrl && isExternalUrl(externalUrl)) {
+        const newProxyUrl = buildWebProxyUrl(externalUrl, subdomainOpts);
+        if (!newProxyUrl) return;
 
-      let displayHost: string;
-      try { displayHost = new URL(externalUrl).hostname; } catch { displayHost = externalUrl; }
+        let displayHost: string;
+        try {
+          displayHost = new URL(externalUrl).hostname;
+        } catch {
+          displayHost = externalUrl;
+        }
+
+        updateTabMetadata({
+          id: tabId,
+          title: displayHost,
+          type: 'preview',
+          href: `/p/web`,
+          metadata: { url: newProxyUrl, port: 0, originalUrl: externalUrl, path: '/' },
+        });
+
+        setAddressValue(externalUrl);
+
+        setHistory((prev) => {
+          const trimmed = prev.slice(0, historyIndex + 1);
+          return [...trimmed, newProxyUrl];
+        });
+        setHistoryIndex((prev) => prev + 1);
+
+        setIsLoading(true);
+        setHasError(false);
+        setRefreshKey((k) => k + 1);
+        return;
+      }
+
+      const parsed = parseLocalhostUrl(url);
+      if (!parsed) return;
+
+      const { port: newPort, path: newPath } = parsed;
+      const newProxyUrl = rewritePortPath(newPort, newPath);
+      const newInternalUrl = toInternalUrl(newPort, newPath);
 
       updateTabMetadata({
         id: tabId,
-        title: displayHost,
+        title: APP_PREVIEW_TITLE,
         type: 'preview',
-        href: `/p/web`,
-        metadata: { url: newProxyUrl, port: 0, originalUrl: externalUrl, path: '/' },
+        href: `/p/${newPort}`,
+        metadata: { url: newProxyUrl, port: newPort, originalUrl: newInternalUrl, path: newPath },
       });
 
-      setAddressValue(externalUrl);
+      setAddressValue(newInternalUrl);
 
       setHistory((prev) => {
         const trimmed = prev.slice(0, historyIndex + 1);
@@ -178,36 +220,9 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
       setIsLoading(true);
       setHasError(false);
       setRefreshKey((k) => k + 1);
-      return;
-    }
-
-    const parsed = parseLocalhostUrl(url);
-    if (!parsed) return;
-
-    const { port: newPort, path: newPath } = parsed;
-    const newProxyUrl = rewritePortPath(newPort, newPath);
-    const newInternalUrl = toInternalUrl(newPort, newPath);
-
-    updateTabMetadata({
-      id: tabId,
-      title: APP_PREVIEW_TITLE,
-      type: 'preview',
-      href: `/p/${newPort}`,
-      metadata: { url: newProxyUrl, port: newPort, originalUrl: newInternalUrl, path: newPath },
-    });
-
-    setAddressValue(newInternalUrl);
-
-    setHistory((prev) => {
-      const trimmed = prev.slice(0, historyIndex + 1);
-      return [...trimmed, newProxyUrl];
-    });
-    setHistoryIndex((prev) => prev + 1);
-
-    setIsLoading(true);
-    setHasError(false);
-    setRefreshKey((k) => k + 1);
-  }, [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex]);
+    },
+    [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex],
+  );
 
   /**
    * Handle address bar submission. This bar controls the sandbox's local
@@ -216,30 +231,33 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
    * (each optionally followed by a path). Anything else (e.g. `google.com`)
    * is rejected inline rather than attempting to browse it.
    */
-  const handleAddressSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddressSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
 
-    let url = addressValue.trim();
-    if (!url) return;
+      let url = addressValue.trim();
+      if (!url) return;
 
-    if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
-      url = `http://localhost:${url}`;
-    } else if (/^:\d{1,5}/.test(url)) {
-      url = `http://localhost${url}`;
-    } else if (/^(?:localhost|127\.0\.0\.1):\d+/i.test(url)) {
-      url = `http://${url}`;
-    }
+      if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
+        url = `http://localhost:${url}`;
+      } else if (/^:\d{1,5}/.test(url)) {
+        url = `http://localhost${url}`;
+      } else if (/^(?:localhost|127\.0\.0\.1):\d+/i.test(url)) {
+        url = `http://${url}`;
+      }
 
-    const parsed = parseLocalhostUrl(url);
-    if (!parsed) {
-      setAddressError(true);
-      return;
-    }
+      const parsed = parseLocalhostUrl(url);
+      if (!parsed) {
+        setAddressError(true);
+        return;
+      }
 
-    setAddressError(false);
-    setIsAddressEditing(false);
-    navigateTo(toInternalUrl(parsed.port, parsed.path));
-  }, [addressValue, navigateTo]);
+      setAddressError(false);
+      setIsAddressEditing(false);
+      navigateTo(toInternalUrl(parsed.port, parsed.path));
+    },
+    [addressValue, navigateTo],
+  );
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
@@ -254,7 +272,11 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
       const targetUrl = parseWebProxyUrl(prevUrl);
       if (targetUrl) {
         let displayHost: string;
-        try { displayHost = new URL(targetUrl).hostname; } catch { displayHost = targetUrl; }
+        try {
+          displayHost = new URL(targetUrl).hostname;
+        } catch {
+          displayHost = targetUrl;
+        }
         updateTabMetadata({
           id: tabId,
           title: displayHost,
@@ -280,7 +302,12 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           title: APP_PREVIEW_TITLE,
           type: 'preview',
           href: `/p/${parsed.port}`,
-          metadata: { url: prevUrl, port: parsed.port, originalUrl: internalUrl, path: parsed.path },
+          metadata: {
+            url: prevUrl,
+            port: parsed.port,
+            originalUrl: internalUrl,
+            path: parsed.path,
+          },
         });
         setAddressValue(internalUrl);
         setIsLoading(true);
@@ -300,7 +327,11 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
       const targetUrl = parseWebProxyUrl(nextUrl);
       if (targetUrl) {
         let displayHost: string;
-        try { displayHost = new URL(targetUrl).hostname; } catch { displayHost = targetUrl; }
+        try {
+          displayHost = new URL(targetUrl).hostname;
+        } catch {
+          displayHost = targetUrl;
+        }
         updateTabMetadata({
           id: tabId,
           title: displayHost,
@@ -326,7 +357,12 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           title: APP_PREVIEW_TITLE,
           type: 'preview',
           href: `/p/${parsed.port}`,
-          metadata: { url: nextUrl, port: parsed.port, originalUrl: internalUrl, path: parsed.path },
+          metadata: {
+            url: nextUrl,
+            port: parsed.port,
+            originalUrl: internalUrl,
+            path: parsed.path,
+          },
         });
         setAddressValue(internalUrl);
         setIsLoading(true);
@@ -378,9 +414,9 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
   // Show a landing page when there's no URL yet (browser tab opened fresh)
   if (!previewUrl) {
     return (
-      <div className="flex flex-col h-full bg-background">
+      <div className="bg-background flex h-full flex-col">
         {/* Toolbar */}
-        <div className="flex items-center gap-1 h-10 px-2 border-b border-border/40 bg-background shrink-0">
+        <div className="border-border/40 bg-background flex h-10 shrink-0 items-center gap-1 border-b px-2">
           <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
             <ArrowLeft className="h-3.5 w-3.5" />
           </Button>
@@ -392,28 +428,40 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           </Button>
 
           {/* Address bar */}
-          <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
+          <form onSubmit={handleAddressSubmit} className="flex flex-1 items-center">
             <div
               className={cn(
-                'w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-xs tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors',
+                'bg-foreground/[0.035] focus-within:bg-background focus-within:border-border/60 flex h-7 w-full items-center rounded-2xl border border-transparent px-2.5 text-xs tracking-tight transition-colors',
                 addressError && 'border-red-500 focus-within:border-red-500',
               )}
             >
-              <Globe className={cn('h-3 w-3 mr-2 shrink-0 opacity-50', addressError && 'text-red-500 opacity-100')} />
+              <Globe
+                className={cn(
+                  'mr-2 h-3 w-3 shrink-0 opacity-50',
+                  addressError && 'text-red-500 opacity-100',
+                )}
+              />
               <input
                 ref={addressInputRef}
                 type="text"
                 value={addressValue}
-                title="Enter a sandbox port, e.g. 3000"
-                onChange={(e) => { setAddressValue(e.target.value); if (addressError) setAddressError(false); }}
+                title={tI18nHardcoded.raw(
+                  'autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26',
+                )}
+                onChange={(e) => {
+                  setAddressValue(e.target.value);
+                  if (addressError) setAddressError(false);
+                }}
                 onFocus={() => {
                   setIsAddressEditing(true);
                   // Select all on focus for easy replacement
                   setTimeout(() => addressInputRef.current?.select(), 0);
                 }}
                 onBlur={() => setIsAddressEditing(false)}
-                placeholder="Type a port or app URL"
-                className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+                placeholder={tI18nHardcoded.raw(
+                  'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
+                )}
+                className="text-foreground placeholder:text-muted-foreground flex-1 bg-transparent outline-none"
                 autoFocus
               />
             </div>
@@ -421,13 +469,19 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
         </div>
 
         {/* Landing content */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 text-muted-foreground max-w-md text-center px-4">
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-muted-foreground flex max-w-md flex-col items-center gap-4 px-4 text-center">
             <Globe className="h-12 w-12 opacity-20" />
             <div>
-              <p className="text-sm font-medium text-foreground">Preview browser</p>
-              <p className="text-xs mt-1.5 leading-relaxed">
-                Open an app preview from chat, or type a port like <span className="font-mono text-foreground/80">3000</span> if you know it.
+              <p className="text-foreground text-sm font-medium">
+                {tI18nHardcoded.raw(
+                  'autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05',
+                )}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed">
+                {tI18nHardcoded.raw('autoComponentsTabsPreviewTabContentJsxTextOpenAnAppda305669')}
+                <span className="text-foreground/80 font-mono">3000</span>{' '}
+                {tI18nHardcoded.raw('autoComponentsTabsPreviewTabContentJsxTextIfYouKnow6745fa88')}
               </p>
             </div>
           </div>
@@ -437,9 +491,9 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="bg-background flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex items-center gap-1 h-10 px-2 border-b border-border/40 bg-background shrink-0">
+      <div className="border-border/40 bg-background flex h-10 shrink-0 items-center gap-1 border-b px-2">
         {/* Back */}
         <Button
           variant="ghost"
@@ -476,20 +530,30 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
         </Button>
 
         {/* Address bar — editable */}
-        <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
+        <form onSubmit={handleAddressSubmit} className="flex flex-1 items-center">
           <div
             className={cn(
-              'w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs',
+              'bg-background flex h-7 w-full items-center rounded-2xl border px-3 text-xs',
               addressError && 'border-red-500 focus-within:border-red-500',
             )}
           >
-            <Globe className={cn('h-3 w-3 mr-2 shrink-0 opacity-50', addressError && 'text-red-500 opacity-100')} />
+            <Globe
+              className={cn(
+                'mr-2 h-3 w-3 shrink-0 opacity-50',
+                addressError && 'text-red-500 opacity-100',
+              )}
+            />
             <input
               ref={addressInputRef}
               type="text"
               value={displayUrl}
-              title="Enter a sandbox port, e.g. 3000"
-              onChange={(e) => { setAddressValue(e.target.value); if (addressError) setAddressError(false); }}
+              title={tI18nHardcoded.raw(
+                'autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26',
+              )}
+              onChange={(e) => {
+                setAddressValue(e.target.value);
+                if (addressError) setAddressError(false);
+              }}
               onFocus={() => {
                 setIsAddressEditing(true);
                 if (isExternalBrowsing) {
@@ -511,16 +575,16 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
                   addressInputRef.current?.blur();
                 }
               }}
-              placeholder="Type a port or app URL"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
+              )}
               className={cn(
-                'flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate',
+                'text-foreground placeholder:text-muted-foreground flex-1 truncate bg-transparent outline-none',
                 isAddressEditing && 'font-mono',
               )}
             />
             {port > 0 && !isAddressEditing && !isExternalBrowsing && (
-              <span className="ml-2 shrink-0 text-xs text-muted-foreground/70">
-                Port {port}
-              </span>
+              <span className="text-muted-foreground/70 ml-2 shrink-0 text-xs">Port {port}</span>
             )}
           </div>
         </form>
@@ -531,7 +595,9 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           size="icon"
           className="h-7 w-7"
           onClick={handleOpenExternal}
-          title="Open private preview"
+          title={tI18nHardcoded.raw(
+            'autoComponentsTabsPreviewTabContentJsxAttrTitleOpenPrivate087e249c',
+          )}
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
@@ -539,38 +605,46 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           projectId={projectId}
           sessionId={projectSessionId}
           input={shareInput}
-          tooltip="Copy a public link for this app preview"
+          tooltip={tI18nHardcoded.raw(
+            'autoComponentsTabsPreviewTabContentJsxAttrTooltipCopyAe8e3844f',
+          )}
           className="h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5"
         />
       </div>
 
       {/* Iframe container */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
         {/* Loading overlay */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
+            <div className="text-muted-foreground flex flex-col items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <p className="text-xs">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line481JsxTextLoadingPreview')}</p>
+              <p className="text-xs">
+                {tHardcodedUi.raw('componentsTabsPreviewTabContent.line481JsxTextLoadingPreview')}
+              </p>
             </div>
           </div>
         )}
 
         {/* Error state */}
         {hasError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <div className="flex flex-col items-center gap-3 text-muted-foreground max-w-sm text-center">
+          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
+            <div className="text-muted-foreground flex max-w-sm flex-col items-center gap-3 text-center">
               <AlertTriangle className="h-8 w-8 text-amber-500" />
               <div>
-                <p className="text-sm font-medium">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line492JsxTextFailedToLoadPreview')}</p>
-                <p className="text-xs mt-1">
+                <p className="text-sm font-medium">
+                  {tHardcodedUi.raw(
+                    'componentsTabsPreviewTabContent.line492JsxTextFailedToLoadPreview',
+                  )}
+                </p>
+                <p className="mt-1 text-xs">
                   {isExternalBrowsing
                     ? 'Could not reach the target website.'
                     : `The service on port ${port} may not be running yet.`}
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={handleRefresh}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                 Retry
               </Button>
             </div>
@@ -582,7 +656,7 @@ export function PreviewTabContent({ tabId, projectId, projectSessionId }: Previe
           ref={iframeRef}
           src={previewUrl}
           title={isExternalBrowsing ? `Browse: ${originalUrl}` : `Preview :${port}`}
-          className="w-full h-full border-0"
+          className="h-full w-full border-0"
           sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={handleLoad}
           onError={handleError}

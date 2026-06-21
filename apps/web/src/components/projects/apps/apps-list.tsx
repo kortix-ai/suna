@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Apps list — the default section of the Apps overlay.
  *
@@ -8,19 +9,13 @@
  * the user to ship their first app.
  */
 
-import { useState } from 'react';
-import { formatDistanceToNowStrict } from 'date-fns';
 import { toast } from '@/lib/toast';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   IconAdd,
   IconApp,
@@ -44,16 +40,14 @@ import {
   IconStop,
   IconTerminal,
 } from '@/components/ui/kortix-icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import {
   useDeleteProjectApp,
   useDeployProjectApp,
   useStopProjectApp,
 } from '@/hooks/projects/use-project-apps';
-import type {
-  ListProjectAppsResponse,
-  ProjectApp,
-} from '@/lib/projects-apps-client';
+import type { ListProjectAppsResponse, ProjectApp } from '@/lib/projects-apps-client';
 
 interface AppsListProps {
   projectId: string;
@@ -65,6 +59,7 @@ interface AppsListProps {
 }
 
 export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: AppsListProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
 
   const deployMut = useDeployProjectApp(projectId);
@@ -73,9 +68,9 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
         <IconLoader className="mr-2 size-4 animate-spin" />
-        Loading apps…
+        {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextLoadingApps9bc302d2')}
       </div>
     );
   }
@@ -87,18 +82,20 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
     return (
       <EmptyState
         icon={IconApp}
-        title="Ship a website from this project"
+        title={tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxAttrTitleShipA0cc9c09a')}
         description={
           <>
-            Point an app at a folder in your repo and Kortix handles the build
-            and a free <code className="font-mono">*.style.dev</code> URL — no
-            hosting setup. Or just ask your agent to build one and add it.
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextPointAnAppcd52df2e')}
+            <code className="font-mono">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextStyleDev4ceecb97')}
+            </code>{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextURLNoHosting4152e75a')}
           </>
         }
         action={
           <Button onClick={onAdd}>
             <IconAdd className="size-3.5" />
-            Add app
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextAddApp823e5b8d')}
           </Button>
         }
       />
@@ -107,20 +104,24 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-5 py-3">
+      <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">
+          <p className="text-foreground text-sm font-medium">
             {apps.length} {apps.length === 1 ? 'app' : 'apps'}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
-            Websites deployed from this project. Defined in{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">kortix.toml</code>
-            {' '}— changes here commit to your repo.
+          <p className="text-muted-foreground truncate text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsAppsAppsListJsxTextWebsitesDeployedFrom4a7cee39',
+            )}{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-[11px]">kortix.toml</code>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsAppsAppsListJsxTextChangesHereCommitc5472cbc',
+            )}
           </p>
         </div>
         <Button size="sm" onClick={onAdd} className="shrink-0">
           <IconAdd className="size-3.5" />
-          Add app
+          {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextAddApp823e5b8d')}
         </Button>
       </div>
 
@@ -128,7 +129,11 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {errors.length > 0 && (
             <div className="flex flex-col gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
-              <p className="font-medium">Some entries in kortix.toml couldn&apos;t be parsed:</p>
+              <p className="font-medium">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppsListJsxTextSomeEntriesIn40dad16c',
+                )}
+              </p>
               <ul className="list-disc pl-4">
                 {errors.map((err) => (
                   <li key={`${err.slug}-${err.error}`}>
@@ -147,8 +152,8 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
                 (deployMut.isPending && deployMut.variables) === app.slug
                   ? 'deploy'
                   : (stopMut.isPending && stopMut.variables) === app.slug
-                  ? 'stop'
-                  : null
+                    ? 'stop'
+                    : null
               }
               onDeploy={async () => {
                 try {
@@ -188,9 +193,9 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
         title={`Remove ${confirmSlug ?? ''}?`}
         description={
           <>
-            This removes the entry from <code className="font-mono">kortix.toml</code>{' '}
-            and stops auto-deploys for this app. Any live deployment keeps
-            running until you stop it explicitly.
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextThisRemovesThe4dfd4851')}
+            <code className="font-mono">kortix.toml</code>{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextAndStopsAuto6f27bb16')}
           </>
         }
         confirmLabel="Remove"
@@ -211,26 +216,45 @@ export function AppsList({ projectId, data, isLoading, onAdd, onEdit, onLogs }: 
   );
 }
 
-function statusBadge(app: ProjectApp): React.ReactNode {
+function statusBadge(
+  app: ProjectApp,
+  tHardcodedUi: ReturnType<typeof useTranslations>,
+): React.ReactNode {
   const dep = app.latest_deployment;
   if (!dep) {
     return (
       <Badge size="sm" variant="muted">
-        Not deployed
+        {tHardcodedUi.raw('autoComponentsProjectsAppsAppsListJsxTextNotDeployedb0921cc2')}
       </Badge>
     );
   }
   switch (dep.status) {
     case 'active':
-      return <Badge size="sm" variant="success">Live</Badge>;
+      return (
+        <Badge size="sm" variant="success">
+          Live
+        </Badge>
+      );
     case 'pending':
     case 'building':
     case 'deploying':
-      return <Badge size="sm" variant="info">Deploying</Badge>;
+      return (
+        <Badge size="sm" variant="info">
+          Deploying
+        </Badge>
+      );
     case 'failed':
-      return <Badge size="sm" variant="destructive">Failed</Badge>;
+      return (
+        <Badge size="sm" variant="destructive">
+          Failed
+        </Badge>
+      );
     case 'stopped':
-      return <Badge size="sm" variant="muted">Stopped</Badge>;
+      return (
+        <Badge size="sm" variant="muted">
+          Stopped
+        </Badge>
+      );
   }
 }
 
@@ -250,7 +274,9 @@ function sourceLabel(app: ProjectApp): string {
 function deployedAgo(dep: ProjectApp['latest_deployment']): string | null {
   if (!dep) return null;
   try {
-    return formatDistanceToNowStrict(new Date(dep.updated_at || dep.created_at), { addSuffix: true });
+    return formatDistanceToNowStrict(new Date(dep.updated_at || dep.created_at), {
+      addSuffix: true,
+    });
   } catch {
     return null;
   }
@@ -258,13 +284,16 @@ function deployedAgo(dep: ProjectApp['latest_deployment']): string | null {
 
 /** Copy-to-clipboard chip with a brief check confirmation. */
 function CopyUrlButton({ url }: { url: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
-          aria-label="Copy URL"
+          aria-label={tI18nHardcoded.raw(
+            'autoComponentsProjectsAppsAppsListJsxAttrAriaLabelCopy167271c3',
+          )}
           onClick={() => {
             navigator.clipboard?.writeText(url).then(
               () => {
@@ -274,9 +303,13 @@ function CopyUrlButton({ url }: { url: string }) {
               () => toast.error('Could not copy'),
             );
           }}
-          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
         >
-          {copied ? <IconCheck className="size-3.5 text-emerald-500" /> : <IconCopy className="size-3.5" />}
+          {copied ? (
+            <IconCheck className="size-3.5 text-emerald-500" />
+          ) : (
+            <IconCopy className="size-3.5" />
+          )}
         </button>
       </TooltipTrigger>
       <TooltipContent className="text-xs">{copied ? 'Copied' : 'Copy URL'}</TooltipContent>
@@ -295,9 +328,11 @@ interface AppCardProps {
 }
 
 function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: AppCardProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const dep = app.latest_deployment;
   const isLive = dep?.status === 'active' && !!dep.live_url;
-  const isDeploying = dep?.status === 'pending' || dep?.status === 'building' || dep?.status === 'deploying';
+  const isDeploying =
+    dep?.status === 'pending' || dep?.status === 'building' || dep?.status === 'deploying';
   // Where this app serves: the live URL once deployed, else where it WILL go.
   const liveUrl = dep?.live_url ?? null;
   const targetDomain = app.effective_domains?.[0] ?? app.domains?.[0] ?? null;
@@ -305,16 +340,24 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
   const ago = deployedAgo(dep);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-background px-4 py-3.5 transition-colors hover:border-border">
+    <div className="border-border/60 bg-background hover:border-border flex flex-col gap-3 rounded-2xl border px-4 py-3.5 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h4 className="truncate text-sm font-medium text-foreground">{app.name}</h4>
-            {statusBadge(app)}
-            {!app.enabled && <Badge size="sm" variant="outline">Disabled</Badge>}
-            {app.drift && app.enabled && dep && <Badge size="sm" variant="warning">Out of date</Badge>}
+            <h4 className="text-foreground truncate text-sm font-medium">{app.name}</h4>
+            {statusBadge(app, tI18nHardcoded)}
+            {!app.enabled && (
+              <Badge size="sm" variant="outline">
+                Disabled
+              </Badge>
+            )}
+            {app.drift && app.enabled && dep && (
+              <Badge size="sm" variant="warning">
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextOutOfDate47e87f6f')}
+              </Badge>
+            )}
           </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <span className="font-mono">{app.slug}</span>
             <span className="text-muted-foreground/40">·</span>
             <span className="inline-flex items-center gap-1" title="Source">
@@ -362,14 +405,20 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" aria-label="More actions">
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppsListJsxAttrAriaLabelMore084f2d57',
+                )}
+              >
                 <IconChevronDown className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onLogs} disabled={!dep}>
                 <IconTerminal className="size-3.5" />
-                View logs
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsListJsxTextViewLogs4b1e7675')}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onEdit}>
                 <IconEdit className="size-3.5" />
@@ -395,19 +444,24 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
       {/* URL row — the address this app serves on, with a copy button. Muted
           (not a link) until it's actually live. */}
       {displayUrl && (
-        <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5">
+        <div className="bg-muted/40 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5">
           {isLive ? (
             <a
               href={liveUrl!}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-w-0 flex-1 items-center gap-1 truncate font-mono text-xs text-foreground/90 hover:text-foreground hover:underline"
+              className="text-foreground/90 hover:text-foreground inline-flex min-w-0 flex-1 items-center gap-1 truncate font-mono text-xs hover:underline"
             >
               {displayUrl.replace(/^https?:\/\//, '')}
               <IconExternal className="size-3 shrink-0" />
             </a>
           ) : (
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title="Deploys here">
+            <span
+              className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs"
+              title={tI18nHardcoded.raw(
+                'autoComponentsProjectsAppsAppsListJsxAttrTitleDeploysHere16577892',
+              )}
+            >
               {displayUrl.replace(/^https?:\/\//, '')}
             </span>
           )}
@@ -416,7 +470,7 @@ function AppCard({ app, busySlug, onDeploy, onStop, onLogs, onEdit, onDelete }: 
       )}
 
       {dep?.error && (
-        <p className="rounded-md bg-destructive/5 px-3 py-2 font-mono text-xs text-destructive">
+        <p className="bg-destructive/5 text-destructive rounded-md px-3 py-2 font-mono text-xs">
           {dep.error}
         </p>
       )}

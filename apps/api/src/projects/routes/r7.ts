@@ -10,8 +10,24 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { buildSessionTranscriptDigest } from '../lib/session-transcript';
+import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
-import { syncOpencodeSessionsHandler } from './shared';
+
+function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -414,7 +430,7 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  const visible = listableRows.filter((r) =>
+  let visible = listableRows.filter((r) =>
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,
@@ -422,6 +438,12 @@ projectsApp.openapi(
       subject,
     ),
   );
+  visible = await syncOpenCodeTitlesForSessions({
+    rows: visible,
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+  });
   // Owner emails only for sessions someone else owns (for the "shared by" label).
   const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
   const emails = await lookupEmailsByUserIds(ownerIds);
@@ -466,16 +488,75 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  const [row] = await syncOpenCodeTitlesForSessions({
+    rows: [visible.row],
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+  });
 
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;
-  return c.json(serializeSession(visible.row, {
+  return c.json(serializeSession(row ?? visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerEmail,
   }));
+},
+);
+
+
+// GET /v1/projects/:projectId/sessions/:sessionId/transcript
+// Compact server-side transcript read for project automation. Unlike the raw
+// /v1/p sandbox proxy, this endpoint is callable with project-scoped session
+// tokens and strips tool inputs/outputs before returning messages.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/transcript',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/transcript',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        query: z.object({
+          limit: z.string().optional(),
+          chars: z.string().optional(),
+        }),
+      },
+    responses: {
+        200: json(AnyObject, 'Compact session transcript'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
+  if (!limit.ok) return c.json({ error: limit.error }, 400);
+  const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
+  if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+
+  const transcript = await buildSessionTranscriptDigest({
+    session: visible.row,
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+    limit: limit.value,
+    maxChars: maxChars.value,
+  });
+  return c.json(transcript);
 },
 );
 
@@ -583,8 +664,8 @@ projectsApp.openapi(
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
   // A user-set name is the AUTHORITATIVE display name. It lives in
-  // metadata.custom_name — a separate key from metadata.name (the auto title
-  // mirrored from opencode by /sync-opencode-sessions) so a rename is never
+  // metadata.custom_name — a separate key from metadata.name (the server-side
+  // auto title mirrored from OpenCode during session reads) so a rename is never
   // clobbered by a later sync. Passing name: "" (or null) clears the override
   // and reverts the session to its auto title.
   const hasNameField = hasOwn(body, 'name');
@@ -623,27 +704,6 @@ projectsApp.openapi(
   }));
 },
 );
-
-// POST /v1/projects/sync-opencode-sessions
-// Mirrors session data from the sandbox-local opencode DB into our cloud DB.
-// The project_sessions row remains the branch+sandbox root;
-// metadata.opencode_sessions stores the local OpenCode root/sub-session graph
-// for sidebar/list rendering when the sandbox is not the active runtime.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/sync-opencode-sessions',
-    tags: ['sessions'],
-    summary: 'POST /sync-opencode-sessions',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  syncOpencodeSessionsHandler as any,
-);
-
 
 // DELETE /v1/projects/:projectId/sessions/:sessionId
 // Soft delete only. We deliberately keep the remote branch so the user can

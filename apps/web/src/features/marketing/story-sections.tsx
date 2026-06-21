@@ -198,6 +198,7 @@ const CHAT_STREAM_CHARS_PER_TICK = 6;
 const CHAT_STREAM_TICK_MS = 28;
 
 function ChatMorningBriefReply() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [phase, setPhase] = useState<'thinking' | 'streaming' | 'done'>('thinking');
   const [streamedContent, setStreamedContent] = useState('');
 
@@ -235,7 +236,9 @@ function ChatMorningBriefReply() {
           <span className="bg-muted-foreground/50 relative inline-flex size-2.5 rounded-full" />
         </span>
         <AnimatedThinkingText
-          statusText="Gathering overnight updates..."
+          statusText={tI18nHardcoded.raw(
+            'autoFeaturesMarketingStorySectionsJsxAttrStatusTextGatheringOvernightUpdates3a9550bf',
+          )}
           className="text-muted-foreground text-xs"
         />
       </div>
@@ -297,6 +300,7 @@ function SlackSurfaceCard({
   card: (typeof surfaceCards)[number];
   index: number;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const chatRef = useRef<HTMLDivElement>(null);
   const isChatInView = useInView(chatRef, { once: true, amount: 0.4 });
   const [visibleChatMessages, setVisibleChatMessages] = useState(0);
@@ -350,7 +354,11 @@ function SlackSurfaceCard({
                     </span>
                   }
                 >
-                  <span className="block truncate">Hey! 👋 What can I help you with?</span>
+                  <span className="block truncate">
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesMarketingStorySectionsJsxTextHeyWhatCanI5de80837',
+                    )}
+                  </span>
                 </SlackChatMessage>
               ) : null}
 
@@ -369,7 +377,11 @@ function SlackSurfaceCard({
                     </span>
                   }
                 >
-                  <span className="block truncate">What happened while I was sleeping?</span>
+                  <span className="block truncate">
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesMarketingStorySectionsJsxTextWhatHappenedWhileIb8835287',
+                    )}
+                  </span>
                 </SlackChatMessage>
               ) : null}
 
@@ -394,7 +406,9 @@ function SlackSurfaceCard({
                 <Textarea
                   minHeight={20}
                   maxHeight={10}
-                  placeholder="Type your message here..."
+                  placeholder={tI18nHardcoded.raw(
+                    'autoFeaturesMarketingStorySectionsJsxAttrPlaceholderTypeYourMessage95756d48',
+                  )}
                   className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
                 />
               </div>

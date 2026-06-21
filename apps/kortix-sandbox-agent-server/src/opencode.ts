@@ -20,14 +20,13 @@ const READY_TIMEOUT_MS = 20_000
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
 
-const EXECUTOR_MCP_ENTRY = '/opt/kortix/apps/sandbox/agent-cli/connectors/executor-mcp.ts'
 export const OPENCODE_HOME = '/opt/kortix/home'
-export const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
-export const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
-export const OPENCODE_CACHE_HOME = `${OPENCODE_HOME}/.cache`
-export const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
-export const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
-export const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
+const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
+const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
+const OPENCODE_CACHE_HOME = `${OPENCODE_HOME}/.cache`
+const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
+const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
+const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has three
@@ -73,11 +72,17 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       ...mcp,
       'kortix-executor': {
         type: 'local',
-        command: ['bun', EXECUTOR_MCP_ENTRY],
+        // The Executor MCP server is a face of the unified `kortix` CLI
+        // (`kortix executor mcp`), baked onto PATH in every sandbox image.
+        command: ['kortix', 'executor', 'mcp'],
         enabled: true,
         environment: {
           KORTIX_EXECUTOR_TOKEN: executorToken,
           KORTIX_API_URL: apiUrl,
+          // Lets the CLI target the project-explicit gateway route. Optional —
+          // the session token also pins the project for the legacy flat route,
+          // so this is belt-and-suspenders.
+          ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
         },
       },
     }
@@ -325,7 +330,7 @@ async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
-export type OpencodeState = 'starting' | 'ok' | 'down'
+type OpencodeState = 'starting' | 'ok' | 'down'
 
 export type Opencode = {
   start(): Promise<void>
@@ -602,7 +607,7 @@ export function createOpencodeSupervisor(
  * is too weak because OpenCode can bind while the project directory is still
  * unusable for real session APIs.
  */
-export async function probeOpencodeSessionApi(
+async function probeOpencodeSessionApi(
   baseUrl: string,
   directory: string,
   timeoutMs = 1_000,

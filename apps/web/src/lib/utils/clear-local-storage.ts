@@ -21,9 +21,9 @@ export const clearUserLocalStorage = () => {
     });
     // Clear sessionStorage sandbox connection flag
     try { sessionStorage.removeItem('kortix-sandbox-was-connected'); } catch {}
-    
+
     console.log('✅ Local storage cleared on logout');
   } catch (error) {
     console.error('❌ Error clearing local storage:', error);
   }
-}; 
+};

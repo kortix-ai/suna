@@ -26,10 +26,10 @@ export function createGitRouter(cfg: Config): Hono {
   let inFlight: Promise<Response> | null = null
 
   router.post('/commit-push', async (c) => {
-    if (!cfg.kortixToken) {
+    if (!cfg.sandboxToken) {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
-    if (bearerToken(c.req.header('Authorization')) !== cfg.kortixToken) {
+    if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken) {
       return c.json({ error: 'unauthorized' }, 401)
     }
     if (inFlight) {

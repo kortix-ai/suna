@@ -1,0 +1,99 @@
+# Traces ingest — OpenTelemetry Collector (deployment mode). The single OTLP
+# endpoint the application will send spans to; it batches and forwards them to
+# Tempo (platform-tracing) over OTLP/gRPC in-namespace.
+#
+# PREREQUISITE — receives NOTHING yet: this is backend-only infrastructure. The
+# application is NOT OTel-instrumented, so the OTLP receiver has no clients until
+# app-side tracing is added. This stands up the collection endpoint ahead of
+# that work.
+#
+# Deployment mode (NOT daemonset): app emits OTLP to a stable in-cluster
+# service; no per-node host-metric/log scraping is wanted here.
+#
+# Single-source: chart from the upstream helm repo, all config inline.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-otel-collector
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.158.2
+    helm:
+      releaseName: otel-collector
+      values: |
+        fullnameOverride: otel-collector
+        mode: deployment
+        replicaCount: 1
+        image:
+          repository: otel/opentelemetry-collector-contrib
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+          jaeger-compact:
+            enabled: false
+          jaeger-thrift:
+            enabled: false
+          jaeger-grpc:
+            enabled: false
+          zipkin:
+            enabled: false
+        presets:
+          kubernetesAttributes:
+            enabled: false
+          hostMetrics:
+            enabled: false
+          logsCollection:
+            enabled: false
+          kubeletMetrics:
+            enabled: false
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+          processors:
+            batch: {}
+          exporters:
+            otlp/tempo:
+              endpoint: tempo.monitoring.svc:4317
+              tls:
+                insecure: true
+          service:
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [batch]
+                exporters: [otlp/tempo]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

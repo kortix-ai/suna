@@ -1002,6 +1002,7 @@ function TocSidebar() {
 }
 
 export default function BrandPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [logoFmt, setLogoFmt] = useState<LogoFormat>('svg');
   const [checkboxGroupValue, setCheckboxGroupValue] = useState<string[]>(['a']);
@@ -1079,12 +1080,14 @@ export default function BrandPage() {
               {/* Social avatars — symbol centred on a solid field, square 1:1 */}
               <div className="mt-10">
                 <h3 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
-                  Social Avatar
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextSocialAvatar0528fcc8',
+                  )}
                 </h3>
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-                  The symbol centred on a solid field, square 1:1 — drop it straight into a profile
-                  picture or social handle. Hover to download the ready-made PNG (1000&times;1000,
-                  &lt;1&nbsp;MB).
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextTheSymbold333c66e',
+                  )}
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {SOCIAL_ASSETS.map((a) => (
@@ -1344,8 +1347,9 @@ export default function BrandPage() {
                 Shadows
               </h2>
               <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-                Subtle elevation tokens for floating surfaces. Most app chrome stays flat — use
-                shadows only when depth helps hierarchy. Never add colored, glow, or custom{' '}
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation9150cc18',
+                )}{' '}
                 <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code> values.
               </p>
 
@@ -1529,7 +1533,9 @@ export default function BrandPage() {
                   <div className="space-y-4">
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                        Solid colors
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextSolidColors15530798',
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {(Object.keys(badgeColors) as Array<keyof typeof badgeColors>).map(
@@ -1564,7 +1570,11 @@ export default function BrandPage() {
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="success">Success</Badge>
-                        <Badge variant="badgeSuccess">Badge success</Badge>
+                        <Badge variant="badgeSuccess">
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextBadgeSuccessef599436',
+                          )}
+                        </Badge>
                         <Badge variant="kortix">Update</Badge>
                         <Badge variant="warning">Warning</Badge>
                         <Badge variant="info">Info</Badge>
@@ -1765,7 +1775,11 @@ export default function BrandPage() {
               </div>
 
               <div id="comp-checkbox" className="mb-12">
-                <ComponentLabel>Checkbox Group</ComponentLabel>
+                <ComponentLabel>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextCheckboxGroupf8961cfb',
+                  )}
+                </ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line1276JsxTextToggleForBooleanValues',
@@ -1773,9 +1787,28 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer className="max-w-xs">
                   <CheckboxGroup value={checkboxGroupValue} onValueChange={setCheckboxGroupValue}>
-                    <CheckboxGroupItem value="a" id="check-a" label="Option A" />
-                    <CheckboxGroupItem value="b" id="check-b" label="Option B" />
-                    <CheckboxGroupItem value="c" id="check-c" label="Option C" disabled />
+                    <CheckboxGroupItem
+                      value="a"
+                      id="check-a"
+                      label={tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDesignSystemPageJsxAttrLabelOption8399dd58',
+                      )}
+                    />
+                    <CheckboxGroupItem
+                      value="b"
+                      id="check-b"
+                      label={tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDesignSystemPageJsxAttrLabelOption275da31e',
+                      )}
+                    />
+                    <CheckboxGroupItem
+                      value="c"
+                      id="check-c"
+                      label={tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDesignSystemPageJsxAttrLabelOption225b100e',
+                      )}
+                      disabled
+                    />
                   </CheckboxGroup>
                 </DemoContainer>
               </div>
@@ -1818,7 +1851,9 @@ export default function BrandPage() {
                   <div className="space-y-4">
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                        Icon only
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextIconOnlyf6a2c4ee',
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Toggle
@@ -1843,7 +1878,9 @@ export default function BrandPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                        Text only
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextTextOnly458d5129',
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Toggle variant="default">Bold</Toggle>
@@ -1853,7 +1890,9 @@ export default function BrandPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                        Text + icon
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextTextIconc6453fac',
+                        )}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Toggle variant="default">
@@ -2015,24 +2054,38 @@ export default function BrandPage() {
               <div id="comp-modal" className="mb-12">
                 <ComponentLabel>Modal</ComponentLabel>
                 <ComponentDesc>
-                  Responsive overlay: bottom sheet on mobile, centered dialog on desktop. Supports
-                  side variants via <code className="font-mono text-xs">side</code>.
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextResponsiveOverlay8094b284',
+                  )}
+                  <code className="font-mono text-xs">side</code>.
                 </ComponentDesc>
                 <DemoContainer>
                   <Modal>
                     <ModalTrigger asChild>
-                      <Button variant="outline">Open Modal</Button>
+                      <Button variant="outline">
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextOpenModal87b8fff8',
+                        )}
+                      </Button>
                     </ModalTrigger>
                     <ModalContent>
                       <ModalHeader>
-                        <ModalTitle>Modal Title</ModalTitle>
+                        <ModalTitle>
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextModalTitle4b2e4477',
+                          )}
+                        </ModalTitle>
                         <ModalDescription>
-                          This is a description of the modal content.
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextThisIs8e3df96c',
+                          )}
                         </ModalDescription>
                       </ModalHeader>
                       <ModalBody>
                         <p className="text-muted-foreground text-sm">
-                          Modal body content goes here.
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextModalBody7732d54c',
+                          )}
                         </p>
                       </ModalBody>
                       <ModalFooter>
@@ -2247,10 +2300,21 @@ export default function BrandPage() {
               <div id="comp-toast" className="mb-12">
                 <ComponentLabel>Toast</ComponentLabel>
                 <ComponentDesc>
-                  Ephemeral notifications for async outcomes and feedback. Use{' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextEphemeralNotifications64698ef7',
+                  )}{' '}
                   <code>successToast</code>, <code>errorToast</code>, <code>infoToast</code>,{' '}
-                  <code>warningToast</code>, and <code>loadingToast</code> from{' '}
-                  <code>@/components/ui/toast</code> — not raw sonner calls.
+                  <code>warningToast</code>
+                  {tI18nHardcoded.raw('autoAppPublicMarketingDesignSystemPageJsxTextAndd93e251a')}
+                  <code>loadingToast</code> from{' '}
+                  <code>
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd',
+                    )}
+                  </code>{' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDesignSystemPageJsxTextNotRaw7f6d0bf8',
+                  )}
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="space-y-6">
@@ -2322,7 +2386,9 @@ export default function BrandPage() {
                             )
                           }
                         >
-                          Loading → Success
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextLoadingSuccessde0ea42f',
+                          )}
                         </Button>
                         <Button
                           variant="secondary"
@@ -2340,7 +2406,9 @@ export default function BrandPage() {
                             ).catch(() => undefined)
                           }
                         >
-                          Loading → Error
+                          {tI18nHardcoded.raw(
+                            'autoAppPublicMarketingDesignSystemPageJsxTextLoadingErrorda06eee7',
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -2646,12 +2714,18 @@ export default function BrandPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                        In tooltips
+                        {tI18nHardcoded.raw(
+                          'autoAppPublicMarketingDesignSystemPageJsxTextInTooltips3dc63b0c',
+                        )}
                       </p>
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="outline">Command palette</Button>
+                            <Button variant="outline">
+                              {tI18nHardcoded.raw(
+                                'autoAppPublicMarketingDesignSystemPageJsxTextCommandPalettea9dabb80',
+                              )}
+                            </Button>
                           </TooltipTrigger>
                           <TooltipContent>
                             <p>Search</p>

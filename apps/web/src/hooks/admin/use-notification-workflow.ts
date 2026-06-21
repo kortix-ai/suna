@@ -72,4 +72,3 @@ export function useTriggerWorkflow(options?: UseTriggerWorkflowOptions) {
     onError: options?.onError,
   });
 }
-

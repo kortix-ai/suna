@@ -49,4 +49,3 @@ export function getTierByKey(
 ): TierConfiguration | undefined {
   return tiers?.find((tier) => tier.tier_key === tierKey);
 }
-

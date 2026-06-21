@@ -202,25 +202,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                   }
                 }
                 
-                // Get language from localStorage, cookie, or default to 'en'
+                // Default analytics language to English. UI language changes only
+                // after an explicit profile settings update; browser storage and
+                // cookies must not infer language.
                 var lang = 'en';
-                try {
-                  // Check localStorage first
-                  var stored = localStorage.getItem('locale');
-                  if (stored) {
-                    lang = stored;
-                  } else {
-                    // Check cookie
-                    var cookies = document.cookie.split(';');
-                    for (var i = 0; i < cookies.length; i++) {
-                      var cookie = cookies[i].trim();
-                      if (cookie.indexOf('locale=') === 0) {
-                        lang = cookie.substring(7);
-                        break;
-                      }
-                    }
-                  }
-                } catch (e) {}
                 
                 var context = { master_group: 'General', content_group: 'Other', page_type: 'other', language: lang };
                 
@@ -379,41 +364,41 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={300}>
-            <BrowserNoiseGuard />
-            <DesktopChrome />
-            <DesktopUrlPrompt />
             <AuthProvider>
               <I18nProvider>
+                <BrowserNoiseGuard />
+                <DesktopChrome />
+                <DesktopUrlPrompt />
                 <ReactQueryProvider>
                   <Toaster />
                   {children}
                 </ReactQueryProvider>
+                {/* Analytics - lazy loaded to not block FCP */}
+                <Suspense fallback={null}>
+                  <Analytics />
+                </Suspense>
+                {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+                  <Suspense fallback={null}>
+                    <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+                  </Suspense>
+                )}
+                <Suspense fallback={null}>
+                  <SpeedInsights />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <PostHogIdentify />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <RouteChangeTracker />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <AuthEventTracker />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <LocalhostLinkInterceptor />
+                </Suspense>
               </I18nProvider>
             </AuthProvider>
-            {/* Analytics - lazy loaded to not block FCP */}
-            <Suspense fallback={null}>
-              <Analytics />
-            </Suspense>
-            {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
-              <Suspense fallback={null}>
-                <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
-              </Suspense>
-            )}
-            <Suspense fallback={null}>
-              <SpeedInsights />
-            </Suspense>
-            <Suspense fallback={null}>
-              <PostHogIdentify />
-            </Suspense>
-            <Suspense fallback={null}>
-              <RouteChangeTracker />
-            </Suspense>
-            <Suspense fallback={null}>
-              <AuthEventTracker />
-            </Suspense>
-            <Suspense fallback={null}>
-              <LocalhostLinkInterceptor />
-            </Suspense>
           </TooltipProvider>
         </ThemeProvider>
       </body>

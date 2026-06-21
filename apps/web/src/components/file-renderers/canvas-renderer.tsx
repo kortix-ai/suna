@@ -188,8 +188,8 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
         style={{
           background: `
             linear-gradient(
-              110deg, 
-              transparent 15%, 
+              110deg,
+              transparent 15%,
               rgba(255,255,255,0.15) 25%,
               rgba(255,255,255,0.5) 45%,
               rgba(255,255,255,0.7) 50%,
@@ -208,8 +208,8 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
         style={{
           background: `
             linear-gradient(
-              110deg, 
-              transparent 25%, 
+              110deg,
+              transparent 25%,
               rgba(255,255,255,0.25) 40%,
               rgba(255,255,255,0.6) 50%,
               rgba(255,255,255,0.25) 60%,

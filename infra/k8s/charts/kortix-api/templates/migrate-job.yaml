@@ -27,6 +27,14 @@ spec:
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       restartPolicy: Never
+      {{- if .Values.security.enabled }}
+      securityContext:
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
+        runAsUser: {{ .Values.security.runAsUser }}
+        runAsGroup: {{ .Values.security.runAsGroup }}
+        seccompProfile:
+          type: {{ .Values.security.seccompProfile }}
+      {{- end }}
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -39,4 +47,13 @@ spec:
                 name: {{ .Values.externalSecrets.targetSecretName }}
           resources:
             {{- toYaml .Values.migrate.resources | nindent 12 }}
+          {{- if .Values.security.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.security.allowPrivilegeEscalation }}
+            readOnlyRootFilesystem: false
+            {{- if .Values.security.dropAllCapabilities }}
+            capabilities:
+              drop: ["ALL"]
+            {{- end }}
+          {{- end }}
 {{- end }}

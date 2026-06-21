@@ -306,7 +306,7 @@ export async function supabaseAuth(c: Context, next: Next) {
  *
  * Used for:
  *   - Preview proxy routes (/v1/p/{sandboxId}/{port}/*)
- *   - Cron, deployment, secrets, providers, servers, queue, tunnel routes
+ *   - Cron, secrets, providers, servers, and tunnel routes
  *   - SSE stream endpoints (clients use fetch() with Authorization header)
  *
  * Sets userId and userEmail in context regardless of token type.
@@ -578,8 +578,13 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
     });
   }
 
-  // `/v1/projects/:projectId/...` — require the URL id to match.
-  const m = path.match(/^\/v1\/projects\/([^/]+)/);
+  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
+  // both are project-scoped surfaces. Require the URL id to match the token's
+  // project. (The executor branch also lets a session token reach the Executor's
+  // project-explicit gateway + management routes for ITS OWN project — without it
+  // a project-scoped token would fall through to the default-deny below.)
+  const m =
+    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {

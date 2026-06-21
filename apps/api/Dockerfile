@@ -37,6 +37,7 @@ ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
+COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter
@@ -66,7 +67,7 @@ COPY packages/registry ./packages/registry
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
-# Include devDeps so drizzle-kit is available for schema push at runtime.
+# Include devDeps because the API runs TypeScript source directly under Bun.
 RUN corepack enable pnpm && \
     pnpm install --filter ./${SERVICE}... --shamefully-hoist --prod=false --ignore-scripts
 
@@ -95,6 +96,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     git \
     openssh-client && \
+    apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # License
@@ -161,12 +163,29 @@ RUN rm -f ${SERVICE}/node_modules/agent-tunnel 2>/dev/null; \
 COPY --from=deps /app/packages/agent-tunnel/src ./${SERVICE}/node_modules/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modules/agent-tunnel/package.json
 
+# Drop test-only source copied in with workspace packages. The runtime image
+# executes the API directly from TypeScript source, but does not need tests.
+RUN rm -rf \
+    ${SERVICE}/src/__tests__ \
+    apps/kortix-sandbox-agent-server/src/__tests__ \
+    apps/cli/src/__tests__ \
+    packages/starter/src/__tests__ \
+    packages/manifest-schema/src/__tests__
+
 WORKDIR /app/${SERVICE}
 
 # Pre-create the data dir and give the bun user write access before dropping privileges.
-# The queue drainer writes to .kortix-data/queue at runtime; without this it fails with EACCES.
 RUN mkdir -p /app/${SERVICE}/.kortix-data && \
     chown -R bun:bun /app/${SERVICE}/.kortix-data
+
+LABEL org.opencontainers.image.title="kortix-api" \
+      org.opencontainers.image.description="Kortix API server" \
+      org.opencontainers.image.source="https://github.com/kortix-ai/suna" \
+      org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.vendor="Kortix"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

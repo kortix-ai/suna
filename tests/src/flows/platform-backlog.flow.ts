@@ -14,15 +14,6 @@
  *    boundaries (unknown keyId → 404 on revoke/delete/regenerate). These all run
  *    locally without provisioning a sandbox or minting a usable secret.
  *
- *  - DEP-1: deployments. DRIFT: the whole /v1/deployments router is mounted ONLY
- *    when KORTIX_DEPLOYMENTS_ENABLED is true (config default false), and every
- *    write path calls Freestyle. Because the route dumper imports the app with
- *    the flag off, NONE of the deployment routes exist in the route manifest, so
- *    they can be neither coverage-declared (Gate B) nor exercised at runtime
- *    without polluting routesHit with unknown routes. On the managed test targets
- *    the routes 404 (unmounted). Registered as a tracked todo until the suite can
- *    run against a deployments-enabled + Freestyle target.
- *
  *  - RTR-4: billed router passthrough. DRIFT: the per-service proxy routes are
  *    registered via `proxy.all(...)` (method ALL), which the route dumper skips,
  *    so neither `ALL /v1/router/:service` nor the concrete `/tavily/*` mounts
@@ -145,26 +136,5 @@ flow(
         .post("/v1/router/web-search", { query: "noop" });
       r.status([401, 403]);
     });
-  },
-);
-
-// ─── DEP-1 — deployments (tracked todo: unmounted + off-manifest) ─────────
-//
-// Cannot be covered by the live black-box suite as-is:
-//   • The /v1/deployments router only mounts when KORTIX_DEPLOYMENTS_ENABLED is
-//     true (config default false), so its routes are absent from the route
-//     manifest — declaring or hitting them fails the coverage gate (Gate B).
-//   • Every create/redeploy/stop/delete/logs path calls Freestyle.
-// Promote to a real flow once a deployments-enabled + Freestyle target exists
-// (add the routes to the manifest, then assert create→get→stop→redeploy→delete
-// plus unknown-id → 404 and ANON → 401).
-flow(
-  "DEP-1",
-  {
-    domain: "accounts",
-    todo: "deployments router is gated behind KORTIX_DEPLOYMENTS_ENABLED (off by default) and Freestyle — its routes are not in the manifest and not mounted on managed targets, so it can't be exercised by the live suite yet",
-  },
-  async () => {
-    /* never runs — registered as a tracked todo */
   },
 );

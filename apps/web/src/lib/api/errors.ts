@@ -1,6 +1,6 @@
 /**
  * Billing & API Error Classes
- * 
+ *
  * Simplified from the legacy 8-class hierarchy. The backend (kortix-api)
  * only returns plain HTTP 402 with { message: "..." } for billing errors.
  * All the old error codes (AGENT_RUN_LIMIT_EXCEEDED, THREAD_LIMIT_EXCEEDED, etc.)
@@ -50,7 +50,7 @@ export class RequestTooLargeError extends Error {
   ) {
     const defaultMessage = 'Request headers are too large';
     const defaultSuggestion = 'Try uploading files one at a time, or reduce the number of files in a single request.';
-    
+
     super(message || detail?.message || defaultMessage);
     this.name = 'RequestTooLargeError';
     this.status = status;

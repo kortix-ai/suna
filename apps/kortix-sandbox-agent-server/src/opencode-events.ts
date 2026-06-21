@@ -4,7 +4,7 @@ import type { Opencode } from './opencode'
 
 // opencode's QuestionInfo schema, mirrored from the v2 SDK. Anything richer
 // (like permission.asked) is layered on top of the same SSE stream.
-export interface QuestionInfo {
+interface QuestionInfo {
   question: string
   header: string
   options: Array<{ value: string; label?: string }>
@@ -18,7 +18,7 @@ export interface QuestionRequest {
   questions: QuestionInfo[]
 }
 
-export type OpencodeEventHandlers = {
+type OpencodeEventHandlers = {
   onQuestionAsked?: (req: QuestionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including

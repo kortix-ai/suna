@@ -1,0 +1,37 @@
+# Audit: every container must set allowPrivilegeEscalation: false, so a process
+# cannot gain more privileges than its parent (e.g. via setuid). Audit mode.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privilege-escalation
+  annotations:
+    policies.kyverno.io/title: Disallow Privilege Escalation
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Every container must set securityContext.allowPrivilegeEscalation to false
+      so a process cannot acquire more privileges than its parent.
+spec:
+  background: true
+  rules:
+    - name: deny-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+      validate:
+        failureAction: Audit
+        message: "allowPrivilegeEscalation must be set to false on every container."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false

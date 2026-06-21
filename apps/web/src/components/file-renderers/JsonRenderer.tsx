@@ -27,4 +27,3 @@ export function JsonRenderer({ content, className = '' }: JsonRendererProps) {
     </div>
   );
 }
-

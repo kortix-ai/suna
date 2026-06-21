@@ -3,20 +3,27 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { KeyRound, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { RiCpuLine } from 'react-icons/ri';
 import { PROVIDERS } from '../data';
 import { BrandLogo, ConnectBadge, PageHead } from '../primitives';
 
 export function ModelsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div>
       <PageHead
         title="Models"
-        sub="Bring any provider — routed per session, keys stay in Secrets"
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesModelsPageJsxAttrSubb32ed537',
+        )}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> Add provider
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesModelsPageJsxTextAdd2c76a9b7',
+            )}
           </Button>
         }
       />
@@ -55,7 +62,9 @@ export function ModelsPage() {
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
         <KeyRound className="size-3.5 shrink-0" />
-        Connecting a provider writes its API key to Secrets — sessions pick it up at sandbox boot.
+        {tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesModelsPageJsxTextConnecting6d7cacee',
+        )}
       </div>
     </div>
   );

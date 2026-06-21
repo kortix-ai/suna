@@ -129,4 +129,3 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
         </Dialog>
     );
 }
-

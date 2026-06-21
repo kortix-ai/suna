@@ -3,6 +3,14 @@ import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
+import {
+  recordHttpRequest,
+  incInFlight,
+  decInFlight,
+  setEventLoopLagSeconds,
+  renderMetrics,
+  metricsEnabled,
+} from './lib/metrics';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
@@ -48,6 +56,7 @@ import {
   projectsApp,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
+  getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -112,6 +121,31 @@ const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
+
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  if (path === '/metrics' || path.startsWith('/health') || path.startsWith('/v1/health')) {
+    return next();
+  }
+  const start = performance.now();
+  incInFlight();
+  let status = 0;
+  try {
+    await next();
+    status = c.res.status;
+  } catch (err) {
+    status = 500;
+    throw err;
+  } finally {
+    decInFlight();
+    recordHttpRequest({
+      method: c.req.method,
+      route: c.req.routePath || path,
+      status: status || c.res.status,
+      durationSeconds: (performance.now() - start) / 1000,
+    });
+  }
+});
 
 // === Global Middleware === 
 
@@ -330,6 +364,7 @@ const HealthSchema = z
     }),
     tunnel: z.any(),
     leader: z.boolean(),
+    trigger_scheduler: z.any(),
   })
   .openapi('Health');
 
@@ -365,6 +400,10 @@ const healthHandler = (c: any) =>
     },
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
+    // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
+    // took, and what it did. On a non-leader pod the fields are null (the sweep
+    // only runs on the leader) — so "all pods null" = no leader = no triggers.
+    trigger_scheduler: getTriggerSchedulerHealth(),
   });
 
 app.openapi(
@@ -401,6 +440,7 @@ let eventLoopLagMs = 0;
     // How much longer than the interval the loop took to come back to this tick.
     eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
     lastSample = now;
+    setEventLoopLagSeconds(eventLoopLagMs / 1000);
   }, SAMPLE_INTERVAL_MS);
   // Never keep the process alive just for the sampler.
   (lagTimer as { unref?: () => void }).unref?.();
@@ -421,6 +461,12 @@ const livenessHandler = (c: any) => {
 // Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
+
+app.get('/metrics', (c) => {
+  if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
+  c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  return c.body(renderMetrics());
+});
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.openapi(
@@ -625,7 +671,16 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           // so the managed gateway works for self-hosted / billing-off deploys.
           const acct = await validateAccountToken(token);
           if (acct.isValid && acct.userId && acct.accountId) {
-            return { userId: acct.userId, accountId: acct.accountId };
+            // projectId/sessionId attribute LLM usage to the calling session
+            // (sandbox executor token is minted per-session with session_id =
+            // sandbox_id) — the reaper's reliable activity signal + precise
+            // per-session billing.
+            return {
+              userId: acct.userId,
+              accountId: acct.accountId,
+              projectId: acct.projectId ?? null,
+              sessionId: acct.sessionId ?? null,
+            };
           }
           return null;
         },
@@ -637,6 +692,8 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           const usageEventId = await recordUsageEvent({
             accountId: event.accountId,
             actorUserId: event.actorUserId,
+            projectId: event.projectId ?? null,
+            sessionId: event.sessionId ?? null,
             provider: event.provider,
             model: event.model,
             route: '/v1/llm/chat/completions',
@@ -735,10 +792,8 @@ app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oaut
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
-if (config.KORTIX_DEPLOYMENTS_ENABLED) {
-  const { deploymentsApp } = await import('./deployments');
-  app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
-}
+const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
+app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
@@ -892,7 +947,7 @@ console.log(`
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
-${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
+║    /v1/projects   (Git-backed projects)                    ║
 ${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║

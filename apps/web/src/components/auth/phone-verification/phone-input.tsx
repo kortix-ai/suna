@@ -12,10 +12,10 @@ import { PhoneInput as PhoneInputComponent } from "@/components/ui/phone-input";
 
 function getUserCountryCode(): string {
   if (typeof window === 'undefined') return 'US';
-  
+
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
+
     const timezoneToCountry: Record<string, string> = {
       'America/New_York': 'US',
       'America/Chicago': 'US',
@@ -71,11 +71,11 @@ function getUserCountryCode(): string {
       'Africa/Lagos': 'NG',
       'Africa/Nairobi': 'KE',
     };
-    
+
     if (timezoneToCountry[timezone]) {
       return timezoneToCountry[timezone];
     }
-    
+
     const locale = navigator.language || 'en-US';
     const countryCode = locale.split('-')[1];
     if (countryCode && countryCode.length === 2) {
@@ -84,7 +84,7 @@ function getUserCountryCode(): string {
   } catch (error) {
     console.error('Error detecting country:', error);
   }
-  
+
   return 'US';
 }
 
@@ -147,9 +147,9 @@ export function PhoneInput({ onSubmit, isLoading = false, error = null }: PhoneI
             </Alert>
           )}
 
-          <Button 
-            type="submit" 
-            className="w-full h-11" 
+          <Button
+            type="submit"
+            className="w-full h-11"
             disabled={isLoading || !phoneNumber.trim()}
           >
             {isLoading ? (

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Custom frontend-URL prompt for the desktop app (self-hosting).
  *
@@ -10,7 +11,7 @@
  * the Tauri shell and the window reloads onto it. Renders nothing on the web.
  */
 
-import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -19,13 +20,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { isDesktop, getFrontendUrl, setFrontendUrl } from '@/lib/desktop';
+import { getFrontendUrl, isDesktop, setFrontendUrl } from '@/lib/desktop';
 import { toast } from '@/lib/toast';
+import { useEffect, useState } from 'react';
 
 export function DesktopUrlPrompt() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -52,11 +54,7 @@ export function DesktopUrlPrompt() {
     } catch (e) {
       // Tauri rejects commands with a plain string, not an Error — surface it.
       const msg =
-        typeof e === 'string'
-          ? e
-          : e instanceof Error
-            ? e.message
-            : 'Could not set frontend URL';
+        typeof e === 'string' ? e : e instanceof Error ? e.message : 'Could not set frontend URL';
       toast.error(msg);
       setBusy(false);
     }
@@ -68,10 +66,15 @@ export function DesktopUrlPrompt() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Custom frontend URL</DialogTitle>
+          <DialogTitle>
+            {tI18nHardcoded.raw(
+              'autoComponentsDesktopDesktopUrlPromptJsxTextCustomFrontendURL8006a906',
+            )}
+          </DialogTitle>
           <DialogDescription>
-            Point this desktop app at a self-hosted Kortix instance. The window
-            reloads and the choice is saved locally.
+            {tI18nHardcoded.raw(
+              'autoComponentsDesktopDesktopUrlPromptJsxTextPointThisDesktop4b4ff15f',
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -96,7 +99,7 @@ export function DesktopUrlPrompt() {
             Cancel
           </Button>
           <Button type="button" onClick={apply} disabled={busy || !value.trim()}>
-            Apply &amp; reload
+            {tI18nHardcoded.raw('autoComponentsDesktopDesktopUrlPromptJsxTextApplyReload0eff0716')}
           </Button>
         </DialogFooter>
       </DialogContent>

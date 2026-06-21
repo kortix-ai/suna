@@ -26,7 +26,7 @@ export function BinaryRenderer({
 }: BinaryRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
-  
+
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'files',

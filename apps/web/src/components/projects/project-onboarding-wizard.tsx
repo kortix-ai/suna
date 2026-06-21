@@ -37,6 +37,7 @@ import {
 } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Check, MessageSquare, Plug, type LucideIcon } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -74,6 +75,7 @@ type WizardStep = {
 };
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const contactTier = usePersonalContactTier();
   const showFounderStep = contactTier !== 'none';
   const { user } = useAuth();
@@ -268,7 +270,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
             'border-border/70 bg-background gap-0 space-y-0 overflow-hidden p-0 lg:max-w-xl',
             hiddenWhileOverlayOpen && 'pointer-events-none opacity-0',
           )}
-          closeClassName="text-muted-foreground hover:bg-muted hover:text-foreground"
+          closeClassName={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectOnboardingWizardJsxAttrCloseClassNameTextMuted496fbb2b',
+          )}
           overlayClassName={cn(hiddenWhileOverlayOpen && 'pointer-events-none opacity-0')}
           aria-hidden={hiddenWhileOverlayOpen}
         >
@@ -281,11 +285,14 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                 <div className="flex flex-col items-start gap-5">
                   <div className="max-w-[460px]">
                     <h2 className="text-foreground text-[22px] leading-[1.15] font-semibold tracking-tight">
-                      You&rsquo;re all set
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsProjectOnboardingWizardJsxTextYouReAll9d4a5be9',
+                      )}
                     </h2>
                     <p className="text-muted-foreground mt-2 text-sm leading-6">
-                      Your command center is ready. Describe a task in the composer and your agent
-                      gets to work.
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsProjectOnboardingWizardJsxTextYourCommandCenterb0571c60',
+                      )}
                     </p>
                   </div>
                 </div>
@@ -294,7 +301,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                   onClick={onboarding.complete}
                   className="w-fit gap-1.5 active:scale-[0.98]"
                 >
-                  Start building
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsProjectOnboardingWizardJsxTextStartBuilding342653ba',
+                  )}
                   <ArrowRight />
                 </Button>
               </div>
@@ -347,8 +356,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                         ))}
                       </div>
                       <p className="text-muted-foreground text-center text-xs leading-5">
-                        3,000+ integrations you can connect to — OAuth, MCP, REST, and the tools
-                        your team already lives in.
+                        {tI18nHardcoded.raw(
+                          'autoComponentsProjectsProjectOnboardingWizardJsxText3000Integrations0d987bba',
+                        )}
                       </p>
                     </div>
                   )}
@@ -356,12 +366,19 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                   {currentStep.id === 'agents' && (
                     <div className="flex flex-col gap-3">
                       <p className="text-foreground text-sm leading-6 font-medium">
-                        To make it truly yours, build out:
+                        {tI18nHardcoded.raw(
+                          'autoComponentsProjectsProjectOnboardingWizardJsxTextToMakeIt58c5adb1',
+                        )}
                       </p>
                       <ul className="space-y-2">
                         {CUSTOMIZE_BUILD_OUT_ITEMS.map((item, index) => (
                           <li key={item} className="flex items-start gap-2 text-sm leading-6">
-                            <KortixAsterisk index={index} parentClass="mt-1.5 size-3" />
+                            <KortixAsterisk
+                              index={index}
+                              parentClass={tI18nHardcoded.raw(
+                                'autoComponentsProjectsProjectOnboardingWizardJsxAttrParentClassMt1f0eb5c30',
+                              )}
+                            />
                             <p className="text-muted-foreground flex items-center gap-1 font-medium">
                               {item}
                             </p>
@@ -369,8 +386,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                         ))}
                       </ul>
                       <p className="text-muted-foreground text-sm leading-6 font-medium">
-                        All of it lives in your repo as code, version-controlled, and compounds week
-                        over week.
+                        {tI18nHardcoded.raw(
+                          'autoComponentsProjectsProjectOnboardingWizardJsxTextAllOfIt1d62a58a',
+                        )}
                       </p>
                     </div>
                   )}
@@ -446,7 +464,12 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
           </ModalBody>
 
           <ModalFooter className="border-border/60 bg-muted/25 flex-row items-center justify-between gap-2 border-t px-6 py-3.5 sm:justify-between md:px-6">
-            <div className="flex items-center gap-1.5" aria-label="Onboarding progress">
+            <div
+              className="flex items-center gap-1.5"
+              aria-label={tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectOnboardingWizardJsxAttrAriaLabelOnboarding0aefa252',
+              )}
+            >
               {steps.map((step, index) => (
                 <button
                   key={step.id}
@@ -486,8 +509,12 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
           calLink={CAL_LINK}
           calNamespace={CAL_NAMESPACE}
           source="onboarding-wizard"
-          title="Book a call with Marko"
-          description="A couple of quick details so Marko can tailor the call."
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectOnboardingWizardJsxAttrTitleBookA7b71ab51',
+          )}
+          description={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectOnboardingWizardJsxAttrDescriptionACouple16048a01',
+          )}
           defaultName={defaultName}
           defaultEmail={defaultEmail}
           onBookingSuccessful={() => setFounderBooked(true)}

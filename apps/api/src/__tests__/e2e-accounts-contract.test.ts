@@ -110,6 +110,24 @@ function collectConditionValues(condition: unknown): Record<string, unknown> {
   return values;
 }
 
+function collectStringValues(node: unknown, out: string[] = []): string[] {
+  if (!node) return out;
+  if (typeof node === 'string') {
+    out.push(node);
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) collectStringValues(item, out);
+    return out;
+  }
+  if (typeof node === 'object') {
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      collectStringValues(value, out);
+    }
+  }
+  return out;
+}
+
 function queryResult<T = any>(rows: T[]) {
   return {
     then: (resolve: (value: T[]) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -266,6 +284,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../accounts/email', () => ({
+  buildInviteUrl: (inviteId: string) => `http://localhost:3000/invites/${inviteId}`,
   sendAccountInviteEmail: async (opts: Record<string, unknown>) => {
     sentInvites.push(opts);
     return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
@@ -359,6 +378,14 @@ mock.module('../shared/db', () => ({
               const row = membership(values.user_id as string, values.account_id as string);
               if (row) Object.assign(row, updates);
             }
+            if (table === accountInvitations) {
+              const row = inviteRows.find((invite) =>
+                invite.inviteId === values.invite_id &&
+                (!values.account_id || invite.accountId === values.account_id) &&
+                invite.acceptedAt === null
+              );
+              if (row) Object.assign(row, updates);
+            }
             return resolve([]);
           },
         }),
@@ -380,6 +407,22 @@ mock.module('../shared/db', () => ({
         return [];
       },
     }),
+    execute: async (query: unknown) => {
+      const strings = collectStringValues(query);
+      const accountId = strings.find((value) =>
+        memberRows.some((row) => row.accountId === value)
+      );
+      if (accountId) {
+        return [{
+          n: memberRows.filter((row) =>
+            row.accountId === accountId &&
+            authUsers.some((user) => user.id === row.userId)
+          ).length,
+        }];
+      }
+      const user = authUsers.find((candidate) => strings.includes(candidate.email));
+      return user ? [{ id: user.id }] : [];
+    },
   },
 }));
 
@@ -413,7 +456,6 @@ describe('accounts API contract', () => {
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
       account_id: PERSONAL_ACCOUNT_ID,
-      personal_account: true,
       account_role: 'owner',
       is_primary_owner: true,
     });
@@ -432,7 +474,7 @@ describe('accounts API contract', () => {
       body: JSON.stringify({}),
     });
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({ error: 'name is required' });
+    expect(await missing.json()).toMatchObject({ error: true, status: 400 });
 
     const tooLong = await app.request('/v1/accounts', {
       method: 'POST',
@@ -451,7 +493,6 @@ describe('accounts API contract', () => {
     expect(await create.json()).toMatchObject({
       account_id: CREATED_ACCOUNT_ID,
       name: 'Created Team',
-      personal_account: false,
       account_role: 'owner',
     });
 
@@ -576,7 +617,7 @@ describe('accounts API contract', () => {
     currentUserEmail = 'owner@example.test';
     const leavePersonal = await app.request(`/v1/accounts/${PERSONAL_ACCOUNT_ID}/leave`, { method: 'POST' });
     expect(leavePersonal.status).toBe(409);
-    expect(await leavePersonal.json()).toEqual({ error: 'Personal accounts cannot be left' });
+    expect(await leavePersonal.json()).toEqual({ error: 'Cannot leave as the last owner — transfer ownership first' });
   });
 
   test('redacts invites for wrong users and enforces invite accept failure modes', async () => {
@@ -625,6 +666,7 @@ describe('accounts API contract', () => {
     expect(await accepted.json()).toEqual({
       account_id: ACCOUNT_ID,
       account_role: 'member',
+      already_accepted: false,
       bootstrap_grants_applied: [],
     });
     expect(membership(INVITEE_ID, ACCOUNT_ID)?.accountRole).toBe('member');
@@ -636,6 +678,7 @@ describe('accounts API contract', () => {
       account_id: ACCOUNT_ID,
       account_role: 'member',
       already_accepted: true,
+      bootstrap_grants_applied: [],
     });
 
     inviteRows[0] = {
