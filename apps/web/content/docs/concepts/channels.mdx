@@ -16,8 +16,16 @@ messages in that thread continue the same session.
   OAuth.
 - **Credentials are stored as project [secrets](/docs/concepts/secrets)** (e.g.
   `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) — never in the repo.
+- **The agent talks to Slack through the Executor.** Connecting Slack
+  auto-materializes a `slack` [connector](/docs/concepts/connections) (provider
+  `channel`): the agent's Slack calls — posting, **file upload/download**,
+  history, reactions, search — run through the gateway with the bot token
+  resolved **server-side**, so the token is never exposed inside the sandbox. The
+  `slack` connector also shows up in the project's Connectors, where you control
+  who can use it.
 
 <Callout type="info" title="Note">
 Channels are configured through the dashboard, CLI, and secrets — **not** through
-`kortix.toml`.
+`kortix.toml`. The `slack` connector auto-materializes on connect; you don't
+declare it.
 </Callout>
