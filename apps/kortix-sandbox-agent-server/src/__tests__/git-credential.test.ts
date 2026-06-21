@@ -33,7 +33,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchName: 'session-xyz',
     sessionFresh: false,
     baseSha: undefined,
-    kortixToken: 'kortix_sb_secret',
+    sandboxToken: 'kortix_sb_secret',
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
@@ -112,7 +112,7 @@ describe('git credential helper', () => {
   it('returns null when token/project/api are not all present', async () => {
     expect(await resolveGitCredentialOutput(baseConfig({ apiUrl: undefined }))).toBeNull()
     expect(await resolveGitCredentialOutput(baseConfig({ projectId: undefined }))).toBeNull()
-    expect(await resolveGitCredentialOutput(baseConfig({ kortixToken: undefined }))).toBeNull()
+    expect(await resolveGitCredentialOutput(baseConfig({ sandboxToken: undefined }))).toBeNull()
   })
 
   it('configures git with a host-scoped credential helper pointing at this binary', async () => {

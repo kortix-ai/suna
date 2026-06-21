@@ -42,7 +42,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchName: undefined,
     sessionFresh: false,
     baseSha: undefined,
-    kortixToken: TEST_TOKEN,
+    sandboxToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
@@ -122,7 +122,7 @@ describe('daemon proxy auth gate', () => {
       KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
     } as NodeJS.ProcessEnv)
 
-    expect(cfg.kortixToken).toBe(TEST_TOKEN)
+    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
     expect('apiToken' in cfg).toBe(false)
   })
 
@@ -315,7 +315,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('reports auth=unconfigured when KORTIX_TOKEN is unset', async () => {
-    const app = buildOpencodeApp(baseConfig({ kortixToken: undefined }), fakeOpencode(), Date.now())
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     const body = (await res.json()) as { auth: string }
     expect(body.auth).toBe('unconfigured')
@@ -442,7 +442,7 @@ describe('daemon proxy auth gate', () => {
   })
 
   it('refuses to proxy when KORTIX_TOKEN is unset → 503 (never silently bypass)', async () => {
-    const app = buildOpencodeApp(baseConfig({ kortixToken: undefined }), fakeOpencode('ok'), Date.now())
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
     const res = await app.request('/session/anything')
     expect(res.status).toBe(503)
     const body = (await res.json()) as { error: string; detail: string }
