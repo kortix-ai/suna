@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { interpretAcquireResult, shouldDemote } from '../shared/leader-election';
+import { interpretAcquireResult, runsSingletonWorkers, shouldDemote } from '../shared/leader-election';
 
 const ME = 'host-123-abc';
 const OTHER = 'host-999-xyz';
@@ -33,5 +33,50 @@ describe('shouldDemote', () => {
     const last = 1_000_000;
     expect(shouldDemote(last, last + 60_000, TTL)).toBe(true);
     expect(shouldDemote(last, last + 120_000, TTL)).toBe(true);
+  });
+});
+
+describe('runsSingletonWorkers (dead-weight-leader guard)', () => {
+  test('default (no flags set) → owner, so single-node/self-host still elects', () => {
+    expect(runsSingletonWorkers({})).toBe(true);
+  });
+
+  test('API-only profile (ALL four worker flags "false") → NOT an owner', () => {
+    // This is the helm workers.enabled=false profile. Such a pod must never join
+    // the election — otherwise it can win the lease and dead-weight-starve crons.
+    expect(
+      runsSingletonWorkers({
+        KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
+        KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
+        KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
+      }),
+    ).toBe(false);
+  });
+
+  test('any single worker still enabled → owner', () => {
+    expect(
+      runsSingletonWorkers({
+        KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
+        KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
+        KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'true',
+      }),
+    ).toBe(true);
+  });
+
+  test('only the scheduler enabled (others off) → owner', () => {
+    expect(
+      runsSingletonWorkers({
+        KORTIX_TRIGGER_SCHEDULER_ENABLED: 'true',
+        KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
+        KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
+      }),
+    ).toBe(true);
+  });
+
+  test('only literal "false" disables a flag — "0"/"no"/"" still count as on', () => {
+    expect(runsSingletonWorkers({ KORTIX_TRIGGER_SCHEDULER_ENABLED: '0' })).toBe(true);
   });
 });

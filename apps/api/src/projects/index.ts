@@ -65,6 +65,7 @@ export {
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
+  schedulerSweepIsStale,
   loadManifestForEdit,
   commitManifest,
 } from './lib/triggers';
