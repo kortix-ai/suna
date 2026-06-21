@@ -38,10 +38,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : String(error || fallback);
 }
 
+const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
+  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+
 function isRetryableEnvSyncFailure(message: string): boolean {
   return (
     /\benv sync failed: (502|503|504)\b/i.test(message) ||
-    /\b(operation timed out|timeout|aborterror)\b/i.test(message)
+    RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message)
   );
 }
 
