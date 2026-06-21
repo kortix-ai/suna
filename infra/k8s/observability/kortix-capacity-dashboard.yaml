@@ -208,12 +208,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "green",
-                  "value": null
-                }
-              ],
+              "unit": "short",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -267,12 +262,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "green",
-                  "value": null
-                }
-              ],
+              "unit": "short",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -380,24 +370,24 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "red",
-                  "value": null
-                },
-                {
-                  "color": "yellow",
-                  "value": 1
-                },
-                {
-                  "color": "green",
-                  "value": 3
-                }
-              ],
+              "unit": "short",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
-                "steps": 1
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "green",
+                    "value": 3
+                  }
+                ]
               },
               "color": {
                 "mode": "thresholds"
