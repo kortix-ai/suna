@@ -1,6 +1,3 @@
-import { CircuitBreaker } from '../resilience';
-import { type FetchImpl } from '../http';
-import { calculateCost, extractUsageFromJson, type ExtractedUsage } from '../usage';
 import type {
   GatewayConfig,
   GatewayHooks,
@@ -8,9 +5,12 @@ import type {
   TokenCounts,
   UsageEvent,
 } from '../domain';
-import { createTraceEmitter } from './trace';
+import type { FetchImpl } from '../http';
+import type { CircuitBreaker } from '../resilience';
+import { type ExtractedUsage, calculateCost, extractUsageFromJson } from '../usage';
 import { runFailover } from './failover';
 import { relayStream } from './streaming';
+import { createTraceEmitter } from './trace';
 
 export interface ChatCompletionRequest {
   authorization: string | undefined;
@@ -41,7 +41,7 @@ function json(data: unknown, status = 200): Response {
 
 function bearer(header: string | undefined): string | null {
   if (!header) return null;
-  const match = header.match(/^Bearer\s+(.+)$/i);
+  const match = header.match(/^Bearer\s+(\S.*)$/i);
   return match ? match[1].trim() : null;
 }
 
@@ -88,7 +88,13 @@ export async function handleChatCompletions(
   try {
     await hooks.assertBillingActive(principal.accountId);
   } catch (err) {
-    emit({ ...id, status: 402, ok: false, errorCode: 'subscription_required', errorMessage: errorMessage(err) });
+    emit({
+      ...id,
+      status: 402,
+      ok: false,
+      errorCode: 'subscription_required',
+      errorMessage: errorMessage(err),
+    });
     const message = err instanceof Error ? err.message : 'Billing inactive';
     return json({ error: message, message, code: 'subscription_required' }, 402);
   }
@@ -100,7 +106,13 @@ export async function handleChatCompletions(
       // 402, not 429: a budget cap is a terminal condition (it won't clear by
       // waiting), so it must NOT be retried like a transient rate limit. Mirrors
       // the billing-inactive gate above.
-      emit({ ...id, status: 402, ok: false, errorCode: 'budget_exceeded', errorMessage: errorMessage(err) });
+      emit({
+        ...id,
+        status: 402,
+        ok: false,
+        errorCode: 'budget_exceeded',
+        errorMessage: errorMessage(err),
+      });
       const message = err instanceof Error ? err.message : 'Budget exceeded';
       return json({ error: message, message, code: 'budget_exceeded' }, 402);
     }
@@ -116,7 +128,9 @@ export async function handleChatCompletions(
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
   const metadata =
-    body.metadata && typeof body.metadata === 'object' ? (body.metadata as Record<string, unknown>) : {};
+    body.metadata && typeof body.metadata === 'object'
+      ? (body.metadata as Record<string, unknown>)
+      : {};
 
   logger.info(
     `[gateway] → ${requestId} ${requestedModel || '(no model)'}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
@@ -124,13 +138,26 @@ export async function handleChatCompletions(
 
   const candidates = await hooks.resolveUpstream(principal, requestedModel);
   if (!candidates.length) {
-    emit({ ...id, requestedModel, status: 400, ok: false, errorCode: 'model_unavailable', request: capture(body), metadata });
-    return json({ error: `No upstream configured for model "${requestedModel}"`, code: 'model_unavailable' }, 400);
+    emit({
+      ...id,
+      requestedModel,
+      status: 400,
+      ok: false,
+      errorCode: 'model_unavailable',
+      request: capture(body),
+      metadata,
+    });
+    return json(
+      { error: `No upstream configured for model "${requestedModel}"`, code: 'model_unavailable' },
+      400,
+    );
   }
 
   const streaming = body.stream === true;
   const hasReasoning =
-    body.reasoning !== undefined || body.reasoning_effort !== undefined || body.thinking !== undefined;
+    body.reasoning !== undefined ||
+    body.reasoning_effort !== undefined ||
+    body.thinking !== undefined;
   if (!hasReasoning && config.injectReasoningFor?.(requestedModel)) {
     body.reasoning = { effort: 'medium' };
   }
@@ -154,14 +181,25 @@ export async function handleChatCompletions(
   const { upstream, chosen: descriptor, tried, attempts } = result.value;
 
   const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
-    const usedModel = (usage?.model ?? descriptor.resolvedModel ?? requestedModel ?? 'unknown').toString();
+    const usedModel = (
+      usage?.model ??
+      descriptor.resolvedModel ??
+      requestedModel ??
+      'unknown'
+    ).toString();
     const counts: TokenCounts = {
       promptTokens: usage?.promptTokens ?? 0,
       completionTokens: usage?.completionTokens ?? 0,
       cachedTokens: usage?.cachedTokens ?? 0,
     };
     const markup = descriptor.billingMode === 'none' ? 0 : descriptor.markup;
-    const { upstreamCost, finalCost } = calculateCost(usedModel, counts, markup, usage?.upstreamCostHint, descriptor.pricing);
+    const { upstreamCost, finalCost } = calculateCost(
+      usedModel,
+      counts,
+      markup,
+      usage?.upstreamCostHint,
+      descriptor.pricing,
+    );
 
     if (counts.promptTokens + counts.completionTokens > 0) {
       const event: UsageEvent = {
@@ -184,9 +222,22 @@ export async function handleChatCompletions(
     }
 
     emit({
-      ...id, requestedModel, resolvedModel: usedModel, provider: descriptor.provider,
-      billingMode: descriptor.billingMode, streaming, status: 200, ok: true, attempts, candidatesTried: tried,
-      usage: counts, upstreamCost, finalCost, request: capture(payload), response: capture(response), metadata,
+      ...id,
+      requestedModel,
+      resolvedModel: usedModel,
+      provider: descriptor.provider,
+      billingMode: descriptor.billingMode,
+      streaming,
+      status: 200,
+      ok: true,
+      attempts,
+      candidatesTried: tried,
+      usage: counts,
+      upstreamCost,
+      finalCost,
+      request: capture(payload),
+      response: capture(response),
+      metadata,
     });
   };
 

@@ -1,8 +1,17 @@
-import { CircuitBreaker } from './resilience';
-import { handleChatCompletions, type ChatCompletionRequest, type GatewayDeps, type HandlerRuntime } from './pipeline';
 import type { GatewayConfig, GatewayHooks } from './domain';
+import {
+  type ChatCompletionRequest,
+  type GatewayDeps,
+  type HandlerRuntime,
+  handleChatCompletions,
+} from './pipeline';
+import { CircuitBreaker } from './resilience';
 
-export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, deps: GatewayDeps = {}) {
+export function createGateway(
+  hooks: GatewayHooks,
+  config: GatewayConfig = {},
+  deps: GatewayDeps = {},
+) {
   const logger = deps.logger ?? console;
   const captureBodies = config.captureBodies ?? true;
   const maxBodyBytes = config.maxCapturedBodyBytes ?? 256 * 1024;
@@ -21,7 +30,11 @@ export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, d
     try {
       const serialized = JSON.stringify(value);
       if (serialized.length > maxBodyBytes) {
-        return { truncated: true, bytes: serialized.length, preview: serialized.slice(0, maxBodyBytes) };
+        return {
+          truncated: true,
+          bytes: serialized.length,
+          preview: serialized.slice(0, maxBodyBytes),
+        };
       }
       return value;
     } catch {
@@ -43,7 +56,7 @@ export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, d
     new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
   const bearer = (header: string | undefined): string | null => {
-    const match = header?.match(/^Bearer\s+(.+)$/i);
+    const match = header?.match(/^Bearer\s+(\S.*)$/i);
     return match ? match[1].trim() : null;
   };
 
@@ -55,7 +68,9 @@ export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, d
     if (!hooks.listModels) return jsonResponse({ models: {} });
     try {
       const models = await hooks.listModels(principal);
-      logger.info(`[gateway] models ${Object.keys(models).length} for acct=${principal.accountId.slice(0, 8)}`);
+      logger.info(
+        `[gateway] models ${Object.keys(models).length} for acct=${principal.accountId.slice(0, 8)}`,
+      );
       return jsonResponse({ models });
     } catch (err) {
       logger.error('[gateway] listModels failed', err);
@@ -71,7 +86,8 @@ export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, d
     }));
 
   return {
-    chatCompletions: (req: ChatCompletionRequest): Promise<Response> => handleChatCompletions(runtime, req),
+    chatCompletions: (req: ChatCompletionRequest): Promise<Response> =>
+      handleChatCompletions(runtime, req),
     listModels,
     breakerHealth,
   };

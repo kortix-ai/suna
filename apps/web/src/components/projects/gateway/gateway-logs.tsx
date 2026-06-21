@@ -1,19 +1,33 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { Activity, ArrowLeft, ChevronRight, Clock, Coins, DollarSign, ScrollText, Zap } from 'lucide-react';
+import {
+  Activity,
+  ArrowLeft,
+  ChevronRight,
+  Clock,
+  Coins,
+  DollarSign,
+  ScrollText,
+} from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 
 import { EmptyState } from '@/components/ui/empty-state';
-import { cn } from '@/lib/utils';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
+import { cn } from '@/lib/utils';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import { CopyButton, displayModel, modelAccent } from './_shared';
 
 function fmtTime(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 function latencyTone(ms: number): string {
@@ -68,7 +82,9 @@ function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
       </span>
       <StatusBadge ok={row.ok} status={row.status} />
       <span className="flex items-center gap-1">
-        <span className="w-16 text-right text-xs tabular-nums text-foreground">${row.final_cost.toFixed(4)}</span>
+        <span className="w-16 text-right text-xs tabular-nums text-foreground">
+          ${row.final_cost.toFixed(4)}
+        </span>
         <ChevronRight className="size-4 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
       </span>
     </button>
@@ -149,7 +165,10 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
         <div className="mx-auto flex w-full max-w-3xl animate-in fade-in-0 flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: modelAccent(data.requested_model) }} />
+              <span
+                className="mt-1 size-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: modelAccent(data.requested_model) }}
+              />
               <div className="min-w-0">
                 <div className="truncate text-base font-semibold text-foreground">
                   {displayModel(data.requested_model || data.resolved_model)}
@@ -164,17 +183,46 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatTile icon={Clock} label="Latency" value={`${data.latency_ms}ms`} accent="var(--chart-2)" />
-            <StatTile icon={Coins} label="Tokens" value={(data.input_tokens + data.output_tokens).toLocaleString()} accent="var(--chart-3)" />
-            <StatTile icon={Activity} label="Provider cost" value={`$${data.upstream_cost.toFixed(4)}`} accent="var(--chart-4)" />
-            <StatTile icon={DollarSign} label="Billed" value={`$${data.final_cost.toFixed(4)}`} accent="var(--chart-1)" />
+            <StatTile
+              icon={Clock}
+              label="Latency"
+              value={`${data.latency_ms}ms`}
+              accent="var(--chart-2)"
+            />
+            <StatTile
+              icon={Coins}
+              label="Tokens"
+              value={(data.input_tokens + data.output_tokens).toLocaleString()}
+              accent="var(--chart-3)"
+            />
+            <StatTile
+              icon={Activity}
+              label="Provider cost"
+              value={`$${data.upstream_cost.toFixed(4)}`}
+              accent="var(--chart-4)"
+            />
+            <StatTile
+              icon={DollarSign}
+              label="Billed"
+              value={`$${data.final_cost.toFixed(4)}`}
+              accent="var(--chart-1)"
+            />
           </div>
 
           <div className="rounded-2xl border border-border/60 bg-card px-4 py-1">
-            <DetailField label="Requested model" value={<span className="font-mono text-xs">{data.requested_model}</span>} />
-            <DetailField label="Resolved model" value={<span className="font-mono text-xs">{data.resolved_model}</span>} />
+            <DetailField
+              label="Requested model"
+              value={<span className="font-mono text-xs">{data.requested_model}</span>}
+            />
+            <DetailField
+              label="Resolved model"
+              value={<span className="font-mono text-xs">{data.resolved_model}</span>}
+            />
             <DetailField label="Provider" value={data.provider} />
-            <DetailField label="Tokens" value={`${data.input_tokens.toLocaleString()} in · ${data.output_tokens.toLocaleString()} out`} />
+            <DetailField
+              label="Tokens"
+              value={`${data.input_tokens.toLocaleString()} in · ${data.output_tokens.toLocaleString()} out`}
+            />
             <DetailField label="Streaming" value={data.streaming ? 'yes' : 'no'} />
             {data.billing_mode && <DetailField label="Billing mode" value={data.billing_mode} />}
             {data.attempts > 1 && <DetailField label="Attempts" value={data.attempts} />}
@@ -185,7 +233,9 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
               <div className="mb-1 text-xs font-medium text-muted-foreground">
                 {data.error_code ?? 'Error'}
               </div>
-              <div className="whitespace-pre-wrap break-words text-sm text-foreground">{data.error_message}</div>
+              <div className="whitespace-pre-wrap break-words text-sm text-foreground">
+                {data.error_message}
+              </div>
             </div>
           )}
 
@@ -201,7 +251,10 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   const selectedLogId = useGatewayOverlayStore((s) => s.selectedLogId);
   const selectLog = useGatewayOverlayStore((s) => s.selectLog);
   const [filter, setFilter] = useState<'all' | 'ok' | 'err'>('all');
-  const { data, isLoading } = useGatewayLogs(projectId, filter === 'all' ? undefined : { ok: filter === 'ok' });
+  const { data, isLoading } = useGatewayLogs(
+    projectId,
+    filter === 'all' ? undefined : { ok: filter === 'ok' },
+  );
   const logs = data?.logs ?? [];
 
   if (selectedLogId) return <GatewayLogDetail projectId={projectId} logId={selectedLogId} />;
@@ -217,7 +270,9 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
               onClick={() => setFilter(f.key)}
               className={cn(
                 'rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150',
-                filter === f.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+                filter === f.key
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
               {f.label}
@@ -251,7 +306,9 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             description="Every LLM call routed through the gateway shows up here — model, status, latency, tokens, and cost."
           />
         ) : (
-          logs.map((row) => <LogRow key={row.log_id} row={row} onClick={() => selectLog(row.log_id)} />)
+          logs.map((row) => (
+            <LogRow key={row.log_id} row={row} onClick={() => selectLog(row.log_id)} />
+          ))
         )}
       </div>
     </div>

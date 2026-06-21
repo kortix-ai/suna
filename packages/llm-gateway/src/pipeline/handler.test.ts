@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createGateway } from '../create-gateway';
-import type { FetchImpl } from '../http';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
+import type { FetchImpl } from '../http';
 
 const principal = { userId: 'u1', accountId: 'a1', projectId: 'p1', keyId: 'k1' };
 
@@ -24,8 +24,12 @@ function makeHooks(over: Partial<GatewayHooks> = {}) {
     authenticate: async (token) => (token === 'good' ? principal : null),
     resolveUpstream: async () => [managed],
     assertBillingActive: async () => {},
-    recordUsage: async (event) => { usage.push(event); },
-    recordTrace: async (trace) => { traces.push(trace); },
+    recordUsage: async (event) => {
+      usage.push(event);
+    },
+    recordTrace: async (trace) => {
+      traces.push(trace);
+    },
     ...over,
   };
   return { hooks, usage, traces };
@@ -33,7 +37,10 @@ function makeHooks(over: Partial<GatewayHooks> = {}) {
 
 function okFetch(data: unknown): FetchImpl {
   return async () =>
-    new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+    new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -41,7 +48,10 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 5));
 describe('gateway.chatCompletions', () => {
   test('401 without a bearer token, still traced', async () => {
     const { hooks, traces } = makeHooks();
-    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({ authorization: undefined, rawBody: '{}' });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: undefined,
+      rawBody: '{}',
+    });
     expect(res.status).toBe(401);
     await flush();
     expect(traces[0].ok).toBe(false);
@@ -50,33 +60,52 @@ describe('gateway.chatCompletions', () => {
 
   test('401 for an invalid token', async () => {
     const { hooks } = makeHooks();
-    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({ authorization: 'Bearer nope', rawBody: '{}' });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer nope',
+      rawBody: '{}',
+    });
     expect(res.status).toBe(401);
   });
 
   test('402 when billing is inactive', async () => {
-    const { hooks } = makeHooks({ assertBillingActive: async () => { throw new Error('subscription required'); } });
-    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
+    const { hooks } = makeHooks({
+      assertBillingActive: async () => {
+        throw new Error('subscription required');
+      },
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
     expect(res.status).toBe(402);
     expect((await res.json()).code).toBe('subscription_required');
   });
 
   test('400 on invalid JSON', async () => {
     const { hooks } = makeHooks();
-    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({ authorization: 'Bearer good', rawBody: 'not json' });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: 'not json',
+    });
     expect(res.status).toBe(400);
   });
 
   test('400 when no upstream resolves for the model', async () => {
     const { hooks } = makeHooks({ resolveUpstream: async () => [] });
-    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"ghost"}' });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"ghost"}',
+    });
     expect(res.status).toBe(400);
     expect((await res.json()).code).toBe('model_unavailable');
   });
 
   test('200 success records usage and a full trace', async () => {
     const { hooks, usage, traces } = makeHooks();
-    const fetchImpl = okFetch({ model: 'kortix/x', usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 } });
+    const fetchImpl = okFetch({
+      model: 'kortix/x',
+      usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 },
+    });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: '{"model":"kortix/x","metadata":{"tag":"demo"}}',
@@ -104,25 +133,51 @@ describe('gateway.chatCompletions', () => {
   });
 
   test('BYOK billingMode "none" records zero final cost', async () => {
-    const byok: UpstreamDescriptor = { ...managed, provider: 'anthropic', billingMode: 'none', markup: 2 };
+    const byok: UpstreamDescriptor = {
+      ...managed,
+      provider: 'anthropic',
+      billingMode: 'none',
+      markup: 2,
+    };
     const { hooks, usage } = makeHooks({ resolveUpstream: async () => [byok] });
-    const fetchImpl = okFetch({ model: 'anthropic/x', usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.5 } });
-    await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"anthropic/x"}' });
+    const fetchImpl = okFetch({
+      model: 'anthropic/x',
+      usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.5 },
+    });
+    await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"anthropic/x"}',
+    });
     await flush();
     expect(usage[0].billingMode).toBe('none');
     expect(usage[0].finalCost).toBe(0);
   });
 
   test('fails over to the next candidate when the first provider is down', async () => {
-    const down: UpstreamDescriptor = { ...managed, provider: 'primary', baseUrl: 'https://down.test/v1' };
-    const up: UpstreamDescriptor = { ...managed, provider: 'secondary', baseUrl: 'https://up.test/v1' };
+    const down: UpstreamDescriptor = {
+      ...managed,
+      provider: 'primary',
+      baseUrl: 'https://down.test/v1',
+    };
+    const up: UpstreamDescriptor = {
+      ...managed,
+      provider: 'secondary',
+      baseUrl: 'https://up.test/v1',
+    };
     const { hooks, traces } = makeHooks({ resolveUpstream: async () => [down, up] });
     const fetchImpl: FetchImpl = async (url) =>
-      url.startsWith('https://down.test')
+      new URL(url).hostname === 'down.test'
         ? new Response('boom', { status: 500 })
-        : new Response(JSON.stringify({ model: 'm', usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200 });
+        : new Response(
+            JSON.stringify({ model: 'm', usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+            { status: 200 },
+          );
 
-    const res = await createGateway(hooks, { retry: { ...fastRetry, maxAttempts: 1 } }, { fetchImpl }).chatCompletions({
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl },
+    ).chatCompletions({
       authorization: 'Bearer good',
       rawBody: '{"model":"x"}',
     });
@@ -138,11 +193,17 @@ describe('gateway.chatCompletions', () => {
     const b: UpstreamDescriptor = { ...managed, provider: 'b', baseUrl: 'https://b.test/v1' };
     let bCalled = false;
     const fetchImpl: FetchImpl = async (url) => {
-      if (url.startsWith('https://b.test')) { bCalled = true; return new Response('{}', { status: 200 }); }
+      if (new URL(url).hostname === 'b.test') {
+        bCalled = true;
+        return new Response('{}', { status: 200 });
+      }
       return new Response('bad request', { status: 400 });
     };
     const { hooks } = makeHooks({ resolveUpstream: async () => [a, b] });
-    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
     expect(res.status).toBe(400);
     expect(bCalled).toBe(false);
   });
@@ -150,7 +211,11 @@ describe('gateway.chatCompletions', () => {
   test('returns 502 when all candidates are down', async () => {
     const fetchImpl: FetchImpl = async () => new Response('boom', { status: 500 });
     const { hooks } = makeHooks();
-    const res = await createGateway(hooks, { retry: { ...fastRetry, maxAttempts: 1 } }, { fetchImpl }).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl },
+    ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
     expect(res.status).toBe(502);
     expect((await res.json()).code).toBe('upstream_unreachable');
   });
@@ -160,11 +225,17 @@ describe('gateway.chatCompletions', () => {
     const { hooks } = makeHooks();
     const gateway = createGateway(
       hooks,
-      { retry: { ...fastRetry, maxAttempts: 1 }, breaker: { failureThreshold: 1, cooldownMs: 10_000 } },
+      {
+        retry: { ...fastRetry, maxAttempts: 1 },
+        breaker: { failureThreshold: 1, cooldownMs: 10_000 },
+      },
       { fetchImpl },
     );
     await gateway.chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
-    const second = await gateway.chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"x"}' });
+    const second = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
     expect(second.status).toBe(503);
     expect((await second.json()).code).toBe('upstream_unavailable');
   });

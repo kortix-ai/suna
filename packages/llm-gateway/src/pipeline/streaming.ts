@@ -1,4 +1,4 @@
-import { extractUsageFromSseBuffer, type ExtractedUsage } from '../usage';
+import { type ExtractedUsage, extractUsageFromSseBuffer } from '../usage';
 
 export interface StreamRelayOptions {
   upstreamBody: ReadableStream<Uint8Array>;
@@ -38,7 +38,7 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       try {
         await writer.close();
       } catch {
-        downstreamAlive = false;
+        // writer already closed / downstream gone — nothing to do here.
       }
       await settle(extractUsageFromSseBuffer(sseBuffer), captureBodies ? sseBuffer : null);
     }

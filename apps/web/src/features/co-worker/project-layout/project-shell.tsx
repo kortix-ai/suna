@@ -15,15 +15,11 @@ import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-b
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';
 import { useIsMobile } from '@/hooks/use-mobile';
-import {
-  createProjectSession,
-  getProjectDetail,
-  prefetchSessionStart,
-} from '@/lib/projects-client';
+import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
