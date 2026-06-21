@@ -5,6 +5,7 @@
  * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
  */
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { and, eq } from 'drizzle-orm';
 import {
   executorConnectorActions,
@@ -293,8 +294,9 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
       const access = await loadProjectForUser(c, projectId, 'read');
       if (!access?.row) return null;
       accountId = access.row.accountId; // the PROJECT's account owns its connectors
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof HTTPException && err.status === 403) return null;
+      throw err;
     }
   }
   if (!accountId) return null;

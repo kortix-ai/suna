@@ -20,6 +20,10 @@ catalog:
 - **`discover`** — intent search across every usable tool
 - **`describe`** — one tool's full input schema + risk
 - **`call`** — run a tool
+- **`add_connector` / `remove_connector`** — declare or remove project
+  connectors through the platform (committed to `kortix.toml` + synced)
+- **`connect` / `request_secret`** — mint a short-lived human setup link for
+  OAuth/API-key credentials without exposing secrets to the sandbox
 
 **You never see a third-party secret.** The gateway resolves it server-side from
 the project's secrets and attaches it. The sandbox only carries
@@ -27,10 +31,11 @@ the project's secrets and attaches it. The sandbox only carries
 the session** — so you can only use connectors that user has been granted.
 
 A **connector** is one named integration. They're declared in `kortix.toml` as
-`[[connectors]]` (provider = pipedream | mcp | openapi | graphql | http) and the
-secret value / Pipedream 1-click connection + who-can-use-it are set in the
-Kortix dashboard. Each connector exposes **tools** (actions) with a connector-
-namespaced path like `stripe.charges.create`.
+`[[connectors]]` (provider = pipedream | mcp | openapi | graphql | http). The
+Executor can add/remove declarations and mint setup links for credentials; the
+secret value / Pipedream 1-click connection is entered by the human in Kortix and
+never exposed to the sandbox. Each connector exposes **tools** (actions) with a
+connector-namespaced path like `stripe.charges.create`.
 </overview>
 
 <when-to-load>
@@ -65,6 +70,27 @@ to learn its input schema before you `call` it.
 
 **GraphQL tools:** pass selected fields via `__select` inside `args`, e.g.
 `{ "connector": "internal-graph", "action": "query.user", "args": { "id": "1", "__select": "id name email" } }`.
+
+**The full API of any connector — the `request` tool.** Every connector exposes
+a curated set of named actions, but you are NOT limited to them. Each
+**Pipedream** connector also has a generic **`request`** tool that proxies to
+*any* endpoint of that app's API (the Connect Proxy — the credential is injected
+server-side, you never see it). This is the "complete API access" path: when no
+named action fits, find the endpoint in the app's API docs and call it directly.
+
+```jsonc
+// Post a PR comment on GitHub — no named action needed, just the endpoint:
+{ "connector": "github", "action": "request", "args": {
+    "method": "POST",
+    "url": "https://api.github.com/repos/kortix-ai/suna/issues/1234/comments",
+    "body": { "body": "Thermo review: …" } } }
+```
+
+`request` args: `method` (GET/POST/PUT/PATCH/DELETE), `url` (the absolute app
+API URL), optional `body` (JSON) and `headers`. The upstream status + JSON come
+back verbatim. Reach for a named action when one fits (typed inputs); reach for
+`request` for everything else. (`openapi`/`http`/`graphql` connectors already
+expose the whole spec as named tools, so they don't need `request`.)
 </usage>
 
 <rules>
@@ -72,15 +98,18 @@ to learn its input schema before you `call` it.
   APIs with raw tokens. There are no raw third-party tokens in the sandbox by
   design.
 - If `connectors` is empty or a tool is missing, the connector isn't configured
-  or isn't **shared with this user**. Tell the user to add/share it in the Kortix
-  dashboard (Customize → Connectors); don't try to work around it.
+  or isn't **shared with this user**. If configuration is missing, use
+  `add_connector` and then `connect` / `request_secret` to surface a setup link to
+  the human; don't hand-roll around the Executor.
 - A `call` result of `ok: false` with `denied` (`not_shared` / `needs_auth`)
-  means exactly that — surface it; the fix is in the dashboard, not the sandbox.
+  means exactly that — surface it. For `needs_auth`, mint the appropriate setup
+  link (`connect` for Pipedream OAuth, `request_secret` for API keys) instead of
+  asking the user to paste credentials into chat.
 - Tools carry a **risk** (read / write / destructive). Be deliberate with
   `write`/`destructive` calls; confirm intent with the user for irreversible ones.
-- To add a connector to the repo, edit `kortix.toml` `[[connectors]]` (see the
-  `kortix-system` skill for the manifest); the secret value + sharing are then
-  set in the dashboard.
+- To add a connector, prefer the Executor's `add_connector` tool (or
+  `kortix executor add` locally); it commits the `kortix.toml` change and syncs
+  the catalog. Then use `connect` / `request_secret` for credentials.
 - A `kortix executor` CLI exists too (same gateway, same auth) — and the same
   Executor core is also the `@kortix/executor-sdk` TypeScript framework. The MCP
   tools are the primary path, though — prefer them.
@@ -97,13 +126,31 @@ provider = "openapi"
 spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
   [connectors.auth]
   type   = "bearer"
-  secret = "STRIPE_API_KEY"   # the VALUE is set in the dashboard, never in git
+  secret = "STRIPE_API_KEY"   # the VALUE is entered via setup link, never in git
 ```
 
-Providers: `pipedream` (`app` + `account`, 1-click connect in dashboard),
-`openapi`/`graphql`/`http` (a `spec`/`endpoint`/`base_url` + `[connectors.auth]`),
-`mcp` (`url` + `transport`). After editing the manifest, the platform
-materializes the catalog; set the secret value + sharing in the dashboard.
+Providers: `pipedream` (`app` + 1-click OAuth — gives the whole app API via the
+`request` proxy tool), `openapi`/`graphql`/`http` (a `spec`/`endpoint`/`base_url`
++ `[connectors.auth]`), `mcp` (`url` + `transport`). The Executor materializes
+the catalog after the declaration lands.
+
+**One-click setup (no dashboard hunting).** In a session, prefer the MCP tools:
+
+```jsonc
+// Add the connector and sync it immediately.
+{ "slug": "github", "provider": "pipedream", "app": "github" }
+// Then call `connect` with { "slug": "github" } and surface the returned URL.
+```
+
+From a terminal, the same flow is available through the unified CLI:
+
+```sh
+kortix executor add github --provider pipedream --app github
+kortix executor connect github   # prints a one-click OAuth URL — open it, authorize
+```
+
+That's the whole setup for a new integration: add → connect (click the link). The
+connected app's full API is then reachable via the `request` tool.
 </adding-connectors>
 
 </skill>

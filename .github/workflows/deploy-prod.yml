@@ -266,6 +266,24 @@ jobs:
           npm pkg set version="$VERSION"
           echo "Building @kortix/executor-sdk@$VERSION"
           bun run build
+          # The workspace package points at src/ so local TypeScript consumers do
+          # not need a prebuilt dist/. npm does not rewrite main/types/exports
+          # from publishConfig, so stage the published manifest explicitly.
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.main = './dist/index.js';
+          pkg.types = './dist/index.d.ts';
+          pkg.exports = { '.': { types: './dist/index.d.ts', import: './dist/index.js' } };
+          pkg.files = ['dist', 'README.md'];
+          if (pkg.publishConfig) {
+            delete pkg.publishConfig.main;
+            delete pkg.publishConfig.types;
+            delete pkg.publishConfig.exports;
+          }
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          npm pack --dry-run
           # Idempotent: a re-run of the same release must not hard-fail on E409.
           if npm view "@kortix/executor-sdk@$VERSION" version >/dev/null 2>&1; then
             echo "@kortix/executor-sdk@$VERSION already on npm — skipping (idempotent re-run)."
