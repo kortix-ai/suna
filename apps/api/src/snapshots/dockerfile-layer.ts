@@ -83,15 +83,15 @@ export interface BuildLayeredDockerfileOpts {
   /** Path the snapshot builder will reference for the entrypoint script. */
   entrypointScriptPath: string;
   /**
-   * Path the snapshot builder will reference for the agent-cli source tree
-   * (apps/sandbox/agent-cli). The layer COPYs it into
-   * /opt/kortix/apps/sandbox/agent-cli
+   * Path the snapshot builder will reference for the slack-cli source tree
+   * (apps/sandbox/slack-cli). The layer COPYs it into
+   * /opt/kortix/apps/sandbox/slack-cli
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
    * agent to invoke from inside the sandbox. (The Executor moved into the
    * `kortix` CLI as `kortix executor` / `kortix executor mcp`.)
    */
-  agentCliPath: string;
+  slackCliPath: string;
   /**
    * Path the snapshot builder will reference for packages/executor-sdk.
    * The agent CLI imports it via the same repo-relative path in dev and in
@@ -117,7 +117,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     agentBinaryPath,
     cliBinaryPath,
     entrypointScriptPath,
-    agentCliPath,
+    slackCliPath,
     executorSdkPath,
     opencodeConfigPath,
   } = opts;
@@ -287,7 +287,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
     // Keep the repo-relative layout so CLIs can import shared packages.
-    `COPY ${agentCliPath}/ /opt/kortix/apps/sandbox/agent-cli/`,
+    `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
@@ -297,8 +297,8 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
     '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
     '    && chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint \\',
-    '        /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \\',
-    '    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli \\',
+    '        /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \\',
+    '    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \\',
     // Fail the build loudly if the CLI didn't land — every sandbox must ship it.
     '    && kortix --version',
     '',
