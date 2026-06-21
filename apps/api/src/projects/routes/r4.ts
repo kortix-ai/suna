@@ -170,6 +170,12 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAuthorized(
+      loaded.userId,
+      loaded.row.accountId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      { type: 'project', id: projectId },
+    );
     const paused = body.paused;
     if (typeof paused !== 'boolean') {
       return c.json({ error: 'paused must be a boolean' }, 400);

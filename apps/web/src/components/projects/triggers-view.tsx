@@ -71,6 +71,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -340,41 +341,31 @@ function TriggersActivationControl({
   onToggle: (paused: boolean) => void;
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-2xl border px-4 py-3.5 transition-colors',
-        paused ? 'border-amber-500/40 bg-amber-500/[0.05]' : 'border-border bg-card',
+    <SectionCard
+      title={(
+        <span className="flex items-center gap-2">
+          <Pause className="text-muted-foreground h-3.5 w-3.5" />
+          Pause all triggers
+        </span>
       )}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <Pause className="text-muted-foreground h-3.5 w-3.5" />
-            <p className="text-foreground text-sm font-medium">Pause all triggers</p>
-          </div>
-          <p className="text-muted-foreground text-xs">
-            Stop the platform from auto-running this project&apos;s schedules and webhooks.
-            Manual test-fires still work. Use this when the same repo also runs in another
-            environment that should own the triggers.
-          </p>
-        </div>
+      description="Stop the platform from auto-running this project's schedules and webhooks. Manual test-fires still work. Use this when another environment should own the triggers."
+      action={(
         <Switch
           checked={paused}
           disabled={pending}
           onCheckedChange={onToggle}
           aria-label="Pause all triggers for this project"
         />
-      </div>
-      {paused && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-xs text-amber-700 dark:text-amber-400">
-            Triggers are paused. Scheduled runs and incoming webhooks are ignored for this
-            project until you resume — test-firing a trigger manually still works.
-          </p>
-        </div>
       )}
-    </div>
+      bodyClassName={paused ? 'py-4' : 'hidden'}
+    >
+      {paused && (
+        <InfoBanner tone="warning" icon={AlertTriangle}>
+          Triggers are paused. Scheduled runs and incoming webhooks are ignored for this
+          project until you resume — test-firing a trigger manually still works.
+        </InfoBanner>
+      )}
+    </SectionCard>
   );
 }
 
