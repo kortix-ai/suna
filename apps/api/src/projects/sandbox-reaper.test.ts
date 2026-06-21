@@ -6,6 +6,7 @@ let candidates: any[] = [];
 let activeTurns: Array<{ sessionId: string }> = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
+let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
@@ -58,6 +59,8 @@ mock.module('../platform/providers', () => ({
     getStatus: async (externalId: string) => statusByExternal[externalId] ?? 'unknown',
     stop: async (externalId: string) => {
       stops.push(externalId);
+      const err = stopErrorByExternal[externalId];
+      if (err) throw err;
     },
   }),
 }));
@@ -86,6 +89,7 @@ beforeEach(() => {
   activeTurns = [];
   usageRows = [];
   statusByExternal = {};
+  stopErrorByExternal = {};
   stops = [];
   cacheInvalidations = [];
   pausedCompute = [];
@@ -272,5 +276,22 @@ describe('reapAndReconcileSandboxes', () => {
     expect(r.skipped).toBe(1);
     expect(stops).toEqual([]);
     expect(pausedCompute).toEqual([]);
+  });
+
+  test('does not mark stopped or close billing when provider stop fails', async () => {
+    candidates = [candidate()];
+    statusByExternal['ext-1'] = 'running';
+    stopErrorByExternal['ext-1'] = new Error('provider unavailable');
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.errors).toBe(1);
+    expect(r.stopped).toBe(0);
+    expect(r.billingClosed).toBe(0);
+    expect(stops).toEqual(['ext-1']);
+    expect(pausedCompute).toEqual([]);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(false);
   });
 });

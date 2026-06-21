@@ -9,6 +9,14 @@ let branchDeletes: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let providerStopError: Error | null = null;
 
+mock.module('../config', () => ({
+  config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
+  SANDBOX_VERSION: 'test',
+  KORTIX_MARKUP: 1,
+  PLATFORM_FEE_MARKUP: 0,
+  getToolCost: () => 0,
+}));
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
@@ -88,6 +96,19 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   invalidateProjectMirror: () => {},
+}));
+
+mock.module('../projects/sandbox-reaper', () => ({
+  reapAndReconcileSandboxes: async () => ({
+    candidates: 0,
+    stopped: 0,
+    reconciled: 0,
+    billingClosed: 0,
+    skipped: 0,
+    errors: 0,
+  }),
+  reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
+  countBillingInvariantViolations: async () => 0,
 }));
 
 const {

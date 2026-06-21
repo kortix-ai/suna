@@ -124,6 +124,16 @@ function isLifecycleTransitionInProgress(err: unknown): boolean {
   return msg.includes('state change in progress') || msg.includes('transition in progress');
 }
 
+function isAlreadyNotRunning(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('not started') ||
+    msg.includes('not running') ||
+    msg.includes('already stopped') ||
+    msg.includes('not found')
+  );
+}
+
 /** Merge keys into a jsonb metadata column without clobbering siblings. */
 function mergeMetadata(patch: Record<string, unknown>) {
   return sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
@@ -288,8 +298,15 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
                 result.skipped += 1;
                 break;
               }
-              // Already stopped/gone on the provider side is success — fall through
-              // to reconcile our row + close billing.
+              if (!isAlreadyNotRunning(err)) {
+                result.errors += 1;
+                console.error(
+                  `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+                );
+                break;
+              }
+              // Already stopped/gone on the provider side is success — reconcile
+              // our row + close billing.
             }
             await reconcileRowToStopped(row, now, /* quiesce */ true, decision.reprovisionOnResume);
             result.stopped += 1;
