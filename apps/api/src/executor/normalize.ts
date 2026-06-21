@@ -343,6 +343,7 @@ function pdType(t: string): string {
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
 
 import type { ConnectorProvider } from '../projects/connectors';
+import { channelCatalog } from './channels';
 
 /** Source material a connector needs normalized, by provider. */
 type NormalizeInput =
@@ -350,7 +351,8 @@ type NormalizeInput =
   | { provider: 'graphql'; introspection: any }
   | { provider: 'mcp'; tools: McpToolLike[] }
   | { provider: 'http'; routes: HttpRouteSpec[] }
-  | { provider: 'pipedream'; actions: PipedreamActionLike[]; app: string };
+  | { provider: 'pipedream'; actions: PipedreamActionLike[]; app: string }
+  | { provider: 'channel'; platform: string };
 
 export function normalize(input: NormalizeInput): NormalizedAction[] {
   switch (input.provider) {
@@ -364,6 +366,8 @@ export function normalize(input: NormalizeInput): NormalizedAction[] {
       return normalizePipedream(input.actions, input.app);
     case 'http':
       return normalizeHttp(input.routes);
+    case 'channel':
+      return channelCatalog(input.platform);
     default:
       return [];
   }

@@ -40,8 +40,12 @@ import { isValidSecretName } from './secrets';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
-const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'];
+
+/** Chat platforms a `channel` connector can target. */
+export type ChannelPlatform = 'slack';
+const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack'];
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
@@ -94,6 +98,8 @@ export interface ConnectorSpec {
   endpoint: string | null;
   /** http: base URL for declared routes. */
   baseUrl: string | null;
+  /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
+  platform: ChannelPlatform | null;
   /** openapi/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -188,6 +194,8 @@ export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, un
   } else if (spec.provider === 'http') {
     if (spec.baseUrl) entry.base_url = spec.baseUrl;
     if (spec.spec) entry.spec = spec.spec;
+  } else if (spec.provider === 'channel') {
+    if (spec.platform) entry.platform = spec.platform;
   } else if (spec.provider === 'openapi') {
     if (spec.spec) entry.spec = spec.spec;
   }
@@ -226,6 +234,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     transport: spec.transport,
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
+    platform: spec.platform,
     spec: spec.spec,
     auth: spec.auth,
   });
@@ -281,6 +290,7 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
     transport: null,
     endpoint: null,
     baseUrl: null,
+    platform: null,
     spec: null,
   };
 
@@ -331,6 +341,14 @@ function parseProviderFields(
     return { ok: true, value: { ...base, spec } };
   }
 
+  if (provider === 'channel') {
+    const platform = (str(row.platform) ?? '').toLowerCase();
+    if (!CHANNEL_PLATFORMS.includes(platform as ChannelPlatform)) {
+      return err(slug, `provider="channel" requires platform one of ${CHANNEL_PLATFORMS.join(', ')} (got "${platform || 'unset'}")`);
+    }
+    return { ok: true, value: { ...base, platform: platform as ChannelPlatform } };
+  }
+
   if (provider === 'graphql') {
     const endpoint = str(row.endpoint);
     if (!endpoint) return err(slug, 'provider="graphql" requires `endpoint`');
@@ -362,6 +380,9 @@ function parseAuth(
   }
   if (provider === 'pipedream' && type !== 'none') {
     return err(slug, 'provider="pipedream" authenticates via its connected account — omit [connectors.auth]');
+  }
+  if (provider === 'channel' && type !== 'none') {
+    return err(slug, 'provider="channel" authenticates via its platform install token — omit [connectors.auth]');
   }
 
   if (type === 'none') return { ok: true, value: { ...NO_AUTH } };

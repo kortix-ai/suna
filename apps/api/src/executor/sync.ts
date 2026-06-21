@@ -30,6 +30,8 @@ import {
   normalizeOpenApi,
   normalizePipedream,
 } from './normalize';
+import { channelApiBase, channelCatalog } from './channels';
+import { synthesizeChannelConnectors } from './channel-materialize';
 import { parseSpecDocument } from './spec-doc';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
@@ -39,6 +41,27 @@ import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+/**
+ * Best-effort re-materialization after a channel platform install changes
+ * (connect / disconnect). Resolves the project's account, then runs the normal
+ * sweep so the auto-materialized channel connector (dis)appears immediately —
+ * "connect Slack → the `slack` connector shows up" with no manifest edit.
+ * Never throws: a sync hiccup must not fail the install/uninstall request.
+ */
+export async function reconcileChannelConnectors(projectId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return;
+    await syncProjectConnectors(projectId, row.accountId);
+  } catch (e) {
+    console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });
+  }
 }
 
 export interface SyncOptions {
@@ -73,6 +96,15 @@ export async function syncProjectConnectors(projectId: string, accountId: string
 
   const { specs, errors: parseErrors } = extractConnectors(manifest);
   const errors: SyncResult['errors'] = parseErrors.map((e) => ({ slug: e.slug, error: e.error }));
+
+  // Auto-materialize channel connectors (e.g. Slack) for any platform this
+  // project has installed but hasn't explicitly declared in kortix.toml. This
+  // is what makes "connect Slack → the `slack` connector just appears" work
+  // with zero manifest editing — the install IS the registration. Synthetic
+  // specs are materialized like any other connector but never written back to
+  // the manifest (the install is the source of truth, not git).
+  const channelSpecs = await synthesizeChannelConnectors(projectId, specs);
+  specs.push(...channelSpecs);
 
   // Project-level policies + settings — separate scope, always reconciled (cheap).
   const projectPoliciesParsed = extractProjectPolicies(manifest);
@@ -236,6 +268,10 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
         const raw = await pipedreamCatalog(spec.app);
         return { actions: normalizePipedream(raw, spec.app), server: null };
+      }
+      case 'channel': {
+        // Fixed, local catalog — no network fetch. Server = the platform API base.
+        return { actions: channelCatalog(spec.platform ?? ''), server: channelApiBase(spec.platform ?? '') };
       }
       default:
         return { actions: [], server: null };

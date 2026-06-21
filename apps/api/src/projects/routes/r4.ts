@@ -1,4 +1,5 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
+import { reconcileChannelConnectors } from '../../executor/sync';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
@@ -329,6 +330,7 @@ projectsApp.openapi(
     teamName: authTest.team ?? null,
     botUserId: authTest.user_id,
   });
+  void reconcileChannelConnectors(projectId);
   return c.json(summary);
 },
 );
@@ -355,6 +357,8 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await deleteSlackInstall(projectId);
+  // Tear down the auto-materialized Slack connector now that the install is gone.
+  void reconcileChannelConnectors(projectId);
   return c.json({ status: 'disconnected' });
 },
 );
