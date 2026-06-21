@@ -419,6 +419,55 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
 }
 
 /**
+ * Close billing + reconcile a sandbox the PROVIDER reports stopped/archived,
+ * keyed by external id. The deterministic billing-close path shared by the
+ * provider webhook ingress (fast path) and the reaper sweep (backstop).
+ * Idempotent: a row already stopped/archived is a no-op. Returns true if it
+ * transitioned a live row.
+ */
+export async function reconcileSandboxStoppedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+  const [row] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  if (!row) return false;
+  if (row.status === 'stopped' || row.status === 'archived') return false;
+  await pauseComputeSession(row.sandboxId).catch((err) =>
+    console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+  );
+  await db.update(sessionSandboxes).set({ status: 'stopped', updatedAt: now }).where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  invalidateProviderCache(externalId);
+  return true;
+}
+
+/**
+ * The provider reports the box destroyed/deleted/lost — finalize billing and
+ * flag the row so the next open reprovisions a fresh box. Keyed by external id;
+ * idempotent. Shared by webhook ingress + reaper.
+ */
+export async function reconcileSandboxRemovedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+  const [row] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  if (!row) return false;
+  if (row.status === 'archived') return false;
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+  );
+  await db
+    .update(sessionSandboxes)
+    .set({ status: 'archived', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
+    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  invalidateProviderCache(externalId);
+  return true;
+}
+
+/**
  * Invariant monitor (surfaced on /health + alerting): how many `active` compute
  * sessions have a sandbox that is NOT `active`. In steady state this is 0; a
  * non-zero, growing value means billing is leaking and must page. Cheap, DB-only.
