@@ -32,14 +32,10 @@ export type RequestAuditContext = {
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
-// NOTE: the partial index idx_project_sessions_account_active (see
-// packages/db/drizzle/20260617102106_account_active_session_index.sql) hard-codes
-// this exact set in its WHERE predicate to keep the concurrency-cap COUNT fast.
-// If you change these statuses, update that index's predicate in a new migration
-// or the planner will silently stop using it.
-export const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
-
-export const PROVISIONING_SESSION_STATUSES = ['queued', 'branching', 'provisioning'] as const;
+// Session-status constants live in a dependency-free module so lean callers (the
+// sandbox reaper) can import them without this heavy serializer graph. Re-exported
+// here for the existing import sites. See session-status.ts for the index note.
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './session-status';
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 

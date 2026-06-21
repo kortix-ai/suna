@@ -151,18 +151,16 @@ export async function createOrJoinThreadSession(input: {
   });
 
   if (result.error) {
-    console.error('[slack-webhook] createProjectSession failed', result.error.body);
+    console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
     if (handle) {
-      await finalizeTurn(handle, { error: "I couldn't start up just now — try again in a moment." });
+      await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body?.error) });
     }
     return;
   }
 
   if (result.status === 'queued' || result.status === 'pending') {
     if (handle) {
-      await finalizeTurn(handle, {
-        answer: "I'm queued behind other project work. I'll reply here when the session starts.",
-      });
+      await finalizeTurn(handle, { answer: queuedMessage(result.reason) });
     }
     return;
   }
@@ -171,6 +169,32 @@ export async function createOrJoinThreadSession(input: {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
   }
+}
+
+// Honest, actionable copy for the two non-success outcomes of starting a Slack
+// session — surfaced in-thread instead of a generic "try again" so a real
+// blocker (out of credits, at the session cap) tells the user what to do.
+function startErrorMessage(status: number | undefined, detail: unknown): string {
+  if (status === 402) {
+    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
+  }
+  if (status === 429) {
+    return "This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.";
+  }
+  if (status === 404) {
+    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel and try again.";
+  }
+  const text = typeof detail === 'string' ? detail.trim() : '';
+  const tail = text && text.length <= 140 ? ` (${text})` : '';
+  return `I couldn't start a session just now${tail}. Give it a moment and send your message again — I'll reply right here.`;
+}
+
+function queuedMessage(reason?: string): string {
+  if (reason === 'account session cap') {
+    return "This workspace is at its concurrent-session limit, so I've queued your task. I'll start it and reply right here as soon as a running session frees up a slot.";
+  }
+  // 'project provisioning backpressure' or an unspecified queue reason.
+  return "I've queued your task behind the sessions already starting up in this project, and I'll reply right here the moment it begins.";
 }
 
 // Single-winner claim for "who creates this thread's session", reusing the
