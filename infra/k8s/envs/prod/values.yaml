@@ -20,12 +20,16 @@ extraEnv:
   # catalog shape) and the model picker collapses to a single model.
   LLM_GATEWAY_BASE_URL: "https://gateway.kortix.com/v1/llm"
 
-# PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
-# ECS, so EKS runs API-only and ECS keeps ownership of the singleton workers
-# (one Postgres leader lease is shared across both). At cutover, flip this to
-# true here AND disable the ECS service — EKS then owns the background work.
+# CUTOVER COMPLETE (2026-06-21): api.kortix.com is served by api-eks, and EKS now
+# OWNS the singleton workers (cron scheduler, project maintenance, migrations).
+# ECS Fargate is scaled to 0 — it had held the worker lease while running stale
+# 0.9.63 code whose trigger sweep silently skipped every cron fleet-wide
+# (pre-#3530), so no cron fired for ~18h. One Postgres leader lease is shared, so
+# exactly one EKS pod is leader. KEEP THIS true. If ECS is ever brought back as a
+# standby it MUST stay workers-disabled (KORTIX_TRIGGER_SCHEDULER_ENABLED=false)
+# so it can never grab the worker lease and starve the scheduler again.
 workers:
-  enabled: false
+  enabled: true
 
 # Drizzle migrations as a PreSync hook before each rollout (gates the release on
 # schema). The hook (templates/migrate-job.yaml) is in place and ready, but is
