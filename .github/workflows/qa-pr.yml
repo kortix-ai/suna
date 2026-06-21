@@ -39,11 +39,17 @@ jobs:
           node-version: 22
       - name: Install test dependencies
         run: cd tests && bun install --frozen-lockfile
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
       - name: PR cadence
         run: make ci-pr
       - name: Build Allure report from PR results
         if: always()
         run: |
+          # Fold the co-located bun:test unit suites (~830) into the report, not
+          # just the cross-cutting vitest/pact suites. package-tests.yml is the
+          # gate for these; here it's report-only, so failures don't abort.
+          bash tests/scripts/collect-bun-junit.sh || true
           npm --prefix tests run allure:junit
           cd tests
           rm -rf test-results/allure-report

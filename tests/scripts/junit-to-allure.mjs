@@ -80,8 +80,8 @@ for (const file of files) {
   const category = categoryFromPath(file);
   const mtime = statSync(file).mtimeMs;
 
-  for (const match of xml.matchAll(/<testcase\b([^>]*)>([\s\S]*?)<\/testcase>|<testcase\b([^/>]*)\/>/g)) {
-    const testAttrs = attrs(match[1] ?? match[3] ?? '');
+  for (const match of xml.matchAll(/<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
+    const testAttrs = attrs(match[1] ?? '');
     const body = match[2] ?? '';
     const name = testAttrs.name || 'unnamed test';
     const className = testAttrs.classname || category;
