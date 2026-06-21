@@ -65,6 +65,13 @@ spec:
             displayName: "Kubernetes errors"
             botkube/kubernetes:
               enabled: true
+              context:
+                rbac:
+                  group:
+                    type: Static
+                    static:
+                      values:
+                        - botkube-plugins-default
               config:
                 namespaces:
                   include:
@@ -98,6 +105,13 @@ spec:
             displayName: "kubectl (read-only)"
             botkube/kubectl:
               enabled: true
+              context:
+                rbac:
+                  group:
+                    type: Static
+                    static:
+                      values:
+                        - botkube-plugins-default
         resources:
           requests:
             cpu: 50m
