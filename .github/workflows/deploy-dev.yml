@@ -256,7 +256,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → read the dev cluster
-      contents: write # push the values bump to main
+      contents: write # push the values-bump branch
+      pull-requests: write # open/merge the values-bump PR into protected main
     env:
       AWS_REGION: us-west-2
       CLUSTER: kortix-dev-eks
@@ -265,6 +266,7 @@ jobs:
       API_HOST: dev-api-eks.kortix.com
       VALUES: infra/k8s/envs/dev/values.yaml
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -272,25 +274,54 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bump dev image tag + commit
+      - name: Bump dev image tag through GitOps PR
         id: bump
         run: |
           set -euo pipefail
           TAG="dev-${GITHUB_SHA::8}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          verify_remote_tag() {
+            git fetch origin main --quiet
+            remote_tag="$(git show origin/main:"$VALUES" | yq '.image.tag')"
+            if [ "$remote_tag" != "$TAG" ]; then
+              echo "::error::GitOps source is still at '$remote_tag', expected '$TAG'. Refusing to watch old healthy pods."
+              return 1
+            fi
+            echo "GitOps source verified: origin/main:$VALUES image.tag=$TAG"
+          }
+
           if [ "$(yq '.image.tag' "$VALUES")" = "$TAG" ]; then
             echo "values already at $TAG — no commit needed."
+            verify_remote_tag
           else
+            BR="chore/dev-eks-deploy-${TAG}"
             TAG="$TAG" yq -i '.image.tag = strenv(TAG)' "$VALUES"
             git config user.name  "kortix-ci[bot]"
             git config user.email "kortix-ci[bot]@users.noreply.github.com"
+            git checkout -B "$BR"
             git add "$VALUES"
             git commit -m "chore(dev-eks): deploy ${TAG} [skip ci]"
-            # main moves fast; rebase onto any concurrent pushes before pushing.
-            for attempt in 1 2 3; do
-              git pull --rebase --autostash origin main && git push origin main && break
-              echo "push attempt ${attempt} lost a race — retrying"; sleep 3
-            done
+            git push -f origin "HEAD:$BR"
+
+            body="GitOps bump for the API image built by ${GITHUB_RUN_ID}: ${TAG}."
+            gh pr create --base main --head "$BR" \
+              --title "chore(dev-eks): deploy ${TAG} [skip ci]" \
+              --body "$body" || true
+            PR="$(gh pr view "$BR" --json number --jq '.number')"
+
+            # main is protected with "changes through PR"; merge the tiny GitOps
+            # bump as a PR so Argo has an auditable source-of-truth update. If
+            # this merge fails, fail here instead of polling old healthy pods for
+            # 15 minutes and making the rollout look ambiguous.
+            gh pr merge "$PR" --squash --delete-branch \
+              --subject "chore(dev-eks): deploy ${TAG} [skip ci]" \
+              --body "" \
+              || gh pr merge "$PR" --squash --delete-branch --admin \
+                --subject "chore(dev-eks): deploy ${TAG} [skip ci]" \
+                --body ""
+
+            verify_remote_tag
           fi
 
       - name: Configure AWS credentials (OIDC)
