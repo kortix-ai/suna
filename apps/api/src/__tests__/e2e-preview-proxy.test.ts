@@ -579,6 +579,26 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
   });
 
+  test('does not retry non-transient project env sync HTTP errors that mention network failures', async () => {
+    mockFetchResponses = [{ status: 500, body: '{"error":"connection refused to metadata store"}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toContain('env sync failed: 500');
+    expect(mockWakeCalls).toEqual([]);
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+  });
+
   test('retries transient project env sync failures before forwarding prompt_async', async () => {
     mockFetchResponses = [
       { status: 502, body: 'Bad Gateway' },

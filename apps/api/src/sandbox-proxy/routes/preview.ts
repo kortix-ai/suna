@@ -42,10 +42,12 @@ const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
   /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
 
 function isRetryableEnvSyncFailure(message: string): boolean {
-  return (
-    /\benv sync failed: (502|503|504)\b/i.test(message) ||
-    RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message)
-  );
+  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
+  // Fetch rejections are bare network errors. HTTP failures include the daemon
+  // response body, so don't classify a non-retryable status as transient just
+  // because its JSON/body happens to mention a connection failure.
+  if (/^env sync failed:/i.test(message)) return false;
+  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
 }
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
