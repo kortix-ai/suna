@@ -173,7 +173,6 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
         externalUserId: `${projectId}:${slug}`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -765,7 +764,8 @@ function ConnectorDetail({
         {/* When connected, a compact Reconnect/Replace lives in the header.
             When NOT connected, the connect action is a big CTA below — not a
             small header button buried next to the title. */}
-        {connector.authSecret && connected &&
+        {connector.authSecret &&
+          connected &&
           (isPipedream ? (
             <Button
               size="sm"
@@ -795,34 +795,28 @@ function ConnectorDetail({
       </div>
 
       <div className="mt-7 space-y-5">
-        {/* Prominent connect CTA — the first thing you see on an unconnected
-            connector. Big, obvious, "connect here". */}
+        {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
         {connector.authSecret && !connected && (
-          <div className="border-primary/40 from-primary/10 to-primary/5 flex flex-col gap-4 rounded-2xl border bg-gradient-to-br p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-foreground text-lg font-semibold">
-                Connect {displayName}
-              </h3>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {isPipedream
-                  ? `Authorize your ${displayName} account so the agent and your triggers can use it.`
-                  : `Add the credential so the agent and your triggers can use ${displayName}.`}
-              </p>
-            </div>
-            <Button
-              size="lg"
-              className="h-12 shrink-0 gap-2 px-6 text-base font-semibold shadow-sm"
-              onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-              disabled={isPipedream && reconnect.isPending}
-            >
-              {isPipedream && reconnect.isPending ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <KeyRound className="h-5 w-5" />
-              )}
-              {isPipedream ? `Connect ${displayName}` : 'Set credential'}
-            </Button>
-          </div>
+          <InfoBanner
+            tone="info"
+            icon={KeyRound}
+            title={`Connect ${displayName}`}
+            action={
+              <Button
+                size="lg"
+                className="h-11 shrink-0 gap-2 px-5 font-semibold"
+                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+                disabled={isPipedream && reconnect.isPending}
+              >
+                {isPipedream && reconnect.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isPipedream ? `Connect ${displayName}` : 'Set credential'}
+              </Button>
+            }
+          >
+            {isPipedream
+              ? `Authorize your ${displayName} account so the agent and your triggers can use it.`
+              : `Add the credential so the agent and your triggers can use ${displayName}.`}
+          </InfoBanner>
         )}
         {!isPipedream && (
           <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
@@ -1772,6 +1766,12 @@ interface ConnectorSetup {
   memberIds: string[];
 }
 
+const DEFAULT_CONNECTOR_SETUP: ConnectorSetup = {
+  credential: 'shared',
+  access: 'project',
+  memberIds: [],
+};
+
 function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   if (s.access === 'project') return { mode: 'project' };
   if (s.access === 'private') return { mode: 'private', ownerId: '' };
@@ -2062,11 +2062,10 @@ function ConfigureAppDialog({
   // per-member setup), and it makes triggers work without each member having to
   // connect their own account. "Each member brings their own" stays a one-click
   // opt-in for the genuine BYO case.
-  const [setup, setSetup] = useState<ConnectorSetup>({
-    credential: 'shared',
-    access: 'project',
-    memberIds: [],
-  });
+  const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
+  useEffect(() => {
+    if (open && app?.slug) setSetup(DEFAULT_CONNECTOR_SETUP);
+  }, [open, app?.slug]);
   const save = useMutation({
     mutationFn: () =>
       createConnector(projectId, {
@@ -2332,11 +2331,7 @@ function CustomConnectorForm({
     provider: 'openapi',
     auth: { type: 'none' },
   });
-  const [setup, setSetup] = useState<ConnectorSetup>({
-    credential: 'shared',
-    access: 'project',
-    memberIds: [],
-  });
+  const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
   const save = useMutation({
     mutationFn: () =>
       createConnector(projectId, {
