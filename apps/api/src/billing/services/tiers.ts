@@ -14,11 +14,11 @@ export const COMPUTE_PRICE_MARKUP = 1.2;
 
 /**
  * Margin multiplier applied to the live models.dev cost on every LLM gateway
- * call. 1.15 = 15% profit (default). Override per-environment with
+ * call. 1.2 = 20% profit (default). Override per-environment with
  * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
  * periods. Clamped to >= 1 so we never undercut the provider.
  */
-export const DEFAULT_LLM_PRICE_MARKUP = 1.15;
+export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
