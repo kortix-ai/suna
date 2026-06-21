@@ -103,7 +103,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
     const models = config.provider.kortix.models
     expect(Object.keys(models).length).toBeGreaterThan(0)
-    expect(models['anthropic/claude-opus-4.8']).toBeDefined()
+    expect(models['kortix-power']).toBeDefined()
   }, 20_000) // full backoff (~15.5s) before the minimal-catalog fallback
 
   test('sets default model to kortix/* when none in pre-existing config', async () => {
