@@ -58,6 +58,37 @@ jobs:
           fi
           echo "OK — no existing migration files were modified."
 
+  sequence:
+    name: Migrations are sequential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: New migrations must come after every merged migration
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          # Highest 17-digit timestamp already merged (depth-1; _archive is 14-digit, excluded).
+          BASE_MAX=$(git ls-tree -r --name-only "$BASE" -- packages/db/migrations \
+            | sed -n 's#.*/\([0-9]\{17\}\)_.*\.sql$#\1#p' | sort -n | tail -1 || true)
+          # Migrations ADDED by this PR.
+          ADDED=$(git diff --diff-filter=A --name-only "$BASE...HEAD" -- 'packages/db/migrations/*.sql' || true)
+          bad=0
+          for f in $ADDED; do
+            ts=$(basename "$f" | sed -n 's#^\([0-9]\{17\}\)_.*#\1#p')
+            if [ -z "$ts" ]; then
+              echo "::error file=$f::Migration filename has no 17-digit UTC timestamp prefix (old format / hand-written). Use \`pnpm migrate:create\` or \`pnpm migrate:generate\`."
+              bad=1; continue
+            fi
+            if [ -n "${BASE_MAX:-}" ] && [ "$ts" -le "$BASE_MAX" ]; then
+              echo "::error file=$f::Out-of-sequence migration: timestamp $ts is not after the latest merged migration ($BASE_MAX). Regenerate it with a current timestamp so it sorts last."
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then exit 1; fi
+          echo "OK — every new migration's timestamp comes after the latest merged one."
+
   shadow-db:
     name: Applies cleanly to a fresh DB
     runs-on: ubuntu-latest
