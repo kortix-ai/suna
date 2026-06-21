@@ -1,22 +1,23 @@
-# Grafana dashboard provisioned from git (source of truth). The Grafana sidecar
-# auto-loads ConfigMaps labeled grafana_dashboard=1. To change it: edit in the
-# Grafana UI -> Share -> Export -> JSON, then commit it back here.
+# Grafana dashboard provisioned from git (source of truth). Sidecar auto-loads
+# ConfigMaps labeled grafana_dashboard=1. To change: edit in the Grafana UI ->
+# Share -> Export -> JSON, then commit it back here.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kortix-overview-dashboard
+  name: kortix-capacity-dashboard
   namespace: monitoring
   labels:
     grafana_dashboard: "1"
     app.kubernetes.io/part-of: kortix-platform
 data:
-  kortix-overview.json: |
+  capacity.json: |
     {
-      "title": "Kortix \u2014 Platform Overview",
-      "uid": "kortix-overview",
+      "title": "Kortix \u2014 Capacity & Efficiency",
+      "uid": "kortix-capacity",
       "tags": [
         "kortix",
-        "platform"
+        "platform",
+        "cost"
       ],
       "timezone": "browser",
       "schemaVersion": 39,
@@ -27,6 +28,19 @@ data:
         "to": "now"
       },
       "editable": true,
+      "links": [
+        {
+          "type": "dashboards",
+          "tags": [
+            "kortix"
+          ],
+          "title": "Kortix dashboards",
+          "asDropdown": true,
+          "includeVars": true,
+          "keepTime": true,
+          "icon": "apps"
+        }
+      ],
       "templating": {
         "list": []
       },
@@ -51,7 +65,7 @@ data:
         {
           "id": 1,
           "type": "row",
-          "title": "Fleet \u2014 at a glance",
+          "title": "Cluster capacity",
           "collapsed": false,
           "gridPos": {
             "h": 1,
@@ -62,46 +76,39 @@ data:
         },
         {
           "id": 2,
-          "type": "stat",
-          "title": "API pods ready (prod)",
+          "type": "gauge",
+          "title": "CPU requested vs allocatable",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 4,
+            "h": 6,
             "w": 6,
             "x": 0,
             "y": 1
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "red",
-                  "value": null
-                },
-                {
-                  "color": "yellow",
-                  "value": 1
-                },
-                {
-                  "color": "green",
-                  "value": 3
-                }
-              ],
-              "decimals": 0,
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
                     "color": "green",
                     "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
                   }
                 ]
-              },
-              "color": {
-                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -112,14 +119,13 @@ data:
                 "lastNotNull"
               ]
             },
-            "colorMode": "value",
-            "graphMode": "area",
-            "textMode": "auto"
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
           },
           "targets": [
             {
               "refId": "A",
-              "expr": "kube_deployment_status_replicas_available{namespace=\"kortix-prod\",deployment=\"kortix-api\"}",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"}) / sum(kube_node_status_allocatable{resource=\"cpu\"}) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -129,42 +135,39 @@ data:
         },
         {
           "id": 3,
-          "type": "stat",
-          "title": "API pods ready (dev)",
+          "type": "gauge",
+          "title": "Memory requested vs allocatable",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 4,
+            "h": 6,
             "w": 6,
             "x": 6,
             "y": 1
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "red",
-                  "value": null
-                },
-                {
-                  "color": "green",
-                  "value": 1
-                }
-              ],
-              "decimals": 0,
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
                     "color": "green",
                     "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 90
                   }
                 ]
-              },
-              "color": {
-                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -175,14 +178,13 @@ data:
                 "lastNotNull"
               ]
             },
-            "colorMode": "value",
-            "graphMode": "area",
-            "textMode": "auto"
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
           },
           "targets": [
             {
               "refId": "A",
-              "expr": "kube_deployment_status_replicas_available{namespace=\"kortix-dev\",deployment=\"kortix-api\"}",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"}) / sum(kube_node_status_allocatable{resource=\"memory\"}) * 100",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -193,15 +195,74 @@ data:
         {
           "id": 4,
           "type": "stat",
-          "title": "Pods running (all ns)",
+          "title": "Nodes",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 4,
-            "w": 6,
+            "h": 3,
+            "w": 4,
             "x": 12,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ],
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(kube_node_info)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Pods scheduled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 3,
+            "w": 4,
+            "x": 16,
             "y": 1
           },
           "fieldConfig": {
@@ -250,22 +311,89 @@ data:
           ]
         },
         {
-          "id": 5,
+          "id": 6,
           "type": "stat",
-          "title": "API req/s",
+          "title": "CPU actual vs requested %",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 4,
-            "w": 6,
-            "x": 18,
+            "h": 3,
+            "w": 8,
+            "x": 12,
+            "y": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "color": {
+                "mode": "thresholds"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])) / clamp_min(sum(kube_pod_container_resource_requests{resource=\"cpu\"}),0.001) * 100",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "Spare CPU (cores)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 4,
+            "x": 20,
             "y": 1
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "reqps",
+              "unit": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "green",
+                  "value": 3
+                }
+              ],
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -290,7 +418,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(rate(http_requests_total[5m]))",
+              "expr": "sum(kube_node_status_allocatable{resource=\"cpu\"}) - sum(kube_pod_container_resource_requests{resource=\"cpu\"})",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -299,21 +427,21 @@ data:
           ]
         },
         {
-          "id": 6,
+          "id": 8,
           "type": "row",
-          "title": "kortix-api \u2014 golden signals",
+          "title": "Requests by namespace (who's reserving capacity)",
           "collapsed": false,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 5
+            "y": 7
           }
         },
         {
-          "id": 7,
+          "id": 9,
           "type": "timeseries",
-          "title": "Request rate by status",
+          "title": "CPU requests by namespace",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -322,11 +450,11 @@ data:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 6
+            "y": 8
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "reqps",
+              "unit": "none",
               "custom": {
                 "drawStyle": "line",
                 "fillOpacity": 40,
@@ -357,106 +485,8 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (status) (rate(http_requests_total[5m]))",
-              "legendFormat": "{{status}}",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 8,
-          "type": "stat",
-          "title": "5xx error rate %",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 6,
-            "x": 12,
-            "y": 6
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "percent",
-              "decimals": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": 2
-              },
-              "color": {
-                "mode": "thresholds"
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ]
-            },
-            "colorMode": "value",
-            "graphMode": "area",
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])),0.001) * 100",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 9,
-          "type": "stat",
-          "title": "p95 latency",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 6,
-            "x": 18,
-            "y": 6
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "decimals": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": 3
-              },
-              "color": {
-                "mode": "thresholds"
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ]
-            },
-            "colorMode": "value",
-            "graphMode": "area",
-            "textMode": "auto"
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+              "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"})",
+              "legendFormat": "{{namespace}}",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -467,119 +497,7 @@ data:
         {
           "id": 10,
           "type": "timeseries",
-          "title": "p95 latency by route",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 12,
-            "x": 12,
-            "y": 10
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "custom": {
-                "drawStyle": "line",
-                "fillOpacity": 15,
-                "stacking": {
-                  "mode": "none"
-                },
-                "showPoints": "never",
-                "lineWidth": 2
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "bottom",
-              "calcs": [
-                "mean",
-                "max",
-                "lastNotNull"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "histogram_quantile(0.95, sum by (le,route) (rate(http_request_duration_seconds_bucket[5m])))",
-              "legendFormat": "{{route}}",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 11,
-          "type": "timeseries",
-          "title": "Top routes by traffic",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 14
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "reqps",
-              "custom": {
-                "drawStyle": "line",
-                "fillOpacity": 15,
-                "stacking": {
-                  "mode": "none"
-                },
-                "showPoints": "never",
-                "lineWidth": 2
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "bottom",
-              "calcs": [
-                "mean",
-                "max",
-                "lastNotNull"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "topk(8, sum by (route) (rate(http_requests_total[5m])))",
-              "legendFormat": "{{route}}",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 12,
-          "type": "timeseries",
-          "title": "Event-loop lag (ms)",
+          "title": "Memory requests by namespace",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -588,75 +506,7 @@ data:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 14
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "ms",
-              "custom": {
-                "drawStyle": "line",
-                "fillOpacity": 15,
-                "stacking": {
-                  "mode": "none"
-                },
-                "showPoints": "never",
-                "lineWidth": 2
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "bottom",
-              "calcs": [
-                "mean",
-                "max",
-                "lastNotNull"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "nodejs_eventloop_lag_seconds * 1000",
-              "legendFormat": "{{pod}}",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 13,
-          "type": "row",
-          "title": "Resources \u2014 by namespace",
-          "collapsed": false,
-          "gridPos": {
-            "h": 1,
-            "w": 24,
-            "x": 0,
-            "y": 22
-          }
-        },
-        {
-          "id": 14,
-          "type": "timeseries",
-          "title": "Memory (working set) by namespace",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 23
+            "y": 8
           },
           "fieldConfig": {
             "defaults": {
@@ -691,7 +541,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"kortix.*|monitoring\"})",
+              "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\"})",
               "legendFormat": "{{namespace}}",
               "datasource": {
                 "type": "prometheus",
@@ -701,86 +551,30 @@ data:
           ]
         },
         {
-          "id": 15,
-          "type": "timeseries",
-          "title": "CPU cores by namespace",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 23
-          },
-          "fieldConfig": {
-            "defaults": {
-              "unit": "none",
-              "custom": {
-                "drawStyle": "line",
-                "fillOpacity": 40,
-                "stacking": {
-                  "mode": "normal"
-                },
-                "showPoints": "never",
-                "lineWidth": 2
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "table",
-              "placement": "bottom",
-              "calcs": [
-                "mean",
-                "max",
-                "lastNotNull"
-              ]
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          },
-          "targets": [
-            {
-              "refId": "A",
-              "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"kortix.*|monitoring\"}[5m]))",
-              "legendFormat": "{{namespace}}",
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              }
-            }
-          ]
-        },
-        {
-          "id": 16,
+          "id": 11,
           "type": "row",
-          "title": "Deployments \u2014 health & restarts",
+          "title": "Right-sizing \u2014 usage vs requests (low % = over-provisioned)",
           "collapsed": false,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 31
+            "y": 16
           }
         },
         {
-          "id": 17,
+          "id": 12,
           "type": "table",
-          "title": "Deployments: ready / desired",
+          "title": "Memory: usage / request per workload",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 8,
+            "h": 9,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 17
           },
           "options": {
             "showHeader": true,
@@ -797,7 +591,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum by (namespace,deployment) (kube_deployment_status_replicas_available) / sum by (namespace,deployment) (kube_deployment_spec_replicas)",
+              "expr": "sort_desc(sum by (namespace,pod) (container_memory_working_set_bytes{container!=\"\",namespace=~\"kortix.*|monitoring\"}) / clamp_min(sum by (namespace,pod) (kube_pod_container_resource_requests{resource=\"memory\"}),1) * 100)",
               "format": "table",
               "instant": true,
               "datasource": {
@@ -814,25 +608,25 @@ data:
           ]
         },
         {
-          "id": 18,
+          "id": 13,
           "type": "timeseries",
-          "title": "Pod restarts (15m) \u2014 crashloop watch",
+          "title": "CPU usage vs requested (cluster)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
           "gridPos": {
-            "h": 8,
+            "h": 9,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 17
           },
           "fieldConfig": {
             "defaults": {
               "unit": "none",
               "custom": {
                 "drawStyle": "line",
-                "fillOpacity": 15,
+                "fillOpacity": 12,
                 "stacking": {
                   "mode": "none"
                 },
@@ -860,8 +654,26 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "topk(10, sum by (namespace,pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"kortix.*|monitoring|kyverno|falco|velero\"}[15m])))",
-              "legendFormat": "{{namespace}}/{{pod}}",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
+              "legendFormat": "used",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"})",
+              "legendFormat": "requested",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "sum(kube_node_status_allocatable{resource=\"cpu\"})",
+              "legendFormat": "allocatable",
               "datasource": {
                 "type": "prometheus",
                 "uid": "prometheus"
@@ -870,60 +682,61 @@ data:
           ]
         },
         {
-          "id": 19,
+          "id": 14,
           "type": "row",
-          "title": "Logs \u2014 recent prod errors (Loki)",
+          "title": "Pods per node",
           "collapsed": false,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 40
+            "y": 26
           }
         },
         {
-          "id": 20,
-          "type": "logs",
-          "title": "kortix-prod errors",
+          "id": 15,
+          "type": "table",
+          "title": "Node capacity & pod density",
           "datasource": {
-            "type": "loki",
-            "uid": "loki"
+            "type": "prometheus",
+            "uid": "prometheus"
           },
           "gridPos": {
-            "h": 9,
+            "h": 7,
             "w": 24,
             "x": 0,
-            "y": 41
+            "y": 27
           },
           "options": {
-            "showTime": true,
-            "wrapLogMessage": true,
-            "sortOrder": "Descending",
-            "enableLogDetails": true
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto"
+              }
+            },
+            "overrides": []
           },
           "targets": [
             {
               "refId": "A",
-              "expr": "{namespace=\"kortix-prod\"} |~ \"(?i)error|exception|5[0-9][0-9]\"",
+              "expr": "sort_desc(count by (node) (kube_pod_info))",
+              "format": "table",
+              "instant": true,
               "datasource": {
-                "type": "loki",
-                "uid": "loki"
+                "type": "prometheus",
+                "uid": "prometheus"
               }
             }
-          ]
-        }
-      ],
-      "links": [
-        {
-          "type": "dashboards",
-          "tags": [
-            "kortix"
           ],
-          "title": "Kortix dashboards",
-          "asDropdown": true,
-          "includeVars": true,
-          "keepTime": true,
-          "icon": "apps"
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {}
+            }
+          ]
         }
       ]
     }
