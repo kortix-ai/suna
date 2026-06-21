@@ -778,6 +778,11 @@ jobs:
           git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
           git push -u origin "$BR" --force-with-lease
           gh pr create --base main --head "$BR" \
-            --title "chore(release): VERSION → $NEXT" \
+            --title "chore(release): VERSION → $NEXT [skip ci]" \
             --body "Auto-bump main's VERSION to the next dev target after the v$RELEASED prod release." || true
-          gh pr merge "$BR" --squash --admin --delete-branch || gh pr merge "$BR" --squash --delete-branch || true
+          # [skip ci] in the squash subject so merging to main doesn't kick off a
+          # full dev build/deploy just for a one-line VERSION bump.
+          SUBJ="chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
+            || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
+            || true
