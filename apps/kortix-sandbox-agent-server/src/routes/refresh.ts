@@ -14,11 +14,11 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   let refreshInFlight: Promise<Response> | null = null
 
   router.post('/', async (c) => {
-    if (!cfg.kortixToken) {
+    if (!cfg.sandboxToken) {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
 
-    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.kortixToken)
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
     if (!auth.ok) {
       logger.warn('[refresh] reject', { reason: auth.reason })
       return c.json({ error: 'unauthorized', reason: auth.reason }, 401)

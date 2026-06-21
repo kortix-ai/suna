@@ -1,31 +1,32 @@
-#!/usr/bin/env bun
 /**
- * executor-mcp — the agent's PRIMARY interface to every configured integration,
- * exposed as a stdio MCP server. OpenCode auto-loads it in every session (the
- * daemon registers it via OPENCODE_CONFIG_CONTENT), so the agent reaches
- * Pipedream / MCP / OpenAPI / GraphQL / HTTP connectors as native MCP tools.
+ * `kortix executor mcp` — the Executor exposed as a stdio MCP server.
+ *
+ * This is the agent's PRIMARY interface to every configured integration
+ * (Pipedream / MCP / OpenAPI / GraphQL / HTTP). OpenCode auto-loads it in every
+ * session (the daemon registers `kortix executor mcp` via OPENCODE_CONFIG_CONTENT),
+ * so the agent reaches connectors as native MCP tools.
  *
  * Modeled on RhysSullivan/executor: instead of exploding every connector action
- * into tools/list (which floods the agent's context once a catalog has hundreds
- * of actions), we expose a small, stable set of META-TOOLS and let the agent
- * progressively discover what it needs:
- *
- *   connectors  — what this session can use (provider, status, tool count)
- *   discover    — intent search across every usable tool
- *   describe    — one tool's full input schema + risk
- *   call        — run a tool (gateway resolves the credential server-side)
+ * into tools/list (which floods context once a catalog has hundreds of actions),
+ * we expose a small, stable set of META-TOOLS and let the agent progressively
+ * discover what it needs.
  *
  * Thin client: it never holds a third-party credential. Every call goes to the
- * Kortix Executor Gateway (/v1/executor/*), which checks this user's connector
- * sharing, resolves the secret SERVER-SIDE, runs the call, and audits it. The
- * sandbox only carries KORTIX_EXECUTOR_TOKEN + KORTIX_API_URL (injected at
- * sandbox spawn).
+ * Kortix Executor Gateway, which checks sharing, resolves the secret SERVER-SIDE,
+ * runs the call, and audits it. The sandbox only carries KORTIX_EXECUTOR_TOKEN +
+ * KORTIX_API_URL (injected at sandbox spawn).
+ *
+ * STDOUT IS THE JSON-RPC CHANNEL — nothing else may be written there. index.ts
+ * skips the host/update notices for `executor`, so this stays clean.
  */
+import type { ExecutorClient } from '@kortix/executor-sdk';
 import {
-  createExecutorClient,
-  type ExecutorClient,
-} from '../../../../packages/executor-sdk/src/index';
-import { getEnv, requireEnv, mintConnectLink, mintSecretLink, kortixPost, kortixDelete, kortixProjectId } from '../lib';
+  addConnector,
+  executorClient,
+  mintConnectLink,
+  mintSecretLink,
+  removeConnector,
+} from './gateway.ts';
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -34,7 +35,9 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
-const SERVER_INFO = { name: 'kortix-executor', version: '0.2.0' };
+// The MCP server identity is kept as `kortix-executor` (unchanged from the old
+// standalone shim) so the agent's tool names and registration key don't move.
+const SERVER_INFO = { name: 'kortix-executor', version: '0.3.0' };
 
 /**
  * The fixed meta-tool surface. Stable regardless of how many connectors or
@@ -174,12 +177,6 @@ const META_TOOLS = [
   },
 ] as const;
 
-function apiBase(): string {
-  const url = getEnv('KORTIX_API_URL')?.trim();
-  if (!url) throw new Error('KORTIX_API_URL not set');
-  return url.replace(/\/+$/, '');
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -308,15 +305,13 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
       const slug = typeof args.slug === 'string' ? args.slug : '';
       const provider = typeof args.provider === 'string' ? args.provider : '';
       if (!slug || !provider) return { content: content({ ok: false, error: 'slug and provider are required' }), isError: true };
-      const projectId = kortixProjectId();
-      if (!projectId) return { content: content({ ok: false, error: 'KORTIX_PROJECT_ID not set' }), isError: true };
       const draft: Record<string, unknown> = { slug, provider };
       for (const k of ['app', 'name', 'url', 'transport', 'endpoint', 'spec', 'credential'] as const) {
         if (typeof args[k] === 'string') draft[k] = args[k];
       }
       if (typeof args.base_url === 'string') draft.baseUrl = args.base_url;
       try {
-        const res = await kortixPost<{ ok: boolean; sync?: unknown }>(`/executor/projects/${projectId}/connectors`, draft);
+        const res = await addConnector(draft);
         return {
           content: content({
             ok: true, slug, provider, applied: true, sync: res.sync,
@@ -332,10 +327,8 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
     case 'remove_connector': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
       if (!slug) return { content: content({ ok: false, error: 'slug is required' }), isError: true };
-      const projectId = kortixProjectId();
-      if (!projectId) return { content: content({ ok: false, error: 'KORTIX_PROJECT_ID not set' }), isError: true };
       try {
-        await kortixDelete(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);
+        await removeConnector(slug);
         return { content: content({ ok: true, slug, removed: true }), isError: false };
       } catch (err) {
         return { content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }), isError: true };
@@ -387,8 +380,9 @@ function writeResponse(id: JsonRpcRequest['id'], result: unknown, error?: { code
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
-export async function main() {
-  const executor = createExecutorClient({ apiUrl: apiBase(), token: requireEnv('KORTIX_EXECUTOR_TOKEN') });
+/** Run the stdio JSON-RPC loop until stdin closes. */
+export async function runExecutorMcpServer(): Promise<number> {
+  const executor = executorClient();
   const decoder = new TextDecoder();
   let buffer = '';
   for await (const chunk of Bun.stdin.stream()) {
@@ -414,11 +408,5 @@ export async function main() {
       }
     }
   }
-}
-
-if (import.meta.main) {
-  main().catch((err) => {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) })}\n`);
-    process.exit(1);
-  });
+  return 0;
 }

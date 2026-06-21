@@ -35,7 +35,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
     branchName: undefined,
     sessionFresh: false,
     baseSha: undefined,
-    kortixToken: undefined,
+    sandboxToken: undefined,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',

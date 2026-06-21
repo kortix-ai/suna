@@ -1,54 +1,43 @@
 # agent-cli
 
-The set of command-line tools the agent (opencode) invokes from inside the
-sandbox. **Not** the same thing as the user-facing `kortix` CLI in
-[`apps/cli`](../../cli) — those are two different products with two different
-audiences:
+In-sandbox command-line tools the agent (opencode) invokes from inside a
+session. They ship as PATH shims baked into the Daytona sandbox image, auth via
+env vars injected at sandbox spawn, and emit **JSON only** so the agent can parse
+results.
 
-| | User CLI (`apps/cli`) | Agent CLI (this) |
-|---|---|---|
-| Audience | Humans at their laptop using Kortix cloud | opencode inside a sandbox |
-| Auth | Bearer token from `kortix login` | Env vars injected at sandbox spawn |
-| Distributed as | Compiled binary (homebrew / npm) | Bun scripts + PATH shims inside the sandbox image |
-| Surface | Account / project / secrets / sessions / channels management | Vendor adapters + introspection the agent calls per turn |
+> **Scope today: just `slack`.** The Executor — once the `executor` /
+> `executor-mcp` shims here — has been absorbed into the one `kortix` CLI as
+> `kortix executor` (CLI) + `kortix executor mcp` (the stdio MCP server opencode
+> auto-loads), both built on the `@kortix/executor-sdk` framework. The old
+> `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
+> channel state is in the sandbox env already, and secrets are `kortix secrets …`.
+> Slack stays here as a standalone vendor adapter.
 
-These do **not** share code or release cycles. The agent CLI ships baked into
-the Daytona sandbox image; the user CLI ships to people's laptops.
+Not the same thing as the user-facing `kortix` CLI in [`apps/cli`](../../cli),
+which is a compiled binary for people's laptops (and is *also* baked into the
+sandbox image — that's what `kortix executor` runs from).
 
 ## Layout
 
 ```
 apps/sandbox/agent-cli/
-├── lib/                 ← shared kernel, imported by every CLI
+├── lib/                 ← shared kernel imported by every CLI here
 │   ├── cli.ts           ←   parseArgs, out, CliError, handleError, validators
 │   ├── env.ts           ←   getEnv, requireEnv, kortixProjectId, kortixSessionId
-│   ├── api.ts           ←   kortixGet, kortixPost — apps/api client (for CLIs that need cloud state)
-│   ├── format.ts        ←   date helpers
+│   ├── api.ts           ←   kortixGet, kortixPost — apps/api client
 │   └── index.ts         ←   barrel
 │
-├── channels/            ← communication adapters and channel discovery
+├── channels/
+│   └── slack.ts         ← the Slack Web API adapter (`slack send`, `slack step`, …)
 ├── install-shims.sh     ← generates /usr/local/bin/<name> shims at image build
 └── README.md
 ```
 
-When a new category of agent tools appears (browser, git, docs, …), add a
-sibling subdir next to `channels/`. The shim generator picks up `.ts` files
-recursively, so nothing else needs to change.
+The shim generator walks for `.ts` files (skipping `lib/`) and installs each as
+`/usr/local/bin/<basename>`. It **fails the image build** on basename
+collisions — pick a unique name.
 
-PATH layout in the running sandbox stays flat — `/usr/local/bin/slack`,
-`/usr/local/bin/kchannel`, etc. The subdirs are purely organizational so the
-source tree stays navigable.
-
-## Naming convention
-
-- **Bare names** (`slack`) — platform / vendor adapters.
-- **`k`-prefix** (`kchannel`, `kconnectors`, `kpipedream`) — kortix-namespace
-  meta tools that introspect or coordinate, not vendor wrappers.
-
-The `install-shims.sh` build step **fails the image build** if two `.ts` files
-would install under the same basename. Pick a unique name.
-
-## The contract — every CLI looks like this
+## The contract — every CLI here looks like this
 
 ```typescript
 #!/usr/bin/env bun
@@ -81,57 +70,30 @@ if (import.meta.main) {
 
 Rules:
 
-- **JSON-only stdout**, exit 0 on success and 1 on failure. The agent
-  parses results — never write progress to stdout.
+- **JSON-only stdout**, exit 0 on success and 1 on failure. The agent parses
+  results — never write progress to stdout.
 - **Auth via env.** Tokens such as `SLACK_BOT_TOKEN` are injected at sandbox
-  spawn from `project_secrets` (cloud postgres).
-  No `--config-id`, no SQLite, no per-sandbox state. Sandboxes are
-  per-session and destructive — anything you write to disk in the
-  sandbox dies with it.
-- **CLIs that need apps/api state** import `kortixGet` / `kortixPost`
-  from `../lib`. Auth there uses the project-scoped CLI token
-  (`KORTIX_CLI_TOKEN`) that's already in env.
-- **Every CLI exposes a `help` subcommand** printing its full surface so
-  the agent can self-discover.
-- **No `--config-id`-style flags.** Per-project state lives in env;
-  per-call state goes in flags.
+  spawn from `project_secrets`. No per-sandbox state on disk.
+- **Every CLI exposes a `help` subcommand** printing its full surface so the
+  agent can self-discover.
 
-## Adding a new CLI
+## When to add here vs. into the `kortix` CLI
 
-1. Pick a category subdir (`channels/` exists today, or create a new one if
-   no existing category fits — e.g. `browser/`, `git/`, `docs/`).
-2. Drop a `.ts` file following the contract above.
-3. Import shared utilities from `../lib`.
-4. Rebuild the sandbox image — `install-shims.sh` picks it up. The agent
-   has it at the next session boot.
-
-No Dockerfile edit. No webhook prompt update (the prompts point the agent
-at `/usr/local/bin/` for discovery + `<cli> help` for the surface).
+- **Vendor/channel adapter** the agent calls per turn (like Slack) → add a `.ts`
+  here following the contract above; rebuild the image, `install-shims.sh` picks
+  it up.
+- **Kortix-platform capability** (anything that talks to apps/api as the user —
+  connectors, secrets, sessions, change requests, the Executor) → add it as a
+  subcommand of the one `kortix` CLI in [`apps/cli`](../../cli) instead, so there
+  is a single surface.
 
 ## Talking to apps/api
 
-For CLIs that need cloud-side state (connectors list, project settings,
-audit events, …) use the api module:
+For state that lives cloud-side, use the api module:
 
 ```typescript
 import { kortixGet, kortixPost } from "../lib"
-
-async function listConnectors() {
-  const { connectors } = await kortixGet<{ connectors: Connector[] }>("/connectors")
-  return { ok: true, connectors }
-}
 ```
 
-`kortixGet` / `kortixPost` use `KORTIX_API_URL` + `KORTIX_CLI_TOKEN` from env.
-Both are minted per session by apps/api at sandbox spawn — see
-[`buildSessionSandboxEnvVars`](../../api/src/projects/index.ts) for the wiring.
-
-## What lives where
-
-| Concern | Location |
-|---|---|
-| Slack adapter | `channels/slack.ts` |
-| Channel discovery | `channels/kchannel.ts` (env-driven) |
-| Webhook router that wakes the agent | `apps/api/src/channels/` (server-side, separate from this dir) |
-| Durable channel state | `project_secrets` (postgres) + `chat_channel_bindings` for OAuth team_id lookup |
-| Shared CLI utilities | `lib/` |
+`kortixGet` / `kortixPost` use `KORTIX_API_URL` + `KORTIX_CLI_TOKEN` from env,
+both minted per session by apps/api at sandbox spawn.

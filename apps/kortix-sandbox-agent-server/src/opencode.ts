@@ -20,7 +20,6 @@ const READY_TIMEOUT_MS = 20_000
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
 
-const EXECUTOR_MCP_ENTRY = '/opt/kortix/apps/sandbox/agent-cli/connectors/executor-mcp.ts'
 export const OPENCODE_HOME = '/opt/kortix/home'
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
 const OPENCODE_CONFIG_HOME = `${OPENCODE_HOME}/.config`
@@ -73,11 +72,17 @@ export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | und
       ...mcp,
       'kortix-executor': {
         type: 'local',
-        command: ['bun', EXECUTOR_MCP_ENTRY],
+        // The Executor MCP server is a face of the unified `kortix` CLI
+        // (`kortix executor mcp`), baked onto PATH in every sandbox image.
+        command: ['kortix', 'executor', 'mcp'],
         enabled: true,
         environment: {
           KORTIX_EXECUTOR_TOKEN: executorToken,
           KORTIX_API_URL: apiUrl,
+          // Lets the CLI target the project-explicit gateway route. Optional —
+          // the session token also pins the project for the legacy flat route,
+          // so this is belt-and-suspenders.
+          ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
         },
       },
     }

@@ -730,7 +730,15 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
 async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  // /turn-stream accepts EITHER the session token or the sandbox credential
+  // (it's a sandbox-identity route). Prefer the session token; fall back to the
+  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
+  const token = (
+    process.env.KORTIX_CLI_TOKEN ||
+    process.env.KORTIX_SANDBOX_TOKEN ||
+    process.env.KORTIX_TOKEN ||
+    ''
+  ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
@@ -791,7 +799,15 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
   if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  // /turn-stream accepts EITHER the session token or the sandbox credential
+  // (it's a sandbox-identity route). Prefer the session token; fall back to the
+  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
+  const token = (
+    process.env.KORTIX_CLI_TOKEN ||
+    process.env.KORTIX_SANDBOX_TOKEN ||
+    process.env.KORTIX_TOKEN ||
+    ''
+  ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {

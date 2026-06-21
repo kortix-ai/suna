@@ -17,8 +17,9 @@ const USER = 'user-faces';
 const TOKEN = 'kortix_test_executor_faces';
 const SERVER_SECRET = 'server_side_secret';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const EXECUTOR_CLI = resolve(REPO_ROOT, 'apps/sandbox/agent-cli/connectors/executor.ts');
-const EXECUTOR_MCP = resolve(REPO_ROOT, 'apps/sandbox/agent-cli/connectors/executor-mcp.ts');
+// The Executor's CLI + MCP faces are now subcommands of the one kortix CLI:
+// `kortix executor …` and `kortix executor mcp`.
+const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 interface World {
   executions: ExecutionRecord[];
@@ -105,6 +106,11 @@ function makeDeps(): ExecutorRouterDeps {
 
   return {
     resolvePrincipal: async (c) => c.req.header('authorization') === `Bearer ${TOKEN}` ? principal() : null,
+    // Project-explicit gateway: same principal, but the project comes from the
+    // path (the production impl accepts a logged-in user token here — this is the
+    // local-executor unlock). Authorize only the matching project.
+    resolveProjectPrincipal: async (c, projectId) =>
+      c.req.header('authorization') === `Bearer ${TOKEN}` && projectId === PROJECT ? principal() : null,
     makeGatewayDeps: () => gateway,
     listCatalog: async (p) => catalogFor(p),
     resolveAdmin: async () => null,
@@ -116,7 +122,7 @@ function makeDeps(): ExecutorRouterDeps {
 
 async function runCli(args: string[], extraEnv: Record<string, string | undefined> = {}) {
   const proc = Bun.spawn({
-    cmd: ['bun', EXECUTOR_CLI, ...args],
+    cmd: ['bun', CLI_ENTRY, 'executor', ...args],
     cwd: REPO_ROOT,
     env: {
       PATH: process.env.PATH,
@@ -196,10 +202,36 @@ describe('CLI face', () => {
   });
 });
 
+describe('Project-explicit gateway face (the local-executor unlock)', () => {
+  test('SDK with a projectId hits /projects/:id/{catalog,call}', async () => {
+    const sdk = createExecutorClient({ apiUrl, token: TOKEN, projectId: PROJECT });
+    expect((await sdk.connectors())[0]?.slug).toBe('echo');
+    const result = await sdk.call<{ url: string }>('echo', 'get', { q: 'proj-sdk' });
+    expect(result.ok).toBe(true);
+    expect(result.data?.url).toBe('https://example.test/anything?q=proj-sdk');
+  });
+
+  test('CLI with KORTIX_PROJECT_ID set routes through the project-explicit gateway', async () => {
+    // This is exactly the local path: a project (here via env, in practice
+    // .kortix/link.json or --project) makes `kortix executor` use the routes that
+    // accept a plain user token. Same command, same result as in-sandbox.
+    const connectors = await runCli(['connectors'], { KORTIX_PROJECT_ID: PROJECT });
+    expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', tools: ['echo.get'] });
+    const call = await runCli(['call', 'echo', 'get', '{"q":"proj-cli"}'], { KORTIX_PROJECT_ID: PROJECT });
+    expect(call).toMatchObject({ ok: true, risk: 'read' });
+    expect(call.data.url).toBe('https://example.test/anything?q=proj-cli');
+  });
+
+  test('an unauthorized project is rejected (403 → SDK throws)', async () => {
+    const sdk = createExecutorClient({ apiUrl, token: TOKEN, projectId: 'someone-elses-project' });
+    await expect(sdk.connectors()).rejects.toThrow();
+  });
+});
+
 describe('MCP face', () => {
   test('exposes stable meta-tools and runs the discover→describe→call loop', async () => {
     const proc = Bun.spawn({
-      cmd: ['bun', EXECUTOR_MCP],
+      cmd: ['bun', CLI_ENTRY, 'executor', 'mcp'],
       cwd: REPO_ROOT,
       env: {
         PATH: process.env.PATH,

@@ -37,6 +37,7 @@ ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
+COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter

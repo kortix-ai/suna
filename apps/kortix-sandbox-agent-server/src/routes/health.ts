@@ -133,7 +133,7 @@ export function createHealthRouter(
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,
       // Visible auth posture so misconfiguration doesn't silently downgrade.
-      auth: cfg.kortixToken ? 'configured' : 'unconfigured',
+      auth: cfg.sandboxToken ? 'configured' : 'unconfigured',
     })
   })
 

@@ -141,6 +141,10 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-user');
     return u ? principalFor(u) : null;
   },
+  resolveProjectPrincipal: async (c, projectId) => {
+    const u = c.req.header('x-test-user');
+    return u && projectId === PROJECT ? principalFor(u) : null;
+  },
   makeGatewayDeps,
   listCatalog: async (p) => catalogFor(p),
   resolveAdmin: async (c) => {

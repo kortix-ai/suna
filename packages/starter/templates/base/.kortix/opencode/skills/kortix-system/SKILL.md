@@ -93,8 +93,8 @@ that's intentional. Use `kortix projects info` to inspect **this** project.
 or an app connected, **mint a setup link and surface the URL in the same turn** —
 don't tell the human to "open Customize → Connectors", and don't ask them to
 paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-executor` MCP (or `secrets request` / `executor connect` /
-`kortix secrets request` / `kortix connectors link`). The human gets a fill-in
+`kortix-executor` MCP (or `kortix secrets request` / `kortix executor connect` /
+`kortix connectors link`). The human gets a fill-in
 modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
@@ -233,9 +233,9 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
   by minting a short-lived **setup link** and surfacing the URL, instead of
   punting the human to the dashboard or asking them to paste a raw key. Covers
   the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
-  (the `request_secret` + `connect` MCP tools, the `secrets request` /
-  `executor connect` shims, the `kortix secrets request` / `kortix connectors
-  link` CLI), what the human sees (web modal vs Slack link), how to verify it
+  (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
+  `kortix executor connect` / `kortix connectors link` CLI), what the human sees
+  (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.
 </reference>

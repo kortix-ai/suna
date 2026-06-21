@@ -207,6 +207,58 @@ jobs:
             artifacts/kortix-linux-arm64
           if-no-files-found: error
 
+  # ── Publish the Executor SDK to npm ─────────────────────────────────────────
+  # @kortix/executor-sdk is the programmatic face of the Executor (alongside the
+  # `kortix executor` CLI + `kortix executor mcp` MCP server). It ships to npm on
+  # every version release, in lockstep with the platform version. Requires an
+  # NPM_TOKEN secret (an npm automation token with publish rights on the @kortix
+  # org); until that's set the step skips cleanly so a release is never blocked.
+  publish-sdk:
+    name: Publish @kortix/executor-sdk to npm
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable && corepack prepare pnpm@latest --activate || true
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (version-locked, idempotent)
+        working-directory: packages/executor-sdk
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN not set — skipping @kortix/executor-sdk publish. Add the secret to enable npm releases."
+            exit 0
+          fi
+          # Lock the SDK version to the platform release version, then build dist/.
+          npm pkg set version="$VERSION"
+          echo "Building @kortix/executor-sdk@$VERSION"
+          bun run build
+          # Idempotent: a re-run of the same release must not hard-fail on E409.
+          if npm view "@kortix/executor-sdk@$VERSION" version >/dev/null 2>&1; then
+            echo "@kortix/executor-sdk@$VERSION already on npm — skipping (idempotent re-run)."
+            exit 0
+          fi
+          npm publish
+          echo "Published @kortix/executor-sdk@$VERSION ✅"
+
   # ── Build prod desktop installers (per-OS signed matrix) ────────────────────
   build-desktop:
     name: Build prod desktop ${{ matrix.target_pretty }}
