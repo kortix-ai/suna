@@ -39,7 +39,9 @@ function attrs(raw = '') {
 }
 
 function stripTags(value = '') {
-  return decodeXml(value).replace(/<[^>]+>/g, '').trim();
+  // Decode entities first, then drop every '<...'—closing '>' optional—so an
+  // unclosed '<script' can't survive (complete tag stripping, no leftover '<').
+  return decodeXml(value).replace(/<[^>]*>?/g, '').trim();
 }
 
 function statusFor(body) {
