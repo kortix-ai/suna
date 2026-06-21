@@ -48,7 +48,7 @@ import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunn
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
+import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -57,6 +57,7 @@ import {
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
+  schedulerSweepIsStale,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -403,7 +404,9 @@ const healthHandler = (c: any) =>
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
     // took, and what it did. On a non-leader pod the fields are null (the sweep
     // only runs on the leader) — so "all pods null" = no leader = no triggers.
-    trigger_scheduler: getTriggerSchedulerHealth(),
+    // `stale` is true when we're the leader but the sweep has frozen (started
+    // and not completed within the stale window) — the signal to alert on.
+    trigger_scheduler: { ...getTriggerSchedulerHealth(), stale: schedulerSweepIsStale(isLeader()) },
   });
 
 app.openapi(
@@ -1031,10 +1034,20 @@ async function stopSingletonWorkers() {
 // (self-host single node → sole leader, no coordination).
 async function bootServices() {
   await startReplicaServices();
-  startLeaderElection({
-    onAcquire: () => startSingletonWorkers(),
-    onRelease: () => stopSingletonWorkers(),
-  });
+  // Only pods that actually run singleton workers join the election. An API-only
+  // pod (workers disabled) that won the lease would become a dead-weight leader,
+  // holding it while running nothing and starving the scheduler fleet-wide.
+  const eligible = runsSingletonWorkers();
+  if (!eligible) {
+    appLogger.info('[workers] API-only pod — singleton workers disabled; not joining leader election');
+  }
+  startLeaderElection(
+    {
+      onAcquire: () => startSingletonWorkers(),
+      onRelease: () => stopSingletonWorkers(),
+    },
+    { eligible },
+  );
 }
 
 // Graceful shutdown
