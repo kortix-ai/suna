@@ -578,15 +578,27 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
     });
   }
 
-  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
-  // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. (The executor branch also lets a session token reach the Executor's
-  // project-explicit gateway + management routes for ITS OWN project — without it
-  // a project-scoped token would fall through to the default-deny below.)
-  const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
+  // `/v1/projects/:projectId/...` is a project-scoped surface. Require the URL id
+  // to match the token's project.
+  const m = path.match(/^\/v1\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
+    if (urlProjectId !== tokenProjectId) {
+      throw new HTTPException(403, {
+        message: 'Project-scoped token cannot access a different project',
+      });
+    }
+    return;
+  }
+
+  // The Executor's project-explicit *gateway* routes are also project-scoped and
+  // are safe for session PATs: they still enforce connector sharing, policy, and
+  // per-agent grants before listing/calling tools. Do NOT allow the broader
+  // `/v1/executor/projects/:projectId/*` admin surface here — those routes mutate
+  // connector config/credentials and must stay dashboard/user-auth only.
+  const executorGateway = path.match(/^\/v1\/executor\/projects\/([^/]+)\/(catalog|call)$/);
+  if (executorGateway) {
+    const urlProjectId = executorGateway[1];
     if (urlProjectId !== tokenProjectId) {
       throw new HTTPException(403, {
         message: 'Project-scoped token cannot access a different project',
