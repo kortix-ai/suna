@@ -12,10 +12,10 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: kortix
   source:
     repoURL: https://github.com/kortix-ai/suna.git
-    targetRevision: gateway
+    targetRevision: main
     path: infra/k8s/charts/kortix-gateway
     helm:
       releaseName: kortix-gateway

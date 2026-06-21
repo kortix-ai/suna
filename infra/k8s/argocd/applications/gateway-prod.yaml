@@ -1,8 +1,10 @@
 # Argo CD Application for the EKS prod LLM gateway (gateway.kortix.com).
 #
-# Multi-source (mirrors kortix-prod): render the kortix-gateway chart with the
-# prod gateway value file from the same repo. A PR bumping image.tag in
-# infra/k8s/envs/prod/gateway-values.yaml IS the release; git revert is rollback.
+# SINGLE source (mirrors kortix-prod): render the kortix-gateway chart with the
+# prod gateway value file via a relative path in the same repo — one revision, so
+# it can't race a multi-source $values resolution while the prod branch moves. A
+# PR bumping image.tag in infra/k8s/envs/prod/gateway-values.yaml IS the release;
+# git revert is rollback.
 #
 # Runs in the kortix-prod namespace, reusing the API's ServiceAccount (kortix-api)
 # + synced secret (kortix-api-env) — depends on kortix-prod creating them first;
@@ -16,17 +18,14 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: kortix
-  sources:
-    - repoURL: https://github.com/kortix-ai/suna.git
-      targetRevision: prod
-      path: infra/k8s/charts/kortix-gateway
-      helm:
-        releaseName: kortix-gateway
-        valueFiles:
-          - $values/infra/k8s/envs/prod/gateway-values.yaml
-    - repoURL: https://github.com/kortix-ai/suna.git
-      targetRevision: prod
-      ref: values
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: prod
+    path: infra/k8s/charts/kortix-gateway
+    helm:
+      releaseName: kortix-gateway
+      valueFiles:
+        - ../../envs/prod/gateway-values.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: kortix-prod
