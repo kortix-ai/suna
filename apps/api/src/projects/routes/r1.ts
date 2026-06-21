@@ -21,7 +21,7 @@ import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProje
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -100,6 +100,13 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
         .update(signatureHeader ?? '')
         .update(staticAuthFingerprint)
         .digest('hex')}`;
+
+  // Server-side per-project kill-switch: a paused project ignores inbound
+  // webhooks (acknowledged, not fired) so a repo deployed to two control planes
+  // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
+  if (triggersPausedForProject(project.metadata)) {
+    return c.json({ status: 'skipped', reason: 'triggers are paused server-side for this project' }, 200);
+  }
 
   const result = await fireGitTrigger({
     spec,

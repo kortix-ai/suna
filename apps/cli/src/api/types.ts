@@ -142,6 +142,10 @@ export interface ProjectTrigger {
 
 export interface ProjectTriggersResponse {
   triggers: ProjectTrigger[];
+  // Server-side per-project activation state. When true, the platform won't
+  // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
+  // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
+  triggers_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
 
