@@ -13,6 +13,8 @@
 # helm/kubernetes providers can reach a live API server.
 
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -294,9 +296,9 @@ locals {
       # so the admin team maps via "org:team". Tighten/expand later.
       rbac = var.argocd_github_sso_enabled ? {
         "policy.default" = "role:readonly"
-        "policy.csv" = var.argocd_admin_team != "" ? (
+        "policy.csv"     = var.argocd_admin_team != "" ? (
           "g, ${var.argocd_github_org}:${var.argocd_admin_team}, role:admin\n"
-          ) : (
+        ) : (
           "g, ${var.argocd_github_org}, role:admin\n"
         )
       } : {}

@@ -3,6 +3,8 @@
 # prod — only CIDR / az_count / single_nat_gateway differ via variables.
 
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
