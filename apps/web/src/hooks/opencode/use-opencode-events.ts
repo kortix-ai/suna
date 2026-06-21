@@ -88,6 +88,14 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   }
 }
 
+function refetchKortixSessionMirrors(queryClient: QueryClient): void {
+  // OpenCode title/tree mirroring is owned by API session reads. When OpenCode
+  // emits a title/tree change, refetch the active Kortix session reads so tabs
+  // and sidebars pick up the server-side mirror without browser-side writes.
+  void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
+  void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
+}
+
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
  * performs INCREMENTAL cache updates on React Query data.
@@ -677,6 +685,7 @@ export function useOpenCodeEventStream() {
               return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
             });
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
+            refetchKortixSessionMirrors(queryClient);
           }
           break;
         }
@@ -684,6 +693,16 @@ export function useOpenCodeEventStream() {
         case 'session.updated': {
           const info = readSessionInfo(event);
           if (info) {
+            // OpenCode auto-titles after the first message via session.updated.
+            // Capture the previous title before local cache mutation so we only
+            // force the server-owned mirror read when the title actually changed.
+            const prevTitle =
+              queryClient
+                .getQueryData<Session[]>(opencodeKeys.sessions())
+                ?.find((s) => s.id === info.id)?.title ??
+              queryClient.getQueryData<Session>(opencodeKeys.session(info.id))?.title ??
+              null;
+            const titleChanged = !!info.title && info.title !== prevTitle;
             // Only update individual session cache (cheap, targeted)
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
             // Update session list only if the session actually changed
@@ -703,6 +722,7 @@ export function useOpenCodeEventStream() {
               next[idx] = info;
               return next.sort((a, b) => b.time.updated - a.time.updated);
             });
+            if (titleChanged) refetchKortixSessionMirrors(queryClient);
           }
           break;
         }

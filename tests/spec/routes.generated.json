@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 384,
+  "count": 383,
   "routes": [
     {
       "method": "GET",
@@ -1285,10 +1285,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/suna-migration/status"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/sync-opencode-sessions"
     },
     {
       "method": "POST",

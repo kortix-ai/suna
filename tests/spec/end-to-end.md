@@ -181,11 +181,11 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
 `SESS-5` `GET /projects/:id/sessions/:sid` → `read` → 200; non-uuid `sid` → 400.
-`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by `/sync-opencode-sessions`, which only writes the auto title `metadata.name`); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
+`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by the server-side OpenCode title mirror, which only writes the auto title `metadata.name` during session reads); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
 `SESS-7` `DELETE /projects/:id/sessions/:sid` → `write` → 200 soft-delete status `stopped`; **remote branch preserved**.
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `write` → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
-`SESS-10` `POST /projects/sync-opencode-titles {entries[]}` → mirrors OpenCode titles → `metadata.name` (per-row write check).
+`SESS-10` OpenCode title/tree mirror is server-owned: `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` read the sandbox's OpenCode sessions server-side and mirror `metadata.name`/`metadata.opencode_sessions`; there is no browser-write sync endpoint.
 
 ---
 
