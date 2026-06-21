@@ -762,11 +762,14 @@ function ConnectorDetail({
             </InlineMeta>
           </div>
         </div>
-        {connector.authSecret &&
+        {/* When connected, a compact Reconnect/Replace lives in the header.
+            When NOT connected, the connect action is a big CTA below — not a
+            small header button buried next to the title. */}
+        {connector.authSecret && connected &&
           (isPipedream ? (
             <Button
               size="sm"
-              variant={connected ? 'outline' : 'default'}
+              variant="outline"
               className="shrink-0 gap-1.5"
               onClick={() => reconnect.mutate()}
               disabled={reconnect.isPending}
@@ -776,22 +779,51 @@ function ConnectorDetail({
               ) : (
                 <KeyRound className="h-4 w-4" />
               )}
-              {connected ? 'Reconnect' : 'Connect'}
+              Reconnect
             </Button>
           ) : (
             <Button
               size="sm"
-              variant={connected ? 'outline' : 'default'}
+              variant="outline"
               className="shrink-0 gap-1.5"
               onClick={() => setCredOpen(true)}
             >
               <KeyRound className="h-4 w-4" />
-              {connected ? 'Replace credential' : 'Set credential'}
+              Replace credential
             </Button>
           ))}
       </div>
 
       <div className="mt-7 space-y-5">
+        {/* Prominent connect CTA — the first thing you see on an unconnected
+            connector. Big, obvious, "connect here". */}
+        {connector.authSecret && !connected && (
+          <div className="border-primary/40 from-primary/10 to-primary/5 flex flex-col gap-4 rounded-2xl border bg-gradient-to-br p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-foreground text-lg font-semibold">
+                Connect {displayName}
+              </h3>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {isPipedream
+                  ? `Authorize your ${displayName} account so the agent and your triggers can use it.`
+                  : `Add the credential so the agent and your triggers can use ${displayName}.`}
+              </p>
+            </div>
+            <Button
+              size="lg"
+              className="h-12 shrink-0 gap-2 px-6 text-base font-semibold shadow-sm"
+              onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+              disabled={isPipedream && reconnect.isPending}
+            >
+              {isPipedream && reconnect.isPending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <KeyRound className="h-5 w-5" />
+              )}
+              {isPipedream ? `Connect ${displayName}` : 'Set credential'}
+            </Button>
+          </div>
+        )}
         {!isPipedream && (
           <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
         )}
@@ -1767,9 +1799,7 @@ function ConnectorSetupFields({
         <div className="space-y-0.5">
           <Label>Profile</Label>
           <p className="text-muted-foreground text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTheAccount7df6646c',
-            )}
+            How this connection is set up for the project.
           </p>
         </div>
         <RadioGroup
@@ -1786,21 +1816,13 @@ function ConnectorSetupFields({
         >
           <ShareOption
             value="shared"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
-            )}
+            label="One shared profile across the whole project (recommended)"
+            desc="Connect it once. Everyone — and every trigger/cron — uses the same account. Best for almost all cases."
           />
           <ShareOption
             value="per_user"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
-            )}
+            label="Each member brings their own profile"
+            desc="Every member connects their own account, and only ever uses their own. Pick this only when each person must act as themselves."
           />
         </RadioGroup>
       </div>
@@ -2035,8 +2057,13 @@ function ConfigureAppDialog({
   onAdded: (slug: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Default to ONE SHARED profile for the whole project. It's the right choice
+  // for the overwhelming majority of cases (the agent + crons just use it, no
+  // per-member setup), and it makes triggers work without each member having to
+  // connect their own account. "Each member brings their own" stays a one-click
+  // opt-in for the genuine BYO case.
   const [setup, setSetup] = useState<ConnectorSetup>({
-    credential: 'per_user',
+    credential: 'shared',
     access: 'project',
     memberIds: [],
   });
