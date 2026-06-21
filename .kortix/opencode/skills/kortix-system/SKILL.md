@@ -110,9 +110,9 @@ Kortix cloud state — not just files in the repo. Examples:
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
 | "add / list connectors" | `kortix connectors add <slug> --provider …`, `kortix connectors ls`, `connectors show <slug>` |
-| **"add a connector NOW, no CR (like the UI)"** | agent: `add_connector` MCP tool / `executor add <slug> --provider pipedream --app <app>` · human: `kortix connectors add … --apply` — commits to `kortix.toml` on main + syncs server-side, live this session |
-| **"I need an API key the human has (e.g. `APOLLO_API_KEY`)"** | `request_secret` MCP tool / `secrets request NAME` / `kortix secrets request NAME` — mint a link, **surface it**. You never see the value. |
-| **"I need this app connected (Pipedream)"** | `connect` MCP tool / `executor connect <slug>` / `kortix connectors link <slug>` — mint a 1-click link, **surface it**. No "go to the dashboard". |
+| **"add a connector NOW, no CR (like the UI)"** | agent: `add_connector` MCP tool / `kortix executor add <slug> --provider pipedream --app <app>` · human: `kortix connectors add … --apply` — commits to `kortix.toml` on main + syncs server-side, live this session |
+| **"I need an API key the human has (e.g. `APOLLO_API_KEY`)"** | `request_secret` MCP tool / `kortix secrets request NAME` — mint a link, **surface it**. You never see the value. |
+| **"I need this app connected (Pipedream)"** | `connect` MCP tool / `kortix executor connect <slug>` / `kortix connectors link <slug>` — mint a 1-click link, **surface it**. No "go to the dashboard". |
 | "set a connector's credential directly" | `kortix connectors credential <slug>` *(admin/login only — prefer the link above)* |
 | "who can use a connector" | `kortix connectors share <slug> --mode project\|private\|members` |
 | "shared profile vs each-member-BYO" | `kortix connectors mode <slug> shared\|per_user` |
@@ -125,8 +125,8 @@ Kortix cloud state — not just files in the repo. Examples:
 > **Getting a credential — never punt to the dashboard.** When you need an API key
 > or an app connected, **mint a setup link and surface the URL in the same turn**
 > — don't tell the human to "open Customize → Connectors". Use the `request_secret`
-> / `connect` tools on the `kortix-executor` MCP (or `secrets request` /
-> `executor connect` / `kortix secrets request` / `kortix connectors link`). The
+> / `connect` tools on the `kortix-executor` MCP (or `kortix secrets request` /
+> `kortix executor connect` / `kortix connectors link`). The
 > human gets a fill-in modal (web) or a tappable link (Slack); you never touch the
 > raw value. This is the streamlined default — do it automatically whenever you
 > add or need a tool. Full playbook in the
@@ -285,9 +285,9 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
   by minting a short-lived **setup link** and surfacing the URL, instead of
   punting the human to the dashboard or asking them to paste a raw key. Covers
   the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
-  (the `request_secret` + `connect` MCP tools, the `secrets request` /
-  `executor connect` shims, the `kortix secrets request` / `kortix connectors
-  link` CLI), what the human sees (web modal vs Slack link), how to verify it
+  (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
+  `kortix executor connect` / `kortix connectors link` CLI), what the human sees
+  (web modal vs Slack link), how to verify it
   landed, the runtime-vs-connector scope choice, and the security model. Load
   this whenever you hit "I need an API key / I need this app connected" — it is
   the canonical, autonomous flow.

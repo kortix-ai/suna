@@ -8,6 +8,7 @@ import { runCr } from './commands/cr.ts';
 import { runCreate } from './commands/create.ts';
 import { runDev } from './commands/dev.ts';
 import { runEnv } from './commands/env.ts';
+import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
 import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
@@ -63,6 +64,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
   { name: 'channels', args: '<subcommand>', blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)' },
   { name: 'connectors', args: '<subcommand>', blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)' },
+  { name: 'executor', args: '<subcommand>', blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server' },
   { name: 'add', args: '<item>', blurb: 'Install a skill/agent/command/file/bundle from a registry' },
   { name: 'registry', args: '<subcommand>', blurb: 'Author + browse registries (build/validate/list/view/search)' },
   { name: 'sandboxes', args: '<subcommand>', blurb: 'Manage sandbox images: templates, builds, health' },
@@ -128,8 +130,13 @@ async function main(argv: string[]): Promise<number> {
     if (notice) process.stdout.write(`${notice}\n`);
     return 0;
   }
-  printActiveHostNotice(argv[0]);
-  await printUpdateNoticeForCommand(argv[0]);
+  // `executor` is a MACHINE surface (the in-sandbox agent parses stdout as JSON,
+  // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
+  // + update notices so its output stays clean.
+  if (argv[0] !== 'executor') {
+    printActiveHostNotice(argv[0]);
+    await printUpdateNoticeForCommand(argv[0]);
+  }
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
@@ -187,6 +194,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
+  }
+  if (argv[0] === 'executor') {
+    return runExecutor(argv.slice(1));
   }
   if (argv[0] === 'add') {
     return runAdd(argv.slice(1));

@@ -47,8 +47,9 @@ RUN case "${TARGETARCH:-}" in \
 
 # ─── Stage 2: build the kortix CLI binary ───────────────────────────────
 #
-# The CLI lives in apps/cli and imports two workspace packages
-# (@kortix/manifest-schema, @kortix/starter) plus one npm dep (smol-toml).
+# The CLI lives in apps/cli and imports four workspace packages
+# (@kortix/executor-sdk, @kortix/manifest-schema, @kortix/registry,
+# @kortix/starter) plus one npm dep (smol-toml).
 # `bun build --compile` inlines all of them, so the runtime image carries a
 # single self-contained binary and never needs node_modules on PATH — the
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
@@ -60,6 +61,7 @@ ARG TARGETARCH
 
 WORKDIR /cli
 COPY apps/cli ./apps/cli
+COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter

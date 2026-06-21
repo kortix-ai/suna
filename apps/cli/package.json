@@ -20,6 +20,7 @@
     "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*"
   },
   "dependencies": {
+    "@kortix/executor-sdk": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/starter": "workspace:*",

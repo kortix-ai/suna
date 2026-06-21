@@ -1,22 +1,30 @@
-#!/usr/bin/env bun
 /**
- * executor — the agent's single interface to every configured integration
- * (Pipedream / MCP / OpenAPI / GraphQL / HTTP). Thin client: it never holds a
- * third-party credential. Every call goes to the Kortix Executor Gateway
- * (/v1/executor/*), which checks this user's connector sharing, resolves the
- * secret SERVER-SIDE, runs the call, and audits it.
+ * `kortix executor` — the agent's interface to every configured integration
+ * (Pipedream / MCP / OpenAPI / GraphQL / HTTP), absorbed from the old in-sandbox
+ * `executor` shim into the one kortix CLI.
  *
- * Auth: KORTIX_EXECUTOR_TOKEN (acts as the launching user) + KORTIX_API_URL,
- * both injected at sandbox spawn.
+ * Three faces over ONE core (see ../executor/gateway.ts):
+ *   - this CLI        (`kortix executor call …`)
+ *   - the MCP server  (`kortix executor mcp`, the agent's PRIMARY path)
+ *   - the SDK         (`@kortix/executor-sdk`, the TypeScript framework)
  *
- * Usage:
- *   executor connectors                       # what this session can use
- *   executor discover "send a slack message"  # intent search across tools
- *   executor describe stripe.charges.create   # full input schema for one tool
- *   executor call stripe charges.create '{"amount":999,"currency":"usd"}'
+ * Thin client: it never holds a third-party credential. Every tool call goes to
+ * the Kortix Executor Gateway (/v1/executor/*), which checks sharing, resolves
+ * the secret SERVER-SIDE, runs the call, and audits it. Auth comes from
+ * KORTIX_EXECUTOR_TOKEN + KORTIX_API_URL, injected at sandbox spawn.
+ *
+ * MACHINE surface: emits JSON only (the agent parses stdout); index.ts skips the
+ * host/update notices for `executor`.
  */
-import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
-import { parseArgs, out, handleError, CliError, requireEnv, getEnv, mintConnectLink, kortixPost, kortixDelete, kortixProjectId } from '../lib';
+import { ExecutorError } from '@kortix/executor-sdk';
+import {
+  addConnector,
+  executorClientFromEnv,
+  mintConnectLink,
+  removeConnector,
+} from '../executor/gateway.ts';
+import { runExecutorMcpServer } from '../executor/mcp.ts';
+import { CliError, out, parseExecArgs } from '../executor/io.ts';
 
 const PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
@@ -38,32 +46,11 @@ function connectorDraftFromFlags(slug: string, flags: Record<string, string | un
   return draft;
 }
 
-function requireProjectId(): string {
-  const id = kortixProjectId();
-  if (!id) throw new CliError('KORTIX_PROJECT_ID not set', 'MISSING_ENV');
-  return id;
-}
-
-function apiBase(): string {
-  const url = getEnv('KORTIX_API_URL')?.trim();
-  if (!url) throw new CliError('KORTIX_API_URL not set — the Executor gateway is unreachable.', 'MISSING_ENV');
-  return url.replace(/\/$/, '');
-}
-
-function client() {
-  return createExecutorClient({
-    apiUrl: apiBase(),
-    token: requireEnv('KORTIX_EXECUTOR_TOKEN'),
-  });
-}
-
-export async function main(argv = process.argv): Promise<void> {
-  const { command, args, flags } = parseArgs(argv);
-  const executor = client();
-
+async function dispatch(command: string, args: string[], flags: Record<string, string>): Promise<void> {
   switch (command) {
     case 'connectors':
     case 'ls': {
+      const executor = executorClientFromEnv();
       const connectors = await executor.connectors();
       out({
         connectors: connectors.map((c) => ({
@@ -78,6 +65,7 @@ export async function main(argv = process.argv): Promise<void> {
 
     case 'discover':
     case 'search': {
+      const executor = executorClientFromEnv();
       const q = args.join(' ') || flags.query || '';
       const matches = await executor.discover(q, { limit: Number(flags.limit) || 20 });
       out({ matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })) });
@@ -85,18 +73,20 @@ export async function main(argv = process.argv): Promise<void> {
     }
 
     case 'describe': {
+      const executor = executorClientFromEnv();
       const ref = args[0];
-      if (!ref || !ref.includes('.')) throw new CliError('usage: executor describe <connector>.<action>', 'USAGE');
+      if (!ref || !ref.includes('.')) throw new CliError('usage: kortix executor describe <connector>.<action>', 'USAGE');
       const tool = await executor.describe(ref);
-      if (!tool) throw new CliError(`unknown tool "${ref}" — run 'executor discover' to list tools`, 'NOT_FOUND');
+      if (!tool) throw new CliError(`unknown tool "${ref}" — run 'kortix executor discover' to list tools`, 'NOT_FOUND');
       out({ tool: tool.tool, risk: tool.risk, description: tool.description, inputSchema: tool.inputSchema });
       break;
     }
 
     case 'call': {
+      const executor = executorClientFromEnv();
       const slug = args[0];
       const action = args[1];
-      if (!slug || !action) throw new CliError('usage: executor call <connector> <action> [json-args]', 'USAGE');
+      if (!slug || !action) throw new CliError('usage: kortix executor call <connector> <action> [json-args]', 'USAGE');
       const raw = args[2] ?? flags.args;
       let parsed: Record<string, unknown> = {};
       if (raw) {
@@ -112,21 +102,18 @@ export async function main(argv = process.argv): Promise<void> {
       // Add (or update) a connector on the project NOW — committed to
       // kortix.toml on main + synced server-side, exactly like the dashboard's
       // "Add app". No change request needed; it's live this session. Then run
-      // `executor connect <slug>` to surface the auth link.
+      // `kortix executor connect <slug>` to surface the auth link.
       const slug = args[0];
-      if (!slug) throw new CliError('usage: executor add <slug> --provider <p> [--app <app>] [--url <url>] …', 'USAGE');
+      if (!slug) throw new CliError('usage: kortix executor add <slug> --provider <p> [--app <app>] [--url <url>] …', 'USAGE');
       const draft = connectorDraftFromFlags(slug, flags);
-      const res = await kortixPost<{ ok: boolean; sync?: unknown }>(
-        `/executor/projects/${requireProjectId()}/connectors`,
-        draft,
-      );
+      const res = await addConnector(draft);
       out({
         ok: true,
         slug,
         provider: draft.provider,
         applied: true,
         sync: res.sync,
-        note: `Live now (committed to kortix.toml on main + synced). Next: 'executor connect ${slug}' to get the auth link.`,
+        note: `Live now (committed to kortix.toml on main + synced). Next: 'kortix executor connect ${slug}' to get the auth link.`,
       });
       break;
     }
@@ -135,8 +122,8 @@ export async function main(argv = process.argv): Promise<void> {
     case 'remove':
     case 'delete': {
       const slug = args[0];
-      if (!slug) throw new CliError('usage: executor rm <slug>', 'USAGE');
-      await kortixDelete(`/executor/projects/${requireProjectId()}/connectors/${encodeURIComponent(slug)}`);
+      if (!slug) throw new CliError('usage: kortix executor rm <slug>', 'USAGE');
+      await removeConnector(slug);
       out({ ok: true, slug, removed: true, note: 'Removed from kortix.toml on main + catalog.' });
       break;
     }
@@ -148,7 +135,7 @@ export async function main(argv = process.argv): Promise<void> {
       // never touches the credential. The connector must already be declared in
       // kortix.toml (add it + land the change request first).
       const slug = args[0];
-      if (!slug) throw new CliError('usage: executor connect <connector-slug>', 'USAGE');
+      if (!slug) throw new CliError('usage: kortix executor connect <connector-slug>', 'USAGE');
       const expires = flags.expires ? Number(flags.expires) : undefined;
       const link = await mintConnectLink({ slug, expiresInMinutes: expires });
       out({
@@ -164,26 +151,44 @@ export async function main(argv = process.argv): Promise<void> {
 
     default:
       out({
-        name: 'executor',
+        name: 'kortix executor',
         description: 'One interface to every configured integration. Calls run server-side; no secrets in the sandbox.',
         commands: {
-          connectors: 'executor connectors — list connectors + tools this session can use',
-          discover: 'executor discover "<intent>" — search tools by natural language',
-          describe: 'executor describe <connector>.<action> — show a tool\'s input schema',
-          call: 'executor call <connector> <action> \'<json-args>\' — run a tool',
-          add: 'executor add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
-          rm: 'executor rm <slug> — remove a connector from the project',
-          connect: 'executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',
+          connectors: 'kortix executor connectors — list connectors + tools this session can use',
+          discover: 'kortix executor discover "<intent>" — search tools by natural language',
+          describe: 'kortix executor describe <connector>.<action> — show a tool\'s input schema',
+          call: 'kortix executor call <connector> <action> \'<json-args>\' — run a tool',
+          add: 'kortix executor add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
+          rm: 'kortix executor rm <slug> — remove a connector from the project',
+          connect: 'kortix executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',
+          mcp: 'kortix executor mcp — run the Executor as a stdio MCP server (opencode auto-loads this)',
         },
       });
   }
 }
 
-if (import.meta.main) {
-  main().catch((err) => {
+/** `argv` is everything AFTER the `executor` token. */
+export async function runExecutor(argv: string[]): Promise<number> {
+  const { command, args, flags } = parseExecArgs(argv);
+
+  // The MCP server owns stdin/stdout for JSON-RPC; run it directly.
+  if (command === 'mcp') {
+    return runExecutorMcpServer();
+  }
+
+  try {
+    await dispatch(command, args, flags);
+    return 0;
+  } catch (err) {
     if (err instanceof ExecutorError) {
-      handleError(new CliError(err.message, 'EXECUTOR_ERROR', 1));
+      out({ ok: false, error: err.message, code: 'EXECUTOR_ERROR' });
+      return 1;
     }
-    handleError(err);
-  });
+    if (err instanceof CliError) {
+      out({ ok: false, error: err.message, code: err.code });
+      return err.exitCode;
+    }
+    out({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    return 1;
+  }
 }

@@ -151,6 +151,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@kortix/executor-sdk':
+        specifier: workspace:*
+        version: link:../../packages/executor-sdk
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema

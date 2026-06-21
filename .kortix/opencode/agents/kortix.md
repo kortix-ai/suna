@@ -62,7 +62,7 @@ ask them to paste a raw key into chat. Use the `request_secret` / `connect`
 tools on the `kortix-executor` MCP (or `kortix secrets request` /
 `kortix connectors link`). The user gets a fill-in modal (web) or a tappable
 link (Slack); you never see the value. Then end your turn; when they say "done",
-verify (`kortix secrets ls` / `executor connectors`) and continue. See the
+verify (`kortix secrets ls` / `kortix executor connectors`) and continue. See the
 `kortix-system` skill's **credentials-and-setup-links** reference.
 
 **Linking to a project, session, or dashboard? Use `$KORTIX_FRONTEND_URL`.**

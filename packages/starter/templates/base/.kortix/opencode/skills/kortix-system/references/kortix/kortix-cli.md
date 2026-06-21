@@ -143,6 +143,29 @@ into every session sandbox at boot.
 > when they say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
+### Executor — call connectors as tools
+
+The Executor is the one interface to every configured integration (Pipedream /
+MCP / OpenAPI / GraphQL / HTTP). Calls run **server-side** through the gateway —
+no third-party secret ever touches the sandbox. It has three faces over one
+core: the `kortix-executor` **MCP** (primary; auto-loaded), this **CLI**, and the
+`@kortix/executor-sdk` **TypeScript framework**. JSON output.
+
+| Command | Effect |
+| --- | --- |
+| `kortix executor connectors` | List connectors + tools this session can use. |
+| `kortix executor discover "<intent>"` | Search tools by natural language (`--limit`). |
+| `kortix executor describe <connector>.<action>` | Show one tool's input schema + risk. |
+| `kortix executor call <connector> <action> '<json>'` | Run a tool (gateway resolves the credential, enforces policy, audits). |
+| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.toml` on main + syncs. |
+| `kortix executor rm <slug>` | Remove a connector. |
+| `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
+| `kortix executor mcp` | Run the Executor as a stdio MCP server (opencode auto-loads this). |
+
+> Inside a session, **prefer the `kortix-executor` MCP tools** (`connectors` /
+> `discover` / `describe` / `call`) — they're always loaded. The CLI is the same
+> core for shell/scripting use.
+
 ### Env — dotenv ↔ secrets
 
 | Command | Effect |

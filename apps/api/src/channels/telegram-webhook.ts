@@ -133,7 +133,7 @@ function renderAgentPrompt(update: TelegramUpdate, message: TelegramMessage): st
     '  ls /usr/local/bin/            # see every CLI',
     '  <cli> help                    # surface for any specific one',
     '',
-    'Common starting points: `telegram help`, `slack help`, `kchannel help`.',
+    'Common starting points: `telegram help`, `slack help`.',
   ].join('\n');
 }
 
