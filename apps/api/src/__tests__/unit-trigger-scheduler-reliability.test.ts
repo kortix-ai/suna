@@ -13,7 +13,9 @@ describe('withTimeout', () => {
 
   test('rejects with a labelled timeout error when the promise hangs past ms', async () => {
     const hang = new Promise<never>(() => {}); // never settles — models a hung fire
-    await expect(withTimeout(hang, 20, 'stuck fire')).rejects.toThrow(/stuck fire timed out after 20ms/);
+    await expect(withTimeout(hang, 20, 'stuck fire')).rejects.toThrow(
+      /stuck fire timed out after 20ms/,
+    );
   });
 
   test('a slow-but-completing promise still resolves (no false timeout)', async () => {
@@ -33,13 +35,25 @@ describe('isSweepStale (scheduler stall detection)', () => {
 
   test('never stale when this pod is not the leader', () => {
     expect(
-      isSweepStale({ isLeader: false, lastSweepStartedAt: null, lastSweepCompletedAt: null, nowMs: T0, staleMs: STALE }),
+      isSweepStale({
+        isLeader: false,
+        lastSweepStartedAt: null,
+        lastSweepCompletedAt: null,
+        nowMs: T0,
+        staleMs: STALE,
+      }),
     ).toBe(false);
   });
 
   test('grace: leader but the scheduler has not ticked yet (no start) → not stale', () => {
     expect(
-      isSweepStale({ isLeader: true, lastSweepStartedAt: null, lastSweepCompletedAt: null, nowMs: T0, staleMs: STALE }),
+      isSweepStale({
+        isLeader: true,
+        lastSweepStartedAt: null,
+        lastSweepCompletedAt: null,
+        nowMs: T0,
+        staleMs: STALE,
+      }),
     ).toBe(false);
   });
 
