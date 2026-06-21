@@ -5,7 +5,6 @@ import {
   out,
   CliError,
   handleError,
-  requireEnv,
   validateRequired,
   getEnv,
   kortixProjectId,
@@ -13,6 +12,10 @@ import {
   kortixGet,
   kortixPost,
 } from '../lib';
+// The published Kortix Executor SDK — baked into the sandbox at the mirrored
+// path (/opt/kortix/packages/executor-sdk). Using it here both keeps the shim's
+// gateway calls clean AND dogfoods the SDK in a real in-sandbox consumer.
+import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
 
 // Relay a checkpoint or the final answer into this turn's live Slack stream.
 // apps/api owns the streamed message; here we just hand it the content.
@@ -64,29 +67,63 @@ function readSourcesFlag(flags: Record<string, string>): Array<{ url: string; te
     .filter((s) => /^https?:\/\//.test(s.url));
 }
 
-function slackApiBase(): string {
-  return (getEnv('SLACK_API_URL') ?? 'https://slack.com/api').replace(/\/$/, '');
+// Slack Web API methods → their Kortix `channel` connector action paths. The
+// shim speaks Slack method names; the Executor speaks connector actions.
+const SLACK_CONNECTOR = 'slack';
+const METHOD_TO_ACTION: Record<string, string> = {
+  'chat.postMessage': 'send_message',
+  'chat.update': 'update_message',
+  'chat.delete': 'delete_message',
+  'reactions.add': 'add_reaction',
+  'conversations.history': 'get_history',
+  'conversations.replies': 'get_thread',
+  'conversations.list': 'list_channels',
+  'conversations.info': 'channel_info',
+  'conversations.join': 'join_channel',
+  'users.list': 'list_users',
+  'users.info': 'user_info',
+  'auth.test': 'auth_test',
+  'search.messages': 'search_messages',
+  'files.info': 'file_info',
+};
+
+// The Executor SDK client, built from this sandbox's env. Setting projectId
+// makes the SDK use the project-explicit gateway route
+// (/executor/projects/:id/call), which accepts the in-sandbox session token.
+function executorClient() {
+  const apiUrl = getEnv('KORTIX_API_URL');
+  const token = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
+  if (!apiUrl || !token) {
+    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN not set — cannot reach the Executor.');
+  }
+  return createExecutorClient({ apiUrl, token, projectId: kortixProjectId() });
+}
+
+// Route a Slack Web API call through the Kortix Executor (via the SDK): the bot
+// token is resolved + attached SERVER-SIDE (never in this sandbox), the call is
+// audited + policy-gated, and Slack's response comes back as `data`. The gateway
+// maps Slack's `{ok:false}` envelope to an error, so the SDK throws on failure
+// (surfacing the Slack error); on success it returns `{ ok:true, data:<slack> }`.
+// Args keep Slack's native names, so the existing callers + `data.ok` reads are
+// unchanged.
+async function executorCall(method: string, args: Record<string, unknown>): Promise<any> {
+  const action = METHOD_TO_ACTION[method];
+  if (!action) throw new CliError(`No Executor action mapped for Slack method "${method}"`);
+  try {
+    const res = await executorClient().call(SLACK_CONNECTOR, action, args);
+    return res.data ?? res;
+  } catch (err) {
+    if (err instanceof ExecutorError) throw new CliError(err.message);
+    throw err;
+  }
 }
 
 async function apiPost(method: string, body: Record<string, unknown>): Promise<any> {
-  const token = requireEnv('SLACK_BOT_TOKEN');
-  const res = await fetch(`${slackApiBase()}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  });
-  return res.json();
+  return executorCall(method, body);
 }
 
 async function apiGet(method: string, params: Record<string, string>): Promise<any> {
-  const token = requireEnv('SLACK_BOT_TOKEN');
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${slackApiBase()}/${method}?${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(15_000),
-  });
-  return res.json();
+  return executorCall(method, params);
 }
 
 async function send(opts: {
@@ -96,37 +133,25 @@ async function send(opts: {
   file?: string;
   blocks?: unknown[];
 }) {
-  const token = requireEnv('SLACK_BOT_TOKEN');
-
   if (opts.file) {
     if (!existsSync(opts.file)) throw new CliError(`File not found: ${opts.file}`);
     const fileData = readFileSync(opts.file);
     const fileName = opts.file.split('/').pop() || 'file';
-
-    const getUrlRes = await fetch(`${slackApiBase()}/files.getUploadURLExternal`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ filename: fileName, length: String(fileData.length) }),
-      signal: AbortSignal.timeout(15_000),
-    }).then((r) => r.json()) as any;
-    if (!getUrlRes.ok) throw new CliError(getUrlRes.error ?? 'getUploadURL failed');
-
-    const uploadRes = await fetch(getUrlRes.upload_url, {
-      method: 'POST',
-      body: fileData,
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!uploadRes.ok) throw new CliError(`Upload failed: ${uploadRes.status}`);
-
-    const completeBody: Record<string, unknown> = {
-      files: [{ id: getUrlRes.file_id, title: fileName }],
-      channel_id: opts.channel,
-    };
-    if (opts.text) completeBody.initial_comment = opts.text;
-    if (opts.threadTs) completeBody.thread_ts = opts.threadTs;
-    const completeRes = await apiPost('files.completeUploadExternal', completeBody);
-    if (!completeRes.ok) throw new CliError(completeRes.error ?? 'completeUpload failed');
-    return { ok: true, files: completeRes.files, channel: opts.channel };
+    // Upload via the server-side proxy — the bot token stays on the server (the
+    // 3-step external-upload + form-encoding can't ride the JSON Executor gateway).
+    const projectId = kortixProjectId();
+    if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot upload.');
+    const res = await kortixPost<{ ok?: boolean; files?: unknown }>(
+      `/projects/${projectId}/channels/slack/file/upload`,
+      {
+        channel: opts.channel,
+        filename: fileName,
+        content_base64: fileData.toString('base64'),
+        ...(opts.text ? { comment: opts.text } : {}),
+        ...(opts.threadTs ? { thread_ts: opts.threadTs } : {}),
+      },
+    );
+    return { ok: true, files: res.files, channel: opts.channel };
   }
 
   if (!opts.text && (!opts.blocks || opts.blocks.length === 0)) {
@@ -255,12 +280,27 @@ async function fileInfo(opts: { fileId: string }) {
 }
 
 async function download(opts: { url: string; out: string }) {
-  const token = requireEnv('SLACK_BOT_TOKEN');
-  const res = await fetch(opts.url, {
-    headers: { Authorization: `Bearer ${token}` },
+  // Fetch via the server-side proxy — the bot token stays on the server. Binary,
+  // so a raw fetch (not the JSON kortix client), authed with the session token.
+  const apiUrl = getEnv('KORTIX_API_URL');
+  const tok = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
+  const projectId = kortixProjectId();
+  if (!apiUrl || !tok || !projectId) {
+    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.');
+  }
+  const proxyUrl = new URL(
+    `/v1/projects/${projectId}/channels/slack/file?url=${encodeURIComponent(opts.url)}`,
+    apiUrl,
+  ).href;
+  const res = await fetch(proxyUrl, {
+    headers: { Authorization: `Bearer ${tok}` },
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw new CliError(`Download failed: ${res.status}`);
+  if (!res.ok) {
+    let msg = `Download failed: HTTP ${res.status}`;
+    try { const j = (await res.json()) as { error?: string }; if (j?.error) msg = j.error; } catch { /* keep */ }
+    throw new CliError(msg);
+  }
   const buf = await res.arrayBuffer();
   const dir = opts.out.split('/').slice(0, -1).join('/');
   if (dir) mkdirSync(dir, { recursive: true });
@@ -446,7 +486,7 @@ async function main(): Promise<void> {
       console.log(`
 slack — Slack Web API adapter
 
-Auth: SLACK_BOT_TOKEN env (injected from project_secrets at sandbox spawn).
+Auth: none in-sandbox — calls run through the Kortix Executor (server-side bot token).
 
 Turn commands (use these when answering a Slack message):
   step         "<checkpoint>"            # narrate a live plan step as you work

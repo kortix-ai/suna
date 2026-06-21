@@ -7594,6 +7594,7 @@
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4": "Bring your own Slack app",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb": "Self-hosted setups don't have OAuth wired up — paste a manifest and tokens to finish the install. Stored encrypted in this project's secrets",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddKortix0e416aa2": "Add Kortix to your Slack workspace",
+    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOneClick68f102dc": "One-click install — authorize Kortix in your workspace, no setup required.",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOneClicke1160263": "One click — approve scopes in Slack and we'll wire this project to the workspace you choose. Tokens stay encrypted in this project&apos",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddTo1729c1b6": "Add to Slack",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBringYourc7326733": "Bring your own Slack app",

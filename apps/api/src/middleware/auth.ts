@@ -580,9 +580,10 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
 
   // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
   // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. (The executor branch also lets a session token reach the Executor's
-  // project-explicit gateway + management routes for ITS OWN project — without it
-  // a project-scoped token would fall through to the default-deny below.)
+  // project. The executor branch intentionally includes both gateway and
+  // connector-management routes: the unified Executor MCP exposes add/remove
+  // connector tools from inside the sandbox, while individual routes still gate
+  // mutations via project.write in resolveAdmin.
   const m =
     path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
   if (m) {

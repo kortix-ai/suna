@@ -31,8 +31,14 @@ const UTILITY_APP_SLUGS = new Set([
   'only_continue', 'code', 'rss', 'pipedream', 'go', 'node', 'python', 'bash',
 ]);
 
+// Apps Kortix provides NATIVELY (first-class channels/integrations), so the
+// Pipedream version would only be a confusing duplicate in the "connect an app"
+// grid. Slack is a native Kortix channel — hide the Pipedream Slack app.
+const NATIVE_APP_SLUGS = new Set(['slack', 'slack_bot']);
+
 function isConnectableApp(a: { slug: string; authType: string | null }): boolean {
   if (UTILITY_APP_SLUGS.has(a.slug)) return false;
+  if (NATIVE_APP_SLUGS.has(a.slug)) return false;
   return !!a.authType && a.authType !== 'none';
 }
 

@@ -42,6 +42,7 @@ import {
   Terminal,
   Timer,
   Trash2,
+  UserCircle,
   Webhook,
   Zap,
 } from 'lucide-react';
@@ -97,9 +98,11 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectAccess,
   listProjectTriggers,
   updateProjectTrigger,
   upsertProjectSecret,
+  type ProjectAccessMember,
   type ProjectTrigger,
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
@@ -659,9 +662,48 @@ function DetailBody({
       {/* Prompt template — inline editable */}
       <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
 
+      {/* Runs as — the member this trigger's automated runs act as */}
+      <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+
       {/* Meta */}
       <MetaSection trigger={trigger} />
     </div>
+  );
+}
+
+function OwnerSection({
+  projectId,
+  trigger,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  onMutated: () => void;
+}) {
+  const save = useMutation({
+    mutationFn: (userId: string) =>
+      updateProjectTrigger(projectId, trigger.slug, { owner_user_id: userId }),
+    onSuccess: () => {
+      toast.success('Updated who this runs as');
+      onMutated();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to update owner'),
+  });
+  return (
+    <section className="space-y-2">
+      <SectionHeader title="Runs as" icon={UserCircle} />
+      <RunsAsSelect
+        projectId={projectId}
+        value={trigger.owner_user_id}
+        onChange={(id) => save.mutate(id)}
+        disabled={save.isPending}
+      />
+      <p className="text-muted-foreground text-xs">
+        Automated runs act as this member. Connectors set to “each member brings
+        their own profile” use this person’s connected accounts; shared connectors
+        are unaffected. Defaults to whoever created the trigger.
+      </p>
+    </section>
   );
 }
 
@@ -957,6 +999,56 @@ const TIMEZONES = [
 
 type WizardStep = 'source' | 'action' | 'config';
 
+/**
+ * "Runs as" owner picker. The selected member is who this trigger's automated
+ * sessions act AS — so a connector set to "each member brings their own"
+ * resolves to THAT member's connected accounts in scheduled/webhook runs
+ * (a shared connector is unaffected). Reused by the create wizard and the
+ * detail sheet. Reads the project's member list (cached query).
+ */
+function RunsAsSelect({
+  projectId,
+  value,
+  onChange,
+  disabled,
+}: {
+  projectId: string;
+  value: string | null;
+  onChange: (userId: string) => void;
+  disabled?: boolean;
+}) {
+  const { data } = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+  });
+  const viewerId = data?.viewer_user_id ?? null;
+  // Only members who can actually run in this project are eligible owners.
+  const eligible = (data?.members ?? []).filter(
+    (m: ProjectAccessMember) =>
+      m.effective_project_role != null ||
+      m.has_implicit_access ||
+      m.account_role === 'owner' ||
+      m.account_role === 'admin',
+  );
+  const labelFor = (m: ProjectAccessMember) =>
+    `${m.email || m.user_id.slice(0, 8)}${m.user_id === viewerId ? ' (you)' : ''}`;
+  return (
+    <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="cursor-pointer">
+        <SelectValue placeholder="Select a member" />
+      </SelectTrigger>
+      <SelectContent>
+        {eligible.map((m) => (
+          <SelectItem key={m.user_id} value={m.user_id} className="cursor-pointer">
+            {labelFor(m)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function CreateTriggerDialog({
   projectId,
   open,
@@ -989,8 +1081,23 @@ function CreateTriggerDialog({
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [agentName, setAgentName] = useState('default');
+  // Who the trigger runs as. Defaults to the current user (the creator) once the
+  // member list loads; the picker lets you hand it to a teammate.
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+
+  const access = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 60_000,
+    enabled: open,
+  });
+  useEffect(() => {
+    if (open && ownerUserId == null && access.data?.viewer_user_id) {
+      setOwnerUserId(access.data.viewer_user_id);
+    }
+  }, [open, ownerUserId, access.data?.viewer_user_id]);
 
   // Reset on close → next open starts fresh.
   useEffect(() => {
@@ -1004,6 +1111,7 @@ function CreateTriggerDialog({
       setName('');
       setPrompt('');
       setAgentName('default');
+      setOwnerUserId(null);
       setError(null);
     }
   }, [open, forcedType]);
@@ -1044,6 +1152,7 @@ function CreateTriggerDialog({
         type: sourceType,
         prompt_template: trimmedPrompt,
         agent: agentName.trim() || 'default',
+        ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
         ...(sourceType === 'cron'
           ? runAt
             ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
@@ -1259,6 +1368,17 @@ function CreateTriggerDialog({
                   placeholder="default"
                   className="font-mono text-sm"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Runs as</Label>
+                <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
+                <p className="text-muted-foreground text-xs">
+                  Every run acts as this member. Connectors set to “each member brings
+                  their own profile” use this person’s connected accounts — so a
+                  personal cron (e.g. email triage) uses your own Gmail. Shared
+                  connectors are unaffected.
+                </p>
               </div>
 
               {error && (

@@ -9,6 +9,7 @@
  */
 import type { ConnectorSpec } from '../projects/connectors';
 import type { ProjectPolicySpec } from '../projects/policies';
+import { channelApiBase } from './channels';
 
 export interface DesiredPolicy {
   match: string;
@@ -30,6 +31,15 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
       return { baseUrl: spec.baseUrl, spec: spec.spec, auth };
     case 'openapi':
       return { spec: spec.spec, server: openapiServer ?? null, auth };
+    case 'channel':
+      // The credential is the platform install token (resolved server-side); the
+      // connector always carries bearer auth + the platform's API base so
+      // authOf()/baseUrlOf() resolve and executeCall attaches `Bearer <token>`.
+      return {
+        platform: spec.platform,
+        baseUrl: channelApiBase(spec.platform ?? ''),
+        auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+      };
     default:
       return {};
   }

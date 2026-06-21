@@ -7,6 +7,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
+import { reconcileChannelConnectors } from '../executor/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -155,6 +156,10 @@ slackOauthApp.openapi(
     });
     return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
   }
+
+  // Materialize the Slack channel connector so it appears in the Executor right
+  // after connecting (best-effort; never blocks the redirect).
+  void reconcileChannelConnectors(payload.projectId);
 
   return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
 },

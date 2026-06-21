@@ -193,6 +193,12 @@ export async function buildSessionSandboxEnvVars(input: {
   // The Slack signing secret only verifies inbound webhooks (an apps/api job).
   // The in-sandbox agent never needs it — keep it out of the sandbox env.
   delete runtimeSecrets.env.SLACK_SIGNING_SECRET;
+  // The Slack BOT TOKEN no longer belongs in the sandbox either: the `slack`
+  // shim now runs every Web API call through the Executor (server-side token)
+  // and its file ops through the server-side file proxy. Keeping it out means a
+  // compromised/prompt-injected agent can't exfiltrate the raw bot token — only
+  // make scoped, audited, policy-gated channel calls. (KORTIX-206 Phase C2.)
+  delete runtimeSecrets.env.SLACK_BOT_TOKEN;
   // Guardrail: drop any project secret whose name would clobber the sandbox's
   // own runtime env (PORT/PATH/KORTIX_*/…). Without this, one stray secret
   // silently breaks every session — and `kortix env push` of a server .env

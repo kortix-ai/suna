@@ -1,4 +1,6 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
+import { reconcileChannelConnectors } from '../../executor/sync';
+import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
@@ -13,9 +15,40 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
 import { APPS_DISABLED_BODY, SlackAuthTest, draftToAppSpec, loadAppsForResponse, parseAppDraft, projectAppsEnabled, removeAppFromManifest, specToAppBody, upsertAppInManifest } from '../lib/apps-helpers';
-import { withProjectGitAuth } from '../lib/git';
+import { getAccountMembership, withProjectGitAuth } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
-import { commitManifest, draftToSpec, fireGitTrigger, loadManifestForEdit, loadTriggersForResponse, markGitTriggerFired, parseTriggerDraft, removeTriggerFromManifest, renderPromptTemplate, specToBody, triggersPausedForProject, upsertTriggerInManifest, withTriggersPaused } from '../lib/triggers';
+import { commitManifest, draftToSpec, fireGitTrigger, loadManifestForEdit, loadTriggersForResponse, markGitTriggerFired, parseTriggerDraft, removeTriggerFromManifest, renderPromptTemplate, setGitTriggerOwner, specToBody, triggersPausedForProject, upsertTriggerInManifest, withTriggersPaused } from '../lib/triggers';
+
+// Body keys that change the trigger's *repo manifest* (committed to git). An
+// owner-only edit touches none of these, so we can skip the manifest commit and
+// just update the DB-side owner — owner lives in project_trigger_runtime, never
+// in the portable kortix.toml.
+const TRIGGER_MANIFEST_KEYS = [
+  'name', 'type', 'agent', 'enabled', 'prompt_template', 'promptTemplate',
+  'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
+  'session_mode', 'sessionMode',
+] as const;
+
+/**
+ * Resolve the owner_user_id from a request body. Returns:
+ *   { skip: true }            — body didn't mention an owner; leave it unchanged
+ *   { ownerUserId: string|null } — set it (null = reset to account owner)
+ *   { error }                 — provided owner isn't a member of the account
+ * The default-to-creator behavior lives at the call site (create), not here.
+ */
+async function resolveOwnerFromBody(
+  body: Record<string, unknown>,
+  accountId: string,
+): Promise<{ skip: true } | { ownerUserId: string | null } | { error: string }> {
+  if (!('owner_user_id' in body) && !('ownerUserId' in body)) return { skip: true };
+  const raw = (body as any).owner_user_id ?? (body as any).ownerUserId;
+  const ownerUserId = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  if (ownerUserId) {
+    const membership = await getAccountMembership(ownerUserId, accountId).catch(() => null);
+    if (!membership) return { error: 'owner_user_id must be a member of this account' };
+  }
+  return { ownerUserId };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -69,6 +102,13 @@ projectsApp.openapi(
   const draft = parseTriggerDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
 
+  // Owner: default to the creator (so a per_user connector in this trigger's
+  // automated runs uses the creator's accounts), unless an explicit, valid
+  // owner_user_id is supplied. Validate BEFORE committing the manifest.
+  const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
+  if ('error' in ownerReq) return c.json({ error: ownerReq.error }, 400);
+  const ownerUserId = 'skip' in ownerReq ? loaded.userId : ownerReq.ownerUserId;
+
   let manifest: ParsedManifest;
   try {
     manifest = await loadManifestForEdit(loaded.row);
@@ -87,6 +127,9 @@ projectsApp.openapi(
   if ('error' in result) {
     return c.json({ error: result.error }, result.status as 400 | 502);
   }
+
+  // Persist the owner (DB-side) after the manifest commit succeeds.
+  await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
 
   return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
 },
@@ -127,18 +170,32 @@ projectsApp.openapi(
   const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
   if (!current) return c.json({ error: 'Not found' }, 404);
 
-  // Merge the patch onto the current spec so callers can send partial bodies
-  // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-  const draft = parseTriggerDraft(
-    { ...specToBody(current), ...body, slug: slug },
-    { existingSlug: slug },
-  );
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
+  // Owner lives in the DB, not the manifest — validate it up front.
+  const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
+  if ('error' in ownerReq) return c.json({ error: ownerReq.error }, 400);
 
-  const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
-  const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
+  // Only commit the repo manifest when a manifest field actually changed. An
+  // owner-only PATCH skips git entirely (owner is a pure platform concern).
+  const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
+  if (touchesManifest) {
+    // Merge the patch onto the current spec so callers can send partial bodies
+    // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
+    const draft = parseTriggerDraft(
+      { ...specToBody(current), ...body, slug: slug },
+      { existingSlug: slug },
+    );
+    if ('error' in draft) return c.json({ error: draft.error }, 400);
+
+    const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+    const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
+    if ('error' in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
+  }
+
+  // Apply the owner change (if the body specified one) after any manifest commit.
+  if (!('skip' in ownerReq)) {
+    await setGitTriggerOwner(projectId, slug, ownerReq.ownerUserId);
   }
 
   return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -329,6 +386,7 @@ projectsApp.openapi(
     teamName: authTest.team ?? null,
     botUserId: authTest.user_id,
   });
+  void reconcileChannelConnectors(projectId);
   return c.json(summary);
 },
 );
@@ -355,6 +413,8 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await deleteSlackInstall(projectId);
+  // Tear down the auto-materialized Slack connector now that the install is gone.
+  void reconcileChannelConnectors(projectId);
   return c.json({ status: 'disconnected' });
 },
 );
@@ -480,6 +540,73 @@ projectsApp.openapi(
       : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
   return c.json({ ok });
 },
+);
+
+// GET /v1/projects/:projectId/channels/slack/file?url=...
+// Server-side download proxy: fetch a Slack-hosted file with the bot token
+// (SSRF-guarded to *.slack.com) so the sandbox never holds the token. Backs
+// `slack download` once the token is out of the box (KORTIX-206 Phase C2).
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/slack/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ url: z.string() }),
+    },
+    responses: {
+      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
+    return c.body(result.body);
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/file/upload
+// Server-side upload proxy: the 3-step external upload, bot token server-side.
+// Backs `slack send --file` once the token is out of the box.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/slack/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/file/upload (upload proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), files: z.any() }).passthrough(), 'Uploaded'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await readBody(c);
+    const result = await uploadSlackFile(projectId, {
+      channel: String(body.channel ?? ''),
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      comment: typeof body.comment === 'string' ? body.comment : undefined,
+      threadTs: typeof body.thread_ts === 'string' ? body.thread_ts : (typeof body.threadTs === 'string' ? body.threadTs : undefined),
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, files: result.files });
+  },
 );
 
 // POST /v1/projects/:projectId/turn-question

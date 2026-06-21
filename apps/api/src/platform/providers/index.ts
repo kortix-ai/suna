@@ -113,6 +113,16 @@ export interface SandboxProvider {
   resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
+  /**
+   * List the running boxes this deployment owns, for the orphan-box reaper
+   * (boxes still running on the provider with no live DB row). OPTIONAL: a
+   * provider that can't enumerate — or where boxes are inherently per-host and
+   * can't leak org-wide (local Docker) — simply omits it and the reaper skips
+   * that provider. Implementations MUST scope the result to THIS environment
+   * (the provider org may be shared across prod/dev/local) and return
+   * `createdAt` so the reaper can age-gate.
+   */
+  listManagedRunningSandboxes?(): Promise<Array<{ externalId: string; createdAt: Date | null }>>;
 }
 
 const providers = new Map<ProviderName, SandboxProvider>();

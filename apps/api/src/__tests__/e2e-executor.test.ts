@@ -88,7 +88,7 @@ function makeGatewayDeps(): GatewayDeps {
   return {
     loadConnectorBySlug: async (_p, slug) => world.connectors.get(slug) ?? null,
     loadAction: async (connectorId, rel) => world.actions.get(`${connectorId}|${rel}`) ?? null,
-    resolveCredential: async (connectorId, userId) => world.credentials.get(credKey(connectorId, userId)) ?? null,
+    resolveCredential: async (connector, userId) => world.credentials.get(credKey(connector.connectorId, userId)) ?? null,
     loadPolicies: async (connectorId) => world.policiesByConnector.get(connectorId) ?? [],
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,

@@ -1,4 +1,4 @@
-# agent-cli
+# slack-cli
 
 In-sandbox command-line tools the agent (opencode) invokes from inside a
 session. They ship as PATH shims baked into the Daytona sandbox image, auth via
@@ -20,7 +20,7 @@ sandbox image — that's what `kortix executor` runs from).
 ## Layout
 
 ```
-apps/sandbox/agent-cli/
+apps/sandbox/slack-cli/
 ├── lib/                 ← shared kernel imported by every CLI here
 │   ├── cli.ts           ←   parseArgs, out, CliError, handleError, validators
 │   ├── env.ts           ←   getEnv, requireEnv, kortixProjectId, kortixSessionId

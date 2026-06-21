@@ -1,13 +1,13 @@
 /**
  * Setup + billing backlog. Maps to spec §6 (ACC-4, self-hosted setup gating) and
- * §16 (BILL-2 server-type checkout, BILL-9 billing write-op authorization).
+ * §16 (BILL-2 server-type checkout).
  *
  * The target this suite runs against is the CLOUD / managed config
  * (`KORTIX_BILLING_INTERNAL_ENABLED=true`), so two things hold by design:
  *   - `/v1/setup/*` is mounted ONLY when billing is DISABLED (self-hosted) — see
  *     apps/api/src/index.ts:463 `if (!config.KORTIX_BILLING_INTERNAL_ENABLED)`.
  *     On this target those routes are unmounted → 404. ACC-4 proves that gating.
- *   - Billing routes ARE mounted; their authz boundary is membership-based
+ *   - Billing routes ARE mounted; BILL-2 covers the checkout membership boundary
  *     (`resolveScopedAccountId` → 403 for a non-member, 401 for ANON).
  */
 import { flow } from "../core/flow";

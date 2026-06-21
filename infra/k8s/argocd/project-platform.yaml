@@ -22,6 +22,7 @@ spec:
     - https://vmware-tanzu.github.io/helm-charts
     - https://opencost.github.io/opencost-helm-chart
     - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://charts.botkube.io
   destinations:
     - server: https://kubernetes.default.svc
       namespace: kortix-platform
@@ -37,6 +38,8 @@ spec:
       namespace: opencost
     - server: https://kubernetes.default.svc
       namespace: argocd
+    - server: https://kubernetes.default.svc
+      namespace: botkube
     # kube-prometheus-stack places kubelet/coredns scrape Services here so it can
     # collect core-component + node/pod metrics. Standard for a monitoring stack.
     - server: https://kubernetes.default.svc
