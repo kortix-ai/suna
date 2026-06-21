@@ -1,0 +1,140 @@
+name: QA - release gate
+
+# Blocking pre-production gate. This runs before a release PR can merge into
+# prod, so deploy-prod only runs after the full suite has passed. Configure the
+# prod branch protection rule to require this workflow for normal releases.
+
+on:
+  pull_request:
+    branches: [prod]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Staging API base URL including /v1"
+        required: false
+        type: string
+      web_base_url:
+        description: "Staging frontend URL"
+        required: false
+        type: string
+      dast_target_url:
+        description: "Staging DAST target origin without /v1"
+        required: false
+        type: string
+      pentest_target_url:
+        description: "Staging automated pentest target origin without /v1"
+        required: false
+        type: string
+
+concurrency:
+  group: qa-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  full-suite:
+    name: full suite + quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+      WEB_BASE_URL_INPUT: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      DAST_TARGET_URL_INPUT: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
+      PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
+      KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+      KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+      KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
+      KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
+      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+      KE2E_ADMIN_TOKEN: ${{ secrets.KE2E_ADMIN_TOKEN }}
+      KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+      KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
+      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Normalize and guard release targets
+        run: |
+          set -euo pipefail
+          api="${API_BASE_URL_INPUT%/}"
+          web="${WEB_BASE_URL_INPUT%/}"
+          dast="${DAST_TARGET_URL_INPUT:-}"
+          pentest="${PENTEST_TARGET_URL_INPUT:-}"
+          if [ -z "$dast" ] && [ -n "$api" ]; then
+            dast="${api%/v1}"
+          fi
+          if [ -z "$pentest" ] && [ -n "$api" ]; then
+            pentest="${api%/v1}"
+          fi
+          if [ -z "$api" ] || [ -z "$web" ] || [ -z "$dast" ] || [ -z "$pentest" ]; then
+            echo "::error::Release QA requires QA_API_BASE_URL, QA_WEB_BASE_URL, QA_DAST_TARGET_URL, and QA_PENTEST_TARGET_URL (or matching workflow inputs)."
+            exit 1
+          fi
+          case "$dast $pentest" in
+            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+              echo "::error::Refusing to run DAST/pentest against production-looking target: dast=$dast pentest=$pentest"
+              exit 1
+              ;;
+          esac
+          {
+            echo "API_BASE_URL=$api"
+            echo "KE2E_API_URL=$api"
+            echo "BASE_URL=$api"
+            echo "E2E_BASE_URL=$web"
+            echo "TARGET_URL=$dast"
+            echo "PENTEST_TARGET_URL=$pentest"
+            echo "PENTEST_LIVE_CONFIRM=ci"
+            echo "KE2E_LIVE_CONFIRM=ci"
+          } >> "$GITHUB_ENV"
+          echo "Release API target: $api"
+          echo "Release web target: $web"
+          echo "Release DAST target: $dast"
+          echo "Release pentest target: $pentest"
+
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: cd tests && npx playwright install --with-deps chromium
+
+      - name: Static + local functional checks
+        run: make lint typecheck unit integration contract api-coverage
+
+      - name: Live API checks
+        run: make smoke api
+
+      - name: Browser regression
+        run: make e2e visual a11y
+
+      - name: Migration, infra, security, pentest, and mutation
+        run: make migration infra security pentest mutation
+
+      - name: Performance and DAST
+        run: make performance security-dast
+
+      - name: Quality gates
+        run: make gates
+
+      - name: Build report artifacts
+        if: always()
+        run: |
+          npm --prefix tests run allure:junit
+          cd tests
+          rm -rf test-results/allure-report
+          npx allure generate test-results/allure-results -o test-results/allure-report || true
+          npm run catalog || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-qa-report
+          path: |
+            tests/test-results/**
+          retention-days: 90

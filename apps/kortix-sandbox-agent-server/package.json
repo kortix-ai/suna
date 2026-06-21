@@ -11,7 +11,8 @@
     "dev": "bun run --hot src/main.ts",
     "build": "bash scripts/build.sh",
     "start": "./dist/kortix-agent",
-    "typecheck": "bun tsc --noEmit"
+    "typecheck": "bun tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "hono": "^4.6.0",

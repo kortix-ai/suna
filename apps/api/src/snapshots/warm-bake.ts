@@ -11,7 +11,7 @@
  *
  * The baked snapshot mirrors the Dockerfile runtime layer (dockerfile-layer.ts):
  * opencode (pre-migrated), bun, agent-browser, the kortix-agent daemon + kortix
- * CLI binaries, the agent-cli shims, and the executor-sdk. It is project- and
+ * CLI binaries, the slack-cli shims, and the executor-sdk. It is project- and
  * session-AGNOSTIC: the session daemon is NOT started here. A session boots from
  * this snapshot and starts `kortix-agent` post-restore with its own per-session
  * env (provisionSessionSandbox already computes it), so identity/repo/branch are
@@ -45,8 +45,8 @@ const CLI_BIN_PATH = process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
+const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 
@@ -175,7 +175,7 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
 
 /**
  * Stage the runtime artifacts into a single gzipped tarball on the local disk:
- * gzipped binaries + entrypoint + the agent-cli and executor-sdk source trees.
+ * gzipped binaries + entrypoint + the slack-cli and executor-sdk source trees.
  * Returns the tarball path; caller deletes the temp dir.
  *
  * No shell is involved: gzip/copy happen in-process and `tar` is invoked with
@@ -202,7 +202,7 @@ async function stageBuildContext(): Promise<{ tarball: string; cleanup: () => vo
   await gzipFile(AGENT_BIN_PATH, join(ctx, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(ctx, 'kortix.gz'));
   copyFileSync(ENTRYPOINT_PATH, join(ctx, 'kortix-entrypoint'));
-  execFileSync('tar', ['czf', join(ctx, 'agent-cli.tar.gz'), '-C', dirname(AGENT_CLI_SRC_PATH), basename(AGENT_CLI_SRC_PATH)], { stdio: 'pipe' });
+  execFileSync('tar', ['czf', join(ctx, 'slack-cli.tar.gz'), '-C', dirname(SLACK_CLI_SRC_PATH), basename(SLACK_CLI_SRC_PATH)], { stdio: 'pipe' });
   execFileSync('tar', ['czf', join(ctx, 'executor-sdk.tar.gz'), '-C', dirname(EXECUTOR_SDK_SRC_PATH), basename(EXECUTOR_SDK_SRC_PATH)], { stdio: 'pipe' });
   execFileSync('tar', ['czf', tarball, '-C', ctx, '.'], { stdio: 'pipe' });
   return { tarball, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
@@ -366,18 +366,18 @@ env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=${RUNTIME_HOME} agent-browser doctor 2
       `set -e
 mkdir -p /tmp/ctx && tar xzf /tmp/kortix-ctx.tar.gz -C /tmp/ctx
 # The builder may be a PREVIOUS warm base (self-hosted bake) — clear the source
-# trees first so files removed upstream don't linger (a stale agent-cli script
+# trees first so files removed upstream don't linger (a stale slack-cli script
 # would get re-linked as a shim by install-shims.sh).
-sudo rm -rf /opt/kortix/apps/sandbox/agent-cli /opt/kortix/packages/executor-sdk
+sudo rm -rf /opt/kortix/apps/sandbox/slack-cli /opt/kortix/packages/executor-sdk
 # sudo + '>' redirect would run the redirect as the non-root shell (denied);
 # pipe into 'sudo tee' so the privileged write lands in /usr/local/bin.
 gunzip -c /tmp/ctx/kortix-agent.gz | sudo tee /usr/local/bin/kortix-agent >/dev/null
 gunzip -c /tmp/ctx/kortix.gz | sudo tee /usr/local/bin/kortix >/dev/null
 sudo cp /tmp/ctx/kortix-entrypoint /usr/local/bin/kortix-entrypoint
-sudo tar xzf /tmp/ctx/agent-cli.tar.gz -C /opt/kortix/apps/sandbox/
+sudo tar xzf /tmp/ctx/slack-cli.tar.gz -C /opt/kortix/apps/sandbox/
 sudo tar xzf /tmp/ctx/executor-sdk.tar.gz -C /opt/kortix/packages/
-sudo chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/agent-cli/install-shims.sh
-sudo bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli >/tmp/shims.log 2>&1
+sudo chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh
+sudo bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli >/tmp/shims.log 2>&1
 sudo chown -R daytona:daytona /opt/kortix
 rm -rf /tmp/ctx /tmp/kortix-ctx.tar.gz
 kortix --version`,

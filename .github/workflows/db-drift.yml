@@ -1,0 +1,91 @@
+name: DB Drift Sentinel
+
+# Nightly smoke alarm for manual schema drift. Builds the schema FRESH from the
+# committed migrations and structurally diffs it against the live environment.
+# A non-empty diff means someone changed a real database by hand without a
+# migration — the exact failure this whole system exists to prevent.
+#
+# REQUIRES a read-only connection string in repo secrets:
+#   DEV_DB_URL   (and PROD_DB_URL once prod is cut over — add it to the matrix)
+# The job self-skips if the secret for an environment is absent, so it is safe
+# to merge before the secrets are configured.
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Schema drift (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev] # add `prod` after the prod cutover
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      LIVE_DB_URL: ${{ matrix.env == 'prod' && secrets.PROD_DATABASE_URL || secrets.DEV_DATABASE_URL }}
+    steps:
+      - name: Skip if this environment is not configured
+        id: gate
+        run: |
+          if [ -z "${LIVE_DB_URL:-}" ]; then
+            echo "No DB URL secret for '${{ matrix.env }}' — drift check not configured yet. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: steps.gate.outputs.skip != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - if: steps.gate.outputs.skip != 'true'
+        run: corepack enable pnpm
+      - if: steps.gate.outputs.skip != 'true'
+        run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - if: steps.gate.outputs.skip != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Build schema fresh from migrations
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
+          pnpm --filter @kortix/db migrate
+      - name: Compare fresh schema vs live ${{ matrix.env }} (read-only)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # Normalize away cosmetic rendering: schema-qualification (search_path
+          # dependent), type casts, parens, and pg_dump's array-cast form.
+          norm() { sed -e 's/kortix\.//g' -e 's/public\.//g' -e 's/::[a-z ]*//g' -e 's/[()]//g' -e 's/\[\]//g' -e 's/  */ /g' | sort; }
+          SIG=packages/db/scripts/schema-signature.sql
+          psql "$DATABASE_URL" -X -At -f "$SIG" | norm > /tmp/fresh.sig
+          PGOPTIONS='-c default_transaction_read_only=on' psql "$LIVE_DB_URL" -X -At -f "$SIG" | norm > /tmp/live.sig
+          if ! diff -u /tmp/fresh.sig /tmp/live.sig > /tmp/drift.diff; then
+            echo "::error::Schema drift detected on ${{ matrix.env }} — the live database differs from the committed migrations. Someone likely changed it by hand. Reconcile by writing a migration."
+            echo '<<< fresh (from migrations)   |   >>> live (${{ matrix.env }})'
+            cat /tmp/drift.diff
+            exit 1
+          fi
+          echo "OK — ${{ matrix.env }} matches the committed migrations."

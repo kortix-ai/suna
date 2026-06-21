@@ -641,10 +641,18 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // The project member this trigger's automated sessions run AS (the "owner").
+    // A per_user connector resolves its credential to THIS member's connected
+    // accounts in cron/webhook/manual fires ("my email-triage cron uses my
+    // Gmail"). NULL = fall back to the account owner (legacy behavior). Stored
+    // here, not in the portable repo manifest, because a user_id is account-
+    // specific. Defaults to the trigger's creator. See resolveTriggerActor().
+    ownerUserId: uuid('owner_user_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+    index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
   ],
 );
 
@@ -2751,6 +2759,10 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'openapi',
   'graphql',
   'http',
+  // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The
+  // catalog is a fixed per-platform action set; the credential is the platform's
+  // existing install token (resolved server-side, no executor_credential row).
+  'channel',
 ]);
 
 export const executorConnectorStatusEnum = kortixSchema.enum('executor_connector_status', [

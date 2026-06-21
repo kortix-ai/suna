@@ -9,6 +9,7 @@ let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
+let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -30,7 +31,7 @@ function hybrid(rows: any[], throwOnGroupBy = false) {
 // test doesn't import the real config, which calls process.exit on incomplete
 // local env. Run this file in its own `bun test <file>` invocation (as CI does)
 // so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, DAYTONA_API_KEY: 'test-key' } }));
 
 mock.module('../shared/db', () => ({
   db: {
@@ -67,6 +68,7 @@ mock.module('../platform/providers', () => ({
       const err = stopErrorByExternal[externalId];
       if (err) throw err;
     },
+    listManagedRunningSandboxes: async () => managedBoxes,
   }),
 }));
 
@@ -85,7 +87,7 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
-const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata } = await import('./sandbox-reaper');
+const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes } = await import('./sandbox-reaper');
 
 const TTL = 15 * 60_000;
 
@@ -97,6 +99,7 @@ beforeEach(() => {
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
+  managedBoxes = [];
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
@@ -326,5 +329,61 @@ describe('reapAndReconcileSandboxes', () => {
     expect(stops).toEqual([]); // uncertain → do not stop
     expect(pausedCompute).toEqual([]);
     expect(r.stopped).toBe(0);
+  });
+});
+
+// ── orphan-box reaper: stops provider boxes the DB sweep can't see ────────────
+describe('reapOrphanProviderBoxes', () => {
+  const NOW2 = new Date('2026-06-21T12:00:00Z');
+  const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
+
+  test('stops boxes with no live DB row; spares kept, too-young, and unknown-age boxes', async () => {
+    // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
+    candidates = [{ externalId: 'keep-1' }];
+    managedBoxes = [
+      { externalId: 'keep-1', createdAt: hoursAgo(48) }, // in keepSet → spare
+      { externalId: 'orphan-1', createdAt: hoursAgo(48) }, // orphan + old → STOP
+      { externalId: 'orphan-2', createdAt: hoursAgo(3) }, // orphan + old → STOP
+      { externalId: 'young-1', createdAt: hoursAgo(0.2) }, // orphan but <1h → spare (provision race)
+      { externalId: 'nodate', createdAt: null }, // unknown age → spare (fail-safe)
+    ];
+
+    const r = await reapOrphanProviderBoxes(NOW2);
+
+    expect([...stops].sort()).toEqual(['orphan-1', 'orphan-2']);
+    expect(r.listed).toBe(5);
+    expect(r.orphans).toBe(2);
+    expect(r.stopped).toBe(2);
+    expect(r.errors).toBe(0);
+  });
+
+  test('continues past a stop failure (bad box never sinks the sweep)', async () => {
+    candidates = [];
+    managedBoxes = [
+      { externalId: 'orphan-a', createdAt: hoursAgo(10) },
+      { externalId: 'orphan-b', createdAt: hoursAgo(10) },
+    ];
+    stopErrorByExternal['orphan-a'] = new Error('429 too many requests');
+
+    const r = await reapOrphanProviderBoxes(NOW2);
+
+    expect(stops).toContain('orphan-a'); // attempted
+    expect(stops).toContain('orphan-b'); // and the next one still ran
+    expect(r.stopped).toBe(1);
+    expect(r.errors).toBe(1);
+  });
+
+  test('env flag off → no-op (never lists or stops)', async () => {
+    const prev = process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
+    process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = 'false';
+    try {
+      managedBoxes = [{ externalId: 'orphan-x', createdAt: hoursAgo(48) }];
+      const r = await reapOrphanProviderBoxes(NOW2);
+      expect(stops).toEqual([]);
+      expect(r).toEqual({ listed: 0, orphans: 0, stopped: 0, errors: 0 });
+    } finally {
+      if (prev === undefined) delete process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED;
+      else process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED = prev;
+    }
   });
 });

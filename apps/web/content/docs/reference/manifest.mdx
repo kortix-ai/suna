@@ -218,9 +218,9 @@ model: [Connections](/docs/concepts/connections).
 
 ```toml
 [[connectors]]
-slug       = "slack"
-provider   = "pipedream"     # pipedream | mcp | openapi | graphql | http
-app        = "slack"         # pipedream app slug
+slug       = "gmail-work"
+provider   = "pipedream"     # pipedream | mcp | openapi | graphql | http | channel
+app        = "gmail"         # pipedream app slug
 credential = "per_user"      # per_user | shared
 
   [[connectors.policies]]
@@ -231,7 +231,7 @@ credential = "per_user"      # per_user | shared
 | Field        | Required | Type   | Notes                                                              |
 | ------------ | -------- | ------ | ----------------------------------------------------------------- |
 | `slug`       | yes      | string | `[a-z0-9][a-z0-9_-]{0,127}`, unique among connectors; the tool namespace. |
-| `provider`   | yes      | string | `pipedream` \| `mcp` \| `openapi` \| `graphql` \| `http`.         |
+| `provider`   | yes      | string | `pipedream` \| `mcp` \| `openapi` \| `graphql` \| `http` \| `channel`. |
 | `name`       | no       | string | Display name. Defaults to slug.                                  |
 | `enabled`    | no       | bool   | Defaults to `true`.                                              |
 | `credential` | no       | string | `shared` or `per_user`. Default: `per_user` for pipedream, `shared` otherwise. |
@@ -243,6 +243,11 @@ Provider-specific fields:
 - **openapi** — `spec` (required: URL or repo-relative path).
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
 - **http** — `base_url` (required), `spec` (optional).
+- **channel** — `platform` (required, e.g. `slack`). Chat platforms. You rarely
+  declare these by hand — connecting Slack ([Channels](/docs/concepts/channels))
+  **auto-materializes** the `slack` connector (credential = the install token,
+  resolved server-side), so the agent can call it through the Executor and you
+  manage it in Connectors.
 
 ### `[connectors.auth]`
 

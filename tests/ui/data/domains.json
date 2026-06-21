@@ -1,0 +1,226 @@
+[
+  {
+    "domain": "projects",
+    "flows": 28,
+    "passed": 26,
+    "skipped": 2,
+    "cases": 99
+  },
+  {
+    "domain": "cli",
+    "flows": 27,
+    "passed": 22,
+    "skipped": 5,
+    "cases": 38
+  },
+  {
+    "domain": "iam",
+    "flows": 24,
+    "passed": 24,
+    "skipped": 0,
+    "cases": 100
+  },
+  {
+    "domain": "accounts",
+    "flows": 21,
+    "passed": 20,
+    "skipped": 1,
+    "cases": 58
+  },
+  {
+    "domain": "billing",
+    "flows": 17,
+    "passed": 14,
+    "skipped": 3,
+    "cases": 71
+  },
+  {
+    "domain": "git",
+    "flows": 15,
+    "passed": 15,
+    "skipped": 0,
+    "cases": 57
+  },
+  {
+    "domain": "channels",
+    "flows": 12,
+    "passed": 11,
+    "skipped": 1,
+    "cases": 32
+  },
+  {
+    "domain": "connectors",
+    "flows": 12,
+    "passed": 12,
+    "skipped": 0,
+    "cases": 20
+  },
+  {
+    "domain": "change-requests",
+    "flows": 11,
+    "passed": 11,
+    "skipped": 0,
+    "cases": 20
+  },
+  {
+    "domain": "security",
+    "flows": 10,
+    "passed": 10,
+    "skipped": 0,
+    "cases": 50
+  },
+  {
+    "domain": "sessions",
+    "flows": 10,
+    "passed": 2,
+    "skipped": 8,
+    "cases": 16
+  },
+  {
+    "domain": "files",
+    "flows": 9,
+    "passed": 7,
+    "skipped": 2,
+    "cases": 33
+  },
+  {
+    "domain": "triggers",
+    "flows": 9,
+    "passed": 6,
+    "skipped": 3,
+    "cases": 7
+  },
+  {
+    "domain": "agent-run",
+    "flows": 8,
+    "passed": 0,
+    "skipped": 8,
+    "cases": 16
+  },
+  {
+    "domain": "sandboxes",
+    "flows": 8,
+    "passed": 6,
+    "skipped": 2,
+    "cases": 28
+  },
+  {
+    "domain": "platform",
+    "flows": 7,
+    "passed": 7,
+    "skipped": 0,
+    "cases": 21
+  },
+  {
+    "domain": "system",
+    "flows": 7,
+    "passed": 7,
+    "skipped": 0,
+    "cases": 19
+  },
+  {
+    "domain": "admin",
+    "flows": 6,
+    "passed": 6,
+    "skipped": 0,
+    "cases": 20
+  },
+  {
+    "domain": "tunnel",
+    "flows": 5,
+    "passed": 5,
+    "skipped": 0,
+    "cases": 38
+  },
+  {
+    "domain": "apps",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 17
+  },
+  {
+    "domain": "audit",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 17
+  },
+  {
+    "domain": "oauth",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 15
+  },
+  {
+    "domain": "scim",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 27
+  },
+  {
+    "domain": "secrets",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 7
+  },
+  {
+    "domain": "servers",
+    "flows": 4,
+    "passed": 4,
+    "skipped": 0,
+    "cases": 16
+  },
+  {
+    "domain": "access",
+    "flows": 3,
+    "passed": 3,
+    "skipped": 0,
+    "cases": 4
+  },
+  {
+    "domain": "router",
+    "flows": 3,
+    "passed": 3,
+    "skipped": 0,
+    "cases": 15
+  },
+  {
+    "domain": "auth",
+    "flows": 2,
+    "passed": 2,
+    "skipped": 0,
+    "cases": 4
+  },
+  {
+    "domain": "preview-proxy",
+    "flows": 2,
+    "passed": 2,
+    "skipped": 0,
+    "cases": 10
+  },
+  {
+    "domain": "github",
+    "flows": 1,
+    "passed": 0,
+    "skipped": 1,
+    "cases": 0
+  },
+  {
+    "domain": "golden",
+    "flows": 1,
+    "passed": 0,
+    "skipped": 1,
+    "cases": 7
+  },
+  {
+    "domain": "ops",
+    "flows": 1,
+    "passed": 1,
+    "skipped": 0,
+    "cases": 2
+  }
+]

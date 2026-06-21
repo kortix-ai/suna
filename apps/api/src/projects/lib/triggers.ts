@@ -10,7 +10,7 @@ import { Cron } from 'croner';
 import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import { getAccountMembership, parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
 import { continueSession, createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
 
@@ -325,6 +325,66 @@ export async function resolveGitTriggerActor(accountId: string): Promise<string 
   return resolveProjectAutomationActor(accountId);
 }
 
+/**
+ * Resolve the user a trigger's automated session runs AS.
+ *
+ * If the trigger has a configured OWNER (`project_trigger_runtime.owner_user_id`)
+ * that is still a member of the account, the session runs as them — so a
+ * `per_user` connector resolves to THAT member's connected accounts ("my
+ * email-triage cron uses my Gmail"). Otherwise we fall back to the account owner
+ * (the legacy, pre-owner behavior), which also covers a configured owner who has
+ * since left the account. This is the single chokepoint used by every fire path
+ * (cron sweep, webhook, manual), so the owner applies uniformly.
+ */
+export async function resolveTriggerActor(
+  project: ProjectRow,
+  slug: string,
+): Promise<string | null> {
+  const runtime = await getGitTriggerRuntime(project.projectId, slug);
+  const owner = runtime?.ownerUserId ?? null;
+  const ownerIsMember = owner
+    ? Boolean(await getAccountMembership(owner, project.accountId).catch(() => null))
+    : false;
+  if (owner && ownerIsMember) return owner;
+  return resolveProjectAutomationActor(project.accountId);
+}
+
+/**
+ * Pure decision: pick the userId a trigger fires as. Owner wins iff it's set AND
+ * still a member; otherwise fall back to the account owner. Extracted so the
+ * decision matrix is unit-testable without a DB. Mirrors resolveTriggerActor.
+ */
+export function chooseTriggerActor(
+  ownerUserId: string | null,
+  ownerIsMember: boolean,
+  accountOwnerUserId: string | null,
+): string | null {
+  if (ownerUserId && ownerIsMember) return ownerUserId;
+  return accountOwnerUserId;
+}
+
+/**
+ * Set (or clear) a trigger's owner — the member its automated sessions run as.
+ * Upserts ONLY the owner column, leaving the fire/observability columns intact
+ * (and vice-versa: markGitTriggerFired never touches owner_user_id). Pass null to
+ * reset to "account owner". Runtime rows are created lazily, so this also seeds
+ * the row at trigger-create time.
+ */
+export async function setGitTriggerOwner(
+  projectId: string,
+  slug: string,
+  ownerUserId: string | null,
+): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(projectTriggerRuntime)
+    .values({ projectId, slug, ownerUserId, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: { ownerUserId, updatedAt: now },
+    });
+}
+
 
 export function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null, now: Date): boolean {
   // One-off ("run once") schedules: fire exactly once at/after `runAt`. The
@@ -438,7 +498,10 @@ export async function fireGitTrigger(input: {
   request?: RequestAuditContext;
 }): Promise<{ status: 'fired' | 'queued' | 'failed'; sessionId?: string; commandId?: string; error?: string; reason?: string; deduped?: boolean }> {
   const { spec, project, payload, renderedPrompt, source } = input;
-  const actor = await resolveGitTriggerActor(project.accountId);
+  // Run as the trigger's owner (its per_user connectors resolve to that member's
+  // accounts); falls back to the account owner when no owner is set or it's
+  // stale. See resolveTriggerActor().
+  const actor = await resolveTriggerActor(project, spec.slug);
   if (!actor) {
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
@@ -725,6 +788,8 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
+      // The member this trigger's automated runs act as (null = account owner).
+      owner_user_id: runtimeBySlug.get(spec.slug)?.ownerUserId ?? null,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,

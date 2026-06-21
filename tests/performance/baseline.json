@@ -1,0 +1,10 @@
+{
+  "_doc": "Committed performance baseline. p95_ms = http_req_duration p(95); error_rate = http_req_failed rate. Set to null to (re)record from the next clean run. The regression gate fails when an observed value exceeds baseline by more than REGRESSION_TOLERANCE (default 0.10).",
+  "tolerance": 0.1,
+  "profiles": {
+    "load": { "p95_ms": null, "error_rate": null },
+    "soak": { "p95_ms": null, "error_rate": null },
+    "spike": { "p95_ms": null, "error_rate": null },
+    "stress": { "p95_ms": null, "error_rate": null }
+  }
+}

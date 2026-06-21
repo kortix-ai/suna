@@ -154,10 +154,10 @@ COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 # Keep the repo-relative layout under /opt/kortix so agent CLIs can import
 # shared workspace packages the same way they do in local tests.
-COPY apps/sandbox/agent-cli/ /opt/kortix/apps/sandbox/agent-cli/
+COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
 COPY packages/executor-sdk/ /opt/kortix/packages/executor-sdk/
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/agent-cli/install-shims.sh \
-    && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli \
+RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
+    && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version
 
 # Platform-owned secret delivery. The daemon writes live project secrets to

@@ -949,7 +949,7 @@ export type ConnectorSharing =
 export interface AdminConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
@@ -2128,6 +2128,10 @@ export interface ProjectTrigger {
   /** project_secrets key holding the webhook HMAC secret. */
   secret_env: string | null;
   prompt_template: string;
+  /** The project member this trigger's automated runs act AS. A per_user
+   *  connector resolves to this member's connected accounts. null = the
+   *  account owner (default/legacy). */
+  owner_user_id: string | null;
   last_fired_at: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
@@ -2144,6 +2148,14 @@ export interface ProjectTriggerParseError {
 export interface ProjectTriggerListing {
   triggers: ProjectTrigger[];
   errors: ProjectTriggerParseError[];
+  /**
+   * Server-side, per-project kill-switch (`projects.metadata.triggers_paused`).
+   * When true the platform auto-runs NONE of this project's triggers — the cron
+   * sweep skips it and inbound webhooks are acknowledged-but-ignored, regardless
+   * of each trigger's repo `enabled`. Manual `fire` still works. Use it to stop
+   * ONE repo deployed to two control planes (e.g. dev + prod) from double-firing.
+   */
+  triggers_paused?: boolean;
 }
 
 export interface CreateProjectTriggerInput {
@@ -2167,6 +2179,9 @@ export interface CreateProjectTriggerInput {
   timezone?: string;
   /** For type='webhook'. Name of a project_secrets entry. */
   secret_env?: string;
+  /** The member this trigger runs as. Omit to default to the creator;
+   *  null resets to the account owner. */
+  owner_user_id?: string | null;
 }
 
 export interface UpdateProjectTriggerInput {
@@ -2177,6 +2192,8 @@ export interface UpdateProjectTriggerInput {
   cron?: string;
   timezone?: string;
   secret_env?: string;
+  /** Change who the trigger runs as. null = reset to the account owner. */
+  owner_user_id?: string | null;
 }
 
 export async function listProjectTriggers(projectId: string) {
@@ -2216,6 +2233,23 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/triggers/${slug}`,
+    ),
+  );
+}
+
+/**
+ * Pause or resume ALL of a project's triggers server-side (the per-project
+ * kill-switch — see {@link ProjectTriggerListing.triggers_paused}). Returns the
+ * updated trigger listing, including the new `triggers_paused` value.
+ */
+export async function setProjectTriggersActivation(
+  projectId: string,
+  paused: boolean,
+) {
+  return unwrap(
+    await backendApi.patch<ProjectTriggerListing>(
+      `/projects/${projectId}/triggers/activation`,
+      { paused },
     ),
   );
 }

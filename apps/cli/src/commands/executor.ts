@@ -106,7 +106,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor add <slug> --provider <p> [--app <app>] [--url <url>] …', 'USAGE');
       const draft = connectorDraftFromFlags(slug, flags);
-      const res = await addConnector(draft);
+      const res = await addConnector(draft, flags.project);
       out({
         ok: true,
         slug,
@@ -123,7 +123,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     case 'delete': {
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor rm <slug>', 'USAGE');
-      await removeConnector(slug);
+      await removeConnector(slug, flags.project);
       out({ ok: true, slug, removed: true, note: 'Removed from kortix.toml on main + catalog.' });
       break;
     }
@@ -137,7 +137,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
       const slug = args[0];
       if (!slug) throw new CliError('usage: kortix executor connect <connector-slug>', 'USAGE');
       const expires = flags.expires ? Number(flags.expires) : undefined;
-      const link = await mintConnectLink({ slug, expiresInMinutes: expires });
+      const link = await mintConnectLink({ slug, expiresInMinutes: expires, projectOverride: flags.project });
       out({
         ok: true,
         slug: link.slug,

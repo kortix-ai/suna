@@ -1,0 +1,30 @@
+# QA env values for the qa-portal chart, deployed by Argo CD
+# (infra/k8s/argocd/applications/qa.yaml) into the kortix-qa namespace. GitOps
+# source of truth for the QA report portal at qa.kortix.com.
+#
+# Fill the placeholders below from `terraform -chdir=<cluster> output` AFTER the
+# qa-portal Terraform module is applied — see the chart RUNBOOK.md.
+
+# S3 bucket holding the Allure results + generated reports (terraform output bucket_name).
+bucket: kortix-qa-reports
+s3Prefix: "reports/latest"
+region: us-west-2
+
+# Resync the served report from S3 every 2 minutes.
+syncIntervalSeconds: 120
+
+serviceAccount:
+  name: qa-portal
+  # IRSA role ARN from terraform output role_arn (qa-portal module, dev cluster).
+  roleArn: arn:aws:iam::935064898258:role/qa-portal
+
+ingress:
+  enabled: true
+  host: qa.kortix.com
+  # *.kortix.com wildcard ACM cert in us-west-2 (covers qa.kortix.com).
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755
+  cloudflareProxied: true
+  albGroup: kortix-qa-portal
+  # Internal tool: lock the ALB to Cloudflare IP ranges so it's only reachable
+  # through the proxied qa.kortix.com record. Leave "" while bootstrapping.
+  inboundCidrs: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"

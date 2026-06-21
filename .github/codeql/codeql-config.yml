@@ -1,0 +1,10 @@
+name: "Kortix CodeQL config"
+
+# CodeQL scans product code. The paths below are internal test/CI tooling and
+# generated artifacts — not product code, and not web-facing — so their
+# report-text munging (e.g. the JUnit -> Allure converter's tag stripping)
+# otherwise raises web-XSS false positives. Exclude them from analysis.
+paths-ignore:
+  - tests/scripts
+  - "**/*.generated.*"
+  - "**/embedded.generated.json"

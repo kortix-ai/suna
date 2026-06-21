@@ -93,8 +93,8 @@ export class ExecutorClient {
   }
 
   async connectors(): Promise<ExecutorConnector[]> {
-    const body = await this.request<{ connectors: ExecutorConnector[] }>(this.catalogPath());
-    return body.connectors ?? [];
+    const body = await this.request<{ connectors?: ExecutorConnector[] } | null>(this.catalogPath());
+    return body?.connectors ?? [];
   }
 
   async tools(): Promise<ExecutorToolMatch[]> {

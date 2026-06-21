@@ -30,6 +30,8 @@ import {
   normalizeOpenApi,
   normalizePipedream,
 } from './normalize';
+import { channelApiBase, channelCatalog } from './channels';
+import { synthesizeChannelConnectors } from './channel-materialize';
 import { parseSpecDocument } from './spec-doc';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
@@ -39,6 +41,27 @@ import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 export interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
+}
+
+/**
+ * Best-effort re-materialization after a channel platform install changes
+ * (connect / disconnect). Resolves the project's account, then runs the normal
+ * sweep so the auto-materialized channel connector (dis)appears immediately —
+ * "connect Slack → the `slack` connector shows up" with no manifest edit.
+ * Never throws: a sync hiccup must not fail the install/uninstall request.
+ */
+export async function reconcileChannelConnectors(projectId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return;
+    await syncProjectConnectors(projectId, row.accountId);
+  } catch (e) {
+    console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });
+  }
 }
 
 export interface SyncOptions {
@@ -69,20 +92,42 @@ export async function syncProjectConnectors(projectId: string, accountId: string
 
   const gitProject = await withProjectGitAuth(row);
   const manifest = await readManifest(gitProject).catch(() => null);
-  if (!manifest) return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.toml not found or unreadable' }] };
 
-  const { specs, errors: parseErrors } = extractConnectors(manifest);
-  const errors: SyncResult['errors'] = parseErrors.map((e) => ({ slug: e.slug, error: e.error }));
+  // Manifest-declared connectors + project policies are only reconciled when the
+  // kortix.toml is actually readable. A NULL manifest can mean "no repo / no
+  // kortix.toml" OR a transient git error — either way we must not treat it as
+  // "zero declared connectors" and delete the project's real ones below.
+  const errors: SyncResult['errors'] = [];
+  let declaredSpecs: ConnectorSpec[] = [];
+  if (manifest) {
+    const parsed = extractConnectors(manifest);
+    declaredSpecs = parsed.specs;
+    errors.push(...parsed.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
-  // Project-level policies + settings — separate scope, always reconciled (cheap).
-  const projectPoliciesParsed = extractProjectPolicies(manifest);
-  for (const e of projectPoliciesParsed.errors) {
-    errors.push({ slug: '(policies)', error: e.error });
+    // Project-level policies + settings — separate scope, reconciled (cheap).
+    const projectPoliciesParsed = extractProjectPolicies(manifest);
+    for (const e of projectPoliciesParsed.errors) {
+      errors.push({ slug: '(policies)', error: e.error });
+    }
+    await reconcileProjectPolicies(projectId, projectPoliciesParsed);
   }
-  await reconcileProjectPolicies(projectId, projectPoliciesParsed);
+
+  // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
+  // connecting the platform IS the registration. So they materialize even when
+  // the project has no readable kortix.toml — "connect Slack → the `slack`
+  // connector just appears" must hold for any project. Synthetic specs are
+  // materialized like any other connector but never written back to git.
+  const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
+  const specs = [...declaredSpecs, ...channelSpecs];
+
+  // No readable manifest AND nothing installed → bail WITHOUT deleting (a
+  // transient git error must never wipe a project's connectors).
+  if (!manifest && channelSpecs.length === 0) {
+    return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.toml not found or unreadable' }] };
+  }
 
   const existing = await db
-    .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash, status: executorConnectors.status })
+    .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash, status: executorConnectors.status, providerType: executorConnectors.providerType })
     .from(executorConnectors)
     .where(eq(executorConnectors.projectId, projectId));
   const existingBySlug = new Map(existing.map((e) => [e.slug, e]));
@@ -108,9 +153,14 @@ export async function syncProjectConnectors(projectId: string, accountId: string
     }
   }
 
-  // Delete connectors no longer in the manifest.
+  // Reconcile deletions. When the manifest is readable it's the source of truth
+  // for declared connectors — drop any it no longer lists (channel specs are in
+  // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
+  // touch manifest-declared connectors (could be a transient git error) — only
+  // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
   for (const e of existing) {
-    if (!desiredSlugs.has(e.slug)) {
+    if (desiredSlugs.has(e.slug)) continue;
+    if (manifest || e.providerType === 'channel') {
       await db.delete(executorConnectors).where(eq(executorConnectors.connectorId, e.connectorId));
     }
   }
@@ -236,6 +286,10 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
         if (!pipedreamConfigured() || !spec.app) return { actions: [], server: null };
         const raw = await pipedreamCatalog(spec.app);
         return { actions: normalizePipedream(raw, spec.app), server: null };
+      }
+      case 'channel': {
+        // Fixed, local catalog — no network fetch. Server = the platform API base.
+        return { actions: channelCatalog(spec.platform ?? ''), server: channelApiBase(spec.platform ?? '') };
       }
       default:
         return { actions: [], server: null };

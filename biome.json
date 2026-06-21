@@ -1,0 +1,54 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "ignore": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.next/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/test-results/**",
+      "**/.expo/**",
+      "**/*.generated.*",
+      "**/routes.generated.json",
+      "**/pnpm-lock.yaml",
+      "**/bun.lock"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "organizeImports": { "enabled": true },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noFocusedTests": "error",
+        "noSkippedTests": "warn",
+        "noConsoleLog": "off"
+      },
+      "complexity": { "noForEach": "off" },
+      "style": { "useNodejsImportProtocol": "off" }
+    }
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "always", "trailingCommas": "all" }
+  },
+  "overrides": [
+    {
+      "include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.test.mts"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noFocusedTests": "error" },
+          "performance": { "noDelete": "off" }
+        }
+      }
+    }
+  ]
+}

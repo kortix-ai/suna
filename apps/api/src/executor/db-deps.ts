@@ -5,6 +5,7 @@
  * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
  */
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { and, eq } from 'drizzle-orm';
 import {
   executorConnectorActions,
@@ -39,6 +40,7 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
+import { loadSlackInstall, loadSlackTokenForProject } from '../channels/install-store';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
@@ -92,8 +94,38 @@ function baseUrlOf(row: ConnectorRow): string | null {
     case 'http': return cfg.baseUrl ?? null;
     case 'graphql': return cfg.endpoint ?? null;
     case 'mcp': return cfg.url ?? null;
+    case 'channel': return cfg.baseUrl ?? null;
     default: return null;
   }
+}
+
+/* ─── channel connectors: credential = the platform install token ──────────────
+ * A channel connector has no executor_credentials row — its credential is the
+ * existing platform install (resolved server-side, always fresh). These three
+ * helpers are the single home for that dispatch; everything else stays generic.
+ */
+function channelPlatform(config: ConnectorRow['config'] | null): string | null {
+  return (config as Record<string, any> | null)?.platform ?? null;
+}
+
+async function channelToken(projectId: string, platform: string | null): Promise<string | null> {
+  return platform === 'slack' ? loadSlackTokenForProject(projectId) : null;
+}
+
+/** Cheap "is it connected?" — the install exists (no decrypt). */
+async function channelInstalled(projectId: string, platform: string | null): Promise<boolean> {
+  return platform === 'slack' ? (await loadSlackInstall(projectId).catch(() => null)) != null : false;
+}
+
+/**
+ * Whether a connector's credential is present for `userId` — channel connectors
+ * check their platform install; everyone else checks executor_credentials. One
+ * place so the catalog + admin listings don't each re-branch on provider.
+ */
+async function connectorConnected(row: ConnectorRow, userId: string | null): Promise<boolean> {
+  return row.providerType === 'channel'
+    ? channelInstalled(row.projectId, channelPlatform(row.config))
+    : credentialExists(row.connectorId, userId);
 }
 
 function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof loadConnectorGrants>>): GatewayConnector {
@@ -143,7 +175,20 @@ function makeDbGatewayDeps(): GatewayDeps {
         binding: a.binding as unknown as ActionBinding,
       } satisfies GatewayAction;
     },
-    resolveCredential: (connectorId, userId) => resolveCredentialValue(connectorId, userId),
+    resolveCredential: async (connector, userId) => {
+      // Channel connectors resolve to their platform install token (server-side);
+      // the provider is already in hand, so only the channel path does a lookup —
+      // every other connector takes the original executor_credentials path.
+      if (connector.provider === 'channel') {
+        const [row] = await db
+          .select({ projectId: executorConnectors.projectId, config: executorConnectors.config })
+          .from(executorConnectors)
+          .where(eq(executorConnectors.connectorId, connector.connectorId))
+          .limit(1);
+        return row ? channelToken(row.projectId, channelPlatform(row.config)) : null;
+      }
+      return resolveCredentialValue(connector.connectorId, userId);
+    },
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
@@ -249,8 +294,9 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
       const access = await loadProjectForUser(c, projectId, 'read');
       if (!access?.row) return null;
       accountId = access.row.accountId; // the PROJECT's account owns its connectors
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof HTTPException && err.status === 403) return null;
+      throw err;
     }
   }
   if (!accountId) return null;
@@ -289,7 +335,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       const uid = row.credentialMode === 'per_user' ? p.userId : null;
-      if (!(await credentialExists(row.connectorId, uid))) continue; // not connected for this user
+      if (!(await connectorConnected(row, uid))) continue; // not connected for this user
     }
     const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
     const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
@@ -334,7 +380,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
     const mode = row.credentialMode as 'shared' | 'per_user';
     let secretSet = !hasAuth;
     if (hasAuth) {
-      secretSet = await credentialExists(row.connectorId, mode === 'per_user' ? viewerUserId : null);
+      secretSet = await connectorConnected(row, mode === 'per_user' ? viewerUserId : null);
     }
     const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
     out.push({

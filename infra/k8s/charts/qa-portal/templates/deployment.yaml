@@ -1,0 +1,109 @@
+{{- if not .Values.bucket }}
+{{- fail "bucket is required (the S3 bucket from terraform output bucket_name, e.g. kortix-qa-reports)" }}
+{{- end }}
+# Stateless QA report portal.
+#
+#   initContainer (aws-cli): one `aws s3 sync` so nginx has the report before it
+#     ever serves traffic (readiness gates the ALB on it being present).
+#   sidecar (aws-cli):       re-syncs s3://<bucket>/<prefix> -> the shared volume
+#     every syncIntervalSeconds, so a freshly generated report appears without a
+#     redeploy.
+#   nginx:                   serves /usr/share/nginx/html from the shared volume.
+#
+# All three share an emptyDir; auth is IRSA (the ServiceAccount role) — no static
+# AWS keys. The report is rebuilt+re-uploaded in S3, so a pod restart loses
+# nothing (it just re-syncs).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "qa-portal.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qa-portal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "qa-portal.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "qa-portal.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      volumes:
+        - name: html
+          emptyDir:
+            sizeLimit: {{ .Values.htmlVolumeSizeLimit }}
+      initContainers:
+        # Prime the volume before nginx serves — readiness then gates the ALB on
+        # the report (or a placeholder) being present.
+        - name: report-sync-init
+          image: "{{ .Values.awsCli.repository }}:{{ .Values.awsCli.tag }}"
+          imagePullPolicy: {{ .Values.awsCli.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" /html --delete --region {{ .Values.region }}
+              # First-run safety: if no report exists yet, leave a placeholder so
+              # nginx is still healthy and the page explains the empty state.
+              if [ -z "$(ls -A /html 2>/dev/null)" ]; then
+                echo "<h1>QA report portal</h1><p>No report has been published yet.</p>" > /html/index.html
+              fi
+          env:
+            - name: AWS_REGION
+              value: {{ .Values.region | quote }}
+          volumeMounts:
+            - name: html
+              mountPath: /html
+          resources:
+            {{- toYaml .Values.resources.sync | nindent 12 }}
+      containers:
+        - name: nginx
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.health.path }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.health.path }}
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources.nginx | nindent 12 }}
+        # Sidecar: keep the served report current with S3.
+        - name: report-sync
+          image: "{{ .Values.awsCli.repository }}:{{ .Values.awsCli.tag }}"
+          imagePullPolicy: {{ .Values.awsCli.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                sleep {{ .Values.syncIntervalSeconds }}
+                aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" /html --delete --region {{ .Values.region }} || true
+              done
+          env:
+            - name: AWS_REGION
+              value: {{ .Values.region | quote }}
+          volumeMounts:
+            - name: html
+              mountPath: /html
+          resources:
+            {{- toYaml .Values.resources.sync | nindent 12 }}

@@ -9,6 +9,7 @@ import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import {
   reapAndReconcileSandboxes,
   reconcileOrphanComputeSessions,
+  reapOrphanProviderBoxes,
   countBillingInvariantViolations,
 } from './sandbox-reaper';
 
@@ -143,7 +144,7 @@ async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, orphanCompute, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
+    const [idle, orphanCompute, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
       reapAndReconcileSandboxes().catch((err) => {
@@ -155,6 +156,13 @@ async function runProjectMaintenance(): Promise<void> {
       reconcileOrphanComputeSessions().catch((err) => {
         console.warn('[project-maintenance] orphan-compute reconcile failed:', err instanceof Error ? err.message : err);
         return { checked: 0, closed: 0, errors: 0 };
+      }),
+      // Provider-authoritative orphan-BOX reaper: stops boxes still running on
+      // the provider (this env) with no live DB row — the leak the DB-driven
+      // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
+      reapOrphanProviderBoxes().catch((err) => {
+        console.warn('[project-maintenance] orphan-box reaper failed:', err instanceof Error ? err.message : err);
+        return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -185,11 +193,12 @@ async function runProjectMaintenance(): Promise<void> {
     ]);
     if (
       idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
+      orphanBoxes.stopped || orphanBoxes.errors ||
       branches.deleted || branches.errors ||
       computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
       snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, orphanCompute, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+      console.log('[project-maintenance] completed', { idle, orphanCompute, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc });
     }
 
     // Invariant monitor: in steady state, every `active` compute session has a
