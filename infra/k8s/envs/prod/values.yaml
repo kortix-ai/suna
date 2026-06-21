@@ -5,8 +5,8 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.38"
-kortixVersion: "0.9.38"
+  tag: "0.9.67"
+kortixVersion: "0.9.67"
 
 env:
   internalKortixEnv: prod
