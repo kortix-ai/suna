@@ -42,6 +42,21 @@ type PageIcon = LucideIcon | IconType;
 const RAIL_ICON = 'size-[1.05rem] lg:size-[1.2rem]';
 const TAB_ICON = 'size-4';
 
+function browserSupportsWebGL(): boolean {
+  if (typeof document === 'undefined') return false;
+
+  try {
+    const canvas = document.createElement('canvas');
+    return Boolean(
+      canvas.getContext('webgl2')
+        ?? canvas.getContext('webgl')
+        ?? canvas.getContext('experimental-webgl'),
+    );
+  } catch {
+    return false;
+  }
+}
+
 type DemoExtras = {
   focusedSkill: string | null;
   onSkillClick: (name: string) => void;
@@ -251,6 +266,7 @@ export function InteractiveDemo({
     if (isDemoPageEnabled(page)) setActiveRaw(page);
   }, []);
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
+  const [webGLReady, setWebGLReady] = useState(false);
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const rootRef = useRef<HTMLDivElement>(null);
   const autoStarted = useRef(false);
@@ -264,6 +280,11 @@ export function InteractiveDemo({
   useEffect(() => {
     if (active !== 'skills') setFocusedSkill(null);
   }, [active]);
+
+  useEffect(() => {
+    setWebGLReady(browserSupportsWebGL());
+  }, []);
+
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
@@ -341,7 +362,7 @@ export function InteractiveDemo({
           aside && 'rounded sm:rounded-sm',
         )}
       >
-        {gradientbg && (
+        {gradientbg && webGLReady && (
           <div className="absolute inset-0">
             <Warp
               speed={4.3}
