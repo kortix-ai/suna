@@ -4,7 +4,7 @@ NPM := npm --prefix $(TESTS)
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
         lint typecheck unit integration api api-coverage contract smoke e2e visual a11y \
-        performance security security-dast pentest migration infra chaos mutation \
+        performance security security-fast security-dast pentest migration infra chaos mutation \
         coverage gates report portal-up portal-down clean
 
 help: ## Show this help
