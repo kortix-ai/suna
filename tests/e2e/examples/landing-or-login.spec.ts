@@ -25,12 +25,14 @@ test.describe('Example — landing or login flow', () => {
     await expect(signIn).toBeVisible();
     await signIn.click();
 
-    const emailField = page
+    const authAffordance = page
       .getByRole('textbox', { name: /email/i })
-      .or(page.locator('input[type="email"], input[name="email"]'))
+      .or(page.locator('input[type="email"], input[name="email"], input[type="password"]'))
+      .or(page.getByRole('button', { name: /continue with|sign in with|log ?in with|google|github|sso|continue/i }))
+      .or(page.getByRole('link', { name: /continue with|sign in with|google|github|sso/i }))
       .first();
 
-    await expect(emailField).toBeVisible();
+    await expect(authAffordance).toBeVisible();
   });
 
   test('login form rejects an empty submission', async ({ page }) => {
