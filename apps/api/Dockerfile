@@ -113,12 +113,10 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.
-COPY --from=deps /app/packages/shared/src ./packages/shared/src
-COPY --from=deps /app/packages/shared/package.json ./packages/shared/package.json
-COPY --from=deps /app/packages/shared/tsconfig.json ./packages/shared/tsconfig.json
-COPY --from=deps /app/packages/llm-gateway/src ./packages/llm-gateway/src
-COPY --from=deps /app/packages/llm-gateway/package.json ./packages/llm-gateway/package.json
-COPY --from=deps /app/packages/llm-gateway/tsconfig.json ./packages/llm-gateway/tsconfig.json
+# Full dirs (not src-only): @kortix/llm-gateway resolves the @kortix/shared/llm-catalog
+# subpath transitively, which needs shared's package-resolution intact at runtime.
+COPY --from=deps /app/packages/shared ./packages/shared
+COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
