@@ -137,4 +137,5 @@ apps/mobile/.env.example
 # local Headlamp login token (ephemeral, do not commit)
 headlamp-token.txt
 grafana-creds.txt
-botkube-communication*.yaml
+botkube-communication.secret.yaml
+botkube-comm-real.yaml
