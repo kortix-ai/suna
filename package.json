@@ -33,15 +33,24 @@
     "format:check": "biome format .",
     "ci": "bash scripts/ci-local.sh pr",
     "ci:pr": "bash scripts/ci-local.sh pr",
-    "ci:release": "bash scripts/ci-local.sh release"
+    "ci:release": "bash scripts/ci-local.sh release",
+    "migrate": "pnpm --filter @kortix/db migrate",
+    "migrate:status": "pnpm --filter @kortix/db migrate:status",
+    "migrate:create": "node-pg-migrate create -m packages/db/migrations -j sql --migration-filename-format utc",
+    "migrate:generate": "pnpm --filter @kortix/db migrate:generate",
+    "migrate:lint": "pnpm --filter @kortix/db migrate:lint"
   },
   "devDependencies": {
     "@clack/prompts": "^0.7.0",
     "@dotenvx/dotenvx": "^1.69.2",
     "@types/bun": "^1.3.12",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
-    "picocolors": "^1.1.1",
-    "@biomejs/biome": "^1.9.4"
+    "@biomejs/biome": "^1.9.4",
+    "dotenv": "^16",
+    "dotenv-expand": "^12",
+    "node-pg-migrate": "^8",
+    "pg": "^8",
+    "picocolors": "^1.1.1"
   },
   "packageManager": "pnpm@8.11.0",
   "pnpm": {
