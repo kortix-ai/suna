@@ -71,6 +71,29 @@ export function shouldDemote(
   return nowMs - lastRenewSuccessMs >= ttlMs;
 }
 
+/**
+ * Does this pod actually OWN singleton work, i.e. should it join the election?
+ *
+ * The helm "API-only" profile (workers.enabled=false) sets every KORTIX_*_ENABLED
+ * worker flag to "false" so the pod serves requests but runs no background loops.
+ * Such a pod MUST NOT join the election: election is independent of those flags,
+ * so a workers-disabled pod can win the shared lease and sit on it as a
+ * DEAD-WEIGHT leader — holding it, renewing it, running nothing — silently
+ * starving the cron scheduler fleet-wide with no error and no churn. That is what
+ * left an EKS API-only pod able to freeze every cron in the 2026-06-21 outage. A
+ * pod is an owner unless ALL four worker flags are explicitly "false"; default
+ * (unset) = owner, so single-node / self-host is unaffected.
+ */
+export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): boolean {
+  const on = (v: string | undefined) => v !== 'false';
+  return (
+    on(env.KORTIX_TRIGGER_SCHEDULER_ENABLED) ||
+    on(env.KORTIX_PROJECT_MAINTENANCE_ENABLED) ||
+    on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED) ||
+    on(env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED)
+  );
+}
+
 // ─── Runtime state ───────────────────────────────────────────────────────────
 
 const ownerId = `${os.hostname()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -197,8 +220,19 @@ async function tick(): Promise<void> {
  * With no DATABASE_URL (self-host single node) there's nothing to coordinate, so
  * this node is the sole leader immediately.
  */
-export function startLeaderElection(h: LeaderElectionHandlers): void {
+export function startLeaderElection(
+  h: LeaderElectionHandlers,
+  opts: { eligible?: boolean } = {},
+): void {
   if (running) return;
+  // A pod that runs no singleton workers must never hold the lease (see
+  // runsSingletonWorkers): joining the election would let it become a
+  // dead-weight leader and starve the scheduler. Skip election entirely —
+  // isLeader() stays false and onAcquire is never called.
+  if (opts.eligible === false) {
+    logger.info('[leader] API-only pod (singleton workers disabled) — not joining election', { ownerId });
+    return;
+  }
   running = true;
   handlers = h;
 
