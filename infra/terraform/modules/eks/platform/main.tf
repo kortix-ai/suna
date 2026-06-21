@@ -13,6 +13,7 @@
 # helm/kubernetes providers can reach a live API server.
 
 terraform {
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
