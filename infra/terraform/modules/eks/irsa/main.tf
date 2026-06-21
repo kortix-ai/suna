@@ -8,6 +8,8 @@
 # cluster-autoscaler, and the app's secret-reading SA.
 
 terraform {
+  required_version = ">= 1.5"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
