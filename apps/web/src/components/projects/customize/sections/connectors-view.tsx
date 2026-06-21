@@ -20,6 +20,7 @@ import {
   Globe,
   KeyRound,
   Loader2,
+  MessageSquare,
   Pencil,
   Plug,
   Plus,
@@ -31,6 +32,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -105,6 +107,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   openapi: Globe,
   graphql: Globe,
   http: Globe,
+  channel: MessageSquare,
 };
 
 const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
@@ -115,7 +118,9 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
 
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
-  return p === 'pipedream' ? 'App' : p.toUpperCase();
+  if (p === 'pipedream') return 'App';
+  if (p === 'channel') return 'Channel';
+  return p.toUpperCase();
 }
 
 // ─── Pipedream Connect overlay escape (used by the connect flow) ─────────────
@@ -648,6 +653,10 @@ function ConnectorDetail({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const Icon = PROVIDER_ICON[connector.provider] ?? Plug;
   const isPipedream = connector.provider === 'pipedream';
+  // Channel connectors (Slack) are credentialed + connected/removed via their
+  // platform install in the Channels tab — not the generic credential UI here.
+  const isChannel = connector.provider === 'channel';
+  const setSection = useCustomizeStore((s) => s.setSection);
   const connected = connector.secretSet;
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
   const [credOpen, setCredOpen] = useState(false);
@@ -763,9 +772,11 @@ function ConnectorDetail({
         </div>
         {/* When connected, a compact Reconnect/Replace lives in the header.
             When NOT connected, the connect action is a big CTA below — not a
-            small header button buried next to the title. */}
+            small header button buried next to the title. (Channel connectors
+            are managed from the Channels tab, so neither shows.) */}
         {connector.authSecret &&
           connected &&
+          !isChannel &&
           (isPipedream ? (
             <Button
               size="sm"
@@ -795,8 +806,32 @@ function ConnectorDetail({
       </div>
 
       <div className="mt-7 space-y-5">
+        {/* Channel connectors (Slack) are credentialed + connected via their
+            platform install — point management at the Channels tab instead of
+            the generic credential / connection / remove controls. */}
+        {isChannel && (
+          <InfoBanner
+            tone="info"
+            icon={MessageSquare}
+            title={`${displayName} is managed in Channels`}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => setSection('channels')}
+              >
+                <MessageSquare className="h-4 w-4" />
+                Open Channels
+              </Button>
+            }
+          >
+            Connecting or disconnecting the workspace, and the bot token, live in the Channels
+            tab. Here you control who can use it and review its tools.
+          </InfoBanner>
+        )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
-        {connector.authSecret && !connected && (
+        {connector.authSecret && !connected && !isChannel && (
           <InfoBanner
             tone="info"
             icon={KeyRound}
@@ -818,32 +853,34 @@ function ConnectorDetail({
               : `Add the credential so the agent and your triggers can use ${displayName}.`}
           </InfoBanner>
         )}
-        {!isPipedream && (
+        {!isPipedream && !isChannel && (
           <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
         )}
         <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
         <PermissionsSection projectId={projectId} connector={connector} />
 
-        <SectionCard
-          tone="destructive"
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
-          )}
-          description={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
-          )}
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Remove
-            </Button>
-          }
-        />
+        {!isChannel && (
+          <SectionCard
+            tone="destructive"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
+            )}
+            description={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
+            )}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </Button>
+            }
+          />
+        )}
       </div>
 
       <ConfirmDialog
@@ -901,6 +938,10 @@ function ProfileSection({
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Channel connectors (Slack) are always one shared install token — the
+  // per-user credential mode doesn't apply, so we hide that choice and keep
+  // only "who can use it".
+  const isChannel = connector.provider === 'channel';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
@@ -955,30 +996,32 @@ function ProfileSection({
         'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionThe33be3829',
       )}
     >
-      <RadioGroup
-        value={credential}
-        onValueChange={(v) => setCredential(v as 'shared' | 'per_user')}
-        className="space-y-2"
-      >
-        <ShareOption
-          value="shared"
-          label={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
-          )}
-          desc={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
-          )}
-        />
-        <ShareOption
-          value="per_user"
-          label={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
-          )}
-          desc={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
-          )}
-        />
-      </RadioGroup>
+      {!isChannel && (
+        <RadioGroup
+          value={credential}
+          onValueChange={(v) => setCredential(v as 'shared' | 'per_user')}
+          className="space-y-2"
+        >
+          <ShareOption
+            value="shared"
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
+            )}
+            desc={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
+            )}
+          />
+          <ShareOption
+            value="per_user"
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
+            )}
+            desc={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
+            )}
+          />
+        </RadioGroup>
+      )}
 
       {modeChanged && (
         <InfoBanner
