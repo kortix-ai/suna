@@ -11,10 +11,6 @@ function errorPaths(input: string | Record<string, unknown>): string[] {
   return validateManifest(input).issues.filter((i) => i.severity === 'error').map((i) => i.path);
 }
 
-function warningPaths(input: string | Record<string, unknown>): string[] {
-  return validateManifest(input).issues.filter((i) => i.severity === 'warning').map((i) => i.path);
-}
-
 describe('validateManifest — object input', () => {
   test('accepts an already-parsed object without re-parsing TOML', () => {
     const result = validateManifest({ kortix_version: 1 });

@@ -39,7 +39,7 @@ function attrs(raw = '') {
 }
 
 function stripTags(value = '') {
-  return decodeXml(value.replace(/<[^>]+>/g, '').trim());
+  return decodeXml(value).replace(/<[^>]+>/g, '').trim();
 }
 
 function statusFor(body) {
