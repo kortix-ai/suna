@@ -14,6 +14,125 @@ import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from '.
 import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
 import { continueSession, createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
 
+type LegacyProjectTriggerRuntimeRow = Pick<
+  typeof projectTriggerRuntime.$inferSelect,
+  'projectId' | 'slug' | 'lastFiredAt' | 'updatedAt'
+> & Partial<Pick<
+  typeof projectTriggerRuntime.$inferSelect,
+  'lastStatus' | 'lastError' | 'lastAttemptAt'
+>>;
+
+const TRIGGER_RUNTIME_OBSERVABILITY_COLUMNS = [
+  'last_status',
+  'last_error',
+  'last_attempt_at',
+] as const;
+
+function collectErrorMessages(error: unknown): string[] {
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let current = error;
+
+  for (let depth = 0; depth < 8 && current && !seen.has(current); depth += 1) {
+    seen.add(current);
+    if (current instanceof Error) {
+      messages.push(current.message);
+      current = current.cause;
+      continue;
+    }
+    if (typeof current === 'object') {
+      const record = current as { message?: unknown; cause?: unknown; column_name?: unknown; column?: unknown };
+      if (typeof record.message === 'string') messages.push(record.message);
+      if (typeof record.column_name === 'string') messages.push(record.column_name);
+      if (typeof record.column === 'string') messages.push(record.column);
+      current = record.cause;
+      continue;
+    }
+    if (typeof current === 'string') messages.push(current);
+    break;
+  }
+
+  return messages;
+}
+
+export function isMissingTriggerRuntimeObservabilityColumnError(error: unknown): boolean {
+  const messages = collectErrorMessages(error).map((message) => message.toLowerCase());
+  return TRIGGER_RUNTIME_OBSERVABILITY_COLUMNS.some((column) => messages.some((message) => (
+    message === column
+    || message.includes(`column "${column}" does not exist`)
+    || message.includes(`column "${column}" of relation "project_trigger_runtime" does not exist`)
+  )));
+}
+
+function normalizeLegacyTriggerRuntimeRows(result: unknown): LegacyProjectTriggerRuntimeRow[] {
+  const rows = Array.isArray(result)
+    ? result
+    : result && typeof result === 'object' && Array.isArray((result as { rows?: unknown }).rows)
+      ? (result as { rows: unknown[] }).rows
+      : [];
+
+  return rows.map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      projectId: normalizeString(record.projectId ?? record.project_id) ?? '',
+      slug: normalizeString(record.slug) ?? '',
+      lastFiredAt: record.lastFiredAt instanceof Date
+        ? record.lastFiredAt
+        : record.last_fired_at instanceof Date
+          ? record.last_fired_at
+          : record.lastFiredAt || record.last_fired_at
+            ? new Date(String(record.lastFiredAt ?? record.last_fired_at))
+            : null,
+      updatedAt: record.updatedAt instanceof Date
+        ? record.updatedAt
+        : record.updated_at instanceof Date
+          ? record.updated_at
+          : record.updatedAt || record.updated_at
+            ? new Date(String(record.updatedAt ?? record.updated_at))
+            : new Date(0),
+      lastStatus: null,
+      lastError: null,
+      lastAttemptAt: null,
+    };
+  });
+}
+
+async function selectLegacyGitTriggerRuntimeRows(
+  projectId: string,
+  slug?: string,
+): Promise<LegacyProjectTriggerRuntimeRow[]> {
+  const result = await db.execute(sql`
+    SELECT
+      project_id,
+      slug,
+      last_fired_at,
+      updated_at
+    FROM ${projectTriggerRuntime}
+    WHERE project_id = ${projectId}
+      ${slug ? sql`AND slug = ${slug}` : sql``}
+  `);
+  return normalizeLegacyTriggerRuntimeRows(result);
+}
+
+async function markLegacyGitTriggerFired(projectId: string, slug: string, when: Date): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO ${projectTriggerRuntime} (project_id, slug, last_fired_at, updated_at)
+    VALUES (${projectId}, ${slug}, ${when}, ${when})
+    ON CONFLICT (project_id, slug) DO UPDATE SET
+      last_fired_at = EXCLUDED.last_fired_at,
+      updated_at = EXCLUDED.updated_at
+  `);
+}
+
+async function markLegacyGitTriggerAttemptFailed(projectId: string, slug: string, when: Date): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO ${projectTriggerRuntime} (project_id, slug, updated_at)
+    VALUES (${projectId}, ${slug}, ${when})
+    ON CONFLICT (project_id, slug) DO UPDATE SET
+      updated_at = EXCLUDED.updated_at
+  `);
+}
+
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
   if (!header) return null;
@@ -347,15 +466,21 @@ export function isGitCronSpecDue(spec: GitTriggerSpec, lastFiredAt: Date | null,
 
 
 export async function getGitTriggerRuntime(projectId: string, slug: string) {
-  const [row] = await db
-    .select()
-    .from(projectTriggerRuntime)
-    .where(and(
-      eq(projectTriggerRuntime.projectId, projectId),
-      eq(projectTriggerRuntime.slug, slug),
-    ))
-    .limit(1);
-  return row ?? null;
+  try {
+    const [row] = await db
+      .select()
+      .from(projectTriggerRuntime)
+      .where(and(
+        eq(projectTriggerRuntime.projectId, projectId),
+        eq(projectTriggerRuntime.slug, slug),
+      ))
+      .limit(1);
+    return row ?? null;
+  } catch (error) {
+    if (!isMissingTriggerRuntimeObservabilityColumnError(error)) throw error;
+    const [row] = await selectLegacyGitTriggerRuntimeRows(projectId, slug);
+    return row ?? null;
+  }
 }
 
 
@@ -365,13 +490,18 @@ export async function markGitTriggerFired(
   when: Date,
   status: 'fired' | 'queued' = 'fired',
 ) {
-  await db
-    .insert(projectTriggerRuntime)
-    .values({ projectId, slug, lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when })
-    .onConflictDoUpdate({
-      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when },
-    });
+  try {
+    await db
+      .insert(projectTriggerRuntime)
+      .values({ projectId, slug, lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when })
+      .onConflictDoUpdate({
+        target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+        set: { lastFiredAt: when, lastStatus: status, lastError: null, lastAttemptAt: when, updatedAt: when },
+      });
+  } catch (error) {
+    if (!isMissingTriggerRuntimeObservabilityColumnError(error)) throw error;
+    await markLegacyGitTriggerFired(projectId, slug, when);
+  }
 }
 
 /**
@@ -386,13 +516,18 @@ export async function markGitTriggerAttemptFailed(
   error: string,
 ) {
   const lastError = error.slice(0, 1000);
-  await db
-    .insert(projectTriggerRuntime)
-    .values({ projectId, slug, lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when })
-    .onConflictDoUpdate({
-      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when },
-    });
+  try {
+    await db
+      .insert(projectTriggerRuntime)
+      .values({ projectId, slug, lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when })
+      .onConflictDoUpdate({
+        target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+        set: { lastStatus: 'failed', lastError, lastAttemptAt: when, updatedAt: when },
+      });
+  } catch (error) {
+    if (!isMissingTriggerRuntimeObservabilityColumnError(error)) throw error;
+    await markLegacyGitTriggerAttemptFailed(projectId, slug, when);
+  }
 }
 
 /**
@@ -703,12 +838,18 @@ export function buildPublicWebhookUrl(projectId: string, slug: string): string {
 
 export async function loadTriggersForResponse(projectId: string, project: ProjectRow) {
   const { specs, errors } = await loadProjectTriggers(await withProjectGitAuth(project));
-  const runtimeRows = specs.length === 0
-    ? []
-    : await db
+  let runtimeRows: LegacyProjectTriggerRuntimeRow[] = [];
+  if (specs.length > 0) {
+    try {
+      runtimeRows = await db
         .select()
         .from(projectTriggerRuntime)
         .where(eq(projectTriggerRuntime.projectId, projectId));
+    } catch (error) {
+      if (!isMissingTriggerRuntimeObservabilityColumnError(error)) throw error;
+      runtimeRows = await selectLegacyGitTriggerRuntimeRows(projectId);
+    }
+  }
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
 
   return {

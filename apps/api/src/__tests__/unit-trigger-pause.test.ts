@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { triggersPausedForProject, withTriggersPaused } from '../projects/lib/triggers';
+import {
+  isMissingTriggerRuntimeObservabilityColumnError,
+  triggersPausedForProject,
+  withTriggersPaused,
+} from '../projects/lib/triggers';
 
 describe('server-side per-project trigger kill-switch', () => {
   test('triggersPausedForProject reads metadata.triggers_paused (default off)', () => {
@@ -22,5 +26,22 @@ describe('server-side per-project trigger kill-switch', () => {
     // round-trips with the reader
     expect(triggersPausedForProject(withTriggersPaused({}, true))).toBe(true);
     expect(triggersPausedForProject(withTriggersPaused({ triggers_paused: true }, false))).toBe(false);
+  });
+});
+
+describe('trigger runtime legacy schema detection', () => {
+  test('detects missing observability columns through wrapped query errors', () => {
+    const postgresError = new Error('column "last_status" of relation "project_trigger_runtime" does not exist');
+    const drizzleError = new Error('Failed query: insert into "kortix"."project_trigger_runtime" ...', {
+      cause: postgresError,
+    });
+
+    expect(isMissingTriggerRuntimeObservabilityColumnError(drizzleError)).toBe(true);
+  });
+
+  test('does not classify unrelated postgres errors as legacy schema drift', () => {
+    const error = new Error('duplicate key value violates unique constraint "project_trigger_runtime_pkey"');
+
+    expect(isMissingTriggerRuntimeObservabilityColumnError(error)).toBe(false);
   });
 });
