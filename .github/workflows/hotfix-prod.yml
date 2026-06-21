@@ -141,7 +141,7 @@ jobs:
         run: bash .github/scripts/slack-notify.sh
 
       - name: Install test dependencies
-        run: npm --prefix tests ci
+        run: cd tests && bun install --frozen-lockfile
 
       - name: Fast safety checks
         run: make typecheck unit contract api-coverage

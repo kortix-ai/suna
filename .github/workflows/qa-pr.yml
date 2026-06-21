@@ -38,7 +38,7 @@ jobs:
         with:
           node-version: 22
       - name: Install test dependencies
-        run: npm --prefix tests ci
+        run: cd tests && bun install --frozen-lockfile
       - name: PR cadence
         run: make ci-pr
       - name: Build Allure report from PR results

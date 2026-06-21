@@ -33,8 +33,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install test dependencies
-        run: npm --prefix tests ci
+        run: cd tests && bun install --frozen-lockfile
       - name: Install Playwright Chromium
         run: cd tests && npx playwright install --with-deps chromium
       - name: Run browser regression when configured
@@ -82,8 +85,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Install test dependencies
-        run: npm --prefix tests ci
+        run: cd tests && bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           path: tests/test-results

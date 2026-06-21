@@ -101,7 +101,7 @@ jobs:
           echo "Release pentest target: $pentest"
 
       - name: Install test dependencies
-        run: npm --prefix tests ci
+        run: cd tests && bun install --frozen-lockfile
       - name: Install Playwright Chromium
         run: cd tests && npx playwright install --with-deps chromium
 
