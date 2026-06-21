@@ -2148,6 +2148,14 @@ export interface ProjectTriggerParseError {
 export interface ProjectTriggerListing {
   triggers: ProjectTrigger[];
   errors: ProjectTriggerParseError[];
+  /**
+   * Server-side, per-project kill-switch (`projects.metadata.triggers_paused`).
+   * When true the platform auto-runs NONE of this project's triggers — the cron
+   * sweep skips it and inbound webhooks are acknowledged-but-ignored, regardless
+   * of each trigger's repo `enabled`. Manual `fire` still works. Use it to stop
+   * ONE repo deployed to two control planes (e.g. dev + prod) from double-firing.
+   */
+  triggers_paused?: boolean;
 }
 
 export interface CreateProjectTriggerInput {
@@ -2225,6 +2233,23 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/triggers/${slug}`,
+    ),
+  );
+}
+
+/**
+ * Pause or resume ALL of a project's triggers server-side (the per-project
+ * kill-switch — see {@link ProjectTriggerListing.triggers_paused}). Returns the
+ * updated trigger listing, including the new `triggers_paused` value.
+ */
+export async function setProjectTriggersActivation(
+  projectId: string,
+  paused: boolean,
+) {
+  return unwrap(
+    await backendApi.patch<ProjectTriggerListing>(
+      `/projects/${projectId}/triggers/activation`,
+      { paused },
     ),
   );
 }

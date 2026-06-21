@@ -76,6 +76,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -100,6 +101,7 @@ import {
   fireProjectTrigger,
   listProjectAccess,
   listProjectTriggers,
+  setProjectTriggersActivation,
   updateProjectTrigger,
   upsertProjectSecret,
   type ProjectAccessMember,
@@ -321,6 +323,61 @@ export function TriggersView({ projectId, type }: { projectId: string; type: Tri
   );
 }
 
+/**
+ * Project-wide trigger kill-switch. Presentational — the parent owns the
+ * mutation. When paused, the platform auto-runs none of this project's triggers
+ * (cron sweep skips it, inbound webhooks are acknowledged-but-ignored); manual
+ * test-fires still work. The amber banner explains the silence so an operator
+ * doesn't wonder why scheduled runs stopped.
+ */
+function TriggersActivationControl({
+  paused,
+  pending,
+  onToggle,
+}: {
+  paused: boolean;
+  pending: boolean;
+  onToggle: (paused: boolean) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border px-4 py-3.5 transition-colors',
+        paused ? 'border-amber-500/40 bg-amber-500/[0.05]' : 'border-border bg-card',
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <Pause className="text-muted-foreground h-3.5 w-3.5" />
+            <p className="text-foreground text-sm font-medium">Pause all triggers</p>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Stop the platform from auto-running this project&apos;s schedules and webhooks.
+            Manual test-fires still work. Use this when the same repo also runs in another
+            environment that should own the triggers.
+          </p>
+        </div>
+        <Switch
+          checked={paused}
+          disabled={pending}
+          onCheckedChange={onToggle}
+          aria-label="Pause all triggers for this project"
+        />
+      </div>
+      {paused && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            Triggers are paused. Scheduled runs and incoming webhooks are ignored for this
+            project until you resume — test-firing a trigger manually still works.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProjectTriggersBody({
   projectId,
   type,
@@ -353,6 +410,27 @@ function ProjectTriggersBody({
     [queryClient, queryKey],
   );
 
+  // Project-level kill-switch (server-side `triggers_paused`). When on, the
+  // platform auto-runs NONE of this project's triggers regardless of each
+  // trigger's repo `enabled` — used to stop a repo deployed to two control
+  // planes from double-firing. Shared across the Schedules + Webhooks views;
+  // toggling here writes back to the same `['project-triggers', projectId]`
+  // cache both pages read.
+  const triggersPaused = triggersQuery.data?.triggers_paused ?? false;
+  const setActivation = useMutation({
+    mutationFn: (paused: boolean) => setProjectTriggersActivation(projectId, paused),
+    onSuccess: (data, paused) => {
+      queryClient.setQueryData(queryKey, data);
+      toast.success(
+        paused ? 'All triggers paused for this project' : 'Triggers resumed',
+      );
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update trigger activation',
+      ),
+  });
+
   // Filter to just this view's type — the API returns every trigger
   // because they share one `kortix.toml`, but each page is scoped.
   const allTriggers = triggersQuery.data?.triggers ?? [];
@@ -368,6 +446,14 @@ function ProjectTriggersBody({
           <h2 className="text-foreground text-base font-semibold">{meta.pageTitle}</h2>
           <p className="text-muted-foreground text-xs">{meta.description}</p>
         </header>
+
+        {!triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (allTriggers.length > 0 || triggersPaused) && (
+          <TriggersActivationControl
+            paused={triggersPaused}
+            pending={setActivation.isPending}
+            onToggle={(paused) => setActivation.mutate(paused)}
+          />
+        )}
 
         {triggersQuery.isLoading ? (
           <TriggersSkeleton />
