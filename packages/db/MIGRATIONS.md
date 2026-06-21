@@ -90,12 +90,24 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 
 | Env | How | When |
 |---|---|---|
-| **local** | `ensureSchema()` at API boot (only when `KORTIX_LOCAL_DEV=1`/`ENV_MODE=local`), or `pnpm migrate` | every `pnpm dev` |
-| **dev** | CI/CD step against `DEV_DB_URL` | on merge to the dev branch, before new code serves |
+| **local** | `ensureSchema()` at API boot (`KORTIX_LOCAL_DEV=1`/`ENV_MODE=local`), or `pnpm migrate` | every `pnpm dev` |
+| **dev** | CI/CD `migrate-db` job against `DEV_DATABASE_URL` | on merge to the dev branch, before new code serves |
 | **preview** | **never runs migrations** — previews share the dev DB and consume its schema | n/a |
-| **prod** | CI/CD step against `PROD_DB_URL` | every release, after build, before the new version boots |
+| **prod** | CI/CD `migrate-db` job against `PROD_DATABASE_URL` | every release, after build, before the new version boots |
+| **self-host** | one-shot `migrate` from the image (below) | before/with the app |
 
-Deployed app boot **never** applies migrations (only local does). A deployed pod that finds a missing critical table logs a loud `[schema]` warning instead of mutating a shared database.
+By default a deployed app boot **never** applies migrations — concurrent replicas (and preview branches sharing the dev DB) would race a half-applied state. A pod that finds a missing critical table logs a loud `[schema]` warning instead of mutating a shared database.
+
+### Self-hosting (running the published image)
+
+The image bundles the migrations + the node-pg-migrate runner, so you don't need this repo or a CI pipeline. Apply migrations as a **one-shot**, before/with the app (the standard release-phase pattern):
+
+```bash
+docker run --rm -e DATABASE_URL="postgres://…" kortix/kortix-api \
+  bun packages/db/scripts/migrate.ts up
+```
+
+In docker-compose, make this a `migrate` service the `api` service `depends_on`. Prerequisite: your database must already have the Supabase Auth + Basejump objects the schema references.
 
 ### Preview branches share the dev database
 
