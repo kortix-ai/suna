@@ -101,7 +101,6 @@ flow(
       "POST /v1/tunnel/permissions/:tunnelId",
       "DELETE /v1/tunnel/permissions/:tunnelId/:permissionId",
     ],
-    serial: true,
   },
   async (ctx) => {
     let tunnelId = "";
@@ -222,7 +221,6 @@ flow(
       "POST /v1/tunnel/rpc/:tunnelId",
       "GET /v1/tunnel/audit/:tunnelId",
     ],
-    serial: true,
   },
   async (ctx) => {
     let tunnelId = "";

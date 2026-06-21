@@ -32,7 +32,6 @@ flow(
   "PLT-2",
   {
     domain: "accounts",
-    serial: true,
     routes: [
       "GET /v1/platform/api-keys",
       "POST /v1/platform/api-keys",

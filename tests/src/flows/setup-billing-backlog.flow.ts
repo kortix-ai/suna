@@ -27,7 +27,6 @@ flow(
   "ACC-4",
   {
     domain: "system",
-    serial: true,
     routes: [
       "GET /v1/setup/install-status",
       "GET /v1/setup/sandbox-providers",
