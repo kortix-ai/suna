@@ -36,6 +36,16 @@ export interface ExecutorCallResult<T = unknown> {
 export interface ExecutorClientOptions {
   apiUrl: string;
   token: string;
+  /**
+   * Project to operate against. When set, calls hit the project-explicit gateway
+   * routes (`/executor/projects/:projectId/{catalog,call}`), which accept ANY
+   * valid principal — a logged-in user token OR an in-sandbox session token.
+   * This is what makes the Executor usable identically on a laptop and inside a
+   * sandbox. When omitted, falls back to the legacy flat routes
+   * (`/executor/{connectors,call}`), which derive the project from a
+   * project-scoped session token (back-compat for already-baked sandboxes).
+   */
+  projectId?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -54,6 +64,7 @@ export class ExecutorError extends Error {
 export class ExecutorClient {
   private readonly apiUrl: string;
   private readonly token: string;
+  private readonly projectId?: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
@@ -62,12 +73,27 @@ export class ExecutorClient {
     if (!opts.token.trim()) throw new Error('token is required');
     this.apiUrl = normalizeApiUrl(opts.apiUrl);
     this.token = opts.token;
+    this.projectId = opts.projectId?.trim() || undefined;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 60_000;
   }
 
+  /** Catalog endpoint — project-explicit when a projectId is set, else legacy flat. */
+  private catalogPath(): string {
+    return this.projectId
+      ? `/executor/projects/${encodeURIComponent(this.projectId)}/catalog`
+      : '/executor/connectors';
+  }
+
+  /** Call endpoint — project-explicit when a projectId is set, else legacy flat. */
+  private callPath(): string {
+    return this.projectId
+      ? `/executor/projects/${encodeURIComponent(this.projectId)}/call`
+      : '/executor/call';
+  }
+
   async connectors(): Promise<ExecutorConnector[]> {
-    const body = await this.request<{ connectors: ExecutorConnector[] }>('/executor/connectors');
+    const body = await this.request<{ connectors: ExecutorConnector[] }>(this.catalogPath());
     return body.connectors ?? [];
   }
 
@@ -96,7 +122,7 @@ export class ExecutorClient {
     action: string,
     args: Record<string, unknown> = {},
   ): Promise<ExecutorCallResult<T>> {
-    return this.request<ExecutorCallResult<T>>('/executor/call', {
+    return this.request<ExecutorCallResult<T>>(this.callPath(), {
       method: 'POST',
       body: { connector, action, args },
     });

@@ -21,19 +21,35 @@ import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { resolveProjectId } from '../project-link.ts';
 import { CliError } from './io.ts';
 
-function apiBase(): string {
-  const url = process.env.KORTIX_API_URL?.trim();
-  if (!url) throw new CliError('KORTIX_API_URL not set — the Executor gateway is unreachable.', 'MISSING_ENV');
-  return url.replace(/\/+$/, '');
-}
-
-/** The gateway client — runs tool calls as the launching user. */
-export function executorClientFromEnv(): ExecutorClient {
-  const token = process.env.KORTIX_EXECUTOR_TOKEN?.trim() || process.env.KORTIX_CLI_TOKEN?.trim();
-  if (!token) {
-    throw new CliError('KORTIX_EXECUTOR_TOKEN not set — cannot reach the Executor gateway.', 'MISSING_ENV');
+/**
+ * The Executor gateway client — runs tool calls as the launching user.
+ *
+ * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
+ * identically:
+ *   - in-sandbox: KORTIX_EXECUTOR_TOKEN/KORTIX_CLI_TOKEN + KORTIX_API_URL are
+ *     injected and win;
+ *   - on a laptop: falls back to the host you `kortix login`'d.
+ * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
+ * When a project is known we hit the project-explicit gateway routes (which
+ * accept a plain user token), so `kortix executor` is the SAME locally and in
+ * the cloud. Without a project we fall back to the legacy flat routes, which
+ * need a project-scoped session token (the in-sandbox case).
+ */
+export function executorClient(projectOverride?: string): ExecutorClient {
+  const auth = loadAuth();
+  if (!auth?.token) {
+    throw new CliError(
+      'not authenticated — run `kortix login` (or set KORTIX_EXECUTOR_TOKEN in a sandbox).',
+      'MISSING_ENV',
+    );
   }
-  return createExecutorClient({ apiUrl: apiBase(), token });
+  // --project > KORTIX_PROJECT_ID > .kortix/link.json (resolveProjectId order).
+  const projectId = resolveProjectId(projectOverride) ?? undefined;
+  return createExecutorClient({
+    apiUrl: auth.api_base,
+    token: auth.token,
+    ...(projectId ? { projectId } : {}),
+  });
 }
 
 /**

@@ -79,6 +79,10 @@ export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | und
         environment: {
           KORTIX_EXECUTOR_TOKEN: executorToken,
           KORTIX_API_URL: apiUrl,
+          // Lets the CLI target the project-explicit gateway route. Optional —
+          // the session token also pins the project for the legacy flat route,
+          // so this is belt-and-suspenders.
+          ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
         },
       },
     }

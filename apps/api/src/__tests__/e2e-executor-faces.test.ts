@@ -106,6 +106,11 @@ function makeDeps(): ExecutorRouterDeps {
 
   return {
     resolvePrincipal: async (c) => c.req.header('authorization') === `Bearer ${TOKEN}` ? principal() : null,
+    // Project-explicit gateway: same principal, but the project comes from the
+    // path (the production impl accepts a logged-in user token here — this is the
+    // local-executor unlock). Authorize only the matching project.
+    resolveProjectPrincipal: async (c, projectId) =>
+      c.req.header('authorization') === `Bearer ${TOKEN}` && projectId === PROJECT ? principal() : null,
     makeGatewayDeps: () => gateway,
     listCatalog: async (p) => catalogFor(p),
     resolveAdmin: async () => null,
@@ -194,6 +199,32 @@ describe('CLI face', () => {
     const call = await runCli(['call', 'echo', 'get', '{"q":"cli"}']);
     expect(call).toMatchObject({ ok: true, risk: 'read' });
     expect(call.data.url).toBe('https://example.test/anything?q=cli');
+  });
+});
+
+describe('Project-explicit gateway face (the local-executor unlock)', () => {
+  test('SDK with a projectId hits /projects/:id/{catalog,call}', async () => {
+    const sdk = createExecutorClient({ apiUrl, token: TOKEN, projectId: PROJECT });
+    expect((await sdk.connectors())[0]?.slug).toBe('echo');
+    const result = await sdk.call<{ url: string }>('echo', 'get', { q: 'proj-sdk' });
+    expect(result.ok).toBe(true);
+    expect(result.data?.url).toBe('https://example.test/anything?q=proj-sdk');
+  });
+
+  test('CLI with KORTIX_PROJECT_ID set routes through the project-explicit gateway', async () => {
+    // This is exactly the local path: a project (here via env, in practice
+    // .kortix/link.json or --project) makes `kortix executor` use the routes that
+    // accept a plain user token. Same command, same result as in-sandbox.
+    const connectors = await runCli(['connectors'], { KORTIX_PROJECT_ID: PROJECT });
+    expect(connectors.connectors[0]).toMatchObject({ slug: 'echo', tools: ['echo.get'] });
+    const call = await runCli(['call', 'echo', 'get', '{"q":"proj-cli"}'], { KORTIX_PROJECT_ID: PROJECT });
+    expect(call).toMatchObject({ ok: true, risk: 'read' });
+    expect(call.data.url).toBe('https://example.test/anything?q=proj-cli');
+  });
+
+  test('an unauthorized project is rejected (403 → SDK throws)', async () => {
+    const sdk = createExecutorClient({ apiUrl, token: TOKEN, projectId: 'someone-elses-project' });
+    await expect(sdk.connectors()).rejects.toThrow();
   });
 });
 

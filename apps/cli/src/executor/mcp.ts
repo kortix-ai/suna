@@ -22,7 +22,7 @@
 import type { ExecutorClient } from '@kortix/executor-sdk';
 import {
   addConnector,
-  executorClientFromEnv,
+  executorClient,
   mintConnectLink,
   mintSecretLink,
   removeConnector,
@@ -382,7 +382,7 @@ function writeResponse(id: JsonRpcRequest['id'], result: unknown, error?: { code
 
 /** Run the stdio JSON-RPC loop until stdin closes. */
 export async function runExecutorMcpServer(): Promise<number> {
-  const executor = executorClientFromEnv();
+  const executor = executorClient();
   const decoder = new TextDecoder();
   let buffer = '';
   for await (const chunk of Bun.stdin.stream()) {

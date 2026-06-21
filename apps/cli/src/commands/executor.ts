@@ -19,7 +19,7 @@
 import { ExecutorError } from '@kortix/executor-sdk';
 import {
   addConnector,
-  executorClientFromEnv,
+  executorClient,
   mintConnectLink,
   removeConnector,
 } from '../executor/gateway.ts';
@@ -50,7 +50,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
   switch (command) {
     case 'connectors':
     case 'ls': {
-      const executor = executorClientFromEnv();
+      const executor = executorClient(flags.project);
       const connectors = await executor.connectors();
       out({
         connectors: connectors.map((c) => ({
@@ -65,7 +65,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
 
     case 'discover':
     case 'search': {
-      const executor = executorClientFromEnv();
+      const executor = executorClient(flags.project);
       const q = args.join(' ') || flags.query || '';
       const matches = await executor.discover(q, { limit: Number(flags.limit) || 20 });
       out({ matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })) });
@@ -73,7 +73,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     }
 
     case 'describe': {
-      const executor = executorClientFromEnv();
+      const executor = executorClient(flags.project);
       const ref = args[0];
       if (!ref || !ref.includes('.')) throw new CliError('usage: kortix executor describe <connector>.<action>', 'USAGE');
       const tool = await executor.describe(ref);
@@ -83,7 +83,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
     }
 
     case 'call': {
-      const executor = executorClientFromEnv();
+      const executor = executorClient(flags.project);
       const slug = args[0];
       const action = args[1];
       if (!slug || !action) throw new CliError('usage: kortix executor call <connector> <action> [json-args]', 'USAGE');

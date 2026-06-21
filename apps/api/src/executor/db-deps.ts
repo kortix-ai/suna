@@ -18,6 +18,7 @@ import {
 import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { authorize } from '../iam';
+import { loadProjectForUser } from '../projects/lib/access';
 import {
   isSecretUsableBy,
   resolveShareSubject,
@@ -223,6 +224,47 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
   };
 }
 
+/**
+ * Principal for the project-EXPLICIT gateway routes (/executor/projects/:id/*).
+ * These run under combinedAuth, so identity is already validated and sits in the
+ * context; the project comes from the PATH. Works for BOTH a project-scoped
+ * session token (enforceTokenProjectScope already pinned it to this project) AND
+ * a logged-in user token (verified to be a project member here). This is the
+ * unlock for using the Executor locally: same gateway, same authz, any principal.
+ */
+async function resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null> {
+  const userId = c.get('userId') as string | undefined;
+  if (!userId) return null;
+  const tokenProjectId = c.get('tokenProjectId') as string | undefined;
+  let accountId = c.get('accountId') as string | undefined;
+
+  if (tokenProjectId) {
+    // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
+    // tokenProjectId === the URL project at the auth layer. Re-check defensively.
+    if (tokenProjectId !== projectId) return null;
+  } else {
+    // User token (PAT/JWT, no pinned project): verify project access. Throws 403
+    // if the user isn't a member — treat that as an unauthorized principal.
+    try {
+      const access = await loadProjectForUser(c, projectId, 'read');
+      if (!access?.row) return null;
+      accountId = access.row.accountId; // the PROJECT's account owns its connectors
+    } catch {
+      return null;
+    }
+  }
+  if (!accountId) return null;
+
+  return {
+    userId,
+    accountId,
+    projectId,
+    sessionId: c.req.header('X-Kortix-Session-Id') ?? null,
+    subject: await resolveShareSubject(userId),
+    agentGrant: (c.get('agentGrant') as ExecutorPrincipal['agentGrant']) ?? null,
+  };
+}
+
 /** The catalog a principal can actually use (access + credential present + not blocked). */
 async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
   const conns = await db
@@ -323,6 +365,7 @@ async function setSharing(projectId: string, slug: string, intent: SharingIntent
 
 export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   resolvePrincipal,
+  resolveProjectPrincipal,
   makeGatewayDeps: () => makeDbGatewayDeps(),
   listCatalog,
   resolveAdmin,
