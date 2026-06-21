@@ -9,7 +9,6 @@ import { authenticatedFetch, getSupabaseAccessToken, invalidateTokenCache } from
 import { deleteSessionFromIDB, saveSessionToIDB } from '@/lib/idb-sync-cache';
 import { logger } from '@/lib/logger';
 import { getClient, resetClient } from '@/lib/opencode-sdk';
-import { syncOpencodeSessionData } from '@/lib/projects-client';
 import {
   notifyPermissionRequest,
   notifyQuestion,
@@ -35,39 +34,6 @@ const messageRehydrateInFlight = new Set<string>();
 const messageRehydrateLastAt = new Map<string, number>();
 let projectMetadataRefetchLastAt = 0;
 let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
-
-function syncOpenCodeSessionSnapshot(
-  info: Session,
-  queryClient?: QueryClient,
-  // When the opencode-side title changed (e.g. auto-generated after the first
-  // message), refetch the KORTIX session list so the sidebar tabs + project
-  // sidebar pick up the new name immediately — otherwise the name only refreshed
-  // on the next session-create invalidation ("title shows up only after I start
-  // a new session"). project_sessions rows are the mirror target; refetch them
-  // AFTER the mirror POST lands so we read the freshly-written name.
-  refreshKortixSessions = false,
-): void {
-  void syncOpencodeSessionData([
-    {
-      opencode_session_id: info.id,
-      title: info.title || null,
-      parent_id: info.parentID ?? null,
-      project_id: info.projectID ?? null,
-      created_at: info.time?.created ?? null,
-      updated_at: info.time?.updated ?? null,
-      archived_at: info.time?.archived ?? null,
-    },
-  ])
-    .then(() => {
-      if (refreshKortixSessions && queryClient) {
-        // Prefix match → refreshes ['project-sessions', projectId] (tabs +
-        // sidebar) and ['project-session', …] for every active query.
-        queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
-        queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
-      }
-    })
-    .catch(() => {});
-}
 
 /**
  * session.created/updated/deleted carry the Session object either nested under
@@ -120,6 +86,14 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   if (!projectMetadataRefetchTimer) {
     projectMetadataRefetchTimer = setTimeout(run, wait);
   }
+}
+
+function refetchKortixSessionMirrors(queryClient: QueryClient): void {
+  // OpenCode title/tree mirroring is owned by API session reads. When OpenCode
+  // emits a title/tree change, refetch the active Kortix session reads so tabs
+  // and sidebars pick up the server-side mirror without browser-side writes.
+  void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
+  void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
 }
 
 /**
@@ -711,8 +685,7 @@ export function useOpenCodeEventStream() {
               return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
             });
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
-            // New session → the Kortix session list changed; refresh it.
-            syncOpenCodeSessionSnapshot(info, queryClient, true);
+            refetchKortixSessionMirrors(queryClient);
           }
           break;
         }
@@ -720,8 +693,9 @@ export function useOpenCodeEventStream() {
         case 'session.updated': {
           const info = readSessionInfo(event);
           if (info) {
-            // Did the title change? (opencode auto-titles after the first
-            // message via session.updated.) Capture BEFORE we overwrite caches.
+            // OpenCode auto-titles after the first message via session.updated.
+            // Capture the previous title before local cache mutation so we only
+            // force the server-owned mirror read when the title actually changed.
             const prevTitle =
               queryClient
                 .getQueryData<Session[]>(opencodeKeys.sessions())
@@ -748,10 +722,7 @@ export function useOpenCodeEventStream() {
               next[idx] = info;
               return next.sort((a, b) => b.time.updated - a.time.updated);
             });
-            // Mirror + (only when the name actually changed) refresh the Kortix
-            // session list so tabs/sidebar show the new title without waiting for
-            // the next create. titleChanged gate keeps streaming churn cheap.
-            syncOpenCodeSessionSnapshot(info, queryClient, titleChanged);
+            if (titleChanged) refetchKortixSessionMirrors(queryClient);
           }
           break;
         }
