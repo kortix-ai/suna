@@ -578,27 +578,16 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
     });
   }
 
-  // `/v1/projects/:projectId/...` is a project-scoped surface. Require the URL id
-  // to match the token's project.
-  const m = path.match(/^\/v1\/projects\/([^/]+)/);
+  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
+  // both are project-scoped surfaces. Require the URL id to match the token's
+  // project. The executor branch intentionally includes both gateway and
+  // connector-management routes: the unified Executor MCP exposes add/remove
+  // connector tools from inside the sandbox, while individual routes still gate
+  // mutations via project.write in resolveAdmin.
+  const m =
+    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
-    if (urlProjectId !== tokenProjectId) {
-      throw new HTTPException(403, {
-        message: 'Project-scoped token cannot access a different project',
-      });
-    }
-    return;
-  }
-
-  // The Executor's project-explicit *gateway* routes are also project-scoped and
-  // are safe for session PATs: they still enforce connector sharing, policy, and
-  // per-agent grants before listing/calling tools. Do NOT allow the broader
-  // `/v1/executor/projects/:projectId/*` admin surface here — those routes mutate
-  // connector config/credentials and must stay dashboard/user-auth only.
-  const executorGateway = path.match(/^\/v1\/executor\/projects\/([^/]+)\/(catalog|call)$/);
-  if (executorGateway) {
-    const urlProjectId = executorGateway[1];
     if (urlProjectId !== tokenProjectId) {
       throw new HTTPException(403, {
         message: 'Project-scoped token cannot access a different project',

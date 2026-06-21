@@ -11,8 +11,8 @@
  *   4. The token CANNOT call account-level routes (/v1/accounts/tokens),
  *      but the self-identity probe (/v1/accounts/me) is allowed.
  *   5. The token CANNOT enumerate projects (GET /v1/projects → 403).
- *   6. The token CAN use the project-explicit Executor gateway routes, but
- *      CANNOT reach Executor admin/management routes for the project.
+ *   6. The token CAN use project-explicit Executor routes for its project
+ *      (gateway + connector management), but not another project's routes.
  *   7. Revoking via DELETE /v1/projects/:id/cli-token/:tokenId yields
  *      401 on the next call.
  *
@@ -154,7 +154,7 @@ async function main() {
   }
   ok('token cannot list account-level PATs → 403');
 
-  // ── 8. Executor project scope: gateway allowed, admin denied ──────────
+  // ── 8. Executor project scope: own project allowed, cross-project denied ─
   const executorCatalog = await callApi(secretKey, `/executor/projects/${projA.project_id}/catalog`);
   if (executorCatalog.status !== 200) {
     die(`projA token → /executor/projects/<projA>/catalog should 200, got ${executorCatalog.status}: ${JSON.stringify(executorCatalog.body)}`);
@@ -162,10 +162,10 @@ async function main() {
   ok('token can use the Executor project-explicit catalog gateway → 200');
 
   const executorAdmin = await callApi(secretKey, `/executor/projects/${projA.project_id}/connectors`);
-  if (executorAdmin.status !== 403) {
-    die(`projA token → /executor/projects/<projA>/connectors admin route should 403, got ${executorAdmin.status}: ${JSON.stringify(executorAdmin.body)}`);
+  if (executorAdmin.status !== 200) {
+    die(`projA token → /executor/projects/<projA>/connectors should 200, got ${executorAdmin.status}: ${JSON.stringify(executorAdmin.body)}`);
   }
-  ok('token cannot reach Executor admin connector management routes → 403');
+  ok('token can use Executor connector management routes for its own project → 200');
 
   const crossProjectCatalog = await callApi(secretKey, `/executor/projects/${projB.project_id}/catalog`);
   if (crossProjectCatalog.status !== 403) {
