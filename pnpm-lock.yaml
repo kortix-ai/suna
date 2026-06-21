@@ -1150,7 +1150,7 @@ importers:
     devDependencies:
       '@types/bun':
         specifier: ^1.3.9
-        version: 1.3.10
+        version: 1.3.14
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
