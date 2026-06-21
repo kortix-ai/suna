@@ -46,11 +46,16 @@ spec:
           args:
             - |
               set -e
-              aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" /html --delete --region {{ .Values.region }}
-              # First-run safety: if no report exists yet, leave a placeholder so
-              # nginx is still healthy and the page explains the empty state.
-              if [ -z "$(ls -A /html 2>/dev/null)" ]; then
-                echo "<h1>QA report portal</h1><p>No report has been published yet.</p>" > /html/index.html
+              # Sync the whole reports/ tree so per-PR reports (reports/pr/<n>/<run>/)
+              # and history are served too, not just latest/.
+              aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }}
+              # Root redirects to the latest report; the qa-pr comment links deep to
+              # /{{ .Values.s3Prefix }}/pr/<n>/<run>/index.html.
+              printf '<!doctype html><meta http-equiv="refresh" content="0; url=/{{ .Values.s3Prefix }}/latest/">\n' > /html/index.html
+              # First-run safety: placeholder so nginx is healthy before any publish.
+              if [ -z "$(ls -A "/html/{{ .Values.s3Prefix }}/latest" 2>/dev/null)" ]; then
+                mkdir -p "/html/{{ .Values.s3Prefix }}/latest"
+                echo "<h1>QA report portal</h1><p>No report has been published yet.</p>" > "/html/{{ .Values.s3Prefix }}/latest/index.html"
               fi
           env:
             - name: AWS_REGION
@@ -97,7 +102,7 @@ spec:
             - |
               while true; do
                 sleep {{ .Values.syncIntervalSeconds }}
-                aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" /html --delete --region {{ .Values.region }} || true
+                aws s3 sync "s3://{{ .Values.bucket }}/{{ .Values.s3Prefix }}/" "/html/{{ .Values.s3Prefix }}" --delete --region {{ .Values.region }} || true
               done
           env:
             - name: AWS_REGION
