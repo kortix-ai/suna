@@ -20,6 +20,7 @@ import { join } from 'node:path';
  * from apps/api/.env so secrets never go through the shell).
  */
 import { runner } from 'node-pg-migrate';
+import pg from 'pg';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
 const DOTENV = join(import.meta.dir, '..', '..', '..', 'apps', 'api', '.env');
@@ -64,6 +65,46 @@ const fmtUrl = (u: string) => {
   }
 };
 
+/**
+ * Self-heal the one-time transition to the baseline migration system on an
+ * environment whose schema PREDATES it. The baseline migration recreates the
+ * entire managed schema, so running it against a DB that already has that schema
+ * fails (e.g. `CREATE TYPE … AS ENUM` → duplicate_object 42710). Its header
+ * documents the contract: on existing environments it must be "marked-applied
+ * without running". This detects that case and fakes ONLY the baseline (the
+ * oldest pending migration) so the real `up` that follows applies just the
+ * genuinely-new migrations. A fresh DB has no schema → no-op → `up` creates it.
+ *
+ * Trigger is conservative: the managed schema sentinel (`kortix.accounts`) is
+ * present AND the tracking table has no rows yet (never baselined). After the
+ * fake records the baseline, this never fires again.
+ */
+async function autoBaselineIfNeeded(base: Record<string, unknown>, databaseUrl: string): Promise<void> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const { rows: [schema] } = await client.query<{ exists: boolean }>(
+      "select to_regclass('kortix.accounts') is not null as exists",
+    );
+    if (!schema?.exists) return; // fresh DB → let `up` run the baseline for real
+
+    const { rows: [tbl] } = await client.query<{ exists: boolean }>(
+      "select to_regclass('kortix_migrations.pgmigrations') is not null as exists",
+    );
+    if (tbl?.exists) {
+      const { rows: [{ n }] } = await client.query<{ n: number }>(
+        'select count(*)::int as n from kortix_migrations.pgmigrations',
+      );
+      if (n > 0) return; // already tracked (baseline recorded) → normal `up`
+    }
+
+    console.log('[migrate] existing managed schema with an empty migration ledger → faking the baseline (mark-applied, not run).');
+    await runner({ ...(base as any), direction: 'up', count: 1, fake: true });
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
@@ -85,6 +126,7 @@ async function main() {
 
   switch (cmd) {
     case 'up':
+      await autoBaselineIfNeeded(base, databaseUrl);
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
       return;
     case 'fake':
