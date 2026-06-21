@@ -20,12 +20,13 @@ export function randomAlphanumeric(length: number): string {
  *
  * Both secret key variants validate through the same path — only the hash is stored.
  */
-const KEY_PREFIX = 'kortix_';
-const KEY_PREFIX_SANDBOX = 'kortix_sb_';
-const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
-const KEY_PREFIX_PAT = 'kortix_pat_';
-const KEY_PREFIX_SA = 'kortix_sa_';
-const KEY_PREFIX_PUBLIC = 'pk_';
+export const KEY_PREFIX = 'kortix_';
+export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
+export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
+export const KEY_PREFIX_PAT = 'kortix_pat_';
+export const KEY_PREFIX_SA = 'kortix_sa_';
+export const KEY_PREFIX_GATEWAY = 'kortix_gw_';
+export const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
 
@@ -84,6 +85,19 @@ export function generateAccountTokenPair(): { publicKey: string; secretKey: stri
 /** Check if a token is a CLI Personal Access Token. */
 export function isAccountToken(token: string): boolean {
   return token.startsWith(KEY_PREFIX_PAT);
+}
+
+/**
+ * Generate a project-scoped LLM gateway key for external/programmatic access.
+ * Secret: kortix_gw_<32 chars>  (shown once, only the hash is stored).
+ */
+export function generateGatewayKeyPair(): { secretKey: string } {
+  return { secretKey: `${KEY_PREFIX_GATEWAY}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}` };
+}
+
+/** Check if a token is a gateway key. */
+export function isGatewayKey(token: string): boolean {
+  return token.startsWith(KEY_PREFIX_GATEWAY);
 }
 
 /**

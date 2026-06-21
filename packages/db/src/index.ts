@@ -29,6 +29,9 @@ export {
   accountGithubInstallationsRelations,
   auditEvents,
   usageEvents,
+  gatewayRequestLogs,
+  gatewayApiKeys,
+  gatewayBudgets,
   // Kortix tables
   projects,
   projectGitConnections,
@@ -226,4 +229,10 @@ export type {
   NewTunnelPermissionRequest,
   TunnelAuditLog,
   NewTunnelAuditLog,
+  GatewayRequestLog,
+  NewGatewayRequestLog,
+  GatewayApiKey,
+  NewGatewayApiKey,
+  GatewayBudget,
+  NewGatewayBudget,
 } from './types';

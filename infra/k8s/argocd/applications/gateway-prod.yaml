@@ -1,0 +1,45 @@
+# Argo CD Application for the EKS prod LLM gateway (gateway.kortix.com).
+#
+# SINGLE source (mirrors kortix-prod): render the kortix-gateway chart with the
+# prod gateway value file via a relative path in the same repo — one revision, so
+# it can't race a multi-source $values resolution while the prod branch moves. A
+# PR bumping image.tag in infra/k8s/envs/prod/gateway-values.yaml IS the release;
+# git revert is rollback.
+#
+# Runs in the kortix-prod namespace, reusing the API's ServiceAccount (kortix-api)
+# + synced secret (kortix-api-env) — depends on kortix-prod creating them first;
+# Argo retries until they exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-gateway-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kortix
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: prod
+    path: infra/k8s/charts/kortix-gateway
+    helm:
+      releaseName: kortix-gateway
+      valueFiles:
+        - ../../envs/prod/gateway-values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

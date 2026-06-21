@@ -117,7 +117,7 @@ jobs:
           # back to :dev-latest. Fail only if neither exists (nothing to ship).
           SHA8=""
           [ -n "${SOURCE_SHA:-}" ] && SHA8="dev-${SOURCE_SHA:0:8}"
-          for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
             if [ -n "$SHA8" ] && docker buildx imagetools inspect "$IMAGE:$SHA8" >/dev/null 2>&1; then
               SRC_TAG="$SHA8"
             elif docker buildx imagetools inspect "$IMAGE:dev-latest" >/dev/null 2>&1; then

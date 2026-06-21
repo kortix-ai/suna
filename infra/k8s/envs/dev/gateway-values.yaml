@@ -1,0 +1,32 @@
+# Dev values for the kortix-gateway chart. Runs in the SAME namespace as
+# kortix-api (kortix-dev), reusing its ServiceAccount + synced secret
+# (kortix-api-env). deploy-dev-eks bumps image.tag on each push to main.
+
+# Immutable dev tag (CI bumps to dev-<sha8>). Bootstrap value until the first run.
+image:
+  tag: "dev-32e8aacc"
+# Dev sizing (≤100 users): 1-replica floor, burst to 2.
+replicas: 1
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+# No PDB on a 1-replica dev (minAvailable would block node drains).
+pdb:
+  enabled: false
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+# Public, direct. Dev sandboxes hit the gateway straight at this host
+# (LLM_GATEWAY_BASE_URL=https://gateway-dev.kortix.com/v1/llm) so LLM streams
+# live on gateway pods, not the API — API deploys don't cut in-flight streams.
+ingress:
+  enabled: true
+  host: gateway-dev.kortix.com
+  # ACM cert for gateway-dev.kortix.com (dev-eks/cluster module.acm_gateway).
+  certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/ee7b3729-26c7-4622-881d-028daa58d051"
+  cloudflareProxied: true

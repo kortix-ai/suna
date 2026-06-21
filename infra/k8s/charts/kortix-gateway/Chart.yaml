@@ -1,0 +1,7 @@
+apiVersion: v2
+name: kortix-gateway
+description: Kortix standalone LLM gateway on EKS — Deployment + ALB Ingress + HPA/PDB. Runs alongside kortix-api, reusing its ServiceAccount + synced secret.
+type: application
+# Chart version; the app image tag is passed at deploy time via image.tag.
+version: 0.1.0
+appVersion: "1.0.0"

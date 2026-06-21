@@ -11,6 +11,8 @@ interface CatalogProvider {
   name: string;
   env?: string[];
   doc?: string;
+  api?: string | null;
+  npm?: string | null;
   models: CatalogModel[];
 }
 
@@ -23,6 +25,61 @@ export interface Catalog {
 }
 
 export const CATALOG = catalogJson as Catalog;
+
+export interface ManagedModel {
+  id: string;
+  name: string;
+  bedrockModelId: string;
+  openRouterModelId: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion: number;
+  tier: 'flagship' | 'balanced' | 'fast';
+}
+
+// Managed model ids are single-segment (no `provider/` prefix). They are served
+// to opencode under the `kortix` provider, so opencode references them as
+// `kortix/<id>` (e.g. `kortix/kortix-power`) and sends `<id>` as the wire model.
+// A bare, slash-free id is what lets the gateway tell a managed request
+// (`kortix-power` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
+// the user's own key) without the two ever colliding.
+export const MANAGED_MODELS: ManagedModel[] = [
+  {
+    id: 'kortix-power',
+    name: 'Kortix Power',
+    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
+    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cachedInputPerMillion: 0.3,
+    tier: 'flagship',
+  },
+  {
+    id: 'kortix-basic',
+    name: 'Kortix Basic',
+    bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    openRouterModelId: 'anthropic/claude-haiku-4.5',
+    inputPerMillion: 1,
+    outputPerMillion: 5,
+    cachedInputPerMillion: 0.1,
+    tier: 'fast',
+  },
+];
+
+const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
+
+export function getManagedModel(id: string): ManagedModel | undefined {
+  return MANAGED_BY_ID.get(id);
+}
+
+export function isManagedModelId(id: string): boolean {
+  return MANAGED_BY_ID.has(id);
+}
+
+export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
+
+export const MANAGED_FLAGSHIP_MODEL_ID =
+  (MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]).id;
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',
@@ -38,6 +95,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  codex: 'ChatGPT',
   google: 'Google',
   xai: 'xAI',
   moonshotai: 'Moonshot',

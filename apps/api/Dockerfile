@@ -64,6 +64,7 @@ COPY packages/agent-tunnel ./packages/agent-tunnel
 COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/llm-gateway ./packages/llm-gateway
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -115,6 +116,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/src ./packages/shared/src
 COPY --from=deps /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=deps /app/packages/shared/tsconfig.json ./packages/shared/tsconfig.json
+COPY --from=deps /app/packages/llm-gateway/src ./packages/llm-gateway/src
+COPY --from=deps /app/packages/llm-gateway/package.json ./packages/llm-gateway/package.json
+COPY --from=deps /app/packages/llm-gateway/tsconfig.json ./packages/llm-gateway/tsconfig.json
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
