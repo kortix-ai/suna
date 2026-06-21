@@ -11,7 +11,6 @@ flow(
   "INV-2",
   {
     domain: "accounts",
-    serial: true,
     routes: [
       "POST /v1/accounts/:accountId/invites/:inviteId/resend",
       "DELETE /v1/accounts/:accountId/invites/:inviteId",

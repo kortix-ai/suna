@@ -18,7 +18,6 @@ flow(
   "IAM-1",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/groups",
       "POST /v1/accounts/:accountId/iam/groups",
@@ -65,7 +64,6 @@ flow(
   "IAM-2",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/groups/:groupId",
       "PATCH /v1/accounts/:accountId/iam/groups/:groupId",
@@ -135,7 +133,6 @@ flow(
   "IAM-3",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/groups/:groupId/members",
       "POST /v1/accounts/:accountId/iam/groups/:groupId/members",
@@ -218,7 +215,6 @@ flow(
   "IAM-14",
   {
     domain: "iam",
-    serial: true,
     routes: ["GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants"],
   },
   async (ctx) => {
@@ -268,7 +264,6 @@ flow(
   "IAM-7",
   {
     domain: "iam",
-    serial: true,
     routes: ["PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin"],
   },
   async (ctx) => {
@@ -324,7 +319,6 @@ flow(
   "IAM-8",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/members/:userId/groups",
       "GET /v1/accounts/:accountId/iam/members/:userId/effective",
@@ -372,7 +366,6 @@ flow(
   "IAM-15",
   {
     domain: "iam",
-    serial: true,
     routes: ["POST /v1/accounts/:accountId/iam/members/:userId/effective:batch"],
   },
   async (ctx) => {
@@ -415,7 +408,6 @@ flow(
   "IAM-16",
   {
     domain: "iam",
-    serial: true,
     routes: ["GET /v1/accounts/:accountId/iam/members/:userId/project-access"],
   },
   async (ctx) => {
@@ -446,7 +438,6 @@ flow(
   "IAM-17",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/mfa-required",
       "GET /v1/accounts/:accountId/iam/mfa-required/preview",
@@ -507,7 +498,6 @@ flow(
   "IAM-18",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/pat-policy",
       "PATCH /v1/accounts/:accountId/iam/pat-policy",
@@ -566,7 +556,6 @@ flow(
   "IAM-19",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/session-policy",
       "PATCH /v1/accounts/:accountId/iam/session-policy",
@@ -626,7 +615,6 @@ flow(
   "IAM-20",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/sessions",
       "POST /v1/accounts/:accountId/iam/sessions/:sessionId/revoke",
@@ -665,7 +653,6 @@ flow(
   "IAM-21",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/scim/tokens",
       "POST /v1/accounts/:accountId/iam/scim/tokens",
@@ -729,7 +716,6 @@ flow(
   "IAM-22",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/service-accounts",
       "POST /v1/accounts/:accountId/iam/service-accounts",
@@ -820,7 +806,6 @@ flow(
   "IAM-23",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/sso/provider",
       "PUT /v1/accounts/:accountId/iam/sso/provider",
@@ -898,7 +883,6 @@ flow(
   "IAM-24",
   {
     domain: "iam",
-    serial: true,
     routes: [
       "GET /v1/accounts/:accountId/iam/sso/mappings",
       "POST /v1/accounts/:accountId/iam/sso/mappings",
