@@ -1869,13 +1869,12 @@ export interface ProjectSession {
   opencode_session_id: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-sessions (metadata.name in the DB).
+   * auto title mirrored from OpenCode server-side during project session reads.
    */
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the live opencode root title. null = no
+   * present it always wins over the server-mirrored OpenCode title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -2097,28 +2096,6 @@ export async function restartProjectSession(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
       {},
-    ),
-  );
-}
-
-export interface SyncOpencodeSessionEntry {
-  opencode_session_id: string;
-  title: string | null;
-  parent_id?: string | null;
-  project_id?: string | null;
-  created_at?: number | null;
-  updated_at?: number | null;
-  archived_at?: number | null;
-}
-
-export async function syncOpencodeSessionData(
-  entries: SyncOpencodeSessionEntry[],
-) {
-  if (entries.length === 0) return { updated: 0 };
-  return unwrap(
-    await backendApi.post<{ updated: number }>(
-      `/projects/sync-opencode-sessions`,
-      { entries },
     ),
   );
 }

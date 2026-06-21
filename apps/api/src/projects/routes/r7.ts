@@ -10,8 +10,8 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import { createSession, deleteSession } from '../session-lifecycle';
-import { syncOpencodeSessionsHandler } from './shared';
 
 projectsApp.openapi(
   createRoute({
@@ -414,7 +414,7 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  const visible = listableRows.filter((r) =>
+  let visible = listableRows.filter((r) =>
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,
@@ -422,6 +422,12 @@ projectsApp.openapi(
       subject,
     ),
   );
+  visible = await syncOpenCodeTitlesForSessions({
+    rows: visible,
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+  });
   // Owner emails only for sessions someone else owns (for the "shared by" label).
   const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
   const emails = await lookupEmailsByUserIds(ownerIds);
@@ -466,11 +472,17 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  const [row] = await syncOpenCodeTitlesForSessions({
+    rows: [visible.row],
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+  });
 
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;
-  return c.json(serializeSession(visible.row, {
+  return c.json(serializeSession(row ?? visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
@@ -583,8 +595,8 @@ projectsApp.openapi(
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
   // A user-set name is the AUTHORITATIVE display name. It lives in
-  // metadata.custom_name — a separate key from metadata.name (the auto title
-  // mirrored from opencode by /sync-opencode-sessions) so a rename is never
+  // metadata.custom_name — a separate key from metadata.name (the server-side
+  // auto title mirrored from OpenCode during session reads) so a rename is never
   // clobbered by a later sync. Passing name: "" (or null) clears the override
   // and reverts the session to its auto title.
   const hasNameField = hasOwn(body, 'name');
@@ -623,27 +635,6 @@ projectsApp.openapi(
   }));
 },
 );
-
-// POST /v1/projects/sync-opencode-sessions
-// Mirrors session data from the sandbox-local opencode DB into our cloud DB.
-// The project_sessions row remains the branch+sandbox root;
-// metadata.opencode_sessions stores the local OpenCode root/sub-session graph
-// for sidebar/list rendering when the sandbox is not the active runtime.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/sync-opencode-sessions',
-    tags: ['sessions'],
-    summary: 'POST /sync-opencode-sessions',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  syncOpencodeSessionsHandler as any,
-);
-
 
 // DELETE /v1/projects/:projectId/sessions/:sessionId
 // Soft delete only. We deliberately keep the remote branch so the user can
