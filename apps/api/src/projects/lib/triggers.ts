@@ -195,8 +195,15 @@ export function triggerLoadTimeoutMs(): number {
 }
 /** Hard cap on a whole sweep pass — backstop so nothing can wedge the guard. */
 export function triggerSweepTimeoutMs(): number {
+  // GENEROUS backstop, not a routine cap. A full sweep loads every active
+  // project's manifest sequentially (~1.7k projects → ~11min/pass observed), and
+  // the per-fire/per-load timeouts already guarantee no single op hangs forever.
+  // A short cap here would GUILLOTINE a legit long sweep and drop cron coverage
+  // for projects late in the pass (a 4min cap reached only ~10 of ~39 due
+  // triggers). Keep this well above a real sweep so it only fires on a true hang
+  // not bounded by the per-op timeouts (e.g. a wedged DB call); tune via env.
   const raw = Number(process.env.KORTIX_TRIGGER_SWEEP_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4 * 60_000;
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20 * 60_000;
 }
 
 /**
@@ -219,10 +226,15 @@ export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): 
 }
 
 /**
- * Pure stall check: are we the leader with a sweep that started but hasn't
- * completed within `staleMs`? Surfaced at /health and used by the in-loop
- * watchdog so a frozen scheduler is loud, not silent. Returns false before the
- * first tick (grace right after promotion) and when not leader.
+ * Pure stall check: is the leader's scheduler failing to make progress? Surfaced
+ * at /health and used by the in-loop watchdog so a frozen scheduler is loud, not
+ * silent. NOT stale when: not leader, the scheduler hasn't ticked yet (grace
+ * right after promotion), a sweep completed recently, OR a sweep is in-flight and
+ * still within the stale window. Stale only when the latest sweep has been
+ * IN-FLIGHT longer than `staleMs`, or the last COMPLETED sweep is older than
+ * `staleMs` (the interval died). The in-flight case is why we key off the start
+ * time, not a `lastDone=0` sentinel — otherwise a fresh leader's very first
+ * (legitimately long) sweep would read as stale the instant it began.
  */
 export function isSweepStale(opts: {
   isLeader: boolean;
@@ -233,8 +245,13 @@ export function isSweepStale(opts: {
 }): boolean {
   if (!opts.isLeader) return false;
   if (!opts.lastSweepStartedAt) return false;
-  const lastDoneMs = opts.lastSweepCompletedAt ? Date.parse(opts.lastSweepCompletedAt) : 0;
-  return opts.nowMs - lastDoneMs > opts.staleMs;
+  const startedMs = Date.parse(opts.lastSweepStartedAt);
+  const completedMs = opts.lastSweepCompletedAt ? Date.parse(opts.lastSweepCompletedAt) : 0;
+  // The latest sweep already completed → healthy unless the NEXT one is overdue.
+  if (completedMs >= startedMs) return opts.nowMs - completedMs > opts.staleMs;
+  // A sweep is in-flight (started, not yet completed) → stale only if it has been
+  // running longer than the stale window.
+  return opts.nowMs - startedMs > opts.staleMs;
 }
 
 function schedulerStaleMs(): number {
