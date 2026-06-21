@@ -81,7 +81,6 @@ const EXEMPT_FRAGMENTS = [
   '/snapshots',               // sandbox template builds
   '/suna-migration',          // OG Suna → opencode migration runs
   '/legacy-migration',        // legacy VM → project migration runs
-  '/sync-opencode-sessions',  // cross-sandbox session sweep (observed ~26s)
   '/oauth/',                  // provider OAuth device flow — `start` spawns
                               // OpenCode + waits for the device challenge, which
                               // can exceed the deadline on a cold replica
