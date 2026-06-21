@@ -5,6 +5,7 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
+import { SandboxState } from '@daytonaio/sdk';
 import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
 import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
@@ -14,6 +15,16 @@ import { config, SANDBOX_VERSION } from '../../config';
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
 import { WarmRuntimeUnavailableError } from './index';
+
+// Labels stamped on every Kortix-managed Daytona box at create time. The
+// Daytona org is SHARED across environments (prod / dev / laptops), so the
+// orphan-box reaper MUST scope its sweep to this deployment's own boxes —
+// otherwise one env would stop another env's sandboxes. `kortix.managed` marks
+// "we created it"; `kortix.env` pins the owning environment. The reaper lists
+// by exactly these labels (see listManagedRunningSandboxes).
+function managedSandboxLabels(): Record<string, string> {
+  return { 'kortix.managed': 'true', 'kortix.env': config.INTERNAL_KORTIX_ENV };
+}
 import type {
   SandboxProvider,
   ProviderName,
@@ -186,6 +197,7 @@ export class DaytonaProvider implements SandboxProvider {
         // (KORTIX_SANDBOX_AUTO*). A warm-pool spare passes autoStopInterval=0 →
         // persistent (it manages its own lifecycle via reconcileWarmPool).
         ...daytonaLifecycle(opts.autoStopInterval),
+        labels: managedSandboxLabels(),
         public: false,
       },
       { timeout: createTimeoutSeconds },
@@ -239,6 +251,7 @@ export class DaytonaProvider implements SandboxProvider {
           {
             snapshot: warmBaseSnapshot,
             ...daytonaLifecycle(opts.autoStopInterval),
+            labels: managedSandboxLabels(),
             public: false,
           },
           { timeout },
@@ -343,6 +356,31 @@ export class DaytonaProvider implements SandboxProvider {
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await daytona.delete(sandbox);
+  }
+
+  /**
+   * List THIS environment's running boxes, for the orphan-box reaper. Scoped by
+   * the managed labels — the Daytona org is shared across environments, so an
+   * unscoped sweep would reap other deployments' sandboxes. Returns id +
+   * createdAt so the reaper can age-gate (never stop a box inside its grace
+   * window, which would race a box mid-provision before its DB row lands).
+   */
+  async listManagedRunningSandboxes(): Promise<Array<{ externalId: string; createdAt: Date | null }>> {
+    const out: Array<{ externalId: string; createdAt: Date | null }> = [];
+    for await (const box of getDaytona().list({
+      states: [SandboxState.STARTED],
+      labels: managedSandboxLabels(),
+      limit: 100,
+    } as any)) {
+      const externalId = (box as { id?: string }).id;
+      if (!externalId) continue;
+      const raw =
+        (box as { createdAt?: string | Date }).createdAt ??
+        (box as { info?: { createdAt?: string | Date } }).info?.createdAt ??
+        null;
+      out.push({ externalId, createdAt: raw ? new Date(raw) : null });
+    }
+    return out;
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
