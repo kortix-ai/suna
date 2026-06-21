@@ -6,7 +6,6 @@ export REPO_ROOT
 
 export TESTS_DIR="${REPO_ROOT}/tests"
 export MIGRATION_DIR="${TESTS_DIR}/migration"
-export SUPABASE_MIGRATIONS_DIR="${REPO_ROOT}/supabase/migrations"
 
 export COMPOSE_FILE="${TESTS_DIR}/docker-compose.test.yml"
 export COMPOSE_SERVICE="postgres"
@@ -15,6 +14,10 @@ export TEST_DB_USER="${TEST_DB_USER:-kortix_test}"
 export TEST_DB_PASSWORD="${TEST_DB_PASSWORD:-kortix_test}"
 export TEST_DB_NAME="${TEST_DB_NAME:-kortix_test}"
 export TEST_DB_PORT="${TEST_DB_PORT:-55432}"
+
+# Host -> container URL for node-pg-migrate (the migrations are applied from the
+# host with `pnpm migrate`, not psql-in-container).
+export TEST_DATABASE_URL="postgresql://${TEST_DB_USER}:${TEST_DB_PASSWORD}@localhost:${TEST_DB_PORT}/${TEST_DB_NAME}"
 
 export PG_IMAGE="postgres:16-alpine"
 

@@ -1,33 +1,36 @@
 # Migration tests
 
-Validates the repo's `supabase/migrations/*.sql` against a throwaway Postgres,
-using only Docker + `psql` (no host tooling, no Supabase CLI). Output is JUnit
-XML in `test-results/migration/`.
+Validates the repo's `packages/db/migrations/*.sql` against a throwaway Postgres
+by applying them with **node-pg-migrate** (the same `pnpm migrate` the deploy
+pipeline uses). Output is JUnit XML in `test-results/migration/`.
 
 ## What it checks
 
-1. **Apply up, in order** — every `supabase/migrations/*.sql` runs in filename
-   order inside a `postgres:16-alpine` container, each in a single transaction.
+1. **Apply up** — `pnpm --filter @kortix/db migrate` builds the schema from
+   scratch in a `postgres:16-alpine` container (each migration transactional,
+   advisory-locked). Tracking lives in `kortix_migrations.pgmigrations`.
 2. **Schema is non-empty / key tables exist** — `schema.test.sh` asserts the
    `kortix` schema has tables, that a list of business-critical tables exist,
-   that enum types are present, and that Supabase grant roles can see the tables.
-3. **Idempotency** — `idempotency.test.sh` re-runs the apply step and asserts it
-   exits 0 and applies nothing (mirrors `supabase db push` run twice in CI).
-4. **Rollback / down** — `rollback.test.sh`. These migrations are forward-only
-   (no paired `*.down.sql`), so rollback is exercised the way it happens here:
-   `db-reset.sh` drops all app schemas and re-applies from scratch. The test
-   auto-detects `*.down.sql` or `down/*.sql` and, if present, applies them in
-   reverse and asserts the schema empties out.
+   that enum types are present, and that the Supabase grant roles can see them.
+3. **Idempotency** — `idempotency.test.sh` re-runs migrate and asserts it exits
+   0, applies nothing, and reports "No migrations to run".
+4. **Rollback** — `rollback.test.sh`. The flow is forward-only (the baseline has
+   no paired down section; prod rollback is a NEW forward migration), so
+   rollback is exercised via `db-reset.sh`: drop all app schemas and re-apply
+   from scratch, asserting the schema rebuilds cleanly.
 
-## Supabase compatibility shim
+## Prerequisite shim
 
-A vanilla `postgres:16-alpine` image lacks the Supabase-managed roles the
-migrations `GRANT` to. `scripts/bootstrap-roles.sql` pre-creates `anon`,
-`authenticated`, `service_role`, and `authenticator` as no-login placeholders so
-the grant DDL applies cleanly. Migrations that touch the `auth`/`storage`
-schemas are already guarded in-repo (they no-op when those schemas are absent),
-so no further shimming is needed. This shim tests DDL correctness, **not** RLS
-or JWT behaviour.
+A vanilla `postgres:16-alpine` image lacks the Supabase platform objects the
+baseline assumes. `packages/db/scripts/test-prereqs.sql` pre-creates the
+`anon`/`authenticated`/`service_role` roles and minimal `auth`/`basejump` stubs
+so the FK/RLS/grant DDL applies cleanly. The storage-bucket migration self-skips
+when the `storage` schema is absent. This tests DDL correctness, **not** RLS or
+JWT behaviour.
+
+> Unlike the old supabase/migrations flow, this needs host tooling (bun + a
+> workspace `pnpm install`) because node-pg-migrate runs on the host against the
+> container.
 
 ## Run
 

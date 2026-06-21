@@ -1,2 +1,0 @@
--- Intentionally no-op. This migration number was reserved by a removed
--- credential-store experiment before release.

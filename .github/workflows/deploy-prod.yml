@@ -559,7 +559,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply pending migrations (idempotent; halts on failure)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - name: Apply pending migrations (node-pg-migrate; halts on failure)
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
         run: |
@@ -568,8 +578,7 @@ jobs:
             echo "::error::PROD_DATABASE_URL secret is not set — refusing to deploy without a migration check."
             exit 1
           fi
-          command -v psql >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
-          bash scripts/apply-migrations.sh
+          pnpm --filter @kortix/db migrate
 
   # ── Deploy API to prod (EKS / Argo CD GitOps) ───────────────────────────────
   # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
