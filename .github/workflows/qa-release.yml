@@ -115,9 +115,17 @@ jobs:
       - name: Static + local functional checks
         run: make lint typecheck unit integration contract api-coverage
 
-      - name: Live API checks
+      - name: Live API smoke
+        timeout-minutes: 10
+        run: make smoke
+      # The full ke2e API flow suite (~278 live flows) is OFF by default: dev is
+      # already exercised by its own tests, and running the funded suite against
+      # it adds load + time. Opt in by setting repo var QA_RUN_API_SUITE=true once
+      # we wire it against a dedicated target.
+      - name: API flow suite (opt-in)
+        if: vars.QA_RUN_API_SUITE == 'true'
         timeout-minutes: 45
-        run: make smoke api
+        run: make api
 
       - name: Browser regression
         timeout-minutes: 30
