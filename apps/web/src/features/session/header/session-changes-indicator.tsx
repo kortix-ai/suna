@@ -14,10 +14,12 @@ import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { GitPullRequestArrow } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
@@ -54,7 +56,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
             viewBox="0 0 200 200"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="size-4 text-foreground"
+            className="text-foreground size-4"
           >
             <path
               d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
@@ -112,7 +114,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
                 viewBox="0 0 200 200"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
-                className="size-4 text-foreground"
+                className="text-foreground size-4"
               >
                 <path
                   d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
@@ -153,19 +155,34 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
             </span>
             <div className="min-w-0">
               <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
-                {changedCount} change{changedCount === 1 ? '' : 's'} in this version
+                {changedCount} change{changedCount === 1 ? '' : 's'}{' '}
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextInThis7c956bd8',
+                )}
               </h3>
               <p className="text-muted-foreground truncate text-xs">
-                Not in your <span className="font-mono">{baseRef}</span> version yet
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextNotIn5d967721',
+                )}
+                <span className="font-mono">{baseRef}</span>{' '}
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet689021ee',
+                )}
               </p>
             </div>
           </div>
           <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
-            This session is a separate version of{' '}
-            <span className="text-foreground/80 font-mono">{baseRef}</span>. These changes only
-            exist here — they&apos;re not in your{' '}
-            <span className="text-foreground/80 font-mono">{baseRef}</span> version yet. Open a
-            change request to merge them in.
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextThisSession009eeb83',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextTheseChanges18316b37',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextVersionYet922de6bd',
+            )}
           </p>
         </div>
 
@@ -200,10 +217,14 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
             ) : (
               <GitPullRequestArrow className="size-3.5" />
             )}
-            Open change request
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624',
+            )}
           </Button>
           <Button variant="ghost" size="sm" onClick={viewChanges}>
-            View changes
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextViewChangesaf192a3b',
+            )}
           </Button>
         </div>
       </PopoverContent>

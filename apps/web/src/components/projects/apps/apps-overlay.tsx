@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Apps overlay — the surface behind the Apps button in the project sidebar.
  *
@@ -22,16 +23,17 @@ import { useQuery } from '@tanstack/react-query';
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { IconApp, IconClose } from '@/components/ui/kortix-icons';
-import { cn } from '@/lib/utils';
-import { getProjectDetail } from '@/lib/projects-client';
-import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
 import { useProjectApps } from '@/hooks/projects/use-project-apps';
+import { getProjectDetail } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
 
 import { AppForm } from './app-form';
 import { AppLogs } from './app-logs';
 import { AppsList } from './apps-list';
 
 export function AppsOverlay({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const open = useAppsOverlayStore((s) => s.open);
   const section = useAppsOverlayStore((s) => s.section);
   const selectedSlug = useAppsOverlayStore((s) => s.selectedSlug);
@@ -63,14 +65,15 @@ export function AppsOverlay({ projectId }: { projectId: string }) {
         )}
       >
         <DialogTitle className="sr-only">
-          Apps · {projectName || 'project'}
+          {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsOverlayJsxTextApps825cf027')}
+          {projectName || 'project'}
         </DialogTitle>
 
         {/* Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
+        <div className="border-border/60 flex h-12 shrink-0 items-center justify-between border-b pr-2 pl-4">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <IconApp className="size-4 shrink-0 text-muted-foreground" />
-            <span className="font-medium text-foreground">
+            <IconApp className="text-muted-foreground size-4 shrink-0" />
+            <span className="text-foreground font-medium">
               {section === 'create' && 'Add app'}
               {section === 'edit' && `Edit · ${selectedSlug ?? ''}`}
               {section === 'logs' && `Logs · ${selectedSlug ?? ''}`}
@@ -79,7 +82,7 @@ export function AppsOverlay({ projectId }: { projectId: string }) {
             {projectName && section === 'list' && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="truncate text-muted-foreground">{projectName}</span>
+                <span className="text-muted-foreground truncate">{projectName}</span>
               </>
             )}
           </div>
@@ -87,14 +90,14 @@ export function AppsOverlay({ projectId }: { projectId: string }) {
             type="button"
             onClick={close}
             aria-label="Close"
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors"
           >
             <IconClose className="size-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="flex min-h-0 flex-1 bg-background">
+        <div className="bg-background flex min-h-0 flex-1">
           {section === 'list' && (
             <AppsList
               projectId={projectId}
@@ -109,23 +112,15 @@ export function AppsOverlay({ projectId }: { projectId: string }) {
             <AppForm projectId={projectId} onDone={() => setSection('list')} />
           )}
           {section === 'edit' && existing && (
-            <AppForm
-              projectId={projectId}
-              existing={existing}
-              onDone={() => setSection('list')}
-            />
+            <AppForm projectId={projectId} existing={existing} onDone={() => setSection('list')} />
           )}
           {section === 'edit' && !existing && !appsQuery.isLoading && (
-            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-              That app no longer exists.
+            <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppsOverlayJsxTextThatAppNoe42e1373')}
             </div>
           )}
           {section === 'logs' && selectedSlug && (
-            <AppLogs
-              projectId={projectId}
-              slug={selectedSlug}
-              onClose={() => setSection('list')}
-            />
+            <AppLogs projectId={projectId} slug={selectedSlug} onClose={() => setSection('list')} />
           )}
         </div>
       </DialogContent>

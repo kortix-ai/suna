@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Blocks, KeyRound } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { RiCpuLine } from 'react-icons/ri';
@@ -21,13 +22,17 @@ import { useStep2Director, type Step2View } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
 function CostTrackingPanel() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: 'easeOut' }}
     >
-      <Panel title="Gateway usage" count="this month">
+      <Panel
+        title={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectClic4f03099')}
+        count={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectCli1e349a6f')}
+      >
         <div className="bg-border grid grid-cols-3 gap-px">
           {[
             { label: 'Spend', value: '$12.40' },
@@ -54,11 +59,12 @@ function ModelsView({
   connectedDomains: string[];
   showCostPanel: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col">
       <PageHead
         title="Models"
-        sub="Bring any provider — routed per session, keys stay in Secrets"
+        sub={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectClif30bc303')}
       />
 
       <div className="space-y-2">
@@ -104,7 +110,7 @@ function ModelsView({
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
         <KeyRound className="size-3.5 shrink-0" />
-        Connecting a provider writes its API key to Secrets — sessions pick it up at sandbox boot.
+        {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectClidcc2a2a7')}
       </div>
 
       <AnimatePresence>
@@ -119,6 +125,7 @@ function ModelsView({
 }
 
 function IntegrationsView({ connectedNames }: { connectedNames: string[] }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const featured = INTEGRATIONS.filter(([, name]) =>
     ['GitHub', 'Slack', 'Linear', 'Notion', 'HubSpot', 'Stripe'].includes(name),
   );
@@ -129,7 +136,7 @@ function IntegrationsView({ connectedNames }: { connectedNames: string[] }) {
         <div className="min-w-0">
           <h3 className="text-foreground text-lg font-semibold tracking-tight">Integrations</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            3,000+ apps · connected once, shared securely across the org
+            {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectCli3dee7a71')}
           </p>
         </div>
       </div>
@@ -161,7 +168,9 @@ function IntegrationsView({ connectedNames }: { connectedNames: string[] }) {
         className="border-border/60 bg-muted/20 mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-dashed py-3 text-sm"
       >
         <Blocks className="text-muted-foreground size-4" />
-        <span className="text-foreground font-medium">Browse all 3,000+ apps</span>
+        <span className="text-foreground font-medium">
+          {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep2ConnectClid2a078a2')}
+        </span>
       </button>
     </div>
   );

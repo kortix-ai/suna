@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Project-wide approval rules for tool calls. Source of truth = `kortix.toml`;
  * this panel CRUDs the same file via the admin endpoint, then the gateway
@@ -15,9 +16,9 @@
  *   • Default behavior: "Ask before risky actions" (risk) vs "Run everything"
  *     (allow_all, legacy).
  */
-import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,8 +35,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import {
   listProjectPolicies,
   setProjectPolicies,
@@ -43,6 +42,8 @@ import {
   type PolicyDefaultMode,
   type ProjectPolicy,
 } from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 interface DraftRule {
   id: string;
@@ -51,9 +52,13 @@ interface DraftRule {
 }
 
 const ACTION_META: Record<PolicyAction, { label: string; description: string; tint: string }> = {
-  always_run:       { label: 'Allow',     description: 'Run without asking',        tint: 'text-foreground' },
-  require_approval: { label: 'Ask first', description: 'Pause for human approval',  tint: 'text-amber-600 dark:text-amber-400' },
-  block:            { label: 'Block',     description: 'Deny + hide from agents',   tint: 'text-destructive' },
+  always_run: { label: 'Allow', description: 'Run without asking', tint: 'text-foreground' },
+  require_approval: {
+    label: 'Ask first',
+    description: 'Pause for human approval',
+    tint: 'text-amber-600 dark:text-amber-400',
+  },
+  block: { label: 'Block', description: 'Deny + hide from agents', tint: 'text-destructive' },
 };
 
 const DEFAULT_OPTIONS: Array<{ value: PolicyDefaultMode; label: string; description: string }> = [
@@ -74,6 +79,7 @@ function newRuleId() {
 }
 
 export function PoliciesPanel({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['project-policies', projectId] as const, [projectId]);
   const query = useQuery({
@@ -88,10 +94,16 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!query.data) return;
-    const seeded = query.data.policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action }));
+    const seeded = query.data.policies.map((p) => ({
+      id: newRuleId(),
+      match: p.match,
+      action: p.action,
+    }));
     setDraft(seeded);
     setDefaultMode(query.data.defaultMode);
-    setServerSig(JSON.stringify({ policies: query.data.policies, defaultMode: query.data.defaultMode }));
+    setServerSig(
+      JSON.stringify({ policies: query.data.policies, defaultMode: query.data.defaultMode }),
+    );
   }, [query.data]);
 
   const currentSig = JSON.stringify({
@@ -127,14 +139,23 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
   }
   function revert() {
     if (!query.data) return;
-    setDraft(query.data.policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action })));
+    setDraft(
+      query.data.policies.map((p) => ({ id: newRuleId(), match: p.match, action: p.action })),
+    );
     setDefaultMode(query.data.defaultMode);
   }
 
   if (isForbidden) {
     return (
-      <InfoBanner tone="warning" title="Admin access required">
-        Only project managers can edit policies.
+      <InfoBanner
+        tone="warning"
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsPoliciesPanelJsxAttrTitleAdminAccessRequired34f66101',
+        )}
+      >
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsPoliciesPanelJsxTextOnlyProjectManagersCan603f67fc',
+        )}
       </InfoBanner>
     );
   }
@@ -145,8 +166,12 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       {/* ── Default behavior — single card, two compact segmented options ── */}
       <SectionCard
-        title="Default behavior"
-        description="What happens when no rule below matches. Override per tool with a rule."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsPoliciesPanelJsxAttrTitleDefaultBehavior16e16541',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsPoliciesPanelJsxAttrDescriptionWhatHappensWhen4b8b2205',
+        )}
       >
         {query.isLoading ? (
           <Skeleton className="h-14 rounded-2xl" />
@@ -169,9 +194,13 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                 >
                   <div className="flex w-full items-center justify-between gap-2">
                     <span className="text-sm font-medium">{opt.label}</span>
-                    {selected && <Badge variant="secondary" size="sm">Current</Badge>}
+                    {selected && (
+                      <Badge variant="secondary" size="sm">
+                        Current
+                      </Badge>
+                    )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{opt.description}</p>
+                  <p className="text-muted-foreground text-xs">{opt.description}</p>
                 </button>
               );
             })}
@@ -182,19 +211,32 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       {/* ── Rules list ────────────────────────────────────────────────────── */}
       <SectionCard
         title="Rules"
-        description="Top to bottom — first match wins. Project rules override what individual connectors declare."
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsPoliciesPanelJsxAttrDescriptionTopToBottom4926dcea',
+        )}
         count={draft.length > 0 ? draft.length : undefined}
         action={
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={addRule} disabled={query.isLoading}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5 text-xs"
+            onClick={addRule}
+            disabled={query.isLoading}
+          >
             <Plus className="h-3.5 w-3.5" />
-            Add rule
+            {tI18nHardcoded.raw('autoComponentsProjectsPoliciesPanelJsxTextAddRulea294c4bd')}
           </Button>
         }
         flush
       >
         {parseErrors.length > 0 && (
           <div className="px-4 pt-3">
-            <InfoBanner tone="warning" title="kortix.toml had issues">
+            <InfoBanner
+              tone="warning"
+              title={tI18nHardcoded.raw(
+                'autoComponentsProjectsPoliciesPanelJsxAttrTitleKortixTomlHad8db85c74',
+              )}
+            >
               <ul className="ml-1 list-disc space-y-0.5">
                 {parseErrors.map((e, i) => (
                   <li key={i} className="text-xs">
@@ -208,18 +250,24 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
 
         {query.isLoading ? (
           <div className="space-y-2 p-4">
-            {[0, 1].map((i) => <Skeleton key={i} className="h-12 rounded-2xl" />)}
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-12 rounded-2xl" />
+            ))}
           </div>
         ) : draft.length === 0 ? (
           <EmptyState
             icon={ShieldCheck}
             size="sm"
-            title="No rules yet"
-            description="Require approval for sensitive tools, or block ones you don't want agents touching."
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsPoliciesPanelJsxAttrTitleNoRulesYet795c2fb5',
+            )}
+            description={tI18nHardcoded.raw(
+              'autoComponentsProjectsPoliciesPanelJsxAttrDescriptionRequireApprovalFor7e7b9477',
+            )}
             action={
               <Button size="sm" variant="outline" className="gap-1.5" onClick={addRule}>
                 <Plus className="h-3.5 w-3.5" />
-                Add rule
+                {tI18nHardcoded.raw('autoComponentsProjectsPoliciesPanelJsxTextAddRulea294c4bd')}
               </Button>
             }
           />
@@ -229,7 +277,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
               <ListRow
                 key={rule.id}
                 leading={
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted/60 font-mono text-xs text-muted-foreground">
+                  <span className="bg-muted/60 text-muted-foreground flex h-6 w-6 items-center justify-center rounded-full font-mono text-xs">
                     {idx + 1}
                   </span>
                 }
@@ -238,7 +286,9 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                     <Input
                       value={rule.match}
                       onChange={(e) => updateRule(rule.id, { match: e.target.value })}
-                      placeholder="stripe.charges.create  ·  stripe.*  ·  *"
+                      placeholder={tI18nHardcoded.raw(
+                        'autoComponentsProjectsPoliciesPanelJsxAttrPlaceholderStripeChargesCreate0ff0fa54',
+                      )}
                       className="h-8 min-w-[16rem] flex-1 font-mono text-sm"
                       spellCheck={false}
                       aria-label={`Rule ${idx + 1} match pattern`}
@@ -252,23 +302,34 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
                         // Pause for human approval"). Size to content with a
                         // floor so it never clips, and shrink-0 so the flex row
                         // can't squeeze it back into a truncation.
-                        className={cn('h-8 w-auto min-w-[16rem] shrink-0', ACTION_META[rule.action].tint)}
+                        className={cn(
+                          'h-8 w-auto min-w-[16rem] shrink-0',
+                          ACTION_META[rule.action].tint,
+                        )}
                         aria-label={`Rule ${idx + 1} action`}
                       >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(['always_run', 'require_approval', 'block'] as PolicyAction[]).map((a) => (
-                          <SelectItem key={a} value={a}>
-                            <span className={cn('font-medium', ACTION_META[a].tint)}>{ACTION_META[a].label}</span>
-                            <span className="ml-2 text-xs text-muted-foreground">{ACTION_META[a].description}</span>
-                          </SelectItem>
-                        ))}
+                        {(['always_run', 'require_approval', 'block'] as PolicyAction[]).map(
+                          (a) => (
+                            <SelectItem key={a} value={a}>
+                              <span className={cn('font-medium', ACTION_META[a].tint)}>
+                                {ACTION_META[a].label}
+                              </span>
+                              <span className="text-muted-foreground ml-2 text-xs">
+                                {ACTION_META[a].description}
+                              </span>
+                            </SelectItem>
+                          ),
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                 }
-                subtitle={<span className="text-xs text-muted-foreground">{matchHint(rule.match)}</span>}
+                subtitle={
+                  <span className="text-muted-foreground text-xs">{matchHint(rule.match)}</span>
+                }
                 trailing={
                   <Button
                     size="icon"
@@ -289,13 +350,15 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
       {dirty && (
         <div
           className={cn(
-            'sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-2xl border bg-card px-4 py-3 shadow-sm',
+            'bg-card sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm',
             'border-primary/40',
           )}
         >
-          <div className="text-xs text-muted-foreground">
-            Unsaved changes. Saving commits to{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">kortix.toml</code>.
+          <div className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsPoliciesPanelJsxTextUnsavedChangesSavingCommitse36b25bc',
+            )}{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">kortix.toml</code>.
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={revert} disabled={save.isPending}>
@@ -303,7 +366,7 @@ export function PoliciesPanel({ projectId }: { projectId: string }) {
             </Button>
             <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Save changes
+              {tI18nHardcoded.raw('autoComponentsProjectsPoliciesPanelJsxTextSaveChanges3a1ef407')}
             </Button>
           </div>
         </div>

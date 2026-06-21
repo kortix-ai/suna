@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { ArrowDown, Check, FileText } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
 export function Step4ShipCli() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const reduced = useReducedMotion();
   const [approved, setApproved] = useState(false);
 
@@ -35,16 +37,21 @@ export function Step4ShipCli() {
     <div className="relative aspect-19/22 w-full overflow-visible">
       <WebPanelWrapper activeTab="review">
         <div className="flex h-full flex-col">
-          <PageHead title="Review" sub="See what went in and what came back before you keep it" />
+          <PageHead
+            title="Review"
+            sub={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipCli2e1d3562')}
+          />
 
           <motion.div {...enter(0)} className="space-y-3">
             <div>
               <div className="text-muted-foreground mb-1.5 text-xs font-medium">Input</div>
               <div className="border-border bg-card rounded-md border px-4 py-3">
                 <p className="text-foreground text-sm leading-snug">
-                  Draft the Monday revenue brief
+                  {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipClica1df42d')}
                 </p>
-                <p className="text-muted-foreground mt-1 text-xs">Stripe · HubSpot · Linear</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipClid04ede5a')}
+                </p>
               </div>
             </div>
 
@@ -58,9 +65,11 @@ export function Step4ShipCli() {
                     <FileText className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-foreground text-sm font-medium">Monday revenue brief</div>
+                    <div className="text-foreground text-sm font-medium">
+                      {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipCli9be01ef2')}
+                    </div>
                     <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-                      MRR, pipeline, and blockers in one doc — ready to share.
+                      {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipCli60d302f9')}
                     </p>
                   </div>
                   {approved ? (
@@ -88,7 +97,7 @@ export function Step4ShipCli() {
                   transition={{ duration: 0.25, ease: 'easeOut' }}
                 >
                   <InfoBanner tone="success" icon={Check} title="Approved">
-                    This brief is now part of your workspace for the team to reuse.
+                    {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipCli291a9f3d')}
                   </InfoBanner>
                 </motion.div>
               ) : (
@@ -104,7 +113,7 @@ export function Step4ShipCli() {
                     Approve
                   </Button>
                   <span className="text-muted-foreground text-xs">
-                    Read the output first — nothing ships until you say so.
+                    {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep4ShipCli68224593')}
                   </span>
                 </motion.div>
               )}

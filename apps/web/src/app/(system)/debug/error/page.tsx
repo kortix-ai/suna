@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { SystemFaultView } from '@/components/common/system-fault';
+import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 type CrashMode = 'reference' | 'type' | 'custom' | 'long' | 'nostack';
 
@@ -52,6 +53,7 @@ function triggerRealCrash(mode: CrashMode): never {
 }
 
 export default function DebugErrorPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [mode, setMode] = useState<CrashMode>('custom');
   const [crash, setCrash] = useState<CrashMode | null>(null);
 
@@ -85,13 +87,19 @@ export default function DebugErrorPage() {
           background: 'rgba(20,20,20,0.92)',
           backdropFilter: 'blur(8px)',
           color: '#e5e5e5',
-          fontFamily:
-            'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace',
           fontSize: 12,
         }}
       >
-        <div style={{ fontSize: 10, opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          Preview variant
+        <div
+          style={{
+            fontSize: 10,
+            opacity: 0.5,
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+          }}
+        >
+          {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextPreviewVariant8b7cfd4d')}
         </div>
         {PRESETS.map((p) => (
           <button
@@ -128,11 +136,12 @@ export default function DebugErrorPage() {
             fontFamily: 'inherit',
           }}
         >
-          ⚠ Throw for real (hit the boundary)
+          {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextThrowForRealc87f3f6e')}
         </button>
         <div style={{ fontSize: 9.5, opacity: 0.4, lineHeight: 1.5, marginTop: 2 }}>
-          In <code>next dev</code> the Next overlay appears first — dismiss it
-          with <b>×</b> to see the real boundary underneath. In prod it shows directly.
+          In <code>{tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextNextDev93619a23')}</code>{' '}
+          {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextTheNextOverlaye67fbfec')}
+          <b>×</b> {tI18nHardcoded.raw('autoAppSystemDebugErrorPageJsxTextToSeeThee15ec5f8')}
         </div>
       </div>
     </div>

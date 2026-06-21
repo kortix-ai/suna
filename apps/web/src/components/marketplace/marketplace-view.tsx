@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Inline Marketplace surface — rendered as a Customize section, sitting right
  * next to Skills / Agents / Commands (not a floating overlay). Browse the
@@ -7,9 +8,9 @@
  * in the next session. Skills-only for now.
  */
 
-import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Store } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
@@ -19,8 +20,8 @@ import {
   useRegistryUpdates,
   useUninstallMarketplaceItem,
 } from '@/hooks/marketplace';
-import { getProjectDetail } from '@/lib/projects-client';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
+import { getProjectDetail } from '@/lib/projects-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import { AddToProjectDialog } from './add-to-project-dialog';
 import { MarketplaceBrowser } from './marketplace-browser';
@@ -29,6 +30,7 @@ import { MarketplaceInstalledPanel } from './marketplace-installed-panel';
 import { MarketplaceItemDetail } from './marketplace-item-detail';
 
 export function MarketplaceView({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const closeDetail = useMarketplaceDetailStore((s) => s.close);
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
@@ -77,7 +79,9 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
           onBack={closeDetail}
           onAdd={onAdd}
           onRemove={onRemove}
-          addLabel="Add to this project"
+          addLabel={tI18nHardcoded.raw(
+            'autoComponentsMarketplaceMarketplaceViewJsxAttrAddLabelAddToThisc1246454',
+          )}
           installedNames={installedNames}
         />
         <AddToProjectDialog
@@ -115,7 +119,9 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
               onClick={() => setTab('installed')}
             >
               Installed
-              {installedCount > 0 && <span className="text-muted-foreground/60 ml-1">{installedCount}</span>}
+              {installedCount > 0 && (
+                <span className="text-muted-foreground/60 ml-1">{installedCount}</span>
+              )}
               {updateCount > 0 && (
                 <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
                   {updateCount}
@@ -130,7 +136,9 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
         {tab === 'explore' ? (
           <>
             <p className="text-muted-foreground mb-4 text-sm">
-              One click adds a skill into this project — live in the next session.
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceViewJsxTextOneClickAddsA6902b908',
+              )}
             </p>
             <MarketplaceBrowser
               installedNames={installedNames}
@@ -142,7 +150,9 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
         ) : tab === 'marketplaces' ? (
           <>
             <p className="text-muted-foreground mb-4 text-sm">
-              Enable sources to pull their skills into your catalog — any public GitHub repo of SKILL.md files works out of the box.
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceViewJsxTextEnableSourcesToPulle6187609',
+              )}
             </p>
             <MarketplaceDiscover
               onBrowse={(id) => {

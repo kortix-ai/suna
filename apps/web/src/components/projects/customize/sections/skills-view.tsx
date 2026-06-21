@@ -18,42 +18,30 @@ import { useTranslations } from 'next-intl';
  * (the "Edit with agent" action) or by committing the file.
  */
 
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ExternalLink,
-  Loader2,
-  Pencil,
-  Plus,
-  Search,
-  ShieldAlert,
-  Sparkles,
-} from 'lucide-react';
+import { ExternalLink, Loader2, Pencil, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
+import {
+  editConfigPrompt,
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/components/projects/customize/use-configure-thread';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  FileContentRenderer,
-  ProjectFilesProvider,
-} from '@/features/project-files';
-import { cn } from '@/lib/utils';
+import { FileContentRenderer, ProjectFilesProvider } from '@/features/project-files';
 import {
   getProjectDetail,
   listProjectFiles,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
-import {
-  useConfigureThread,
-  newConfigPrompt,
-  editConfigPrompt,
-} from '@/components/projects/customize/use-configure-thread';
 
 type Skill = ProjectConfigSummary['skills'][number];
 
@@ -73,8 +61,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
     [detailQuery.data?.config?.skills],
   );
   const isForbidden =
-    detailQuery.isError &&
-    /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
+    detailQuery.isError && /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
 
   // The tree is rooted at the skills directory (`<opencode>/skills`), derived
   // from any known skill's path.
@@ -96,9 +83,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
   // Right pane cursor + per-folder expand state. The tree opens fully collapsed
   // (empty set), so a fresh visit shows only the top-level skill folders.
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
+  const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [query, setQuery] = useState('');
 
   const togglePath = (path: string) =>
@@ -141,99 +126,107 @@ export function SkillsView({ projectId }: { projectId: string }) {
 
   return (
     <ProjectFilesProvider value={{ projectId, ref: defaultBranch }}>
-    <div className="flex h-full min-h-0 flex-col md:flex-row">
-      {/* ── File tree column ─────────────────────────────────────────── */}
-      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[260px] md:border-b-0 md:border-r">
-        <CustomizeSectionHeader
-          icon={Sparkles}
-          title="Skills"
-          count={skills.length}
-          actions={
-            <div className="flex items-center gap-1.5">
-              <MarketplaceSectionButton projectId={projectId} />
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => configure.start(newConfigPrompt('skill'))}
-                disabled={configure.pending}
-              >
-                {configure.pending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Plus className="h-3 w-3" />
+      <div className="flex h-full min-h-0 flex-col md:flex-row">
+        {/* ── File tree column ─────────────────────────────────────────── */}
+        <aside className="border-border/60 bg-background flex max-h-[42vh] w-full shrink-0 flex-col border-b md:max-h-none md:w-[260px] md:border-r md:border-b-0">
+          <CustomizeSectionHeader
+            icon={Sparkles}
+            title="Skills"
+            count={skills.length}
+            actions={
+              <div className="flex items-center gap-1.5">
+                <MarketplaceSectionButton projectId={projectId} />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => configure.start(newConfigPrompt('skill'))}
+                  disabled={configure.pending}
+                >
+                  {configure.pending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Plus className="h-3 w-3" />
+                  )}
+                  New
+                </Button>
+              </div>
+            }
+          />
+
+          <div className="border-border/40 border-b px-3 py-2.5">
+            <div className="relative">
+              <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
+              <Input
+                placeholder={tHardcodedUi.raw(
+                  'appProjectsIdCustomizeSkillsPage.line149JsxAttrPlaceholderSearchSkills',
                 )}
-                New
-              </Button>
-            </div>
-          }
-        />
-
-        <div className="border-b border-border/40 px-3 py-2.5">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
-            <Input
-              placeholder={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line149JsxAttrPlaceholderSearchSkills')}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pl-8 text-sm placeholder:text-muted-foreground/60"
-            />
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
-          {detailQuery.isLoading ? (
-            <ListSkeleton />
-          ) : isForbidden ? (
-            <ForbiddenNotice />
-          ) : detailQuery.isError ? (
-            <ErrorNotice
-              message={(detailQuery.error as Error)?.message ?? 'Failed to load skills'}
-              onRetry={() => detailQuery.refetch()}
-            />
-          ) : skills.length === 0 ? (
-            <EmptyList
-              icon={Sparkles}
-              label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')}
-              onCreate={() => configure.start(newConfigPrompt('skill'))}
-              creating={configure.pending}
-            />
-          ) : tree.length === 0 ? (
-            searching ? <NoMatches query={query} /> : <ListSkeleton />
-          ) : (
-            <>
-              <FileTreeSprite />
-              <FileTree
-                nodes={tree}
-                rootPath={skillsRoot ?? ''}
-                isExpanded={isExpanded}
-                onToggle={togglePath}
-                selectedPath={selectedFilePath}
-                onSelectFile={setSelectedFilePath}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="placeholder:text-muted-foreground/60 h-8 pl-8 text-sm"
               />
-            </>
-          )}
-        </div>
-      </aside>
+            </div>
+          </div>
 
-      {/* ── Detail column (selected file content) ──────────────────────
+          <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+            {detailQuery.isLoading ? (
+              <ListSkeleton />
+            ) : isForbidden ? (
+              <ForbiddenNotice />
+            ) : detailQuery.isError ? (
+              <ErrorNotice
+                message={(detailQuery.error as Error)?.message ?? 'Failed to load skills'}
+                onRetry={() => detailQuery.refetch()}
+              />
+            ) : skills.length === 0 ? (
+              <EmptyList
+                icon={Sparkles}
+                label={tHardcodedUi.raw(
+                  'appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet',
+                )}
+                onCreate={() => configure.start(newConfigPrompt('skill'))}
+                creating={configure.pending}
+              />
+            ) : tree.length === 0 ? (
+              searching ? (
+                <NoMatches query={query} />
+              ) : (
+                <ListSkeleton />
+              )
+            ) : (
+              <>
+                <FileTreeSprite />
+                <FileTree
+                  nodes={tree}
+                  rootPath={skillsRoot ?? ''}
+                  isExpanded={isExpanded}
+                  onToggle={togglePath}
+                  selectedPath={selectedFilePath}
+                  onSelectFile={setSelectedFilePath}
+                />
+              </>
+            )}
+          </div>
+        </aside>
+
+        {/* ── Detail column (selected file content) ──────────────────────
           min-h-0 + min-w-0 are load-bearing: without min-h-0 the inner
           scroll div can't shrink below its content, so the right pane
           never scrolls. */}
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-        {selectedFilePath && defaultBranch ? (
-          <SkillFileViewer
-            projectId={projectId}
-            skill={owningSkill}
-            selectedPath={selectedFilePath}
-          />
-        ) : detailQuery.isLoading ? (
-          <DetailSkeleton />
-        ) : (
-          <DetailEmpty />
-        )}
-      </section>
-    </div>
+        <section className="bg-background flex min-h-0 min-w-0 flex-1 flex-col">
+          {selectedFilePath && defaultBranch ? (
+            <SkillFileViewer
+              projectId={projectId}
+              skill={owningSkill}
+              selectedPath={selectedFilePath}
+            />
+          ) : detailQuery.isLoading ? (
+            <DetailSkeleton />
+          ) : (
+            <DetailEmpty />
+          )}
+        </section>
+      </div>
     </ProjectFilesProvider>
   );
 }
@@ -254,10 +247,7 @@ function deriveSkillsRoot(skills: readonly Skill[]): string | null {
 
 /** The skill that owns a file (nearest ancestor dir holding a SKILL.md), used to
  *  scope the "Edit with agent" action. */
-function findOwningSkill(
-  skills: readonly Skill[],
-  fullPath: string | null,
-): Skill | null {
+function findOwningSkill(skills: readonly Skill[], fullPath: string | null): Skill | null {
   if (!fullPath) return null;
   let best: Skill | null = null;
   let bestLen = -1;
@@ -292,12 +282,10 @@ function SkillFileViewer({
 
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-        <span className="truncate text-sm font-mono text-foreground">
-          {fileName}
-        </span>
+      <header className="border-border/60 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+        <span className="text-foreground truncate font-mono text-sm">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground/70">
+        <span className="text-muted-foreground/70 min-w-0 flex-1 truncate font-mono text-xs">
           {selectedPath}
         </span>
         {skill && (
@@ -323,13 +311,8 @@ function SkillFileViewer({
   );
 }
 
-function DetailToolbarActions({
-  onEdit,
-  editing,
-}: {
-  onEdit: () => void;
-  editing: boolean;
-}) {
+function DetailToolbarActions({ onEdit, editing }: { onEdit: () => void; editing: boolean }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -344,7 +327,9 @@ function DetailToolbarActions({
         ) : (
           <Pencil className="h-3.5 w-3.5" />
         )}
-        Edit with agent
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsSkillsViewJsxTextEditWithc3582225',
+        )}
       </Button>
     </div>
   );
@@ -365,7 +350,7 @@ function ListSkeleton() {
 function DetailSkeleton() {
   return (
     <>
-      <div className="h-12 border-b border-border/60" />
+      <div className="border-border/60 h-12 border-b" />
       <div className="mx-auto w-full max-w-3xl space-y-3 px-6 py-8">
         <Skeleton className="h-3 w-16" />
         <Skeleton className="h-7 w-48" />
@@ -395,7 +380,9 @@ function DetailEmpty() {
     <EmptyState
       icon={Sparkles}
       title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line590JsxAttrTitleSelectASkill')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line591JsxAttrDescriptionPickASkillMdFromTheListTo')}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSkillsPage.line591JsxAttrDescriptionPickASkillMdFromTheListTo',
+      )}
     />
   );
 }
@@ -404,8 +391,9 @@ function NoMatches({ query }: { query: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-6 text-center">
-      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line600JsxTextNoMatchesFor')}{' '}
-        <span className="font-mono text-foreground">{query}</span>.
+      <p className="text-muted-foreground text-xs">
+        {tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line600JsxTextNoMatchesFor')}{' '}
+        <span className="text-foreground font-mono">{query}</span>.
       </p>
     </div>
   );
@@ -422,6 +410,7 @@ function EmptyList({
   onCreate: () => void;
   creating: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
@@ -429,8 +418,15 @@ function EmptyList({
       size="sm"
       title={label}
       description={
-        <>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line621JsxTextCommitA')}{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line623JsxTextKortixOpencodeSkillsLtSlugGtSkillMd')}</code>{' '}{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line625JsxTextAndItAposLlShowUpHere')}</>
+        <>
+          {tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line621JsxTextCommitA')}{' '}
+          <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
+            {tHardcodedUi.raw(
+              'appProjectsIdCustomizeSkillsPage.line623JsxTextKortixOpencodeSkillsLtSlugGtSkillMd',
+            )}
+          </code>{' '}
+          {tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line625JsxTextAndItAposLlShowUpHere')}
+        </>
       }
       action={
         <div className="flex flex-col items-center gap-2">
@@ -446,14 +442,12 @@ function EmptyList({
             ) : (
               <Plus className="h-3.5 w-3.5" />
             )}
-            Create a skill
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSkillsViewJsxTextCreateA722fbf3c',
+            )}
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <a
-              href="https://opencode.ai/docs/skills/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a href="https://opencode.ai/docs/skills/" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-3 w-3" />
               Docs
             </a>
@@ -468,23 +462,28 @@ function ForbiddenNotice() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-2">
-      <InfoBanner icon={ShieldAlert} title={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line646JsxAttrTitleAccessRequired')}>{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line647JsxTextNoPermissionToReadThisRepo')}</InfoBanner>
+      <InfoBanner
+        icon={ShieldAlert}
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSkillsPage.line646JsxAttrTitleAccessRequired',
+        )}
+      >
+        {tHardcodedUi.raw(
+          'appProjectsIdCustomizeSkillsPage.line647JsxTextNoPermissionToReadThisRepo',
+        )}
+      </InfoBanner>
     </div>
   );
 }
 
-function ErrorNotice({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
+function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="px-3 py-4">
-      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line661JsxTextFailedToLoad')}</p>
-      <p className="mt-1 text-xs text-destructive/80">{message}</p>
+      <p className="text-destructive text-sm font-medium">
+        {tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line661JsxTextFailedToLoad')}
+      </p>
+      <p className="text-destructive/80 mt-1 text-xs">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
 import { ExternalLink, FileText, Globe, Loader2, LogIn, Play, ShieldAlert } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ function apiOrigin() {
 }
 
 export default function PublicSessionSharePage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const params = useParams();
   const token = params?.token as string;
   const [meta, setMeta] = useState<PublicShareMeta | null>(null);
@@ -104,14 +106,17 @@ export default function PublicSessionSharePage() {
     }
     setStarting(true);
     try {
-      await fetch(`${base}/projects/${meta.share.project_id}/sessions/${meta.share.session_id}/start`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
+      await fetch(
+        `${base}/projects/${meta.share.project_id}/sessions/${meta.share.session_id}/start`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
         },
-        body: '{}',
-      });
+      );
       window.location.reload();
     } finally {
       setStarting(false);
@@ -135,8 +140,12 @@ export default function PublicSessionSharePage() {
       <main className="bg-background text-foreground flex min-h-screen items-center justify-center px-6">
         <div className="max-w-sm text-center">
           <ShieldAlert className="text-muted-foreground mx-auto mb-4 h-8 w-8" />
-          <h1 className="text-lg font-semibold">Share link unavailable</h1>
-          <p className="text-muted-foreground mt-2 text-sm">{error ?? 'This link cannot be opened.'}</p>
+          <h1 className="text-lg font-semibold">
+            {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641')}
+          </h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            {error ?? 'This link cannot be opened.'}
+          </p>
         </div>
       </main>
     );
@@ -150,7 +159,9 @@ export default function PublicSessionSharePage() {
     ? 'View only · no workspace browsing'
     : 'No terminal, files, or session controls';
   const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
-  const offlineTitle = isFileShare ? 'This shared file is offline' : 'This shared preview is offline';
+  const offlineTitle = isFileShare
+    ? 'This shared file is offline'
+    : 'This shared preview is offline';
   const offlineDescription = isFileShare
     ? 'The session runtime that serves this file is not active. Sign in with access to this project to start it.'
     : 'The session runtime is not active. Sign in with access to this project to start it.';
@@ -163,7 +174,7 @@ export default function PublicSessionSharePage() {
             <KortixLogo variant="logomark" size={18} className="text-foreground" />
             <span className="bg-border hidden h-4 w-px sm:block" />
             <span className="text-muted-foreground text-xs font-medium">
-              Public share
+              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952')}
             </span>
           </div>
           <div className="flex min-w-0 items-center gap-2.5">
@@ -187,14 +198,18 @@ export default function PublicSessionSharePage() {
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {offline && hasAuth && (
             <Button size="sm" className="h-8 gap-1.5" onClick={startSession} disabled={starting}>
-              {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+              {starting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
               Start
             </Button>
           )}
           {!hasAuth ? (
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={signInForAccess}>
               <LogIn className="h-3.5 w-3.5" />
-              Sign in
+              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextSignInc63c237b')}
             </Button>
           ) : (
             <Button
@@ -205,7 +220,7 @@ export default function PublicSessionSharePage() {
                 window.location.href = sessionHref;
               }}
             >
-              Open in Kortix
+              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
             </Button>
           )}
           {iframeSrc && !offline && !isFileShare && (
@@ -216,7 +231,7 @@ export default function PublicSessionSharePage() {
               onClick={() => window.open(iframeSrc, '_blank', 'noopener,noreferrer')}
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Open app
+              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9')}
             </Button>
           )}
         </div>
@@ -226,17 +241,21 @@ export default function PublicSessionSharePage() {
           <div className="flex h-full min-h-[60vh] items-center justify-center px-6 text-center">
             <div className="max-w-sm">
               <h2 className="text-base font-semibold">{offlineTitle}</h2>
-              <p className="text-muted-foreground mt-2 text-sm">
-                {offlineDescription}
-              </p>
+              <p className="text-muted-foreground mt-2 text-sm">{offlineDescription}</p>
               {hasAuth ? (
                 <Button className="mt-5 gap-1.5" onClick={startSession} disabled={starting}>
-                  {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  Start session
+                  {starting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
+                  )}
                 </Button>
               ) : (
                 <Button className="mt-5" onClick={signInForAccess}>
-                  Sign in to start
+                  {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextSignInb66c3487')}
                 </Button>
               )}
             </div>
@@ -248,7 +267,9 @@ export default function PublicSessionSharePage() {
             title={meta.share.label}
             src={iframeSrc}
             className="h-full min-h-[calc(100vh-64px)] w-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
+            sandbox={tI18nHardcoded.raw(
+              'autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013',
+            )}
           />
         )}
       </section>

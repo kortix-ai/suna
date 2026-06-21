@@ -1,16 +1,17 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import Image from 'next/image';
-import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import type { Metadata } from 'next';
+import { getTranslations } from 'next-intl/server';
+import Image from 'next/image';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
-import { blogSource } from '@/lib/blog-source';
-import { getAllPosts, resolveAuthor, formatPostDate } from '@/lib/blog';
-import { siteMetadata } from '@/lib/site-metadata';
 import { BlogProse } from '@/components/blog/blog-prose';
 import { PostByline } from '@/components/blog/post-byline';
 import { PostCard } from '@/components/blog/post-card';
 import { Badge } from '@/components/ui/badge';
+import { getAllPosts, resolveAuthor } from '@/lib/blog';
+import { blogSource } from '@/lib/blog-source';
+import { siteMetadata } from '@/lib/site-metadata';
 
 // Render plain HTML elements so BlogProse owns all typography — no docs chrome.
 // Internal links route client-side; external links open safely in a new tab.
@@ -43,7 +44,9 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 
   const data = page.data as any;
   const url = `${siteMetadata.url}/blog/${slug}`;
-  const ogImage = data.cover ? `${siteMetadata.url}${data.cover}` : `${siteMetadata.url}/banner.png`;
+  const ogImage = data.cover
+    ? `${siteMetadata.url}${data.cover}`
+    : `${siteMetadata.url}/banner.png`;
   const author = resolveAuthor(data.author);
 
   return {
@@ -77,6 +80,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 }
 
 export default async function BlogPostPage(props: PageProps) {
+  const tI18nHardcoded = await getTranslations('hardcodedUi');
   const { slug } = await props.params;
   const page = blogSource.getPage([slug]);
   if (!page) notFound();
@@ -86,8 +90,7 @@ export default async function BlogPostPage(props: PageProps) {
 
   const MDX = data.body;
   const author = resolveAuthor(data.author);
-  const readingTime =
-    getAllPosts().find((p) => p.slug === slug)?.readingTime ?? 1;
+  const readingTime = getAllPosts().find((p) => p.slug === slug)?.readingTime ?? 1;
   const more = getAllPosts()
     .filter((p) => p.slug !== slug)
     .slice(0, 2);
@@ -125,7 +128,7 @@ export default async function BlogPostPage(props: PageProps) {
   };
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="bg-background min-h-screen">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -134,7 +137,7 @@ export default async function BlogPostPage(props: PageProps) {
       <article className="mx-auto max-w-3xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
         <Link
           href="/blog"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
         >
           <ArrowLeft className="size-3.5" />
           Blog
@@ -150,31 +153,24 @@ export default async function BlogPostPage(props: PageProps) {
               ))}
             </div>
           )}
-          <h1 className="text-3xl font-medium tracking-tight text-foreground sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
+          <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl md:text-[2.75rem] md:leading-[1.1]">
             {data.title}
           </h1>
           {data.description && (
-            <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-              {data.description}
-            </p>
+            <p className="text-muted-foreground mt-4 text-lg leading-relaxed">{data.description}</p>
           )}
-          <PostByline
-            author={author}
-            date={data.date}
-            readingTime={readingTime}
-            className="mt-8"
-          />
+          <PostByline author={author} date={data.date} readingTime={readingTime} className="mt-8" />
         </header>
 
         {data.cover && (
-          <div className="relative mt-10 aspect-[16/9] overflow-hidden rounded-2xl border border-border/60 bg-muted">
+          <div className="border-border/60 bg-muted relative mt-10 aspect-[16/9] overflow-hidden rounded-2xl border">
             <Image
               src={data.cover}
               alt={data.title}
               fill
               priority
               className="object-cover"
-              sizes="(max-width: 768px) 100vw, 768px"
+              sizes={tI18nHardcoded.raw('autoAppPublicSeoBlogSlugPageJsxAttrSizesMaxbb7ac8fb')}
             />
           </div>
         )}
@@ -185,10 +181,10 @@ export default async function BlogPostPage(props: PageProps) {
       </article>
 
       {more.length > 0 && (
-        <section className="border-t border-border/60">
+        <section className="border-border/60 border-t">
           <div className="mx-auto max-w-5xl px-6 py-16 sm:py-20">
-            <h2 className="mb-8 text-sm font-medium uppercase tracking-[0.15em] text-muted-foreground">
-              More from the blog
+            <h2 className="text-muted-foreground mb-8 text-sm font-medium tracking-[0.15em] uppercase">
+              {tI18nHardcoded.raw('autoAppPublicSeoBlogSlugPageJsxTextMoreFrom3f4590f3')}
             </h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {more.map((post) => (

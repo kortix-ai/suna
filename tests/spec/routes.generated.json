@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 385,
+  "count": 383,
   "routes": [
     {
       "method": "GET",
@@ -9,10 +9,6 @@
     {
       "method": "GET",
       "path": "/health/live"
-    },
-    {
-      "method": "GET",
-      "path": "/metrics"
     },
     {
       "method": "GET",
@@ -1209,10 +1205,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/triggers/activation"
     },
     {
       "method": "POST",

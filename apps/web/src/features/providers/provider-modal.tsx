@@ -249,6 +249,7 @@ function ModelsTabBody({
   modelStore: ReturnType<typeof useModelStore>;
   search: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const enabledCount = useMemo(
     () =>
       models.filter((m) => modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }))
@@ -302,7 +303,8 @@ function ModelsTabBody({
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {models.length} shown in the model picker
+            {enabledCount} of {models.length}{' '}
+            {tI18nHardcoded.raw('autoFeaturesProvidersProviderModalJsxTextShownInTheModel42aa9e89')}
           </p>
           {hasOverrides && (
             <Button
@@ -311,7 +313,9 @@ function ModelsTabBody({
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
               onClick={() => modelStore.resetVisibility()}
             >
-              Reset to defaults
+              {tI18nHardcoded.raw(
+                'autoFeaturesProvidersProviderModalJsxTextResetToDefaultse309aea2',
+              )}
             </Button>
           )}
         </div>

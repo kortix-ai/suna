@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
@@ -117,6 +118,7 @@ function SandboxAlertContent({
   health: ProjectSandboxHealth;
   severity: Severity;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   const failure = health.latest_failure;
@@ -179,7 +181,9 @@ function SandboxAlertContent({
             ) : (
               <SparklesSolid className="size-3.5" />
             )}
-            Fix with agent
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsxe7d8ac75',
+            )}
           </Button>
         )}
         <Button
@@ -194,7 +198,9 @@ function SandboxAlertContent({
           ) : (
             <RefreshCw className="size-3.5" />
           )}
-          Retry build
+          {tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
+          )}
         </Button>
       </div>
     </div>

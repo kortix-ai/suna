@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Add / edit form for a single `[[apps]]` entry. Writes via POST or PATCH
  * to `/v1/projects/:id/apps[/:slug]`. Used by the Apps overlay's `create`
@@ -10,20 +11,14 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { IconAdd, IconLoader, IconRemove } from '@/components/ui/kortix-icons';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { IconAdd, IconLoader, IconRemove } from '@/components/ui/kortix-icons';
 import { toast } from '@/lib/toast';
 
-import {
-  useCreateProjectApp,
-  useUpdateProjectApp,
-} from '@/hooks/projects/use-project-apps';
-import type {
-  CreateOrUpdateProjectAppInput,
-  ProjectApp,
-} from '@/lib/projects-apps-client';
+import { useCreateProjectApp, useUpdateProjectApp } from '@/hooks/projects/use-project-apps';
+import type { CreateOrUpdateProjectAppInput, ProjectApp } from '@/lib/projects-apps-client';
 
 interface AppFormProps {
   projectId: string;
@@ -47,6 +42,7 @@ function deriveSlug(name: string): string {
 }
 
 export function AppForm({ projectId, existing, onDone }: AppFormProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const isEdit = !!existing;
   const createMut = useCreateProjectApp(projectId);
   const updateMut = useUpdateProjectApp(projectId);
@@ -59,22 +55,18 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
   const [framework, setFramework] = useState(existing?.framework ?? '');
   const [sourceType, setSourceType] = useState<'git' | 'tar'>(existing?.source.type ?? 'git');
   const [gitRepo, setGitRepo] = useState(
-    existing?.source.type === 'git' ? existing.source.repo ?? '' : '',
+    existing?.source.type === 'git' ? (existing.source.repo ?? '') : '',
   );
   const [gitBranch, setGitBranch] = useState(
-    existing?.source.type === 'git' ? existing.source.branch ?? '' : '',
+    existing?.source.type === 'git' ? (existing.source.branch ?? '') : '',
   );
   const [gitRootPath, setGitRootPath] = useState(
-    existing?.source.type === 'git' ? existing.source.root_path ?? '' : '',
+    existing?.source.type === 'git' ? (existing.source.root_path ?? '') : '',
   );
-  const [tarUrl, setTarUrl] = useState(
-    existing?.source.type === 'tar' ? existing.source.url : '',
-  );
+  const [tarUrl, setTarUrl] = useState(existing?.source.type === 'tar' ? existing.source.url : '');
   const [buildCommand, setBuildCommand] = useState(existing?.build?.command ?? '');
   const [buildOutDir, setBuildOutDir] = useState(existing?.build?.out_dir ?? '');
-  const [domains, setDomains] = useState<string>(
-    (existing?.domains ?? []).join('\n'),
-  );
+  const [domains, setDomains] = useState<string>((existing?.domains ?? []).join('\n'));
   const [envRows, setEnvRows] = useState<EnvRow[]>(
     Object.entries(existing?.env ?? {}).map(([key, value]) => ({ key, value })),
   );
@@ -88,10 +80,11 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
   const submitting = createMut.isPending || updateMut.isPending;
 
   const domainList = useMemo(
-    () => domains
-      .split('\n')
-      .map((d) => d.trim())
-      .filter(Boolean),
+    () =>
+      domains
+        .split('\n')
+        .map((d) => d.trim())
+        .filter(Boolean),
     [domains],
   );
   const envObject = useMemo(() => {
@@ -146,12 +139,14 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
         <div className="mx-auto flex max-w-2xl flex-col gap-5">
           {/* Identity */}
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-foreground">Basics</h3>
+            <h3 className="text-foreground text-sm font-medium">Basics</h3>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="app-name">Name</Label>
               <Input
                 id="app-name"
-                placeholder="Marketing site"
+                placeholder={tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderMarketingSite3dbd4da7',
+                )}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus={!isEdit}
@@ -159,7 +154,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="app-slug">URL-safe id</Label>
+              <Label htmlFor="app-slug">
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextURLSafeId73159819')}
+              </Label>
               <Input
                 id="app-slug"
                 placeholder="marketing-site"
@@ -171,38 +168,50 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                 }}
                 required
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {isEdit
                   ? 'The id is fixed once an app is created.'
                   : 'Lowercase letters, digits, dashes. Auto-filled from the name.'}
               </p>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5">
+            <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-3 rounded-2xl border px-3 py-2.5">
               <div className="flex flex-col">
-                <Label htmlFor="app-enabled" className="cursor-pointer">Enabled</Label>
-                <p className="text-xs text-muted-foreground">
-                  When off, automatic deploys skip this app.
+                <Label htmlFor="app-enabled" className="cursor-pointer">
+                  Enabled
+                </Label>
+                <p className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsAppsAppFormJsxTextWhenOffAutomatic03862174',
+                  )}
                 </p>
               </div>
               <Switch id="app-enabled" checked={enabled} onCheckedChange={setEnabled} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="app-framework">Framework (optional)</Label>
+              <Label htmlFor="app-framework">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppFormJsxTextFrameworkOptional363cf93a',
+                )}
+              </Label>
               <Input
                 id="app-framework"
-                placeholder="next, vite, astro, …"
+                placeholder={tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderNextVite774c6cb6',
+                )}
                 value={framework}
                 onChange={(e) => setFramework(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">
-                A hint for the deploy provider. Leave blank to auto-detect.
+              <p className="text-muted-foreground text-xs">
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextAHintForf08a90ef')}
               </p>
             </div>
           </section>
 
           {/* Source */}
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-foreground">Source code</h3>
+            <h3 className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextSourceCode17814b75')}
+            </h3>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -210,7 +219,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                 size="sm"
                 onClick={() => setSourceType('git')}
               >
-                Git repository
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppFormJsxTextGitRepository8788e9fe',
+                )}
               </Button>
               <Button
                 type="button"
@@ -218,13 +229,19 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                 size="sm"
                 onClick={() => setSourceType('tar')}
               >
-                Prebuilt tarball
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsAppsAppFormJsxTextPrebuiltTarball0dcb58f3',
+                )}
               </Button>
             </div>
             {sourceType === 'git' ? (
               <>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="git-repo">Repository URL</Label>
+                  <Label htmlFor="git-repo">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsAppsAppFormJsxTextRepositoryURL63f64b8e',
+                    )}
+                  </Label>
                   <Input
                     id="git-repo"
                     placeholder="https://github.com/you/site (leave blank to use this project's repo)"
@@ -237,7 +254,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                     <Label htmlFor="git-branch">Branch</Label>
                     <Input
                       id="git-branch"
-                      placeholder="main (defaults to the project default branch)"
+                      placeholder={tI18nHardcoded.raw(
+                        'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderMainDefaults1ce15243',
+                      )}
                       value={gitBranch}
                       onChange={(e) => setGitBranch(e.target.value)}
                     />
@@ -246,7 +265,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                     <Label htmlFor="git-root">Subfolder</Label>
                     <Input
                       id="git-root"
-                      placeholder="apps/web (defaults to the repo root)"
+                      placeholder={tI18nHardcoded.raw(
+                        'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderAppsWeb1e08c767',
+                      )}
                       value={gitRootPath}
                       onChange={(e) => setGitRootPath(e.target.value)}
                     />
@@ -255,7 +276,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
               </>
             ) : (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tar-url">Tarball URL</Label>
+                <Label htmlFor="tar-url">
+                  {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextTarballURL7093f44f')}
+                </Label>
                 <Input
                   id="tar-url"
                   placeholder="https://…/build.tgz"
@@ -269,22 +292,30 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
 
           {/* Build */}
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-foreground">Build (optional)</h3>
-            <p className="text-xs text-muted-foreground">
-              Leave both blank to let the provider auto-detect.
+            <h3 className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextBuildOptionalc15a138e')}
+            </h3>
+            <p className="text-muted-foreground text-xs">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextLeaveBothBlank57472108')}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="build-cmd">Command</Label>
                 <Input
                   id="build-cmd"
-                  placeholder="pnpm build"
+                  placeholder={tI18nHardcoded.raw(
+                    'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderPnpmBuilde2421ca5',
+                  )}
                   value={buildCommand}
                   onChange={(e) => setBuildCommand(e.target.value)}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="build-out">Output folder</Label>
+                <Label htmlFor="build-out">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsAppsAppFormJsxTextOutputFolderfd532492',
+                  )}
+                </Label>
                 <Input
                   id="build-out"
                   placeholder="dist"
@@ -297,28 +328,43 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
 
           {/* Domains */}
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-foreground">Domains (optional)</h3>
+            <h3 className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsAppsAppFormJsxTextDomainsOptionalfb4dc02d',
+              )}
+            </h3>
             <Textarea
-              placeholder="marketing.example.com&#10;www.example.com"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsProjectsAppsAppFormJsxAttrPlaceholderMarketingExampledede1014',
+              )}
               value={domains}
               onChange={(e) => setDomains(e.target.value)}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">
-              One per line. Leave empty and we&apos;ll publish to a free
-              {' '}<code className="font-mono">*.style.dev</code>{' '}
-              URL automatically.
+            <p className="text-muted-foreground text-xs">
+              {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextOnePerLine4dfb7f2a')}{' '}
+              <code className="font-mono">
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextStyleDev4d6d9c32')}
+              </code>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsAppsAppFormJsxTextURLAutomaticallyc0a71dc7',
+              )}
             </p>
           </section>
 
           {/* Env */}
           <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium text-foreground">Environment variables (optional)</h3>
+            <h3 className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsAppsAppFormJsxTextEnvironmentVariablesOptional9342f8a8',
+              )}
+            </h3>
             <div className="flex flex-col gap-2">
               {envRows.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Add public env values your build needs. For secrets, use the
-                  project Secrets tab and reference them by name.
+                <p className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsAppsAppFormJsxTextAddPublicEnv9b115d33',
+                  )}
                 </p>
               )}
               {envRows.map((row, idx) => (
@@ -348,7 +394,9 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                     variant="ghost"
                     size="icon"
                     onClick={() => setEnvRows((rows) => rows.filter((_, i) => i !== idx))}
-                    aria-label="Remove variable"
+                    aria-label={tI18nHardcoded.raw(
+                      'autoComponentsProjectsAppsAppFormJsxAttrAriaLabelRemoveb7171a78',
+                    )}
                   >
                     <IconRemove className="size-4" />
                   </Button>
@@ -362,16 +410,18 @@ export function AppForm({ projectId, existing, onDone }: AppFormProps) {
                 onClick={() => setEnvRows((rows) => [...rows, { key: '', value: '' }])}
               >
                 <IconAdd className="size-3.5" />
-                Add variable
+                {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextAddVariable2fc325a3')}
               </Button>
             </div>
           </section>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
-        <p className="hidden truncate text-xs text-muted-foreground sm:block">
-          Saves to <code className="font-mono">kortix.toml</code> — deploy when you&apos;re ready.
+      <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-t px-5 py-3">
+        <p className="text-muted-foreground hidden truncate text-xs sm:block">
+          {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextSavesToa1795d11')}
+          <code className="font-mono">kortix.toml</code>{' '}
+          {tI18nHardcoded.raw('autoComponentsProjectsAppsAppFormJsxTextDeployWhenYou063c0c34')}
         </p>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" onClick={onDone} disabled={submitting}>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Shared presentation engine — a keyboard-driven deck, styled 1:1 with the
  * marketing site. Each slide is a responsive full-viewport homepage-style
@@ -13,11 +14,11 @@
  * G or Esc — overview · F — fullscreen · 1–9 — jump.
  */
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ThemeToggle } from '@/components/home/theme-toggle';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Grid2x2, Maximize, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -31,6 +32,7 @@ export function Deck({
   /** Optional link to a sibling deck, shown in the chrome. */
   altDeck?: { href: string; label: string };
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState(1);
   const [overview, setOverview] = useState(false);
@@ -201,10 +203,16 @@ export function Deck({
           <ChevronRight className="size-4" />
         </Ctrl>
         <span className="bg-border mx-0.5 h-4 w-px" />
-        <Ctrl onClick={() => setOverview((o) => !o)} label="Overview (G)">
+        <Ctrl
+          onClick={() => setOverview((o) => !o)}
+          label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelOverviewG38c3b5e4')}
+        >
           <Grid2x2 className="size-3.5" />
         </Ctrl>
-        <Ctrl onClick={toggleFs} label="Fullscreen (F)">
+        <Ctrl
+          onClick={toggleFs}
+          label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelFullscreenF28aed7ac')}
+        >
           <Maximize className="size-3.5" />
         </Ctrl>
       </div>
@@ -221,12 +229,15 @@ export function Deck({
           >
             <div className="flex items-center justify-between px-8 py-6">
               <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                Kortix · {total} slides
+                {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextKortix28fe100d')}
+                {total} slides
               </span>
               <button
                 onClick={() => setOverview(false)}
                 className="border-border bg-card text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-sm border transition-colors"
-                aria-label="Close overview"
+                aria-label={tI18nHardcoded.raw(
+                  'autoAppPresentationDeckJsxAttrAriaLabelCloseOverviewf408b52c',
+                )}
               >
                 <X className="size-4" />
               </button>
@@ -319,7 +330,9 @@ function Thumb({
         <span className="text-muted-foreground/60 font-mono text-xs tabular-nums">
           {String(n).padStart(2, '0')}
         </span>
-        <span className={cn('truncate text-xs', active ? 'text-foreground' : 'text-muted-foreground')}>
+        <span
+          className={cn('truncate text-xs', active ? 'text-foreground' : 'text-muted-foreground')}
+        >
           {label}
         </span>
       </div>

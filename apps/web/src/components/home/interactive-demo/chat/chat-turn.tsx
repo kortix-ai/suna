@@ -5,6 +5,7 @@ import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { Reveal } from '../../reveal';
 import { SkillsRead } from './skill-reads';
 import { ToolCard } from './tool-card';
@@ -29,6 +30,7 @@ export function AssistantTurn({
   convo: DemoConversation;
   onSkillClick?: (name: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const sc = convo.scenario;
   if (!sc) return null;
   const isDone = convo.phase === 'done';
@@ -53,7 +55,9 @@ export function AssistantTurn({
             </Badge>
           </motion.span>
         </AnimatePresence>
-        <span className="text-muted-foreground ml-auto text-xs">just now</span>
+        <span className="text-muted-foreground ml-auto text-xs">
+          {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoChatChatTurnJsxTextJust8e271ae4')}
+        </span>
       </div>
 
       <AnimatePresence>
@@ -104,7 +108,7 @@ export function AssistantTurn({
               </div>
             );
           }
-          return <div key={step.id}>{step.render()}</div>;
+          return <div key={step.id}>{step.render(tI18nHardcoded)}</div>;
         })}
       </div>
     </Reveal>

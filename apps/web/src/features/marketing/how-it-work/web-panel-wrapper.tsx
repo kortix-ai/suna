@@ -3,6 +3,7 @@
 import type { PageId } from '@/components/home/interactive-demo/types';
 import { cn } from '@/lib/utils';
 import { Blocks, Brain, GitPullRequest, MessageSquare } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
@@ -51,6 +52,7 @@ export function WebPanelWrapper({
   children: ReactNode;
   className?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tab = DEMO_PANEL_TABS[activeTab];
 
   return (
@@ -69,7 +71,9 @@ export function WebPanelWrapper({
           </span>
 
           {activeTab === 'memory' && (
-            <span className="text-kortix-green mr-3 text-xs font-medium">Syned 2 minutes ago</span>
+            <span className="text-kortix-green mr-3 text-xs font-medium">
+              {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkWebPanelWrapperJsxTexte9d63c73')}
+            </span>
           )}
         </div>
 

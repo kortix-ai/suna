@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * The sources tab — manage *sources* (not items). "Your sources" (Kortix +
  * everything you've enabled, with live counts) and "Featured" (curated,
@@ -7,8 +8,8 @@
  * flow into the catalog; Browse → jumps to Explore filtered to that source.
  */
 
-import { useMemo, useState } from 'react';
 import { Check, ExternalLink, Plus, Search, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,7 @@ function SourceCard({ children }: { children: React.ReactNode }) {
 }
 
 export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const mineQ = useMarketplaces();
   const featuredQ = useFeaturedMarketplaces();
   const add = useAddMarketplaceSource();
@@ -67,7 +69,10 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
   const [search, setSearch] = useState('');
 
   const mine = dedupeBy(mineQ.data?.marketplaces ?? [], (m) => m.id);
-  const featuredAll = dedupeBy((featuredQ.data ?? []).filter((f) => !f.added), (f) => f.address);
+  const featuredAll = dedupeBy(
+    (featuredQ.data ?? []).filter((f) => !f.added),
+    (f) => f.address,
+  );
   const q = search.trim().toLowerCase();
   const featured = q
     ? featuredAll.filter((f) =>
@@ -80,7 +85,10 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
     add
       .mutateAsync({ address, label })
       .then(
-        () => successToast(`Enabled ${label}`, { description: 'Its skills now appear in the catalog.' }),
+        () =>
+          successToast(`Enabled ${label}`, {
+            description: 'Its skills now appear in the catalog.',
+          }),
         (e) => errorToast('Could not enable', { description: (e as Error).message }),
       )
       .finally(() => setPending(null));
@@ -100,14 +108,20 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h3 className="text-foreground text-sm font-semibold">Your sources</h3>
+            <h3 className="text-foreground text-sm font-semibold">
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceDiscoverJsxTextYourSourcesca5e4602',
+              )}
+            </h3>
             {mine.length > 0 && (
               <span className="text-muted-foreground/60 text-xs tabular-nums">{mine.length}</span>
             )}
           </div>
           <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
-            Add source
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceDiscoverJsxTextAddSource6a944c63',
+            )}
           </Button>
         </div>
         {mineQ.isLoading ? (
@@ -123,10 +137,18 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
               const gh = m.sourceUrl ?? ghUrlFor(m.id);
               return (
                 <SourceCard key={m.id}>
-                  <MarketplaceAvatar id={m.id} owner={m.owner} sourceUrl={m.sourceUrl} label={m.label} size="md" />
+                  <MarketplaceAvatar
+                    id={m.id}
+                    owner={m.owner}
+                    sourceUrl={m.sourceUrl}
+                    label={m.label}
+                    size="md"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-foreground truncate text-sm font-medium">{m.label}</span>
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {m.label}
+                      </span>
                       {!m.external && (
                         <Badge variant="muted" size="sm" className="shrink-0">
                           Official
@@ -145,7 +167,9 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
                           href={gh}
                           target="_blank"
                           rel="noreferrer"
-                          aria-label="View on GitHub"
+                          aria-label={tI18nHardcoded.raw(
+                            'autoComponentsMarketplaceMarketplaceDiscoverJsxAttrAriaLabelViewOn35edbd8c',
+                          )}
                           className="text-muted-foreground hover:text-foreground inline-flex size-7 items-center justify-center rounded-lg transition-colors"
                         >
                           <ExternalLink className="size-3.5" />
@@ -178,11 +202,19 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-foreground text-sm font-semibold">Featured sources</h3>
-                <span className="text-muted-foreground/60 text-xs tabular-nums">{featuredAll.length}</span>
+                <h3 className="text-foreground text-sm font-semibold">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsMarketplaceMarketplaceDiscoverJsxTextFeaturedSources185c12c5',
+                  )}
+                </h3>
+                <span className="text-muted-foreground/60 text-xs tabular-nums">
+                  {featuredAll.length}
+                </span>
               </div>
               <p className="text-muted-foreground text-xs">
-                Curated, permissively-licensed repos — one click to enable.
+                {tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceMarketplaceDiscoverJsxTextCuratedPermissivelyLicensedReposadbe2517',
+                )}
               </p>
             </div>
             <div className="relative w-full sm:max-w-[220px]">
@@ -190,14 +222,21 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search sources"
+                placeholder={tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceMarketplaceDiscoverJsxAttrPlaceholderSearchSources18e70a1b',
+                )}
                 className="h-9 pl-9 text-sm"
               />
             </div>
           </div>
 
           {featured.length === 0 ? (
-            <p className="text-muted-foreground/70 py-6 text-center text-sm">No sources match “{search}”.</p>
+            <p className="text-muted-foreground/70 py-6 text-center text-sm">
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceDiscoverJsxTextNoSourcesMatch0432edd6',
+              )}
+              {search}”.
+            </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {featured.map((f) => {
@@ -208,15 +247,21 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
                     <MarketplaceAvatar id={f.address} owner={f.owner} label={f.label} size="md" />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">{f.label}</span>
+                        <span className="text-foreground truncate text-sm font-medium">
+                          {f.label}
+                        </span>
                         {f.license && (
                           <Badge variant="muted" size="sm" className="shrink-0">
                             {f.license}
                           </Badge>
                         )}
                       </div>
-                      <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">{f.description}</div>
-                      <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-[10px]">{f.address}</div>
+                      <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
+                        {f.description}
+                      </div>
+                      <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-[10px]">
+                        {f.address}
+                      </div>
                       <div className="mt-2 flex items-center gap-1">
                         <Button
                           size="xs"

@@ -1,20 +1,12 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { locales, defaultLocale, type Locale } from '@/i18n/config';
-import { getCookieLocale, getUserLocale, LOCALE_COOKIE_MAX_AGE, LOCALE_COOKIE_NAME } from '@/i18n/locale';
-import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
+import { locales, type Locale } from '@/i18n/config';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
-import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
+import { createServerClient } from '@supabase/ssr';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = [
-  '/',
-  '/legal',
-  '/support',
-  '/templates',
-];
+const MARKETING_ROUTES = ['/', '/legal', '/support', '/templates'];
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -58,19 +50,16 @@ const PUBLIC_ROUTES = [
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
-  ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
+  ...locales.flatMap((locale) =>
+    MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
+  ),
 ];
 
 // Routes that require authentication but are related to billing/setup
 const BILLING_ROUTES: string[] = [];
 
 // Routes that require authentication and active subscription
-const PROTECTED_ROUTES = [
-  '/projects',
-  '/accounts',
-  '/invites',
-  '/admin',
-];
+const PROTECTED_ROUTES = ['/projects', '/accounts', '/invites', '/admin'];
 
 // Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
 // these route prefixes — plus /auth/* for sign-in — are allowed to render
@@ -109,8 +98,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
     pathname.includes('.') ||
     pathname.startsWith('/api/') ||
-    pathname.startsWith('/monitoring') ||    // Sentry error tracking tunnel (Better Stack)
-    pathname.startsWith('/_betterstack')     // Better Stack browser telemetry proxy
+    pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
+    pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
   ) {
     return NextResponse.next();
   }
@@ -172,7 +161,7 @@ export async function middleware(request: NextRequest) {
     const isAllowed =
       isAuthPath ||
       DESKTOP_ALLOWED_ROUTES.some(
-        route => pathname === route || pathname.startsWith(route + '/'),
+        (route) => pathname === route || pathname.startsWith(route + '/'),
       );
     if (!isAllowed) {
       return NextResponse.redirect(new URL('/projects', request.url));
@@ -189,7 +178,7 @@ export async function middleware(request: NextRequest) {
     const remainingPath = '/' + pathSegments.slice(1).join('/') || '/';
 
     // Verify remaining path is a marketing route
-    const isRemainingPathMarketing = MARKETING_ROUTES.some(route => {
+    const isRemainingPathMarketing = MARKETING_ROUTES.some((route) => {
       if (route === '/') {
         return remainingPath === '/' || remainingPath === '';
       }
@@ -199,23 +188,13 @@ export async function middleware(request: NextRequest) {
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
       const response = NextResponse.rewrite(new URL(remainingPath, request.url));
-      response.cookies.set(LOCALE_COOKIE_NAME, locale, {
-        path: '/',
-        maxAge: LOCALE_COOKIE_MAX_AGE,
-        sameSite: 'lax',
-      });
-
-      // Store locale in headers so next-intl can pick it up
+      // Store locale in headers so next-intl can pick it up for the explicit URL.
+      // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 
       return response;
     }
   }
-
-  // Check if this is a marketing route (without locale prefix)
-  const isMarketingRoute = MARKETING_ROUTES.some(route =>
-    pathname === route || pathname.startsWith(route + '/')
-  );
 
   // Create a single Supabase client instance that we'll reuse
   let supabaseResponse = NextResponse.next({
@@ -230,35 +209,38 @@ export async function middleware(request: NextRequest) {
   // used for server-side auth calls. SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL is the
   // public-facing URL that the browser uses. The middleware runs server-side inside
   // the Docker container, so it needs the internal URL to reach Supabase.
-  const supabaseUrl = process.env.SUPABASE_SERVER_URL || process.env.SUPABASE_URL || process.env.KORTIX_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookieOptions: {
-        name: KORTIX_SUPABASE_AUTH_COOKIE,
-        path: '/',
-        sameSite: 'lax',
+  const supabaseUrl =
+    process.env.SUPABASE_SERVER_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.KORTIX_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: {
+      name: KORTIX_SUPABASE_AUTH_COOKIE,
+      path: '/',
+      sameSite: 'lax',
+    },
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
       },
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({
-            request,
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        supabaseResponse = NextResponse.next({
+          request,
+        });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options),
+        );
       },
-    }
-  );
+    },
+  });
 
-  // Fetch user ONCE and reuse for both locale detection and auth checks.
+  // Fetch user ONCE and reuse for auth checks.
   // IMPORTANT: Skip getUser() for auth routes — the auth page handles its
   // own session client-side. Calling getUser() here can trigger a server-side
   // token refresh that consumes the refresh token (GoTrue refresh tokens are
@@ -273,7 +255,10 @@ export async function middleware(request: NextRequest) {
 
   if (!isAuthRoute) {
     try {
-      const { data: { user: fetchedUser }, error: fetchedError } = await supabase.auth.getUser();
+      const {
+        data: { user: fetchedUser },
+        error: fetchedError,
+      } = await supabase.auth.getUser();
       user = fetchedUser;
       authError = fetchedError as Error | null;
     } catch (error) {
@@ -292,60 +277,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/projects', request.url));
   }
 
-  // Auto-redirect based on geo-detection for marketing pages
-  // Only redirect if:
-  // 1. User is visiting a marketing route without locale prefix
-  // 2. User doesn't have an explicit preference (no cookie, no user metadata)
-  // 3. Detected locale is not English (default)
-  if (isMarketingRoute && (!firstSegment || !locales.includes(firstSegment as Locale))) {
-    // Check if user has explicit preference in cookie
-    const localeCookie = getCookieLocale(request.cookies.get(LOCALE_COOKIE_NAME)?.value);
-    const hasExplicitPreference = !!localeCookie;
-
-    // Check user metadata (if authenticated) - reuse the user we already fetched
-    let userLocale: Locale | null = null;
-    if (!hasExplicitPreference) {
-      userLocale = getUserLocale(user);
-    }
-
-    // Only auto-redirect if:
-    // - No explicit preference (no cookie, no user metadata)
-    // - Detected locale is not English (default)
-    // This prevents unnecessary redirects for English speakers and users with preferences
-    if (!hasExplicitPreference && !userLocale) {
-      const acceptLanguage = request.headers.get('accept-language');
-
-      const detectedLocale = detectBestLocaleFromHeaders(acceptLanguage);
-
-      // Only redirect if detected locale is not English (default)
-      // This prevents unnecessary redirects for English speakers
-      if (detectedLocale !== defaultLocale) {
-        const redirectUrl = new URL(request.url);
-        redirectUrl.pathname = `/${detectedLocale}${pathname === '/' ? '' : pathname}`;
-
-        const redirectResponse = NextResponse.redirect(redirectUrl);
-        // Set cookie so we don't redirect again on next visit
-        redirectResponse.cookies.set(LOCALE_COOKIE_NAME, detectedLocale, {
-          path: '/',
-          maxAge: LOCALE_COOKIE_MAX_AGE,
-          sameSite: 'lax',
-        });
-        return redirectResponse;
-      }
-    }
-  }
-
   // Allow all public routes — but return supabaseResponse (not NextResponse.next())
   // so that any cookie updates from getUser() token refresh are preserved.
   // Returning a fresh NextResponse.next() would discard refreshed auth cookies,
   // causing the session to break on the next navigation.
-  if (PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'))) {
+  if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
     return supabaseResponse;
   }
 
   // Everything else requires authentication - reuse the user we already fetched
   try {
-
     // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
       const url = request.nextUrl.clone();
@@ -356,7 +297,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // ── Billing-related routes (activate-trial, etc.) ────────────────────
-    if (BILLING_ROUTES.some(route => pathname.startsWith(route))) {
+    if (BILLING_ROUTES.some((route) => pathname.startsWith(route))) {
       return supabaseResponse;
     }
 

@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
@@ -175,6 +176,7 @@ function StatusDot({ on, label }: { on: boolean; label?: [string, string] }) {
 }
 
 function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
     'flex h-5 w-9 items-center rounded-full p-0.5 transition-colors',
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
@@ -187,7 +189,9 @@ function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label="Toggle schedule"
+      aria-label={tI18nHardcoded.raw(
+        'autoComponentsHomeInteractiveDemoSectionJsxAttrAriaLabelToggle7eacfa60',
+      )}
       onClick={onClick}
       className={className}
     >
@@ -211,6 +215,7 @@ function ConnectBadge({ connected }: { connected: boolean }) {
 /* ─── Home ───────────────────────────────────────────────────────────────── */
 
 function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
     ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
     ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
@@ -234,7 +239,9 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
 
           <div className="w-full min-w-0">
             <div className="text-muted-foreground/70 mb-2 px-0.5 text-xs font-medium tracking-wider uppercase">
-              Build out your project
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoSectionJsxTextBuildOutYour4428d562',
+              )}
             </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-2.5 lg:grid-cols-3">
               {cards.map(([title, sub, Icon, count, target]) => (
@@ -429,6 +436,7 @@ function AgentCard({ agent }: { agent: AgentDef }) {
 }
 
 function AgentsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const running = AGENTS.filter((a) => a.on).length;
   const triggered = AGENTS.filter((a) => a.trigger !== 'manual' && a.trigger !== 'primary').length;
   const stats: [string, string][] = [
@@ -441,10 +449,13 @@ function AgentsPage() {
     <div>
       <PageHead
         title="Agents"
-        sub="Each agent is its own worker — defined in .kortix/opencode/agents"
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoSectionJsxAttrSubEachAgent23df874b',
+        )}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> New agent
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxTextNewAgent64a6cadb')}
           </Button>
         }
       />
@@ -499,6 +510,7 @@ const INTEGRATIONS: [string, string, boolean][] = [
 const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
 function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const list = INTEGRATIONS.filter(
@@ -511,7 +523,7 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
         <div className="min-w-0">
           <h3 className="text-foreground text-lg font-semibold tracking-tight">Integrations</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            3,000+ apps · connected once, shared securely across the org
+            {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxText3000Apps0dfb5b41')}
           </p>
         </div>
 
@@ -541,7 +553,9 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search apps…"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoSectionJsxAttrPlaceholderSearchApps86c6a76e',
+              )}
               className="placeholder:text-muted-foreground/60 text-foreground w-full bg-transparent text-sm outline-none"
             />
             {q && (
@@ -568,7 +582,9 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
           </Badge>
         ))}
         <span className="text-muted-foreground ml-1 text-xs">
-          Pipedream, MCP, OpenAPI, GraphQL & raw HTTP — one Executor interface
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoSectionJsxTextPipedreamMCPOpenAPI8368edb1',
+          )}
         </span>
       </div>
 
@@ -593,7 +609,10 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
         </div>
       ) : (
         <div className="border-border/60 text-muted-foreground rounded-md border border-dashed py-8 text-center text-sm">
-          No featured app matches “{q}”.
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoSectionJsxTextNoFeaturedAppe3ac15b4',
+          )}
+          {q}”.
         </div>
       )}
 
@@ -675,6 +694,7 @@ function ModelsPage({
   activeModel?: ActiveModel;
   connectedDomains?: string[];
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const activeName = activeModel?.name ?? 'Claude Opus 4.8';
   return (
     <div>
@@ -683,7 +703,10 @@ function ModelsPage({
         sub={`Bring any provider — routed per session · active: ${activeName}`}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> Add provider
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextAddProvider890f5c67',
+            )}
           </Button>
         }
       />
@@ -734,7 +757,9 @@ function ModelsPage({
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
         <KeyRound className="size-3.5 shrink-0" />
-        Connecting a provider writes its API key to Secrets — sessions pick it up at sandbox boot.
+        {tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoSectionJsxTextConnectingAProvider652bae2b',
+        )}
       </div>
     </div>
   );
@@ -773,6 +798,7 @@ const ADDED_JOB: ScheduleJob = {
 };
 
 function SchedulingPage({ added = false }: { added?: boolean }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [jobs, setJobs] = useState<ScheduleJob[]>(INITIAL_JOBS);
   const toggle = (name: string) =>
     setJobs((js) => js.map((j) => (j.name === name ? { ...j, on: !j.on } : j)));
@@ -786,7 +812,10 @@ function SchedulingPage({ added = false }: { added?: boolean }) {
         sub={`${activeCount} active · cron triggers in your timezone, running 24/7`}
         action={
           <Button size="sm">
-            <Plus className="size-3.5" /> New schedule
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextNewSchedulebc5ebb11',
+            )}
           </Button>
         }
       />
@@ -835,12 +864,15 @@ function ChannelsPage({
   connected?: boolean;
   workspace?: string | null;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [showByo, setShowByo] = useState(false);
   return (
     <div>
       <PageHead
         title="Channels"
-        sub="Run this project from chat — connect a Slack workspace and your agent responds in the channels you invite it to."
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoSectionJsxAttrSubRunThisb0deafba',
+        )}
       />
 
       <div className="border-border bg-card overflow-hidden rounded-md border">
@@ -873,7 +905,10 @@ function ChannelsPage({
             </Badge>
           ) : (
             <Button size="sm" className="shrink-0">
-              <Icon.Slack className="size-3.5" /> Add to Slack
+              <Icon.Slack className="size-3.5" />{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoSectionJsxTextAddToSlacka83dbb5b',
+              )}
             </Button>
           )}
         </div>
@@ -885,9 +920,15 @@ function ChannelsPage({
           aria-expanded={showByo}
         >
           <div className="min-w-0">
-            <p className="text-foreground text-sm font-medium">Bring your own Slack app</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoSectionJsxTextBringYourOwn88c2065e',
+              )}
+            </p>
             <p className="text-muted-foreground mt-0.5 text-xs">
-              For self-hosted setups or custom-scoped installs.
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoSectionJsxTextForSelfHosted80241a4d',
+              )}
             </p>
           </div>
           <ChevronDown
@@ -899,8 +940,10 @@ function ChannelsPage({
         </button>
         {showByo && (
           <div className="border-border text-muted-foreground border-t px-4 py-3 text-xs">
-            Paste a Slack app manifest and your Bot User OAuth Token + Signing Secret — stored
-            encrypted in <span className="text-foreground font-mono">project_secrets</span>.
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextPasteASlackac1c89fb',
+            )}
+            <span className="text-foreground font-mono">project_secrets</span>.
           </div>
         )}
       </div>
@@ -909,14 +952,22 @@ function ChannelsPage({
         <MessageSquare className="size-3.5 shrink-0" />
         {connected ? (
           <span>
-            <span className="text-foreground font-mono">@mention</span> the bot in any channel — a
-            session spawns and the agent replies in-thread.
+            <span className="text-foreground font-mono">
+              {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxTextMentiona9a5bda4')}
+            </span>{' '}
+            {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxTextTheBotIn0bafab5f')}
           </span>
         ) : (
           <span>
-            Invite the bot to any channel and{' '}
-            <span className="text-foreground font-mono">@mention</span> it — a session spawns and
-            the agent replies in-thread.
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextInviteTheBot52bd9700',
+            )}{' '}
+            <span className="text-foreground font-mono">
+              {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxTextMentiona9a5bda4')}
+            </span>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextItASession30f80a59',
+            )}
           </span>
         )}
       </div>
@@ -1032,6 +1083,7 @@ function SecurityPage({
   memberAdded?: boolean;
   secretAdded?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const members = memberAdded ? [ADDED_MEMBER, ...MEMBERS] : MEMBERS;
   const secrets = secretAdded ? [ADDED_SECRET, ...SECRETS] : SECRETS;
   const stats: [string, string][] = [
@@ -1043,8 +1095,12 @@ function SecurityPage({
   return (
     <div>
       <PageHead
-        title="Security & access"
-        sub="Roles, an encrypted secrets vault and per-tool permissions — with a full audit trail"
+        title={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleSecurityAccessf36d6bfb',
+        )}
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoSectionJsxAttrSubRolesAn5790a86a',
+        )}
       />
 
       <div className="space-y-4">
@@ -1059,7 +1115,9 @@ function SecurityPage({
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel
-            title="Members & roles"
+            title={tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleMembersRoles021017af',
+            )}
             count={`· ${members.length}`}
             action={
               <Button variant="outline" size="sm">
@@ -1085,7 +1143,9 @@ function SecurityPage({
                   <div className="flex items-center gap-2">
                     <span
                       className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex dark:text-emerald-500"
-                      title="Two-factor enabled"
+                      title={tI18nHardcoded.raw(
+                        'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleTwoFactor677873ea',
+                      )}
                     >
                       <MdShield className="size-3.5" /> 2FA
                     </span>
@@ -1098,7 +1158,12 @@ function SecurityPage({
             ))}
           </Panel>
 
-          <Panel title="Secrets vault" count={`· ${secrets.length} encrypted`}>
+          <Panel
+            title={tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleSecretsVaultcb8a22ec',
+            )}
+            count={`· ${secrets.length} encrypted`}
+          >
             {secrets.map((sec) => (
               <Row
                 key={sec.name}
@@ -1123,7 +1188,14 @@ function SecurityPage({
           </Panel>
         </div>
 
-        <Panel title="Tool permissions" count="· scoped per connector">
+        <Panel
+          title={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleToolPermissionsad9f5378',
+          )}
+          count={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoSectionJsxAttrCountScopedPerf61a785a',
+          )}
+        >
           {POLICIES.map((p) => (
             <PolicyRow key={p.name} policy={p} />
           ))}
@@ -1132,8 +1204,9 @@ function SecurityPage({
         <div className="border-border/60 bg-muted/20 text-muted-foreground flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs">
           <MdShield className="size-4 shrink-0" />
           <span>
-            SSO + 2FA enforced · secrets injected at sandbox boot, never exposed to agents · every
-            tool call logged.
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoSectionJsxTextSSO2FAEnforced29070cf3',
+            )}
           </span>
         </div>
       </div>

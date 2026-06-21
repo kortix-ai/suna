@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { STAGE_DATA, type StageVisual } from './content';
 
@@ -21,6 +22,7 @@ function SceneShell({ children, className }: { children: React.ReactNode; classN
 }
 
 function IsolationScene({ reduceMotion }: { reduceMotion: boolean }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { sandboxes, spine } = STAGE_DATA.isolation;
 
   return (
@@ -65,7 +67,7 @@ function IsolationScene({ reduceMotion }: { reduceMotion: boolean }) {
                   repeat: reduceMotion ? 0 : Infinity,
                 }}
               >
-                CR→
+                {tI18nHardcoded.raw('autoFeaturesMarketingSecuritySecurityStageJsxTextCReb549683')}
               </motion.span>
             </motion.div>
           );

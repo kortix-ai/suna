@@ -2,6 +2,7 @@
 
 import Cal, { getCalApi } from '@calcom/embed-react';
 import { Check, Mail } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { isWorkEmail } from '@/lib/personal-email';
@@ -80,6 +81,7 @@ export function DemoQualifierModal({
   defaultEmail = '',
   onBookingSuccessful,
 }: DemoQualifierModalProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [step, setStep] = useState<'form' | 'cal' | 'received'>('form');
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(defaultName);
@@ -222,7 +224,9 @@ export function DemoQualifierModal({
                   id="dq-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
+                  placeholder={tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYourName7a7a05ae',
+                  )}
                   autoComplete="name"
                   required
                 />
@@ -230,14 +234,19 @@ export function DemoQualifierModal({
 
               <div className="space-y-1.5">
                 <Label htmlFor="dq-email">
-                  Work email <span className="text-destructive">*</span>
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxTextWorkEmailc15a71d1',
+                  )}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="dq-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
+                  placeholder={tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderYouCompanyee6aa000',
+                  )}
                   autoComplete="email"
                   required
                 />
@@ -245,13 +254,18 @@ export function DemoQualifierModal({
 
               <div className="space-y-1.5">
                 <Label htmlFor="dq-company">
-                  Company name <span className="text-destructive">*</span>
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxTextCompanyName04d8fd10',
+                  )}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="dq-company"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Acme Inc."
+                  placeholder={tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderAcmeInc4c41f6f1',
+                  )}
                   autoComplete="organization"
                   required
                 />
@@ -259,14 +273,21 @@ export function DemoQualifierModal({
 
               <div className="space-y-1.5">
                 <Label htmlFor="dq-size">
-                  Company size <span className="text-destructive">*</span>
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxTextCompanySizee13e1fef',
+                  )}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Select value={size ?? undefined} onValueChange={(v) => setSize(v as CompanySize)}>
                   <SelectTrigger
                     id="dq-size"
                     className="border-border bg-input text-foreground w-full"
                   >
-                    <SelectValue placeholder="Select company size" />
+                    <SelectValue
+                      placeholder={tI18nHardcoded.raw(
+                        'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderSelectCompanya2ad2a30',
+                      )}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {companySizes.map((o) => (
@@ -280,14 +301,18 @@ export function DemoQualifierModal({
 
               <div className="space-y-1.5">
                 <Label htmlFor="dq-goal">
-                  What do you want Kortix to do?{' '}
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxTextWhatDoYoud0acfddd',
+                  )}{' '}
                   <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Textarea
                   id="dq-goal"
                   value={goal}
                   onChange={(e) => setGoal(e.target.value)}
-                  placeholder="e.g. automate our inbound support triage"
+                  placeholder={tI18nHardcoded.raw(
+                    'autoFeaturesContactDemoQualifierModalJsxAttrPlaceholderEGcf1d0320',
+                  )}
                   rows={2}
                   className="resize-none"
                 />
@@ -297,12 +322,16 @@ export function DemoQualifierModal({
             </ModalBody>
 
             <ModalFooter className="justify-between px-4 pb-4 sm:justify-between">
-              <span className="text-muted-foreground text-xs">No spam — a human replies.</span>
+              <span className="text-muted-foreground text-xs">
+                {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextNoSpamAd06b8b00')}
+              </span>
               <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
                 {submitting ? (
                   <>
                     <Loading className="animate-spin" />
-                    Sending…
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesContactDemoQualifierModalJsxTextSendingb5b0a82a',
+                    )}
                   </>
                 ) : (
                   <>Continue</>
@@ -314,17 +343,30 @@ export function DemoQualifierModal({
       ) : (
         <ModalContent variant="base" className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
           <ModalHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-            <ModalTitle>Request received</ModalTitle>
-            <ModalDescription>Thanks — we&apos;ve got your details.</ModalDescription>
+            <ModalTitle>
+              {tI18nHardcoded.raw(
+                'autoFeaturesContactDemoQualifierModalJsxTextRequestReceivedab5bf6e1',
+              )}
+            </ModalTitle>
+            <ModalDescription>
+              {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextThanksWeVeafd780cd')}
+            </ModalDescription>
           </ModalHeader>
 
           <div className="space-y-4 px-6 py-5">
-            <InfoBanner tone="success" icon={Check} title="We'll be in touch">
-              Kortix is built for companies — we&apos;ll reach out if it&apos;s a fit.
+            <InfoBanner
+              tone="success"
+              icon={Check}
+              title={tI18nHardcoded.raw(
+                'autoFeaturesContactDemoQualifierModalJsxAttrTitleWeLle3d686d7',
+              )}
+            >
+              {tI18nHardcoded.raw(
+                'autoFeaturesContactDemoQualifierModalJsxTextKortixIsBuilt9d7721e7',
+              )}
             </InfoBanner>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Spin up your first agent in minutes — most teams your size are up and running the same
-              day. If you hit a wall, we&apos;re one email away.
+              {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextSpinUpYour0b48cac5')}
             </p>
           </div>
 
@@ -332,7 +374,7 @@ export function DemoQualifierModal({
             <Button asChild variant="ghost" className="w-full sm:w-auto">
               <Link href={`mailto:${CONTACT_EMAIL}`}>
                 <Mail />
-                Email us
+                {tI18nHardcoded.raw('autoFeaturesContactDemoQualifierModalJsxTextEmailUs103301cb')}
               </Link>
             </Button>
             <Button onClick={() => onOpenChange(false)} className="w-full sm:w-auto">

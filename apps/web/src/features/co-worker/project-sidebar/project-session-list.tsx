@@ -65,6 +65,7 @@ function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): bool
 }
 
 export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -135,7 +136,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   if (visibleSessions.length === 0) {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        No sessions match this filter.
+        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
       </div>
     );
   }

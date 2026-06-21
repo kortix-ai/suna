@@ -11,6 +11,7 @@ import {
   Send,
   UserRound,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
@@ -45,6 +46,7 @@ function errorStatus(error: unknown): number | undefined {
 }
 
 export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const query = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId, { showErrors: false }),
@@ -66,9 +68,15 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
       return (
         <ProjectAccessStateFrame
           icon={<AlertCircle className="size-5" />}
-          eyebrow="Project unavailable"
-          title="Project not found"
-          description="This project may have been deleted, archived, or the link is no longer valid."
+          eyebrow={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowProjectUnavailablea0231815',
+          )}
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleProjectNotc66b9822',
+          )}
+          description={tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectAccessBoundaryJsxAttrDescriptionThisProject92b78195',
+          )}
         />
       );
     }
@@ -76,9 +84,15 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
     return (
       <ProjectAccessStateFrame
         icon={<AlertCircle className="size-5" />}
-        eyebrow="Project unavailable"
-        title="Couldn't load this project"
-        description="Something went wrong before the project workspace opened. Try again, or go back to your projects."
+        eyebrow={tI18nHardcoded.raw(
+          'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowProjectUnavailablea0231815',
+        )}
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleCouldnT870a862d',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsProjectAccessBoundaryJsxAttrDescriptionSomethingWent8997618a',
+        )}
         footer={
           <Button type="button" variant="outline" onClick={() => query.refetch()}>
             <RefreshCw className="size-4" />
@@ -93,11 +107,14 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
 }
 
 function ProjectAccessLoading() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div
       className="bg-background flex min-h-screen items-center justify-center"
       role="status"
-      aria-label="Loading project"
+      aria-label={tI18nHardcoded.raw(
+        'autoComponentsProjectsProjectAccessBoundaryJsxAttrAriaLabelLoading21cf6b95',
+      )}
     >
       <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
     </div>
@@ -105,6 +122,7 @@ function ProjectAccessLoading() {
 }
 
 function ForbiddenProjectState({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -130,7 +148,9 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   return (
     <ProjectAccessStateFrame
       icon={<LockKeyhole className="size-5" />}
-      eyebrow="Private project"
+      eyebrow={tI18nHardcoded.raw(
+        'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowPrivateProjectd5b1951c',
+      )}
       title={sent ? 'Request sent.' : 'Request access to this project.'}
       description={
         sent
@@ -146,14 +166,30 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
       content={
         <div className="space-y-4">
           {sent ? (
-            <InfoBanner tone="success" icon={CheckCircle2} title="Request sent">
-              Project managers will see it in the Members screen and can approve you as a viewer.
+            <InfoBanner
+              tone="success"
+              icon={CheckCircle2}
+              title={tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleRequestSent6567e02d',
+              )}
+            >
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectAccessBoundaryJsxTextProjectManagersWill08e33ff7',
+              )}
             </InfoBanner>
           ) : (
             <>
-              <InfoBanner tone="neutral" icon={UserRound} title="Signed in">
+              <InfoBanner
+                tone="neutral"
+                icon={UserRound}
+                title={tI18nHardcoded.raw(
+                  'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleSignedIna3165363',
+                )}
+              >
                 <span className="text-muted-foreground">
-                  Requesting access as{' '}
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsProjectAccessBoundaryJsxTextRequestingAccessAs09b70479',
+                  )}{' '}
                   <span className="text-foreground font-medium">
                     {user?.email ?? user?.id ?? 'this account'}
                   </span>
@@ -174,7 +210,9 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
                   onChange={(event) => setMessage(event.target.value)}
                   minHeight={96}
                   maxHeight={160}
-                  placeholder="Tell the project manager why you need access…"
+                  placeholder={tI18nHardcoded.raw(
+                    'autoComponentsProjectsProjectAccessBoundaryJsxAttrPlaceholderTellThec2bb0f7d',
+                  )}
                   disabled={requestMutation.isPending}
                 />
                 {inlineError ? <p className="text-destructive text-xs">{inlineError}</p> : null}
@@ -187,12 +225,16 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
         <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
           <Button type="button" variant="ghost" onClick={() => router.push('/projects')}>
             <ArrowLeft className="size-4" />
-            Back to projects
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsProjectAccessBoundaryJsxTextBackToProjects9ad9ccd3',
+            )}
           </Button>
           {sent ? (
             <Button type="button" variant="outline" onClick={() => window.location.reload()}>
               <RefreshCw className="size-4" />
-              Check again
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectAccessBoundaryJsxTextCheckAgain9f1e6458',
+              )}
             </Button>
           ) : (
             <Button
@@ -205,7 +247,9 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
               ) : (
                 <Send className="size-4" />
               )}
-              Request access
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectAccessBoundaryJsxTextRequestAccess870ec6e1',
+              )}
             </Button>
           )}
         </div>
@@ -233,11 +277,14 @@ function ProjectAccessStateFrame({
   content?: ReactNode;
   footer?: ReactNode;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const action = footer ?? (
     <Button type="button" variant="outline" onClick={() => router.push('/projects')}>
       <ArrowLeft className="size-4" />
-      Back to projects
+      {tI18nHardcoded.raw(
+        'autoComponentsProjectsProjectAccessBoundaryJsxTextBackToProjects9ad9ccd3',
+      )}
     </Button>
   );
 

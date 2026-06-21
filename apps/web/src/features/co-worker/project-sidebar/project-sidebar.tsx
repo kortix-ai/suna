@@ -51,8 +51,8 @@ import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin';
-import { useIsMobile } from '@/hooks/utils';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { useIsMobile } from '@/hooks/utils';
 import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
@@ -69,6 +69,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -88,6 +89,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 };
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
@@ -196,10 +198,16 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
                 className="flex w-full items-center justify-center"
               >
-                <Hint label="Expand sidebar">
+                <Hint
+                  label={tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabelb7b89bbc',
+                  )}
+                >
                   <button
                     type="button"
-                    aria-label="Expand sidebar"
+                    aria-label={tI18nHardcoded.raw(
+                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria0ca75c68',
+                    )}
                     onClick={toggleSidebar}
                     className="group/expand text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground relative flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out"
                   >
@@ -220,11 +228,17 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           )}
         >
           <div className="flex w-full flex-col items-center gap-1">
-            <Hint label="New session">
+            <Hint
+              label={tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrLabel335b2318',
+              )}
+            >
               <Button
                 type="button"
                 size="icon"
-                aria-label="New session"
+                aria-label={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria7f9fc26a',
+                )}
                 onClick={handleNewSession}
                 className={cn(
                   'text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex size-8 items-center justify-center border-[1.2px] [&_svg]:size-4!',
@@ -257,7 +271,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   size="md"
                   className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center !text-sm [&_svg]:!size-5"
                 >
-                  New session
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
+                  )}
                   <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
                     <Kbd>{modSymbol}</Kbd>
                     <Kbd>J</Kbd>
@@ -289,7 +305,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                           <span>Sessions</span>
                           {sessionFilter !== 'all' && (
                             <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                              &bull; {activeFilterOption.label}
+                              {tI18nHardcoded.raw(
+                                'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
+                              )}
+                              {activeFilterOption.label}
                             </span>
                           )}
                         </span>
@@ -318,7 +337,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                     <DropdownMenuTrigger asChild>
                       <SidebarMenuButton
                         type="button"
-                        aria-label="Toggle sessions"
+                        aria-label={tI18nHardcoded.raw(
+                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrAria39d6d82d',
+                        )}
                         className="text-muted-foreground/90 hover:text-sidebar-foreground flex size-8 shrink-0 items-center justify-center px-2"
                       >
                         <HiDotsHorizontal className="size-3" />
@@ -329,7 +350,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               </SidebarGroupLabel>
               <DisclosureContent
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                contentClassName="flex h-full min-h-0 flex-col"
+                contentClassName={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrContentClassName35c48ace',
+                )}
               >
                 <ProjectSessionList projectId={projectId} filter={sessionFilter} />
               </DisclosureContent>

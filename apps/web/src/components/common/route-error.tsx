@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import * as Sentry from '@sentry/nextjs';
+import { useTranslations } from 'next-intl';
+import { useEffect } from 'react';
 import { ErrorDetails } from './error-details';
 
 /**
@@ -21,6 +22,7 @@ export function RouteErrorFallback({
   title?: string;
   description?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   useEffect(() => {
     Sentry.captureException(error);
   }, [error]);
@@ -28,13 +30,13 @@ export function RouteErrorFallback({
   return (
     <div className="flex h-full min-h-[60vh] w-full flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="space-y-1.5">
-        <h2 className="text-lg font-medium text-foreground">{title}</h2>
-        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
+        <h2 className="text-foreground text-lg font-medium">{title}</h2>
+        <p className="text-muted-foreground max-w-md text-sm">{description}</p>
       </div>
       <ErrorDetails error={error} />
       <div className="flex gap-2">
         <Button variant="outline" onClick={reset}>
-          Try again
+          {tI18nHardcoded.raw('autoComponentsCommonRouteErrorJsxTextTryAgainfa3388ed')}
         </Button>
         <Button
           onClick={() => {

@@ -2,14 +2,15 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, FileText, Folder, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+import { FileText, Folder, Search, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFileSearch } from '../hooks';
 import { useFilesStore } from '../store/files-store';
-import { cn } from '@/lib/utils';
 
 export function FileSearch() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -99,42 +100,55 @@ export function FileSearch() {
 
   return (
     <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={closeSearch}>
-      <div className="mx-auto max-w-lg mt-4 px-4" onClick={(e) => e.stopPropagation()}>
-        <div className="rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+      <div className="mx-auto mt-4 max-w-lg px-4" onClick={(e) => e.stopPropagation()}>
+        <div className="border-border bg-card overflow-hidden rounded-2xl border shadow-2xl">
           {/* Search input */}
-          <div className="flex items-center gap-2 px-3 border-b">
-            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Input type="text"
+          <div className="flex items-center gap-2 border-b px-3">
+            <Search className="text-muted-foreground h-4 w-4 shrink-0" />
+            <Input
+              type="text"
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleInputKeyDown}
-              placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsFileSearch.line109JsxAttrPlaceholderSearchFiles')}
-              className="border-0 shadow-none focus-visible:ring-0 px-0 h-10"
+              placeholder={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileSearch.line109JsxAttrPlaceholderSearchFiles',
+              )}
+              className="h-10 border-0 px-0 shadow-none focus-visible:ring-0"
             />
             <button
               onClick={closeSearch}
-              aria-label="Close search"
-              className="p-1 rounded hover:bg-muted"
+              aria-label={tI18nHardcoded.raw(
+                'autoFeaturesProjectFilesComponentsFileSearchJsxAttrAriaLabel732c1816',
+              )}
+              className="hover:bg-muted rounded p-1"
             >
-              <X className="h-4 w-4 text-muted-foreground" />
+              <X className="text-muted-foreground h-4 w-4" />
             </button>
           </div>
 
           {/* Results */}
           <div ref={listRef} className="max-h-[300px] overflow-y-auto">
             {debouncedQuery.length === 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileSearch.line124JsxTextTypeToSearchFiles')}</div>
+              <div className="text-muted-foreground px-4 py-6 text-center text-sm">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileSearch.line124JsxTextTypeToSearchFiles',
+                )}
+              </div>
             )}
 
             {isLoading && debouncedQuery.length > 0 && (
-              <div className="px-4 py-4 text-center text-sm text-muted-foreground">
+              <div className="text-muted-foreground px-4 py-4 text-center text-sm">
                 Searching...
               </div>
             )}
 
             {results && results.length === 0 && debouncedQuery.length > 0 && (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileSearch.line136JsxTextNoFilesFound')}</div>
+              <div className="text-muted-foreground px-4 py-6 text-center text-sm">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileSearch.line136JsxTextNoFilesFound',
+                )}
+              </div>
             )}
 
             {results &&
@@ -151,20 +165,18 @@ export function FileSearch() {
                     onClick={() => handleSelect(filePath)}
                     onMouseEnter={() => setSelectedIndex(index)}
                     className={cn(
-                      'flex items-center gap-2 w-full px-3 py-2 text-sm text-left',
+                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
                       'transition-colors',
-                      index === selectedIndex
-                        ? 'bg-muted'
-                        : 'hover:bg-muted',
+                      index === selectedIndex ? 'bg-muted' : 'hover:bg-muted',
                     )}
                   >
                     {isDir ? (
-                      <Folder className="h-4 w-4 text-blue-400 shrink-0" />
+                      <Folder className="h-4 w-4 shrink-0 text-blue-400" />
                     ) : (
-                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
                     )}
-                    <span className="truncate flex-1 font-medium">{name}</span>
-                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    <span className="flex-1 truncate font-medium">{name}</span>
+                    <span className="text-muted-foreground max-w-[200px] truncate text-xs">
                       {filePath}
                     </span>
                   </button>

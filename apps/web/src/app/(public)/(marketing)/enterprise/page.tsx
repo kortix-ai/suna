@@ -108,6 +108,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 }
 
 const EnterprisePage = () => {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`);
   const [calOpen, setCalOpen] = useState(false);
@@ -333,7 +334,9 @@ const EnterprisePage = () => {
                 <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
                   <div className="space-y-2">
                     <Badge variant="kortix" className="rounded">
-                      Deploy internal agents
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingEnterprisePageJsxTextDeployInternalAgentse5230bd9',
+                      )}
                     </Badge>
                     <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
                       {t('closingTitle')}

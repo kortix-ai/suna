@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * StepMedia — a browser-framed media slot for the landing-page walkthrough.
  *
@@ -11,8 +12,8 @@
  *   - .png/.jpg/…  → next/Image
  */
 
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 export function StepMedia({
   src,
@@ -27,20 +28,26 @@ export function StepMedia({
   priority?: boolean;
   className?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const ext = src.split('.').pop()?.toLowerCase();
   const isVideo = ext === 'mp4' || ext === 'webm';
   const isGif = ext === 'gif';
 
   return (
-    <div className={cn('overflow-hidden rounded-[20px] border border-border bg-background shadow-2xl ring-1 ring-black/[0.02]', className)}>
+    <div
+      className={cn(
+        'border-border bg-background overflow-hidden rounded-[20px] border shadow-2xl ring-1 ring-black/[0.02]',
+        className,
+      )}
+    >
       {/* browser chrome */}
-      <div className="flex h-11 items-center gap-3 border-b border-border/60 bg-muted/30 px-4">
+      <div className="border-border/60 bg-muted/30 flex h-11 items-center gap-3 border-b px-4">
         <div className="flex gap-1.5">
-          <span className="size-2.5 rounded-full bg-muted-foreground/15" />
-          <span className="size-2.5 rounded-full bg-muted-foreground/15" />
-          <span className="size-2.5 rounded-full bg-muted-foreground/15" />
+          <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+          <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+          <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
         </div>
-        <div className="mx-auto flex h-7 w-full max-w-xs items-center justify-center gap-2 rounded-full border border-border bg-background px-3 text-xs text-muted-foreground">
+        <div className="border-border bg-background text-muted-foreground mx-auto flex h-7 w-full max-w-xs items-center justify-center gap-2 rounded-full border px-3 text-xs">
           <span className="size-1.5 rounded-full bg-emerald-500" />
           {urlLabel}
         </div>
@@ -48,7 +55,7 @@ export function StepMedia({
       </div>
 
       {/* media */}
-      <div className="relative aspect-[1440/900] w-full bg-muted/20">
+      <div className="bg-muted/20 relative aspect-[1440/900] w-full">
         {isVideo ? (
           <video
             src={src}
@@ -62,9 +69,24 @@ export function StepMedia({
           />
         ) : isGif ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={alt} className="absolute inset-0 size-full object-cover object-top" loading="lazy" decoding="async" />
+          <img
+            src={src}
+            alt={alt}
+            className="absolute inset-0 size-full object-cover object-top"
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
-          <Image src={src} alt={alt} fill priority={priority} sizes="(max-width: 1024px) 100vw, 1024px" className="object-cover object-top" />
+          <Image
+            src={src}
+            alt={alt}
+            fill
+            priority={priority}
+            sizes={tI18nHardcoded.raw(
+              'autoComponentsHomeStepMediaJsxAttrSizesMaxWidth1024px9d9619e1',
+            )}
+            className="object-cover object-top"
+          />
         )}
       </div>
     </div>

@@ -314,6 +314,7 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
 }: FileContentRendererProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
@@ -811,7 +812,9 @@ export function FileContentRenderer({
                 <FileWarning className="text-destructive/50 h-6 w-6" />
               </div>
               <p className="text-muted-foreground text-sm font-medium">
-                Couldn&apos;t preview this file
+                {tI18nHardcoded.raw(
+                  'autoFeaturesFileViewerFileContentRendererJsxTextCouldnT794ae800',
+                )}
               </p>
               <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
                 {filePath}

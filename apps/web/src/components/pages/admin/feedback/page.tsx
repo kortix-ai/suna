@@ -2,30 +2,39 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AdminFeedbackTable } from '@/components/admin/admin-feedback-table';
 import {
-  FeedbackStatsCards,
   CriticalFeedbackList,
+  FeedbackStatsCards,
   LLMAnalysisPanel,
 } from '@/components/admin/feedback';
-import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 // The three recharts charts are the only recharts consumers on this page; load
 // them lazily so recharts stays out of the feedback page chunk.
 const chartLoading = () => (
-  <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
-    Loading chart…
+  <div className="text-muted-foreground flex h-64 items-center justify-center text-sm">
+    <ChartLoadingText />
   </div>
 );
+
+function ChartLoadingText() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+
+  return tHardcodedUi.raw('autoComponentsPagesAdminFeedbackPageJsxTextLoadingChartc252c8eb');
+}
 const FeedbackTrendChart = dynamic(
   () => import('@/components/admin/feedback/FeedbackTrendChart').then((m) => m.FeedbackTrendChart),
   { ssr: false, loading: chartLoading },
 );
 const RatingDistributionChart = dynamic(
-  () => import('@/components/admin/feedback/RatingDistributionChart').then((m) => m.RatingDistributionChart),
+  () =>
+    import('@/components/admin/feedback/RatingDistributionChart').then(
+      (m) => m.RatingDistributionChart,
+    ),
   { ssr: false, loading: chartLoading },
 );
 const SentimentPieChart = dynamic(
@@ -36,13 +45,19 @@ const SentimentPieChart = dynamic(
 export default function AdminFeedbackPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="bg-background min-h-screen">
+      <div className="mx-auto max-w-6xl space-y-6 p-6">
         <LegacyBanner feature="Feedback" />
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line24JsxTextFeedbackAnalytics')}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line27JsxTextMonitorUserFeedbackAnalyzeTrendsAndGetAi')}</p>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line24JsxTextFeedbackAnalytics')}
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {tHardcodedUi.raw(
+                'componentsPagesAdminFeedbackPage.line27JsxTextMonitorUserFeedbackAnalyzeTrendsAndGetAi',
+              )}
+            </p>
           </div>
         </div>
         <FeedbackStatsCards />
@@ -53,12 +68,16 @@ export default function AdminFeedbackPage() {
               Overview
             </TabsTrigger>
             <TabsTrigger value="analysis" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line40JsxTextAiAnalysis')}</TabsTrigger>
+              <Sparkles className="h-4 w-4" />
+              {tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line40JsxTextAiAnalysis')}
+            </TabsTrigger>
             <TabsTrigger value="all" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line44JsxTextAllFeedback')}</TabsTrigger>
+              <MessageSquare className="h-4 w-4" />
+              {tHardcodedUi.raw('componentsPagesAdminFeedbackPage.line44JsxTextAllFeedback')}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <FeedbackTrendChart />
               </div>
@@ -66,7 +85,7 @@ export default function AdminFeedbackPage() {
                 <CriticalFeedbackList />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <RatingDistributionChart />
               <SentimentPieChart />
             </div>

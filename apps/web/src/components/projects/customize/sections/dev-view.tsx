@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Customize → Dev. The "work on this project from your own machine" guide.
  *
@@ -10,26 +11,22 @@
  * id, and default branch.
  */
 
-import { FormEvent, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, Copy, Loader2, Terminal, UserPlus } from 'lucide-react';
+import { FormEvent, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
-import {
-  getProject,
-  inviteRepoCollaborator,
-  isManagedGithubProject,
-} from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
 export function DevView({ projectId }: { projectId: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Terminal} title="Dev" />
       <DevBody projectId={projectId} />
     </div>
@@ -37,6 +34,7 @@ export function DevView({ projectId }: { projectId: string }) {
 }
 
 function DevBody({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),
@@ -49,13 +47,15 @@ function DevBody({ projectId }: { projectId: string }) {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
         <header className="space-y-1.5">
-          <h2 className="text-lg font-semibold text-foreground">
-            Develop on your own machine
+          <h2 className="text-foreground text-lg font-semibold">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d',
+            )}
           </h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            This project lives in one git repo. Clone it, open it in your own
-            coding agent — Claude Code, Cursor, Codex, opencode — and send your
-            changes back as a change request, the same way a cloud session does.
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProject56f17947',
+            )}
           </p>
         </header>
 
@@ -69,7 +69,9 @@ function DevBody({ projectId }: { projectId: string }) {
         {projectQuery.isError && (
           <SectionCard
             tone="destructive"
-            title="Couldn't load this project"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb',
+            )}
             description={(projectQuery.error as Error).message}
           />
         )}
@@ -80,11 +82,8 @@ function DevBody({ projectId }: { projectId: string }) {
   );
 }
 
-function DevSteps({
-  project,
-}: {
-  project: Awaited<ReturnType<typeof getProject>>;
-}) {
+function DevSteps({ project }: { project: Awaited<ReturnType<typeof getProject>> }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const cloneUrl = cloneUrlFor(project.repo_url);
   const repoDir = repoDirFor(project.repo_url) || 'my-project';
   const managed = isManagedGithubProject(project);
@@ -101,8 +100,12 @@ function DevSteps({
       {managed && (
         <Step
           n={next()}
-          title="Get access to the repo"
-          hint="This repo is private and owned by Kortix. Add your GitHub account as a collaborator, then accept the invite GitHub emails you."
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa',
+          )}
+          hint={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f',
+          )}
         >
           <RepoAccessForm projectId={project.project_id} />
         </Step>
@@ -110,56 +113,74 @@ function DevSteps({
 
       <Step
         n={next()}
-        title="Clone the repo"
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCloneeed535b5',
+        )}
         hint={
           managed
             ? 'Once your invite is accepted, clone it like any other repo.'
             : 'You need read access to the repo to clone it.'
         }
       >
-        <CommandBlock
-          lines={[`git clone ${cloneUrl}`, `cd ${repoDir}`]}
-        />
+        <CommandBlock lines={[`git clone ${cloneUrl}`, `cd ${repoDir}`]} />
       </Step>
 
       <Step
         n={next()}
-        title="Install the Kortix CLI"
-        hint="Manages this project's secrets, sessions, and change requests from your terminal."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleInstall5ee6d4a5',
+        )}
+        hint={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintManages9608753c',
+        )}
       >
-        <CommandBlock
-          lines={['curl -fsSL https://kortix.com/install | bash', 'kortix login']}
-        />
+        <CommandBlock lines={['curl -fsSL https://kortix.com/install | bash', 'kortix login']} />
       </Step>
 
       <Step
         n={next()}
-        title="Set up your local dev environment"
-        hint="Wires the Kortix skill into your coding agent (Claude Code, Cursor, opencode…) and adds anything your local setup is missing — existing files are kept. The repo is already linked to this project, so kortix commands target it automatically."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleSet0eb61991',
+        )}
+        hint={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintWires03f7d392',
+        )}
       >
         <CommandBlock lines={['kortix init --force']} />
       </Step>
 
       <Step
         n={next()}
-        title="Pull secrets"
-        hint="Writes a .env with this project's secret names — fill in the values locally. Plaintext never leaves the cloud."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitlePull407b0e0e',
+        )}
+        hint={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintWritese14f4d88',
+        )}
       >
         <CommandBlock lines={['kortix env pull']} />
       </Step>
 
       <Step
         n={next()}
-        title="Build it in your coding agent"
-        hint="This is where the work happens. Open the repo in the agent you wired up and just talk to it — the Kortix skill is loaded, so it knows how to configure agents, edit kortix.toml, add triggers, and write skills for this project."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleBuild28ec472e',
+        )}
+        hint={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThisc4b92026',
+        )}
       >
         <Launchers />
       </Step>
 
       <Step
         n={next()}
-        title="Ship your changes back"
-        hint="Open a change request, then review and merge it from the dashboard or with kortix cr merge."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleShip32cd936f',
+        )}
+        hint={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintOpen4938bb8e',
+        )}
       >
         <CommandBlock
           lines={[
@@ -169,12 +190,16 @@ function DevSteps({
             'kortix cr open --title "Describe your change"',
           ]}
         />
-        <p className="mt-2 text-xs text-muted-foreground">
-          Branches merge into{' '}
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.7rem] text-foreground">
+        <p className="text-muted-foreground mt-2 text-xs">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxTextBranchesMerge6cfcecc7',
+          )}{' '}
+          <code className="bg-muted text-foreground rounded px-1 py-0.5 font-mono text-[0.7rem]">
             {branch}
           </code>{' '}
-          through change requests — there's no other path to the main branch.
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThroughChange0501ea03',
+          )}
         </p>
       </Step>
     </div>
@@ -194,15 +219,13 @@ function Step({
 }) {
   return (
     <div className="flex gap-3.5">
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold tabular-nums text-foreground">
+      <div className="bg-primary/10 text-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold tabular-nums">
         {n}
       </div>
       <div className="min-w-0 flex-1 space-y-2 pt-0.5">
         <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-          {hint && (
-            <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>
-          )}
+          <h3 className="text-foreground text-sm font-semibold">{title}</h3>
+          {hint && <p className="text-muted-foreground text-xs leading-relaxed">{hint}</p>}
         </div>
         {children}
       </div>
@@ -211,6 +234,7 @@ function Step({
 }
 
 function CommandBlock({ lines }: { lines: string[] }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const text = lines.join('\n');
 
@@ -223,12 +247,12 @@ function CommandBlock({ lines }: { lines: string[] }) {
   };
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-border/60 bg-muted/40">
+    <div className="group border-border/60 bg-muted/40 relative overflow-hidden rounded-xl border">
       <pre className="overflow-x-auto px-3.5 py-3 pr-12 text-[0.8rem] leading-relaxed">
-        <code className="font-mono text-foreground">
+        <code className="text-foreground font-mono">
           {lines.map((line, i) => (
             <div key={i} className="flex">
-              <span aria-hidden className="select-none pr-3 text-muted-foreground/50">
+              <span aria-hidden className="text-muted-foreground/50 pr-3 select-none">
                 $
               </span>
               <span className="min-w-0 break-all">{line}</span>
@@ -239,17 +263,15 @@ function CommandBlock({ lines }: { lines: string[] }) {
       <button
         type="button"
         onClick={copy}
-        aria-label="Copy command"
+        aria-label={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrAriaLabel36dfdacf',
+        )}
         className={cn(
-          'absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg',
-          'text-muted-foreground transition-colors hover:bg-background hover:text-foreground',
+          'absolute top-2 right-2 flex size-7 items-center justify-center rounded-lg',
+          'text-muted-foreground hover:bg-background hover:text-foreground transition-colors',
         )}
       >
-        {copied ? (
-          <Check className="size-3.5 text-primary" />
-        ) : (
-          <Copy className="size-3.5" />
-        )}
+        {copied ? <Check className="text-primary size-3.5" /> : <Copy className="size-3.5" />}
       </button>
     </div>
   );
@@ -293,14 +315,14 @@ function LauncherChip({ label, command }: { label: string; command: string }) {
       type="button"
       onClick={copy}
       title={`Copy "${command}"`}
-      className="group flex items-center gap-2 rounded-2xl border border-border/60 bg-muted/40 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted"
+      className="group border-border/60 bg-muted/40 hover:border-border hover:bg-muted flex items-center gap-2 rounded-2xl border px-3 py-2 text-left transition-colors"
     >
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <code className="font-mono text-[0.7rem] text-muted-foreground">{command}</code>
+      <span className="text-foreground text-sm font-medium">{label}</span>
+      <code className="text-muted-foreground font-mono text-[0.7rem]">{command}</code>
       {copied ? (
-        <Check className="size-3.5 text-primary" />
+        <Check className="text-primary size-3.5" />
       ) : (
-        <Copy className="size-3.5 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" />
+        <Copy className="text-muted-foreground/60 group-hover:text-muted-foreground size-3.5 transition-colors" />
       )}
     </button>
   );
@@ -312,6 +334,7 @@ function LauncherChip({ label, command }: { label: string; command: string }) {
  * step one of the local-dev flow, where you actually need it.
  */
 function RepoAccessForm({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [username, setUsername] = useState('');
 
   const invite = useMutation({
@@ -324,8 +347,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
       }
       setUsername('');
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to add collaborator'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to add collaborator'),
   });
 
   const submit = (e: FormEvent) => {
@@ -336,11 +358,13 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
   return (
     <form className="flex flex-wrap items-center gap-2" onSubmit={submit}>
       <div className="relative min-w-0 flex-1 basis-48">
-        <GithubMark className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+        <GithubMark className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
         <Input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Your GitHub username"
+          placeholder={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrPlaceholderYoure78e16b1',
+          )}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
@@ -358,7 +382,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
         ) : (
           <UserPlus className="size-3.5" />
         )}
-        Add me
+        {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
       </Button>
     </form>
   );
@@ -381,7 +405,10 @@ function GithubMark({ className }: { className?: string }) {
  * URLs become an HTTPS clone URL; anything else is used as-is.
  */
 function cloneUrlFor(repoUrl: string | null | undefined): string {
-  const normalized = repoUrl?.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
+  const normalized = repoUrl
+    ?.trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
   if (!normalized) return 'git@github.com:owner/repo.git';
 
   const ssh = normalized.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
@@ -395,7 +422,10 @@ function cloneUrlFor(repoUrl: string | null | undefined): string {
 
 /** The directory `git clone` drops you into — the repo name. */
 function repoDirFor(repoUrl: string | null | undefined): string {
-  const normalized = repoUrl?.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
+  const normalized = repoUrl
+    ?.trim()
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
   if (!normalized) return '';
   const last = normalized.split(/[/:]/).pop() ?? '';
   return last;

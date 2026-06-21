@@ -551,7 +551,7 @@ describe('Preview proxy: forwarding', () => {
     );
   });
 
-  test('fails prompt forwarding when project env sync is rejected', async () => {
+  test('returns a clean proxy error when project env sync is rejected', async () => {
     mockFetchResponses = [{ status: 401, body: '{"error":"unauthorized"}' }];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
@@ -565,9 +565,34 @@ describe('Preview proxy: forwarding', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toContain('env sync failed: 401');
+    expect(body.error).toContain('env sync failed: 401');
     expect(mockFetchCalls).toHaveLength(1);
     expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+  });
+
+  test('retries transient project env sync failures before forwarding prompt_async', async () => {
+    mockFetchResponses = [
+      { status: 502, body: 'Bad Gateway' },
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
   });
 
   test('strips hop, auth, trace, and forces identity compression for forwarded request', async () => {

@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { type LegacyMachine } from '@/hooks/legacy/use-legacy-machine-migration';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import Loading from '../ui/loading';
 
 const PHASE_LABEL: Record<string, string> = {
@@ -26,6 +27,7 @@ export function LegacyMachineCard({
   onMigrate: () => void;
   onOpenProject: (projectId: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const migration = machine.migration;
   const busy = starting || migration?.status === 'running' || migration?.status === 'planned';
   const done = migration?.status === 'completed';
@@ -48,15 +50,15 @@ export function LegacyMachineCard({
     </Badge>
   ) : failed ? (
     <Badge variant="warning" size="sm">
-      Migration failed
+      {tI18nHardcoded.raw('autoComponentsProjectsLegacyMachineCardJsxTextMigrationFailed81a347fa')}
     </Badge>
   ) : machine.migratable ? (
     <Badge variant="warning" size="sm">
-      Must be migrated
+      {tI18nHardcoded.raw('autoComponentsProjectsLegacyMachineCardJsxTextMustBeMigrated0ff74c6e')}
     </Badge>
   ) : (
     <Badge variant="muted" size="sm">
-      Can&apos;t migrate
+      {tI18nHardcoded.raw('autoComponentsProjectsLegacyMachineCardJsxTextCanTMigratec1b5bcd9')}
     </Badge>
   );
 

@@ -89,10 +89,9 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
 }
 
 function refetchKortixSessionMirrors(queryClient: QueryClient): void {
-  // OpenCode title/tree mirroring is now owned by the API during project-session
-  // reads. When the sandbox emits a session title/tree change, force the active
-  // project-session reads to happen so the tabs/sidebar pick up the server-side
-  // mirror immediately without reintroducing the old browser-write endpoint.
+  // OpenCode title/tree mirroring is owned by API session reads. When OpenCode
+  // emits a title/tree change, refetch the active Kortix session reads so tabs
+  // and sidebars pick up the server-side mirror without browser-side writes.
   void queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
   void queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
 }
@@ -694,8 +693,9 @@ export function useOpenCodeEventStream() {
         case 'session.updated': {
           const info = readSessionInfo(event);
           if (info) {
-            // Did the title change? (opencode auto-titles after the first
-            // message via session.updated.) Capture BEFORE we overwrite caches.
+            // OpenCode auto-titles after the first message via session.updated.
+            // Capture the previous title before local cache mutation so we only
+            // force the server-owned mirror read when the title actually changed.
             const prevTitle =
               queryClient
                 .getQueryData<Session[]>(opencodeKeys.sessions())

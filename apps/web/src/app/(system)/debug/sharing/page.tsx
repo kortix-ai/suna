@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Visual harness for the unified <SharingPicker> (secrets / connectors /
  * sessions all use it). Auth-free: seeds the project-access query so the member
@@ -98,14 +99,21 @@ function Panel({ title }: { title: string }) {
 }
 
 export default function DebugSharingPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <QueryClientProvider client={client}>
       <div className="bg-background min-h-screen p-10">
         <h1 className="text-foreground mb-6 text-lg font-semibold">
-          SharingPicker — visual harness
+          {tI18nHardcoded.raw(
+            'autoAppSystemDebugSharingPageJsxTextSharingPickerVisualHarness45b06d33',
+          )}
         </h1>
         <div className="flex flex-wrap gap-6">
-          <Panel title="Share session" />
+          <Panel
+            title={tI18nHardcoded.raw(
+              'autoAppSystemDebugSharingPageJsxAttrTitleShareSessiona4e430a9',
+            )}
+          />
         </div>
       </div>
     </QueryClientProvider>
