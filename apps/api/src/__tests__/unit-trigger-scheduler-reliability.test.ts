@@ -55,7 +55,22 @@ describe('isSweepStale (scheduler stall detection)', () => {
     ).toBe(false);
   });
 
-  test('WEDGE: leader, a sweep started but never completed → stale (the outage signature)', () => {
+  test('IN-FLIGHT (fresh leader): first sweep started recently, not yet completed → NOT stale', () => {
+    // Regression: a busy sweep can legitimately run for minutes (loads ~1.7k
+    // project manifests). It must not read as stale the instant it starts just
+    // because no prior sweep has completed yet (lastSweepCompletedAt is null).
+    expect(
+      isSweepStale({
+        isLeader: true,
+        lastSweepStartedAt: new Date(T0 - 30_000).toISOString(), // started 30s ago
+        lastSweepCompletedAt: null,
+        nowMs: T0,
+        staleMs: STALE,
+      }),
+    ).toBe(false);
+  });
+
+  test('WEDGE: leader, a sweep in-flight far longer than the stale window → stale (the outage signature)', () => {
     expect(
       isSweepStale({
         isLeader: true,
