@@ -104,52 +104,57 @@ export async function stageBuildContext(
   }
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
-  await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
-  await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
-  await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-  await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
-  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
-  // Stage the starter opencode config for the build-time instance warm-up.
-  // Best effort: if it's missing, skip the warm-up (the build still succeeds and
-  // sessions just pay the first-instance cost at runtime as before).
-  let opencodeConfigPath: string | undefined;
-  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
-    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
-      recursive: true,
+  try {
+    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
+    await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
+    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+    await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
+    await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
+    // Stage the starter opencode config for the build-time instance warm-up.
+    // Best effort: if it's missing, skip the warm-up (the build still succeeds and
+    // sessions just pay the first-instance cost at runtime as before).
+    let opencodeConfigPath: string | undefined;
+    if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+      await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+        recursive: true,
+      });
+      opencodeConfigPath = 'kortix-opencode-config';
+    }
+
+    // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
+    // DEFAULT starter with the SAME pinned commit metadata the project seeder
+    // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
+    // root — the daemon then materializes a project repo as local-clone +
+    // delta-fetch instead of a full clone over the (slow) git path. Non-matching
+    // repos (imported, other starters) share no ancestor and transparently fall
+    // back to a full fetch through the same code.
+    await stageScaffoldRepo(contextDir);
+
+    const dockerfileName = '.kortix-snapshot.Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    const composed = buildLayeredDockerfile({
+      userDockerfile,
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      agentBinaryPath: 'kortix-agent.gz',
+      cliBinaryPath: 'kortix.gz',
+      entrypointScriptPath: 'kortix-entrypoint',
+      agentCliPath: 'kortix-agent-cli',
+      executorSdkPath: 'kortix-executor-sdk',
+      opencodeConfigPath,
     });
-    opencodeConfigPath = 'kortix-opencode-config';
+    if (typeof (globalThis as any).Bun?.write === 'function') {
+      await (globalThis as any).Bun.write(composedPath, composed);
+    } else {
+      const fs = await import('node:fs/promises');
+      await fs.writeFile(composedPath, composed);
+    }
+    console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
+    return { contextDir, composedPath, dockerfileName };
+  } catch (err) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
   }
-
-  // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
-  // DEFAULT starter with the SAME pinned commit metadata the project seeder
-  // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
-  // root — the daemon then materializes a project repo as local-clone +
-  // delta-fetch instead of a full clone over the (slow) git path. Non-matching
-  // repos (imported, other starters) share no ancestor and transparently fall
-  // back to a full fetch through the same code.
-  await stageScaffoldRepo(contextDir);
-
-  const dockerfileName = '.kortix-snapshot.Dockerfile';
-  const composedPath = join(contextDir, dockerfileName);
-  const composed = buildLayeredDockerfile({
-    userDockerfile,
-    opencodeVersion: OPENCODE_VERSION,
-    agentBrowserVersion: AGENT_BROWSER_VERSION,
-    agentBinaryPath: 'kortix-agent.gz',
-    cliBinaryPath: 'kortix.gz',
-    entrypointScriptPath: 'kortix-entrypoint',
-    agentCliPath: 'kortix-agent-cli',
-    executorSdkPath: 'kortix-executor-sdk',
-    opencodeConfigPath,
-  });
-  if (typeof (globalThis as any).Bun?.write === 'function') {
-    await (globalThis as any).Bun.write(composedPath, composed);
-  } else {
-    const fs = await import('node:fs/promises');
-    await fs.writeFile(composedPath, composed);
-  }
-  console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
-  return { contextDir, composedPath, dockerfileName };
 }
 
 async function newestMtimeMs(dir: string): Promise<number> {

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-daytona-context-test-'));
@@ -30,14 +30,28 @@ process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
 process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
 
 let dockerfileSeen = '';
-let scaffoldPresentAtDaytonaBoundary = false;
+let imageFromDockerfile: unknown;
+let imagePassedToCreate: unknown;
+let missingCopySourcesAtDaytonaBoundary: string[] = [];
 
 mock.module('@daytonaio/sdk', () => ({
   Image: {
     fromDockerfile(path: string) {
       dockerfileSeen = readFileSync(path, 'utf8');
-      scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
-      return { kind: 'mock-image', path };
+      const contextDir = dirname(path);
+      missingCopySourcesAtDaytonaBoundary = dockerfileSeen
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('COPY '))
+        .flatMap((line) => {
+          const tokens = line.split(/\s+/).slice(1);
+          while (tokens[0]?.startsWith('--')) tokens.shift();
+          return tokens.slice(0, -1);
+        })
+        .map((source) => source.replace(/\/$/, ''))
+        .filter((source) => !existsSync(join(contextDir, source)));
+      imageFromDockerfile = { kind: 'mock-image', path };
+      return imageFromDockerfile;
     },
   },
 }));
@@ -45,7 +59,9 @@ mock.module('@daytonaio/sdk', () => ({
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({
     snapshot: {
-      create: async () => undefined,
+      create: async (input: { image: unknown }) => {
+        imagePassedToCreate = input.image;
+      },
       get: async () => ({ state: 'active' }),
       delete: async () => undefined,
     },
@@ -69,6 +85,7 @@ describe('Daytona snapshot build context', () => {
     });
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
-    expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
+    expect(imagePassedToCreate).toBe(imageFromDockerfile);
+    expect(missingCopySourcesAtDaytonaBoundary).toEqual([]);
   });
 });
