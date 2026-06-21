@@ -3,6 +3,13 @@
 Infrastructure-as-code for the Kortix API hosting. Each environment is a
 separate root module under `environments/` with its own state.
 
+> ⚠️ **Current runtime (2026-06-21):** prod = **EKS `kortix-prod-eks` (eu-west-2/London)**
+> active; dev = **EKS `kortix-dev-eks` (us-west-2)** active. The **ECS Fargate stacks
+> (`environments/{prod,dev}`) are the WARM STANDBY** the Cloudflare Worker fails over
+> to — **NOT legacy, do not delete them.** Logs live in **Better Stack, not CloudWatch**.
+> See **`infra/OBSERVABILITY.md`** for the full topology, the log tables, and the ECS
+> standby restore runbook. (The env comments below are historical.)
+
 ```
 infra/terraform/
   modules/
