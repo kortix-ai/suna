@@ -116,6 +116,11 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
   return result.stdout;
 }
 
+export function isMissingGitPathError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
+}
+
 /**
  * Stream a zip archive of the repo (or a subtree) at the given ref.
  *

@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { deployAppSpec, getLatestDeployment } from '../app-sweep';
 import { loadProjectApps, manifestHashForApp } from '../apps';
 import { archiveRepoSubtree, getBranchDiff, getCommit, getCommitDiff, getFileHistory, grepRepoFiles, listBranches, listCommits, listRepoFiles, loadProjectConfig, readRepoFile, searchRepoFileNames } from '../git';
+import { isMissingGitPathError } from '../git/files';
 import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -13,11 +14,6 @@ import { loadProjectForUser } from '../lib/access';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
-
-function isMissingGitPathError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error || '');
-  return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
-}
 
 projectsApp.openapi(
   createRoute({
