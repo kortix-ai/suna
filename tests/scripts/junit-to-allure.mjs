@@ -38,10 +38,15 @@ function attrs(raw = '') {
   return result;
 }
 
+function escapeHtml(value = '') {
+  return value.replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+}
+
 function stripTags(value = '') {
-  // Decode entities first, then drop every '<...'—closing '>' optional—so an
-  // unclosed '<script' can't survive (complete tag stripping, no leftover '<').
-  return decodeXml(value).replace(/<[^>]*>?/g, '').trim();
+  // Decode entities and drop tags for readability, then HTML-escape the result
+  // so the plain text can never re-form markup — escaping is the complete
+  // sanitizer (no '<' can reach the output).
+  return escapeHtml(decodeXml(value).replace(/<[^>]*>?/g, '')).trim();
 }
 
 function statusFor(body) {
