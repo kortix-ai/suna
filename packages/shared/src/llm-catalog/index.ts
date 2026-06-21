@@ -31,9 +31,6 @@ export interface ManagedModel {
   name: string;
   bedrockModelId: string;
   openRouterModelId: string;
-  inputPerMillion: number;
-  outputPerMillion: number;
-  cachedInputPerMillion: number;
   tier: 'flagship' | 'balanced' | 'fast';
 }
 
@@ -49,9 +46,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Kortix Power',
     bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
     openRouterModelId: 'anthropic/claude-sonnet-4.6',
-    inputPerMillion: 3,
-    outputPerMillion: 15,
-    cachedInputPerMillion: 0.3,
     tier: 'flagship',
   },
   {
@@ -59,9 +53,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     name: 'Kortix Basic',
     bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
     openRouterModelId: 'anthropic/claude-haiku-4.5',
-    inputPerMillion: 1,
-    outputPerMillion: 5,
-    cachedInputPerMillion: 0.1,
     tier: 'fast',
   },
 ];
