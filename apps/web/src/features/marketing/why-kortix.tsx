@@ -19,7 +19,7 @@ function useRows(): WhyRow[] {
       body: (
         <>
           <p>
-            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextWithMostToolsYoue0092085')}
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextWithMostToolsYou4b74710a')}
           </p>
           <p>
             <strong>
@@ -38,7 +38,7 @@ function useRows(): WhyRow[] {
       body: (
         <>
           <p>
-            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextEveryAIAgentYou1a240225')}
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextEveryAIAgentYou7f5d6f06')}
           </p>
           <p>
             {tI18nHardcoded.raw(
@@ -58,7 +58,7 @@ function useRows(): WhyRow[] {
       body: (
         <>
           <p>
-            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextKortixIsOpenSourcecda1bf14')}
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextKortixIsOpenSource5afa4f64')}
           </p>
           <p>
             {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextYourDataStaysWhere3c5e3923')}
@@ -78,7 +78,7 @@ function useRows(): WhyRow[] {
       body: (
         <>
           <p>
-            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextYouShouldnTNeed1c26921a')}
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextYouShouldnTNeedae8350b9')}
           </p>
           <p>
             {tI18nHardcoded.raw(

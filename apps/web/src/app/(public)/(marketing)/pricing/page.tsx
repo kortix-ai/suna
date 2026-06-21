@@ -160,7 +160,7 @@ export default function PricingPage() {
             {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521')}
           </h1>
           <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-lg text-balance">
-            {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextEverySeatGets907db6fe')}
+            {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8')}
           </p>
         </div>
 
