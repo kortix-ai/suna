@@ -1,8 +1,57 @@
 # llm-gateway
 
-OpenAI-compatible LLM proxy backed by OpenRouter. Self-contained,
-dependency-injected module — the host wires it up with three hooks (auth,
-billing gate, usage sink) and mounts it under any path.
+OpenAI-compatible LLM proxy backed by OpenRouter, with an optional **AWS
+Bedrock** backend. Self-contained, dependency-injected module — the host wires
+it up with three hooks (auth, billing gate, usage sink) and mounts it under any
+path.
+
+## Backends
+
+| Model id pattern | Backend |
+|---|---|
+| `bedrock/*` (e.g. `bedrock/anthropic/claude-opus-4.8`) | AWS Bedrock Converse — *only when `config.bedrock.enabled`* |
+| everything else | OpenRouter |
+
+Both backends run behind the same `/chat/completions` route, the same auth +
+billing gate, and the same usage-accounting pipeline (`recordUsage`). Usage
+events carry `provider: 'bedrock'` vs `provider: 'openrouter'` so spend is
+attributable per backend.
+
+### AWS Bedrock
+
+When `config.bedrock.enabled` is true, any request whose `model` starts with
+`bedrock/` is served via the Bedrock Runtime **Converse / ConverseStream** API
+instead of OpenRouter:
+
+- `services/bedrock-models.ts` — maps the logical id (e.g.
+  `bedrock/anthropic/claude-opus-4.8`) to a Bedrock inference-profile id
+  (`us.anthropic.claude-opus-4-5-...`) plus per-model fallback pricing.
+- `services/bedrock-translate.ts` — **pure** OpenAI↔Converse translation
+  (messages, system prompts, tools/tool-calls, images, reasoning/extended
+  thinking, streaming → OpenAI SSE chunks). No SDK imports, fully unit-tested.
+- `services/bedrock-client.ts` — thin `@aws-sdk/client-bedrock-runtime` wrapper
+  (lazy, memoized client; swappable senders for tests).
+- `services/bedrock-handler.ts` — orchestrates a completion, mirroring the
+  OpenRouter handler's streaming-disconnect handling so usage is still captured
+  if the client drops mid-stream.
+
+Credentials use the AWS default chain (env vars, EKS IRSA / instance role) when
+`accessKeyId`/`secretAccessKey` are omitted — the production path on our EKS
+nodes. The region defaults to `us-west-2`.
+
+Config (env, read in `apps/api/src/config.ts`, wired in `apps/api/src/index.ts`):
+
+```
+BEDROCK_ENABLED=true
+BEDROCK_REGION=us-west-2
+AWS_ACCESS_KEY_ID=...        # optional — default chain used when unset
+AWS_SECRET_ACCESS_KEY=...    # optional
+AWS_SESSION_TOKEN=...        # optional
+```
+
+The `bedrock/*` model ids are also declared in the sandbox `kortix` OpenCode
+provider (`apps/kortix-sandbox-agent-server/src/opencode.ts`) so they show up in
+the model selector.
 
 ## Routes
 
