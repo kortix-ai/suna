@@ -173,7 +173,6 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
         externalUserId: `${projectId}:${slug}`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -762,11 +761,15 @@ function ConnectorDetail({
             </InlineMeta>
           </div>
         </div>
+        {/* When connected, a compact Reconnect/Replace lives in the header.
+            When NOT connected, the connect action is a big CTA below — not a
+            small header button buried next to the title. */}
         {connector.authSecret &&
+          connected &&
           (isPipedream ? (
             <Button
               size="sm"
-              variant={connected ? 'outline' : 'default'}
+              variant="outline"
               className="shrink-0 gap-1.5"
               onClick={() => reconnect.mutate()}
               disabled={reconnect.isPending}
@@ -776,22 +779,45 @@ function ConnectorDetail({
               ) : (
                 <KeyRound className="h-4 w-4" />
               )}
-              {connected ? 'Reconnect' : 'Connect'}
+              Reconnect
             </Button>
           ) : (
             <Button
               size="sm"
-              variant={connected ? 'outline' : 'default'}
+              variant="outline"
               className="shrink-0 gap-1.5"
               onClick={() => setCredOpen(true)}
             >
               <KeyRound className="h-4 w-4" />
-              {connected ? 'Replace credential' : 'Set credential'}
+              Replace credential
             </Button>
           ))}
       </div>
 
       <div className="mt-7 space-y-5">
+        {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
+        {connector.authSecret && !connected && (
+          <InfoBanner
+            tone="info"
+            icon={KeyRound}
+            title={`Connect ${displayName}`}
+            action={
+              <Button
+                size="lg"
+                className="h-11 shrink-0 gap-2 px-5 font-semibold"
+                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
+                disabled={isPipedream && reconnect.isPending}
+              >
+                {isPipedream && reconnect.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isPipedream ? `Connect ${displayName}` : 'Set credential'}
+              </Button>
+            }
+          >
+            {isPipedream
+              ? `Authorize your ${displayName} account so the agent and your triggers can use it.`
+              : `Add the credential so the agent and your triggers can use ${displayName}.`}
+          </InfoBanner>
+        )}
         {!isPipedream && (
           <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
         )}
@@ -1740,6 +1766,12 @@ interface ConnectorSetup {
   memberIds: string[];
 }
 
+const DEFAULT_CONNECTOR_SETUP: ConnectorSetup = {
+  credential: 'shared',
+  access: 'project',
+  memberIds: [],
+};
+
 function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   if (s.access === 'project') return { mode: 'project' };
   if (s.access === 'private') return { mode: 'private', ownerId: '' };
@@ -1767,9 +1799,7 @@ function ConnectorSetupFields({
         <div className="space-y-0.5">
           <Label>Profile</Label>
           <p className="text-muted-foreground text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTheAccount7df6646c',
-            )}
+            How this connection is set up for the project.
           </p>
         </div>
         <RadioGroup
@@ -1786,21 +1816,13 @@ function ConnectorSetupFields({
         >
           <ShareOption
             value="shared"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
-            )}
+            label="One shared profile across the whole project (recommended)"
+            desc="Connect it once. Everyone — and every trigger/cron — uses the same account. Best for almost all cases."
           />
           <ShareOption
             value="per_user"
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
-            )}
-            desc={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
-            )}
+            label="Each member brings their own profile"
+            desc="Every member connects their own account, and only ever uses their own. Pick this only when each person must act as themselves."
           />
         </RadioGroup>
       </div>
@@ -2035,11 +2057,15 @@ function ConfigureAppDialog({
   onAdded: (slug: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [setup, setSetup] = useState<ConnectorSetup>({
-    credential: 'per_user',
-    access: 'project',
-    memberIds: [],
-  });
+  // Default to ONE SHARED profile for the whole project. It's the right choice
+  // for the overwhelming majority of cases (the agent + crons just use it, no
+  // per-member setup), and it makes triggers work without each member having to
+  // connect their own account. "Each member brings their own" stays a one-click
+  // opt-in for the genuine BYO case.
+  const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
+  useEffect(() => {
+    if (open && app?.slug) setSetup(DEFAULT_CONNECTOR_SETUP);
+  }, [open, app?.slug]);
   const save = useMutation({
     mutationFn: () =>
       createConnector(projectId, {
@@ -2305,11 +2331,7 @@ function CustomConnectorForm({
     provider: 'openapi',
     auth: { type: 'none' },
   });
-  const [setup, setSetup] = useState<ConnectorSetup>({
-    credential: 'shared',
-    access: 'project',
-    memberIds: [],
-  });
+  const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
   const save = useMutation({
     mutationFn: () =>
       createConnector(projectId, {
