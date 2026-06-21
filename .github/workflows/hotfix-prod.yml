@@ -122,6 +122,24 @@ jobs:
           echo "branch=hotfix/$tag" >> "$GITHUB_OUTPUT"
           echo "Hotfix $tag from $sha (prod currently $base)"
 
+      - name: Slack — hotfix initiated
+        if: always() && steps.rel.outcome == 'success'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_HOTFIX_CHANNEL || secrets.SLACK_RELEASE_CHANNEL }}
+          COLOR_EMOJI: "🚨 "
+          HEADER: "Emergency hotfix initiated — ${{ steps.rel.outputs.tag }}"
+          BODY: |
+            *${{ inputs.title }}*
+            ${{ inputs.reason }}
+          FIELDS: |
+            *Version* `${{ steps.rel.outputs.tag }}`
+            *Source* `${{ inputs.ref }}` @ `${{ steps.rel.outputs.sha8 }}`
+            *Initiated by* ${{ github.actor }}
+            *Surfaces* `${{ inputs.surfaces }}`
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/slack-notify.sh
+
       - name: Install test dependencies
         run: npm --prefix tests ci
 
@@ -231,6 +249,39 @@ jobs:
 
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:prod"
+
+      - name: Slack — hotfix pushed to prod
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_HOTFIX_CHANNEL || secrets.SLACK_RELEASE_CHANNEL }}
+          COLOR_EMOJI: "✅ "
+          HEADER: "Hotfix ${{ steps.rel.outputs.tag }} pushed to prod — deploying"
+          BODY: |
+            Break-glass hotfix is on `prod`. `deploy-prod.yml` is now publishing and rolling out via Argo CD; watch for the "Kortix ${{ steps.rel.outputs.tag }} is live" release message.
+          FIELDS: |
+            *Version* `${{ steps.rel.outputs.tag }}`
+            *Commit* `${{ steps.rel.outputs.sha8 }}`
+            *By* ${{ github.actor }}
+            *Surfaces* `${{ inputs.surfaces }}`
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/slack-notify.sh
+
+      - name: Slack — hotfix FAILED
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_HOTFIX_CHANNEL || secrets.SLACK_RELEASE_CHANNEL }}
+          COLOR_EMOJI: "❌ "
+          HEADER: "Emergency hotfix FAILED — ${{ steps.rel.outputs.tag || inputs.ref }}"
+          BODY: |
+            The break-glass hotfix run failed before completing the prod push. Prod is unchanged by this run. Check the pipeline and re-run or escalate.
+          FIELDS: |
+            *Attempted* `${{ steps.rel.outputs.tag || 'unresolved' }}`
+            *Source* `${{ inputs.ref }}`
+            *By* ${{ github.actor }}
+            *Reason* ${{ inputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/slack-notify.sh
 
       - name: Summary
         run: |

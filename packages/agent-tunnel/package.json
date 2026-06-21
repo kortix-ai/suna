@@ -22,7 +22,8 @@
     "src/"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "hono": "^4.4.0"
@@ -31,7 +32,15 @@
     "@types/bun": "^1.3.9",
     "typescript": "^5.4.0"
   },
-  "keywords": ["tunnel", "relay", "websocket", "json-rpc", "hmac", "agent", "sdk"],
+  "keywords": [
+    "tunnel",
+    "relay",
+    "websocket",
+    "json-rpc",
+    "hmac",
+    "agent",
+    "sdk"
+  ],
   "license": "MIT",
   "publishConfig": {
     "access": "public"

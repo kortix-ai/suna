@@ -27,6 +27,7 @@ jobs:
     timeout-minutes: 45
     env:
       E2E_BASE_URL: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      A11Y_CONTRAST_MAX: ${{ vars.A11Y_CONTRAST_MAX || '560' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

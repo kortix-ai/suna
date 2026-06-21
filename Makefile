@@ -61,6 +61,8 @@ a11y: ## Accessibility tests (axe + Playwright)
 	$(NPM) run test:a11y
 performance: ## Performance / load (k6, Docker)
 	$(NPM) run test:perf
+perf-regression: ## Fail if k6 p95/error-rate regressed >10% vs committed baseline
+	$(NPM) run test:perf:regression
 security: ## Static security scans (SAST/deps/secrets/container)
 	$(NPM) run test:security
 security-dast: ## Dynamic security scan + API fuzz (needs TARGET_URL)

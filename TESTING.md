@@ -48,6 +48,47 @@ security security-dast pentest migration infra chaos mutation`.
 Each folder has its own `README.md` with how to write and run that category's tests, plus a
 copyable example. Shared test data factories/fixtures/mocks live in `tests/_support`.
 
+## Per-package unit tests (co-located)
+
+Unit tests live next to the code they cover (`apps/<app>/src/**/*.test.ts`,
+`packages/<pkg>/src/**/*.test.ts`) and run on **`bun:test`**. Every package and app declares a
+`test` script, and there is a single root entrypoint so nothing is orphaned from CI:
+
+```bash
+pnpm test            # every workspace with a test script (pnpm -r --if-present test)
+pnpm test:packages   # packages/** only
+pnpm test:apps       # apps/** only
+pnpm --filter <name> test    # one package, e.g. pnpm --filter @kortix/shared test
+```
+
+- **`kortix-api`** runs through `apps/api/scripts/test.sh` (invoked by `pnpm --filter kortix-api test`).
+  It discovers every `*.test.ts` under `src/` — no hand-maintained globs, no fail-fast — and splits
+  DB-backed and live-external suites into explicit lanes: `test` (default, no external deps),
+  `test:integration` (`integration-*`, needs Postgres), `test:live` (opt-in, real LLM provider),
+  `test:coverage` (Bun lcov). Run via `dotenvx` so encrypted env is provided.
+- **`apps/web`** uses a deterministic Bun preload (`apps/web/test-setup.ts`, wired in
+  `apps/web/bunfig.toml`) that scrubs `encrypted:` placeholders and supplies safe `NEXT_PUBLIC_*`
+  test config, so env-validated modules import cleanly without secrets.
+
+CI runs these on every PR via **`.github/workflows/package-tests.yml`** (pnpm-store cached). The
+`kortix-api` suite runs there only when `DOTENV_PRIVATE_KEY` is configured for the context.
+
+## Lint & format (Biome)
+
+`biome.json` (+ `.editorconfig`) is the single lint/format config for the TS surface. App-local
+ESLint (e.g. `apps/web`) is retained where Next.js-specific rules apply.
+
+```bash
+pnpm lint:biome        # check
+pnpm lint:biome:fix    # check + safe fixes
+pnpm format            # format in place
+```
+
+Biome's `noFocusedTests` is an error rule; the `package-tests` workflow additionally greps for any
+committed `.only(` and fails the build. Biome runs repo-wide as an **advisory ratchet** today
+(`continue-on-error`) so the unlinted backlog can be paid down without blocking PRs; flip it to
+blocking once `pnpm lint:biome` is clean.
+
 ## CI cadences
 
 Workflows mirror the `make` cadence targets, so CI == local.
@@ -55,6 +96,7 @@ Workflows mirror the `make` cadence targets, so CI == local.
 | Workflow | Trigger | Runs |
 |---|---|---|
 | `.github/workflows/qa-pr.yml` | every PR | lint, typecheck, unit, integration, contract, route coverage, **quality gates** |
+| `.github/workflows/package-tests.yml` | every PR | co-located `bun:test` suites across all packages + apps (pnpm-cached), focused-test guard, env-gated `kortix-api` suite, advisory Biome lint |
 | `.github/workflows/qa-main.yml` | merge to `main` | browser regression when a dev/staging web target is configured, migration tests, Allure report |
 | `.github/workflows/qa-nightly.yml` | nightly cron / dispatch | static security, automated pentest, performance/load, DAST + fuzz, mutation, chaos when dedicated targets are configured |
 | `.github/workflows/qa-release.yml` | PR into `prod` / dispatch | full suite against staging + **blocking quality gates** before the release PR can merge |
@@ -97,6 +139,12 @@ also post a stable clickable PR report link, configure:
 
 It treats missing artifacts as SKIP, so it scales to whatever ran. Migration/contract/a11y failures
 surface as JUnit failures and are caught by gate #1.
+
+**Performance regression gate:** `make perf-regression` (`tests/performance/compare-baseline.mjs`)
+compares each k6 profile's `http_req_duration p(95)` and `http_req_failed rate` against the committed
+`tests/performance/baseline.json` and fails on a >10% regression. Capture/refresh the baseline from a
+clean run with `pnpm --filter @kortix/tests test:perf:baseline` (writes the observed numbers). Until a
+baseline is committed it reports SKIP rather than failing.
 
 ## Reporting
 

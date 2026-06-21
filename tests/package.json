@@ -51,7 +51,9 @@
     "test:mutation": "stryker run mutation/stryker.conf.json",
     "quality-gates": "bash scripts/quality-gates.sh",
     "allure:junit": "node scripts/junit-to-allure.mjs test-results",
-    "test:pentest": "bun pentest/pentest.ts"
+    "test:pentest": "bun pentest/pentest.ts",
+    "test:perf:regression": "node performance/compare-baseline.mjs",
+    "test:perf:baseline": "node performance/compare-baseline.mjs --record"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

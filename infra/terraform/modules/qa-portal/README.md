@@ -68,3 +68,35 @@ module "qa_portal" {
 - `bucket_name` — globally unique; confirm it isn't taken.
 - `ci_writer_role_arn` — the existing CI role that uploads reports (e.g. the
   `kortix-gha-eks-deploy` role, or a dedicated QA CI role).
+
+## Cloudflare Access gate (qa.kortix.com)
+
+`enable_access = true` (default) puts the portal behind **Cloudflare Access (Zero Trust)**
+on `qa.kortix.com` (which is already proxied through Cloudflare). Access denies by default;
+the one allow policy admits the configured emails / email domains. Every report — including
+the per-PR Allure links `qa-pr` posts — requires authentication.
+
+```hcl
+module "qa_portal" {
+  # ...
+  enable_access                = true
+  cloudflare_account_id        = var.cloudflare_account_id   # TF_VAR_cloudflare_account_id
+  access_allowed_email_domains = ["kortix.com"]
+  access_allowed_emails        = []                          # add contractors/on-call here
+  access_session_duration      = "24h"
+}
+```
+
+**Prerequisites**
+- An identity provider (Google / GitHub / one-time-PIN) configured in the Cloudflare
+  Zero Trust account. This module uses the existing IdPs; it does not create one.
+- `cloudflare_account_id` supplied (the module fails the plan with a clear message otherwise).
+- The Cloudflare API token must include **Account · Access: Apps and Policies · Edit**.
+
+Set `enable_access = false` to serve the portal without the gate (not recommended — reports
+can include internal hostnames, tokens-in-URLs, and failure traces).
+
+| Output | Use |
+| ------ | --- |
+| `access_application_id` | the Access app guarding `qa.kortix.com` |
+| `access_enabled` | whether the gate is on |

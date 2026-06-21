@@ -20,6 +20,7 @@
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "tsc -p tsconfig.build.json"
   },

@@ -97,3 +97,46 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+# ── Cloudflare Access gate (optional) ─────────────────────────────────────────
+variable "enable_access" {
+  description = "Put qa.kortix.com behind Cloudflare Access (Zero Trust). Denies by default; only the allowlist below can open reports."
+  type        = bool
+  default     = true
+}
+
+variable "cloudflare_account_id" {
+  description = "Cloudflare account ID that owns the Zero Trust org. Required when enable_access = true. Supply via TF_VAR_cloudflare_account_id."
+  type        = string
+  default     = ""
+}
+
+variable "access_app_name" {
+  description = "Display name of the Cloudflare Access application."
+  type        = string
+  default     = "QA Reports (qa.kortix.com)"
+}
+
+variable "access_allowed_email_domains" {
+  description = "Email domains allowed through the Access gate."
+  type        = list(string)
+  default     = ["kortix.com"]
+}
+
+variable "access_allowed_emails" {
+  description = "Additional individual emails allowed through the Access gate (contractors, on-call)."
+  type        = list(string)
+  default     = []
+}
+
+variable "access_session_duration" {
+  description = "How long an authenticated Access session lasts before re-auth."
+  type        = string
+  default     = "24h"
+}
+
+variable "access_app_launcher_visible" {
+  description = "Show the portal in the Cloudflare Access app launcher."
+  type        = bool
+  default     = true
+}

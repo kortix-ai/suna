@@ -1,0 +1,150 @@
+name: Package Unit Tests
+
+on:
+  pull_request:
+    branches: [main, prod]
+  workflow_dispatch:
+
+concurrency:
+  group: package-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests-required:
+    name: every change ships with tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no-tests-needed')
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a test change alongside source changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          src=$(echo "$changed" | grep -E '^(apps|packages)/[^/]+/(src|app|components|lib|hooks|features|stores)/.*\.(ts|tsx)$' \
+                | grep -vE '\.(test|spec)\.(ts|tsx|mts)$|\.d\.ts$|/__tests__/|/generated/|\.generated\.' || true)
+          tests=$(echo "$changed" | grep -E '\.(test|spec)\.(ts|tsx|mts)$|^tests/|/__tests__/|\.flow\.ts$' || true)
+          if [ -n "$src" ] && [ -z "$tests" ]; then
+            echo "::error::Source changed but no test changed. Every behavioural change must ship with tests (see .claude/skills/testing)."
+            echo "Source files changed without an accompanying test:"; echo "$src" | sed 's/^/  - /'
+            echo "If this change is genuinely test-exempt (formatting, comments, rename), add label 'no-tests-needed' to override."
+            exit 1
+          fi
+          echo "OK — source changes are accompanied by test changes (or none were source)."
+
+  packages-and-apps:
+    name: bun unit tests (packages + apps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      npm_config_engine_strict: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Resolve pnpm store
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Guard against focused tests
+        run: |
+          set -euo pipefail
+          if grep -rn --include='*.test.ts' --include='*.test.tsx' --include='*.test.mts' \
+            -E '\b(describe|test|it)\.only\(' apps packages 2>/dev/null | grep -v node_modules; then
+            echo "::error::Focused test (.only) committed — remove it before merge."
+            exit 1
+          fi
+          echo "No focused tests."
+
+      - name: Test packages
+        run: pnpm --filter "./packages/**" --if-present test
+
+      - name: Test apps (no decrypted secrets required)
+        run: |
+          pnpm --filter "Kortix-Computer-Frontend" \
+               --filter "@kortix/cli" \
+               --filter "@kortix/sandbox-agent-server" \
+               --filter "kortix" \
+               --if-present test
+
+      - name: Lint test surface (advisory ratchet)
+        continue-on-error: true
+        run: pnpm exec biome check tests packages apps/api/scripts
+
+  api:
+    name: bun unit tests (kortix-api)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      npm_config_engine_strict: 'false'
+      DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install pnpm
+        run: corepack enable pnpm
+
+      - name: Resolve pnpm store
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter "kortix-api..."
+
+      - name: Run api unit + e2e suite
+        if: env.DOTENV_PRIVATE_KEY != ''
+        run: pnpm --filter kortix-api test:coverage
+
+      - name: Skip notice
+        if: env.DOTENV_PRIVATE_KEY == ''
+        run: echo "DOTENV_PRIVATE_KEY not configured for this context — skipping the env-gated kortix-api suite."

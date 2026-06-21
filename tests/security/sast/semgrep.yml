@@ -7,10 +7,15 @@ rules:
       is attacker-controlled. Pass args as an array with shell:false.
     patterns:
       - pattern-either:
-          - pattern: $CP.spawn(..., { ..., shell: true, ... })
-          - pattern: $CP.spawnSync(..., { ..., shell: true, ... })
-          - pattern: $CP.exec($CMD, ...)
-          - pattern: $CP.execSync($CMD, ...)
+          - pattern: '$CP.spawn(..., { ..., shell: true, ... })'
+          - pattern: '$CP.spawnSync(..., { ..., shell: true, ... })'
+          - patterns:
+              - pattern-either:
+                  - pattern: $CP.exec($CMD, ...)
+                  - pattern: $CP.execSync($CMD, ...)
+              - metavariable-regex:
+                  metavariable: $CP
+                  regex: ^(child_process|childProcess|childproc|cp|proc)$
 
   - id: kortix-no-eval-dynamic-code
     languages: [typescript, javascript]
