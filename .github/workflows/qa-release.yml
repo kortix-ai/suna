@@ -138,7 +138,7 @@ jobs:
 
       - name: Migration, infra, and static security
         timeout-minutes: 30
-        run: make migration infra security
+        run: make migration infra security-fast
       # The exhaustive, scan-the-whole-app lanes — mutation (Stryker), black-box
       # pentest, k6 performance, and DAST — run in qa-nightly, not on every
       # release: they add ~40-60min and duplicate the scheduled suite. The

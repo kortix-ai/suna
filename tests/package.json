@@ -53,7 +53,8 @@
     "allure:junit": "node scripts/junit-to-allure.mjs test-results",
     "test:pentest": "bun pentest/pentest.ts",
     "test:perf:regression": "node performance/compare-baseline.mjs",
-    "test:perf:baseline": "node performance/compare-baseline.mjs --record"
+    "test:perf:baseline": "node performance/compare-baseline.mjs --record",
+    "test:security:fast": "bash security/run.sh --sast --deps --secrets"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",

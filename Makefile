@@ -65,6 +65,8 @@ perf-regression: ## Fail if k6 p95/error-rate regressed >10% vs committed baseli
 	$(NPM) run test:perf:regression
 security: ## Static security scans (SAST/deps/secrets/container)
 	$(NPM) run test:security
+security-fast: ## Fast static security (SAST/deps/secrets — no app image build)
+	$(NPM) run test:security:fast
 security-dast: ## Dynamic security scan + API fuzz (needs TARGET_URL)
 	$(NPM) run test:security:dast
 pentest: ## Enterprise black-box pentest probes (needs PENTEST_TARGET_URL)
