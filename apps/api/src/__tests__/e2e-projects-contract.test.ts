@@ -342,6 +342,9 @@ mock.module('../projects/git', () => ({
   }),
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
+    if (path === 'missing.txt') {
+      throw new Error("fatal: path 'missing.txt' does not exist in 'feature'");
+    }
     return `content:${path}@${ref}`;
   },
   archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
@@ -702,6 +705,11 @@ describe('projects API contract', () => {
       content: 'content:README.md@feature',
     });
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'README.md', ref: 'feature' });
+
+    const missingFile = await app.request(`/v1/projects/${PROJECT_ID}/files/content?path=missing.txt&ref=feature`);
+    expect(missingFile.status).toBe(404);
+    expect(await missingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);

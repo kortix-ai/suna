@@ -14,6 +14,11 @@ import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app'
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
 
+function isMissingGitPathError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -387,8 +392,15 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
-  const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
-  return c.json({ path, ref, content });
+  try {
+    const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
+    return c.json({ path, ref, content });
+  } catch (error) {
+    if (isMissingGitPathError(error)) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+    throw error;
+  }
 },
 );
 
