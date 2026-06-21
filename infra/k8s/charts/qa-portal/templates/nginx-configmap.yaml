@@ -1,0 +1,27 @@
+{{/*
+nginx server config. Forces revalidation (Cache-Control: no-cache) so browsers
+always check with the server before reusing the landing page or a report — a
+stale meta-redirect or an out-of-date report can never get pinned in cache. The
+report assets are small and revalidation is a cheap 304.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "qa-portal.name" . }}-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qa-portal.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen       {{ .Values.containerPort }};
+        server_name  _;
+        root         /usr/share/nginx/html;
+        index        index.html;
+
+        add_header Cache-Control "no-cache" always;
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
