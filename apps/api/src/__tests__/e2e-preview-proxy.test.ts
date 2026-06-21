@@ -39,7 +39,12 @@ let mockDbMembership: any = { accountRole: 'member' };
 let mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
 let mockPreviewToken: string | null = 'daytona-preview-token-123';
 let mockWakeCalls: string[] = [];
-let mockFetchResponses: Array<{ status: number; body: string; headers?: Record<string, string> }> = [];
+let mockFetchResponses: Array<{
+  status: number;
+  body: string;
+  headers?: Record<string, string>;
+  error?: Error;
+}> = [];
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
@@ -245,6 +250,10 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
   if (!responseConfig) {
     return Promise.resolve(new Response('OK', { status: 200 }));
+  }
+
+  if (responseConfig.error) {
+    return Promise.reject(responseConfig.error);
   }
 
   return Promise.resolve(
@@ -570,9 +579,58 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
   });
 
+  test('does not retry non-transient project env sync HTTP errors that mention network failures', async () => {
+    mockFetchResponses = [{ status: 500, body: '{"error":"connection refused to metadata store"}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toContain('env sync failed: 500');
+    expect(mockWakeCalls).toEqual([]);
+    expect(mockFetchCalls).toHaveLength(1);
+    expect(mockFetchCalls[0].url).toBe('https://preview.daytona.io/proxy-url/kortix/env');
+  });
+
   test('retries transient project env sync failures before forwarding prompt_async', async () => {
     mockFetchResponses = [
       { status: 502, body: 'Bad Gateway' },
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+  });
+
+  test('retries fetch-level project env sync connection failures before forwarding prompt_async', async () => {
+    mockFetchResponses = [
+      {
+        status: 0,
+        body: '',
+        error: new Error('Unable to connect. Is the computer able to access the url?'),
+      },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },
     ];
