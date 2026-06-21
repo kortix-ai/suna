@@ -40,10 +40,9 @@ describe('lintManifest', () => {
     expect(issues.errors).toEqual([]);
   });
 
-  test('warns when kortix_version is missing', () => {
+  test('errors when kortix_version is missing', () => {
     const issues = lintToml(`[project]\nname = "x"\n`);
-    expect(issues.errors).toEqual([]);
-    expect(issues.warnings.some((w) => w.includes('kortix_version'))).toBe(true);
+    expect(issues.errors.some((e) => e.includes('kortix_version'))).toBe(true);
   });
 
   test('errors on non-numeric kortix_version', () => {

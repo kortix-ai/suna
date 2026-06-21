@@ -43,11 +43,14 @@ export async function adminCreateUser(env: Env, email: string, password: string)
 
 export async function adminDeleteUser(env: Env, userId: string): Promise<void> {
   if (!env.supabaseServiceRoleKey || !env.supabaseAnonKey) return;
-  await fetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
+  const res = await fetch(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: "DELETE",
     headers: {
       apikey: env.supabaseAnonKey,
       authorization: `Bearer ${env.supabaseServiceRoleKey}`,
     },
-  }).catch(() => {});
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`admin delete user ${userId} failed: ${res.status} ${(await res.text()).slice(0, 160)}`);
+  }
 }

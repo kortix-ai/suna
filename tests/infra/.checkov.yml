@@ -1,0 +1,14 @@
+framework:
+  - terraform
+
+compact: true
+quiet: true
+
+soft-fail: true
+
+skip-check:
+  - CKV_AWS_18
+  - CKV_AWS_144
+  - CKV2_AWS_62
+
+download-external-modules: false

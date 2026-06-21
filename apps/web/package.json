@@ -15,7 +15,8 @@
     "test:e2e:full": "bash ../../tests/e2e/scripts/run-full-self-hosted-e2e.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs 2>/dev/null || true"
+    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs 2>/dev/null || true",
+    "test": "bun test"
   },
   "dependencies": {
     "@calcom/embed-react": "^1.5.2",

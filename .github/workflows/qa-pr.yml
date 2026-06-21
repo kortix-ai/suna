@@ -1,0 +1,109 @@
+name: QA - PR
+
+# Fast, blocking feedback for every PR. This intentionally avoids live targets,
+# browser regression, full security scans, load tests, mutation, and chaos.
+# Those run on main, nightly, or the release gate.
+
+on:
+  pull_request:
+    branches: [main, prod]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  fast:
+    name: fast checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+      QA_REPORTS_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+      QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
+      QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: PR cadence
+        run: make ci-pr
+      - name: Build Allure report from PR results
+        if: always()
+        run: |
+          npm --prefix tests run allure:junit
+          cd tests
+          rm -rf test-results/allure-report
+          npx allure generate test-results/allure-results -o test-results/allure-report
+      - name: AWS auth for report publish
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Publish PR Allure report
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        run: |
+          set -euo pipefail
+          run_key="pr/${{ github.event.pull_request.number }}/${{ github.run_id }}"
+          aws s3 sync tests/test-results/allure-report \
+            "s3://${QA_REPORTS_BUCKET}/${QA_REPORTS_PREFIX}/${run_key}/" \
+            --delete --only-show-errors
+          url="${QA_REPORTS_PUBLIC_BASE_URL%/}/${QA_REPORTS_PREFIX}/${run_key}/index.html"
+          echo "ALLURE_REPORT_URL=$url" >> "$GITHUB_ENV"
+          {
+            echo "### Allure report"
+            echo ""
+            echo "Report: $url"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment PR Allure link
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          marker="<!-- qa-pr-allure-report -->"
+          if [ -n "${ALLURE_REPORT_URL:-}" ]; then
+            report_line="[Open Allure report](${ALLURE_REPORT_URL})"
+          else
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            report_line="Allure report artifact is attached to [this workflow run](${run_url}). Configure \`QA_REPORTS_BUCKET\` + \`QA_REPORTS_PUBLIC_BASE_URL\` for a stable public link."
+          fi
+          body="$(cat <<EOF
+          ${marker}
+          ## QA Report
+
+          ${report_line}
+
+          Commit: \`${GITHUB_SHA}\`
+          Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )"
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty" | head -1)"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$body" >/dev/null
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-pr-results
+          path: |
+            tests/test-results/**
+          retention-days: 14

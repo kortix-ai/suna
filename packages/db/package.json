@@ -14,6 +14,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "db:generate": "bunx drizzle-kit generate",
     "db:migrate": "bunx drizzle-kit migrate",
