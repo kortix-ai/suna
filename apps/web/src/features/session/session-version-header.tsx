@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * SessionVersionHeader — the top of the session's Files / Changes panel.
  *
@@ -12,18 +13,15 @@
  * style): **All files** (default) and **Changes** (the real diff viewer).
  */
 
-import { useParams } from 'next/navigation';
 import { GitBranch, GitPullRequestArrow, Info, Loader2 } from 'lucide-react';
+import { useParams } from 'next/navigation';
 
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { cn } from '@/lib/utils';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  useOpenChangeRequest,
-  useSessionBaseRef,
-} from '@/features/session/session-changes-shared';
+import { useOpenChangeRequest, useSessionBaseRef } from '@/features/session/session-changes-shared';
 
 export type SessionPanelMode = 'changes' | 'files';
 
@@ -48,7 +46,7 @@ function SubTab({
       className={cn(
         // Constant weight in every state — only color + the underline change,
         // so selecting a tab never shifts the layout.
-        'relative inline-flex h-9 items-center gap-1.5 text-sm font-medium tracking-tight transition-colors cursor-pointer',
+        'relative inline-flex h-9 cursor-pointer items-center gap-1.5 text-sm font-medium tracking-tight transition-colors',
         active ? 'text-foreground' : 'text-muted-foreground/70 hover:text-foreground/90',
       )}
     >
@@ -59,7 +57,7 @@ function SubTab({
         </Badge>
       )}
       {active && (
-        <span aria-hidden className="absolute -bottom-px left-0 right-0 h-px bg-foreground" />
+        <span aria-hidden className="bg-foreground absolute right-0 -bottom-px left-0 h-px" />
       )}
     </button>
   );
@@ -76,6 +74,8 @@ export function SessionVersionHeader({
   onModeChange: (mode: SessionPanelMode) => void;
 }) {
   // The git branch == the ROUTE session id; the chat session id is passed in.
+
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { id: projectId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
@@ -92,12 +92,24 @@ export function SessionVersionHeader({
   const hasChanges = changedCount > 0;
 
   return (
-    <div className="flex-shrink-0 border-b border-border/60">
+    <div className="border-border/60 flex-shrink-0 border-b">
       {/* Compact header row — tabs (left) + version chip & CTA (right). */}
       <div className="flex items-center gap-3 px-4">
         {/* Tabs — All files (default) · Changes (secondary). */}
-        <div role="tablist" aria-label="Files view" className="flex items-center gap-5">
-          <SubTab active={mode === 'files'} onClick={() => onModeChange('files')} label="All files" />
+        <div
+          role="tablist"
+          aria-label={tI18nHardcoded.raw(
+            'autoFeaturesSessionSessionVersionHeaderJsxAttrAriaLabelFiles9fd01463',
+          )}
+          className="flex items-center gap-5"
+        >
+          <SubTab
+            active={mode === 'files'}
+            onClick={() => onModeChange('files')}
+            label={tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionVersionHeaderJsxAttrLabelAllFiles4f423738',
+            )}
+          />
           <SubTab
             active={mode === 'changes'}
             onClick={() => onModeChange('changes')}
@@ -111,11 +123,11 @@ export function SessionVersionHeader({
             "Changes" it's spelled out in the explanation strip below. */}
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <span
-            className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+            className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs"
             title={`Version ${shortVersionId} · alternative version of ${baseRef}`}
           >
-            <GitBranch className="size-3.5 shrink-0 text-muted-foreground/70" />
-            <span className="truncate font-mono text-foreground/80">{shortVersionId}</span>
+            <GitBranch className="text-muted-foreground/70 size-3.5 shrink-0" />
+            <span className="text-foreground/80 truncate font-mono">{shortVersionId}</span>
           </span>
           {hasChanges && (
             <Button
@@ -129,7 +141,9 @@ export function SessionVersionHeader({
               ) : (
                 <GitPullRequestArrow className="size-3.5" />
               )}
-              Open change request
+              {tI18nHardcoded.raw(
+                'autoFeaturesSessionSessionVersionHeaderJsxTextOpenChangeRequesta0b45de3',
+              )}
             </Button>
           )}
         </div>
@@ -138,28 +152,43 @@ export function SessionVersionHeader({
       {/* Contextual explanation — only on the Changes tab, where the version
           framing matters most: what these changes are and how they reach main. */}
       {mode === 'changes' && (
-        <div className="flex gap-2 border-t border-border/60 bg-muted/15 px-4 py-2.5">
-          <Info className="mt-px size-3.5 shrink-0 text-muted-foreground/60" />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            What this session changed in version{' '}
-            <span className="font-mono text-foreground/80">{shortVersionId}</span> — a separate
-            version of{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span>. These edits stay here and
-            don&apos;t affect{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span> until you{' '}
+        <div className="border-border/60 bg-muted/15 flex gap-2 border-t px-4 py-2.5">
+          <Info className="text-muted-foreground/60 mt-px size-3.5 shrink-0" />
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionVersionHeaderJsxTextWhatThisSession2da8e6ce',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{shortVersionId}</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionVersionHeaderJsxTextASeparateVersionc3d7a454',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionVersionHeaderJsxTextTheseEditsStaya67c1667',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>{' '}
+            {tI18nHardcoded.raw('autoFeaturesSessionSessionVersionHeaderJsxTextUntilYou3cf21807')}{' '}
             {hasChanges ? (
               <button
                 type="button"
                 onClick={openChangeRequest}
                 disabled={asking}
-                className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
+                className="text-foreground font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
               >
-                open a change request
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59',
+                )}
               </button>
             ) : (
-              <span className="font-medium text-foreground/80">open a change request</span>
+              <span className="text-foreground/80 font-medium">
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionSessionVersionHeaderJsxTextOpenAChange52446e59',
+                )}
+              </span>
             )}{' '}
-            to merge them in.
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionVersionHeaderJsxTextToMergeThemde828b03',
+            )}
           </p>
         </div>
       )}

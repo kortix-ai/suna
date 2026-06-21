@@ -2,6 +2,7 @@
 
 import { ArrowUpRight } from '@mynaui/icons-react';
 import { BookOpen } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
@@ -34,6 +35,7 @@ export function SupportModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
 
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);
@@ -89,7 +91,9 @@ export function SupportModal({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full space-y-0 p-0 sm:max-w-sm">
         <SheetHeader className="border-border/40 space-y-1 border-b px-5 pt-5 pb-4">
-          <SheetTitle className="text-base font-semibold">Help center</SheetTitle>
+          <SheetTitle className="text-base font-semibold">
+            {tI18nHardcoded.raw('autoFeaturesLayoutSupportModalJsxTextHelpCenter3bd51ced')}
+          </SheetTitle>
         </SheetHeader>
 
         <SheetBody className="gap-2 px-5 py-0.5">

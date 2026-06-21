@@ -9,6 +9,7 @@ import {
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { KortixAccount } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import { Icon } from '../icon/icon';
 
 const NewProjectControl = ({
@@ -30,6 +31,7 @@ const NewProjectControl = ({
   fullWidth?: boolean;
   className?: string;
 }) => {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const classes = cn(fullWidth && 'w-full', className);
 
   if (!viewAll) {
@@ -73,7 +75,9 @@ const NewProjectControl = ({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-muted-foreground">Create in</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-muted-foreground">
+          {tI18nHardcoded.raw('autoFeaturesProjectsNewProjectControlJsxTextCreateIn804eeac3')}
+        </DropdownMenuLabel>
         {creatableAccounts.map((account) => (
           <DropdownMenuItem
             key={account.account_id}

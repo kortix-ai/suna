@@ -4,11 +4,13 @@ import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
 import { Clock, Plus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { INITIAL_JOBS, type ScheduleJob } from '../data';
 import { PageHead, Panel, Row, Toggle } from '../primitives';
 
 export function SchedulingPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [jobs, setJobs] = useState<ScheduleJob[]>(INITIAL_JOBS);
   const toggle = (name: string) =>
     setJobs((js) => js.map((j) => (j.name === name ? { ...j, on: !j.on } : j)));
@@ -21,7 +23,10 @@ export function SchedulingPage() {
         sub={`${activeCount} active · cron triggers in your timezone, running 24/7`}
         action={
           <Button size="sm">
-            <Plus className="size-3.5" /> New schedule
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSchedulingPageJsxTextNew9bbd6b25',
+            )}
           </Button>
         }
       />

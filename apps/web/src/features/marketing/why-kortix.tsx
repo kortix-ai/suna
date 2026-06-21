@@ -1,4 +1,5 @@
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -8,73 +9,96 @@ type WhyRow = {
   body: ReactNode;
 };
 
-const ROWS: WhyRow[] = [
-  {
-    title: 'When you want to stay in control',
-    cta: { label: 'See how it works', href: '#how-it-works' },
-    body: (
-      <>
-        <p>
-          With most tools, you change a setting and just have to trust it stuck. Kortix keeps a
-          clear record of every change your team makes — who changed what, and when.
-        </p>
-        <p>
-          <strong>If something goes wrong, you can undo it in seconds</strong> and get back to a
-          version you know was working. No guessing, no support ticket.
-        </p>
-      </>
-    ),
-  },
-  {
-    title: 'When you care about security',
-    cta: { label: 'Explore security', href: '#security' },
-    body: (
-      <>
-        <p>
-          Every AI agent you run gets its own walled-off space and only the access it genuinely
-          needs — nothing more. So one agent can never reach into something it shouldn&apos;t.
-        </p>
-        <p>
-          And instead of scattered passwords and keys across a dozen services,{' '}
-          <strong>there&apos;s one key you manage</strong>. Less to track, far less to leak.
-        </p>
-      </>
-    ),
-  },
-  {
-    title: "When you'd rather own your setup",
-    cta: { label: 'Read about hosting', href: '/enterprise' },
-    body: (
-      <>
-        <p>
-          Kortix is open source, so you&apos;re never locked in. Run it in our cloud, in your own,
-          or entirely on your own servers — whatever your business needs.
-        </p>
-        <p>
-          Your data stays where you want it, and <strong>the platform is yours to keep</strong>, on
-          your terms.
-        </p>
-      </>
-    ),
-  },
-  {
-    title: 'When you want it to just work',
-    cta: { label: 'Get started', href: '/auth' },
-    body: (
-      <>
-        <p>
-          You shouldn&apos;t need a team of engineers to get going. Kortix is built so the people
-          who use it day to day can set things up, adjust them, and trust the result.
-        </p>
-        <p>
-          Powerful enough for your developers, <strong>simple enough for everyone else</strong>.
-        </p>
-      </>
-    ),
-  },
-];
+function useRows(): WhyRow[] {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+
+  return [
+    {
+      title: 'When you want to stay in control',
+      cta: { label: 'See how it works', href: '#how-it-works' },
+      body: (
+        <>
+          <p>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextWithMostToolsYoue0092085')}
+          </p>
+          <p>
+            <strong>
+              {tI18nHardcoded.raw(
+                'autoFeaturesMarketingWhyKortixJsxTextIfSomethingGoesWrong78045d2a',
+              )}
+            </strong>{' '}
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextAndGetBackTo8122fb4b')}
+          </p>
+        </>
+      ),
+    },
+    {
+      title: 'When you care about security',
+      cta: { label: 'Explore security', href: '#security' },
+      body: (
+        <>
+          <p>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextEveryAIAgentYou1a240225')}
+          </p>
+          <p>
+            {tI18nHardcoded.raw(
+              'autoFeaturesMarketingWhyKortixJsxTextAndInsteadOfScattered1833a24c',
+            )}{' '}
+            <strong>
+              {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextThereSOneKey04359483')}
+            </strong>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextLessToTrackFar1c45d988')}
+          </p>
+        </>
+      ),
+    },
+    {
+      title: "When you'd rather own your setup",
+      cta: { label: 'Read about hosting', href: '/enterprise' },
+      body: (
+        <>
+          <p>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextKortixIsOpenSourcecda1bf14')}
+          </p>
+          <p>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextYourDataStaysWhere3c5e3923')}
+            <strong>
+              {tI18nHardcoded.raw(
+                'autoFeaturesMarketingWhyKortixJsxTextThePlatformIsYours4d10224d',
+              )}
+            </strong>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextOnYourTerms2f7966c5')}
+          </p>
+        </>
+      ),
+    },
+    {
+      title: 'When you want it to just work',
+      cta: { label: 'Get started', href: '/auth' },
+      body: (
+        <>
+          <p>
+            {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextYouShouldnTNeed1c26921a')}
+          </p>
+          <p>
+            {tI18nHardcoded.raw(
+              'autoFeaturesMarketingWhyKortixJsxTextPowerfulEnoughForYour214b6ca4',
+            )}
+            <strong>
+              {tI18nHardcoded.raw(
+                'autoFeaturesMarketingWhyKortixJsxTextSimpleEnoughForEveryonef376c7a7',
+              )}
+            </strong>
+            .
+          </p>
+        </>
+      ),
+    },
+  ];
+}
 
 function RowCta({ label, href }: { label: string; href: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <Link
       href={href}
@@ -82,13 +106,16 @@ function RowCta({ label, href }: { label: string; href: string }) {
     >
       {label}
       <span className="inline-block text-sm opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-        &nbsp;↗
+        {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxText99e0d65c')}
       </span>
     </Link>
   );
 }
 
 export function WhyKortix() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const rows = useRows();
+
   return (
     <section className="bg-foreground text-background relative overflow-hidden">
       <div
@@ -102,16 +129,17 @@ export function WhyKortix() {
         <div className="z-20 mx-auto max-w-6xl">
           <div className="mx-auto mb-16 max-w-2xl space-y-3 text-center">
             <h2 className="text-background text-3xl font-medium tracking-tight sm:text-4xl">
-              Why Kortix?
+              {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextWhyKortix55f4edea')}
             </h2>
             <p className="text-background/70 text-base leading-relaxed text-balance">
-              Every AI platform sounds the same on paper. Here&apos;s what actually changes once
-              you&apos;re running on Kortix.
+              {tI18nHardcoded.raw(
+                'autoFeaturesMarketingWhyKortixJsxTextEveryAIPlatformSounds31a0bf4e',
+              )}
             </p>
           </div>
 
           <div className="mx-auto w-full max-w-4xl">
-            {ROWS.map((row) => (
+            {rows.map((row) => (
               <div
                 key={row.title}
                 className="border-background/20 grid gap-5 border-b px-0 py-11 max-md:grid-cols-1 md:grid-cols-[1fr_1.05fr] md:gap-x-16 md:gap-y-10 md:px-2 md:py-14"
@@ -131,11 +159,11 @@ export function WhyKortix() {
 
           <div className="mx-auto mt-28 flex w-full flex-col items-center justify-center space-y-0 text-center">
             <h1 className="text-background text-xl font-semibold text-balance">
-              Get going fast. Grow without worry.
+              {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextGetGoingFastGrow2d378210')}
             </h1>
 
             <h1 className="text-background text-xl font-semibold text-balance">
-              Kortix isn't just simple to start — it's built to grow with you.
+              {tI18nHardcoded.raw('autoFeaturesMarketingWhyKortixJsxTextKortixIsnTJustb8425b28')}
             </h1>
           </div>
         </div>

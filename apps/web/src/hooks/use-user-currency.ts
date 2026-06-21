@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
-import { detectCurrencyFromTimezone } from '@/lib/utils/geo-detection';
 import { getCurrencySymbol, type Currency } from '@/lib/utils/currency';
+import { detectCurrencyFromTimezone } from '@/lib/utils/region-currency';
+import { useMemo } from 'react';
 
 export interface UserCurrencyInfo {
   currency: Currency;

@@ -12,6 +12,7 @@ import type { AccountState } from '@/lib/api/billing';
 import { cn } from '@/lib/utils';
 import { Heatmap } from '@paper-design/shaders-react';
 import { ArrowRight, UserPlus } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 const TEAM_PLAN_HEATMAP = {
   speed: 1,
@@ -35,6 +36,7 @@ export interface TeamPlanCheckoutProps {
 }
 
 export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanCheckoutProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const createPerSeat = useCreatePerSeatCheckout();
 
   const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
@@ -63,9 +65,14 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:flex lg:min-h-[55dvh] lg:max-w-5xl lg:flex-col">
-        <ModalTitle className="sr-only">Subscribe to Kortix Team</ModalTitle>
+        <ModalTitle className="sr-only">
+          {tI18nHardcoded.raw(
+            'autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d',
+          )}
+        </ModalTitle>
         <ModalDescription className="sr-only">
-          ${pricePerSeat} per seat per month. LLM compute and AI Computers for every teammate.
+          ${pricePerSeat}{' '}
+          {tI18nHardcoded.raw('autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatPera29a6c6d')}
         </ModalDescription>
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-12">
@@ -81,7 +88,9 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
             <div className="flex flex-col items-start space-y-8 px-6 py-8 pt-2 lg:py-6">
               <div className="space-y-4">
                 <Badge variant="kortix" className="rounded">
-                  Kortix Team
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesBillingTeamPlanCheckoutJsxTextKortixTeame5d39916',
+                  )}
                 </Badge>
                 <div className="space-y-1">
                   <p
@@ -91,15 +100,21 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
                     ${pricePerSeat}
                   </p>
                   <p className="text-muted-foreground text-sm leading-snug">
-                    per seat
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesBillingTeamPlanCheckoutJsxTextPerSeatc1480f59',
+                    )}
                     <span aria-hidden className="text-muted-foreground/35 mx-1.5">
                       ·
                     </span>
-                    billed monthly
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesBillingTeamPlanCheckoutJsxTextBilledMonthlybdd7a0cd',
+                    )}
                   </p>
                 </div>
                 <p className="text-muted-foreground max-w-[300px] text-sm leading-relaxed">
-                  LLM compute and AI Computers for every teammate. Add seats as your team grows.
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesBillingTeamPlanCheckoutJsxTextLLMComputeAndfea9deab',
+                  )}
                 </p>
               </div>
 
@@ -134,7 +149,9 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
                     {createPerSeat.isPending ? (
                       <>
                         <Loading />
-                        Starting checkout…
+                        {tI18nHardcoded.raw(
+                          'autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f',
+                        )}
                       </>
                     ) : (
                       <>
@@ -146,13 +163,17 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
                     )}
                   </Button>
                   <p className="text-muted-foreground text-center text-xs">
-                    Auto-prorated · cancel anytime · billed monthly
+                    {tI18nHardcoded.raw(
+                      'autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962',
+                    )}
                   </p>
                 </>
               ) : (
                 <Item variant="outline" size="sm" className="items-start bg-none">
                   <Hint
-                    label="Only account owners can subscribe. Your seat activates automatically once they do."
+                    label={tI18nHardcoded.raw(
+                      'autoFeaturesBillingTeamPlanCheckoutJsxAttrLabelOnlyAccountbf72d3e0',
+                    )}
                     side="top"
                     className="max-w-xs text-xs"
                   >
@@ -161,10 +182,15 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
                     </ItemMedia>
                   </Hint>
                   <ItemContent>
-                    <ItemTitle>Ask an account owner for a seat</ItemTitle>
+                    <ItemTitle>
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesBillingTeamPlanCheckoutJsxTextAskAnAccount6f6b506d',
+                      )}
+                    </ItemTitle>
                     <ItemDescription className="text-xs leading-relaxed">
-                      Only account owners can manage billing. Once an owner subscribes to Kortix
-                      Team, your seat is activated automatically.
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesBillingTeamPlanCheckoutJsxTextOnlyAccountOwnerse7f0d952',
+                      )}
                     </ItemDescription>
                   </ItemContent>
                 </Item>

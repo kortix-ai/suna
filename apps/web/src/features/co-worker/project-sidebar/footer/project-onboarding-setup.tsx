@@ -2,6 +2,7 @@
 
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { BookOpen } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -59,6 +60,7 @@ function SetupPopoverBody({
   setup: ReturnType<typeof useProjectSetup>;
   onStep: (step: ProjectSetupStep) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const essentials = setup.steps.filter((s) => !s.optional);
   const optionals = setup.steps.filter((s) => s.optional);
   const nextStep = essentials.find((s) => !s.done) ?? null;
@@ -169,7 +171,9 @@ function SetupPopoverBody({
         >
           <Link href="/docs/quickstart" target="_blank" rel="noreferrer">
             <BookOpen className="size-3" />
-            Quickstart guide
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarFooterProjectOnboardingSetupJsx957fad2d',
+            )}
           </Link>
         </Button>
       </div>
@@ -178,6 +182,7 @@ function SetupPopoverBody({
 }
 
 export function OnboardingSetupNavItem({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const setup = useProjectSetup(projectId);
   const onStep = useStepHandler(projectId);
 
@@ -189,7 +194,11 @@ export function OnboardingSetupNavItem({ projectId }: { projectId: string }) {
         <PopoverTrigger asChild>
           <SidebarMenuButton className="text-sm! font-medium [&_svg]:size-4!">
             <SetupRing value={setup.percent} />
-            <span>Set up project</span>
+            <span>
+              {tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarFooterProjectOnboardingSetupJsx814d0f37',
+              )}
+            </span>
             <span className="ml-auto pr-1 text-xs tabular-nums">
               {setup.requiredDone}/{setup.requiredTotal}
             </span>
@@ -209,6 +218,7 @@ export function OnboardingSetupNavItem({ projectId }: { projectId: string }) {
 }
 
 export function ProjectSetupRailItem({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const setup = useProjectSetup(projectId);
   const onStep = useStepHandler(projectId);
 
@@ -220,7 +230,9 @@ export function ProjectSetupRailItem({ projectId }: { projectId: string }) {
         <PopoverTrigger asChild>
           <SidebarMenuButton
             type="button"
-            aria-label="Set up project"
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarFooterProjectOnboardingSetupJsx66eaf244',
+            )}
             className="flex items-center justify-center"
           >
             <SetupRing value={setup.percent} className="size-5" />

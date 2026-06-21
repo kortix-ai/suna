@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useSunaMigration, useStartSunaMigration } from '@/hooks/legacy/use-suna-migration';
+import { useStartSunaMigration, useSunaMigration } from '@/hooks/legacy/use-suna-migration';
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertTriangle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useRef } from 'react';
 
 const PHASE_LABEL: Record<string, string> = {
   extract: 'Recovering your files',
@@ -20,6 +21,7 @@ const PHASE_LABEL: Record<string, string> = {
  * progress while it runs and disappears once it's done (eligibility flips false).
  */
 export function SunaMigrationBanner({ accountId }: { accountId?: string | null }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { data } = useSunaMigration(accountId);
   const start = useStartSunaMigration(accountId);
   const queryClient = useQueryClient();
@@ -36,25 +38,30 @@ export function SunaMigrationBanner({ accountId }: { accountId?: string | null }
     }
     prevStatus.current = s;
   }, [migration?.status, queryClient]);
-  const busy = start.isPending || migration?.status === 'running' || migration?.status === 'planned';
+  const busy =
+    start.isPending || migration?.status === 'running' || migration?.status === 'planned';
   const failed = migration?.status === 'failed';
 
   // Hide unless there's something to do: eligible to start, in-flight, or failed.
   if (!busy && !failed && !data?.eligible) return null;
 
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-2.5 min-w-0">
+    <div className="border-primary/20 bg-primary/5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-start gap-2.5">
         {failed ? (
-          <AlertTriangle className="size-4 text-destructive mt-0.5 shrink-0" />
+          <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" />
         ) : (
-          <Sparkles className="size-4 text-primary mt-0.5 shrink-0" />
+          <Sparkles className="text-primary mt-0.5 size-4 shrink-0" />
         )}
         <div className="min-w-0">
           <p className="text-sm font-medium">
-            {busy ? 'Restoring your previous projects…' : failed ? 'We hit a snag restoring your projects' : 'Bring your previous projects over'}
+            {busy
+              ? 'Restoring your previous projects…'
+              : failed
+                ? 'We hit a snag restoring your projects'
+                : 'Bring your previous projects over'}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             {busy
               ? `${PHASE_LABEL[migration?.phase ?? ''] ?? 'Working'}${migration?.step ? ` (${migration.step}/${migration.total_steps})` : ''}`
               : failed
@@ -66,12 +73,18 @@ export function SunaMigrationBanner({ accountId }: { accountId?: string | null }
 
       {busy ? (
         <Button size="sm" disabled className="shrink-0">
-          <Loader2 className="size-3.5 animate-spin mr-1.5" />Restoring…
+          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+          {tI18nHardcoded.raw('autoComponentsProjectsSunaMigrationBannerJsxTextRestoringc3690c1d')}
         </Button>
       ) : (
-        <Button size="sm" onClick={() => start.mutate({})} disabled={start.isPending} className="shrink-0">
+        <Button
+          size="sm"
+          onClick={() => start.mutate({})}
+          disabled={start.isPending}
+          className="shrink-0"
+        >
           {failed ? 'Retry' : 'Restore my projects'}
-          <ArrowRight className="size-3.5 ml-1.5" />
+          <ArrowRight className="ml-1.5 size-3.5" />
         </Button>
       )}
     </div>

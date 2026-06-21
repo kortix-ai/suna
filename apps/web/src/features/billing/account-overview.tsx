@@ -1,15 +1,16 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Account overview block — rendered at the top of the Billing tab.
 // One-glance read of plan + this-period spend split + every limit the API
 // reports. Pure read; the rest of BillingTab still owns mutations.
 
-import { Activity, Bot, Cpu, Layers, Plug, Play, Sparkles, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
+import { Activity, Bot, Cpu, Layers, Play, Plug, Sparkles, Wallet } from 'lucide-react';
 
 type LimitRow = {
   id: string;
@@ -26,6 +27,7 @@ interface AccountOverviewTabProps {
 }
 
 export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const accountState = useAccountState({ accountId });
 
   if (accountState.isLoading) {
@@ -41,8 +43,8 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   const state = accountState.data;
   if (!state) {
     return (
-      <p className="px-1 text-sm text-muted-foreground">
-        Couldn&apos;t load account state. Refresh the page.
+      <p className="text-muted-foreground px-1 text-sm">
+        {tI18nHardcoded.raw('autoFeaturesBillingAccountOverviewJsxTextCouldnTLoadAccountacf6a97f')}
       </p>
     );
   }
@@ -51,9 +53,10 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   // show the seat plan from billing_model + seats instead of the tier label —
   // otherwise a paying per-seat account renders as "Free".
   const seatCount = state.seats?.count ?? 1;
-  const tierName = state.billing_model === 'per_seat'
-    ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}`
-    : (state.tier?.display_name || state.tier?.name || 'No plan');
+  const tierName =
+    state.billing_model === 'per_seat'
+      ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}`
+      : state.tier?.display_name || state.tier?.name || 'No plan';
   const subStatus = state.subscription?.status || null;
   const wallet = state.credits?.total ?? 0;
   const usage = state.usage_this_period;
@@ -62,7 +65,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   return (
     <div className="space-y-4">
       {/* Plan + wallet + status — compact three-up */}
-      <section className="rounded-2xl border bg-card p-5">
+      <section className="bg-card rounded-2xl border p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Plan">
             <div className="flex items-center gap-2">
@@ -76,15 +79,19 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
               )}
             </div>
           </Field>
-          <Field label="Wallet balance">
+          <Field
+            label={tI18nHardcoded.raw(
+              'autoFeaturesBillingAccountOverviewJsxAttrLabelWalletBalancecdd0c37d',
+            )}
+          >
             <ValueLine
-              icon={<Wallet className="size-4 text-muted-foreground" />}
+              icon={<Wallet className="text-muted-foreground size-4" />}
               value={formatUsd(wallet)}
             />
           </Field>
           <Field label="Status">
             <ValueLine
-              icon={<Activity className="size-4 text-muted-foreground" />}
+              icon={<Activity className="text-muted-foreground size-4" />}
               value={subStatus === 'active' ? 'Active' : (subStatus ?? 'Inactive')}
             />
           </Field>
@@ -93,10 +100,14 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
       {/* Spend this period */}
       {usage && (
-        <section className="rounded-2xl border bg-card p-5">
+        <section className="bg-card rounded-2xl border p-5">
           <div className="mb-4 flex items-baseline justify-between">
-            <h4 className="text-sm font-semibold">Spend this period</h4>
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <h4 className="text-sm font-semibold">
+              {tI18nHardcoded.raw(
+                'autoFeaturesBillingAccountOverviewJsxTextSpendThisPeriodc3ec187b',
+              )}
+            </h4>
+            <span className="text-muted-foreground text-xs tabular-nums">
               {formatUsd(usage.total_usd)} total
             </span>
           </div>
@@ -105,7 +116,9 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
               icon={<Cpu className="size-4" />}
               label="Compute"
               value={formatUsd(usage.compute_usd)}
-              sublabel="Sandbox runtime"
+              sublabel={tI18nHardcoded.raw(
+                'autoFeaturesBillingAccountOverviewJsxAttrSublabelSandboxRuntimef66ba97a',
+              )}
             />
             <StatCard
               icon={<Sparkles className="size-4" />}
@@ -119,13 +132,12 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
 
       {/* Limits */}
       {limits.length > 0 && (
-        <section className="rounded-2xl border bg-card p-5">
+        <section className="bg-card rounded-2xl border p-5">
           <h4 className="mb-4 text-sm font-semibold">Limits</h4>
           <div className="space-y-3">
             {limits.map((row) => {
-              const pct = row.limit > 0
-                ? Math.min(100, Math.round((row.active / row.limit) * 100))
-                : 0;
+              const pct =
+                row.limit > 0 ? Math.min(100, Math.round((row.active / row.limit) * 100)) : 0;
               const atCap = row.limit > 0 && row.active >= row.limit;
               return (
                 <div key={row.id} className="space-y-1.5">
@@ -134,10 +146,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
                       <span className="text-muted-foreground">{row.icon}</span>
                       <span>{row.label}</span>
                     </div>
-                    <span className={cn(
-                      'tabular-nums font-medium',
-                      atCap && 'text-destructive',
-                    )}>
+                    <span className={cn('font-medium tabular-nums', atCap && 'text-destructive')}>
                       {row.active} / {row.limit}
                     </span>
                   </div>
@@ -152,7 +161,9 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
   );
 }
 
-function buildLimitRows(limits: NonNullable<ReturnType<typeof useAccountState>['data']>['limits']): LimitRow[] {
+function buildLimitRows(
+  limits: NonNullable<ReturnType<typeof useAccountState>['data']>['limits'],
+): LimitRow[] {
   if (!limits) return [];
   const rows: LimitRow[] = [];
   if (limits.concurrent_sessions) {
@@ -197,7 +208,7 @@ function buildLimitRows(limits: NonNullable<ReturnType<typeof useAccountState>['
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-muted-foreground text-xs">{label}</div>
       {children}
     </div>
   );
@@ -224,15 +235,13 @@ function StatCard({
   sublabel?: string;
 }) {
   return (
-    <div className="rounded-2xl border bg-background p-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="bg-background rounded-2xl border p-3">
+      <div className="text-muted-foreground flex items-center gap-2 text-xs">
         {icon}
         <span>{label}</span>
       </div>
       <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-      {sublabel && (
-        <div className="mt-0.5 text-xs text-muted-foreground">{sublabel}</div>
-      )}
+      {sublabel && <div className="text-muted-foreground mt-0.5 text-xs">{sublabel}</div>}
     </div>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -14,9 +15,9 @@ import {
   Trash2,
   UserPlus,
 } from 'lucide-react';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
+import { FormEvent, useEffect, useState } from 'react';
 
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -32,7 +33,6 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   archiveProject,
   getProject,
@@ -44,10 +44,9 @@ import {
   type KortixProject,
 } from '@/lib/projects-client';
 
-
 export function SettingsView({ projectId }: { projectId: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Settings} title="Settings" />
       <ProjectSettingsBody projectId={projectId} />
     </div>
@@ -75,8 +74,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setArchiveOpen(false);
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to archive project'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to archive project'),
   });
 
   return (
@@ -92,14 +90,12 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
         {projectQuery.isError && (
           <SectionCard
             tone="destructive"
-            title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject')}
+            title={tHardcodedUi.raw(
+              'appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject',
+            )}
             description={(projectQuery.error as Error).message}
           >
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => projectQuery.refetch()}
-            >
+            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
               Retry
             </Button>
           </SectionCard>
@@ -113,13 +109,25 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
             {canManage && (
               <SectionCard
                 tone="destructive"
-                title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone')}
-                description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions')}
+                title={tHardcodedUi.raw(
+                  'appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone',
+                )}
+                description={tHardcodedUi.raw(
+                  'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
+                )}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject')}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList')}</p>
+                    <p className="text-foreground text-sm font-medium">
+                      {tHardcodedUi.raw(
+                        'appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject',
+                      )}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      {tHardcodedUi.raw(
+                        'appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList',
+                      )}
+                    </p>
                   </div>
                   <Button
                     variant="outline"
@@ -139,12 +147,10 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       <ConfirmDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject')}
-        description={
-          project
-            ? `Archive ${project.name}? Current sessions remain recoverable.`
-            : ''
-        }
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
+        )}
+        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
         confirmLabel="Archive"
         onConfirm={() => archiveMutation.mutate()}
         isPending={archiveMutation.isPending}
@@ -153,19 +159,12 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
   );
 }
 
-function RepositoryCard({
-  project,
-  canManage,
-}: {
-  project: KortixProject;
-  canManage: boolean;
-}) {
+function RepositoryCard({ project, canManage }: { project: KortixProject; canManage: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const repoUrl = project.repo_url;
   const githubUrl = githubRepoWebUrl(repoUrl);
-  const repoLabel =
-    githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
+  const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
@@ -187,8 +186,7 @@ function RepositoryCard({
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to update repository'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to update repository'),
   });
 
   const dirty =
@@ -204,28 +202,25 @@ function RepositoryCard({
   return (
     <SectionCard
       title="Repository"
-      description={tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line163JsxAttrDescriptionTheGitRepoBackingThisProjectEverySession')}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSettingsPage.line163JsxAttrDescriptionTheGitRepoBackingThisProjectEverySession',
+      )}
     >
       <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0 flex items-center gap-2.5">
+        <div className="flex min-w-0 items-center gap-2.5">
           {githubUrl ? (
             <GithubMark className="h-4 w-4 shrink-0" />
           ) : (
-            <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <GitBranch className="text-muted-foreground h-4 w-4 shrink-0" />
           )}
-          <span className="truncate text-sm font-mono text-foreground">
-            {repoLabel}
-          </span>
+          <span className="text-foreground truncate font-mono text-sm">{repoLabel}</span>
         </div>
         {githubUrl && (
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="shrink-0 gap-1.5"
-          >
+          <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
             <a href={githubUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" />{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line181JsxTextOpenOnGithub')}</a>
+              <ExternalLink className="h-3.5 w-3.5" />
+              {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line181JsxTextOpenOnGithub')}
+            </a>
           </Button>
         )}
       </div>
@@ -233,7 +228,9 @@ function RepositoryCard({
       <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="default-branch">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}</Label>
+            <Label htmlFor="default-branch">
+              {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}
+            </Label>
             <Input
               id="default-branch"
               value={defaultBranch}
@@ -243,7 +240,9 @@ function RepositoryCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="manifest-path">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}</Label>
+            <Label htmlFor="manifest-path">
+              {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}
+            </Label>
             <Input
               id="manifest-path"
               value={manifestPath}
@@ -265,9 +264,7 @@ function RepositoryCard({
         </div>
       </form>
 
-      {managed && (
-        <RepoCollaboratorInvite projectId={project.project_id} />
-      )}
+      {managed && <RepoCollaboratorInvite projectId={project.project_id} />}
     </SectionCard>
   );
 }
@@ -286,14 +283,10 @@ function RepositoryCard({
  * have to expand it to reveal the toggles, so WIP surfaces don't read as
  * first-class settings.
  */
-function ExperimentalCard({
-  project,
-  canManage,
-}: {
-  project: KortixProject;
-  canManage: boolean;
-}) {
+function ExperimentalCard({ project, canManage }: { project: KortixProject; canManage: boolean }) {
   // Only features the platform actually supports are shown.
+
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const features = (project.experimental_features ?? []).filter((f) => f.available);
   // Collapsed by default — extra expand to reveal.
   const [expanded, setExpanded] = useState(false);
@@ -310,23 +303,27 @@ function ExperimentalCard({
         aria-expanded={expanded}
         className="flex w-full items-center gap-2 text-left"
       >
-        <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
+        <FlaskConical className="text-muted-foreground size-4 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">
-            Experimental / WIP Features
+          <p className="text-foreground text-sm font-medium">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextExperimentalWIPcb2304ee',
+            )}
             {enabledCount > 0 && (
-              <span className="font-normal text-muted-foreground"> · {enabledCount} on</span>
+              <span className="text-muted-foreground font-normal"> · {enabledCount} on</span>
             )}
           </p>
           {!expanded && (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Soft-released, still-moving features. Expand to opt this project in — they may change or break.
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextSoftReleased8dc4e708',
+              )}
             </p>
           )}
         </div>
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-muted-foreground transition-transform',
+            'text-muted-foreground size-4 shrink-0 transition-transform',
             expanded && 'rotate-180',
           )}
         />
@@ -334,11 +331,12 @@ function ExperimentalCard({
 
       {expanded && (
         <>
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            These are real but unfinished. Turning one on enables it for this project only —
-            it may change shape or break between versions, and stays off until you turn it on.
+          <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextTheseAre75a29a6f',
+            )}
           </p>
-          <div className="mt-2 divide-y divide-border border-t border-border">
+          <div className="divide-border border-border mt-2 divide-y border-t">
             {features.map((feature) => (
               <ExperimentalFeatureRow
                 key={feature.key}
@@ -366,8 +364,7 @@ function ExperimentalFeatureRow({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (next: boolean) =>
-      updateExperimentalFeature(projectId, feature.key, next),
+    mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', projectId], updated);
       // Sidebar shortcuts gate off these same values via a separate
@@ -375,20 +372,19 @@ function ExperimentalFeatureRow({
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || `Failed to update ${feature.name}`),
+    onError: (error: Error) => toast.error(error.message || `Failed to update ${feature.name}`),
   });
 
   return (
     <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-foreground">{feature.name}</p>
+          <p className="text-foreground text-sm font-medium">{feature.name}</p>
           <Badge variant={feature.stability === 'beta' ? 'beta' : 'highlight'} size="sm">
             {feature.stability === 'beta' ? 'Beta' : 'Experimental'}
           </Badge>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{feature.description}</p>
+        <p className="text-muted-foreground mt-0.5 text-xs">{feature.description}</p>
       </div>
       <Switch
         checked={feature.enabled}
@@ -404,24 +400,21 @@ function ExperimentalFeatureRow({
  * collaborators so they can clone/browse/work on the repo on github.com.
  */
 function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
 
   const inviteMutation = useMutation({
-    mutationFn: () =>
-      inviteRepoCollaborator(projectId, username.trim(), permission),
+    mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
         toast.success(`@${res.username} already has access to this repo`);
       } else {
-        toast.success(
-          `Invite sent to @${res.username} — they accept it on GitHub to get access`,
-        );
+        toast.success(`Invite sent to @${res.username} — they accept it on GitHub to get access`);
       }
       setUsername('');
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to add collaborator'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to add collaborator'),
   });
 
   const submit = (e: FormEvent) => {
@@ -431,34 +424,46 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
 
   return (
     <div className="mt-6">
-      <p className="text-sm font-medium text-foreground">Add people to this repo</p>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        Kortix owns this repo. Add GitHub users as collaborators so they can clone,
-        browse, and work on it directly on github.com.
+      <p className="text-foreground text-sm font-medium">
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextAddPeople18915e9b',
+        )}
+      </p>
+      <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextKortixOwns7b6690bc',
+        )}
       </p>
       <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={submit}>
         <div className="relative min-w-0 flex-1 basis-48">
-          <GithubMark className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+          <GithubMark className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
           <Input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="GitHub username"
+            placeholder={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSettingsViewJsxAttrPlaceholderGitHub84efb7a1',
+            )}
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
             className="pl-9"
           />
         </div>
-        <Select
-          value={permission}
-          onValueChange={(v) => setPermission(v as 'read' | 'write')}
-        >
+        <Select value={permission} onValueChange={(v) => setPermission(v as 'read' | 'write')}>
           <SelectTrigger size="lg" className="w-[8.5rem] shrink-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="write">Can edit</SelectItem>
-            <SelectItem value="read">Can view</SelectItem>
+            <SelectItem value="write">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanEdit2eb88c1b',
+              )}
+            </SelectItem>
+            <SelectItem value="read">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanView39f4dd36',
+              )}
+            </SelectItem>
           </SelectContent>
         </Select>
         <Button
@@ -536,8 +541,7 @@ function GeneralProjectCard({
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to update project'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to update project'),
   });
 
   const dirty = name.trim() !== project.name;
@@ -552,7 +556,9 @@ function GeneralProjectCard({
     <SectionCard title="General">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="project-name">{tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}</Label>
+          <Label htmlFor="project-name">
+            {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}
+          </Label>
           <Input
             id="project-name"
             value={name}

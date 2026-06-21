@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { FileText, FolderGit2, Lightbulb, Repeat, TriangleAlert, Users } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import type { ComponentType } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
@@ -39,6 +40,7 @@ const CARRIES: { icon: ComponentType<{ className?: string }>; label: string }[] 
 ];
 
 export function Step6OwnCli() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const reduced = useReducedMotion();
   const enter = (i: number) =>
     reduced
@@ -55,10 +57,13 @@ export function Step6OwnCli() {
         <div className="flex h-full flex-col">
           <PageHead
             title="Memory"
-            sub="Context Kortix learned from your tools, files, and past sessions"
+            sub={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep6OwnCli35107eec')}
           />
 
-          <Panel title="Captured this week" count="from real work">
+          <Panel
+            title={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep6OwnCli5cc55856')}
+            count={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep6OwnCli98d018f1')}
+          >
             <div className="divide-border divide-y">
               {CAPTURED.map((item, i) => (
                 <motion.div
@@ -81,7 +86,9 @@ export function Step6OwnCli() {
           </Panel>
 
           <motion.div {...enter(CAPTURED.length)} className="mt-4">
-            <div className="text-muted-foreground mb-2 text-xs font-medium">Carries forward</div>
+            <div className="text-muted-foreground mb-2 text-xs font-medium">
+              {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep6OwnCli00af3d26')}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {CARRIES.map((chip) => (
                 <Badge key={chip.label} size="sm" variant="outline" className="gap-1.5">
@@ -98,7 +105,7 @@ export function Step6OwnCli() {
               'border-border/60 bg-muted/20 text-muted-foreground mt-4 rounded-md border px-3 py-2.5 text-xs leading-relaxed',
             )}
           >
-            Reused across sessions — every coworker starts from what the team already knows.
+            {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep6OwnClib5fd8e81')}
           </motion.p>
         </div>
       </WebPanelWrapper>

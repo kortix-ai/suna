@@ -1,11 +1,13 @@
 'use client';
 
-import { ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
 import type { AccountState } from '@/lib/api/billing';
+import { ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const claim = useClaimPerSeat();
   // Show ONLY for genuine legacy accounts with a machine to migrate. A plain
   // `billing_model === 'legacy'` check also matched new per-seat-era free users
@@ -15,15 +17,19 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
   if (!accountState || !accountState.can_claim_per_seat) return null;
 
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+    <div className="border-primary/20 bg-primary/5 space-y-3 rounded-2xl border p-4">
       <div className="flex items-start gap-2.5">
-        <Sparkles className="size-4 text-primary mt-0.5 shrink-0" />
-        <div className="space-y-1 min-w-0">
-          <p className="text-sm font-medium">Switch to seat-based pricing</p>
-          <p className="text-xs text-muted-foreground">
-            Move off per-machine billing to the new $40/seat plan. We cancel your machine
-            subscriptions, put your unused balance toward your first seat, and return the
-            rest as <span className="font-medium text-foreground">non-expiring credit</span>.
+        <Sparkles className="text-primary mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-medium">
+            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextSwitchTo0413ce4a')}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d')}
+            <span className="text-foreground font-medium">
+              {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextNonExpiringc3f29937')}
+            </span>
+            .
           </p>
         </div>
       </div>
@@ -34,13 +40,19 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
         className="w-full sm:w-auto"
       >
         {claim.isPending ? (
-          <><Loader2 className="size-3.5 animate-spin mr-1.5" />Switching…</>
+          <>
+            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421')}
+          </>
         ) : (
-          <>Claim seat-based pricing<ArrowRight className="size-3.5 ml-1.5" /></>
+          <>
+            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9')}
+            <ArrowRight className="ml-1.5 size-3.5" />
+          </>
         )}
       </Button>
       {claim.isError && (
-        <p className="text-xs text-destructive break-words">
+        <p className="text-destructive text-xs break-words">
           {(claim.error as Error)?.message ?? 'Could not switch. Try again or contact support.'}
         </p>
       )}

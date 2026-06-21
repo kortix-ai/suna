@@ -57,6 +57,7 @@ function CopyButton({ value }: { value: string }) {
 }
 
 function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [confirming, setConfirming] = useState(false);
   const revoked = token.status !== 'active';
@@ -89,7 +90,9 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
           </div>
           <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
             <span>Created {formatRelative(token.created_at)}</span>
-            <span>&bull;</span>
+            <span>
+              {tI18nHardcoded.raw('autoFeaturesAccountsSettingsCliTokensTabJsxTextBullbb9413cf')}
+            </span>
             <span>
               {tHardcodedUi.raw('componentsSettingsCliTokensTab.line94JsxTextLastUsed')}{' '}
               {formatRelative(token.last_used_at)}

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Create / edit dialog for a project's sandbox template.
  *
@@ -9,9 +10,9 @@
  * layer is added automatically — the user only defines their workspace base.
  */
 
-import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Container, FileCode, Package } from 'lucide-react';
+import { Container, FileCode, Loader2, Package } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -25,13 +26,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
 } from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 type Mode = 'image' | 'dockerfile';
 
@@ -63,6 +64,7 @@ export function SandboxTemplateForm({
   onOpenChange,
   template,
 }: SandboxTemplateFormProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const isEdit = !!template;
   const queryClient = useQueryClient();
 
@@ -119,7 +121,8 @@ export function SandboxTemplateForm({
   const slugError = useMemo(() => {
     if (!slug) return null;
     if (slug === 'default') return 'Slug "default" is reserved for the platform template.';
-    if (!isValidSlug(slug)) return 'Use lowercase letters, digits, dashes, or underscores (1-64 chars).';
+    if (!isValidSlug(slug))
+      return 'Use lowercase letters, digits, dashes, or underscores (1-64 chars).';
     return null;
   }, [slug]);
 
@@ -139,7 +142,9 @@ export function SandboxTemplateForm({
       createSandboxTemplate(projectId, {
         slug,
         name: name.trim(),
-        ...(mode === 'image' ? { image: image.trim() } : { dockerfile_path: dockerfilePath.trim() }),
+        ...(mode === 'image'
+          ? { image: image.trim() }
+          : { dockerfile_path: dockerfilePath.trim() }),
         entrypoint: entrypoint.trim() || undefined,
         cpu: parsePosInt(cpu),
         memory_gb: parsePosInt(memoryGb),
@@ -185,8 +190,9 @@ export function SandboxTemplateForm({
             {isEdit ? `Edit "${template?.name}"` : 'New sandbox template'}
           </DialogTitle>
           <DialogDescription>
-            Define a sandbox image sessions can boot from. Pick either a public Docker image or a Dockerfile in
-            your repo. The Kortix runtime layer (agent daemon, opencode, bun) is added automatically.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxTemplateFormJsxTextDefineASandbox3c0ec6b6',
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -196,7 +202,9 @@ export function SandboxTemplateForm({
               <Label htmlFor="tpl-name">Name</Label>
               <Input
                 id="tpl-name"
-                placeholder="ML Development"
+                placeholder={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxTemplateFormJsxAttrPlaceholderMLDevelopment53e1277c',
+                )}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
@@ -214,28 +222,34 @@ export function SandboxTemplateForm({
                 disabled={isEdit}
                 aria-invalid={!!slugError}
               />
-              {slugError && (
-                <p className="mt-1 text-xs text-destructive">{slugError}</p>
-              )}
+              {slugError && <p className="text-destructive mt-1 text-xs">{slugError}</p>}
             </div>
           </div>
 
           <div>
-            <Label>Image source</Label>
+            <Label>
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsSandboxTemplateFormJsxTextImageSourcecaa2d535',
+              )}
+            </Label>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setMode('image')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-2xl border border-border/60 p-3 text-left text-sm transition-colors',
+                  'border-border/60 flex flex-col items-start gap-1 rounded-2xl border p-3 text-left text-sm transition-colors',
                   mode === 'image' && 'border-foreground/30 bg-muted/40',
                 )}
               >
                 <div className="flex items-center gap-2">
                   <Package className="size-4" />
-                  <span className="font-medium">Public image</span>
+                  <span className="font-medium">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsSandboxTemplateFormJsxTextPublicImage51d40ec2',
+                    )}
+                  </span>
                 </div>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   e.g. <code className="font-mono">python:3.12-slim</code>
                 </span>
               </button>
@@ -243,7 +257,7 @@ export function SandboxTemplateForm({
                 type="button"
                 onClick={() => setMode('dockerfile')}
                 className={cn(
-                  'flex flex-col items-start gap-1 rounded-2xl border border-border/60 p-3 text-left text-sm transition-colors',
+                  'border-border/60 flex flex-col items-start gap-1 rounded-2xl border p-3 text-left text-sm transition-colors',
                   mode === 'dockerfile' && 'border-foreground/30 bg-muted/40',
                 )}
               >
@@ -251,8 +265,10 @@ export function SandboxTemplateForm({
                   <FileCode className="size-4" />
                   <span className="font-medium">Dockerfile</span>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  Path inside this repo
+                <span className="text-muted-foreground text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsSandboxTemplateFormJsxTextPathInsideThis6fc72ad4',
+                  )}
                 </span>
               </button>
             </div>
@@ -266,27 +282,34 @@ export function SandboxTemplateForm({
                     value={image}
                     onChange={(e) => setImage(e.target.value)}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Must include a specific tag (no <code className="font-mono">latest</code>).
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsSandboxTemplateFormJsxTextMustIncludeA5f4b959e',
+                    )}
+                    <code className="font-mono">latest</code>).
                   </p>
                 </>
               ) : (
                 <>
-                  <Label htmlFor="tpl-df">Dockerfile path</Label>
+                  <Label htmlFor="tpl-df">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsSandboxTemplateFormJsxTextDockerfilePathda3717f2',
+                    )}
+                  </Label>
                   <Input
                     id="tpl-df"
                     placeholder=".kortix/Dockerfile.ml"
                     value={dockerfilePath}
                     onChange={(e) => setDockerfilePath(e.target.value)}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Relative to the repository root.
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsSandboxTemplateFormJsxTextRelativeToThe552e0897',
+                    )}
                   </p>
                 </>
               )}
-              {sourceError && (
-                <p className="mt-1 text-xs text-destructive">{sourceError}</p>
-              )}
+              {sourceError && <p className="text-destructive mt-1 text-xs">{sourceError}</p>}
             </div>
           </div>
 
@@ -294,16 +317,38 @@ export function SandboxTemplateForm({
             <Label>Resources</Label>
             <div className="mt-2 grid grid-cols-3 gap-3">
               <NumericField id="cpu" label="vCPU" value={cpu} onChange={setCpu} min={1} max={32} />
-              <NumericField id="mem" label="Memory (GiB)" value={memoryGb} onChange={setMemoryGb} min={1} max={128} />
-              <NumericField id="disk" label="Disk (GiB)" value={diskGb} onChange={setDiskGb} min={1} max={500} />
+              <NumericField
+                id="mem"
+                label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxTemplateFormJsxAttrLabelMemoryGiB200ca9a8',
+                )}
+                value={memoryGb}
+                onChange={setMemoryGb}
+                min={1}
+                max={128}
+              />
+              <NumericField
+                id="disk"
+                label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxTemplateFormJsxAttrLabelDiskGiB94935856',
+                )}
+                value={diskGb}
+                onChange={setDiskGb}
+                min={1}
+                max={500}
+              />
             </div>
           </div>
 
           <div>
-            <Label htmlFor="tpl-entry">Entrypoint <span className="text-muted-foreground">(optional)</span></Label>
+            <Label htmlFor="tpl-entry">
+              Entrypoint <span className="text-muted-foreground">(optional)</span>
+            </Label>
             <Textarea
               id="tpl-entry"
-              placeholder="Leave blank to use the Kortix default (recommended)."
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsProjectsSandboxTemplateFormJsxAttrPlaceholderLeaveBlank4adf74ef',
+              )}
               value={entrypoint}
               onChange={(e) => setEntrypoint(e.target.value)}
               className="font-mono text-xs"
@@ -346,7 +391,9 @@ function NumericField({
 }) {
   return (
     <div>
-      <Label htmlFor={id} className="text-xs">{label}</Label>
+      <Label htmlFor={id} className="text-xs">
+        {label}
+      </Label>
       <Input
         id={id}
         type="number"

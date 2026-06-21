@@ -17,6 +17,7 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
@@ -175,6 +176,7 @@ function TemplateWarmControl({
   template: SandboxTemplate;
   canManage: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const warm = template.warm_pool;
   const serverEnabled = warm?.enabled ?? false;
@@ -182,13 +184,19 @@ function TemplateWarmControl({
 
   const [enabled, setEnabled] = useState(serverEnabled);
   const [size, setSize] = useState(serverSize);
-  useEffect(() => { setEnabled(serverEnabled); }, [serverEnabled]);
-  useEffect(() => { setSize(serverSize); }, [serverSize]);
+  useEffect(() => {
+    setEnabled(serverEnabled);
+  }, [serverEnabled]);
+  useEffect(() => {
+    setSize(serverSize);
+  }, [serverSize]);
 
   const save = useMutation({
     mutationFn: (input: { enabled?: boolean; size?: number }) =>
       updateTemplateWarmPool(projectId, { slug: template.slug, ...input }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
+    },
     onError: (err: Error) => {
       toast.error(err.message || 'Failed to update warm pool');
       setEnabled(serverEnabled);
@@ -210,10 +218,13 @@ function TemplateWarmControl({
     <div className="border-border/50 mt-1 flex basis-full flex-wrap items-center gap-x-3 gap-y-2 border-t pt-2.5">
       <Zap className="text-muted-foreground size-3.5" />
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium">Keep warm</div>
+        <div className="text-xs font-medium">
+          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextKeepWarm55c849e1')}
+        </div>
         <div className="text-muted-foreground text-[11px]">
-          Pre-boot sandboxes of this template so sessions open instantly. Off by default;
-          ready sandboxes use credits while running, only while you’re active here.
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsSandboxSnapshotCardJsxTextPreBootSandboxes7405a223',
+          )}
         </div>
         {enabled && warm && (
           <div className="mt-1 flex items-center gap-3 text-[11px]">
@@ -224,7 +235,10 @@ function TemplateWarmControl({
             {warm.warming > 0 && (
               <span className="text-muted-foreground inline-flex items-center gap-1.5">
                 <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                {warm.warming} warming…
+                {warm.warming}{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxTextWarmingfab1d732',
+                )}
               </span>
             )}
           </div>
@@ -238,7 +252,9 @@ function TemplateWarmControl({
             className="size-7"
             disabled={!canManage || save.isPending || size <= 0}
             onClick={() => setSizeClamped(size - 1)}
-            aria-label="Decrease ready sandboxes"
+            aria-label={tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDecreased514ed20',
+            )}
           >
             <Minus className="size-3.5" />
           </Button>
@@ -249,7 +265,9 @@ function TemplateWarmControl({
             className="size-7"
             disabled={!canManage || save.isPending || size >= MAX_WARM_SIZE}
             onClick={() => setSizeClamped(size + 1)}
-            aria-label="Increase ready sandboxes"
+            aria-label={tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelIncrease82989967',
+            )}
           >
             <Plus className="size-3.5" />
           </Button>
@@ -258,8 +276,13 @@ function TemplateWarmControl({
       <Switch
         checked={enabled}
         disabled={!canManage || save.isPending}
-        onCheckedChange={(v) => { setEnabled(v); commit({ enabled: v }); }}
-        aria-label="Keep this template warm"
+        onCheckedChange={(v) => {
+          setEnabled(v);
+          commit({ enabled: v });
+        }}
+        aria-label={tI18nHardcoded.raw(
+          'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelKeepb2a43916',
+        )}
       />
     </div>
   );
@@ -278,6 +301,7 @@ function TemplateRow({
   warmAvailable: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const buildMut = useMutation({
     mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
@@ -320,7 +344,12 @@ function TemplateRow({
           </span>
         </div>
         <div className="text-muted-foreground mt-0.5 truncate text-xs">
-          {sub} · {template.cpu} vCPU · {template.memory_gb} GiB · {template.disk_gb} GiB disk
+          {sub} · {template.cpu}{' '}
+          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}
+          {template.memory_gb}{' '}
+          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f')}
+          {template.disk_gb}{' '}
+          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}
         </div>
       </div>
       <StateBadge state={template.daytona_state} />
@@ -333,7 +362,9 @@ function TemplateRow({
                 variant="ghost"
                 className="size-7 p-0"
                 onClick={() => onEdit(template)}
-                aria-label="Edit template"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelEditdc9d24c2',
+                )}
               >
                 <Edit3 className="size-3.5" />
               </Button>
@@ -347,7 +378,9 @@ function TemplateRow({
                     deleteMut.mutate();
                   }
                 }}
-                aria-label="Delete template"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDeleteda0507cf',
+                )}
               >
                 {deleteMut.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -383,6 +416,7 @@ function TemplateRow({
 }
 
 export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCardProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const snapshotsQuery = useQuery({
     queryKey: SNAPSHOTS_QUERY_KEY(projectId),
     queryFn: () => listProjectSnapshots(projectId),
@@ -420,7 +454,10 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
         </header>
         <div className="px-6 py-5">
           <p className="text-destructive text-sm">
-            Failed to load sandbox templates: {(snapshotsQuery.error as Error).message}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextFailedToLoad51fc2341',
+            )}
+            {(snapshotsQuery.error as Error).message}
           </p>
           <Button
             variant="outline"
@@ -456,23 +493,37 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
     <section className="border-border/70 bg-card rounded-2xl border">
       <header className="border-border/60 flex items-start justify-between gap-3 border-b px-6 py-4">
         <div>
-          <h2 className="text-foreground text-base font-semibold">Sandbox templates</h2>
+          <h2 className="text-foreground text-base font-semibold">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextSandboxTemplatesc053b378',
+            )}
+          </h2>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Sessions boot from a sandbox template. The platform default is shared by every project
-            and clones your repo into <code className="font-mono">/workspace</code> at boot. Add
-            your own templates here or via <code className="font-mono">[[sandbox.templates]]</code>{' '}
-            in <code className="font-mono">kortix.toml</code>.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextSessionsBootFrom7b80534b',
+            )}
+            <code className="font-mono">/workspace</code>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextAtBootAdd8305ffcd',
+            )}
+            <code className="font-mono">[[sandbox.templates]]</code> in{' '}
+            <code className="font-mono">kortix.toml</code>.
           </p>
           {data.templates_error && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              Couldn’t read project sandbox config: {data.templates_error}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsSandboxSnapshotCardJsxTextCouldnTReadf6f1bc48',
+              )}
+              {data.templates_error}
             </p>
           )}
         </div>
         {canManage && (
           <Button size="sm" className="gap-1.5" onClick={openNewForm}>
             <Plus className="size-3.5" />
-            New template
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextNewTemplate62cccf85',
+            )}
           </Button>
         )}
       </header>
@@ -480,7 +531,9 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
       <div className="space-y-5 px-6 py-5">
         {templates.length === 0 ? (
           <p className="border-border/60 text-muted-foreground rounded-2xl border border-dashed px-4 py-6 text-center text-sm">
-            No templates resolved yet.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextNoTemplatesResolved1e5654c6',
+            )}
           </p>
         ) : (
           <List className="border-border/60 rounded-2xl border">
@@ -501,7 +554,11 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
           <div className="border-destructive/30 bg-destructive/5 rounded-2xl border p-4">
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <XCircle className="text-destructive h-4 w-4" />
-              <span className="text-destructive text-sm font-semibold">Latest build failed</span>
+              <span className="text-destructive text-sm font-semibold">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxTextLatestBuildFailedf1dd9030',
+                )}
+              </span>
               {latestFailure.error_category && (
                 <span className="border-destructive/20 bg-destructive/10 text-destructive rounded-full border px-2 py-0.5 text-xs font-medium">
                   {CATEGORY_LABEL[latestFailure.error_category] ?? latestFailure.error_category}
@@ -531,7 +588,9 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
                 ) : (
                   <Sparkles className="h-3.5 w-3.5" />
                 )}
-                Fix with agent
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxTextFixWithAgent918e1083',
+                )}
               </Button>
             )}
           </div>
@@ -539,12 +598,15 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
 
         <div>
           <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-            Recent builds
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsSandboxSnapshotCardJsxTextRecentBuildscde18d4a',
+            )}
           </h3>
           {builds.length === 0 ? (
             <p className="border-border/60 text-muted-foreground rounded-2xl border border-dashed px-4 py-6 text-center text-sm">
-              No builds recorded yet. The platform default builds once globally; custom templates
-              build on first use.
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsSandboxSnapshotCardJsxTextNoBuildsRecordedfa95bbcb',
+              )}
             </p>
           ) : (
             <List className="border-border/60 rounded-2xl border">

@@ -229,6 +229,7 @@ function SecretsCard({
   projectId: string;
   data: ProjectSecretsResponse | ProjectSecret[] | null | undefined;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-secrets', projectId];
@@ -357,7 +358,9 @@ function SecretsCard({
                 onClick={() => setProviderModalOpen(true)}
               >
                 <Plug className="h-3.5 w-3.5" />
-                Connect LLM provider
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
+                )}
               </Button>
             )}
             <Button
@@ -445,6 +448,7 @@ function SecretListRow({
   onEditMine: () => void;
   onRemoveMine: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const scopeLabel = sharingScopeLabel(row.sharing);
   const canManageShared = canManage && !row.system;
 
@@ -521,7 +525,14 @@ function SecretListRow({
           <SourceChooser row={row} busy={busy} onChoose={(s) => onChooseSource(row, s)} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="Secret actions">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxAttrAriaLabelda70cb1c',
+                )}
+              >
                 {busy ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
@@ -537,7 +548,9 @@ function SecretListRow({
               {row.mine && (
                 <DropdownMenuItem onClick={onRemoveMine} variant="destructive">
                   <Trash2 className="h-3.5 w-3.5" />
-                  Remove my value
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextRemoveMy28722d0f',
+                  )}
                 </DropdownMenuItem>
               )}
               {canManageShared && (
@@ -550,7 +563,9 @@ function SecretListRow({
                   {row.sharedConfigured && (
                     <DropdownMenuItem onClick={onDeleteShared} variant="destructive">
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete shared value
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',
+                      )}
                     </DropdownMenuItem>
                   )}
                 </>
@@ -573,6 +588,7 @@ function SourceChooser({
   busy: boolean;
   onChoose: (source: 'shared' | 'mine') => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const usingMine = row.effectiveSource === 'mine';
   // Picking "Shared" is only meaningful if a shared value can reach the member.
   const sharedAvailable = row.sharedConfigured && row.usableByMe;
@@ -605,7 +621,9 @@ function SourceChooser({
             ? 'bg-primary/10 text-primary font-medium'
             : 'text-muted-foreground hover:text-foreground',
         )}
-        title="Use your own value for this key"
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsSecretsViewJsxAttrTitleUsed8cf287f',
+        )}
       >
         <Lock className="h-3 w-3" />
         Mine
@@ -630,6 +648,7 @@ function SecretDialog({
   row: SecretRow | null;
   onSaved: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
@@ -699,7 +718,9 @@ function SecretDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            The shared project value, injected into every member’s sessions (subject to sharing).
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextTheShared55c37a86',
+            )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -761,7 +782,9 @@ function SecretDialog({
             />
             {row?.sharedConfigured && (
               <p className="text-muted-foreground text-xs">
-                Leave blank to keep the current value.
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextLeaveBlank2964f5bb',
+                )}
               </p>
             )}
           </div>
@@ -813,6 +836,7 @@ function PersonalSecretDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
@@ -864,8 +888,9 @@ function PersonalSecretDialog({
         <DialogHeader>
           <DialogTitle>{row ? `Your value for ${row.name}` : 'Add your own secret'}</DialogTitle>
           <DialogDescription>
-            A private value only you can use. It overrides the shared value in your own sessions and
-            is never visible to other members.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextAPrivate3616193c',
+            )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -929,7 +954,9 @@ function PersonalSecretDialog({
               className="gap-1.5"
             >
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Use mine
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextUseMineb9944133',
+              )}
             </Button>
           </DialogFooter>
         </form>

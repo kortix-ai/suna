@@ -2,6 +2,7 @@
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, type HTMLAttributes } from 'react';
 import { KORTIX_CMD_CLASS, KORTIX_CMD_STYLE, LineView } from './terminal';
 import type { DemoDirector } from './use-demo-director';
@@ -16,6 +17,7 @@ export function CliTerminal({
   director: DemoDirector;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { scrollback, typed, typingNote, running } = director;
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +44,9 @@ export function CliTerminal({
         </div>
         <span className="text-muted-foreground ml-1.5 inline-flex items-center gap-1 text-[11px] font-medium">
           <KortixLogo size={12} />
-          kortix cli
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoCliCliTerminalJsxTextKortix1390795b',
+          )}
         </span>
         <span className="ml-auto inline-flex items-center gap-2">
           <span

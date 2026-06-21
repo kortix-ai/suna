@@ -7,6 +7,9 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
 import { BillingError, formatBillingErrorForUI, isBillingError } from './api/errors';
 
+const TOP_UP_LABEL = 'Top up';
+const MANAGE_PLAN_LABEL = 'Manage plan';
+
 export interface ApiError extends Error {
   status?: number;
   code?: string;
@@ -233,7 +236,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
                 .openAccountSettings({ tab: 'billing', highlight: 'credits' })
             }
           >
-            Top up
+            {TOP_UP_LABEL}
           </Button>
         ),
       });
@@ -263,7 +266,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
               useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' })
             }
           >
-            Manage plan
+            {MANAGE_PLAN_LABEL}
           </Button>
         ),
       });

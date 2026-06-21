@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Installed view — the "WordPress for AI" plugins screen. Reads the project's
  * `registry-lock.json` (what's installed), cross-references the catalog for
@@ -42,6 +43,7 @@ export function MarketplaceInstalledPanel({
   projectId: string;
   onBrowse: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const installed = useInstalledItems(projectId);
   const updates = useRegistryUpdates(projectId);
   const catalog = useMarketplaceItems({});
@@ -90,9 +92,19 @@ export function MarketplaceInstalledPanel({
     return (
       <EmptyState
         icon={PackageOpen}
-        title="Nothing installed yet"
-        description="Add skills from Explore — they commit into this project's repo, live in the next session."
-        action={<Button onClick={onBrowse}>Browse Explore</Button>}
+        title={tI18nHardcoded.raw(
+          'autoComponentsMarketplaceMarketplaceInstalledPanelJsxAttrTitleNothingInstalled853f4b1c',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsMarketplaceMarketplaceInstalledPanelJsxAttrDescriptionAddSkills237df761',
+        )}
+        action={
+          <Button onClick={onBrowse}>
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextBrowseExplore6a8c54d5',
+            )}
+          </Button>
+        }
       />
     );
   }
@@ -109,7 +121,14 @@ export function MarketplaceInstalledPanel({
             </span>
           </>
         )}
-        {updates.isLoading && <span className="text-muted-foreground/60"> · checking for updates…</span>}
+        {updates.isLoading && (
+          <span className="text-muted-foreground/60">
+            {' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextCheckingForUpdatese5306763',
+            )}
+          </span>
+        )}
       </p>
 
       <div className="space-y-2.5">
@@ -118,7 +137,9 @@ export function MarketplaceInstalledPanel({
           const meta = typeMeta(it.type);
           const cat = catalogByName.get(it.name);
           const caps = cat?.capabilities;
-          const capCount = caps ? caps.secrets.length + caps.connectors.length + caps.tools.length : 0;
+          const capCount = caps
+            ? caps.secrets.length + caps.connectors.length + caps.tools.length
+            : 0;
           return (
             <div
               key={it.name}
@@ -127,15 +148,21 @@ export function MarketplaceInstalledPanel({
               <TypeTile type={it.type} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-foreground truncate text-sm font-medium">{cat?.title ?? it.name}</span>
+                  <span className="text-foreground truncate text-sm font-medium">
+                    {cat?.title ?? it.name}
+                  </span>
                   {status === 'update-available' && (
                     <Badge variant="update" size="sm">
-                      Update available
+                      {tI18nHardcoded.raw(
+                        'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextUpdateAvailable9830d327',
+                      )}
                     </Badge>
                   )}
                   {status === 'orphaned' && (
                     <Badge variant="muted" size="sm">
-                      Source removed
+                      {tI18nHardcoded.raw(
+                        'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextSourceRemoved1896940e',
+                      )}
                     </Badge>
                   )}
                 </div>

@@ -43,6 +43,7 @@ export function AccountSwitcher({
   variant?: AccountSwitcherVariant;
   className?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
@@ -200,7 +201,11 @@ export function AccountSwitcher({
             }}
           >
             <CogOneSolid className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium">Account settings</span>
+            <span className="flex-1 truncate text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
+              )}
+            </span>
           </DropdownMenuItem>
         )}
 

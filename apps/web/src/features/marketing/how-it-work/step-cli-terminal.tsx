@@ -9,6 +9,7 @@ import {
 } from '@/components/home/interactive-demo/cli/terminal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, type HTMLAttributes } from 'react';
 
 /** Default floating CLI panel anchor for how-it-works steps (bottom-right, not top-left). */
@@ -41,6 +42,7 @@ export function StepCliTerminal({
   director: StepCliDirector;
   dragHandleProps?: HTMLAttributes<HTMLDivElement>;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { scrollback, typed, running, menu } = director;
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -81,7 +83,10 @@ export function StepCliTerminal({
           <div className="space-y-0.5">
             <div className="wrap-break-word whitespace-pre-wrap">
               <span className="text-emerald-500">?</span>
-              <span className="text-foreground"> Choose a coding runtime </span>
+              <span className="text-foreground">
+                {' '}
+                {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepCliTerminalJsxText9d2e1727')}
+              </span>
               <span className="text-muted-foreground/45">(↑/↓)</span>
             </div>
             {RUNTIMES.map((opt, i) => {

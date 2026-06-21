@@ -6,6 +6,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
 import { FolderGit2, GitBranch } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
 import { useStep1Director, type Step1Project } from '../step-director';
@@ -70,14 +71,18 @@ function ProjectRow({ project }: { project: Step1Project }) {
 }
 
 function ProjectsView({ projects }: { projects: Step1Project[] }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-foreground text-lg font-semibold tracking-tight">Projects</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            Each project is a repo your agents run from — scaffolded with{' '}
-            <span className="text-foreground font-mono">kortix init</span>.
+            {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep1ProjectCli3fea7d90')}{' '}
+            <span className="text-foreground font-mono">
+              {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e')}
+            </span>
+            .
           </p>
         </div>
       </div>
@@ -88,10 +93,15 @@ function ProjectsView({ projects }: { projects: Step1Project[] }) {
             <FolderGit2 className="text-muted-foreground/70 size-5" />
           </span>
           <div className="space-y-1">
-            <div className="text-foreground text-sm font-medium">No projects yet</div>
+            <div className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep1ProjectClid954d961')}
+            </div>
             <div className="text-muted-foreground text-xs">
-              Run <span className="text-foreground font-mono">kortix init</span> in your terminal to
-              scaffold one.
+              Run{' '}
+              <span className="text-foreground font-mono">
+                {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep1ProjectCli4a56b05e')}
+              </span>{' '}
+              {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep1ProjectClif1300c56')}
             </div>
           </div>
         </div>

@@ -1,12 +1,9 @@
 'use client';
 
-import {
-  cmdLine,
-  t,
-  type Line,
-} from '@/components/home/interactive-demo/cli/terminal';
 import { DraggableCliPanel } from '@/components/home/interactive-demo/cli/draggable-cli-panel';
+import { cmdLine, t, type Line } from '@/components/home/interactive-demo/cli/terminal';
 import { motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal, type StepCliBlock } from '../step-cli-terminal';
 import { useStepShowcaseStart } from '../use-step-showcase';
@@ -126,6 +123,7 @@ function useStepAskDirector() {
 }
 
 function AskView() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col space-y-3">
       <motion.div
@@ -137,9 +135,11 @@ function AskView() {
           {ASK_PROMPT}
         </div>
         <div className="text-muted-foreground rounded-lg border border-dashed px-3 py-2 text-xs">
-          coworker reading connected tools…
+          {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStepAskCliJsxedd76b62')}
         </div>
-        <div className="text-muted-foreground text-xs">sources: Stripe · HubSpot · Linear · Slack</div>
+        <div className="text-muted-foreground text-xs">
+          {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStepAskCliJsxbcfac79a')}
+        </div>
       </motion.div>
     </div>
   );
