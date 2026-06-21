@@ -15,8 +15,14 @@ let repo = '';
 let origin = '';
 let originalCwd = '';
 let previousConfigFile: string | undefined;
+let previousCliToken: string | undefined;
+let previousExecutorToken: string | undefined;
+let previousApiUrl: string | undefined;
+let previousProjectId: string | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let sessionCreateBody: Record<string, unknown> | null = null;
+let sessionList: Record<string, unknown>[] = [];
+let transcriptRequests: URL[] = [];
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -33,7 +39,17 @@ describe('sessions new CLI flow', () => {
     origin = join(root, 'origin.git');
     originalCwd = process.cwd();
     previousConfigFile = process.env.KORTIX_CONFIG_FILE;
+    previousCliToken = process.env.KORTIX_CLI_TOKEN;
+    previousExecutorToken = process.env.KORTIX_EXECUTOR_TOKEN;
+    previousApiUrl = process.env.KORTIX_API_URL;
+    previousProjectId = process.env.KORTIX_PROJECT_ID;
+    delete process.env.KORTIX_CLI_TOKEN;
+    delete process.env.KORTIX_EXECUTOR_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    delete process.env.KORTIX_PROJECT_ID;
     sessionCreateBody = null;
+    sessionList = [];
+    transcriptRequests = [];
 
     mkdirSync(repo, { recursive: true });
     git(['init', '-b', 'main'], repo);
@@ -100,7 +116,43 @@ describe('sessions new CLI flow', () => {
             updated_at: '2026-01-01T00:00:00.000Z',
           });
         }
-        return new Response('not found', { status: 404 });
+        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+          return Response.json(sessionList);
+        }
+        const transcriptMatch = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/sessions/([^/]+)/transcript$`));
+        if (req.method === 'GET' && transcriptMatch) {
+          transcriptRequests.push(url);
+          return Response.json({
+            available: true,
+            reason: null,
+            opencode_session_id: 'ses_test',
+            message_count: 2,
+            messages: [
+              {
+                role: 'user',
+                created: '2026-06-20T00:00:00.000Z',
+                completed: null,
+                text: 'Review recent sessions',
+                tools: [],
+                files: [],
+                reasoning_omitted: false,
+                error: null,
+              },
+              {
+                role: 'assistant',
+                created: '2026-06-20T00:01:00.000Z',
+                completed: '2026-06-20T00:02:00.000Z',
+                text: 'Found the important changes.',
+                tools: [{ tool: 'bash', status: 'completed', output: 'must not leak' }],
+                files: [],
+                reasoning_omitted: true,
+                error: null,
+                output: 'must not leak',
+              },
+            ],
+          });
+        }
+        return Response.json({ error: `not found ${url.pathname}` }, { status: 404 });
       },
     });
 
@@ -131,6 +183,14 @@ describe('sessions new CLI flow', () => {
     process.chdir(originalCwd);
     if (previousConfigFile === undefined) delete process.env.KORTIX_CONFIG_FILE;
     else process.env.KORTIX_CONFIG_FILE = previousConfigFile;
+    if (previousCliToken === undefined) delete process.env.KORTIX_CLI_TOKEN;
+    else process.env.KORTIX_CLI_TOKEN = previousCliToken;
+    if (previousExecutorToken === undefined) delete process.env.KORTIX_EXECUTOR_TOKEN;
+    else process.env.KORTIX_EXECUTOR_TOKEN = previousExecutorToken;
+    if (previousApiUrl === undefined) delete process.env.KORTIX_API_URL;
+    else process.env.KORTIX_API_URL = previousApiUrl;
+    if (previousProjectId === undefined) delete process.env.KORTIX_PROJECT_ID;
+    else process.env.KORTIX_PROJECT_ID = previousProjectId;
     server?.stop(true);
     server = null;
     if (root) rmSync(root, { recursive: true, force: true });
@@ -152,4 +212,82 @@ describe('sessions new CLI flow', () => {
     const sessionSha = git(['--git-dir', origin, 'rev-parse', `refs/heads/${sessionId}`]);
     expect(sessionSha).toBe(baseSha);
   });
+
+  test('digest uses compact project transcript endpoint', async () => {
+    const runningId = '11111111-1111-4111-8111-111111111111';
+    const stoppedId = '22222222-2222-4222-8222-222222222222';
+    sessionList = [
+      {
+        session_id: runningId,
+        account_id: ACCOUNT_ID,
+        project_id: PROJECT_ID,
+        branch_name: runningId,
+        base_ref: 'main',
+        sandbox_provider: 'daytona',
+        sandbox_id: runningId,
+        sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
+        opencode_session_id: 'ses_test',
+        name: 'Digest target',
+        agent_name: 'memory-reflector',
+        status: 'running',
+        error: null,
+        metadata: { opencode_sessions: [{ title: 'Digest target' }] },
+        created_at: '2026-06-20T00:00:00.000Z',
+        updated_at: '2026-06-20T00:05:00.000Z',
+      },
+      {
+        session_id: stoppedId,
+        account_id: ACCOUNT_ID,
+        project_id: PROJECT_ID,
+        branch_name: stoppedId,
+        base_ref: 'main',
+        sandbox_provider: 'daytona',
+        sandbox_id: stoppedId,
+        sandbox_url: null,
+        opencode_session_id: null,
+        name: 'Stopped target',
+        agent_name: 'default',
+        status: 'stopped',
+        error: null,
+        metadata: {},
+        created_at: '2026-06-20T00:00:00.000Z',
+        updated_at: '2026-06-20T00:03:00.000Z',
+      },
+    ];
+
+    const { code, stdout } = await captureStdout(() =>
+      runSessions(['digest', '--all', '--messages', '5', '--chars', '120', '--json']),
+    );
+
+    expect(code).toBe(0);
+    expect(transcriptRequests).toHaveLength(1);
+    expect(transcriptRequests[0]!.searchParams.get('limit')).toBe('5');
+    expect(transcriptRequests[0]!.searchParams.get('chars')).toBe('120');
+
+    const parsed = JSON.parse(stdout) as {
+      sessions: Array<{ transcript: { available: boolean; messages: Array<{ tools: unknown[] }> } }>;
+    };
+    expect(parsed.sessions).toHaveLength(2);
+    expect(parsed.sessions[0]!.transcript.available).toBe(true);
+    expect(parsed.sessions[1]!.transcript.available).toBe(false);
+    expect(JSON.stringify(parsed)).not.toContain('must not leak');
+    expect(parsed.sessions[0]!.transcript.messages[1]!.tools).toEqual([
+      { tool: 'bash', status: 'completed' },
+    ]);
+  });
 });
+
+async function captureStdout(fn: () => Promise<number>): Promise<{ code: number; stdout: string }> {
+  const originalWrite = process.stdout.write;
+  let stdout = '';
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    const code = await fn();
+    return { code, stdout };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+}

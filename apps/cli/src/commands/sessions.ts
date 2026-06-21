@@ -9,6 +9,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
+import { runSessionsDigest } from './sessions-digest.ts';
 import { C, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
@@ -33,6 +34,11 @@ Subcommands:
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
                                     --limit <N>, --json. Aliases: messages.
+  digest                            Compact review of recent sessions for
+                                    reflection: metadata + compressed
+                                    transcript snippets with tool outputs
+                                    stripped. --since <7d>, --json.
+                                    Aliases: review, summary.
   info <session-id>                 Show one session. --json.
   preview <session-id> [port]       Print a clickable preview URL for a port
                                     in the session's sandbox (default 3000).
@@ -68,6 +74,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `status` fans out live per-session reads; owns its own flag parsing.
   if (sub === 'status' || sub === 'overview' || sub === 'ps') {
     return runSessionsStatus(argv.slice(1));
+  }
+  // `digest` owns its own time-window + compaction flags.
+  if (sub === 'digest' || sub === 'review' || sub === 'summary') {
+    return runSessionsDigest(argv.slice(1));
   }
   const rest = argv.slice(1);
   const json = takeFlagBool(rest, ['--json']);
