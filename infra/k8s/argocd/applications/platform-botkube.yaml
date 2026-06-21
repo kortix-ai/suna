@@ -1,0 +1,97 @@
+# Botkube — alerts + cluster events to Slack + read-only kubectl from Slack.
+# RBAC is read-only (get/watch/list) so commands run from Slack can never mutate
+# the cluster. Slack tokens (botToken/appToken) are NOT in git — they live in a
+# secret `botkube-communication` (key comm_config.yaml) provisioned out-of-band;
+# see docs/runbooks/devops-gateway.md. The comm secret also holds the channel→
+# bindings map (which sources/executors the channel gets), referencing the source
+# and executor names defined inline below.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-botkube
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.botkube.io
+    chart: botkube
+    targetRevision: v1.14.0
+    helm:
+      releaseName: botkube
+      values: |
+        settings:
+          clusterName: kortix-prod-eks
+        rbac:
+          create: true
+          groups:
+            botkube-plugins-default:
+              create: true
+              rules:
+                - apiGroups: ["*"]
+                  resources: ["*"]
+                  verbs: ["get", "watch", "list"]
+        existingCommunicationsSecretName: botkube-communication
+        sources:
+          k8s-errors:
+            displayName: "Kubernetes errors"
+            botkube/kubernetes:
+              enabled: true
+              config:
+                namespaces:
+                  include:
+                    - kortix-prod
+                    - kortix-platform
+                    - monitoring
+                    - kyverno
+                    - falco
+                    - velero
+                    - argocd
+                event:
+                  types:
+                    - error
+                    - warning
+                resources:
+                  - type: v1/pods
+                  - type: apps/v1/deployments
+                  - type: batch/v1/jobs
+                  - type: v1/events
+          prometheus-alerts:
+            displayName: "Prometheus alerts"
+            botkube/prometheus:
+              enabled: true
+              config:
+                url: http://kps-prometheus.monitoring:9090
+                ignoreOldAlerts: true
+                alertStates:
+                  - firing
+        executors:
+          kubectl-ro:
+            displayName: "kubectl (read-only)"
+            botkube/kubectl:
+              enabled: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 384Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: botkube
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
