@@ -138,10 +138,10 @@ resource "helm_release" "external_dns" {
     # the domainFilters are subdomains, so without --zone-id-filter external-dns
     # matches the zone NAME (kortix.com) against them, finds no match, discards the
     # zone, and manages nothing.
-    extraArgs = var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
-    policy    = "sync"
-    registry      = "txt"
-    txtOwnerId    = var.cluster_name
+    extraArgs  = var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
+    policy     = "sync"
+    registry   = "txt"
+    txtOwnerId = var.cluster_name
     # Cloudflare proxying is decided per-record via the Ingress annotation
     # external-dns.alpha.kubernetes.io/cloudflare-proxied (set in the app chart).
     sources = ["ingress"]
