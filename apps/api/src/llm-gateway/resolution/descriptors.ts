@@ -1,15 +1,19 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import type { ManagedModel } from '@kortix/shared/llm-catalog';
-import { config } from '../../config';
 import { llmPriceMarkup } from '../../billing/services/tiers';
+import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
-import { CHATGPT_CODEX_BASE_URL, CODEX_USER_AGENT, type CodexCredential } from '../credentials/codex';
+import {
+  CHATGPT_CODEX_BASE_URL,
+  CODEX_USER_AGENT,
+  type CodexCredential,
+} from '../credentials/codex';
 
 export function bedrockBaseUrl(): string {
   return `https://bedrock-runtime.${config.AWS_BEDROCK_REGION || 'us-west-2'}.amazonaws.com`;
 }
 
-export function livePricing(modelId: string) {
+export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | undefined {
   const p = getModelPricing(modelId);
   if (!p) return undefined;
   return {
@@ -17,11 +21,6 @@ export function livePricing(modelId: string) {
     outputPerMillion: p.outputPer1M,
     cachedInputPerMillion: p.cacheReadPer1M,
   };
-}
-
-function managedLookupId(managed: ManagedModel): string {
-  const slash = managed.openRouterModelId.indexOf('/');
-  return slash >= 0 ? managed.openRouterModelId.slice(slash + 1) : managed.openRouterModelId;
 }
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -34,7 +33,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.bedrockModelId,
-    pricing: livePricing(managedLookupId(managed)),
+    pricing: livePricing(managed.bedrockModelId),
   };
 }
 
@@ -50,7 +49,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appName: 'Kortix',
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.openRouterModelId,
-    pricing: livePricing(managedLookupId(managed)),
+    pricing: livePricing(managed.openRouterModelId),
   };
 }
 
