@@ -2652,6 +2652,10 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   'openapi',
   'graphql',
   'http',
+  // Chat platforms (Slack, later Telegram/Teams) as first-class connectors. The
+  // catalog is a fixed per-platform action set; the credential is the platform's
+  // existing install token (resolved server-side, no executor_credential row).
+  'channel',
 ]);
 
 export const executorConnectorStatusEnum = kortixSchema.enum('executor_connector_status', [

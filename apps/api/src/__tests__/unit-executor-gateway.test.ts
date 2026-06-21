@@ -57,8 +57,8 @@ function makeDeps(o: FakeOpts = {}) {
   const deps: GatewayDeps = {
     loadConnectorBySlug: async () => (o.connector === undefined ? STRIPE : o.connector),
     loadAction: async () => (o.action === undefined ? CREATE_CHARGE : o.action),
-    resolveCredential: async (connectorId, userId) => {
-      credentialCalls.push({ connectorId, userId });
+    resolveCredential: async (connector, userId) => {
+      credentialCalls.push({ connectorId: connector.connectorId, userId });
       return o.secret === undefined ? 'sk_live_123' : o.secret;
     },
     loadPolicies: async () => o.policies ?? [],
