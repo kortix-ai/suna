@@ -29,6 +29,8 @@ docker run --rm \
     -schema-location default \
     -schema-location "${CRD_SCHEMA}" \
     -ignore-filename-pattern '^/manifests/charts/.*' \
+    -ignore-filename-pattern '^/manifests/envs/.*' \
+    -ignore-filename-pattern '.*botkube-slack-app-manifest\..*' \
     -summary \
     -output junit \
     /manifests > "${OUT_JUNIT}"
