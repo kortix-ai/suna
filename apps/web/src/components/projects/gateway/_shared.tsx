@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { DEFAULT_MANAGED_MODEL_IDS, getManagedModel } from '@kortix/shared/llm-catalog';
 
 import { cn } from '@/lib/utils';
 
@@ -25,6 +25,10 @@ export function modelAccent(id: string): string {
 export function modelLabel(id: string): string {
   const tail = id.split('/').pop() ?? id;
   return tail.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function displayModel(id: string): string {
+  return getManagedModel(id)?.name ?? (id.split('/').pop() ?? id);
 }
 
 export function tint(accent: string, pct: number): string {

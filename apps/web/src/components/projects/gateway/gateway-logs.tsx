@@ -9,15 +9,11 @@ import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gate
 import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 
-import { CopyButton, modelAccent } from './_shared';
+import { CopyButton, displayModel, modelAccent } from './_shared';
 
 function fmtTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-
-function modelTail(id: string) {
-  return id.split('/').pop() ?? id;
 }
 
 function latencyTone(ms: number): string {
@@ -57,7 +53,7 @@ function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
       <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-foreground">
-          {modelTail(row.resolved_model || row.requested_model)}
+          {displayModel(row.requested_model || row.resolved_model)}
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {row.provider} · {fmtTime(row.created_at)}
@@ -156,7 +152,7 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
               <span className="mt-1 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: modelAccent(data.requested_model) }} />
               <div className="min-w-0">
                 <div className="truncate text-base font-semibold text-foreground">
-                  {modelTail(data.resolved_model || data.requested_model)}
+                  {displayModel(data.requested_model || data.resolved_model)}
                 </div>
                 <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
                   {data.request_id}

@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
+  BarChart3,
   Boxes,
+  DollarSign,
   FlaskConical,
   KeyRound,
   type LucideIcon,
@@ -23,6 +25,8 @@ import { useGatewayOverlayStore, type GatewaySection } from '@/stores/gateway-ov
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 
 import { GatewayOverview } from './gateway-overview';
+import { GatewayCost } from './gateway-cost';
+import { GatewayUsage } from './gateway-usage';
 import { GatewayLogs } from './gateway-logs';
 import { GatewayBudgets } from './gateway-budgets';
 import { GatewayKeys } from './gateway-keys';
@@ -32,8 +36,20 @@ const SECTIONS: { id: GatewaySection; label: string; description: string; icon: 
   {
     id: 'overview',
     label: 'Overview',
-    description: "Spend, requests, and errors across this project's gateway.",
+    description: "At-a-glance spend, requests, errors, and tokens across this project's gateway.",
     icon: Activity,
+  },
+  {
+    id: 'cost',
+    label: 'Cost',
+    description: 'Where spend goes — daily cost, cost by model, and total cost per session (LLM + compute).',
+    icon: DollarSign,
+  },
+  {
+    id: 'usage',
+    label: 'Usage',
+    description: 'Traffic and health — requests, tokens, latency percentiles, and errors by type.',
+    icon: BarChart3,
   },
   {
     id: 'logs',
@@ -101,6 +117,7 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
           'project-gateway-overview',
           'project-gateway-series',
           'project-gateway-breakdown',
+          'project-gateway-sessions',
           'project-gateway-errors',
           'project-gateway-logs',
           'project-gateway-budgets',
@@ -208,6 +225,8 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
               {section === 'overview' && <GatewayOverview projectId={projectId} />}
+              {section === 'cost' && <GatewayCost projectId={projectId} />}
+              {section === 'usage' && <GatewayUsage projectId={projectId} />}
               {section === 'logs' && <GatewayLogs projectId={projectId} />}
               {section === 'budgets' && <GatewayBudgets projectId={projectId} />}
               {section === 'keys' && <GatewayKeys projectId={projectId} />}
