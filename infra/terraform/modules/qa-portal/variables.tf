@@ -14,12 +14,6 @@ variable "bucket_name" {
   default     = "kortix-qa-reports"
 }
 
-variable "region" {
-  description = "AWS region for the bucket (matches the cluster region)."
-  type        = string
-  default     = "us-west-2"
-}
-
 # ── IRSA wiring (read role for the portal pod) ────────────────────────────────
 variable "oidc_provider_arn" {
   description = "Cluster IAM OIDC provider ARN (from modules/eks/cluster output oidc_provider_arn)."

@@ -11,6 +11,7 @@
 # own role. No static AWS keys anywhere.
 
 terraform {
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -24,7 +25,16 @@ terraform {
 }
 
 # ── Bucket ────────────────────────────────────────────────────────────────────
+# QA report artifacts are non-sensitive and fully regenerable from CI. SSE-S3
+# (AES256) is enabled below; a customer-managed KMS key, cross-region
+# replication, access logging, and event notifications add cost and key/ops
+# management with no benefit for this data class — accepted-risk, documented.
+#trivy:ignore:AVD-AWS-0089
 resource "aws_s3_bucket" "this" {
+  #checkov:skip=CKV_AWS_145:non-sensitive regenerable CI artifacts; SSE-S3 (AES256) is sufficient, a CMK adds needless key management
+  #checkov:skip=CKV_AWS_18:access logging on an internal QA-artifact bucket is low value and only adds another bucket
+  #checkov:skip=CKV_AWS_144:cross-region replication is unnecessary for regenerable CI reports
+  #checkov:skip=CKV2_AWS_62:event notifications are not consumed by the portal sync sidecar
   bucket = var.bucket_name
   tags   = var.tags
 }
@@ -45,6 +55,8 @@ resource "aws_s3_bucket_public_access_block" "this" {
   restrict_public_buckets = true
 }
 
+# SSE-S3 (AES256) — non-sensitive regenerable CI artifacts don't warrant a CMK.
+#trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
   bucket = aws_s3_bucket.this.id
   rule {
