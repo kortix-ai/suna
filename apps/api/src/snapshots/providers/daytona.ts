@@ -8,17 +8,17 @@
  * adapter only knows about Daytona-specific request shapes and retries.
  */
 
-import { copyFile, cp, mkdtemp, rm, stat } from 'node:fs/promises';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { pipeline } from 'node:stream/promises';
-import { createGzip } from 'node:zlib';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
-import { buildLayeredDockerfile } from '../dockerfile-layer';
+import {
+  stageBuildContext,
+  DEFAULT_CPU,
+  DEFAULT_MEMORY_GB,
+  DEFAULT_DISK_GB,
+  KORTIX_ENTRYPOINT,
+} from '../build-context';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -26,21 +26,6 @@ import type {
   SandboxProviderAdapter,
 } from './index';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '../../../../..');
-const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
-const CLI_BIN_PATH = process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
-  || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
-const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
-const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
-
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
@@ -48,14 +33,6 @@ const SNAPSHOT_LOG_TAIL_LIMIT = 20;
 const POST_FAILURE_SETTLE_TIMEOUT_MS = 5 * 60 * 1000;
 const POST_FAILURE_SETTLE_POLL_MS = 4_000;
 const ACTIVATE_DEADLINE_MS = 120_000;
-const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
-const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = Number.parseInt(process.env[name] || '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
-}
 
 /**
  * Positive-state cache for Daytona snapshots. Keyed by snapshot name; only
@@ -86,7 +63,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     const daytona = getDaytona();
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const ctx = await this.prepareBuildContext(input.snapshotName, userDockerfile);
+    const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
     try {
       const resources = {
         cpu: input.spec.cpu ?? DEFAULT_CPU,
@@ -105,7 +82,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
             {
               name: input.snapshotName,
               image: Image.fromDockerfile(ctx.composedPath),
-              entrypoint: input.entrypoint ?? ['/usr/local/bin/kortix-entrypoint'],
+              entrypoint: input.entrypoint ?? [KORTIX_ENTRYPOINT],
               resources,
             },
             {
@@ -202,46 +179,6 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
   }
 
-  private async prepareBuildContext(
-    snapshotName: string,
-    userDockerfile: string,
-  ): Promise<{ contextDir: string; composedPath: string }> {
-    await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-    await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
-    await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-    await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
-    await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
-
-    const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
-    await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
-    await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
-    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-    await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
-    await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
-
-    const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
-    const composed = buildLayeredDockerfile({
-      userDockerfile,
-      opencodeVersion: OPENCODE_VERSION,
-      agentBrowserVersion: AGENT_BROWSER_VERSION,
-      agentBinaryPath: 'kortix-agent.gz',
-      cliBinaryPath: 'kortix.gz',
-      entrypointScriptPath: 'kortix-entrypoint',
-      agentCliPath: 'kortix-agent-cli',
-      executorSdkPath: 'kortix-executor-sdk',
-    });
-    // Use Bun.write if available (faster than node fs for small writes); fall
-    // back to fs.writeFile so the file works in non-Bun runtimes too.
-    if (typeof (globalThis as any).Bun?.write === 'function') {
-      await (globalThis as any).Bun.write(composedPath, composed);
-    } else {
-      const fs = await import('node:fs/promises');
-      await fs.writeFile(composedPath, composed);
-    }
-    console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
-    return { contextDir, composedPath };
-  }
-
   private async waitForActive(name: string): Promise<void> {
     const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
     let lastState = 'unknown';
@@ -306,44 +243,6 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('gateway') ||
     m.includes('not found') ||
     m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
-  );
-}
-
-async function assertExists(path: string, envVarHint: string): Promise<void> {
-  if (!isAbsolute(path)) {
-    throw new Error(`${envVarHint} must be an absolute path (got "${path}")`);
-  }
-  try {
-    const s = await stat(path);
-    if (!s.isFile()) throw new Error(`${envVarHint} (${path}) is not a regular file`);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes(envVarHint)) throw err;
-    throw new Error(
-      `Required artifact missing: ${path}. Set ${envVarHint} or run \`bun run build\` in apps/kortix-sandbox-agent-server.`,
-    );
-  }
-}
-
-async function assertExistsDir(path: string, envVarHint: string): Promise<void> {
-  if (!isAbsolute(path)) {
-    throw new Error(`${envVarHint} must be an absolute path (got "${path}")`);
-  }
-  try {
-    const s = await stat(path);
-    if (!s.isDirectory()) throw new Error(`${envVarHint} (${path}) is not a directory`);
-  } catch (err) {
-    if (err instanceof Error && err.message.includes(envVarHint)) throw err;
-    throw new Error(
-      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/agent-cli.`,
-    );
-  }
-}
-
-async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
-  await pipeline(
-    createReadStream(sourcePath),
-    createGzip({ level: 9 }),
-    createWriteStream(targetPath),
   );
 }
 
