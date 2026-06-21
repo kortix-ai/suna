@@ -12,25 +12,19 @@ OUT_JUNIT="${RESULTS_DIR}/tflint.junit.xml"
 
 log "Running tflint (${TFLINT_IMAGE}) over ${TERRAFORM_DIR}"
 
-docker run --rm \
-  -v "${TERRAFORM_DIR}:/data" \
-  -v "${TESTS_INFRA_DIR}/.tflint.hcl:/data/.tflint.hcl:ro" \
-  -w /data \
-  --entrypoint /bin/sh \
-  "${TFLINT_IMAGE}" -c "tflint --init --config /data/.tflint.hcl" || {
-    err "tflint --init failed"
-    exit 1
-  }
-
+# Init + lint must run in the SAME container: `tflint --init` installs the aws
+# ruleset into the container's plugin dir, which a separate `docker run` can't
+# see ("Plugin aws not found"). Init stdout is dropped so only the recursive
+# JUnit reaches OUT_JUNIT.
 set +e
 docker run --rm \
   -v "${TERRAFORM_DIR}:/data" \
   -v "${TESTS_INFRA_DIR}/.tflint.hcl:/data/.tflint.hcl:ro" \
   -w /data \
-  "${TFLINT_IMAGE}" \
-  --recursive \
-  --config /data/.tflint.hcl \
-  --format junit > "${OUT_JUNIT}"
+  --entrypoint /bin/sh \
+  "${TFLINT_IMAGE}" -c \
+  "tflint --init --config /data/.tflint.hcl >/dev/null && tflint --recursive --config /data/.tflint.hcl --format junit" \
+  > "${OUT_JUNIT}"
 rc=$?
 set -e
 

@@ -28,6 +28,15 @@ for chart_dir in "${charts[@]}"; do
   chart_name="$(basename "${chart_dir}")"
   rel_chart="charts/${chart_name}"
 
+  # A chart only applies to some envs (e.g. qa-portal is qa-only and its required
+  # values aren't in the shared dev/preview/prod env files). An optional sibling
+  # "<chart>.ci-envs" file (whitespace-separated env names) restricts rendering;
+  # absent = render against every env (the default for app charts).
+  allow_envs=""
+  if [ -f "${CHARTS_DIR}/${chart_name}.ci-envs" ]; then
+    allow_envs=" $(tr '\n' ' ' < "${CHARTS_DIR}/${chart_name}.ci-envs") "
+  fi
+
   envs=("${K8S_DIR}"/envs/*/)
   if [ "${#envs[@]}" -eq 0 ]; then
     envs=("")
@@ -36,6 +45,10 @@ for chart_dir in "${charts[@]}"; do
   for env_dir in "${envs[@]}"; do
     if [ -n "${env_dir}" ] && [ -f "${env_dir}values.yaml" ]; then
       env_name="$(basename "${env_dir}")"
+      if [ -n "${allow_envs}" ] && [[ "${allow_envs}" != *" ${env_name} "* ]]; then
+        log "skip ${chart_name} for env ${env_name} (not in ${chart_name}.ci-envs)"
+        continue
+      fi
       rel_values="envs/${env_name}/values.yaml"
       values_flag="--values /src/${rel_values}"
       label="${chart_name}-${env_name}"
