@@ -88,12 +88,15 @@ mock.module('../shared/db', () => ({
     select: () => makeChain('select'),
     insert: () => makeChain('insert'),
     update: () => makeChain('update'),
-    delete: () => makeChain('delete'),
+    delete: () => {
+      dbWrites.push({ op: 'delete' });
+      return makeChain('delete');
+    },
   },
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan, relayTurnEnd, relayTurnStep } = await import('../channels/slack/turn');
+const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep } = await import('../channels/slack/turn');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {
@@ -252,6 +255,24 @@ describe('relayTurnStep (chat.update model)', () => {
     expect(update.args[3]).toBe('Working on it…');
     const blocks = update.args[4] as Array<{ tasks: Array<{ title: string; status: string }> }>;
     expect(blocks[0]!.tasks.map((t) => t.title)).toEqual(['Reading logs', 'Next step']);
+  });
+});
+
+describe('expired turn rows', () => {
+  test('drops a late answer relay without posting to Slack', async () => {
+    dbResults = [
+      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn
+      [], // delete expired turn
+    ];
+
+    const ok = await relayTurnAnswer('sess-1', 'Late answer.');
+    expect(ok).toBe(false);
+    expect(dbWrites.map((w) => w.op)).toEqual(['delete']);
+    expect(calls('postMessage').length).toBe(0);
+    expect(calls('postBlocks').length).toBe(0);
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('addReaction').length).toBe(0);
+    expect(calls('removeReaction').length).toBe(0);
   });
 });
 
