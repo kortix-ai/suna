@@ -7,7 +7,7 @@ import { ApiError, clientFromAuth, type ApiClient } from '../api/client.ts';
 import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../project-link.ts';
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
-import { confirm, promptSecret } from '../prompts.ts';
+import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';

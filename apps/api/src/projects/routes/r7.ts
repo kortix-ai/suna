@@ -10,8 +10,24 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
+import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { syncOpencodeSessionsHandler } from './shared';
+
+function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -476,6 +492,59 @@ projectsApp.openapi(
     canManageProject: visible.canManageProject,
     ownerEmail,
   }));
+},
+);
+
+
+// GET /v1/projects/:projectId/sessions/:sessionId/transcript
+// Compact server-side transcript read for project automation. Unlike the raw
+// /v1/p sandbox proxy, this endpoint is callable with project-scoped session
+// tokens and strips tool inputs/outputs before returning messages.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/transcript',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/transcript',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        query: z.object({
+          limit: z.string().optional(),
+          chars: z.string().optional(),
+        }),
+      },
+    responses: {
+        200: json(AnyObject, 'Compact session transcript'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const sessionId = c.req.param('sessionId');
+  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+  const limit = parseBoundedPositiveInt(c.req.query('limit'), 40, 1, 500, 'limit');
+  if (!limit.ok) return c.json({ error: limit.error }, 400);
+  const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
+  if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const visible = await loadVisibleSession(loaded, sessionId);
+  if (!visible) return c.json({ error: 'Not found' }, 404);
+
+  const transcript = await buildSessionTranscriptDigest({
+    session: visible.row,
+    projectId,
+    accountId: loaded.row.accountId,
+    userId: loaded.userId,
+    limit: limit.value,
+    maxChars: maxChars.value,
+  });
+  return c.json(transcript);
 },
 );
 
