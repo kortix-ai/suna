@@ -120,6 +120,9 @@ async function mintExecutorToken(opts: {
       accountId: opts.accountId,
       userId: opts.userId,
       projectId: opts.projectId,
+      // session_id == sandbox_id by construction — lets the LLM gateway attribute
+      // usage_events to this session (the reaper's reliable activity signal).
+      sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
     });
@@ -385,15 +388,17 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Session sandboxes auto-stop on idle at the PROVIDER level (Platinum
-    // enforces auto_stop_minutes; the in-repo hibernate sweep is never
-    // scheduled, which left session VMs running for days — caught live
-    // 2026-06-10). Stopped sandboxes keep their disk and wake automatically
-    // on inbound preview traffic, so the UX cost is one ~2s resume after an
-    // idle gap. Warm-pool boxes (legacy; pool is disabled) opt out.
-    ...(opts.poolState
-      ? { autoStopInterval: 0 }
-      : { autoStopInterval: Math.max(0, Number(process.env.KORTIX_SANDBOX_AUTO_STOP_MIN ?? 30) || 0) }),
+    // Idle lifecycle is owned by the provider-agnostic reaper (projects/
+    // sandbox-reaper.ts), keyed off MEANINGFUL activity (real turns), with each
+    // provider's native auto-stop as a secondary backstop. We pass NO explicit
+    // autoStopInterval for a normal session so each provider applies its own
+    // policy via daytonaLifecycle(): Daytona → KORTIX_SANDBOX_AUTOSTOP_MINUTES
+    // (default 15); Platinum → persistent (autoStop=0) because its stop→resume
+    // is broken (CH resume-freeze) — the reaper stops idle Platinum boxes and
+    // flags reprovision-on-open instead. (The old divergent KORTIX_SANDBOX_AUTO_
+    // STOP_MIN env, default 30, also wrongly made Platinum ephemeral — removed.)
+    // Warm-pool spares (legacy; pool disabled) stay persistent until claimed.
+    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately

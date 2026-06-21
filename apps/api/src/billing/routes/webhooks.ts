@@ -57,3 +57,6 @@ webhooksRouter.openapi(
     return c.json(result);
   },
 );
+
+// Sandbox lifecycle webhooks (Daytona/Platinum) live at /v1/webhooks/sandbox/*
+// (platform/webhooks/routes.ts) — they're provider state events, not billing.

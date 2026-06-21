@@ -230,6 +230,10 @@ const envSchema = z.object({
   DAYTONA_API_KEY:             optStr,
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
+  // Org-level Daytona webhook signing secret (Svix `whsec_…`). When set, the
+  // /v1/billing/webhooks/daytona endpoint closes compute billing the instant a
+  // box stops; the reaper sweep is the backstop, so this is optional.
+  DAYTONA_WEBHOOK_SECRET:      optStr,
 
   // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
   // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
@@ -265,6 +269,9 @@ const envSchema = z.object({
   PLATINUM_API_KEY:            optStr,
   PLATINUM_API_URL:            optStr,
   PLATINUM_TEMPLATE:           optStr,
+  // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
+  // once at registration). Optional — same backstop story as Daytona's.
+  PLATINUM_WEBHOOK_SECRET:     optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
@@ -596,6 +603,7 @@ export const config = {
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
+  DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
@@ -610,6 +618,7 @@ export const config = {
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
+  PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,

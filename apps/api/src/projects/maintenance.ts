@@ -1,15 +1,17 @@
-import { and, eq, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm';
-import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { projectSessions, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { getProvider, type ProviderName } from '../platform/providers';
-import { invalidateProviderCache } from '../sandbox-proxy';
 import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
-import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
+import { tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileWarmPool } from '../platform/services/warm-pool';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
+import {
+  reapAndReconcileSandboxes,
+  reconcileOrphanComputeSessions,
+  countBillingInvariantViolations,
+} from './sandbox-reaper';
 
-const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60 * 1000;
 const GC_BATCH_SIZE = 50;
@@ -28,10 +30,6 @@ let maintenanceRunning = false;
 function positiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function sandboxIdleTtlMs(): number {
-  return positiveInt(process.env.KORTIX_SANDBOX_IDLE_TTL, DEFAULT_IDLE_TTL_MS);
 }
 
 function branchRetentionDays(): number {
@@ -59,122 +57,11 @@ export function postgresTimestampParam(date: Date): string {
   return date.toISOString();
 }
 
-/**
- * Daytona auto-stops idle sandboxes on its own (autoStopInterval), so by the
- * time this hourly idle GC runs the sandbox is frequently already stopped,
- * archived, or deleted. Those are the desired end state — not failures — so we
- * reconcile our row quietly instead of logging a stack trace per sandbox.
- */
-function isAlreadyNotRunning(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    msg.includes('not started') ||
-    msg.includes('not running') ||
-    msg.includes('already stopped') ||
-    msg.includes('not found')
-  );
-}
-
-function isLifecycleTransitionInProgress(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return msg.includes('state change in progress') || msg.includes('transition in progress');
-}
-
-export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
-  candidates: number;
-  stopped: number;
-  skipped: number;
-  errors: number;
-}> {
-  const cutoff = new Date(now.getTime() - sandboxIdleTtlMs());
-  const cutoffParam = postgresTimestampParam(cutoff);
-  const rows = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      accountId: sessionSandboxes.accountId,
-      provider: sessionSandboxes.provider,
-      externalId: sessionSandboxes.externalId,
-    })
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.status, 'active'),
-      isNotNull(sessionSandboxes.externalId),
-      // Never hibernate an unclaimed warm-pool box (pool_state set) — it has no
-      // session activity by design. Claimed boxes have pool_state cleared and
-      // hibernate normally. See docs/specs/warm-pool.md.
-      sql`${sessionSandboxes.poolState} IS NULL`,
-      sql`coalesce(${sessionSandboxes.lastUsedAt}, ${sessionSandboxes.updatedAt}, ${sessionSandboxes.createdAt}) < ${cutoffParam}::timestamptz`,
-    ))
-    .limit(GC_BATCH_SIZE);
-
-  let stopped = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  for (const row of rows) {
-    if (!row.externalId) {
-      skipped += 1;
-      continue;
-    }
-
-    // Local Docker containers are launched with --rm, so stopping one discards
-    // the runnable container id. Skip until local resume can re-create them.
-    if (row.provider !== 'daytona') {
-      skipped += 1;
-      continue;
-    }
-
-    try {
-      const provider = getProvider(row.provider as ProviderName);
-      await provider.stop(row.externalId);
-      invalidateProviderCache(row.externalId);
-      const stoppedAt = new Date();
-
-      // Billing v2 — close out the compute metering row before flipping
-      // status, so the wall-time delta is computed against an `active` row.
-      void pauseComputeSession(row.sandboxId).catch((err) =>
-        console.warn(`[maintenance] compute pauseComputeSession failed for ${row.sandboxId}:`, err),
-      );
-
-      await db
-        .update(sessionSandboxes)
-        .set({ status: 'stopped', updatedAt: stoppedAt })
-        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-      await db
-        .update(projectSessions)
-        .set({ status: 'stopped', updatedAt: stoppedAt })
-        .where(eq(projectSessions.sessionId, row.sessionId));
-
-      stopped += 1;
-    } catch (err) {
-      // Already stopped/archived/gone on Daytona's side — that's success.
-      // Reconcile our row to match and move on without the noisy stack trace.
-      if (isAlreadyNotRunning(err)) {
-        const reconciledAt = new Date();
-        await db
-          .update(sessionSandboxes)
-          .set({ status: 'stopped', updatedAt: reconciledAt })
-          .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-        await db
-          .update(projectSessions)
-          .set({ status: 'stopped', updatedAt: reconciledAt })
-          .where(eq(projectSessions.sessionId, row.sessionId));
-        invalidateProviderCache(row.externalId);
-        stopped += 1;
-        continue;
-      }
-      if (isLifecycleTransitionInProgress(err)) {
-        skipped += 1;
-        continue;
-      }
-      errors += 1;
-      console.error(`[project-maintenance] Failed to hibernate sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
-    }
-  }
-
-  return { candidates: rows.length, stopped, skipped, errors };
-}
+// Idle sandbox hibernation + state/billing reconciliation now lives in the
+// provider-agnostic reaper (./sandbox-reaper.ts), which makes the PROVIDER's
+// real state the source of truth and keys idleness off MEANINGFUL activity
+// (real turns) rather than the partial `last_used_at` proxy signal. See that
+// module for the why.
 
 export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   candidates: number;
@@ -256,8 +143,19 @@ async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
-      hibernateIdleSessionSandboxes(),
+    const [idle, orphanCompute, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
+      // Provider-authoritative idle reaper + state/billing reconcile (the fix for
+      // boxes that never auto-stopped and kept billing). Backstops the webhooks.
+      reapAndReconcileSandboxes().catch((err) => {
+        console.warn('[project-maintenance] reaper failed:', err instanceof Error ? err.message : err);
+        return { candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+      }),
+      // Billing safety net: close metering for any active compute row whose box
+      // is not actually running (catches orphans / missed webhooks).
+      reconcileOrphanComputeSessions().catch((err) => {
+        console.warn('[project-maintenance] orphan-compute reconcile failed:', err instanceof Error ? err.message : err);
+        return { checked: 0, closed: 0, errors: 0 };
+      }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
       // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
@@ -286,11 +184,24 @@ async function runProjectMaintenance(): Promise<void> {
       }),
     ]);
     if (
-      idle.stopped || idle.errors || branches.deleted || branches.errors ||
+      idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
+      branches.deleted || branches.errors ||
       computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
       snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+      console.log('[project-maintenance] completed', { idle, orphanCompute, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+    }
+
+    // Invariant monitor: in steady state, every `active` compute session has a
+    // running box. A non-zero count means billing is leaking — make it loud so a
+    // silent regression pages instead of accruing $ for days (the original bug).
+    try {
+      const billingLeak = await countBillingInvariantViolations();
+      if (billingLeak > 0) {
+        console.warn(`[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`);
+      }
+    } catch (err) {
+      console.warn('[project-maintenance] billing invariant check failed:', err instanceof Error ? err.message : err);
     }
   } finally {
     maintenanceRunning = false;

@@ -260,10 +260,32 @@ export async function wakeSandbox(externalId: string): Promise<void> {
   try {
     const record = await loadSandbox(externalId);
     if (!record) return;
+    // Don't let passive preview/share traffic resurrect a box the reaper
+    // deliberately idle-stopped (quiesced) — that endless resurrection is what
+    // kept boxes alive past the auto-stop window. A quiesced box returns only on
+    // an explicit open / a real new turn (which clears the flag).
+    if (await isSandboxQuiesced(record.sandboxId)) {
+      console.log(`[PREVIEW] Skipping wake for quiesced (idle-stopped) sandbox ${externalId}`);
+      return;
+    }
     await getProvider(record.provider as ProviderName).ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
   } catch (e) {
     console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
+  }
+}
+
+/** True when the sandbox row carries the reaper's idle-quiesce marker. */
+async function isSandboxQuiesced(sandboxId: string): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ metadata: sessionSandboxes.metadata })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, sandboxId))
+      .limit(1);
+    return !!(row?.metadata as Record<string, unknown> | null)?.idleQuiesced;
+  } catch {
+    return false;
   }
 }
 
@@ -285,6 +307,7 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         sandboxId: sessionSandboxes.sandboxId,
         sessionId: sessionSandboxes.sessionId,
         status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
@@ -296,6 +319,13 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
       .update(sessionSandboxes)
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    // A box the reaper idle-stopped is QUIESCED: passive proxy traffic (an open
+    // tab polling opencode, a background stream reconnect) must NOT heal it back
+    // to active — that resurrection is exactly what kept boxes alive forever.
+    // Only an explicit open / a real new turn (which clears the flag in
+    // resumeStoppedSandbox) brings it back.
+    if ((row.metadata as Record<string, unknown> | null)?.idleQuiesced) return;
 
     if (['error', 'stopped'].includes(row.status)) {
       await db

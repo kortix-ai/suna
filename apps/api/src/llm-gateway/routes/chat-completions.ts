@@ -150,6 +150,8 @@ export function createChatCompletionsRoute(
       const event: UsageEvent = {
         accountId: principal.accountId,
         actorUserId: principal.userId,
+        projectId: principal.projectId ?? null,
+        sessionId: principal.sessionId ?? null,
         provider: 'openrouter',
         model,
         promptTokens: usage.promptTokens,

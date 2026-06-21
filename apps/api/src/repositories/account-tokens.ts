@@ -20,6 +20,9 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token is scoped to one project; the auth
    *  middleware enforces URL :projectId === this value. */
   projectId?: string | null;
+  /** Non-null = this token belongs to a specific session (sandbox executor
+   *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
+  sessionId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
    *  authorization (which Kortix CLI/API actions + connectors it may use,
    *  already ∩ the launching user). Null = full access (laptop CLI PAT). */
@@ -34,6 +37,9 @@ export interface CreateAccountTokenParams {
   /** Non-null = project-scoped token (sandbox injection). Null/undefined
    *  = user-scoped (laptop CLI). */
   projectId?: string;
+  /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
+   *  through the gateway is attributed to the session. */
+  sessionId?: string | null;
   expiresAt?: Date;
   /** Set for agent-session tokens — the resolved per-agent grant to stamp
    *  onto the token (already ∩ the launching user's role). */
@@ -150,6 +156,7 @@ export async function createAccountToken(
       accountId: params.accountId,
       userId: params.userId,
       projectId: params.projectId ?? null,
+      sessionId: params.sessionId ?? null,
       name: params.name,
       publicKey,
       secretKeyHash,
@@ -249,6 +256,7 @@ export async function validateAccountToken(
         accountId: accountTokens.accountId,
         userId: accountTokens.userId,
         projectId: accountTokens.projectId,
+        sessionId: accountTokens.sessionId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
         lastUsedAt: accountTokens.lastUsedAt,
@@ -302,6 +310,7 @@ export async function validateAccountToken(
       userId: row.userId,
       tokenId: row.tokenId,
       projectId: row.projectId,
+      sessionId: row.sessionId ?? null,
       agentGrant: row.agentGrant ?? null,
     };
   } catch (err) {

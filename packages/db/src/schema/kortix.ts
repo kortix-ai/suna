@@ -1382,6 +1382,11 @@ export const accountTokens = kortixSchema.table(
      *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
      *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
     agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
+    /** Session this token belongs to (sandbox executor token, session_id =
+     *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —
+     *  the reaper's reliable activity signal + precise billing. Null for
+     *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
+    sessionId: text('session_id'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),

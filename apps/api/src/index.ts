@@ -671,7 +671,16 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           // so the managed gateway works for self-hosted / billing-off deploys.
           const acct = await validateAccountToken(token);
           if (acct.isValid && acct.userId && acct.accountId) {
-            return { userId: acct.userId, accountId: acct.accountId };
+            // projectId/sessionId attribute LLM usage to the calling session
+            // (sandbox executor token is minted per-session with session_id =
+            // sandbox_id) — the reaper's reliable activity signal + precise
+            // per-session billing.
+            return {
+              userId: acct.userId,
+              accountId: acct.accountId,
+              projectId: acct.projectId ?? null,
+              sessionId: acct.sessionId ?? null,
+            };
           }
           return null;
         },
@@ -683,6 +692,8 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           const usageEventId = await recordUsageEvent({
             accountId: event.accountId,
             actorUserId: event.actorUserId,
+            projectId: event.projectId ?? null,
+            sessionId: event.sessionId ?? null,
             provider: event.provider,
             model: event.model,
             route: '/v1/llm/chat/completions',
@@ -746,6 +757,9 @@ const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./c
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+
+const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
+app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
