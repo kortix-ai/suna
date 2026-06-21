@@ -3,7 +3,7 @@ import { getManagedModel } from '@kortix/shared/llm-catalog';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
-import { codexDescriptor, managedCandidates } from './descriptors';
+import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 
@@ -30,6 +30,7 @@ export async function resolveCandidates(principal: AuthedPrincipal, model: strin
           billingMode: config.KORTIX_BILLING_INTERNAL_ENABLED ? 'platform-fee' : 'none',
           markup: PLATFORM_FEE_MARKUP,
           resolvedModel: model.slice(provider.length + 1),
+          pricing: livePricing(model.slice(provider.length + 1)),
         },
       ];
     }

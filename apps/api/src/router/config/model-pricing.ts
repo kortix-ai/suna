@@ -19,12 +19,15 @@
 export interface ModelPricingEntry {
   inputPer1M: number;
   outputPer1M: number;
+  cacheReadPer1M?: number;
 }
+
+const normModelId = (id: string): string => id.toLowerCase().replace(/\./g, '-');
 
 /** Shape of a single model in the models.dev API response. */
 interface ModelsDevModel {
   id: string;
-  cost?: { input?: number; output?: number };
+  cost?: { input?: number; output?: number; cache_read?: number };
   [key: string]: unknown;
 }
 
@@ -44,16 +47,6 @@ type ModelsDevApiResponse = Record<string, ModelsDevProvider>;
 
 const API_URL = 'https://models.dev/api.json';
 
-/** Only ingest pricing for providers we actually proxy. */
-const PROXY_PROVIDERS = [
-  'anthropic',
-  'openai',
-  'xai',
-  'google',
-  'groq',
-  'deepseek',
-] as const;
-
 /** How often to refresh pricing in the background (ms). */
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 h
 
@@ -66,6 +59,8 @@ const FETCH_TIMEOUT_MS = 15_000;
 
 /** In-memory pricing lookup.  `null` key means "not yet loaded". */
 let pricingMap: Map<string, ModelPricingEntry> = new Map();
+/** Normalised-id index (lowercase, dots→dashes) for resilient lookups. */
+let normIndex: Map<string, ModelPricingEntry> = new Map();
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -81,7 +76,15 @@ let modelCount = 0;
  * Returns `null` if the model is unknown or pricing hasn't been fetched yet.
  */
 export function getModelPricing(modelId: string): ModelPricingEntry | null {
-  return pricingMap.get(modelId) ?? null;
+  const exact = pricingMap.get(modelId);
+  if (exact) return exact;
+  const nq = normModelId(modelId);
+  const norm = normIndex.get(nq);
+  if (norm) return norm;
+  for (const [key, entry] of normIndex) {
+    if (key.startsWith(nq) || nq.startsWith(key)) return entry;
+  }
+  return null;
 }
 
 /**
@@ -143,29 +146,29 @@ async function refreshPricing(): Promise<void> {
 
     const data = (await res.json()) as ModelsDevApiResponse;
     const newMap = new Map<string, ModelPricingEntry>();
+    const newNorm = new Map<string, ModelPricingEntry>();
 
-    for (const providerId of PROXY_PROVIDERS) {
-      const provider = data[providerId];
+    for (const provider of Object.values(data)) {
       if (!provider?.models) continue;
-
       for (const model of Object.values(provider.models)) {
         const input = model.cost?.input;
         const output = model.cost?.output;
-        if (typeof input === 'number' && typeof output === 'number' && (input > 0 || output > 0)) {
-          newMap.set(model.id, { inputPer1M: input, outputPer1M: output });
-        }
+        if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0)) continue;
+        const entry: ModelPricingEntry = { inputPer1M: input, outputPer1M: output };
+        if (typeof model.cost?.cache_read === 'number') entry.cacheReadPer1M = model.cost.cache_read;
+        if (!newMap.has(model.id)) newMap.set(model.id, entry);
+        const nk = normModelId(model.id);
+        if (!newNorm.has(nk)) newNorm.set(nk, entry);
       }
     }
 
     // Atomic swap — readers never see a partially-built map
     pricingMap = newMap;
+    normIndex = newNorm;
     modelCount = newMap.size;
     lastFetchedAt = new Date();
 
-    console.log(
-      `[model-pricing] Loaded ${newMap.size} model prices from models.dev ` +
-        `(${PROXY_PROVIDERS.join(', ')})`,
-    );
+    console.log(`[model-pricing] Loaded ${newMap.size} model prices from models.dev (live)`);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('abort')) {
