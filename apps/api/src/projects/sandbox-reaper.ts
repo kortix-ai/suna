@@ -28,14 +28,14 @@
  * invariant rather than a best-effort.
  */
 
-import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { db } from '../shared/db';
-import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
-import { invalidateProviderCache } from '../sandbox-proxy';
-import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
-import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
+import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { endComputeSession, pauseComputeSession } from '../billing/services/compute-metering';
 import { config } from '../config';
+import { type ProviderName, type SandboxStatus, getProvider } from '../platform/providers';
+import { invalidateProviderCache } from '../sandbox-proxy';
+import { db } from '../shared/db';
+import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
@@ -95,7 +95,11 @@ export function decideReap(input: {
     return { action: 'none', reprovisionOnResume: false, reason: 'active-turn' };
   }
   if (meaningfulIdleMs > ttlMs) {
-    return { action: 'stop-idle', reprovisionOnResume: provider === 'platinum', reason: 'meaningful-idle' };
+    return {
+      action: 'stop-idle',
+      reprovisionOnResume: provider === 'platinum',
+      reason: 'meaningful-idle',
+    };
   }
   return { action: 'none', reprovisionOnResume: false, reason: 'within-ttl' };
 }
@@ -111,9 +115,10 @@ export function lastMeaningfulAt(row: {
   metadata: Record<string, unknown> | null;
   createdAt: Date;
 }): Date {
-  const stamped = row.metadata && typeof row.metadata.lastTurnAt === 'string'
-    ? new Date(row.metadata.lastTurnAt as string)
-    : null;
+  const stamped =
+    row.metadata && typeof row.metadata.lastTurnAt === 'string'
+      ? new Date(row.metadata.lastTurnAt as string)
+      : null;
   if (stamped && !Number.isNaN(stamped.getTime())) {
     return stamped.getTime() >= row.createdAt.getTime() ? stamped : row.createdAt;
   }
@@ -146,7 +151,11 @@ function mergeMetadata(patch: Record<string, unknown>) {
  * turn clears it); `reprovision` flags that the next open must REPROVISION
  * rather than resume (Platinum's broken stop→resume). Pure so it is unit-tested.
  */
-export function buildIdleStopMetadata(opts: { quiesce: boolean; reprovision: boolean; nowIso: string }): Record<string, unknown> {
+export function buildIdleStopMetadata(opts: {
+  quiesce: boolean;
+  reprovision: boolean;
+  nowIso: string;
+}): Record<string, unknown> {
   const meta: Record<string, unknown> = {};
   if (opts.quiesce) {
     meta.idleQuiesced = true;
@@ -166,11 +175,19 @@ interface ReapCandidate {
   createdAt: Date;
 }
 
-async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean, reprovision: boolean): Promise<void> {
+async function reconcileRowToStopped(
+  row: ReapCandidate,
+  now: Date,
+  quiesce: boolean,
+  reprovision: boolean,
+): Promise<void> {
   // Close billing FIRST (computes the wall-clock delta against the still-active
   // metering row), then flip status, so the final window is billed correctly.
   await pauseComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+    console.warn(
+      `[reaper] pauseComputeSession failed for ${row.sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    ),
   );
   const meta = buildIdleStopMetadata({ quiesce, reprovision, nowIso: now.toISOString() });
   await db
@@ -190,8 +207,8 @@ async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boo
 
 export interface ReapResult {
   candidates: number;
-  stopped: number;      // we issued a provider.stop() for an idle box
-  reconciled: number;   // provider already not-running; we synced our row
+  stopped: number; // we issued a provider.stop() for an idle box
+  reconciled: number; // provider already not-running; we synced our row
   billingClosed: number;
   skipped: number;
   errors: number;
@@ -218,15 +235,24 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
       createdAt: sessionSandboxes.createdAt,
     })
     .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.status, 'active'),
-      isNotNull(sessionSandboxes.externalId),
-      // Unclaimed warm-pool spares manage their own lifecycle.
-      sql`${sessionSandboxes.poolState} IS NULL`,
-    ))
+    .where(
+      and(
+        eq(sessionSandboxes.status, 'active'),
+        isNotNull(sessionSandboxes.externalId),
+        // Unclaimed warm-pool spares manage their own lifecycle.
+        sql`${sessionSandboxes.poolState} IS NULL`,
+      ),
+    )
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 
-  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+  const result: ReapResult = {
+    candidates: rows.length,
+    stopped: 0,
+    reconciled: 0,
+    billingClosed: 0,
+    skipped: 0,
+    errors: 0,
+  };
   if (rows.length === 0) return result;
 
   const sessionIds = rows.map((r) => r.sessionId);
@@ -292,7 +318,10 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             break;
           case 'reconcile-removed':
             await endComputeSession(row.sandboxId).catch((err) =>
-              console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+              console.warn(
+                `[reaper] endComputeSession failed for ${row.sandboxId}:`,
+                err instanceof Error ? err.message : err,
+              ),
             );
             // Status MUST be 'stopped' (not 'archived'): openSession only honors
             // `needsReprovision` in its `row.status === 'stopped'` branch. An
@@ -301,7 +330,11 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             // makes the next open reprovision a fresh box.
             await db
               .update(sessionSandboxes)
-              .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
+              .set({
+                status: 'stopped',
+                updatedAt: now,
+                metadata: mergeMetadata({ needsReprovision: true }),
+              })
               .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
             await db
               .update(projectSessions)
@@ -336,7 +369,9 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
         }
       } catch (err) {
         result.errors += 1;
-        console.error(`[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
+        console.error(
+          `[reaper] failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
+        );
       }
     }
   };
@@ -357,7 +392,10 @@ async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string,
   try {
     const { usageEvents } = await import('@kortix/db');
     const rows = await db
-      .select({ sessionId: usageEvents.sessionId, last: sql<string>`max(${usageEvents.createdAt})` })
+      .select({
+        sessionId: usageEvents.sessionId,
+        last: sql<string>`max(${usageEvents.createdAt})`,
+      })
       .from(usageEvents)
       .where(inArray(usageEvents.sessionId, sessionIds))
       .groupBy(usageEvents.sessionId);
@@ -369,7 +407,10 @@ async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string,
     }
     return out;
   } catch (err) {
-    console.warn('[reaper] usage-activity lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
+    console.warn(
+      '[reaper] usage-activity lookup failed — failing safe (no stops this cycle):',
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }
@@ -386,10 +427,15 @@ async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string>
     const rows = await db
       .select({ sessionId: chatTurnStreams.sessionId })
       .from(chatTurnStreams)
-      .where(and(inArray(chatTurnStreams.sessionId, sessionIds), eq(chatTurnStreams.finalized, false)));
+      .where(
+        and(inArray(chatTurnStreams.sessionId, sessionIds), eq(chatTurnStreams.finalized, false)),
+      );
     return new Set(rows.map((r) => r.sessionId));
   } catch (err) {
-    console.warn('[reaper] active-turn lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
+    console.warn(
+      '[reaper] active-turn lookup failed — failing safe (no stops this cycle):',
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }
@@ -402,7 +448,11 @@ async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string>
  * resolves every still-open metering row against the PROVIDER's real state and
  * closes any that are not running. Deterministic; idempotent.
  */
-export async function reconcileOrphanComputeSessions(): Promise<{ checked: number; closed: number; errors: number }> {
+export async function reconcileOrphanComputeSessions(): Promise<{
+  checked: number;
+  closed: number;
+  errors: number;
+}> {
   const { sandboxComputeSessions } = await import('@kortix/db');
   // Join the metering row to its sandbox to recover provider + externalId.
   const rows = await db
@@ -441,7 +491,10 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
         }
       } catch (err) {
         errors += 1;
-        console.warn(`[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err);
+        console.warn(
+          `[reaper] orphan-compute reconcile failed for ${row.sandboxId}:`,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
   };
@@ -482,18 +535,20 @@ export async function reconcileStuckActiveSessions(
   const cutoff = new Date(now.getTime() - autoStopTtlMs());
   const { chatTurnStreams, usageEvents } = await import('@kortix/db');
 
+  const staleActiveSessionWhere = (sessionId?: string) =>
+    and(
+      sessionId ? eq(projectSessions.sessionId, sessionId) : undefined,
+      inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+      lt(projectSessions.updatedAt, cutoff),
+      sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+      sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
+      sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
+    );
+
   const candidates = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
-    .where(
-      and(
-        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-        lt(projectSessions.updatedAt, cutoff),
-        sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
-        sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
-        sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
-      ),
-    )
+    .where(staleActiveSessionWhere())
     .limit(STUCK_SESSION_BATCH);
 
   const result = { candidates: candidates.length, reconciled: 0, billingClosed: 0, errors: 0 };
@@ -501,6 +556,18 @@ export async function reconcileStuckActiveSessions(
 
   for (const c of candidates) {
     try {
+      // Re-run the full stale/idleness predicate in the UPDATE itself. Between
+      // SELECT and UPDATE a background provision/open can create an active box or
+      // start a turn while the project_session status is still an ACTIVE status;
+      // a status-only guard would clobber that healthy session back to stopped.
+      const updated = await db
+        .update(projectSessions)
+        .set({ status: 'stopped', updatedAt: now })
+        .where(staleActiveSessionWhere(c.sessionId))
+        .returning({ sessionId: projectSessions.sessionId });
+      if (!updated.length) continue;
+      result.reconciled += 1;
+
       // Close any lingering billing window for the session's (non-active) box(es).
       // pauseComputeSession is DB-only + idempotent (no-op when no row is open).
       const sbs = await db
@@ -508,25 +575,24 @@ export async function reconcileStuckActiveSessions(
         .from(sessionSandboxes)
         .where(eq(sessionSandboxes.sessionId, c.sessionId));
       for (const sb of sbs) {
-        await pauseComputeSession(sb.sandboxId).catch((err) =>
-          console.warn(`[reaper] stuck-session pauseComputeSession failed for ${sb.sandboxId}:`, err instanceof Error ? err.message : err),
-        );
-        result.billingClosed += 1;
+        try {
+          await pauseComputeSession(sb.sandboxId);
+          result.billingClosed += 1;
+        } catch (err) {
+          result.errors += 1;
+          console.warn('[reaper] stuck-session pauseComputeSession failed:', {
+            sessionId: c.sessionId,
+            sandboxId: sb.sandboxId,
+            error: err instanceof Error ? err.message : err,
+          });
+        }
       }
-      // Re-check the status in the UPDATE predicate so we never clobber a session
-      // a real open transitioned out from under us between SELECT and UPDATE.
-      const updated = await db
-        .update(projectSessions)
-        .set({ status: 'stopped', updatedAt: now })
-        .where(and(
-          eq(projectSessions.sessionId, c.sessionId),
-          inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-        ))
-        .returning({ sessionId: projectSessions.sessionId });
-      if (updated.length) result.reconciled += 1;
     } catch (err) {
       result.errors += 1;
-      console.warn('[reaper] stuck-session reconcile failed:', { sessionId: c.sessionId, error: err instanceof Error ? err.message : err });
+      console.warn('[reaper] stuck-session reconcile failed:', {
+        sessionId: c.sessionId,
+        error: err instanceof Error ? err.message : err,
+      });
     }
   }
   return result;
@@ -539,25 +605,44 @@ export async function reconcileStuckActiveSessions(
  * Idempotent: a row already stopped/archived is a no-op. Returns true if it
  * transitioned a live row.
  */
-export async function reconcileSandboxStoppedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+export async function reconcileSandboxStoppedByExternalId(
+  externalId: string,
+  now = new Date(),
+): Promise<boolean> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      status: sessionSandboxes.status,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
   if (row.status === 'stopped' || row.status === 'archived') return false;
   await pauseComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+    console.warn(
+      `[reaper] pauseComputeSession failed for ${row.sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    ),
   );
   // Quiesce: a provider-confirmed stop must stay stopped — passive /v1/p traffic
   // (markSandboxUsed heal / wakeSandbox) must not resurrect it. Cleared on an
   // explicit open / real turn.
   await db
     .update(sessionSandboxes)
-    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso: now.toISOString() })) })
+    .set({
+      status: 'stopped',
+      updatedAt: now,
+      metadata: mergeMetadata(
+        buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso: now.toISOString() }),
+      ),
+    })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  await db
+    .update(projectSessions)
+    .set({ status: 'stopped', updatedAt: now })
+    .where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
   return true;
 }
@@ -567,15 +652,25 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
  * flag the row so the next open reprovisions a fresh box. Keyed by external id;
  * idempotent. Shared by webhook ingress + reaper.
  */
-export async function reconcileSandboxRemovedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
+export async function reconcileSandboxRemovedByExternalId(
+  externalId: string,
+  now = new Date(),
+): Promise<boolean> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      status: sessionSandboxes.status,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
   await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
+    console.warn(
+      `[reaper] endComputeSession failed for ${row.sandboxId}:`,
+      err instanceof Error ? err.message : err,
+    ),
   );
   // 'stopped' (not 'archived') + needsReprovision so openSession's stopped-branch
   // reprovisions a fresh box on the next open (an archived row would strand it).
@@ -583,7 +678,10 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
     .update(sessionSandboxes)
     .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  await db
+    .update(projectSessions)
+    .set({ status: 'stopped', updatedAt: now })
+    .where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
   return true;
 }
@@ -599,10 +697,12 @@ export async function countBillingInvariantViolations(): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
-    .where(and(
-      eq(sandboxComputeSessions.state, 'active'),
-      sql`(${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active')`,
-    ));
+    .where(
+      and(
+        eq(sandboxComputeSessions.state, 'active'),
+        sql`(${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active')`,
+      ),
+    );
   return Number(row?.n ?? 0);
 }
 
@@ -643,7 +743,9 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   // Daytona is the only org-shared provider that leaks this way; local_docker
   // boxes are per-host and Platinum is reconciled on its own path.
   if (!config.DAYTONA_API_KEY) return zero;
-  let listManaged: (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>) | undefined;
+  let listManaged:
+    | (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>)
+    | undefined;
   try {
     const provider = getProvider('daytona');
     listManaged = provider.listManagedRunningSandboxes?.bind(provider);
@@ -705,7 +807,12 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   };
   await Promise.all(Array.from({ length: Math.min(REAP_CONCURRENCY, orphans.length) }, worker));
   if (stopped || errors) {
-    console.log('[reaper] orphan-box sweep', { listed: boxes.length, orphans: orphans.length, stopped, errors });
+    console.log('[reaper] orphan-box sweep', {
+      listed: boxes.length,
+      orphans: orphans.length,
+      stopped,
+      errors,
+    });
   }
   return { listed: boxes.length, orphans: orphans.length, stopped, errors };
 }

@@ -1,17 +1,17 @@
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import { projectSessions, projects } from '@kortix/db';
-import { db } from '../shared/db';
-import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
+import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
-import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileWarmPool } from '../platform/services/warm-pool';
+import { db } from '../shared/db';
+import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
+import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import {
+  countBillingInvariantViolations,
   reapAndReconcileSandboxes,
+  reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
-  reapOrphanProviderBoxes,
-  countBillingInvariantViolations,
 } from './sandbox-reaper';
 
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -39,10 +39,15 @@ function branchRetentionDays(): number {
 }
 
 function maintenanceIntervalMs(): number {
-  return positiveInt(process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS, DEFAULT_MAINTENANCE_INTERVAL_MS);
+  return positiveInt(
+    process.env.KORTIX_PROJECT_MAINTENANCE_INTERVAL_MS,
+    DEFAULT_MAINTENANCE_INTERVAL_MS,
+  );
 }
 
-export function hasOpenPullRequestMarker(metadata: Record<string, unknown> | null | undefined): boolean {
+export function hasOpenPullRequestMarker(
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
   if (!metadata) return false;
   if (metadata.open_pr === true || metadata.has_open_pr === true) return true;
   for (const key of ['pull_request', 'github_pull_request', 'pr']) {
@@ -85,11 +90,13 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
     })
     .from(projectSessions)
     .innerJoin(projects, eq(projectSessions.projectId, projects.projectId))
-    .where(and(
-      inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
-      lt(projectSessions.updatedAt, cutoff),
-      ne(projectSessions.branchName, projects.defaultBranch),
-    ))
+    .where(
+      and(
+        inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
+        lt(projectSessions.updatedAt, cutoff),
+        ne(projectSessions.branchName, projects.defaultBranch),
+      ),
+    )
     .limit(GC_BATCH_SIZE);
 
   let deleted = 0;
@@ -145,17 +152,40 @@ async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
+    const [
+      idle,
+      orphanCompute,
+      stuckSessions,
+      orphanBoxes,
+      branches,
+      computeTick,
+      staleBuilds,
+      warmPool,
+      snapshotGc,
+    ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
       reapAndReconcileSandboxes().catch((err) => {
-        console.warn('[project-maintenance] reaper failed:', err instanceof Error ? err.message : err);
-        return { candidates: 0, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+        console.warn(
+          '[project-maintenance] reaper failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return {
+          candidates: 0,
+          stopped: 0,
+          reconciled: 0,
+          billingClosed: 0,
+          skipped: 0,
+          errors: 0,
+        };
       }),
       // Billing safety net: close metering for any active compute row whose box
       // is not actually running (catches orphans / missed webhooks).
       reconcileOrphanComputeSessions().catch((err) => {
-        console.warn('[project-maintenance] orphan-compute reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] orphan-compute reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { checked: 0, closed: 0, errors: 0 };
       }),
       // Session-side leak fix: reconcile project_sessions stuck in an ACTIVE
@@ -164,52 +194,90 @@ async function runProjectMaintenance(): Promise<void> {
       // account's concurrent-session cap fills up and wedges Slack. DB-only, so
       // it drains the cap even while Daytona is throttling the box reaper.
       reconcileStuckActiveSessions().catch((err) => {
-        console.warn('[project-maintenance] stuck-session reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] stuck-session reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
       // reaper above structurally can't see. STOP-only, label-scoped, age-gated.
       reapOrphanProviderBoxes().catch((err) => {
-        console.warn('[project-maintenance] orphan-box reaper failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] orphan-box reaper failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
       // settled in > 1h, so a missed stop hook can't accrue uncharged compute.
       tickRunningComputeCharges().catch((err) => {
-        console.warn('[project-maintenance] compute tick failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] compute tick failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { settled: 0 };
       }),
       // Heal snapshot build-log rows orphaned at "building" by a process
       // restart/crash, globally across all projects.
       reconcileStaleBuilds().catch((err) => {
-        console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] stale-build reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
       // Keep each opted-in template's warm pool at its desired size and reap
       // dead/aged boxes. No-op when KORTIX_WARM_POOL_ENABLED=false.
       reconcileWarmPool().catch((err) => {
-        console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] warm-pool reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { reaped: 0, projects: 0 };
       }),
       // GC superseded template snapshots (content-addressed names orphaned by
       // every identity drift) before the 100/org Daytona quota fills up.
       // Pressure-gated + bounded; no-op while the namespace is small.
       reconcileSnapshotQuota().catch((err) => {
-        console.warn('[project-maintenance] snapshot quota GC failed:', err instanceof Error ? err.message : err);
+        console.warn(
+          '[project-maintenance] snapshot quota GC failed:',
+          err instanceof Error ? err.message : err,
+        );
         return { namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false };
       }),
     ]);
     if (
-      idle.stopped || idle.reconciled || idle.errors || orphanCompute.closed || orphanCompute.errors ||
-      stuckSessions.reconciled || stuckSessions.errors ||
-      orphanBoxes.stopped || orphanBoxes.errors ||
-      branches.deleted || branches.errors ||
-      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
+      idle.stopped ||
+      idle.reconciled ||
+      idle.errors ||
+      orphanCompute.closed ||
+      orphanCompute.errors ||
+      stuckSessions.reconciled ||
+      stuckSessions.errors ||
+      orphanBoxes.stopped ||
+      orphanBoxes.errors ||
+      branches.deleted ||
+      branches.errors ||
+      computeTick.settled ||
+      staleBuilds.closedReady ||
+      staleBuilds.closedFailed ||
+      warmPool.reaped ||
       snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, orphanCompute, stuckSessions, orphanBoxes, branches, computeTick, staleBuilds, warmPool, snapshotGc });
+      console.log('[project-maintenance] completed', {
+        idle,
+        orphanCompute,
+        stuckSessions,
+        orphanBoxes,
+        branches,
+        computeTick,
+        staleBuilds,
+        warmPool,
+        snapshotGc,
+      });
     }
 
     // Invariant monitor: in steady state, every `active` compute session has a
@@ -218,10 +286,15 @@ async function runProjectMaintenance(): Promise<void> {
     try {
       const billingLeak = await countBillingInvariantViolations();
       if (billingLeak > 0) {
-        console.warn(`[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`);
+        console.warn(
+          `[project-maintenance] BILLING INVARIANT VIOLATED: ${billingLeak} active compute session(s) with a non-running box`,
+        );
       }
     } catch (err) {
-      console.warn('[project-maintenance] billing invariant check failed:', err instanceof Error ? err.message : err);
+      console.warn(
+        '[project-maintenance] billing invariant check failed:',
+        err instanceof Error ? err.message : err,
+      );
     }
   } finally {
     maintenanceRunning = false;

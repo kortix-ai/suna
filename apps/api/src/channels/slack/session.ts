@@ -1,11 +1,11 @@
-import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { and, eq } from 'drizzle-orm';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { db } from '../../shared/db';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { currentChannelSelection } from './selection';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
@@ -19,7 +19,9 @@ const defaultSlackSessionLifecycle = {
 
 let slackSessionLifecycle = defaultSlackSessionLifecycle;
 
-export function setSlackSessionLifecycleForTest(overrides: Partial<typeof defaultSlackSessionLifecycle>) {
+export function setSlackSessionLifecycleForTest(
+  overrides: Partial<typeof defaultSlackSessionLifecycle>,
+) {
   slackSessionLifecycle = { ...defaultSlackSessionLifecycle, ...overrides };
 }
 
@@ -77,12 +79,18 @@ export async function createOrJoinThreadSession(input: {
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event) });
-    } else {
-      console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
-        teamId,
-        threadId,
+      await deliverSlackFollowUpToSession({
+        sessionId,
+        text: renderFollowUpPrompt(envelope, event),
       });
+    } else {
+      console.warn(
+        '[slack-webhook] lost thread-create claim but winner never published a session',
+        {
+          teamId,
+          threadId,
+        },
+      );
     }
     return;
   }
@@ -103,7 +111,10 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+      });
       return;
     }
   }
@@ -129,9 +140,10 @@ export async function createOrJoinThreadSession(input: {
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     idempotencyKey: claimKey,
-    postCreate: teamId && threadId
-      ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
-      : undefined,
+    postCreate:
+      teamId && threadId
+        ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
+        : undefined,
     // Slack threads are team-facing — project-visible, not private to the
     // stand-in owner the session is attributed to.
     visibility: 'project',
@@ -151,9 +163,14 @@ export async function createOrJoinThreadSession(input: {
   });
 
   if (result.error) {
-    console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
+    console.error('[slack-webhook] createProjectSession failed', {
+      status: result.error.status,
+      body: result.error.body,
+    });
     if (handle) {
-      await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body?.error) });
+      await finalizeTurn(handle, {
+        error: startErrorMessage(result.error.status, result.error.body?.error),
+      });
     }
     return;
   }
@@ -179,7 +196,7 @@ function startErrorMessage(status: number | undefined, detail: unknown): string 
     return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
   }
   if (status === 429) {
-    return "This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.";
+    return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
   }
   if (status === 404) {
     return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel and try again.";
@@ -272,8 +289,8 @@ const TURN_INSTRUCTIONS = [
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',
   '  The `blocks` JSON follows the Block Kit schema (header, section with mrkdwn,',
   '  divider, context, image, actions). Plain text via `slack send "..."` is fine',
-  '  for one-liners, but prefer blocks when there\'s real structure to convey.',
-  '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
+  "  for one-liners, but prefer blocks when there's real structure to convey.",
+  "- One `slack send` per turn. It finalizes the live stream and can't be undone.",
 ].join('\n');
 
 export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent): string {
@@ -288,11 +305,7 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent)
   ].join('\n');
 }
 
-function renderAgentPrompt(
-  envelope: SlackEnvelope,
-  event: SlackEvent,
-  revived: boolean,
-): string {
+function renderAgentPrompt(envelope: SlackEnvelope, event: SlackEvent, revived: boolean): string {
   const channel = event.channel ?? '?';
   const threadTs = event.thread_ts ?? event.ts ?? '';
   const user = event.user ?? 'unknown';

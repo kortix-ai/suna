@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes, chatTurnStreams, usageEvents } from '@kortix/db';
+import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from '@kortix/db';
 
 // ── mock state ──────────────────────────────────────────────────────────────
-let candidates: any[] = [];
+let candidates: Array<Record<string, unknown>> = [];
 let activeTurns: Array<{ sessionId: string }> = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
 let throwOnUsageLookup = false;
@@ -15,11 +15,15 @@ let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 let stuckSessions: Array<{ sessionId: string }> = [];
+let projectSessionUpdateReturningRows: Array<{ sessionId: string }> = [{ sessionId: 'updated' }];
 
 /** A thenable that also exposes `.limit()` so both `await where()` (turn query)
  *  and `where().limit()` (candidate query) resolve to the same rows. */
-function hybrid(rows: any[], throwOnGroupBy = false) {
-  const p: any = Promise.resolve(rows);
+function hybrid<T>(rows: T[], throwOnGroupBy = false) {
+  const p = Promise.resolve(rows) as Promise<T[]> & {
+    limit: () => Promise<T[]>;
+    groupBy: () => Promise<T[]>;
+  };
   p.limit = async () => rows;
   p.groupBy = async () => {
     if (throwOnGroupBy) throw new Error('db down');
@@ -32,7 +36,9 @@ function hybrid(rows: any[], throwOnGroupBy = false) {
 // test doesn't import the real config, which calls process.exit on incomplete
 // local env. Run this file in its own `bun test <file>` invocation (as CI does)
 // so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, DAYTONA_API_KEY: 'test-key' } }));
+mock.module('../config', () => ({
+  config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, DAYTONA_API_KEY: 'test-key' },
+}));
 
 mock.module('../shared/db', () => ({
   db: {
@@ -60,13 +66,16 @@ mock.module('../shared/db', () => ({
         where: () => {
           const record = () => updateCalls.push({ table, updates });
           return {
+            // biome-ignore lint/suspicious/noThenProperty: Drizzle's update builder is awaitable in production; this mock mirrors that chain.
             then: (resolve: (v: unknown) => void) => {
               record();
               resolve(undefined);
             },
             returning: async () => {
               record();
-              return [{ sessionId: 'updated' }];
+              return table === projectSessions
+                ? projectSessionUpdateReturningRows
+                : [{ sessionId: 'updated' }];
             },
           };
         },
@@ -102,7 +111,14 @@ mock.module('../billing/services/compute-metering', () => ({
   },
 }));
 
-const { decideReap, lastMeaningfulAt, reapAndReconcileSandboxes, buildIdleStopMetadata, reapOrphanProviderBoxes, reconcileStuckActiveSessions } = await import('./sandbox-reaper');
+const {
+  decideReap,
+  lastMeaningfulAt,
+  reapAndReconcileSandboxes,
+  buildIdleStopMetadata,
+  reapOrphanProviderBoxes,
+  reconcileStuckActiveSessions,
+} = await import('./sandbox-reaper');
 
 const TTL = 15 * 60_000;
 
@@ -120,39 +136,102 @@ beforeEach(() => {
   endedCompute = [];
   updateCalls = [];
   stuckSessions = [];
+  projectSessionUpdateReturningRows = [{ sessionId: 'updated' }];
 });
 
 // ── pure decision matrix (the money + UX correctness lives here) ─────────────
 describe('decideReap', () => {
   test('never acts on unknown provider state', () => {
-    expect(decideReap({ providerStatus: 'unknown', meaningfulIdleMs: 10 * TTL, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+    expect(
+      decideReap({
+        providerStatus: 'unknown',
+        meaningfulIdleMs: 10 * TTL,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).action,
+    ).toBe('none');
   });
 
   test('removed → reconcile-removed + reprovision', () => {
-    const d = decideReap({ providerStatus: 'removed', meaningfulIdleMs: 0, hasActiveTurn: false, ttlMs: TTL, provider: 'platinum' });
+    const d = decideReap({
+      providerStatus: 'removed',
+      meaningfulIdleMs: 0,
+      hasActiveTurn: false,
+      ttlMs: TTL,
+      provider: 'platinum',
+    });
     expect(d.action).toBe('reconcile-removed');
     expect(d.reprovisionOnResume).toBe(true);
   });
 
   test('provider already stopped → reconcile-stopped', () => {
-    expect(decideReap({ providerStatus: 'stopped', meaningfulIdleMs: 0, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('reconcile-stopped');
+    expect(
+      decideReap({
+        providerStatus: 'stopped',
+        meaningfulIdleMs: 0,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).action,
+    ).toBe('reconcile-stopped');
   });
 
   test('running + idle past TTL → stop-idle', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('stop-idle');
+    expect(
+      decideReap({
+        providerStatus: 'running',
+        meaningfulIdleMs: TTL + 1,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).action,
+    ).toBe('stop-idle');
   });
 
   test('running + idle but a turn is in flight → none', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: 10 * TTL, hasActiveTurn: true, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+    expect(
+      decideReap({
+        providerStatus: 'running',
+        meaningfulIdleMs: 10 * TTL,
+        hasActiveTurn: true,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).action,
+    ).toBe('none');
   });
 
   test('running + within TTL → none', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL - 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).action).toBe('none');
+    expect(
+      decideReap({
+        providerStatus: 'running',
+        meaningfulIdleMs: TTL - 1,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).action,
+    ).toBe('none');
   });
 
   test('Daytona idle stop resumes in place; Platinum must reprovision', () => {
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'daytona' }).reprovisionOnResume).toBe(false);
-    expect(decideReap({ providerStatus: 'running', meaningfulIdleMs: TTL + 1, hasActiveTurn: false, ttlMs: TTL, provider: 'platinum' }).reprovisionOnResume).toBe(true);
+    expect(
+      decideReap({
+        providerStatus: 'running',
+        meaningfulIdleMs: TTL + 1,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'daytona',
+      }).reprovisionOnResume,
+    ).toBe(false);
+    expect(
+      decideReap({
+        providerStatus: 'running',
+        meaningfulIdleMs: TTL + 1,
+        hasActiveTurn: false,
+        ttlMs: TTL,
+        provider: 'platinum',
+      }).reprovisionOnResume,
+    ).toBe(true);
   });
 });
 
@@ -160,15 +239,27 @@ describe('lastMeaningfulAt', () => {
   test('uses stamped lastTurnAt when present and newer than creation', () => {
     const created = new Date('2026-06-01T00:00:00Z');
     const turn = new Date('2026-06-01T05:00:00Z');
-    expect(lastMeaningfulAt({ metadata: { lastTurnAt: turn.toISOString() }, createdAt: created }).getTime()).toBe(turn.getTime());
+    expect(
+      lastMeaningfulAt({
+        metadata: { lastTurnAt: turn.toISOString() },
+        createdAt: created,
+      }).getTime(),
+    ).toBe(turn.getTime());
   });
   test('falls back to creation when no stamp', () => {
     const created = new Date('2026-06-01T00:00:00Z');
-    expect(lastMeaningfulAt({ metadata: null, createdAt: created }).getTime()).toBe(created.getTime());
+    expect(lastMeaningfulAt({ metadata: null, createdAt: created }).getTime()).toBe(
+      created.getTime(),
+    );
   });
   test('ignores a stamp older than creation (clock skew / stale)', () => {
     const created = new Date('2026-06-01T10:00:00Z');
-    expect(lastMeaningfulAt({ metadata: { lastTurnAt: '2026-06-01T00:00:00Z' }, createdAt: created }).getTime()).toBe(created.getTime());
+    expect(
+      lastMeaningfulAt({
+        metadata: { lastTurnAt: '2026-06-01T00:00:00Z' },
+        createdAt: created,
+      }).getTime(),
+    ).toBe(created.getTime());
   });
 });
 
@@ -192,7 +283,7 @@ describe('buildIdleStopMetadata', () => {
 
 // ── orchestration ────────────────────────────────────────────────────────────
 const NOW = new Date('2026-06-21T12:00:00Z');
-function candidate(over: Partial<any> = {}) {
+function candidate(over: Record<string, unknown> = {}) {
   return {
     sandboxId: 'sb-1',
     sessionId: 'sess-1',
@@ -220,7 +311,9 @@ describe('reapAndReconcileSandboxes', () => {
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.status).toBe('stopped');
     expect(sbUpdate?.updates.metadata).toBeDefined(); // quiesce flag merged
-    expect(updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped')).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped'),
+    ).toBe(true);
   });
 
   test('Platinum idle stop flags reprovision (resume is broken)', async () => {
@@ -247,11 +340,15 @@ describe('reapAndReconcileSandboxes', () => {
     expect(r.billingClosed).toBe(1);
     expect(stops).toEqual([]); // never poke a stopped box
     expect(pausedCompute).toEqual(['sb-1']);
-    expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
   });
 
   test('leaves a recently-active box running', async () => {
-    candidates = [candidate({ metadata: { lastTurnAt: new Date(NOW.getTime() - 60_000).toISOString() } })];
+    candidates = [
+      candidate({ metadata: { lastTurnAt: new Date(NOW.getTime() - 60_000).toISOString() } }),
+    ];
     statusByExternal['ext-1'] = 'running';
 
     const r = await reapAndReconcileSandboxes(NOW);
@@ -437,6 +534,20 @@ describe('reconcileStuckActiveSessions', () => {
     expect(result.reconciled).toBe(1);
     expect(result.billingClosed).toBe(0);
     expect(pausedCompute.length).toBe(0);
+    expect(updateCalls.filter((u) => u.table === projectSessions).length).toBe(1);
+  });
+
+  test('lost stale-session update race → does not close billing or count reconciled', async () => {
+    stuckSessions = [{ sessionId: 's3' }];
+    candidates = [{ sandboxId: 'sb3' }];
+    projectSessionUpdateReturningRows = [];
+
+    const result = await reconcileStuckActiveSessions(new Date());
+
+    expect(result.candidates).toBe(1);
+    expect(result.reconciled).toBe(0);
+    expect(result.billingClosed).toBe(0);
+    expect(pausedCompute).toEqual([]);
     expect(updateCalls.filter((u) => u.table === projectSessions).length).toBe(1);
   });
 });

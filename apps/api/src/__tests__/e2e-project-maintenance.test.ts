@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 
-let sandboxCandidates: any[] = [];
-let branchCandidates: any[] = [];
+let sandboxCandidates: Array<Record<string, unknown>> = [];
+let branchCandidates: Array<Record<string, unknown>> = [];
 let providerStops: string[] = [];
 let cacheInvalidations: string[] = [];
 let branchDeletes: string[] = [];
@@ -108,16 +108,18 @@ mock.module('../projects/sandbox-reaper', () => ({
     errors: 0,
   }),
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
-  reconcileStuckActiveSessions: async () => ({ candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 }),
+  reconcileStuckActiveSessions: async () => ({
+    candidates: 0,
+    reconciled: 0,
+    billingClosed: 0,
+    errors: 0,
+  }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
 }));
 
-const {
-  hasOpenPullRequestMarker,
-  postgresTimestampParam,
-  sweepExpiredSessionBranches,
-} = await import('../projects/maintenance');
+const { hasOpenPullRequestMarker, postgresTimestampParam, sweepExpiredSessionBranches } =
+  await import('../projects/maintenance');
 
 beforeEach(() => {
   sandboxCandidates = [];
@@ -140,8 +142,9 @@ describe('project maintenance', () => {
   });
 
   test('formats raw SQL timestamp parameters as strings', () => {
-    expect(postgresTimestampParam(new Date('2026-05-15T21:08:13.000Z')))
-      .toBe('2026-05-15T21:08:13.000Z');
+    expect(postgresTimestampParam(new Date('2026-05-15T21:08:13.000Z'))).toBe(
+      '2026-05-15T21:08:13.000Z',
+    );
   });
 
   test('deletes expired session branches and records branch GC metadata', async () => {

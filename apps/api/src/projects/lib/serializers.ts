@@ -1,15 +1,30 @@
+import {
+  type accountGithubInstallations,
+  type deployments,
+  type projectGitConnections,
+  type projectGitCredentials,
+  projectSecrets,
+  type projectSessions,
+  type projects,
+} from '@kortix/db';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { config } from '../../config';
-import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
+import {
+  type SecretGrant,
+  type ShareSubject,
+  isSecretUsableBy,
+  loadGrants,
+  scopeToIntent,
+  visibilityToIntent,
+} from '../../executor/share';
+import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
 import { resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { db } from '../../shared/db';
-import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
-import { type ProjectRole } from '../access';
+import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
+import type { ProjectRole } from '../access';
 import { resolveAppsEnabled } from '../apps-config';
-import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
-import { isGithubAppConfigured, type GitHubRepo } from '../github';
-import { accountGithubInstallations, deployments, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import { Context } from 'hono';
+import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
 import { proxyGitUrl } from './sessions';
 
@@ -39,7 +54,6 @@ export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './sessio
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
-
 export function serializeSession(
   row: ProjectSessionRow,
   ctx?: {
@@ -62,7 +76,8 @@ export function serializeSession(
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
-  const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
+  const customName =
+    typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
   const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   return {
     session_id: row.sessionId,
@@ -85,7 +100,10 @@ export function serializeSession(
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     visibility: row.visibility,
-    sharing: visibilityToIntent(row.visibility as 'private' | 'project' | 'restricted', ctx?.grants ?? []),
+    sharing: visibilityToIntent(
+      row.visibility as 'private' | 'project' | 'restricted',
+      ctx?.grants ?? [],
+    ),
     is_owner: isOwner,
     can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
     created_at: row.createdAt.toISOString(),
@@ -112,8 +130,10 @@ export function isRepoNameTakenError(error: unknown): boolean {
   return m.includes('already exists') || m.includes('name already') || m.includes('(422)');
 }
 
-
-export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }) {
+export function serializeProject(
+  row: ProjectRow,
+  access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole },
+) {
   return {
     project_id: row.projectId,
     account_id: row.accountId,
@@ -152,7 +172,6 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
   };
 }
 
-
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {
   if (!row) return null;
   return {
@@ -181,7 +200,6 @@ export function serializeProjectGitConnection(row: ProjectGitConnectionRow | nul
   };
 }
 
-
 export function serializeGitHubRepo(repo: GitHubRepo) {
   return {
     id: String(repo.id),
@@ -196,13 +214,11 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-
 function clientIp(c: Context) {
-  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || null;
+  return (
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || c.req.header('x-real-ip') || null
+  );
 }
-
 
 export function requestAuditContext(c: Context): RequestAuditContext {
   return {
@@ -212,7 +228,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     userAgent: c.req.header('user-agent') || null,
   };
 }
-
 
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
@@ -232,6 +247,10 @@ export function buildSecretView(input: {
   canManageShared: boolean;
 }) {
   const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+  const source = shared ?? personal;
+  if (!source) {
+    throw new Error(`Cannot build secret view for ${name}: missing shared or personal secret row`);
+  }
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
   const usableByMe = shared
@@ -242,7 +261,7 @@ export function buildSecretView(input: {
     personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
   return {
     name,
-    project_id: (shared ?? personal)!.projectId,
+    project_id: source.projectId,
     secret_id: shared?.secretId ?? null,
     created_by: shared?.createdBy ?? null,
     created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,
@@ -255,10 +274,14 @@ export function buildSecretView(input: {
     // The SHARED row: is a project value set, who can use it, and can it reach me.
     configured: Boolean(shared),
     share_scope: shared?.shareScope ?? 'project',
-    sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
+    sharing: shared
+      ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants)
+      : null,
     usable_by_me: usableByMe,
     // MY private override (value never returned), and whether I'm using it.
-    mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
+    mine: personal
+      ? { active: personal.active, updated_at: personal.updatedAt.toISOString() }
+      : null,
     // What actually gets injected into my sessions for this key.
     effective_source: effectiveSource,
     // Members manage only their own override; managers also manage the shared row.
@@ -279,10 +302,12 @@ export async function loadSecretViewsForUser(
   const rows = await db
     .select()
     .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
-    ))
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+      ),
+    )
     .orderBy(desc(projectSecrets.updatedAt));
 
   const byName = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
@@ -292,13 +317,15 @@ export async function loadSecretViewsForUser(
     else slot.personal = row;
     byName.set(row.name, slot);
   }
-  const grants = await loadGrants(rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId));
+  const grants = await loadGrants(
+    rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId),
+  );
 
   return [...byName.entries()].map(([name, slot]) =>
     buildSecretView({
       name,
       shared: slot.shared,
-      sharedGrants: slot.shared ? grants.get(slot.shared.secretId) ?? [] : [],
+      sharedGrants: slot.shared ? (grants.get(slot.shared.secretId) ?? []) : [],
       personal: slot.personal,
       subject,
       canManageShared,
@@ -306,18 +333,17 @@ export async function loadSecretViewsForUser(
   );
 }
 
-
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
 
-
-export function serializeSessionSandboxConfig(configValue: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  const config = { ...(configValue ?? {}) };
-  delete config.serviceKey;
-  return config;
+export function serializeSessionSandboxConfig(
+  configValue: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(configValue ?? {}).filter(([key]) => key !== 'serviceKey'),
+  );
 }
-
 
 export function serializeGitHubInstallation(
   row: typeof accountGithubInstallations.$inferSelect | null,
@@ -346,7 +372,6 @@ export function serializeGitHubInstallation(
   };
 }
 
-
 export function serializeGitHubInstallations(
   rows: Array<typeof accountGithubInstallations.$inferSelect>,
   accountId: string,
@@ -363,11 +388,9 @@ export function serializeGitHubInstallations(
   };
 }
 
-
 export function normalizeString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
-
 
 export function normalizeBoolean(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value;
@@ -379,16 +402,13 @@ export function normalizeBoolean(value: unknown): boolean | null {
   return null;
 }
 
-
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-
 export function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
 }
-
 
 export function normalizeRepoUrl(value: unknown): string | null {
   const repoUrl = normalizeString(value);
@@ -403,11 +423,9 @@ export function normalizeRepoUrl(value: unknown): string | null {
   return normalized;
 }
 
-
 export function hasOwn(body: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, key);
 }
-
 
 export function deriveKortixApiRoot(kortixUrl: string): string {
   return (kortixUrl || 'https://api.kortix.com')
@@ -416,16 +434,12 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
     .replace(/\/v1$/, '');
 }
 
-
 export function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
   if (!tail) return 'Untitled Project';
-  return tail
-    .replace(/[-_]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return tail.replace(/[-_]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
-
 
 export async function readBody(c: Context) {
   try {
@@ -434,7 +448,6 @@ export async function readBody(c: Context) {
     return {};
   }
 }
-
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
   return {
@@ -450,7 +463,6 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
     finished_at: b.finishedAt?.toISOString() ?? null,
   };
 }
-
 
 export interface TemplateWarmStatus {
   enabled: boolean;
@@ -490,7 +502,6 @@ export function serializeTemplate(
   };
 }
 
-
 export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
   return {
     deployment_id: row.deploymentId,
@@ -515,11 +526,9 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
   };
 }
 
-
 const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
 
-export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
-
+export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 
 export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
