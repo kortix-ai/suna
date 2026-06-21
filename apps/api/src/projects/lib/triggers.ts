@@ -194,6 +194,28 @@ export function nextCronRun(schedule: string, from: Date, timezone?: string): Da
 }
 
 /**
+ * Server-side, per-project trigger kill-switch (`projects.metadata.triggers_paused`).
+ * When paused, the platform does NOT auto-run any of the project's triggers —
+ * the cron sweep skips it and inbound webhooks are ignored — even though each
+ * trigger is still `enabled` in the repo. This is how you stop ONE repo
+ * deployed to TWO independent control planes (e.g. dev.kortix.com + kortix.com,
+ * separate DBs/schedulers with no cross-platform dedup) from double-firing every
+ * cron: pause it on the deployment you don't want firing. A manual
+ * `…/triggers/:slug/fire` is an explicit action and still runs. Toggle via
+ * `PATCH /:projectId/triggers/activation`.
+ */
+export function triggersPausedForProject(metadata: unknown): boolean {
+  return isPlainObject(metadata) && (metadata as Record<string, unknown>).triggers_paused === true;
+}
+
+export function withTriggersPaused(metadata: unknown, paused: boolean): Record<string, unknown> {
+  const base = isPlainObject(metadata) ? { ...(metadata as Record<string, unknown>) } : {};
+  if (paused) base.triggers_paused = true;
+  else delete base.triggers_paused;
+  return base;
+}
+
+/**
  * Walks every active project's git repo for `.opencode/triggers/*.md` and
  * fires due cron triggers. Triggers are 100% file-defined now (kortix.toml);
  * the old DB-backed trigger tables have been removed.
@@ -527,6 +549,11 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
   const projectsForSweep = await selectActiveProjects();
 
   for (const project of projectsForSweep) {
+    // Server-side per-project kill-switch — skip the whole project (no manifest
+    // read, no session spin) when its triggers are paused, so a repo deployed
+    // to two control planes only fires on the un-paused one. See
+    // triggersPausedForProject.
+    if (triggersPausedForProject(project.metadata)) continue;
     let specs: GitTriggerSpec[];
     try {
       const loaded = await loadProjectTriggers(await withProjectGitAuth(project));
@@ -707,6 +734,10 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
           ? buildPublicWebhookUrl(projectId, spec.slug)
           : null,
     })),
+    // Server-side activation state for this project's whole trigger set. When
+    // true, the platform won't auto-run any of them (cron sweep skips, webhooks
+    // ignored), regardless of each trigger's own `enabled`.
+    triggers_paused: triggersPausedForProject(project.metadata),
     errors,
   };
 }
