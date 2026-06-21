@@ -19,7 +19,7 @@ describe('buildRuntimeArtifactFingerprint', () => {
         artifacts: [
           { label: 'kortix-agent', path: join(root, 'agent') },
           { label: 'kortix-entrypoint', path: join(root, 'entrypoint') },
-          { label: 'kortix-agent-cli', path: join(root, 'cli') },
+          { label: 'kortix-slack-cli', path: join(root, 'cli') },
         ],
       };
 
@@ -77,7 +77,7 @@ describe('buildRuntimeArtifactFingerprint', () => {
 
       const artifacts = [
         { label: 'kortix-agent', path: join(root, 'agent') },
-        { label: 'kortix-agent-cli', path: join(root, 'cli') },
+        { label: 'kortix-slack-cli', path: join(root, 'cli') },
       ];
 
       const before = await buildRuntimeArtifactFingerprint({

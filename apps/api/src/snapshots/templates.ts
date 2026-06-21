@@ -39,8 +39,8 @@ const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src')
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
+const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Source of the `kortix` CLI binary baked into every sandbox. We fingerprint
@@ -701,7 +701,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
       { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
       { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
-      { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
+      { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
       { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
       { label: 'kortix-cli-src', path: CLI_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
       { label: 'kortix-cli-pkg', path: CLI_PKG_JSON },
