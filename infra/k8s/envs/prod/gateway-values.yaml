@@ -5,7 +5,7 @@
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
 image:
-  tag: "0.9.71"
+  tag: "0.9.72"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
@@ -25,6 +25,6 @@ resources:
 ingress:
   enabled: true
   host: gateway.kortix.com
-  # ACM cert for gateway.kortix.com (prod-eks/cluster module.acm_gateway).
-  certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/440f9346-5271-40bd-aff2-47993f14748d"
+  # ACM cert for gateway.kortix.com in eu-west-2 (the prod-eks ALB region).
+  certificateArn: "arn:aws:acm:eu-west-2:935064898258:certificate/89358fa4-c7a1-4ea8-82b6-310e9118b41a"
   cloudflareProxied: true

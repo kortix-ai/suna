@@ -69,8 +69,9 @@ export function isManagedModelId(id: string): boolean {
 
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
 
-export const MANAGED_FLAGSHIP_MODEL_ID =
-  (MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]).id;
+export const MANAGED_FLAGSHIP_MODEL_ID = (
+  MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
+).id;
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',
