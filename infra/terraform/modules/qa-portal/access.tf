@@ -35,7 +35,7 @@ resource "cloudflare_zero_trust_access_application" "qa" {
 }
 
 resource "cloudflare_zero_trust_access_policy" "qa_allow" {
-  count          = var.enable_access ? 1 : 0
+  count          = var.enable_access && var.create_access_policy ? 1 : 0
   application_id = cloudflare_zero_trust_access_application.qa[0].id
   account_id     = var.cloudflare_account_id
   name           = "Allow Kortix team"
