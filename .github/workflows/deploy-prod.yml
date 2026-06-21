@@ -217,6 +217,14 @@ jobs:
     name: Publish @kortix/executor-sdk to npm
     needs: version
     runs-on: ubuntu-latest
+    # Trusted Publishing (OIDC): the job mints a short-lived credential at publish
+    # time — no long-lived npm token to store or rotate. Requires a one-time
+    # config on npmjs.com (package → Settings → Trusted Publisher → this repo +
+    # this workflow). NPM_TOKEN stays as a fallback until TP is verified, then it
+    # (and the env line below) can be deleted.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -236,15 +244,22 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Build + publish (version-locked, idempotent)
+      - name: Build + publish (Trusted Publishing via OIDC; token fallback)
         working-directory: packages/executor-sdk
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          # Fallback only. Once Trusted Publishing is verified, delete the
+          # NPM_TOKEN secret AND this line — OIDC needs no stored secret.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::warning::NPM_TOKEN not set — skipping @kortix/executor-sdk publish. Add the secret to enable npm releases."
+          # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.
+          npm install -g npm@latest
+          echo "npm $(npm --version)"
+          # Publish if EITHER auth path is available: OIDC (id-token granted →
+          # ACTIONS_ID_TOKEN_REQUEST_URL is set) OR a fallback token.
+          if [ -z "${NODE_AUTH_TOKEN:-}" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::warning::No npm auth (no OIDC, no NPM_TOKEN) — skipping publish."
             exit 0
           fi
           # Lock the SDK version to the platform release version, then build dist/.
@@ -256,6 +271,8 @@ jobs:
             echo "@kortix/executor-sdk@$VERSION already on npm — skipping (idempotent re-run)."
             exit 0
           fi
+          # With TP configured + OIDC available, npm publishes via OIDC (+provenance)
+          # and ignores the token; otherwise it falls back to NODE_AUTH_TOKEN.
           npm publish
           echo "Published @kortix/executor-sdk@$VERSION ✅"
 
