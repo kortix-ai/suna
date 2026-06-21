@@ -116,9 +116,11 @@ jobs:
         run: make lint typecheck unit integration contract api-coverage
 
       - name: Live API checks
+        timeout-minutes: 45
         run: make smoke api
 
       - name: Browser regression
+        timeout-minutes: 30
         run: |
           make e2e a11y
           # Visual is advisory: it snapshots the live target with no deterministic
@@ -127,9 +129,11 @@ jobs:
           make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
 
       - name: Migration, infra, security, pentest, and mutation
+        timeout-minutes: 60
         run: make migration infra security pentest mutation
 
       - name: Performance and DAST
+        timeout-minutes: 30
         run: make performance security-dast
 
       - name: Quality gates
