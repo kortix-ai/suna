@@ -34,6 +34,17 @@ function jsonProxyError(body: Record<string, unknown>, status: number): Response
   });
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : String(error || fallback);
+}
+
+function isRetryableEnvSyncFailure(message: string): boolean {
+  return (
+    /\benv sync failed: (502|503|504)\b/i.test(message) ||
+    /\b(operation timed out|timeout|aborterror)\b/i.test(message)
+  );
+}
+
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
 function stripFrameAncestors(csp: string): string | null {
@@ -343,9 +354,17 @@ export async function forwardToSandbox(
             previewToken,
           });
         } catch (err) {
-          throw new HTTPException(502, {
-            message: (err as Error).message || 'project env sync failed',
-          });
+          const message = errorMessage(err, 'project env sync failed');
+          if (isRetryableEnvSyncFailure(message)) {
+            // Treat daemon/preview-transient env-sync failures like any other
+            // sandbox-port reachability miss: retry/wake in the outer loop, then
+            // return the friendly port-unreachable response if the sandbox never
+            // recovers. Throwing HTTPException here bypassed that retry path and
+            // turned expected 502/timeouts from Daytona into Better Stack errors.
+            throw new Error(message);
+          }
+          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
+          return jsonProxyError({ error: message }, 502);
         }
       }
 
