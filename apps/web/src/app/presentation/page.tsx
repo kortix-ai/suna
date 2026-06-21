@@ -6,8 +6,11 @@
  */
 
 import { Deck } from './deck';
-import { SLIDES } from './slides-eng';
+import { useSlides } from './slides-eng';
 
 export default function PresentationPage() {
-  return <Deck slides={SLIDES} altDeck={{ href: '/presentation/platform', label: 'Product deck' }} />;
+  const slides = useSlides();
+  return (
+    <Deck slides={slides} altDeck={{ href: '/presentation/platform', label: 'Product deck' }} />
+  );
 }

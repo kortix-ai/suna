@@ -1,6 +1,7 @@
 'use client';
 
 import { MessageSquare } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { AssistantTurn, UserBubble } from '../chat/chat-turn';
 import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';
 import type { DemoConversation } from '../chat/use-demo-conversation';
@@ -12,6 +13,7 @@ export function ChatPage({
   convo: DemoConversation;
   onSkillClick?: (name: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const sessionName = convo.scenario?.sessionName ?? 'new-session';
   const busy = convo.phase === 'thinking' || convo.phase === 'streaming';
   const others = HOME_PROMPT_MESSAGES.filter((p) => p !== convo.userText).slice(0, 3);
@@ -20,7 +22,10 @@ export function ChatPage({
     <div className="flex h-full flex-col">
       <div className="text-muted-foreground mb-4 flex items-center gap-2 text-xs tracking-wide">
         <MessageSquare className="size-3.5" />
-        sessions / {sessionName}
+        {tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesChatPageJsxTextSessionsa01a2571',
+        )}
+        {sessionName}
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto">
@@ -29,7 +34,11 @@ export function ChatPage({
 
         {convo.phase === 'done' && others.length > 0 && (
           <div className="pt-2">
-            <div className="text-muted-foreground/70 mb-1.5 text-xs">Try another</div>
+            <div className="text-muted-foreground/70 mb-1.5 text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesChatPageJsxTextTry70dc3164',
+              )}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {others.map((p) => (
                 <button

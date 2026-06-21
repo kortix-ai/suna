@@ -20,7 +20,6 @@ import { useTranslations } from 'next-intl';
  * `createProjectTrigger` / `updateProjectTrigger` / `deleteProjectTrigger`.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -46,7 +45,10 @@ import {
   Webhook,
   Zap,
 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,7 +59,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -67,8 +68,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -86,15 +92,7 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { SectionCard } from '@/components/ui/section-card';
-import { List, ListRow } from '@/components/ui/list';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
-import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import { getEnv } from '@/lib/env-config';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import {
   createProjectTrigger,
   deleteProjectTrigger,
@@ -104,6 +102,8 @@ import {
   upsertProjectSecret,
   type ProjectTrigger,
 } from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -116,12 +116,12 @@ interface CronPreset {
 }
 
 const CRON_PRESETS: readonly CronPreset[] = [
-  { id: '5m',    label: 'Every 5 minutes',   hint: 'Frequent polling',         expr: '0 */5 * * * *' },
-  { id: '15m',   label: 'Every 15 minutes',  hint: 'Modest polling',           expr: '0 */15 * * * *' },
-  { id: '1h',    label: 'Hourly',            hint: 'At the top of each hour',  expr: '0 0 * * * *' },
-  { id: 'daily', label: 'Daily at 09:00',    hint: 'Once a day',               expr: '0 0 9 * * *' },
-  { id: 'wkdy',  label: 'Weekdays at 09:00', hint: 'Mon–Fri morning',          expr: '0 0 9 * * 1-5' },
-  { id: 'wkly',  label: 'Mondays at 09:00',  hint: 'Once a week',              expr: '0 0 9 * * 1' },
+  { id: '5m', label: 'Every 5 minutes', hint: 'Frequent polling', expr: '0 */5 * * * *' },
+  { id: '15m', label: 'Every 15 minutes', hint: 'Modest polling', expr: '0 */15 * * * *' },
+  { id: '1h', label: 'Hourly', hint: 'At the top of each hour', expr: '0 0 * * * *' },
+  { id: 'daily', label: 'Daily at 09:00', hint: 'Once a day', expr: '0 0 9 * * *' },
+  { id: 'wkdy', label: 'Weekdays at 09:00', hint: 'Mon–Fri morning', expr: '0 0 9 * * 1-5' },
+  { id: 'wkly', label: 'Mondays at 09:00', hint: 'Once a week', expr: '0 0 9 * * 1' },
 ];
 
 function describeCron(expr: string): string {
@@ -158,7 +158,10 @@ function describeRunAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'Runs once';
   return `Runs once on ${d.toLocaleString(undefined, {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })}`;
 }
 
@@ -259,11 +262,10 @@ function CronTriggerDescription() {
 
   return (
     <>
-      {tHardcodedUi.raw('componentsProjectsTriggersView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires')}{' '}
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-        KORTIX_INITIAL_PROMPT
-      </code>
-      .
+      {tHardcodedUi.raw(
+        'componentsProjectsTriggersView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
+      )}{' '}
+      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">KORTIX_INITIAL_PROMPT</code>.
     </>
   );
 }
@@ -273,11 +275,10 @@ function WebhookTriggerDescription() {
 
   return (
     <>
-      {tHardcodedUi.raw('componentsProjectsTriggersView.line272JsxTextSignedHttpEntryPointsWhenARequestHits')}{' '}
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-        KORTIX_INITIAL_PROMPT
-      </code>
-      .
+      {tHardcodedUi.raw(
+        'componentsProjectsTriggersView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
+      )}{' '}
+      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">KORTIX_INITIAL_PROMPT</code>.
     </>
   );
 }
@@ -305,18 +306,12 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
   },
 };
 
-export function TriggersView({
-  projectId,
-  type,
-}: {
-  projectId: string;
-  type: TriggerKind;
-}) {
+export function TriggersView({ projectId, type }: { projectId: string; type: TriggerKind }) {
   const meta = TYPE_META[type];
   const Icon = meta.icon;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Icon} title={meta.pageTitle} />
       <ProjectTriggersBody projectId={projectId} type={type} meta={meta} />
     </div>
@@ -348,8 +343,7 @@ function ProjectTriggersBody({
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const isForbidden =
-    triggersQuery.isError &&
-    /403|forbidden/i.test((triggersQuery.error as Error)?.message ?? '');
+    triggersQuery.isError && /403|forbidden/i.test((triggersQuery.error as Error)?.message ?? '');
 
   const invalidate = useCallback(
     () => queryClient.invalidateQueries({ queryKey }),
@@ -368,12 +362,8 @@ function ProjectTriggersBody({
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">
-            {meta.pageTitle}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {meta.description}
-          </p>
+          <h2 className="text-foreground text-base font-semibold">{meta.pageTitle}</h2>
+          <p className="text-muted-foreground text-xs">{meta.description}</p>
         </header>
 
         {triggersQuery.isLoading ? (
@@ -437,7 +427,11 @@ function ProjectTriggersBody({
         {parseErrors.length > 0 && (
           <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {parseErrors.length}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{' '}{parseErrors.length === 1 ? '' : 's'}{tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}</p>
+              {parseErrors.length}
+              {tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{' '}
+              {parseErrors.length === 1 ? '' : 's'}
+              {tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}
+            </p>
             <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
               {parseErrors.map((err) => (
                 <li key={err.slug}>
@@ -490,13 +484,7 @@ function ProjectTriggersBody({
 
 /* ─── Row ───────────────────────────────────────────────────────────────── */
 
-function TriggerRow({
-  trigger,
-  onSelect,
-}: {
-  trigger: ProjectTrigger;
-  onSelect: () => void;
-}) {
+function TriggerRow({ trigger, onSelect }: { trigger: ProjectTrigger; onSelect: () => void }) {
   const isCron = trigger.type === 'cron';
   const name = getTriggerName(trigger);
   const subtitle = getTriggerSubtitle(trigger);
@@ -517,7 +505,7 @@ function TriggerRow({
           <span className="font-mono">{trigger.slug.slice(0, 8)}</span>
           <span>{subtitle}</span>
           <span>{lastFired ? `Fired ${relativeTime(lastFired)}` : 'Never fired'}</span>
-          <span className="uppercase tracking-wide">{trigger.agent}</span>
+          <span className="tracking-wide uppercase">{trigger.agent}</span>
         </InlineMeta>
       }
     />
@@ -546,10 +534,7 @@ function TriggerDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 sm:max-w-[520px] sm:px-0"
-      >
+      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-[520px] sm:px-0">
         <SheetHeader className="space-y-1 px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
             <EntityAvatar icon={isCron ? Timer : Webhook} size="sm" />
@@ -560,7 +545,7 @@ function TriggerDetailSheet({
               {trigger.enabled ? 'Active' : 'Paused'}
             </Badge>
           </div>
-          <SheetDescription className="font-mono text-xs text-muted-foreground/70">
+          <SheetDescription className="text-muted-foreground/70 font-mono text-xs">
             {trigger.slug}
           </SheetDescription>
         </SheetHeader>
@@ -615,8 +600,7 @@ function DetailBody({
   });
 
   const toggle = useMutation({
-    mutationFn: (enabled: boolean) =>
-      updateProjectTrigger(projectId, trigger.slug, { enabled }),
+    mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger.slug, { enabled }),
     onSuccess: (_data, enabled) => {
       toast.success(enabled ? 'Trigger enabled' : 'Trigger paused');
       onMutated();
@@ -638,7 +622,9 @@ function DetailBody({
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Play className="h-3.5 w-3.5" />
-          )}{tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}</Button>
+          )}
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}
+        </Button>
         <Button
           variant="outline"
           size="sm"
@@ -659,7 +645,7 @@ function DetailBody({
         <Button
           variant="ghost"
           size="sm"
-          className="gap-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground gap-1.5"
           onClick={onDelete}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -668,18 +654,10 @@ function DetailBody({
       </div>
 
       {/* Type-specific section */}
-      {isCron ? (
-        <CronSection trigger={trigger} />
-      ) : (
-        <WebhookSection trigger={trigger} />
-      )}
+      {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
 
       {/* Prompt template — inline editable */}
-      <PromptTemplateSection
-        projectId={projectId}
-        trigger={trigger}
-        onMutated={onMutated}
-      />
+      <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
 
       {/* Meta */}
       <MetaSection trigger={trigger} />
@@ -700,8 +678,8 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
-      <span className="flex-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
+      <Icon className="text-muted-foreground/60 h-3.5 w-3.5" />
+      <span className="text-muted-foreground/70 flex-1 text-xs font-medium tracking-wide uppercase">
         {title}
       </span>
       {action}
@@ -711,18 +689,22 @@ function SectionHeader({
 
 function CronSection({ trigger }: { trigger: ProjectTrigger }) {
   // One-off schedules carry an absolute instant instead of a cron expression.
+
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   if (trigger.run_at) {
     const d = new Date(trigger.run_at);
     const valid = !Number.isNaN(d.getTime());
     return (
       <section className="space-y-2">
         <SectionHeader title="Schedule" icon={Timer} />
-        <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
-          <div className="text-sm font-medium text-foreground">
+        <div className="border-border/70 bg-muted/20 space-y-1.5 rounded-2xl border px-4 py-3">
+          <div className="text-foreground text-sm font-medium">
             {valid ? describeRunAt(trigger.run_at) : 'Runs once'}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>One-off · fires a single time</span>
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <span>
+              {tI18nHardcoded.raw('autoComponentsProjectsTriggersViewJsxTextOneOffFiresAacd67796')}
+            </span>
           </div>
         </div>
       </section>
@@ -735,10 +717,10 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
   return (
     <section className="space-y-2">
       <SectionHeader title="Schedule" icon={Timer} />
-      <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
-        <div className="text-sm font-medium text-foreground">{describeCron(expr)}</div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <code className="rounded bg-background px-1.5 py-0.5 font-mono">{expr}</code>
+      <div className="border-border/70 bg-muted/20 space-y-1.5 rounded-2xl border px-4 py-3">
+        <div className="text-foreground text-sm font-medium">{describeCron(expr)}</div>
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <code className="bg-background rounded px-1.5 py-0.5 font-mono">{expr}</code>
           <span className="text-muted-foreground/40">·</span>
           <span>{tz}</span>
         </div>
@@ -758,11 +740,9 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
     <section className="space-y-3">
       <div className="space-y-2">
         <SectionHeader title="Endpoint" icon={Webhook} />
-        <div className="rounded-2xl border border-border/70 bg-muted/20">
+        <div className="border-border/70 bg-muted/20 rounded-2xl border">
           <div className="flex items-center gap-2 px-3 py-2">
-            <code className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
-              {url}
-            </code>
+            <code className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">{url}</code>
             <Button
               variant="ghost"
               size="sm"
@@ -774,14 +754,22 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           </div>
           <Separator />
-          <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-2 px-3 py-1.5 text-xs">
             {trigger.secret_env ? (
               <>
-                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />{tHardcodedUi.raw('componentsProjectsTriggersView.line744JsxTextSignedViaProjectSecret')}<code className="ml-1 font-mono">{trigger.secret_env}</code>
+                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                {tHardcodedUi.raw(
+                  'componentsProjectsTriggersView.line744JsxTextSignedViaProjectSecret',
+                )}
+                <code className="ml-1 font-mono">{trigger.secret_env}</code>
               </>
             ) : (
               <>
-                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />{tHardcodedUi.raw('componentsProjectsTriggersView.line749JsxTextNoSigningSecretConfigured')}</>
+                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                {tHardcodedUi.raw(
+                  'componentsProjectsTriggersView.line749JsxTextNoSigningSecretConfigured',
+                )}
+              </>
             )}
           </div>
         </div>
@@ -789,7 +777,9 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
 
       <div className="space-y-2">
         <SectionHeader
-          title={tHardcodedUi.raw('componentsProjectsTriggersView.line758JsxAttrTitleSampleRequest')}
+          title={tHardcodedUi.raw(
+            'componentsProjectsTriggersView.line758JsxAttrTitleSampleRequest',
+          )}
           icon={Terminal}
           action={
             <Button
@@ -803,12 +793,22 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           }
         />
-        <pre className="max-h-[200px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-snug text-foreground">
+        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[200px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-snug">
           {curl}
         </pre>
-        <p className="text-xs text-muted-foreground/70">
-          Replace <code className="font-mono">{tHardcodedUi.raw('componentsProjectsTriggersView.line776JsxTextBody')}</code> and{' '}
-          <code className="font-mono">{tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextSecret')}</code>{tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextTheSignatureMustCoverTheRawRequestBody')}</p>
+        <p className="text-muted-foreground/70 text-xs">
+          Replace{' '}
+          <code className="font-mono">
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line776JsxTextBody')}
+          </code>{' '}
+          and{' '}
+          <code className="font-mono">
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextSecret')}
+          </code>
+          {tHardcodedUi.raw(
+            'componentsProjectsTriggersView.line777JsxTextTheSignatureMustCoverTheRawRequestBody',
+          )}
+        </p>
       </div>
     </section>
   );
@@ -834,8 +834,7 @@ function PromptTemplateSection({
   }, [trigger.prompt_template, editing]);
 
   const save = useMutation({
-    mutationFn: () =>
-      updateProjectTrigger(projectId, trigger.slug, { prompt_template: draft }),
+    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { prompt_template: draft }),
     onSuccess: () => {
       toast.success('Prompt saved');
       setEditing(false);
@@ -869,11 +868,7 @@ function PromptTemplateSection({
                 disabled={save.isPending || !draft.trim() || draft === trigger.prompt_template}
                 onClick={() => save.mutate()}
               >
-                {save.isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  'Save'
-                )}
+                {save.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
               </Button>
             </div>
           ) : (
@@ -898,11 +893,11 @@ function PromptTemplateSection({
           autoFocus
         />
       ) : (
-        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground">
+        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[200px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {trigger.prompt_template}
         </pre>
       )}
-      <p className="text-xs text-muted-foreground/70">
+      <p className="text-muted-foreground/70 text-xs">
         Placeholders: <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
         <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
         <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
@@ -917,22 +912,25 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
     ['Slug', trigger.slug],
     ['Agent', trigger.agent],
     ['Source file', trigger.path],
-    ['Last fired', trigger.last_fired_at ? new Date(trigger.last_fired_at).toLocaleString() : 'Never'],
+    [
+      'Last fired',
+      trigger.last_fired_at ? new Date(trigger.last_fired_at).toLocaleString() : 'Never',
+    ],
   ];
   return (
     <section className="space-y-2">
       <SectionHeader title="Metadata" icon={AlertCircle} />
-      <dl className="rounded-2xl border border-border/40 bg-muted/10">
+      <dl className="border-border/40 bg-muted/10 rounded-2xl border">
         {rows.map(([label, value], i) => (
           <div
             key={label}
             className={cn(
               'flex items-center justify-between gap-3 px-3 py-2 text-xs',
-              i > 0 && 'border-t border-border/30',
+              i > 0 && 'border-border/30 border-t',
             )}
           >
             <dt className="text-muted-foreground/70">{label}</dt>
-            <dd className="truncate font-mono text-foreground">{value}</dd>
+            <dd className="text-foreground truncate font-mono">{value}</dd>
           </div>
         ))}
       </dl>
@@ -944,9 +942,16 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
 
 const TIMEZONES = [
   'UTC',
-  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'Europe/London', 'Europe/Berlin', 'Europe/Paris',
-  'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Asia/Tokyo',
+  'Asia/Shanghai',
+  'Asia/Kolkata',
   'Australia/Sydney',
 ];
 
@@ -1016,7 +1021,8 @@ function CreateTriggerDialog({
           throw new Error('Cron expression is required');
         }
       }
-      if (sourceType === 'webhook' && !webhookSecret.trim()) throw new Error('Webhook secret is required');
+      if (sourceType === 'webhook' && !webhookSecret.trim())
+        throw new Error('Webhook secret is required');
       if (!trimmedPrompt) throw new Error('Prompt is required');
 
       const slug = slugifyName(trimmedName);
@@ -1064,14 +1070,16 @@ function CreateTriggerDialog({
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to create'),
   });
 
-function slugifyName(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 128) || 'trigger';
-}
+  function slugifyName(input: string): string {
+    return (
+      input
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .replace(/-{2,}/g, '-')
+        .slice(0, 128) || 'trigger'
+    );
+  }
 
   const isValid = (): boolean => {
     if (!name.trim()) return false;
@@ -1083,11 +1091,12 @@ function slugifyName(input: string): string {
 
   // Dialog title + per-step description, type-aware. The typed flow
   // (`forcedType` set) is a 2-step wizard, so descriptions are tighter.
-  const dialogTitle = forcedType === 'cron'
-    ? 'New schedule'
-    : forcedType === 'webhook'
-      ? 'New webhook'
-      : 'Create trigger';
+  const dialogTitle =
+    forcedType === 'cron'
+      ? 'New schedule'
+      : forcedType === 'webhook'
+        ? 'New webhook'
+        : 'Create trigger';
   const dialogIcon = forcedType === 'cron' ? Timer : forcedType === 'webhook' ? Webhook : Calendar;
   const DialogIcon = dialogIcon;
   const stepDescription = (() => {
@@ -1099,21 +1108,22 @@ function slugifyName(input: string): string {
     if (step === 'action') return 'Choose what happens when the trigger fires.';
     return 'Configure the details.';
   })();
-  const createButtonLabel = forcedType === 'cron'
-    ? 'Create Schedule'
-    : forcedType === 'webhook'
-      ? 'Create Webhook'
-      : 'Create Trigger';
+  const createButtonLabel =
+    forcedType === 'cron'
+      ? 'Create Schedule'
+      : forcedType === 'webhook'
+        ? 'Create Webhook'
+        : 'Create Trigger';
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-[540px]">
         <DialogHeader className="shrink-0 space-y-0.5">
           <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
-            <DialogIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <DialogIcon className="text-muted-foreground h-3.5 w-3.5" />
             {dialogTitle}
           </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">
+          <DialogDescription className="text-muted-foreground/60 text-xs">
             {stepDescription}
           </DialogDescription>
         </DialogHeader>
@@ -1124,19 +1134,27 @@ function slugifyName(input: string): string {
             <div className="space-y-4">
               {!forcedType && (
                 <div className="space-y-1.5">
-                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsProjectsTriggersView.line1079JsxTextTriggerSource')}</div>
+                  <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
+                    {tHardcodedUi.raw(
+                      'componentsProjectsTriggersView.line1079JsxTextTriggerSource',
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <SourceCard
                       icon={Timer}
                       title="Cron"
-                      description={tHardcodedUi.raw('componentsProjectsTriggersView.line1085JsxAttrDescriptionTimeBasedSchedule')}
+                      description={tHardcodedUi.raw(
+                        'componentsProjectsTriggersView.line1085JsxAttrDescriptionTimeBasedSchedule',
+                      )}
                       selected={sourceType === 'cron'}
                       onClick={() => setSourceType('cron')}
                     />
                     <SourceCard
                       icon={Webhook}
                       title="Webhook"
-                      description={tHardcodedUi.raw('componentsProjectsTriggersView.line1092JsxAttrDescriptionFiresOnHttpRequest')}
+                      description={tHardcodedUi.raw(
+                        'componentsProjectsTriggersView.line1092JsxAttrDescriptionFiresOnHttpRequest',
+                      )}
                       selected={sourceType === 'webhook'}
                       onClick={() => setSourceType('webhook')}
                     />
@@ -1146,7 +1164,7 @@ function slugifyName(input: string): string {
 
               {sourceType === 'cron' && (
                 <div className="space-y-1.5 pt-1">
-                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
                     Schedule
                   </div>
                   <ScheduleBuilder
@@ -1160,10 +1178,7 @@ function slugifyName(input: string): string {
               )}
 
               {sourceType === 'webhook' && (
-                <WebhookSourceConfig
-                  secret={webhookSecret}
-                  onSecretChange={setWebhookSecret}
-                />
+                <WebhookSourceConfig secret={webhookSecret} onSecretChange={setWebhookSecret} />
               )}
             </div>
           )}
@@ -1171,17 +1186,27 @@ function slugifyName(input: string): string {
           {/* ── Step 2: Action ───────────────────────────────────── */}
           {step === 'action' && (
             <div className="space-y-1.5">
-              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsProjectsTriggersView.line1122JsxTextActionType')}</div>
+              <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
+                {tHardcodedUi.raw('componentsProjectsTriggersView.line1122JsxTextActionType')}
+              </div>
               <div className="grid grid-cols-1 gap-2">
                 <SourceCard
                   icon={MessageSquare}
                   title="Prompt"
-                  description={tHardcodedUi.raw('componentsProjectsTriggersView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo')}
+                  description={tHardcodedUi.raw(
+                    'componentsProjectsTriggersView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo',
+                  )}
                   selected
-                  onClick={() => {/* prompt is the only cloud action type */}}
+                  onClick={() => {
+                    /* prompt is the only cloud action type */
+                  }}
                 />
               </div>
-              <p className="px-1 pt-2 text-xs text-muted-foreground/70">{tHardcodedUi.raw('componentsProjectsTriggersView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn')}</p>
+              <p className="text-muted-foreground/70 px-1 pt-2 text-xs">
+                {tHardcodedUi.raw(
+                  'componentsProjectsTriggersView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn',
+                )}
+              </p>
             </div>
           )}
 
@@ -1195,7 +1220,9 @@ function slugifyName(input: string): string {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder={tHardcodedUi.raw('componentsProjectsTriggersView.line1151JsxAttrPlaceholderDailyStandupDigest')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProjectsTriggersView.line1151JsxAttrPlaceholderDailyStandupDigest',
+                  )}
                   maxLength={64}
                 />
               </div>
@@ -1206,10 +1233,15 @@ function slugifyName(input: string): string {
                   id="trigger-prompt"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder={tHardcodedUi.raw('componentsProjectsTriggersView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProjectsTriggersView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
+                  )}
                   rows={4}
                 />
-                <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1166JsxTextMustachePlaceholdersSupported')}{' '}
+                <p className="text-muted-foreground text-xs">
+                  {tHardcodedUi.raw(
+                    'componentsProjectsTriggersView.line1166JsxTextMustachePlaceholdersSupported',
+                  )}{' '}
                   <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
                   <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
                   <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
@@ -1230,7 +1262,7 @@ function slugifyName(input: string): string {
               </div>
 
               {error && (
-                <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -1263,7 +1295,7 @@ function slugifyName(input: string): string {
             {step === 'source' && sourceType === 'cron' && !runAt && (
               <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger
-                  className="h-8 w-auto cursor-pointer gap-1.5 rounded-full border-border/50 bg-transparent px-3 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                  className="border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full bg-transparent px-3 text-sm"
                   title="Timezone"
                 >
                   <Clock className="h-3.5 w-3.5" />
@@ -1299,11 +1331,7 @@ function slugifyName(input: string): string {
               </Button>
             )}
             {step === 'action' && (
-              <Button
-                size="sm"
-                onClick={() => setStep('config')}
-                className="cursor-pointer"
-              >
+              <Button size="sm" onClick={() => setStep('config')} className="cursor-pointer">
                 Next <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
             )}
@@ -1349,10 +1377,10 @@ function SourceCard({
           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
       )}
     >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <Icon className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground/60">{description}</div>
+        <div className="text-foreground text-sm font-medium">{title}</div>
+        <div className="text-muted-foreground/60 mt-0.5 text-xs">{description}</div>
       </div>
     </button>
   );
@@ -1369,7 +1397,9 @@ function WebhookSourceConfig({
   return (
     <div className="space-y-3 pt-2">
       <div className="space-y-2">
-        <Label>{tHardcodedUi.raw('componentsProjectsTriggersView.line1325JsxTextSigningSecret')}</Label>
+        <Label>
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1325JsxTextSigningSecret')}
+        </Label>
         <div className="flex gap-2">
           <Input
             value={secret}
@@ -1391,15 +1421,26 @@ function WebhookSourceConfig({
         </div>
       </div>
 
-      <div className="space-y-1.5 rounded-2xl border bg-muted/50 p-3">
-        <div className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1349JsxTextExternalUrl')}</div>
-        <code className="block break-all font-mono text-xs text-foreground">
+      <div className="bg-muted/50 space-y-1.5 rounded-2xl border p-3">
+        <div className="text-muted-foreground text-xs font-medium">
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1349JsxTextExternalUrl')}
+        </div>
+        <code className="text-foreground block font-mono text-xs break-all">
           {buildWebhookUrl('<trigger-id>')}
         </code>
-        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost')}{' '}
-          <code className="font-mono text-xs">X-Kortix-Signature</code>{tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
-          <code className="font-mono text-xs">{tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}</code>
-          {' '}{tHardcodedUi.raw('componentsProjectsTriggersView.line1360JsxTextComputedOverTheRawBodyWithTheSecret')}</p>
+        <p className="text-muted-foreground text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
+          )}{' '}
+          <code className="font-mono text-xs">X-Kortix-Signature</code>
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
+          <code className="font-mono text-xs">
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}
+          </code>{' '}
+          {tHardcodedUi.raw(
+            'componentsProjectsTriggersView.line1360JsxTextComputedOverTheRawBodyWithTheSecret',
+          )}
+        </p>
       </div>
     </div>
   );
@@ -1420,8 +1461,7 @@ function DeleteDialog({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const remove = useMutation({
-    mutationFn: (trigger: ProjectTrigger) =>
-      deleteProjectTrigger(projectId, trigger.slug),
+    mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
     onSuccess: () => {
       toast.success('Trigger deleted');
       onDeleted();
@@ -1433,14 +1473,17 @@ function DeleteDialog({
     <AlertDialog open={!!target} onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{tHardcodedUi.raw('componentsProjectsTriggersView.line1394JsxTextDeleteTrigger')}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line1394JsxTextDeleteTrigger')}
+          </AlertDialogTitle>
           <AlertDialogDescription>
             {target && (
               <>
-                Remove{' '}
-                <span className="font-medium text-foreground">
-                  {getTriggerName(target)}
-                </span>{' '}{tHardcodedUi.raw('componentsProjectsTriggersView.line1402JsxTextAndStopAnyFutureRunsFromItPast')}</>
+                Remove <span className="text-foreground font-medium">{getTriggerName(target)}</span>{' '}
+                {tHardcodedUi.raw(
+                  'componentsProjectsTriggersView.line1402JsxTextAndStopAnyFutureRunsFromItPast',
+                )}
+              </>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -1473,11 +1516,17 @@ function TriggersSkeleton() {
 function ForbiddenNotice() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
-      <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+    <div className="border-border/70 bg-muted/20 text-foreground flex items-start gap-3 rounded-2xl border px-4 py-3">
+      <ShieldAlert className="text-muted-foreground mt-0.5 h-4 w-4 flex-shrink-0" />
       <div className="space-y-0.5 text-sm">
-        <p className="font-medium">{tHardcodedUi.raw('componentsProjectsTriggersView.line1438JsxTextAccessRequired')}</p>
-        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsTriggersView.line1440JsxTextYouDonAposTHavePermissionToView')}</p>
+        <p className="font-medium">
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1438JsxTextAccessRequired')}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsTriggersView.line1440JsxTextYouDonAposTHavePermissionToView',
+          )}
+        </p>
       </div>
     </div>
   );
@@ -1486,9 +1535,11 @@ function ForbiddenNotice() {
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-      <p className="text-sm font-medium text-destructive">{tHardcodedUi.raw('componentsProjectsTriggersView.line1450JsxTextFailedToLoadTriggers')}</p>
-      <p className="mt-1 text-xs text-destructive/80">{message}</p>
+    <div className="border-destructive/30 bg-destructive/5 rounded-2xl border px-4 py-3">
+      <p className="text-destructive text-sm font-medium">
+        {tHardcodedUi.raw('componentsProjectsTriggersView.line1450JsxTextFailedToLoadTriggers')}
+      </p>
+      <p className="text-destructive/80 mt-1 text-xs">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

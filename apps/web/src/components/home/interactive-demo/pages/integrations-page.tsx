@@ -2,11 +2,13 @@
 
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Blocks, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { CONNECTOR_TYPES, INTEGRATIONS } from '../data';
 import { BrandLogo, ConnectBadge } from '../primitives';
 
 export function IntegrationsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const list = INTEGRATIONS.filter(
@@ -19,7 +21,9 @@ export function IntegrationsPage() {
         <div className="min-w-0">
           <h3 className="text-foreground text-lg font-semibold tracking-tight">Integrations</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            3,000+ apps · connected once, shared securely across the org
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesIntegrationsPageJsxText36d607807',
+            )}
           </p>
         </div>
 
@@ -49,7 +53,9 @@ export function IntegrationsPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search apps…"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesIntegrationsPageJsxAttrPlaceholder6a77c4eb',
+              )}
               className="placeholder:text-muted-foreground/60 text-foreground w-full bg-transparent text-sm outline-none"
             />
             {q && (
@@ -76,7 +82,9 @@ export function IntegrationsPage() {
           </Badge>
         ))}
         <span className="text-muted-foreground ml-1 text-xs">
-          Pipedream, MCP, OpenAPI, GraphQL & raw HTTP — one Executor interface
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesIntegrationsPageJsxTextPipedreamf86d3760',
+          )}
         </span>
       </div>
 
@@ -95,7 +103,10 @@ export function IntegrationsPage() {
         </div>
       ) : (
         <div className="border-border/60 text-muted-foreground rounded-md border border-dashed py-8 text-center text-sm">
-          No featured app matches “{q}”.
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesIntegrationsPageJsxTextNob06fedb2',
+          )}
+          {q}”.
         </div>
       )}
 

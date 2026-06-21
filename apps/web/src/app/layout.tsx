@@ -202,25 +202,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                   }
                 }
                 
-                // Get language from localStorage, cookie, or default to 'en'
+                // Default analytics language to English. UI language changes only
+                // after an explicit profile settings update; browser storage and
+                // cookies must not infer language.
                 var lang = 'en';
-                try {
-                  // Check localStorage first
-                  var stored = localStorage.getItem('locale');
-                  if (stored) {
-                    lang = stored;
-                  } else {
-                    // Check cookie
-                    var cookies = document.cookie.split(';');
-                    for (var i = 0; i < cookies.length; i++) {
-                      var cookie = cookies[i].trim();
-                      if (cookie.indexOf('locale=') === 0) {
-                        lang = cookie.substring(7);
-                        break;
-                      }
-                    }
-                  }
-                } catch (e) {}
                 
                 var context = { master_group: 'General', content_group: 'Other', page_type: 'other', language: lang };
                 

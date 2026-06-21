@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -7,13 +8,14 @@ import { AddToProjectDialog } from '@/components/marketplace/add-to-project-dial
 import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
 import { MarketplaceDiscover } from '@/components/marketplace/marketplace-discover';
 import { MarketplaceItemDetail } from '@/components/marketplace/marketplace-item-detail';
-import { useAuth } from '@/features/providers/auth-provider';
-import { AppHeader } from '@/features/layout/app-header';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { AppHeader } from '@/features/layout/app-header';
+import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 
 export default function MarketplacePage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
@@ -55,14 +57,18 @@ export default function MarketplacePage() {
         <div className="mx-auto w-full max-w-5xl space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-lg font-semibold text-foreground">Marketplace</h1>
-              <p className="text-sm text-muted-foreground">
-                Browse skills across every source — one click adds them to a project&rsquo;s repo, live in
-                its next session.
+              <h1 className="text-foreground text-lg font-semibold">Marketplace</h1>
+              <p className="text-muted-foreground text-sm">
+                {tI18nHardcoded.raw(
+                  'autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d',
+                )}
               </p>
             </div>
             <FilterBar className="shrink-0">
-              <FilterBarItem data-state={tab === 'explore' ? 'active' : 'inactive'} onClick={() => setTab('explore')}>
+              <FilterBarItem
+                data-state={tab === 'explore' ? 'active' : 'inactive'}
+                onClick={() => setTab('explore')}
+              >
                 Explore
               </FilterBarItem>
               <FilterBarItem

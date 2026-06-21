@@ -1,14 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ChevronRight, GitBranch } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  FileContentRenderer,
-  FileSourceProvider,
-  type FileSource,
-} from '@/features/file-viewer';
+import { FileContentRenderer, FileSourceProvider, type FileSource } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/files/components/file-icon';
+import { cn } from '@/lib/utils';
+import { ChevronRight, GitBranch } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
 
 /* -------------------------------------------------------------------------- */
 /*  A real Kortix project, as plain files. This is the exact in-product file   */
@@ -227,15 +224,11 @@ const TREE: Node[] = [
           },
           {
             name: 'tools',
-            children: [
-              { name: 'lookup-order.ts', path: '.kortix/opencode/tools/lookup-order.ts' },
-            ],
+            children: [{ name: 'lookup-order.ts', path: '.kortix/opencode/tools/lookup-order.ts' }],
           },
           {
             name: 'memory',
-            children: [
-              { name: 'company.md', path: '.kortix/opencode/memory/company.md' },
-            ],
+            children: [{ name: 'company.md', path: '.kortix/opencode/memory/company.md' }],
           },
         ],
       },
@@ -314,7 +307,10 @@ function TreeRow({
       >
         {isDir ? (
           <ChevronRight
-            className={cn('size-3.5 shrink-0 text-muted-foreground/60 transition-transform', isOpen && 'rotate-90')}
+            className={cn(
+              'text-muted-foreground/60 size-3.5 shrink-0 transition-transform',
+              isOpen && 'rotate-90',
+            )}
           />
         ) : (
           <span className="w-3.5 shrink-0" />
@@ -322,7 +318,8 @@ function TreeRow({
         {getFileIcon(node.name, { isDirectory: isDir, isOpen, className: 'size-4 shrink-0' })}
         <span className="truncate">{node.name}</span>
       </button>
-      {isDir && isOpen &&
+      {isDir &&
+        isOpen &&
         node.children!.map((child) => (
           <TreeRow
             key={child.name}
@@ -342,6 +339,7 @@ function TreeRow({
 /* ── the browser ─────────────────────────────────────────────────────────── */
 
 export function RepoBrowser({ className }: { className?: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selected, setSelected] = useState(DEFAULT_FILE);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(ALL_DIRS));
 
@@ -359,28 +357,30 @@ export function RepoBrowser({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_30px_80px_-40px_rgba(0,0,0,0.5)]',
+        'border-border/70 bg-card overflow-hidden rounded-2xl border shadow-[0_30px_80px_-40px_rgba(0,0,0,0.5)]',
         className,
       )}
     >
       {/* window bar — the project, not a fake terminal */}
-      <div className="flex h-11 items-center gap-2.5 border-b border-border/60 bg-muted/30 px-4">
-        <span className="flex size-5 items-center justify-center rounded-md bg-foreground text-[10px] font-semibold text-background">
+      <div className="border-border/60 bg-muted/30 flex h-11 items-center gap-2.5 border-b px-4">
+        <span className="bg-foreground text-background flex size-5 items-center justify-center rounded-md text-[10px] font-semibold">
           A
         </span>
-        <span className="text-sm font-medium text-foreground">acme</span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-xs text-muted-foreground">
+        <span className="text-foreground text-sm font-medium">acme</span>
+        <span className="border-border/70 text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs">
           <GitBranch className="size-3" />
           main
         </span>
-        <span className="ml-auto hidden text-xs text-muted-foreground/70 sm:block">
-          your company, as a git repo
+        <span className="text-muted-foreground/70 ml-auto hidden text-xs sm:block">
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeDevelopersRepoBrowserJsxTextYourCompanyAse8329445',
+          )}
         </span>
       </div>
 
       <div className="grid h-[520px] grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[200px_minmax(0,1fr)] sm:grid-rows-1">
         {/* file tree */}
-        <div className="max-h-[150px] overflow-y-auto border-b border-border/60 bg-muted/[0.18] p-2 sm:max-h-none sm:border-b-0 sm:border-r">
+        <div className="border-border/60 bg-muted/[0.18] max-h-[150px] overflow-y-auto border-b p-2 sm:max-h-none sm:border-r sm:border-b-0">
           {TREE.map((node) => (
             <TreeRow
               key={node.name}
@@ -396,18 +396,20 @@ export function RepoBrowser({ className }: { className?: string }) {
 
         {/* viewer — the actual product FileContentRenderer */}
         <div className="flex min-w-0 flex-col">
-          <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-border/50 px-3">
+          <div className="border-border/50 flex h-9 shrink-0 items-center gap-1.5 border-b px-3">
             {getFileIcon(fileName, { className: 'size-3.5 shrink-0' })}
-            <div className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex min-w-0 items-center gap-1 truncate text-xs">
               {segments.map((seg, i) => (
                 <span key={i} className="flex items-center gap-1">
                   {i > 0 && <span className="text-muted-foreground/40">/</span>}
-                  <span className={cn('truncate', i === segments.length - 1 && 'text-foreground')}>{seg}</span>
+                  <span className={cn('truncate', i === segments.length - 1 && 'text-foreground')}>
+                    {seg}
+                  </span>
                 </span>
               ))}
             </div>
-            <span className="ml-auto shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-              read only
+            <span className="bg-muted text-muted-foreground ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] tracking-wider uppercase">
+              {tI18nHardcoded.raw('autoComponentsHomeDevelopersRepoBrowserJsxTextReadOnlyd13e142f')}
             </span>
           </div>
           <div className="min-h-0 flex-1">

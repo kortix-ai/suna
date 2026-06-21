@@ -1,27 +1,29 @@
 'use client';
 
-import React from 'react';
-import { useParams } from 'next/navigation';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { SecretIntakeForm } from '@/components/setup-links/secret-intake-form';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslations } from 'next-intl';
+import { useParams } from 'next/navigation';
 
 export default function SecretIntakePage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const params = useParams();
   const token = Array.isArray(params.token) ? params.token[0] : (params.token as string);
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-background px-4 py-10">
+    <div className="bg-background flex min-h-screen w-full items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
           <KortixLogo />
         </div>
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add a project secret</CardTitle>
+            <CardTitle className="text-base">
+              {tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextAddA71a8394a')}
+            </CardTitle>
             <CardDescription>
-              Your Kortix agent needs this to continue. Enter the value below — it’s encrypted
-              and the agent never sees it.
+              {tI18nHardcoded.raw('autoAppPublicSecretIntakeTokenPageJsxTextYourKortix7bc8f4ee')}
             </CardDescription>
           </CardHeader>
           <CardContent>

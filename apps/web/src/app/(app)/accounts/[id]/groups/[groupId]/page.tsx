@@ -66,6 +66,7 @@ import {
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string; groupId: string }>();
@@ -135,7 +136,9 @@ export default function GroupDetailPage() {
               <TabsTrigger value="members">
                 {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}
               </TabsTrigger>
-              <TabsTrigger value="projects">Project access</TabsTrigger>
+              <TabsTrigger value="projects">
+                {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextProject5cf58b9a')}
+              </TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
 
@@ -184,6 +187,7 @@ function GroupMembersCard({
   groupId: string;
   canManage: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -287,8 +291,8 @@ function GroupMembersCard({
       {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 && (
         <div className="border-border/60 border-b bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
           <span className="font-medium">Heads-up:</span> {overrideCount}{' '}
-          {overrideCount === 1 ? 'member is' : 'members are'} an account owner or admin. They get
-          Manager on every project regardless of this group&apos;s role.
+          {overrideCount === 1 ? 'member is' : 'members are'}{' '}
+          {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAn3a706d13')}
         </div>
       )}
 
@@ -308,7 +312,9 @@ function GroupMembersCard({
                   overrides && badgeLabel ? (
                     <span
                       className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-700 capitalize dark:text-amber-300"
-                      title="Account owners and admins always have Manager access on every project, regardless of group role."
+                      title={tI18nHardcoded.raw(
+                        'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle5ac3c178',
+                      )}
                     >
                       {badgeLabel}
                     </span>
@@ -660,6 +666,7 @@ function GroupProjectGrantsCard({
   groupId: string;
   groupName: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['group-project-grants', accountId, groupId];
   const [attachOpen, setAttachOpen] = useState(false);
@@ -719,13 +726,13 @@ function GroupProjectGrantsCard({
     <>
       <SectionCard
         flush
-        title="Project access"
+        title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle82ea8920')}
         description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
         count={grants.length}
         action={
           <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
             <Plus className="h-4 w-4" />
-            Attach to project
+            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAttachfc6eecb6')}
           </Button>
         }
       >
@@ -739,7 +746,9 @@ function GroupProjectGrantsCard({
           <div className="px-6 py-5">
             <InfoBanner
               tone="destructive"
-              title="Failed to load project access"
+              title={tI18nHardcoded.raw(
+                'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle724619d6',
+              )}
               action={
                 <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
                   Retry
@@ -754,7 +763,7 @@ function GroupProjectGrantsCard({
         {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
           <EmptyState
             icon={FolderOpen}
-            title="Not attached to any project"
+            title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitleb851c672')}
             description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
           />
         )}
@@ -839,15 +848,16 @@ function GroupProjectGrantsCard({
         onOpenChange={(open) => {
           if (!open) setDetachTarget(null);
         }}
-        title="Detach from project?"
+        title={tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxAttrTitle2c336348')}
         description={
           detachTarget ? (
             <span>
-              <strong>{groupName}</strong> will no longer be attached to{' '}
-              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
-              inherited <strong>{detachTarget.role}</strong> access on that project (unless they
-              also have a direct grant or another group attached). Owners and admins keep their
-              implicit Manager access either way.
+              <strong>{groupName}</strong>{' '}
+              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextWilldd678991')}{' '}
+              <strong>{detachTarget.project_name}</strong>
+              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery76958122')}
+              <strong>{detachTarget.role}</strong>{' '}
+              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAccessf385fd87')}
             </span>
           ) : null
         }
@@ -892,6 +902,7 @@ function AttachToProjectDialog({
    *  invalidations to the project that was just attached. */
   onAttached: (projectId: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
@@ -951,9 +962,13 @@ function AttachToProjectDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Attach &quot;{groupName}&quot; to a project</DialogTitle>
+          <DialogTitle>
+            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAttachf3cd23a1')}
+            {groupName}
+            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextTo28a6368a')}
+          </DialogTitle>
           <DialogDescription>
-            Every member of this group will inherit the chosen role on the project.
+            {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery625580cc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -980,7 +995,11 @@ function AttachToProjectDialog({
                 onValueChange={(v) => setSelectedProjectId(v || undefined)}
               >
                 <SelectTrigger id="attach-project">
-                  <SelectValue placeholder="Choose a project…" />
+                  <SelectValue
+                    placeholder={tI18nHardcoded.raw(
+                      'autoAppAppAccountsIdGroupsGroupIdPageJsxAttrPlaceholderb49f921c',
+                    )}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {candidates.map((p) => (
@@ -1000,11 +1019,17 @@ function AttachToProjectDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">Manager — full control of the project</SelectItem>
-                <SelectItem value="editor">
-                  Editor — read and write, no member or settings changes
+                <SelectItem value="manager">
+                  {tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdGroupsGroupIdPageJsxTextManager33f373a5',
+                  )}
                 </SelectItem>
-                <SelectItem value="viewer">Viewer — read-only</SelectItem>
+                <SelectItem value="editor">
+                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
+                </SelectItem>
+                <SelectItem value="viewer">
+                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextViewer8a17707f')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1013,7 +1038,7 @@ function AttachToProjectDialog({
             <Label htmlFor="attach-expires" className="flex items-center gap-2">
               Expires
               <span className="text-muted-foreground text-[10px] font-normal">
-                optional · leave blank for permanent
+                {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextOptional57a5222d')}
               </span>
             </Label>
             {/* datetime-local renders the OS-native picker. We convert
@@ -1029,8 +1054,7 @@ function AttachToProjectDialog({
               className="max-w-xs"
             />
             <p className="text-muted-foreground text-[11px]">
-              The grant auto-revokes at this time. Group members lose this project on the next
-              request after expiry; the audit log records the revocation within a minute.
+              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextThe40a6326f')}
             </p>
           </div>
         </div>

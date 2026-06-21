@@ -20,8 +20,8 @@ import {
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useProjectPresence } from '@/hooks/platform/use-project-presence';
+import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
@@ -63,6 +63,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
  * The URL stays at `/projects/<id>/sessions/<sessionId>` the whole time.
  */
 export default function ProjectSessionPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
@@ -271,15 +272,21 @@ export default function ProjectSessionPage() {
     if (gated) {
       return (
         <InlineSessionError
-          title="Subscribe to start sessions"
-          message="Your team isn't on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate."
+          title={tI18nHardcoded.raw(
+            'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c',
+          )}
+          message={tI18nHardcoded.raw(
+            'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779',
+          )}
           action={
             <Button
               onClick={() =>
                 openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId })
               }
             >
-              Subscribe to Team plan
+              {tI18nHardcoded.raw(
+                'autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1',
+              )}
             </Button>
           }
         />

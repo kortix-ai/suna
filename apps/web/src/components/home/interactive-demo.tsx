@@ -48,9 +48,9 @@ function browserSupportsWebGL(): boolean {
   try {
     const canvas = document.createElement('canvas');
     return Boolean(
-      canvas.getContext('webgl2')
-        ?? canvas.getContext('webgl')
-        ?? canvas.getContext('experimental-webgl'),
+      canvas.getContext('webgl2') ??
+      canvas.getContext('webgl') ??
+      canvas.getContext('experimental-webgl'),
     );
   } catch {
     return false;
@@ -171,6 +171,7 @@ function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
 }
 
 function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
     ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
     ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
@@ -189,7 +190,9 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
 
           <div>
             <div className="text-muted-foreground/70 mb-2 px-0.5 text-xs font-medium tracking-wider uppercase">
-              Build out your project
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoJsxTextBuildOutYourProject01488f98',
+              )}
             </div>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {cards.map(([title, sub, Icon, count, target]) => (

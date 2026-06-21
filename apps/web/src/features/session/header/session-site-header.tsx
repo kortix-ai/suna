@@ -45,6 +45,7 @@ export function SessionSiteHeader({
   isMobileView,
   leadingAction,
 }: SessionSiteHeaderProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const pathname = usePathname();
@@ -117,7 +118,9 @@ export function SessionSiteHeader({
                       onClick={() => setRenameOpen(true)}
                     >
                       <Pencil />
-                      Rename…
+                      {tI18nHardcoded.raw(
+                        'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
+                      )}
                     </DropdownMenuItem>
                     {canShare && (
                       <DropdownMenuItem
@@ -125,7 +128,9 @@ export function SessionSiteHeader({
                         onClick={() => setShareOpen(true)}
                       >
                         <Share />
-                        Share…
+                        {tI18nHardcoded.raw(
+                          'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f',
+                        )}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem

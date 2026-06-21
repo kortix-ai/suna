@@ -2,9 +2,8 @@
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { getBrowserLocale, LOCALE_CHANGE_EVENT, persistBrowserLocale } from '@/i18n/locale';
+import { getExplicitLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
 import { createClient } from '@/lib/supabase/client';
-import { detectBestLocale } from '@/lib/utils/geo-detection';
 import { useCallback, useEffect, useState } from 'react';
 
 export function useLanguage() {
@@ -14,11 +13,11 @@ export function useLanguage() {
   const [isChanging, setIsChanging] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load locale on mount
+  // Load locale on mount. Only profile metadata can switch away from English.
   useEffect(() => {
     let mounted = true;
 
-    const storedLocale = getBrowserLocale(user, detectBestLocale);
+    const storedLocale = getExplicitLocale(user);
     if (mounted) {
       setLocale(storedLocale);
       setIsLoading(false);
@@ -52,24 +51,28 @@ export function useLanguage() {
 
       setIsChanging(true);
 
-      // Priority 1: Save to user profile if authenticated (highest priority)
-      // Use user from AuthProvider to avoid unnecessary getUser call
-      if (user) {
-        try {
-          const supabase = createClient();
-          const { error: updateError } = await supabase.auth.updateUser({
-            data: { locale: newLocale },
-          });
-
-          if (updateError) {
-            console.warn('Failed to save locale to user profile:', updateError);
-          }
-        } catch (error) {
-          console.warn('Error saving locale to user profile:', error);
-        }
+      if (!user) {
+        setLocale(defaultLocale);
+        setIsChanging(false);
+        return;
       }
 
-      persistBrowserLocale(newLocale);
+      try {
+        const supabase = createClient();
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: { locale: newLocale },
+        });
+
+        if (updateError) {
+          console.warn('Failed to save locale to user profile:', updateError);
+          setIsChanging(false);
+          return;
+        }
+      } catch (error) {
+        console.warn('Error saving locale to user profile:', error);
+        setIsChanging(false);
+        return;
+      }
 
       // Update local state immediately
       setLocale(newLocale);

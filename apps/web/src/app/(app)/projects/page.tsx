@@ -43,6 +43,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export default function ProjectsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -341,7 +342,7 @@ export default function ProjectsPage() {
                 >
                   <TabsList className="w-full lg:w-fit">
                     <TabsTrigger value="all" className="min-w-0 flex-1 lg:flex-initial">
-                      All accounts
+                      {tI18nHardcoded.raw('autoAppAppProjectsPageJsxTextAllAccounts7f58297f')}
                     </TabsTrigger>
                     <TabsTrigger
                       value="account"
@@ -406,15 +407,21 @@ export default function ProjectsPage() {
                 <SectionCard flush>
                   <EmptyState
                     icon={FolderPlus}
-                    title="No projects yet"
-                    description="A project is a dedicated space for one company, product, or idea."
+                    title={tI18nHardcoded.raw(
+                      'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
+                    )}
+                    description={tI18nHardcoded.raw(
+                      'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
+                    )}
                     action={
                       <Button
                         onClick={() => openCreateModal(activeAccountId)}
                         disabled={!canCreateProjects}
                       >
                         <Icon.Plus />
-                        Create your first project
+                        {tI18nHardcoded.raw(
+                          'autoAppAppProjectsPageJsxTextCreateYourFirstProject061cafdb',
+                        )}
                       </Button>
                     }
                   />
@@ -476,8 +483,12 @@ export default function ProjectsPage() {
                 <SectionCard flush>
                   <EmptyState
                     icon={FolderPlus}
-                    title="No projects yet"
-                    description="A project is a dedicated space for one company, product, or idea."
+                    title={tI18nHardcoded.raw(
+                      'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
+                    )}
+                    description={tI18nHardcoded.raw(
+                      'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
+                    )}
                     action={
                       <NewProjectControl
                         viewAll
@@ -485,7 +496,9 @@ export default function ProjectsPage() {
                         activeAccountId={activeAccountId}
                         canCreateActive={canCreateProjects}
                         onPick={openCreateModal}
-                        label="Create your first project"
+                        label={tI18nHardcoded.raw(
+                          'autoAppAppProjectsPageJsxAttrLabelCreateYourFirst301a83a6',
+                        )}
                       />
                     }
                   />

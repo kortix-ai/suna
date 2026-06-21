@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import { Check, Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
 import type { SessionStartStage } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -58,6 +59,7 @@ export function SessionStartingLoader({
   stage?: SessionStartStage;
   delayMs?: number;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [show, setShow] = useState(delayMs <= 0);
   useEffect(() => {
     if (delayMs <= 0) {
@@ -103,7 +105,9 @@ export function SessionStartingLoader({
             <span className="bg-kortix-green relative inline-flex h-2.5 w-2.5 rounded-full" />
           </span>
           <h2 className="text-foreground text-[13px] font-medium tracking-tight">
-            Kortix Computer is starting
+            {tI18nHardcoded.raw(
+              'autoFeaturesSessionSessionStartingLoaderJsxTextKortixComputerIs7c42f59a',
+            )}
           </h2>
         </div>
 

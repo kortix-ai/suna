@@ -63,7 +63,8 @@ function LineText({
 Line.Text = LineText;
 
 function Space() {
-  return <span className="w-3">&nbsp;</span>;
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  return <span className="w-3"> </span>;
 }
 
 const deployReveal = {
@@ -297,13 +298,16 @@ function DeployBody() {
 }
 
 export function CodeWindow({ className }: { className?: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [tab, setTab] = useState<TabId>('toml');
   return (
     <div className={cn('border-border bg-card overflow-hidden rounded border', className)}>
       <SlidingTabIndicator
         activeId={tab}
         className="border-border bg-card flex items-center gap-1 border-b p-2"
-        indicatorClassName="bg-foreground rounded"
+        indicatorClassName={tI18nHardcoded.raw(
+          'autoComponentsHomeCodeWindowJsxAttrIndicatorClassNameBgForegroundRounded88279797',
+        )}
       >
         {TABS.map((t) => {
           const isActive = tab === t.id;

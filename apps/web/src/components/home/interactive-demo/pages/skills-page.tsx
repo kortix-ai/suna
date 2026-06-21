@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Plus, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { CORE_SKILLS, GKW_SKILLS } from '../data';
@@ -32,6 +33,7 @@ function SkillItem({ name, desc, focused }: { name: string; desc: string; focuse
 }
 
 export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = {}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
 
@@ -60,7 +62,10 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
         sub={`${total} skills · packaged once, reused by every agent`}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> New skill
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesSkillsPageJsxTextNewae67068c',
+            )}
           </Button>
         }
       />
@@ -70,7 +75,9 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search 71 skills…"
+          placeholder={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesSkillsPageJsxAttrPlaceholderfdea48dd',
+          )}
           className="placeholder:text-muted-foreground/60 text-foreground w-full bg-transparent text-sm outline-none"
         />
         {q && (
@@ -88,7 +95,9 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
       )}
       {gkw.length > 0 && (
         <SkillGroup
-          label="General Knowledge Worker"
+          label={tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesSkillsPageJsxAttrLabelf4af9462',
+          )}
           count={gkw.length}
           skills={gkw}
           className="mt-5"
@@ -97,7 +106,8 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
       )}
       {core.length === 0 && gkw.length === 0 && (
         <div className="text-muted-foreground py-10 text-center text-sm">
-          No skills match “{q}”.
+          {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoPagesSkillsPageJsxTextNo318d003e')}
+          {q}”.
         </div>
       )}
     </div>

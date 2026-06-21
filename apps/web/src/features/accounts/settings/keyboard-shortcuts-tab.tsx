@@ -6,6 +6,7 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useTranslations } from 'next-intl';
 
 export function KeyboardShortcutsTab() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { preferences, setKeyboardPreferences, getModifierLabel } = useUserPreferencesStore();
   const modifier = preferences.keyboard.tabSwitchModifier;
@@ -48,15 +49,27 @@ export function KeyboardShortcutsTab() {
               closeTabModifier: val as 'meta' | 'ctrl',
             })
           }
-          className="grid  grid-cols-2 items-center gap-2 w-fit"
+          className="grid w-fit grid-cols-2 items-center gap-2"
         >
-          <RadioGroupItem value="meta" id="mod-meta" label="Cmd (⌘)" />
-          <RadioGroupItem value="ctrl" id="mod-ctrl" label="Ctrl (⌃)" />
+          <RadioGroupItem
+            value="meta"
+            id="mod-meta"
+            label={tI18nHardcoded.raw(
+              'autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCmd975d185c',
+            )}
+          />
+          <RadioGroupItem
+            value="ctrl"
+            id="mod-ctrl"
+            label={tI18nHardcoded.raw(
+              'autoFeaturesAccountsSettingsKeyboardShortcutsTabJsxAttrLabelCtrl620ee654',
+            )}
+          />
         </RadioGroup>
       </div>
 
       <div className="flex flex-col space-y-3">
-        <label className="text-sm font-medium text-muted-foreground">
+        <label className="text-muted-foreground text-sm font-medium">
           {tHardcodedUi.raw('componentsSettingsUserSettingsModal.line915JsxTextAllShortcuts')}
         </label>
         <div className="divide-y rounded-lg border">

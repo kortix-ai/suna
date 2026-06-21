@@ -25,6 +25,7 @@ import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-cl
 import { LockSolid, UsersSolid } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
 import { Globe } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 const SESSION_SHARING_COPY = {
@@ -75,6 +76,7 @@ export function ShareSessionModal({
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [sharing, setSharing] = useState<SharingSelection>({ mode: 'private', memberIds: [] });
 
   useEffect(() => {
@@ -106,10 +108,15 @@ export function ShareSessionModal({
     >
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>Share session</ModalTitle>
+          <ModalTitle>
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarModalShareSessionModalJsxc5c9cc41',
+            )}
+          </ModalTitle>
           <ModalDescription>
-            Private to you by default. Grant read &amp; continue access to your whole team or
-            specific members.
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarModalShareSessionModalJsxb29062b4',
+            )}
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[60vh] overflow-y-auto">

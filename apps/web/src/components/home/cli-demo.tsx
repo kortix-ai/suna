@@ -3,6 +3,7 @@
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
 import { Check, Copy } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -315,9 +316,15 @@ function LineView({ line }: { line: Line }) {
 }
 
 function ReasoningView() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="text-muted-foreground flex items-center gap-2 py-0.5">
-      <KortixAsterisk index={0} parentClass="mt-0 animate-spin" />
+      <KortixAsterisk
+        index={0}
+        parentClass={tI18nHardcoded.raw(
+          'autoComponentsHomeCliDemoJsxAttrParentClassMt0Animateaddcd0bb',
+        )}
+      />
       <div className="inline-flex items-center gap-0">
         {/* <span className="text-primary text-sm font-medium">Reasoning</span> */}
         <TextShimmer>Reasoning...</TextShimmer>
@@ -347,6 +354,7 @@ function InstallCtaView({ cta }: { cta: InstallCta }) {
 }
 
 export function CliDemo() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -734,13 +742,15 @@ export function CliDemo() {
               </>
             ) : wizard?.phase === 'name' ? (
               <>
-                <span className="text-foreground">Project name </span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw('autoComponentsHomeCliDemoJsxTextProjectName25e32f89')}
+                </span>
                 <span className="text-muted-foreground">(my-app)</span>
                 <span className="text-foreground">: </span>
               </>
             ) : wizard?.phase === 'agent' ? (
               <span className="text-muted-foreground/70 font-sans tracking-normal">
-                Pick your coding agent — ←/→ to move · enter to confirm · or click below
+                {tI18nHardcoded.raw('autoComponentsHomeCliDemoJsxTextPickYourCodingAgent67e01482')}
               </span>
             ) : (
               <span className="text-muted-foreground/45">$ </span>
@@ -752,7 +762,9 @@ export function CliDemo() {
               autoComplete="off"
               disabled={thinking}
               readOnly={wizard?.phase === 'agent'}
-              aria-label="kortix terminal input"
+              aria-label={tI18nHardcoded.raw(
+                'autoComponentsHomeCliDemoJsxAttrAriaLabelKortixTerminalc0bdb15a',
+              )}
               placeholder={
                 thinking
                   ? 'reasoning…'

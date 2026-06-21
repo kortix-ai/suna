@@ -1,9 +1,10 @@
 'use client';
 
-import { Component } from 'react';
-import type { ErrorInfo } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import { Button } from '@/components/ui/button';
+import * as Sentry from '@sentry/nextjs';
+import { useTranslations } from 'next-intl';
+import type { ErrorInfo } from 'react';
+import { Component } from 'react';
 import { ErrorDetails } from './error-details';
 
 // `children` is typed via the global `React.ReactNode` (not the named import)
@@ -13,18 +14,21 @@ import { ErrorDetails } from './error-details';
 export type ErrorBoundaryFallback = (props: { error: Error; reset: () => void }) => React.ReactNode;
 
 function DefaultAppFallback({ error, reset }: { error: Error; reset: () => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full min-h-[60vh] w-full flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="space-y-1.5">
-        <h2 className="text-lg font-medium text-foreground">Something went wrong</h2>
-        <p className="max-w-md text-sm text-muted-foreground">
-          This part of the app hit an unexpected error. Try again, or reload the page if it keeps happening.
+        <h2 className="text-foreground text-lg font-medium">
+          {tI18nHardcoded.raw('autoComponentsCommonErrorBoundaryJsxTextSomethingWentWrong1571085c')}
+        </h2>
+        <p className="text-muted-foreground max-w-md text-sm">
+          {tI18nHardcoded.raw('autoComponentsCommonErrorBoundaryJsxTextThisPartOfThe0af7a52e')}
         </p>
       </div>
       <ErrorDetails error={error} />
       <div className="flex gap-2">
         <Button variant="outline" onClick={reset}>
-          Try again
+          {tI18nHardcoded.raw('autoComponentsCommonErrorBoundaryJsxTextTryAgain9615ff3f')}
         </Button>
         <Button
           onClick={() => {
@@ -95,6 +99,8 @@ export function ClientErrorBoundary({
 }) {
   const render: ErrorBoundaryFallback =
     fallback ??
-    (silent ? () => null : (props) => <DefaultAppFallback error={props.error} reset={props.reset} />);
+    (silent
+      ? () => null
+      : (props) => <DefaultAppFallback error={props.error} reset={props.reset} />);
   return <ErrorBoundaryInner render={render}>{children}</ErrorBoundaryInner>;
 }

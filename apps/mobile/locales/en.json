@@ -223,6 +223,11 @@
       "description": "Set up triggers to automate workflows. Schedule tasks and monitor events.",
       "example": "Send daily reports at 9 AM"
     },
+    "superworker": {
+      "title": "Your AI Super Worker",
+      "description": "Combine every feature to create custom AI Workers for any task you need.",
+      "example": "Create a customer support Worker"
+    },
     "final": {
       "title": "You're All Set!",
       "description": "Built for complex tasks, designed for everything. What do you want to get done?",

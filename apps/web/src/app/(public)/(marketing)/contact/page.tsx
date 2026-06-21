@@ -10,6 +10,7 @@ import {
   Server,
   ShieldCheck,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ const VALUE_PROPS = [
 ];
 
 export default function ContactPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
 
   return (
@@ -60,18 +62,19 @@ export default function ContactPage() {
       <section className="relative z-[1] mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center px-6 py-32 text-center">
         <div className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs tracking-wider uppercase backdrop-blur-sm">
           <span className="size-1.5 rounded-full bg-emerald-500" />
-          Enterprise · on-prem available
+          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEnterpriseOnPremb5a0c0b0')}
         </div>
 
         <h1 className="text-foreground mt-6 text-4xl leading-[1.04] font-medium tracking-tight sm:text-5xl md:text-6xl">
-          See Kortix run
+          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextSeeKortixRun82bdbdad')}
           <br />
-          <span className="text-muted-foreground">your company&apos;s work</span>
+          <span className="text-muted-foreground">
+            {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextYourCompanyS9f04147b')}
+          </span>
         </h1>
 
         <p className="text-muted-foreground mt-5 max-w-xl text-base leading-relaxed sm:text-lg">
-          Book a 30-minute walkthrough with a solutions engineer — see agents run your real
-          workflows, and get a deployment plan for your stack.
+          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookA30ee0f8c6a')}
         </p>
 
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
@@ -80,20 +83,20 @@ export default function ContactPage() {
             className="h-12 rounded-full px-8 text-sm"
             onClick={() => setOpen(true)}
           >
-            Book a demo
+            {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextBookADemofaaea0a0')}
             <ArrowRight className="ml-1.5 size-3.5" />
           </Button>
           <Button asChild size="lg" variant="outline" className="h-12 rounded-full px-7 text-sm">
             <a href={`mailto:${CONTACT_EMAIL}`}>
               <Mail className="mr-1.5 size-4" />
-              Email us
+              {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextEmailUs505f9598')}
             </a>
           </Button>
         </div>
 
         <p className="text-muted-foreground mt-6 inline-flex items-center gap-2 text-sm">
-          <Clock className="text-foreground/60 size-4" />A solutions engineer replies within one
-          business day.
+          <Clock className="text-foreground/60 size-4" />
+          {tI18nHardcoded.raw('autoAppPublicMarketingContactPageJsxTextASolutionsEngineer7001e57e')}
         </p>
 
         {/* Value props — minimal list, balanced regardless of count. */}

@@ -81,12 +81,13 @@ function Terminal({ title, children }: { title?: string; children: React.ReactNo
 }
 
 function Line({
-  children = <>&nbsp;</>,
+  children = <> </>,
   className,
 }: {
   children?: React.ReactNode;
   className?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return <div className={cn('flex leading-relaxed whitespace-pre', className)}>{children}</div>;
 }
 
@@ -102,10 +103,17 @@ function Done({ children }: { children: React.ReactNode }) {
 }
 
 function Working({ children }: { children: React.ReactNode }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <Line className="items-center justify-start gap-2">
       <span className={C.s}>
-        <KortixAsterisk parentClass="animate-spin mt-0 size-3" index={0} variant="solid" />
+        <KortixAsterisk
+          parentClass={tI18nHardcoded.raw(
+            'autoAppPublicMarketingDevelopersPageJsxAttrParentClassAnimateSpin79162867',
+          )}
+          index={0}
+          variant="solid"
+        />
       </span>
       <span className={C.f}>{children}</span>
     </Line>
@@ -382,10 +390,15 @@ function FlowLine({ label }: { label?: string }) {
 }
 
 function ConnectorsRequestPath() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       <div className="border-border/60 bg-background/30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-4 py-2.5">
-        <span className="text-muted-foreground font-mono text-xs">connectors · request path</span>
+        <span className="text-muted-foreground font-mono text-xs">
+          {tI18nHardcoded.raw(
+            'autoAppPublicMarketingDevelopersPageJsxTextConnectorsRequestPath28e55918',
+          )}
+        </span>
         <div className="flex flex-wrap gap-1">
           {CONNECTOR_PROTOCOLS.map((protocol) => (
             <Badge key={protocol} variant={protocol === 'App' ? 'highlight' : 'outline'} size="sm">
@@ -399,10 +412,16 @@ function ConnectorsRequestPath() {
         <div className="border-border/60 bg-background/60 flex items-center gap-2.5 rounded-sm border border-dashed px-3 py-2.5">
           <Boxes className="text-muted-foreground/70 size-4 shrink-0" />
           <span className="font-medium">sandbox</span>
-          <span className="text-muted-foreground ml-auto text-[11px]">agent runtime</span>
+          <span className="text-muted-foreground ml-auto text-[11px]">
+            {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextAgentRuntime00a9a84b')}
+          </span>
         </div>
 
-        <FlowLine label="only a scoped token leaves the box" />
+        <FlowLine
+          label={tI18nHardcoded.raw(
+            'autoAppPublicMarketingDevelopersPageJsxAttrLabelOnlyAfa7b37b0',
+          )}
+        />
 
         <div className="flex justify-center pb-1">
           <span className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 font-mono text-[10px] sm:text-[11px]">
@@ -415,9 +434,15 @@ function ConnectorsRequestPath() {
 
         <div className="border-border bg-card ring-border/40 flex items-center gap-2.5 rounded-sm border px-3 py-3 ring-1">
           <Server className="text-foreground size-4 shrink-0" />
-          <span className="font-medium">Kortix Executor</span>
+          <span className="font-medium">
+            {tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxTextKortixExecutor80880ab2',
+            )}
+          </span>
           <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
-            connect proxy · gateway
+            {tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxTextConnectProxyGateway799c9a68',
+            )}
           </span>
         </div>
 
@@ -442,7 +467,7 @@ function ConnectorsRequestPath() {
           ))}
         </div>
         <p className="text-muted-foreground/70 mt-2.5 text-center text-[10px] sm:text-[11px]">
-          + 3,000 more via Pipedream
+          {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText3000Moree9562262')}
         </p>
       </div>
     </div>
@@ -450,11 +475,13 @@ function ConnectorsRequestPath() {
 }
 
 function HeroWorkspace() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="border-card bg-background overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
         <div className="border-border/60 bg-muted/30 text-muted-foreground flex items-center gap-2 border-b px-4 py-2.5 font-mono text-xs">
-          <GitBranch className="size-3.5" /> the repo is the product
+          <GitBranch className="size-3.5" />{' '}
+          {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
         </div>
         <div className="text-foreground px-4 py-3 font-mono text-sm">
           {REPO_TREE.map(([name, depth, kind], i) => (
@@ -496,7 +523,9 @@ function HeroWorkspace() {
           <span className="bg-foreground text-background rounded px-2.5 py-0.5 font-mono text-xs font-medium">
             kortix.toml
           </span>
-          <span className="text-muted-foreground font-mono text-xs">declare it once</span>
+          <span className="text-muted-foreground font-mono text-xs">
+            {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextDeclareItOnce7b7c95e7')}
+          </span>
         </div>
         <div className="text-foreground overflow-x-auto text-sm">
           <CodeBlockCode
@@ -511,6 +540,7 @@ function HeroWorkspace() {
 }
 
 export default function DevelopersPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { copied, copy } = useCopy();
   const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -537,14 +567,20 @@ export default function DevelopersPage() {
         <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-0">
           <section className="w-full">
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
-              One kortix.toml. One Git repo.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextOneKortixToml1138e741',
+              )}
               <br />
-              <span className="text-muted-foreground">Your entire AI workforce, as code.</span>
+              <span className="text-muted-foreground">
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextYourEntireAI2f05f11a',
+                )}
+              </span>
             </h1>
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-              Agents, skills, tools, connectors, schedules — all just files in a repo. Edit them in
-              your IDE, run them locally, ship to the cloud with one command. Open source,
-              self-hostable, yours.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextAgentsSkillsTools813c489d',
+              )}
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
@@ -563,7 +599,10 @@ export default function DevelopersPage() {
                 asChild
               >
                 <Link href={DOCS_URL}>
-                  Read the docs <HiArrowRight className="size-4" />
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextReadTheDocs7dfe8373',
+                  )}
+                  <HiArrowRight className="size-4" />
                 </Link>
               </Button>
             </div>
@@ -584,13 +623,18 @@ export default function DevelopersPage() {
       <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
-            <Eyebrow>The thesis</Eyebrow>
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheThesis2430ef03')}
+            </Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              The coding-agent loop, for real work
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextTheCodingAgenta0a0e99f',
+              )}
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              Describe intent, an agent edits files, you review the diff. Kortix runs that same loop
-              for support, ops, and research.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextDescribeIntentAnd6106e4a',
+              )}
             </p>
           </div>
         </Reveal>
@@ -615,12 +659,19 @@ export default function DevelopersPage() {
         <div className="mx-auto w-full max-w-6xl">
           <Reveal>
             <div className="mb-8 max-w-2xl">
-              <Eyebrow>The loop</Eyebrow>
+              <Eyebrow>
+                {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheLoopd95820b1')}
+              </Eyebrow>
               <h2 className="text-muted-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                From <span className="text-foreground font-mono">curl</span> to production
+                From <span className="text-foreground font-mono">curl</span>{' '}
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextToProduction51bf7e67',
+                )}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                One repo, one config, one command. The whole path, top to bottom.
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextOneRepoOne9f702828',
+                )}
               </p>
             </div>
           </Reveal>
@@ -629,11 +680,19 @@ export default function DevelopersPage() {
         <div className="flex flex-col gap-20 sm:gap-24">
           <Step
             n="01"
-            title="Install & scaffold"
-            body="One line installs the CLI. kortix init scaffolds kortix.toml and .kortix/, wired to your coding agent."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleInstallScaffolda27ee59d',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyOneLinee5ce45d3',
+            )}
           >
             <Terminal title="init">
-              <Cmd>kortix init</Cmd>
+              <Cmd>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
+                )}
+              </Cmd>
               <Done>kortix.toml</Done>
               <Done>.kortix/opencode/</Done>
             </Terminal>
@@ -641,8 +700,12 @@ export default function DevelopersPage() {
 
           <Step
             n="02"
-            title="Build it locally, like code"
-            body="An agent is markdown — a persona, its model, and its tools. Skills are folders it loads on demand. Edit them by hand, or describe what you want and let your coding agent write them."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleBuildIte194e7c4',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyAnAgentd3ac5ad4',
+            )}
             flip
           >
             <CodeFile
@@ -654,32 +717,63 @@ export default function DevelopersPage() {
 
           <Step
             n="03"
-            title="Declare the project in one manifest"
-            body="kortix.toml holds secrets, sandbox images, triggers, connectors, and channels. Versioned from the first commit."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleDeclareThed1672ddf',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixToml8f2ef9df',
+            )}
           >
             <CodeFile name="kortix.toml" code={TOML} language="toml" />
           </Step>
 
           <Step
             n="04"
-            title="Ship it"
-            body="kortix ship commits, pushes, builds the sandbox, and prompts for missing secrets. Triggers and channels go live immediately — no separate infra to stand up."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleShipItfb312d97',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixShipef9c33ee',
+            )}
             flip
           >
-            <Terminal title="kortix ship">
-              <Cmd>kortix ship</Cmd>
+            <Terminal
+              title={tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxAttrTitleKortixShip3674108d',
+              )}
+            >
+              <Cmd>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextKortixShip0f78d303',
+                )}
+              </Cmd>
               <Done>
-                committed &amp; pushed to <span className={C.f}>main</span>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextCommittedPushedTo6397bcf0',
+                )}
+                <span className={C.f}>main</span>
               </Done>
-              <Done>secrets synced · sandbox built</Done>
-              <Working>live — triggers &amp; channels running</Working>
+              <Done>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextSecretsSyncedSandboxa20399ce',
+                )}
+              </Done>
+              <Working>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextLiveTriggersChannels9865dd98',
+                )}
+              </Working>
             </Terminal>
           </Step>
 
           <Step
             n="05"
-            title="It runs as a fleet of sandboxes"
-            body="Every session is its own VM on its own branch, booting the runtime and your repo. Spawn thousands in parallel — zero interference. A change request is the only way work reaches main, so everything is reviewable and reversible."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleItRuns79baead9',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodyEverySession6d5c7d97',
+            )}
           >
             <Terminal>
               <Line>
@@ -688,56 +782,114 @@ export default function DevelopersPage() {
               </Line>
               <Line>
                 <span className="text-muted-foreground/50"> ├─ </span>
-                <span className="text-foreground">session 1f3a</span>
-                <span className="text-muted-foreground/50"> sandbox ─╮</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession1f3a8c59f56e',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextSandbox2bdd3ae7')}
+                </span>
               </Line>
               <Line>
                 <span className="text-muted-foreground/50"> ├─ </span>
-                <span className="text-foreground">session 9b22</span>
-                <span className="text-muted-foreground/50"> sandbox ─┤ change</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession9b220421e426',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxChange7917aca8',
+                  )}
+                </span>
               </Line>
               <Line>
                 <span className="text-muted-foreground/50"> ├─ </span>
-                <span className="text-foreground">session 4e07</span>
-                <span className="text-muted-foreground/50"> sandbox ─┤ requests</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSession4e0708b094fc',
+                  )}
+                </span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxRequests9e4d59fa',
+                  )}
+                </span>
               </Line>
               <Line>
                 <span className="text-muted-foreground/50"> └─ </span>
                 <span className="text-foreground">… ×1000</span>
-                <span className="text-muted-foreground/50"> sandboxes ─╯</span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextSandboxeseeb779e1',
+                  )}
+                </span>
               </Line>
-              <Line>&nbsp;</Line>
+              <Line> </Line>
               <Line>
-                <span className="text-muted-foreground/50"> review → merge → main</span>
+                <span className="text-muted-foreground/50">
+                  {' '}
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextReviewMergeMain18972c6f',
+                  )}
+                </span>
               </Line>
             </Terminal>
           </Step>
 
           <Step
             n="06"
-            title="Bring your own runtime & model"
-            body="Sessions run on an open runtime. Bring your own keys — Anthropic, OpenAI, local — or use Kortix compute. Nothing about the runtime is hidden."
+            title={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrTitleBringYourc9b3722b',
+            )}
+            body={tI18nHardcoded.raw(
+              'autoAppPublicMarketingDevelopersPageJsxAttrBodySessionsRund6d02c3d',
+            )}
             flip
           >
             <Terminal>
               <Line>
                 {PROMPT}
-                <span className="text-foreground">kortix providers login anthropic</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersLogind1e6302d',
+                  )}
+                </span>
               </Line>
               <Done>
-                using your own key <span className="text-muted-foreground/60">(byo)</span>
+                {tI18nHardcoded.raw(
+                  'autoAppPublicMarketingDevelopersPageJsxTextUsingYourOwn244e5bb8',
+                )}
+                <span className="text-muted-foreground/60">(byo)</span>
               </Done>
-              <Line>&nbsp;</Line>
+              <Line> </Line>
               <Line>
-                <span className="text-muted-foreground/50"># or point at any runtime / model</span>
+                <span className="text-muted-foreground/50">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextOrPointAtc877fc5b',
+                  )}
+                </span>
               </Line>
               <Line>
                 {PROMPT}
-                <span className="text-foreground">kortix providers set --model opus-4.8</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSetc86bed30',
+                  )}
+                </span>
               </Line>
               <Line>
                 {PROMPT}
-                <span className="text-foreground">kortix providers set --model gpt-5</span>
+                <span className="text-foreground">
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextKortixProvidersSet4a7972ff',
+                  )}
+                </span>
               </Line>
             </Terminal>
           </Step>
@@ -747,14 +899,18 @@ export default function DevelopersPage() {
       <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-8 max-w-2xl">
-            <Eyebrow>One CLI</Eyebrow>
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextOneCLI8f2d2b85')}
+            </Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              The whole lifecycle, one CLI
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextTheWholeLifecyclecb116839',
+              )}
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              Scaffold, ship, run, automate, connect and review — one CLI does it all. The same
-              binary is pre-authenticated inside every sandbox, so agents drive Kortix with the
-              exact commands you do.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextScaffoldShipRunb35564e3',
+              )}
             </p>
           </div>
         </Reveal>
@@ -792,7 +948,9 @@ export default function DevelopersPage() {
               href={`${DOCS_URL}/reference/cli`}
               className="group text-foreground inline-flex items-center gap-1.5 text-sm font-medium"
             >
-              Full CLI reference
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextFullCLIReferencefed1886e',
+              )}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </div>
@@ -805,11 +963,12 @@ export default function DevelopersPage() {
           <Reveal>
             <Eyebrow>Scale</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              1 session = 1 sandbox = 1 branch
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText1Session1543175ef')}
             </h2>
             <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
-              Every session runs in its own isolated sandbox — real, isolated compute — on its own
-              Git branch off main. Spin up millions in parallel; nothing collides.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextEverySessionRuns6dd000d3',
+              )}
             </p>
             <ul className="mt-6 max-w-md space-y-2.5">
               {[
@@ -830,7 +989,11 @@ export default function DevelopersPage() {
             </ul>
           </Reveal>
           <Reveal delay={0.1}>
-            <CodeWindowFrame tab="git log --graph">
+            <CodeWindowFrame
+              tab={tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxAttrTabGitLog7b106744',
+              )}
+            >
               <Line>
                 <span className={C.s}>*</span>
                 <span className={C.f}>{'  c7e2  CR #84 merged'}</span>
@@ -841,15 +1004,27 @@ export default function DevelopersPage() {
               </Line>
               <Line>
                 <span className={C.c}>{'| *  s_7f2a  '}</span>
-                <span className={C.f}>triage 14 tickets</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextTriage14Tickets9e98fe81',
+                  )}
+                </span>
               </Line>
               <Line>
                 <span className={C.c}>{'| *  s_3c1d  '}</span>
-                <span className={C.f}>build board deck</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextBuildBoardDeck30c6ad92',
+                  )}
+                </span>
               </Line>
               <Line>
                 <span className={C.c}>{'| *  s_9a04  '}</span>
-                <span className={C.f}>draft outreach</span>
+                <span className={C.f}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa',
+                  )}
+                </span>
               </Line>
               <Line>
                 <span className={C.c}>{'|/'}</span>
@@ -859,9 +1034,13 @@ export default function DevelopersPage() {
                 <span className={C.f}>{'  a1f3  baseline'}</span>
                 <span className={C.c}>{'   (main)'}</span>
               </Line>
-              <Line>&nbsp;</Line>
+              <Line> </Line>
               <Line>
-                <span className={C.c}>… millions of branches, one source of truth</span>
+                <span className={C.c}>
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingDevelopersPageJsxTextMillionsOfBranchesd3dbd3cb',
+                  )}
+                </span>
               </Line>
             </CodeWindowFrame>
           </Reveal>
@@ -874,11 +1053,14 @@ export default function DevelopersPage() {
           <Reveal className="lg:order-2">
             <Eyebrow>Connectors</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              Every tool, behind one interface
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextEveryToolBehindf2d74753',
+              )}
             </h2>
             <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
-              Kortix connectors put 3,000+ apps — plus any MCP, OpenAPI, GraphQL or raw HTTP
-              endpoint — behind a single Executor interface your agents call like any other tool.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextKortixConnectorsPut612736c1',
+              )}
             </p>
             <ul className="mt-6 max-w-md space-y-2.5">
               {[
@@ -906,14 +1088,18 @@ export default function DevelopersPage() {
       <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
         <Reveal>
           <div className="mb-2 max-w-2xl">
-            <Eyebrow>It&apos;s all code</Eyebrow>
+            <Eyebrow>
+              {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextItSAlla4bb94e8')}
+            </Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              A platform that improves itself
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextAPlatformThat026eb45c',
+              )}
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              Because everything is code in a repo, the system can read its own blueprint, extend
-              itself, and stay healthy as it grows. 100% extensible, controllable, self-hostable —
-              nothing is a black box.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingDevelopersPageJsxTextBecauseEverythingIsd6715079',
+              )}
             </p>
           </div>
         </Reveal>
@@ -973,29 +1159,45 @@ export default function DevelopersPage() {
               <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
                 <div className="space-y-2">
                   <Badge variant="update" className="rounded">
-                    Start building
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingDevelopersPageJsxTextStartBuilding83387fa7',
+                    )}
                   </Badge>
                   <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                    Ship your first internal agent
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingDevelopersPageJsxTextShipYourFirst187209c6',
+                    )}
                   </h2>
 
                   <span className="text-muted-foreground text-sm leading-relaxed">
-                    Install the CLI, run{' '}
-                    <span className="text-foreground font-mono text-sm">kortix init</span>, and
-                    deploy the agent you already use.
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingDevelopersPageJsxTextInstallTheCLIbd0e41b0',
+                    )}{' '}
+                    <span className="text-foreground font-mono text-sm">
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
+                      )}
+                    </span>
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingDevelopersPageJsxTextAndDeployThef0bc5670',
+                    )}
                   </span>
                 </div>
 
                 <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                   <Button size="lg" asChild className="w-full">
                     <Link href={DOCS_URL}>
-                      Read the docs
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDevelopersPageJsxTextReadTheDocs7dfe8373',
+                      )}
                       <HiArrowRight className="size-4" />
                     </Link>
                   </Button>
                   <Button asChild size="lg" className="w-full" variant="accent">
                     <Link href={GITHUB_URL}>
-                      Star on GitHub
+                      {tI18nHardcoded.raw(
+                        'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',
+                      )}
                       <Icon.Github />
                     </Link>
                   </Button>

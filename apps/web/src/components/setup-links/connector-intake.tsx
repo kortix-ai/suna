@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Loader2, Plug, ExternalLink, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Check, ExternalLink, Loader2, Plug } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
 
 interface ConnectorLinkInfo {
@@ -32,6 +33,7 @@ export function ConnectorIntake({
   onOpened?: () => void;
   compact?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<ConnectorLinkInfo | null>(null);
@@ -90,15 +92,16 @@ export function ConnectorIntake({
 
   if (phase === 'loading') {
     return (
-      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground justify-center">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />{' '}
+        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextLoading4e5fd209')}
       </div>
     );
   }
 
   if (phase === 'error') {
     return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground py-6 text-center text-sm">
         {error || 'This link is invalid or has expired.'}
       </div>
     );
@@ -110,13 +113,19 @@ export function ConnectorIntake({
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
           <Check className="h-5 w-5" />
         </div>
-        <p className="text-sm font-medium text-foreground">Finish in the popup</p>
-        <p className="text-xs text-muted-foreground max-w-xs">
-          Complete the {appLabel} sign-in in the window that opened. Once it’s connected, you can close
-          this and tell the agent “done”.
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextFinishInThe0a10e77c')}
+        </p>
+        <p className="text-muted-foreground max-w-xs text-xs">
+          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextCompleteThe07661028')}
+          {appLabel}{' '}
+          {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextSignInIn5b6c05ee')}
         </p>
         <Button variant="ghost" size="sm" className="mt-1" onClick={connect}>
-          <ExternalLink className="mr-2 h-3.5 w-3.5" /> Reopen connect window
+          <ExternalLink className="mr-2 h-3.5 w-3.5" />{' '}
+          {tI18nHardcoded.raw(
+            'autoComponentsSetupLinksConnectorIntakeJsxTextReopenConnectWindowb7f822cd',
+          )}
         </Button>
       </div>
     );
@@ -126,13 +135,18 @@ export function ConnectorIntake({
 
   return (
     <div className={cn('space-y-4 text-center', compact ? '' : 'mt-2')}>
-      <p className="text-sm text-muted-foreground">
-        1-click connect <span className="font-medium text-foreground">{appLabel}</span> via Pipedream — no keys
-        are pasted into chat or stored in the repo.
+      <p className="text-muted-foreground text-sm">
+        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxText1ClickConnect9e029325')}
+        <span className="text-foreground font-medium">{appLabel}</span>{' '}
+        {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextViaPipedreamNo5dadf477')}
       </p>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
-        {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plug className="mr-2 h-4 w-4" />}
+        {starting ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Plug className="mr-2 h-4 w-4" />
+        )}
         {starting ? 'Opening…' : `Connect ${appLabel}`}
       </Button>
     </div>

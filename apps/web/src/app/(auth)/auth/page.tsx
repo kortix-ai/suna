@@ -83,6 +83,7 @@ function AuthCardForm({
   returnUrl: string;
   mobileCallbackState: string | null;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('signup');
@@ -319,7 +320,9 @@ function AuthCardForm({
       {/* Tabs */}
       <div
         role="tablist"
-        aria-label="Authentication mode"
+        aria-label={tI18nHardcoded.raw(
+          'autoAppAuthAuthPageJsxAttrAriaLabelAuthenticationMode01efd9f8',
+        )}
         className="bg-foreground/[0.05] mx-auto mb-5 flex w-fit items-center gap-1 rounded-full p-1"
       >
         <button
@@ -433,7 +436,7 @@ function AuthCardForm({
               onClick={resetTransientState}
               className="hover:text-foreground/70 underline-offset-4 hover:underline"
             >
-              Use a different email
+              {tI18nHardcoded.raw('autoAppAuthAuthPageJsxTextUseADifferentEmail8da2cdb0')}
             </button>
           </div>
         </div>

@@ -4,16 +4,20 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { ChevronDown, MessageSquare } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { PageHead } from '../primitives';
 
 export function ChannelsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [showByo, setShowByo] = useState(false);
   return (
     <div>
       <PageHead
         title="Channels"
-        sub="Run this project from chat — connect a Slack workspace and your agent responds in the channels you invite it to."
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxAttrSub03b65d67',
+        )}
       />
 
       <div className="border-border bg-card overflow-hidden rounded-md border">
@@ -24,16 +28,22 @@ export function ChannelsPage() {
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
-                Add Kortix to your Slack workspace
+                {tI18nHardcoded.raw(
+                  'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextAdd56167f5a',
+                )}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                One click — approve scopes in Slack and we&apos;ll wire this project to the
-                workspace you choose. Tokens stay encrypted in this project&apos;s secrets.
+                {tI18nHardcoded.raw(
+                  'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextOne711d17b7',
+                )}
               </p>
             </div>
           </div>
           <Button size="sm" className="shrink-0">
-            <Icon.Slack className="size-3.5" /> Add to Slack
+            <Icon.Slack className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextAdd238856dd',
+            )}
           </Button>
         </div>
 
@@ -44,9 +54,15 @@ export function ChannelsPage() {
           aria-expanded={showByo}
         >
           <div className="min-w-0">
-            <p className="text-foreground text-sm font-medium">Bring your own Slack app</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextBringaefcc1f4',
+              )}
+            </p>
             <p className="text-muted-foreground mt-0.5 text-xs">
-              For self-hosted setups or custom-scoped installs.
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextFor7cbd4533',
+              )}
             </p>
           </div>
           <ChevronDown
@@ -58,17 +74,25 @@ export function ChannelsPage() {
         </button>
         {showByo && (
           <div className="border-border text-muted-foreground border-t px-4 py-3 text-xs">
-            Paste a Slack app manifest and your Bot User OAuth Token + Signing Secret — stored
-            encrypted in <span className="text-foreground font-mono">project_secrets</span>.
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextPaste0cac2ba3',
+            )}
+            <span className="text-foreground font-mono">project_secrets</span>.
           </div>
         )}
       </div>
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
         <MessageSquare className="size-3.5 shrink-0" />
-        Invite the bot to any channel and{' '}
-        <span className="text-foreground font-mono">@mention</span> it — a session spawns and the
-        agent replies in-thread.
+        {tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextInvite62b0b613',
+        )}{' '}
+        <span className="text-foreground font-mono">
+          {tI18nHardcoded.raw(
+            'autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextMention48d6e12f',
+          )}
+        </span>{' '}
+        {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoPagesChannelsPageJsxTextIt4dd92d7f')}
       </div>
     </div>
   );

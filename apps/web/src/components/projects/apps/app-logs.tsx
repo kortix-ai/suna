@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Provider log tail for a single app deployment. Polled every 6s while
  * open (via useProjectAppLogs).
@@ -26,7 +27,7 @@ interface LogEntry {
 function parseLogs(data: unknown): LogEntry[] {
   if (Array.isArray(data)) return data as LogEntry[];
   if (data && typeof data === 'object') {
-    const maybe = (data as { logs?: unknown; lines?: unknown });
+    const maybe = data as { logs?: unknown; lines?: unknown };
     if (Array.isArray(maybe.logs)) return maybe.logs as LogEntry[];
     if (Array.isArray(maybe.lines)) return maybe.lines as LogEntry[];
   }
@@ -34,6 +35,7 @@ function parseLogs(data: unknown): LogEntry[] {
 }
 
 export function AppLogs({ projectId, slug, onClose }: AppLogsProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const query = useProjectAppLogs(projectId, slug);
 
   const entries = useMemo(() => {
@@ -43,11 +45,14 @@ export function AppLogs({ projectId, slug, onClose }: AppLogsProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-5 py-3">
+      <div className="border-border/60 flex shrink-0 items-center justify-between border-b px-5 py-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium text-foreground">Logs · {slug}</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppLogsJsxTextLogs46ce7262')}
+            {slug}
+          </h3>
           {query.isFetching && (
-            <IconLoader className="size-3.5 animate-spin text-muted-foreground" />
+            <IconLoader className="text-muted-foreground size-3.5 animate-spin" />
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -56,7 +61,9 @@ export function AppLogs({ projectId, slug, onClose }: AppLogsProps) {
             variant="ghost"
             size="sm"
             onClick={() => query.refetch()}
-            aria-label="Refresh logs"
+            aria-label={tI18nHardcoded.raw(
+              'autoComponentsProjectsAppsAppLogsJsxAttrAriaLabelRefresh42ce1082',
+            )}
           >
             <IconRefresh className="size-3.5" />
             Refresh
@@ -67,26 +74,24 @@ export function AppLogs({ projectId, slug, onClose }: AppLogsProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto bg-muted/20 px-5 py-4 font-mono text-xs">
+      <div className="bg-muted/20 flex-1 overflow-auto px-5 py-4 font-mono text-xs">
         {query.isLoading ? (
-          <p className="text-muted-foreground">Loading…</p>
+          <p className="text-muted-foreground">
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppLogsJsxTextLoadingf012a81c')}
+          </p>
         ) : query.data && !query.data.ok ? (
           <p className="text-destructive">{query.data.error ?? 'Logs unavailable.'}</p>
         ) : entries.length === 0 ? (
           <p className="text-muted-foreground">
-            No log lines yet. Hang on, or trigger a fresh deploy.
+            {tI18nHardcoded.raw('autoComponentsProjectsAppsAppLogsJsxTextNoLogLines0da4f4a8')}
           </p>
         ) : (
           <ol className="flex flex-col gap-0.5">
             {entries.map((entry, idx) => (
-              <li key={idx} className="flex gap-3 whitespace-pre-wrap break-all">
-                {entry.ts && (
-                  <span className="shrink-0 text-muted-foreground/60">{entry.ts}</span>
-                )}
+              <li key={idx} className="flex gap-3 break-all whitespace-pre-wrap">
+                {entry.ts && <span className="text-muted-foreground/60 shrink-0">{entry.ts}</span>}
                 {entry.level && (
-                  <span className="shrink-0 uppercase text-muted-foreground/70">
-                    {entry.level}
-                  </span>
+                  <span className="text-muted-foreground/70 shrink-0 uppercase">{entry.level}</span>
                 )}
                 <span className="text-foreground">{entry.message ?? JSON.stringify(entry)}</span>
               </li>

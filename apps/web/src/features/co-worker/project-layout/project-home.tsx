@@ -12,6 +12,7 @@ import {
   Package,
   type LucideIcon,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { IconType } from 'react-icons/lib';
 
@@ -59,6 +60,7 @@ export function ProjectHome({
   onSend: (text: string, options?: ProjectHomeSendOptions) => void;
   busy: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -132,7 +134,10 @@ export function ProjectHome({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
         <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
           <h1 className="text-muted-foreground text-left text-[2.3rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-            Give <span className="text-foreground">{displayName}</span> something real to work on.
+            Give <span className="text-foreground">{displayName}</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+            )}
           </h1>
         </div>
 
@@ -155,7 +160,9 @@ export function ProjectHome({
                     submit();
                   }
                 }}
-                placeholder="Describe a task to start a session…"
+                placeholder={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+                )}
                 autoFocus
                 rows={1}
                 className="placeholder:text-muted-foreground relative max-h-[200px] min-h-[62px] w-full resize-none overflow-y-auto border-none bg-transparent py-3 text-base leading-relaxed outline-none sm:text-sm"
@@ -176,7 +183,9 @@ export function ProjectHome({
                 size="icon"
                 onClick={submit}
                 disabled={busy || !text.trim()}
-                aria-label="Start session"
+                aria-label={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria3e2a363b',
+                )}
                 className="rounded-full"
               >
                 {busy ? (
@@ -194,6 +203,7 @@ export function ProjectHome({
 }
 
 function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeftFade, setShowLeftFade] = useState(false);
   const [showRightFade, setShowRightFade] = useState(false);
@@ -293,7 +303,9 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
           size="icon"
           className="shrink-0"
           disabled={!showLeftFade}
-          aria-label="Scroll tabs left"
+          aria-label={tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAriaf25547eb',
+          )}
           onClick={() => scrollTabs('left')}
         >
           <ChevronLeft className="text-muted-foreground size-4" />
@@ -305,7 +317,9 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         size="icon"
         className="shrink-0"
         disabled={!showRightFade}
-        aria-label="Scroll tabs right"
+        aria-label={tI18nHardcoded.raw(
+          'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria59321156',
+        )}
         onClick={() => scrollTabs('right')}
       >
         <ChevronRight className="text-muted-foreground size-4" />
@@ -323,6 +337,7 @@ function SandboxPicker({
   activeSlug: string;
   onSelect: (slug: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const active = items.find((t) => t.slug === activeSlug) ?? items[0] ?? null;
   if (!active) return null;
   const ActiveIcon = active.is_default ? Container : active.has_image ? Package : FileCode;
@@ -337,14 +352,23 @@ function SandboxPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" aria-label="Sandbox template" variant="secondary" size="sm">
+        <Button
+          type="button"
+          aria-label={tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
+          )}
+          variant="secondary"
+          size="sm"
+        >
           <ActiveIcon className="size-3.5" />
           <span className="max-w-[10rem] truncate">{active.name}</span>
           <span className={cn('size-1.5 rounded-full', activeStateTone)} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel>Sandbox template</DropdownMenuLabel>
+        <DropdownMenuLabel>
+          {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSandboxe9c5fbaa')}
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.map((tpl) => {
           const Icon = tpl.is_default ? Container : tpl.has_image ? Package : FileCode;
@@ -397,6 +421,7 @@ function SandboxPicker({
 }
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
@@ -488,7 +513,9 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col space-y-2">
-      <label className="text-muted-foreground text-sm font-medium">Build out your project</label>
+      <label className="text-muted-foreground text-sm font-medium">
+        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextBuildbdf03b73')}
+      </label>
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map((tile) => {
           const { icon: Icon, title, desc, count, section } = tile;

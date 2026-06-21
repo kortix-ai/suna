@@ -4,6 +4,7 @@ import { PageHead, Panel } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
@@ -38,6 +39,7 @@ const SKILLS: Skill[] = [
 ];
 
 export function Step3BuildCli() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const reduced = useReducedMotion();
   const enter = (i: number) =>
     reduced
@@ -54,10 +56,13 @@ export function Step3BuildCli() {
         <div className="flex h-full flex-col">
           <PageHead
             title="Skills"
-            sub="A good workflow becomes reusable — attached to coworkers, improved by review"
+            sub={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep3BuildCli09aaddc7')}
           />
 
-          <Panel title="Skill library" count={`· ${SKILLS.length}`}>
+          <Panel
+            title={tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep3BuildCli697a0b1c')}
+            count={`· ${SKILLS.length}`}
+          >
             <div className="divide-border divide-y">
               {SKILLS.map((skill, i) => (
                 <motion.div
@@ -109,7 +114,7 @@ export function Step3BuildCli() {
             {...enter(SKILLS.length)}
             className="border-border/60 bg-muted/20 text-muted-foreground mt-4 rounded-md border px-3 py-2.5 text-xs leading-relaxed"
           >
-            One person captures it once — the whole team levels up overnight.
+            {tI18nHardcoded.raw('autoFeaturesMarketingHowItWorkStepStep3BuildCli4a1811fb')}
           </motion.p>
         </div>
       </WebPanelWrapper>

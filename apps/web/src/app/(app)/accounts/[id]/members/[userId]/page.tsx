@@ -427,6 +427,7 @@ function MemberProjectAccessCard({
   memberUserId: string;
   accountRole: AccountRole;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const query = useQuery({
     queryKey: ['iam-member-project-access', accountId, memberUserId],
@@ -438,7 +439,7 @@ function MemberProjectAccessCard({
 
   return (
     <SectionCard
-      title="Project access"
+      title={tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxAttrTitle1767c13f')}
       description={
         isAdminLike
           ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
@@ -451,7 +452,7 @@ function MemberProjectAccessCard({
       {!query.isLoading && query.isError && (
         <InfoBanner
           tone="destructive"
-          title="Failed to load project access"
+          title={tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxAttrTitlebf1c6d5a')}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
               Retry
@@ -464,8 +465,7 @@ function MemberProjectAccessCard({
 
       {!query.isLoading && !query.isError && items.length === 0 && (
         <p className="text-muted-foreground text-xs">
-          No project access yet. Add this member to a project directly from the project&apos;s
-          Members page, or to a group that&apos;s attached to one.
+          {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextNo96b8be46')}
         </p>
       )}
 
@@ -556,6 +556,8 @@ function ViewAsUserDialog({
   // V2 engine answers "can they perform this action on the account"
   // which is the question this dialog should answer; per-project
   // breakdown is the job of the MemberProjectAccessCard above.
+
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const probes = useMemo(() => SIMULATOR_PROBES.map((p) => ({ action: p.action })), []);
   const results = usePermissionsFor(
     open ? accountId : undefined,
@@ -586,11 +588,11 @@ function ViewAsUserDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="text-muted-foreground h-4 w-4" />
-            Viewing as {memberLabel}
+            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextViewinga4fdd7c8')}
+            {memberLabel}
           </DialogTitle>
           <DialogDescription>
-            Read-only check of what this member can do across the account. The engine answers in
-            real time — same logic the UI uses to gate buttons for the user themselves.
+            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextRead52927f21')}
           </DialogDescription>
         </DialogHeader>
 
@@ -625,8 +627,7 @@ function ViewAsUserDialog({
           ))}
 
           <p className="text-muted-foreground text-[11px]">
-            Project-scoped access (which projects they can reach + at what role) is shown in the
-            Project access card on this page. This dialog is the account-wide capability view.
+            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextProjectf7077cbd')}
           </p>
         </div>
       </DialogContent>

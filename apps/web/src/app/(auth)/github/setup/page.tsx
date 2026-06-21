@@ -33,6 +33,7 @@ export default function GitHubSetupPage() {
 }
 
 function GitHubSetup() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -142,7 +143,7 @@ function GitHubSetup() {
               </div>
             </div>
             <p className="text-muted-foreground text-center text-xs">
-              This usually takes a few seconds.
+              {tI18nHardcoded.raw('autoAppAuthGithubSetupPageJsxTextThisUsuallyTakes85d58321')}
             </p>
           </>
         ) : state === 'error' ? (
@@ -181,7 +182,9 @@ function GitHubSetup() {
                 <p className="text-muted-foreground text-sm leading-relaxed">{message}</p>
               </div>
             </div>
-            <p className="text-muted-foreground text-center text-xs">Redirecting…</p>
+            <p className="text-muted-foreground text-center text-xs">
+              {tI18nHardcoded.raw('autoAppAuthGithubSetupPageJsxTextRedirecting69a84dea')}
+            </p>
           </>
         )}
       </div>

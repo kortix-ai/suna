@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ export function AddMarketplaceDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [address, setAddress] = useState('');
   const [gitRef, setGitRef] = useState('');
   const [sparse, setSparse] = useState('');
@@ -66,10 +68,19 @@ export function AddMarketplaceDialog({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle>Add a marketplace</DialogTitle>
+          <DialogTitle>
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddMarketplaceDialogJsxTextAddAMarketplace6a70ab2e',
+            )}
+          </DialogTitle>
           <DialogDescription>
-            Point at a GitHub repo (or a registry.json URL). We scan it for <span className="font-mono">SKILL.md</span>{' '}
-            files and import each one as a skill — Anthropic, Codex, skills.sh, or any SKILL.md repo works out of the box.
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddMarketplaceDialogJsxTextPointAtA282139da',
+            )}
+            <span className="font-mono">SKILL.md</span>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddMarketplaceDialogJsxTextFilesAndImport6d37db6e',
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -82,7 +93,9 @@ export function AddMarketplaceDialog({
               id="mp-address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="owner/repo  ·  https://…/registry.json"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsMarketplaceAddMarketplaceDialogJsxAttrPlaceholderOwnerRepo0cb2a2dd',
+              )}
               autoFocus
             />
             <p className="text-muted-foreground text-xs">
@@ -94,13 +107,24 @@ export function AddMarketplaceDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label htmlFor="mp-ref" className="text-foreground text-sm font-medium">
-                Git ref <span className="text-muted-foreground font-normal">(optional)</span>
+                {tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceAddMarketplaceDialogJsxTextGitRef62b0636a',
+                )}
+                <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              <Input id="mp-ref" value={gitRef} onChange={(e) => setGitRef(e.target.value)} placeholder="main" />
+              <Input
+                id="mp-ref"
+                value={gitRef}
+                onChange={(e) => setGitRef(e.target.value)}
+                placeholder="main"
+              />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="mp-sparse" className="text-foreground text-sm font-medium">
-                Sparse paths <span className="text-muted-foreground font-normal">(optional)</span>
+                {tI18nHardcoded.raw(
+                  'autoComponentsMarketplaceAddMarketplaceDialogJsxTextSparsePaths842b3808',
+                )}
+                <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
               <Input
                 id="mp-sparse"
@@ -111,7 +135,9 @@ export function AddMarketplaceDialog({
             </div>
           </div>
           <p className="text-muted-foreground text-xs">
-            Sparse paths scan only sub-folders of the repo. Separate multiple with commas.
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceAddMarketplaceDialogJsxTextSparsePathsScan23f718ab',
+            )}
           </p>
         </div>
 

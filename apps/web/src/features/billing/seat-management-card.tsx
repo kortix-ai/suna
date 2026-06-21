@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 // Billing v2 — seat management card.
 // Rendered when account_state.billing_model === 'per_seat'. Shows seat count,
 // monthly cost, and the running spend breakdown (compute vs LLM) sourced from
@@ -14,6 +15,7 @@ export interface SeatManagementCardProps {
 }
 
 export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const seats = accountState.seats;
   if (!seats || accountState.billing_model !== 'per_seat') return null;
 
@@ -21,31 +23,37 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
   const usage = accountState.usage_this_period;
 
   return (
-    <div className="rounded-2xl border bg-card p-6 space-y-5">
+    <div className="bg-card space-y-5 rounded-2xl border p-6">
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="rounded-md bg-muted p-2 text-muted-foreground">
+          <div className="bg-muted text-muted-foreground rounded-md p-2">
             <Users className="size-5" />
           </div>
           <div>
-            <h3 className="text-base font-semibold">Team seats</h3>
-            <p className="text-sm text-muted-foreground">
-              ${seats.price_per_seat_usd}/teammate · includes compute + LLM usage
+            <h3 className="text-base font-semibold">
+              {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextTeamSeatsac65209c')}
+            </h3>
+            <p className="text-muted-foreground text-sm">
+              ${seats.price_per_seat_usd}
+              {tI18nHardcoded.raw(
+                'autoFeaturesBillingSeatManagementCardJsxTextTeammateIncludesCompute626f1aeb',
+              )}
             </p>
           </div>
         </div>
         <div className="text-right">
           <div className="text-2xl font-semibold tabular-nums">${monthlyTotal}</div>
-          <div className="text-xs text-muted-foreground">
-            {seats.count} {seats.count === 1 ? 'seat' : 'seats'} · /mo
+          <div className="text-muted-foreground text-xs">
+            {seats.count} {seats.count === 1 ? 'seat' : 'seats'}{' '}
+            {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextModba31324')}
           </div>
         </div>
       </header>
 
       {usage ? (
         <div className="space-y-3">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            This period
+          <h4 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextThisPeriode510d764')}
           </h4>
           <div className="grid grid-cols-2 gap-3">
             <UsageStat
@@ -60,15 +68,22 @@ export function SeatManagementCard({ accountState }: SeatManagementCardProps) {
             />
           </div>
           <div className="flex items-baseline justify-between border-t pt-3 text-sm">
-            <span className="text-muted-foreground">Total spend this period</span>
-            <span className="tabular-nums font-medium">${usage.total_usd.toFixed(2)}</span>
+            <span className="text-muted-foreground">
+              {tI18nHardcoded.raw(
+                'autoFeaturesBillingSeatManagementCardJsxTextTotalSpendThis908ba767',
+              )}
+            </span>
+            <span className="font-medium tabular-nums">${usage.total_usd.toFixed(2)}</span>
           </div>
         </div>
       ) : null}
 
-      <p className="text-xs text-muted-foreground border-t pt-4">
-        Adding a teammate adds ${seats.price_per_seat_usd}/mo and grants ${seats.price_per_seat_usd}
-        {' '}of wallet credits. Spend it on compute, LLM, or both — prorated automatically.
+      <p className="text-muted-foreground border-t pt-4 text-xs">
+        {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextAddingATeammateb0681f04')}
+        {seats.price_per_seat_usd}
+        {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextMoAndGrants5da9d984')}
+        {seats.price_per_seat_usd}{' '}
+        {tI18nHardcoded.raw('autoFeaturesBillingSeatManagementCardJsxTextOfWalletCreditsc4eec42f')}
       </p>
     </div>
   );
@@ -84,8 +99,8 @@ function UsageStat({
   valueUsd: number;
 }) {
   return (
-    <div className="rounded-2xl border bg-background p-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="bg-background rounded-2xl border p-3">
+      <div className="text-muted-foreground flex items-center gap-2 text-xs">
         {icon}
         <span>{label}</span>
       </div>

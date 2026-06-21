@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
+import { Button } from '@/components/ui/button';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
@@ -16,6 +16,7 @@ import {
   Minimize2,
   X,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import {
   useCallback,
   useEffect,
@@ -110,6 +111,7 @@ export function FilePreviewModal({
   historyLabel = 'History',
   embedded = false,
 }: FilePreviewModalProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const dialogDepth = useDialogDepth();
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
 
@@ -347,7 +349,9 @@ export function FilePreviewModal({
             projectId={shareContext.projectId}
             sessionId={shareContext.sessionId}
             input={shareInput}
-            tooltip="Copy a public view-only link for this file"
+            tooltip={tI18nHardcoded.raw(
+              'autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181',
+            )}
             className="text-muted-foreground hover:text-foreground"
           />
         )}
@@ -369,7 +373,9 @@ export function FilePreviewModal({
           size="icon"
           className="text-muted-foreground hover:text-foreground h-8 w-8"
           onClick={onClose}
-          title="Close (Esc)"
+          title={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
+          )}
         >
           <X className="h-4 w-4" />
         </Button>
@@ -383,8 +389,12 @@ export function FilePreviewModal({
         <button
           onClick={onPrev}
           className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 left-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
-          title="Previous file"
-          aria-label="Previous file"
+          title={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316',
+          )}
+          aria-label={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76',
+          )}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -393,8 +403,12 @@ export function FilePreviewModal({
         <button
           onClick={onNext}
           className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 right-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
-          title="Next file"
-          aria-label="Next file"
+          title={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleNext96666bd8',
+          )}
+          aria-label={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabelda6ea7e4',
+          )}
         >
           <ChevronRight className="h-4 w-4" />
         </button>

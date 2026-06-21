@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowDown,
   ArrowDownRight,
@@ -24,6 +23,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,11 +33,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -62,9 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useAdminAccountLedger,
   useAdminAccountUsers,
@@ -73,18 +67,14 @@ import {
   useAdminGrantCredits,
   useAdminSetTier,
   type AdminAccount,
-  type AdminAccountUser,
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
-import {
-  SectionContainer,
-  SectionHeader,
-  StatPill,
-  StatRow,
-} from '../_components/section-header';
+import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
 const PAGE_SIZE = 50;
 const REIMBURSEMENT_PRESETS = [5, 10, 25, 50, 100];
@@ -158,13 +148,7 @@ function faviconUrl(domain: string, size = 32): string {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;
 }
 
-function ServiceFavicon({
-  domain,
-  className,
-}: {
-  domain: string;
-  className?: string;
-}) {
+function ServiceFavicon({ domain, className }: { domain: string; className?: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -173,7 +157,7 @@ function ServiceFavicon({
       aria-hidden
       width={14}
       height={14}
-      className={cn('h-3.5 w-3.5 rounded-sm shrink-0', className)}
+      className={cn('h-3.5 w-3.5 shrink-0 rounded-sm', className)}
     />
   );
 }
@@ -244,12 +228,7 @@ function paymentStatusBadge(status: string | null): React.ComponentProps<typeof 
 type AccountFilters = Required<
   Pick<
     AdminAccountsFilters,
-    | 'search'
-    | 'tier'
-    | 'paymentStatus'
-    | 'paidOnly'
-    | 'sortBy'
-    | 'sortDir'
+    'search' | 'tier' | 'paymentStatus' | 'paidOnly' | 'sortBy' | 'sortDir'
   >
 > & {
   hasSubscription: boolean | null;
@@ -316,17 +295,14 @@ export default function AdminAccountsPage() {
 
   const filtersCount = activeFilterCount(filters);
 
-  const setSort = useCallback(
-    (sortBy: AdminAccountsSortBy) => {
-      setFilters((f) => {
-        if (f.sortBy === sortBy) {
-          return { ...f, sortDir: f.sortDir === 'asc' ? 'desc' : 'asc' };
-        }
-        return { ...f, sortBy, sortDir: 'desc' };
-      });
-    },
-    [],
-  );
+  const setSort = useCallback((sortBy: AdminAccountsSortBy) => {
+    setFilters((f) => {
+      if (f.sortBy === sortBy) {
+        return { ...f, sortDir: f.sortDir === 'asc' ? 'desc' : 'asc' };
+      }
+      return { ...f, sortBy, sortDir: 'desc' };
+    });
+  }, []);
 
   const resetFilters = () => {
     setFilters(EMPTY_FILTERS);
@@ -338,7 +314,9 @@ export default function AdminAccountsPage() {
       <SectionHeader
         icon={Users}
         title="Accounts"
-        description={tHardcodedUi.raw('appAdminAccountsPage.line337JsxAttrDescriptionFilterSortAndInspectEveryAccountGrantOr')}
+        description={tHardcodedUi.raw(
+          'appAdminAccountsPage.line337JsxAttrDescriptionFilterSortAndInspectEveryAccountGrantOr',
+        )}
         actions={
           <Button
             variant="outline"
@@ -387,7 +365,12 @@ export default function AdminAccountsPage() {
         filtersCount={filtersCount}
       />
 
-      <ActiveChips filters={filters} onChange={setFilters} searchInput={searchInput} onSearchChange={setSearchInput} />
+      <ActiveChips
+        filters={filters}
+        onChange={setFilters}
+        searchInput={searchInput}
+        onSearchChange={setSearchInput}
+      />
 
       {isLoading ? (
         <div className="space-y-2">
@@ -396,20 +379,22 @@ export default function AdminAccountsPage() {
           ))}
         </div>
       ) : accounts.length === 0 ? (
-        <div className="rounded-2xl border border-border/60 bg-card">
+        <div className="border-border/60 bg-card rounded-2xl border">
           <EmptyState
             icon={IconInbox}
             title={
-              search || filtersCount > 0
-                ? 'No accounts match your filters'
-                : 'No accounts yet'
+              search || filtersCount > 0 ? 'No accounts match your filters' : 'No accounts yet'
             }
             description={
-              search || filtersCount > 0 ? 'Try adjusting filters or clearing the search.' : undefined
+              search || filtersCount > 0
+                ? 'Try adjusting filters or clearing the search.'
+                : undefined
             }
             action={
               search || filtersCount > 0 ? (
-                <Button variant="outline" size="sm" onClick={resetFilters}>{tHardcodedUi.raw('appAdminAccountsPage.line409JsxTextClearFilters')}</Button>
+                <Button variant="outline" size="sm" onClick={resetFilters}>
+                  {tHardcodedUi.raw('appAdminAccountsPage.line409JsxTextClearFilters')}
+                </Button>
               ) : undefined
             }
           />
@@ -417,7 +402,7 @@ export default function AdminAccountsPage() {
       ) : (
         <div
           className={cn(
-            'rounded-2xl border border-border/60 overflow-hidden transition-opacity',
+            'border-border/60 overflow-hidden rounded-2xl border transition-opacity',
             isFetching && 'opacity-70',
           )}
         >
@@ -466,11 +451,11 @@ export default function AdminAccountsPage() {
                   onClick={() => setSelected(account)}
                 >
                   <TableCell>
-                    <div className="min-w-0 max-w-[320px]">
+                    <div className="max-w-[320px] min-w-0">
                       <div className="truncate text-sm font-medium">
                         {account.name || 'Unnamed account'}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div className="text-muted-foreground truncate text-xs">
                         {account.ownerEmail || 'No owner email'}
                         <span className="mx-1.5 opacity-50">·</span>
                         <span className="font-mono">{account.accountId.slice(0, 8)}</span>
@@ -497,14 +482,18 @@ export default function AdminAccountsPage() {
                   </TableCell>
                   <TableCell>
                     {account.paymentStatus ? (
-                      <Badge variant={paymentStatusBadge(account.paymentStatus)} size="sm" className="capitalize">
+                      <Badge
+                        variant={paymentStatusBadge(account.paymentStatus)}
+                        size="sm"
+                        className="capitalize"
+                      >
                         {account.paymentStatus.replace(/_/g, ' ')}
                       </Badge>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="text-muted-foreground text-xs">
                     {account.createdAt
                       ? new Date(account.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
@@ -521,7 +510,7 @@ export default function AdminAccountsPage() {
       )}
 
       {pages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-between text-sm">
           <span>
             Page {page} of {pages} · {total.toLocaleString()} accounts
           </span>
@@ -529,7 +518,7 @@ export default function AdminAccountsPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-2.5 gap-1"
+              className="h-8 gap-1 px-2.5"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
             >
@@ -539,7 +528,7 @@ export default function AdminAccountsPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-2.5 gap-1"
+              className="h-8 gap-1 px-2.5"
               onClick={() => setPage((p) => Math.min(pages, p + 1))}
               disabled={page === pages}
             >
@@ -580,17 +569,23 @@ function FilterBar({
       <PageSearchBar
         value={searchInput}
         onChange={onSearchChange}
-        placeholder={tHardcodedUi.raw('appAdminAccountsPage.line580JsxAttrPlaceholderSearchByAccountOwnerEmailOrAccountId')}
+        placeholder={tHardcodedUi.raw(
+          'appAdminAccountsPage.line580JsxAttrPlaceholderSearchByAccountOwnerEmailOrAccountId',
+        )}
       />
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <label className="flex items-center gap-2 rounded-2xl border border-input bg-card px-3 py-1.5 text-sm h-9">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="border-input bg-card flex h-9 items-center gap-2 rounded-2xl border px-3 py-1.5 text-sm">
           <Switch
             checked={filters.paidOnly}
             onCheckedChange={(v) => onFiltersChange({ ...filters, paidOnly: v })}
-            aria-label={tHardcodedUi.raw('appAdminAccountsPage.line588JsxAttrAriaLabelPaidAccountsOnly')}
+            aria-label={tHardcodedUi.raw(
+              'appAdminAccountsPage.line588JsxAttrAriaLabelPaidAccountsOnly',
+            )}
           />
-          <span className="text-sm">{tHardcodedUi.raw('appAdminAccountsPage.line590JsxTextPaidOnly')}</span>
+          <span className="text-sm">
+            {tHardcodedUi.raw('appAdminAccountsPage.line590JsxTextPaidOnly')}
+          </span>
         </label>
 
         <Popover>
@@ -618,18 +613,34 @@ function FilterBar({
           }}
         >
           <SelectTrigger className="h-9 w-[170px] gap-1.5">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+            <SlidersHorizontal className="text-muted-foreground h-3.5 w-3.5" />
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
           <SelectContent align="end">
-            <SelectItem value="created:desc">{tHardcodedUi.raw('appAdminAccountsPage.line622JsxTextNewestFirst')}</SelectItem>
-            <SelectItem value="created:asc">{tHardcodedUi.raw('appAdminAccountsPage.line623JsxTextOldestFirst')}</SelectItem>
-            <SelectItem value="balance:desc">{tHardcodedUi.raw('appAdminAccountsPage.line624JsxTextBalanceHigh')}</SelectItem>
-            <SelectItem value="balance:asc">{tHardcodedUi.raw('appAdminAccountsPage.line625JsxTextBalanceLow')}</SelectItem>
-            <SelectItem value="members:desc">{tHardcodedUi.raw('appAdminAccountsPage.line626JsxTextMostMembers')}</SelectItem>
-            <SelectItem value="members:asc">{tHardcodedUi.raw('appAdminAccountsPage.line627JsxTextFewestMembers')}</SelectItem>
-            <SelectItem value="name:asc">{tHardcodedUi.raw('appAdminAccountsPage.line628JsxTextNameAZ')}</SelectItem>
-            <SelectItem value="name:desc">{tHardcodedUi.raw('appAdminAccountsPage.line629JsxTextNameZA')}</SelectItem>
+            <SelectItem value="created:desc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line622JsxTextNewestFirst')}
+            </SelectItem>
+            <SelectItem value="created:asc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line623JsxTextOldestFirst')}
+            </SelectItem>
+            <SelectItem value="balance:desc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line624JsxTextBalanceHigh')}
+            </SelectItem>
+            <SelectItem value="balance:asc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line625JsxTextBalanceLow')}
+            </SelectItem>
+            <SelectItem value="members:desc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line626JsxTextMostMembers')}
+            </SelectItem>
+            <SelectItem value="members:asc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line627JsxTextFewestMembers')}
+            </SelectItem>
+            <SelectItem value="name:asc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line628JsxTextNameAZ')}
+            </SelectItem>
+            <SelectItem value="name:desc">
+              {tHardcodedUi.raw('appAdminAccountsPage.line629JsxTextNameZA')}
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -687,24 +698,28 @@ function FiltersPanel({
 
   return (
     <div className="max-h-[70vh] overflow-y-auto">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+      <div className="border-border/60 flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">Filters</span>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>{tHardcodedUi.raw('appAdminAccountsPage.line689JsxTextResetAll')}</Button>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>
+          {tHardcodedUi.raw('appAdminAccountsPage.line689JsxTextResetAll')}
+        </Button>
       </div>
 
-      <div className="px-4 py-3 border-b border-border/60 space-y-2">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="border-border/60 space-y-2 border-b px-4 py-3">
+        <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
           Subscription
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span>{tHardcodedUi.raw('appAdminAccountsPage.line698JsxTextHasActiveSubscription')}</span>
+          <span>
+            {tHardcodedUi.raw('appAdminAccountsPage.line698JsxTextHasActiveSubscription')}
+          </span>
           <Select
             value={
               filters.hasSubscription === true
                 ? 'yes'
                 : filters.hasSubscription === false
-                ? 'no'
-                : 'any'
+                  ? 'no'
+                  : 'any'
             }
             onValueChange={(v) =>
               onChange({
@@ -725,9 +740,9 @@ function FiltersPanel({
         </div>
       </div>
 
-      <div className="px-4 py-3 border-b border-border/60 space-y-2">
+      <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
             Tier
           </div>
           {filters.tier.length > 0 && (
@@ -745,7 +760,7 @@ function FiltersPanel({
           {TIER_OPTIONS.map((t) => (
             <label
               key={t.value}
-              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm"
             >
               <Checkbox
                 checked={filters.tier.includes(t.value)}
@@ -757,9 +772,11 @@ function FiltersPanel({
         </div>
       </div>
 
-      <div className="px-4 py-3 border-b border-border/60 space-y-2">
+      <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAdminAccountsPage.line761JsxTextPaymentStatus')}</div>
+          <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {tHardcodedUi.raw('appAdminAccountsPage.line761JsxTextPaymentStatus')}
+          </div>
           {filters.paymentStatus.length > 0 && (
             <Button
               variant="ghost"
@@ -775,7 +792,7 @@ function FiltersPanel({
           {PAYMENT_STATUS_OPTIONS.map((p) => (
             <label
               key={p.value}
-              className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+              className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm"
             >
               <Checkbox
                 checked={filters.paymentStatus.includes(p.value)}
@@ -787,8 +804,8 @@ function FiltersPanel({
         </div>
       </div>
 
-      <div className="px-4 py-3 space-y-2">
-        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="space-y-2 px-4 py-3">
+        <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
           Balance
         </div>
         <div className="flex items-center gap-2">
@@ -800,7 +817,7 @@ function FiltersPanel({
             placeholder="Min"
             className="h-8 text-sm"
           />
-          <span className="text-xs text-muted-foreground">to</span>
+          <span className="text-muted-foreground text-xs">to</span>
           <Input
             type="number"
             value={maxBalance}
@@ -895,22 +912,24 @@ function ActiveChips({
           key={chip.key}
           type="button"
           onClick={chip.onRemove}
-          className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/30 px-2.5 py-1 text-xs transition-colors hover:bg-muted/60"
+          className="group border-border/60 bg-muted/30 hover:bg-muted/60 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
         >
           <span>{chip.label}</span>
-          <X className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
+          <X className="text-muted-foreground group-hover:text-foreground h-3 w-3" />
         </button>
       ))}
       {chips.length > 1 && (
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground"
+          className="text-muted-foreground h-7 px-2 text-xs"
           onClick={() => {
             onSearchChange('');
             onChange({ ...EMPTY_FILTERS, sortBy: filters.sortBy, sortDir: filters.sortDir });
           }}
-        >{tHardcodedUi.raw('appAdminAccountsPage.line913JsxTextClearAll')}</Button>
+        >
+          {tHardcodedUi.raw('appAdminAccountsPage.line913JsxTextClearAll')}
+        </Button>
       )}
     </div>
   );
@@ -942,7 +961,7 @@ function SortHeader({
         type="button"
         onClick={() => onSort(column)}
         className={cn(
-          'inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider transition-colors',
+          'inline-flex items-center gap-1 text-xs font-medium tracking-wider uppercase transition-colors',
           active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
         )}
       >
@@ -976,7 +995,7 @@ function AccountDetailSheet({
     <Sheet open={!!account} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-full sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[960px] overflow-y-auto p-0"
+        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[960px]"
       >
         {account && <AccountDetail account={account} />}
       </SheetContent>
@@ -991,14 +1010,18 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 
   return (
     <div className="flex flex-col">
-      <SheetHeader className="border-b border-border/60 p-6">
+      <SheetHeader className="border-border/60 border-b p-6">
         <SheetTitle className="flex items-center gap-2 text-lg">
           {account.name || 'Unnamed account'}
           <Badge variant={tierBadgeVariant(account.tier)} size="sm">
             {tierLabel(account.tier)}
           </Badge>
           {account.paymentStatus && account.paymentStatus !== 'active' && (
-            <Badge variant={paymentStatusBadge(account.paymentStatus)} size="sm" className="capitalize">
+            <Badge
+              variant={paymentStatusBadge(account.paymentStatus)}
+              size="sm"
+              className="capitalize"
+            >
               {account.paymentStatus.replace(/_/g, ' ')}
             </Badge>
           )}
@@ -1018,18 +1041,18 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 href={a.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/40"
+                className="group border-border/60 bg-card text-foreground hover:bg-muted/40 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
               >
                 <ServiceFavicon domain={a.domain} />
                 {a.label}
-                <ExternalLink className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground" />
+                <ExternalLink className="text-muted-foreground/60 group-hover:text-foreground h-3 w-3" />
               </a>
             ))}
           </div>
         )}
       </SheetHeader>
 
-      <div className="p-6 space-y-6">
+      <div className="space-y-6 p-6">
         <StatRow className="!grid-cols-2 lg:!grid-cols-4">
           <StatPill label="Total" value={formatCredits(account.balance)} />
           <StatPill label="Expiring" value={formatCredits(account.expiringCredits)} />
@@ -1038,7 +1061,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
         </StatRow>
 
         <Tabs defaultValue="credits" className="w-full">
-          <TabsList className="w-full flex-wrap h-auto">
+          <TabsList className="h-auto w-full flex-wrap">
             <TabsTrigger value="credits" className="gap-1.5">
               <CreditCard className="h-3.5 w-3.5" />
               Credits
@@ -1081,6 +1104,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 }
 
 function CreditsTab({ account }: { account: AdminAccount }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
@@ -1156,12 +1180,13 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     <>
       {/* Plan / Enterprise activation — sales-assigned tiers have no self-serve
           path; this flips the account onto Enterprise (unlocks SSO + SCIM). */}
-      <div className="mb-4 space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+      <div className="border-border/60 bg-card mb-4 space-y-3 rounded-2xl border p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">Plan</div>
-            <div className="text-xs text-muted-foreground">
-              Current: <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>
+            <div className="text-foreground text-sm font-medium">Plan</div>
+            <div className="text-muted-foreground text-xs">
+              Current:{' '}
+              <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>
               {isEnterprise && ' · SSO + SCIM unlocked'}
             </div>
           </div>
@@ -1184,17 +1209,16 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               onClick={() => handleSetTier('per_seat', 'Team')}
               disabled={setTier.isPending}
             >
-              Revert to Team
+              {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextRevertToTeam5247682b')}
             </Button>
           )}
         </div>
         <p className="text-muted-foreground text-xs">
-          Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is
-          unchanged.
+          {tI18nHardcoded.raw('autoAppAdminAccountsPageJsxTextEnterpriseUnlocksSAMLSSO7daa7fe0')}
         </p>
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
+      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
             <Button
@@ -1214,21 +1238,27 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder={tHardcodedUi.raw('appAdminAccountsPage.line1161JsxAttrPlaceholderAmountEG25')}
+            placeholder={tHardcodedUi.raw(
+              'appAdminAccountsPage.line1161JsxAttrPlaceholderAmountEG25',
+            )}
             step="0.01"
           />
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder={tHardcodedUi.raw('appAdminAccountsPage.line1167JsxAttrPlaceholderReasonNote')}
+            placeholder={tHardcodedUi.raw(
+              'appAdminAccountsPage.line1167JsxAttrPlaceholderReasonNote',
+            )}
           />
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <label className="text-muted-foreground flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={isExpiring}
               onChange={(e) => setIsExpiring(e.target.checked)}
               className="size-4"
-            />{tHardcodedUi.raw('appAdminAccountsPage.line1176JsxTextGrantAsExpiringCredits')}</label>
+            />
+            {tHardcodedUi.raw('appAdminAccountsPage.line1176JsxTextGrantAsExpiringCredits')}
+          </label>
         </div>
         <div className="flex gap-2">
           <Button
@@ -1240,7 +1270,9 @@ function CreditsTab({ account }: { account: AdminAccount }) {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <ArrowUpRight className="h-3.5 w-3.5" />
-            )}{tHardcodedUi.raw('appAdminAccountsPage.line1190JsxTextGrantCredits')}</Button>
+            )}
+            {tHardcodedUi.raw('appAdminAccountsPage.line1190JsxTextGrantCredits')}
+          </Button>
           <Button
             variant="outline"
             onClick={() => setConfirmDebit(true)}
@@ -1260,10 +1292,15 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         description={
           <div className="space-y-2 text-sm">
             <p>
-              Deduct <span className="font-mono text-foreground">{isValid ? money(parsed) : '—'}</span>{' '}
+              Deduct{' '}
+              <span className="text-foreground font-mono">{isValid ? money(parsed) : '—'}</span>{' '}
               from <span className="font-medium">{account.name || account.accountId}</span>.
             </p>
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAdminAccountsPage.line1215JsxTextWillFailIfTheAccountHasInsufficientCredits')}</p>
+            <p className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw(
+                'appAdminAccountsPage.line1215JsxTextWillFailIfTheAccountHasInsufficientCredits',
+              )}
+            </p>
           </div>
         }
         confirmLabel="Debit"
@@ -1274,27 +1311,27 @@ function CreditsTab({ account }: { account: AdminAccount }) {
   );
 }
 
-function UsersTab({
-  usersQuery,
-}: {
-  usersQuery: ReturnType<typeof useAdminAccountUsers>;
-}) {
+function UsersTab({ usersQuery }: { usersQuery: ReturnType<typeof useAdminAccountUsers> }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (usersQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}</div>
+      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {tHardcodedUi.raw('appAdminAccountsPage.line1236JsxTextLoadingUsers')}
+      </div>
     );
   }
 
   const users = usersQuery.data?.users ?? [];
   if (users.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/60 bg-card">
+      <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
           title={tHardcodedUi.raw('appAdminAccountsPage.line1247JsxAttrTitleNoUsersOnThisAccount')}
-          description={tHardcodedUi.raw('appAdminAccountsPage.line1248JsxAttrDescriptionMembersWillAppearHereOnceUsersAreAdded')}
+          description={tHardcodedUi.raw(
+            'appAdminAccountsPage.line1248JsxAttrDescriptionMembersWillAppearHereOnceUsersAreAdded',
+          )}
           size="sm"
         />
       </div>
@@ -1302,17 +1339,17 @@ function UsersTab({
   }
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60">
+    <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
         return (
           <div key={user.user_id} className="flex flex-col gap-2 px-4 py-3 text-sm">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium">{user.email}</span>
                 {confirmed ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                 ) : (
                   <Badge variant="warning" size="sm">
                     unverified
@@ -1325,19 +1362,23 @@ function UsersTab({
                   </Badge>
                 )}
               </div>
-              <Badge variant="muted" size="sm" className="capitalize shrink-0">
+              <Badge variant="muted" size="sm" className="shrink-0 capitalize">
                 {user.account_role}
               </Badge>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+            <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">
-                <span className="text-muted-foreground/70">{tHardcodedUi.raw('appAdminAccountsPage.line1285JsxTextLastSignIn')}</span>
+                <span className="text-muted-foreground/70">
+                  {tHardcodedUi.raw('appAdminAccountsPage.line1285JsxTextLastSignIn')}
+                </span>
                 <span className="text-foreground/80">
                   {user.last_sign_in_at ? formatRelative(user.last_sign_in_at) : 'Never'}
                 </span>
               </div>
               <div className="truncate">
-                <span className="text-muted-foreground/70">{tHardcodedUi.raw('appAdminAccountsPage.line1291JsxTextSignedUp')}</span>
+                <span className="text-muted-foreground/70">
+                  {tHardcodedUi.raw('appAdminAccountsPage.line1291JsxTextSignedUp')}
+                </span>
                 <span className="text-foreground/80">
                   {user.signed_up_at ? formatRelative(user.signed_up_at) : '—'}
                 </span>
@@ -1368,27 +1409,27 @@ function formatRelative(value: string | null) {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-function LedgerTab({
-  ledgerQuery,
-}: {
-  ledgerQuery: ReturnType<typeof useAdminAccountLedger>;
-}) {
+function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAccountLedger> }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (ledgerQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}</div>
+      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {tHardcodedUi.raw('appAdminAccountsPage.line1331JsxTextLoadingLedger')}
+      </div>
     );
   }
 
   const entries = ledgerQuery.data?.entries ?? [];
   if (entries.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/60 bg-card">
+      <div className="border-border/60 bg-card rounded-2xl border">
         <EmptyState
           icon={IconInbox}
           title={tHardcodedUi.raw('appAdminAccountsPage.line1342JsxAttrTitleNoLedgerEntries')}
-          description={tHardcodedUi.raw('appAdminAccountsPage.line1343JsxAttrDescriptionCreditActivityWillShowUpHere')}
+          description={tHardcodedUi.raw(
+            'appAdminAccountsPage.line1343JsxAttrDescriptionCreditActivityWillShowUpHere',
+          )}
           size="sm"
         />
       </div>
@@ -1396,15 +1437,12 @@ function LedgerTab({
   }
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 max-h-[50vh] overflow-y-auto">
+    <div className="border-border/60 bg-card divide-border/60 max-h-[50vh] divide-y overflow-y-auto rounded-2xl border">
       {entries.map((entry) => {
         const amount = Number(entry.amount);
         const positive = amount >= 0;
         return (
-          <div
-            key={entry.id}
-            className="flex items-start justify-between gap-3 px-4 py-3 text-sm"
-          >
+          <div key={entry.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Badge variant="muted" size="sm" className="capitalize">
@@ -1417,25 +1455,27 @@ function LedgerTab({
                 )}
               </div>
               {entry.description && (
-                <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">
                   {entry.description}
                 </div>
               )}
-              <div className="mt-0.5 text-xs text-muted-foreground">
+              <div className="text-muted-foreground mt-0.5 text-xs">
                 {formatDateTime(entry.createdAt)}
               </div>
             </div>
-            <div className="text-right shrink-0">
+            <div className="shrink-0 text-right">
               <div
                 className={cn(
                   'font-mono text-sm font-medium',
-                  positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+                  positive
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-red-600 dark:text-red-400',
                 )}
               >
                 {positive ? '+' : '-'}
                 {money(amount)}
               </div>
-              <div className="text-xs text-muted-foreground font-mono">
+              <div className="text-muted-foreground font-mono text-xs">
                 → {formatCredits(entry.balanceAfter)}
               </div>
             </div>
@@ -1451,11 +1491,21 @@ function BillingTab({ account }: { account: AdminAccount }) {
   const actions = billingActionsFor(account);
 
   const summary: Array<[string, React.ReactNode]> = [
-    ['Tier', <Badge key="tier" variant={tierBadgeVariant(account.tier)} size="sm">{tierLabel(account.tier)}</Badge>],
+    [
+      'Tier',
+      <Badge key="tier" variant={tierBadgeVariant(account.tier)} size="sm">
+        {tierLabel(account.tier)}
+      </Badge>,
+    ],
     [
       'Payment status',
       account.paymentStatus ? (
-        <Badge key="ps" variant={paymentStatusBadge(account.paymentStatus)} size="sm" className="capitalize">
+        <Badge
+          key="ps"
+          variant={paymentStatusBadge(account.paymentStatus)}
+          size="sm"
+          className="capitalize"
+        >
           {account.paymentStatus.replace(/_/g, ' ')}
         </Badge>
       ) : (
@@ -1473,18 +1523,16 @@ function BillingTab({ account }: { account: AdminAccount }) {
     {
       label: 'Stripe subscription',
       value: account.stripeSubscriptionId,
-      href:
-        account.stripeSubscriptionId?.startsWith('sub_')
-          ? stripeUrl('subscription', account.stripeSubscriptionId)
-          : null,
+      href: account.stripeSubscriptionId?.startsWith('sub_')
+        ? stripeUrl('subscription', account.stripeSubscriptionId)
+        : null,
     },
     {
       label: 'Stripe customer',
       value: account.billingCustomerId,
-      href:
-        account.billingCustomerId?.startsWith('cus_')
-          ? stripeUrl('customer', account.billingCustomerId)
-          : null,
+      href: account.billingCustomerId?.startsWith('cus_')
+        ? stripeUrl('customer', account.billingCustomerId)
+        : null,
     },
   ];
 
@@ -1498,41 +1546,41 @@ function BillingTab({ account }: { account: AdminAccount }) {
               href={a.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/40"
+              className="group border-border/60 bg-card hover:bg-muted/40 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <ServiceFavicon domain={a.domain} />
               {a.label}
-              <ExternalLink className="h-3 w-3 text-muted-foreground/60 group-hover:text-foreground" />
+              <ExternalLink className="text-muted-foreground/60 group-hover:text-foreground h-3 w-3" />
             </a>
           ))}
         </div>
       )}
 
-      <div className="rounded-2xl border border-border/60 bg-card text-sm">
-        <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+      <div className="border-border/60 bg-card rounded-2xl border text-sm">
+        <div className="divide-border/60 grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {summary.map(([label, value]) => (
-            <div key={label} className="px-4 py-3 flex items-center justify-between gap-3">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground/70">
+            <div key={label} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
                 {label}
               </span>
-              <span className="font-medium text-right">{value}</span>
+              <span className="text-right font-medium">{value}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 text-sm">
+      <div className="border-border/60 bg-card divide-border/60 divide-y rounded-2xl border text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}
             className="flex flex-col gap-1 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
           >
-            <span className="text-xs uppercase tracking-wider text-muted-foreground/70 sm:w-40 shrink-0">
+            <span className="text-muted-foreground/70 shrink-0 text-xs tracking-wider uppercase sm:w-40">
               {label}
             </span>
             {value ? (
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <code className="font-mono text-xs text-foreground/90 break-all bg-muted/30 rounded px-2 py-1 flex-1 min-w-0">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <code className="text-foreground/90 bg-muted/30 min-w-0 flex-1 rounded px-2 py-1 font-mono text-xs break-all">
                   {value}
                 </code>
                 {href && (
@@ -1540,8 +1588,10 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground shrink-0"
-                    title={tHardcodedUi.raw('appAdminAccountsPage.line1495JsxAttrTitleOpenInStripe')}
+                    className="border-border/60 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
+                    title={tHardcodedUi.raw(
+                      'appAdminAccountsPage.line1495JsxAttrTitleOpenInStripe',
+                    )}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
                     Open

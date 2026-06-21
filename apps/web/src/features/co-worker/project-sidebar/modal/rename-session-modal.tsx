@@ -14,6 +14,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { updateProjectSession } from '@/lib/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 interface RenameSessionModalProps {
@@ -35,6 +36,7 @@ export function RenameSessionModal({
   onOpenChange,
   onSaved,
 }: RenameSessionModalProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [value, setValue] = useState(currentName ?? '');
 
@@ -70,9 +72,15 @@ export function RenameSessionModal({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
-          <ModalTitle>Rename session</ModalTitle>
+          <ModalTitle>
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx265e123d',
+            )}
+          </ModalTitle>
           <ModalDescription>
-            Give this session a name. Leave it empty to use the automatic title.
+            {tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx19d80686',
+            )}
           </ModalDescription>
         </ModalHeader>
         <ModalBody>
@@ -80,7 +88,9 @@ export function RenameSessionModal({
             autoFocus
             value={value}
             maxLength={MAX_NAME_LENGTH}
-            placeholder="Session name"
+            placeholder={tI18nHardcoded.raw(
+              'autoFeaturesCoWorkerProjectSidebarModalRenameSessionModalJsx2412472b',
+            )}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
