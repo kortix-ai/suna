@@ -20,6 +20,8 @@
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/index.test.ts",
+    "test:e2e": "bun test src/e2e.test.ts",
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "tsc -p tsconfig.build.json"
   },
