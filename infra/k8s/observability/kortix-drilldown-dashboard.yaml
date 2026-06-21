@@ -131,12 +131,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "green",
-                  "value": null
-                }
-              ],
+              "unit": "none",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -190,16 +185,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "red",
-                  "value": 1
-                }
-              ],
+              "unit": "none",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -207,6 +193,10 @@ data:
                   {
                     "color": "green",
                     "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
                   }
                 ]
               },
@@ -253,20 +243,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "unit": [
-                {
-                  "color": "green",
-                  "value": null
-                },
-                {
-                  "color": "yellow",
-                  "value": 1
-                },
-                {
-                  "color": "red",
-                  "value": 5
-                }
-              ],
+              "unit": "none",
               "decimals": 0,
               "thresholds": {
                 "mode": "absolute",
@@ -274,6 +251,14 @@ data:
                   {
                     "color": "green",
                     "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 5
                   }
                 ]
               },
