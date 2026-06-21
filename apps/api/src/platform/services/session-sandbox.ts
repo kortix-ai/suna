@@ -120,6 +120,9 @@ async function mintExecutorToken(opts: {
       accountId: opts.accountId,
       userId: opts.userId,
       projectId: opts.projectId,
+      // session_id == sandbox_id by construction — lets the LLM gateway attribute
+      // usage_events to this session (the reaper's reliable activity signal).
+      sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
     });

@@ -5,6 +5,7 @@ import { projectSessions, sessionSandboxes, chatTurnStreams, usageEvents } from 
 let candidates: any[] = [];
 let activeTurns: Array<{ sessionId: string }> = [];
 let usageRows: Array<{ sessionId: string; last: string }> = [];
+let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
@@ -15,10 +16,13 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 
 /** A thenable that also exposes `.limit()` so both `await where()` (turn query)
  *  and `where().limit()` (candidate query) resolve to the same rows. */
-function hybrid(rows: any[]) {
+function hybrid(rows: any[], throwOnGroupBy = false) {
   const p: any = Promise.resolve(rows);
   p.limit = async () => rows;
-  p.groupBy = async () => rows;
+  p.groupBy = async () => {
+    if (throwOnGroupBy) throw new Error('db down');
+    return rows;
+  };
   return p;
 }
 
@@ -41,6 +45,7 @@ mock.module('../shared/db', () => ({
                 : table === usageEvents
                   ? usageRows
                   : [],
+            table === usageEvents && throwOnUsageLookup,
           ),
       }),
     }),
@@ -88,6 +93,7 @@ beforeEach(() => {
   candidates = [];
   activeTurns = [];
   usageRows = [];
+  throwOnUsageLookup = false;
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
@@ -293,5 +299,32 @@ describe('reapAndReconcileSandboxes', () => {
     expect(
       updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
     ).toBe(false);
+  });
+
+  test('provider-removed → reconcile to STOPPED (not archived) + needsReprovision, so it can reopen', async () => {
+    candidates = [candidate()];
+    statusByExternal['ext-1'] = 'removed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.reconciled).toBe(1);
+    expect(endedCompute).toEqual(['sb-1']);
+    const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
+    // MUST be 'stopped' — openSession only reprovisions a stopped+needsReprovision row.
+    expect(sbUpdate?.updates.status).toBe('stopped');
+    expect(sbUpdate?.updates.metadata).toBeDefined();
+    expect(stops).toEqual([]); // never poke a removed box
+  });
+
+  test('FAIL-SAFE: when the activity lookup fails, never stop a running box', async () => {
+    candidates = [candidate()]; // idle by timestamp (created 2h ago)
+    statusByExternal['ext-1'] = 'running';
+    throwOnUsageLookup = true; // simulate a DB/transient failure
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual([]); // uncertain → do not stop
+    expect(pausedCompute).toEqual([]);
+    expect(r.stopped).toBe(0);
   });
 });

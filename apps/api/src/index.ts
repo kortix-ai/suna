@@ -671,7 +671,16 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           // so the managed gateway works for self-hosted / billing-off deploys.
           const acct = await validateAccountToken(token);
           if (acct.isValid && acct.userId && acct.accountId) {
-            return { userId: acct.userId, accountId: acct.accountId };
+            // projectId/sessionId attribute LLM usage to the calling session
+            // (sandbox executor token is minted per-session with session_id =
+            // sandbox_id) — the reaper's reliable activity signal + precise
+            // per-session billing.
+            return {
+              userId: acct.userId,
+              accountId: acct.accountId,
+              projectId: acct.projectId ?? null,
+              sessionId: acct.sessionId ?? null,
+            };
           }
           return null;
         },
@@ -683,6 +692,8 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
           const usageEventId = await recordUsageEvent({
             accountId: event.accountId,
             actorUserId: event.actorUserId,
+            projectId: event.projectId ?? null,
+            sessionId: event.sessionId ?? null,
             provider: event.provider,
             model: event.model,
             route: '/v1/llm/chat/completions',

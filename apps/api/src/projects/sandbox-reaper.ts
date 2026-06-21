@@ -231,12 +231,20 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
   const sessionIds = rows.map((r) => r.sessionId);
   // The real activity signals, batched (both lookups are indexed):
   //  - last LLM call per session (the truest "a real turn happened" signal,
-  //    covering web / Slack / trigger uniformly), and
+  //    covering web / Slack / trigger uniformly — the gateway stamps session_id
+  //    on usage_events), and
   //  - which sessions have a turn IN FLIGHT (unfinalized stream) — never reap those.
-  const [lastUsageBySession, activeTurnSessions] = await Promise.all([
+  const [usageResult, activeTurnResult] = await Promise.all([
     loadLastUsageBySession(sessionIds),
     loadActiveTurnSessions(sessionIds),
   ]);
+  // FAIL-SAFE: a null result means the lookup itself FAILED (DB/transient). We
+  // then cannot prove a box is idle, so we must NOT stop it on uncertain data —
+  // same "never act on uncertainty" rule the provider-status path follows.
+  // Provider-confirmed stopped/removed reconciliation still proceeds below.
+  const activitySignalReliable = usageResult !== null && activeTurnResult !== null;
+  const lastUsageBySession = usageResult ?? new Map<string, Date>();
+  const activeTurnSessions = activeTurnResult ?? new Set<string>();
 
   let cursor = 0;
   const worker = async () => {
@@ -260,7 +268,10 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
         const decision = decideReap({
           providerStatus,
           meaningfulIdleMs,
-          hasActiveTurn: activeTurnSessions.has(row.sessionId),
+          // When the activity signal is unreliable this cycle, treat the box as
+          // if a turn is in flight so a running box is never stopped on uncertain
+          // data (provider-confirmed stopped/removed still reconciles).
+          hasActiveTurn: !activitySignalReliable || activeTurnSessions.has(row.sessionId),
           ttlMs,
           provider: row.provider,
         });
@@ -278,9 +289,14 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             await endComputeSession(row.sandboxId).catch((err) =>
               console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
             );
+            // Status MUST be 'stopped' (not 'archived'): openSession only honors
+            // `needsReprovision` in its `row.status === 'stopped'` branch. An
+            // 'archived' row would fall through to a terminal 'stopped' result and
+            // NEVER reprovision — stranding the session. 'stopped' + the marker
+            // makes the next open reprovision a fresh box.
             await db
               .update(sessionSandboxes)
-              .set({ status: 'archived', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
+              .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
               .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
             await db
               .update(projectSessions)
@@ -324,8 +340,13 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
   return result;
 }
 
-/** Last LLM-usage timestamp per session (the indexed `usage_events.session_id`). */
-async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string, Date>> {
+/**
+ * Last LLM-usage timestamp per session (the indexed `usage_events.session_id`).
+ * Returns `null` on a lookup FAILURE so the caller can fail safe (never stop a
+ * box when we can't determine its activity). An empty map = looked up fine, no
+ * usage found.
+ */
+async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string, Date> | null> {
   const out = new Map<string, Date>();
   if (sessionIds.length === 0) return out;
   try {
@@ -341,14 +362,19 @@ async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string,
         if (!Number.isNaN(d.getTime())) out.set(r.sessionId, d);
       }
     }
-  } catch {
-    // Best-effort — never let the activity lookup block the reaper.
+    return out;
+  } catch (err) {
+    console.warn('[reaper] usage-activity lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
+    return null;
   }
-  return out;
 }
 
-/** Session ids that currently have an unfinalized turn stream (a turn in flight). */
-async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string>> {
+/**
+ * Session ids that currently have an unfinalized turn stream (a turn in flight).
+ * Returns `null` on a lookup FAILURE so the caller fails safe (never reap when
+ * we can't tell if a turn is running). Empty set = looked up fine, none active.
+ */
+async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string> | null> {
   if (sessionIds.length === 0) return new Set();
   try {
     const { chatTurnStreams } = await import('@kortix/db');
@@ -357,9 +383,9 @@ async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string>
       .from(chatTurnStreams)
       .where(and(inArray(chatTurnStreams.sessionId, sessionIds), eq(chatTurnStreams.finalized, false)));
     return new Set(rows.map((r) => r.sessionId));
-  } catch {
-    // Best-effort safety signal — never let it block the reaper.
-    return new Set();
+  } catch (err) {
+    console.warn('[reaper] active-turn lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
@@ -454,13 +480,14 @@ export async function reconcileSandboxRemovedByExternalId(externalId: string, no
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
-  if (row.status === 'archived') return false;
   await endComputeSession(row.sandboxId).catch((err) =>
     console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
   );
+  // 'stopped' (not 'archived') + needsReprovision so openSession's stopped-branch
+  // reprovisions a fresh box on the next open (an archived row would strand it).
   await db
     .update(sessionSandboxes)
-    .set({ status: 'archived', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
+    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
