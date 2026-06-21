@@ -70,7 +70,17 @@ non-obvious: `git log "$PREV..origin/main" --no-merges`. Also useful for scope:
 Quality bar: a non-technical reader understands what changed; a teammate can map every
 notable commit in the log to a line in the notes.
 
-### Step 4 — pick the bump (§1) and promote
+### Step 3.5 — pre-Promote QA (deferred / planned)
+
+> **Deferred for now.** The full end-to-end QA gate (agent-browser video walkthrough
+> + API e2e on a preview of the release HEAD, via the company `qa-e2e-preview` skill)
+> is intentionally NOT wired into Promote yet — it's the "next pass." Until then,
+> rely on the per-PR `pr-review` gate + the repo's CI, and do a manual smoke of
+> prod after deploy (Step 6).
+>
+> When we turn it on: stand up a preview of `main` HEAD, run the browser-video core
+> flows + the ke2e suite against it, block the promote on any red, and attach the
+> video to the release notes — ideally as a required CI check on the release PR.
 `promote.yml` **requires** `title` and `notes` (this is enforced — you cannot cut a
 release without describing it). They're written into the annotated tag (subject =
 title, body = notes), which deploy-prod turns into the GitHub Release + changelog.
