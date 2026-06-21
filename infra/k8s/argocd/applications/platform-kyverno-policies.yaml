@@ -1,0 +1,42 @@
+# Kyverno ClusterPolicies — synced straight from git (one concern per file under
+# infra/k8s/policies/kyverno). Everything ships in Audit mode: violations are
+# reported via PolicyReports, never blocked. System namespaces are excluded so
+# platform pods aren't audited to death.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-kyverno-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: main
+    path: infra/k8s/policies/kyverno
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      managedFieldsManagers:
+        - kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

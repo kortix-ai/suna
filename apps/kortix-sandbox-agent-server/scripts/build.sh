@@ -24,7 +24,39 @@ case "$target" in
     ;;
 esac
 
-bun build --compile --target="$target" --outfile=dist/kortix-agent src/main.ts
+compile_with_retry() {
+  local attempt=1
+  local max_attempts=4
+  local delay=5
+
+  while true; do
+    if bun build --compile --target="$target" --outfile=dist/kortix-agent src/main.ts; then
+      return 0
+    fi
+
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      echo "bun build --compile failed after ${max_attempts} attempts" >&2
+      return 1
+    fi
+
+    echo "bun build --compile failed on attempt ${attempt}/${max_attempts}; retrying in ${delay}s..." >&2
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+  done
+}
+
+# Typecheck BEFORE the bundler runs. `bun build --compile` is a bundler — it
+# does NOT typecheck, so a name referenced but never declared (e.g. a variable
+# dropped during a merge while its use survived) compiles cleanly into a binary
+# that throws ReferenceError at runtime. That exact class shipped a daemon that
+# crashed on every warm-pool claim (cloneAtPark, 2026-06-19) → port 8000 never
+# rebound → every proxied request 502'd → sandboxes stuck at "Starting the
+# agent" forever. Gate the compile on a clean tsc so it can never recur.
+echo "Typechecking (tsc --noEmit) before compile…"
+bun run typecheck
+
+compile_with_retry
 chmod +x dist/kortix-agent
 size="$(stat -f%z dist/kortix-agent 2>/dev/null || stat -c%s dist/kortix-agent)"
 echo "Built dist/kortix-agent for ${target} (${size} bytes)"

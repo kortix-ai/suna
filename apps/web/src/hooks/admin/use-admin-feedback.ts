@@ -118,14 +118,14 @@ export function useAdminFeedbackList(params: FeedbackListParams = {}) {
     queryKey: ['admin', 'feedback', 'list', params],
     queryFn: async (): Promise<FeedbackListResponse> => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.page) searchParams.append('page', params.page.toString());
       if (params.page_size) searchParams.append('page_size', params.page_size.toString());
       if (params.rating_filter !== undefined) searchParams.append('rating_filter', params.rating_filter.toString());
       if (params.has_text !== undefined) searchParams.append('has_text', params.has_text.toString());
       if (params.sort_by) searchParams.append('sort_by', params.sort_by);
       if (params.sort_order) searchParams.append('sort_order', params.sort_order);
-      
+
       const response = await backendApi.get(`/admin/feedback/list?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -216,12 +216,12 @@ export function useAdminFeedbackExport(params: {
     queryKey: ['admin', 'feedback', 'export', params],
     queryFn: async (): Promise<FeedbackWithUser[]> => {
       const searchParams = new URLSearchParams();
-      
+
       if (params.rating_filter !== undefined) searchParams.append('rating_filter', params.rating_filter.toString());
       if (params.has_text !== undefined) searchParams.append('has_text', params.has_text.toString());
       if (params.start_date) searchParams.append('start_date', params.start_date);
       if (params.end_date) searchParams.append('end_date', params.end_date);
-      
+
       const response = await backendApi.get(`/admin/feedback/export?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -247,7 +247,7 @@ export function useAdminFeedbackAnalysis() {
 
 export function useRefreshFeedbackData() {
   const queryClient = useQueryClient();
-  
+
   return {
     refreshFeedbackList: (params?: FeedbackListParams) => {
       queryClient.invalidateQueries({

@@ -72,7 +72,7 @@ const ICON_MAP: Record<ToolIconKey, ElementType> = {
 
 /**
  * Get the icon component for a tool name
- * 
+ *
  * @param toolName - The tool name
  * @returns The React component for the icon
  */
@@ -83,4 +83,3 @@ export function getToolIcon(toolName: string): React.ComponentType<{ className?:
 
 // Re-export the icon key function for type checking
 export { getToolIconKey, type ToolIconKey };
-

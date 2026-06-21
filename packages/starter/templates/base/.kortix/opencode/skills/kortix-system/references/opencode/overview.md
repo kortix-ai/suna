@@ -57,4 +57,4 @@ image, deployable apps, project metadata) lives in `kortix.toml` at
 the repo root. OpenCode never reads `kortix.toml`.
 
 Both halves are versioned in the same repo, but the boundary is
-strict — see `references/kortix-toml.md` for the Kortix half.
+strict — see `../kortix/kortix-toml.md` for the Kortix half.

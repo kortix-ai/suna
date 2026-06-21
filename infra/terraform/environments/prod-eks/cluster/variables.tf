@@ -79,6 +79,12 @@ variable "argocd_domain" {
   default     = "ops.kortix.com"
 }
 
+variable "devops_domain" {
+  description = "Public FQDN for the consolidated DevOps gateway (gated by Cloudflare Access)."
+  type        = string
+  default     = "devops.kortix.com"
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string

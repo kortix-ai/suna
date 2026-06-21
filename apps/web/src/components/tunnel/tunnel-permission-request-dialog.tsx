@@ -72,7 +72,7 @@ export function TunnelPermissionRequestDialog() {
 
       if (mode === 'once') {
         scope = currentRequest.requestedScope;
-        expiresAt = getExpiresAt(EXPIRY_OPTIONS[0]!); 
+        expiresAt = getExpiresAt(EXPIRY_OPTIONS[0]!);
       } else if (mode === 'scoped') {
         scope = customScope as Record<string, unknown>;
         const expiry = EXPIRY_OPTIONS.find((o) => o.value === expiryValue);

@@ -1,6 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 
@@ -32,6 +33,7 @@ const MARKO_WHATSAPP = '17372940835';
 const STORAGE_KEY = 'kortix:marko-welcome-dismissed';
 
 export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } = {}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { user } = useAuth();
   const tier = usePersonalContactTier();
   const isPaid = tier === 'personal';
@@ -80,7 +82,9 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
           'w-[min(500px,calc(100vw-2rem))]',
         )}
         role="complementary"
-        aria-label="Welcome from Marko"
+        aria-label={tI18nHardcoded.raw(
+          'autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrAriaLabelWelcome436613af',
+        )}
       >
         <CardHeader className="px-4">
           <div className="flex items-center gap-3">
@@ -94,8 +98,16 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
               />
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-balance">Hey, I&rsquo;m Marko</CardTitle>
-              <CardDescription>Founder &amp; CEO, Kortix</CardDescription>
+              <CardTitle className="text-balance">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextHeyIMe9d73cdb',
+                )}
+              </CardTitle>
+              <CardDescription>
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextFounderCEOKortix4be58c34',
+                )}
+              </CardDescription>
             </div>
           </div>
           <CardAction>
@@ -107,7 +119,9 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
 
         <CardContent className="px-4">
           <p className="text-foreground/90 text-sm leading-relaxed text-pretty">
-            Want a hand setting up your company&rsquo;s AI command center?
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextWantAHandf0a0c56c',
+            )}
             {isPaid
               ? ' Book a call or send me a WhatsApp message whenever you need help.'
               : ' Book a demo and I’ll walk you through it.'}
@@ -117,7 +131,9 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
         <CardFooter className="flex-wrap gap-2 px-4">
           <Button size="sm" onClick={() => setQualifierOpen(true)}>
             <TelephoneSolid />
-            Book a demo
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsPersonalOnboardingWelcomeJsxTextBookADemo7f3fc2d5',
+            )}
           </Button>
           {isPaid && (
             <Button asChild size="sm" variant="outline">
@@ -139,8 +155,12 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
         calLink={MARKO_CAL_LINK}
         calNamespace={MARKO_CAL_NAMESPACE}
         source="marko-widget"
-        title="Book a call with Marko"
-        description="A couple of quick details so Marko can tailor the call."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrTitleBookA33a960c8',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsPersonalOnboardingWelcomeJsxAttrDescriptionACouple5d67eddc',
+        )}
         defaultName={defaultName}
         defaultEmail={defaultEmail}
       />

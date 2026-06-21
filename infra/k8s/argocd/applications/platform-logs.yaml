@@ -1,0 +1,90 @@
+# Logs — loki-stack (Loki + Promtail). Promtail tails every pod's logs on each
+# node and ships them to Loki; Grafana (platform-metrics) queries Loki via its
+# datasource, so log search + dashboards live in the one pane. Retained &
+# searchable across namespaces — the thing Headlamp's live per-pod logs can't do.
+#
+# Loki here is single-binary on a gp2 PVC (filesystem) — simple and reliable at
+# this scale. Graduating to distributed Loki + S3 is a values change, not a
+# re-architecture, when volume grows.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-logs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki-stack
+    targetRevision: 2.10.3
+    helm:
+      releaseName: loki
+      values: |
+        loki:
+          enabled: true
+          # loki-stack auto-creates the Grafana Loki datasource (the kps sidecar
+          # discovers it). Keep it non-default so Prometheus stays the default
+          # datasource — two defaults crash Grafana provisioning.
+          isDefault: false
+          persistence:
+            enabled: true
+            storageClassName: gp2
+            size: 10Gi
+          config:
+            limits_config:
+              retention_period: 168h
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        promtail:
+          enabled: true
+          config:
+            clients:
+              - url: http://loki.monitoring.svc:3100/loki/api/v1/push
+        # Grafana + Prometheus come from platform-metrics, not here.
+        grafana:
+          enabled: false
+        prometheus:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  ignoreDifferences:
+    - kind: Service
+      jqPathExpressions:
+        - .spec.clusterIP
+        - .spec.clusterIPs
+        - .spec.ipFamilies
+        - .spec.ipFamilyPolicy
+        - .spec.internalTrafficPolicy
+        - .spec.sessionAffinity
+    - kind: Secret
+      jqPathExpressions:
+        - .type
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.persistentVolumeClaimRetentionPolicy
+        - .spec.revisionHistoryLimit
+        - .spec.podManagementPolicy
+        - .spec.updateStrategy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

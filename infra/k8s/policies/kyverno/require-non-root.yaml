@@ -1,0 +1,41 @@
+# Audit: workloads must run as non-root — runAsNonRoot: true must be set at the
+# pod or the container securityContext level. Audit mode (report-only).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-non-root
+  annotations:
+    policies.kyverno.io/title: Require runAsNonRoot
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Containers must run as a non-root user. runAsNonRoot: true must be set in
+      the pod-level securityContext or in every container's securityContext.
+spec:
+  background: true
+  rules:
+    - name: run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+      validate:
+        failureAction: Audit
+        message: >-
+          runAsNonRoot must be set to true at the pod or container securityContext.
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true

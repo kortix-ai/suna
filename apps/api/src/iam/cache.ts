@@ -1,23 +1,7 @@
-// Per-request memoisation for authorize() calls. Hono context carries this
-// map so that multiple permission checks in the same request collapse to a
-// single set of DB lookups per (action, target) key.
+// Request-context derivation shared by IAM callers.
 
 import type { Context } from 'hono';
-import { authorize } from './dispatcher';
-import type {
-  AuthorizeResult,
-  AuthorizeTarget,
-  RequestContext,
-} from './engine';
-
-type CacheMap = Map<string, Promise<AuthorizeResult>>;
-
-const CACHE_KEY = '__iamAuthorizeCache' as const;
-
-function cacheKey(action: string, target?: AuthorizeTarget): string {
-  if (!target) return `${action}|account|*`;
-  return `${action}|${target.type}|${'id' in target && target.id ? target.id : '*'}`;
-}
+import type { RequestContext } from './engine';
 
 /**
  * Derive the request context (IP + MFA AAL) from a Hono Context. The IP
@@ -37,33 +21,4 @@ export function deriveRequestContext(c: Context): RequestContext {
     : c.req.header('x-real-ip') || undefined;
   const mfaAal = c.get('mfaAal') as string | undefined;
   return { ip, mfaAal };
-}
-
-export async function authorizeCached(
-  c: Context,
-  userId: string,
-  accountId: string,
-  action: string,
-  target?: AuthorizeTarget,
-): Promise<AuthorizeResult> {
-  let cache = c.get(CACHE_KEY) as CacheMap | undefined;
-  if (!cache) {
-    cache = new Map();
-    c.set(CACHE_KEY, cache);
-  }
-  // Token identity is per-request and set by the auth middleware. Include it
-  // in the cache key so two concurrent requests under different tokens never
-  // share an answer.
-  const actingTokenId = c.get('iamTokenId') as string | undefined;
-  const ctx = deriveRequestContext(c);
-  // Conditions can flip the answer based on IP / AAL, so they belong in
-  // the cache key. ip is per-connection so it rarely collides; mfaAal is
-  // either 'aal1' or 'aal2'.
-  const key = `${userId}|${accountId}|${actingTokenId ?? '-'}|${ctx.ip ?? '-'}|${ctx.mfaAal ?? '-'}|${cacheKey(action, target)}`;
-  const hit = cache.get(key);
-  if (hit) return hit;
-
-  const inflight = authorize(userId, accountId, action, target, actingTokenId, ctx);
-  cache.set(key, inflight);
-  return inflight;
 }

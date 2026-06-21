@@ -460,6 +460,7 @@ const GROUPS: Group[] = [
 ];
 
 export default function DebugToolsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(true);
   const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
@@ -521,7 +522,7 @@ export default function DebugToolsPage() {
           shows its "server not reachable" empty state. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
         <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
-          Side panel · Files (explorer)
+          {tI18nHardcoded.raw('autoAppSystemDebugToolsPageJsxTextSidePanelFileseba2e222')}
         </h2>
         <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-2xl border">
           <SessionFilesExplorer />

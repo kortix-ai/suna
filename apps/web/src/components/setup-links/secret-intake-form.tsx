@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Check, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';
 
 interface SecretField {
@@ -36,6 +37,7 @@ export function SecretIntakeForm({
   onDone?: () => void;
   compact?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const base = setupLinkApiBase();
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<SecretLinkInfo | null>(null);
@@ -103,15 +105,16 @@ export function SecretIntakeForm({
 
   if (phase === 'loading') {
     return (
-      <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground justify-center">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
+        <Loader2 className="h-4 w-4 animate-spin" />{' '}
+        {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067')}
       </div>
     );
   }
 
   if (phase === 'error') {
     return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground py-6 text-center text-sm">
         {error || 'This link is invalid or has expired.'}
       </div>
     );
@@ -123,9 +126,13 @@ export function SecretIntakeForm({
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
           <Check className="h-5 w-5" />
         </div>
-        <p className="text-sm font-medium text-foreground">Saved securely</p>
-        <p className="text-xs text-muted-foreground">
-          You can close this. The agent will pick it up — tell it “done” to continue.
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw(
+            'autoComponentsSetupLinksSecretIntakeFormJsxTextSavedSecurelyd63e94b1',
+          )}
+        </p>
+        <p className="text-muted-foreground text-xs">
+          {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextYouCand69604da')}
         </p>
       </div>
     );
@@ -140,9 +147,7 @@ export function SecretIntakeForm({
           <Label htmlFor={`secret-${f.name}`} className="font-mono text-xs">
             {f.label || f.name}
           </Label>
-          {f.description ? (
-            <p className="text-xs text-muted-foreground">{f.description}</p>
-          ) : null}
+          {f.description ? <p className="text-muted-foreground text-xs">{f.description}</p> : null}
           <Input
             id={`secret-${f.name}`}
             type="password"
@@ -160,16 +165,20 @@ export function SecretIntakeForm({
         </div>
       ))}
 
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
 
       <Button className="w-full" onClick={submit} disabled={submitting}>
-        {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+        {submitting ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <KeyRound className="mr-2 h-4 w-4" />
+        )}
         {submitting ? 'Saving…' : 'Save securely'}
       </Button>
 
-      <p className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+      <p className="text-muted-foreground flex items-center justify-center gap-1.5 text-[11px]">
         <ShieldCheck className="h-3 w-3" />
-        Encrypted at rest. Only this project can read it. The agent never sees the value.
+        {tI18nHardcoded.raw('autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtf17a4f88')}
       </p>
     </div>
   );

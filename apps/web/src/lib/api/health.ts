@@ -18,4 +18,3 @@ export const checkApiHealth = async (): Promise<HealthCheckResponse> => {
 
   return response.data!;
 };
-

@@ -6,8 +6,9 @@
  */
 
 import { Deck } from '../deck';
-import { SLIDES } from '../slides-platform';
+import { useSlides } from '../slides-platform';
 
 export default function PlatformPresentationPage() {
-  return <Deck slides={SLIDES} altDeck={{ href: '/presentation', label: 'Sales deck' }} />;
+  const slides = useSlides();
+  return <Deck slides={slides} altDeck={{ href: '/presentation', label: 'Sales deck' }} />;
 }

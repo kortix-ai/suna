@@ -2,17 +2,40 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Loader2, Mail, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
-import { toast } from '@/lib/toast';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { toast } from '@/lib/toast';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Check,
+  Clock,
+  Loader2,
+  Mail,
+  MessageSquare,
+  RefreshCw,
+  Shield,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 
+import {
+  inheritedFromGroupSummary,
+  isInheritedFromGroupOnly,
+} from '@/components/iam/iam-display-helpers';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
@@ -25,25 +48,23 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
+  approveProjectAccessRequest,
+  attachGroupToProject,
+  detachGroupFromProject,
   getProject,
   inviteProjectMember,
   isInviteSent,
   listPendingProjectInvites,
   listProjectAccess,
+  listProjectAccessRequests,
+  listProjectGroupGrants,
+  rejectProjectAccessRequest,
   resendPendingProjectInvite,
   revokePendingProjectInvite,
   revokeProjectAccess,
   updateProjectAccess,
-  attachGroupToProject,
-  detachGroupFromProject,
-  listProjectGroupGrants,
   updateProjectGroupGrant,
   type InviteProjectMemberResult,
   type ProjectAccessMember,
@@ -51,14 +72,6 @@ import {
   type ProjectRole,
 } from '@/lib/projects-client';
 import { sortByRoleThenLabel } from './member-sort';
-import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
-import {
-  inheritedFromGroupSummary,
-  isInheritedFromGroupOnly,
-} from '@/components/iam/iam-display-helpers';
-import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
-import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
-import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 
 // Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
 // that only need the bare label (badges, "X gets Manager via account role"
@@ -88,10 +101,9 @@ function formatDate(input: string | null | undefined) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-
 export function MembersView({ projectId }: { projectId: string }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Users} title="Members" />
       <ProjectMembersBody projectId={projectId} />
     </div>
@@ -99,6 +111,7 @@ export function MembersView({ projectId }: { projectId: string }) {
 }
 
 function ProjectMembersBody({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
@@ -120,16 +133,29 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}</h2>
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners')}</p>
+            <h2 className="text-foreground text-base font-semibold">
+              {tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
+            </h2>
+            <p className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw(
+                'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
+              )}
+            </p>
           </div>
           {/* Answers Marko's "what does a Viewer/Editor/Manager actually
               do?" right at the point of decision — same popover the
               account settings page uses, driven by the shared descriptor. */}
-          <PermissionsHelpPopover triggerLabel="Role help" align="end" />
+          <PermissionsHelpPopover
+            triggerLabel={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
+            )}
+            align="end"
+          />
         </header>
 
         {canManage && <InviteMemberCard projectId={projectId} />}
+
+        {canManage && <PendingAccessRequestsCard projectId={projectId} />}
 
         {canManage && <PendingInvitesCard projectId={projectId} />}
 
@@ -157,6 +183,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 }
 
 function InviteMemberCard({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [emails, setEmails] = useState<string[]>([]);
@@ -194,9 +221,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       // and won't appear in the access list until they accept.
       const invited = succeeded.filter((r) => isInviteSent(r.res));
       const added = succeeded.filter((r) => !isInviteSent(r.res));
-      const skipped = succeeded.filter(
-        (r) => isInviteSent(r.res) && !r.res.email_sent,
-      );
+      const skipped = succeeded.filter((r) => isInviteSent(r.res) && !r.res.email_sent);
 
       if (succeeded.length === 1) {
         const r = succeeded[0];
@@ -304,11 +329,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
     ) {
       event.preventDefault();
       commitInput(inputValue);
-    } else if (
-      event.key === 'Backspace' &&
-      inputValue === '' &&
-      emails.length > 0
-    ) {
+    } else if (event.key === 'Backspace' && inputValue === '' && emails.length > 0) {
       setEmails((prev) => prev.slice(0, -1));
     }
   }
@@ -353,7 +374,9 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   return (
     <SectionCard
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
-      description="Add a Kortix user to this project. If they don't have an account yet, they'll get an invitation email — accepting puts them on this project at the chosen role in one step."
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAdd408ff6ec',
+      )}
     >
       {/* Layout: labels on top row, controls on the row below. Stacking
           the labels separately (rather than putting Label+control in
@@ -364,23 +387,27 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         onSubmit={handleSubmit}
         className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-[1fr_10rem_auto]"
       >
-        <Label htmlFor="invite-email" className="sm:col-start-1">Emails</Label>
-        <Label htmlFor="invite-role" className="hidden sm:block sm:col-start-2">
+        <Label htmlFor="invite-email" className="sm:col-start-1">
+          Emails
+        </Label>
+        <Label htmlFor="invite-role" className="hidden sm:col-start-2 sm:block">
           Role
         </Label>
         {/* No label above the button — invisible placeholder keeps the
             grid row's intrinsic height stable without rendering text. */}
-        <span aria-hidden className="hidden sm:block sm:col-start-3">&nbsp;</span>
+        <span aria-hidden className="hidden sm:col-start-3 sm:block">
+          {' '}
+        </span>
 
         {/* Multi-email chip field — mirrors the Input treatment (rounded-2xl
             border, bg-card, accent focus ring) so it reads as one of the
             shared form controls, just one that holds many addresses. */}
         <div
-          className="flex w-full flex-wrap items-center gap-1.5 rounded-2xl border bg-card px-3 py-1.5 text-sm transition-[color] focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/50 sm:col-start-1"
+          className="bg-card focus-within:ring-primary/50 flex w-full flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-sm transition-[color] focus-within:ring-2 focus-within:outline-none sm:col-start-1"
           style={{ minHeight: 44 }}
           onClick={() => inputRef.current?.focus()}
         >
-          <Mail className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground" />
+          <Mail className="text-muted-foreground pointer-events-none h-4 w-4 shrink-0" />
           {emails.map((addr) => (
             <Badge key={addr} variant="secondary" className="gap-1 pr-1">
               {addr}
@@ -390,7 +417,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   e.stopPropagation();
                   removeEmail(addr);
                 }}
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground transition-colors"
                 aria-label={`Remove ${addr}`}
                 disabled={inviteMutation.isPending}
               >
@@ -411,16 +438,20 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             onPaste={handlePaste}
             placeholder={
               emails.length === 0
-                ? tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')
+                ? tHardcodedUi.raw(
+                    'appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom',
+                  )
                 : 'Add another…'
             }
             autoComplete="off"
-            className="min-w-[8rem] flex-1 bg-transparent font-medium outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="placeholder:text-muted-foreground min-w-[8rem] flex-1 bg-transparent font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
             disabled={inviteMutation.isPending}
           />
         </div>
 
-        <Label htmlFor="invite-role-mobile" className="sm:hidden">Role</Label>
+        <Label htmlFor="invite-role-mobile" className="sm:hidden">
+          Role
+        </Label>
         <Select
           value={role}
           onValueChange={(next) => setRole(next as ProjectRole)}
@@ -464,10 +495,12 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       </form>
 
       {inlineError ? (
-        <p className="mt-2 text-xs text-destructive">{inlineError}</p>
+        <p className="text-destructive mt-2 text-xs">{inlineError}</p>
       ) : (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Add several at once — separate with commas, spaces, or Enter.
+        <p className="text-muted-foreground mt-2 text-xs">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAddSeveralb131056b',
+          )}
         </p>
       )}
     </SectionCard>
@@ -493,15 +526,13 @@ function ProjectAccessCard({
   error: Error | null;
   onRetry: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   // Set rather than scalar so cycling roles on row A while a revoke
   // on row B is still in flight doesn't make the spinner jump.
-  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const markPending = (userId: string) =>
-    setPendingUserIds((prev) => new Set(prev).add(userId));
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
+  const markPending = (userId: string) => setPendingUserIds((prev) => new Set(prev).add(userId));
   const clearPending = (userId: string) =>
     setPendingUserIds((prev) => {
       const next = new Set(prev);
@@ -532,10 +563,7 @@ function ProjectAccessCard({
   // grants existing members instantly). This is what makes Revoke feel right:
   // removing a grant drops the row instead of leaving a lingering "No access".
   const accessMembers = useMemo(
-    () =>
-      members.filter(
-        (m) => m.has_implicit_access || m.effective_project_role != null,
-      ),
+    () => members.filter((m) => m.has_implicit_access || m.effective_project_role != null),
     [members],
   );
   const sortedMembers = useMemo(
@@ -610,276 +638,317 @@ function ProjectAccessCard({
 
   return (
     <>
-    <SectionCard
-      flush
-      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
-      description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess')}
-      count={accessMembers.length}
-    >
-      {isLoading && (
-        <div className="divide-y divide-border/60">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="h-8 w-8 rounded-full" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-48" />
-                <Skeleton className="h-3 w-28" />
+      <SectionCard
+        flush
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess',
+        )}
+        description={tHardcodedUi.raw(
+          'appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess',
+        )}
+        count={accessMembers.length}
+      >
+        {isLoading && (
+          <div className="divide-border/60 divide-y">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-3 px-6 py-3">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-48" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
+                <Skeleton className="h-8 w-32" />
               </div>
-              <Skeleton className="h-8 w-32" />
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {isError && (
-        <div className="px-6 py-5">
-          <p className="text-sm text-destructive">{error?.message || 'Failed to load access'}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-            Retry
-          </Button>
-        </div>
-      )}
+        {isError && (
+          <div className="px-6 py-5">
+            <p className="text-destructive text-sm">{error?.message || 'Failed to load access'}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+              Retry
+            </Button>
+          </div>
+        )}
 
-      {!isLoading && !isError && (
-        <List>
-          {sortedMembers.map((member) => {
-            const busy = pendingUserIds.has(member.user_id);
-            const value = member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
-            // Group-derived access — at least one project_group_grants
-            // row attaches a group this user belongs to. When this is the
-            // ONLY access path (no direct grant), the dropdown will say
-            // "No access" but the user actually has the group role; the
-            // subtitle below makes that explicit and the badge in the
-            // trailing slot mirrors the effective role.
-            // Pure helpers in iam-display-helpers, unit-tested.
-            const inheritedFromGroup = isInheritedFromGroupOnly(member);
-            const inheritedSummary = inheritedFromGroupSummary(member);
+        {!isLoading && !isError && (
+          <List>
+            {sortedMembers.map((member) => {
+              const busy = pendingUserIds.has(member.user_id);
+              const value =
+                member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
+              // Group-derived access — at least one project_group_grants
+              // row attaches a group this user belongs to. When this is the
+              // ONLY access path (no direct grant), the dropdown will say
+              // "No access" but the user actually has the group role; the
+              // subtitle below makes that explicit and the badge in the
+              // trailing slot mirrors the effective role.
+              // Pure helpers in iam-display-helpers, unit-tested.
+              const inheritedFromGroup = isInheritedFromGroupOnly(member);
+              const inheritedSummary = inheritedFromGroupSummary(member);
 
-            return (
-              <ListRow
-                key={member.user_id}
-                leading={<UserAvatar email={member.email ?? ''} size="md" />}
-                title={userLabel(member)}
-                badges={
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <AccountRoleBadge role={member.account_role} />
-                    {/* Group indicator: which of THIS project's attached groups
+              return (
+                <ListRow
+                  key={member.user_id}
+                  leading={<UserAvatar email={member.email ?? ''} size="md" />}
+                  title={userLabel(member)}
+                  badges={
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <AccountRoleBadge role={member.account_role} />
+                      {/* Group indicator: which of THIS project's attached groups
                         the member belongs to. Makes group-derived access (and
                         why it isn't directly revocable here) obvious — the
                         access is managed in the Group access section below. */}
-                    {(member.group_sources ?? []).map((g) => (
-                      <Badge
-                        key={g.group_id}
-                        variant="outline"
-                        size="sm"
-                        className="gap-1 font-normal"
-                        title={`In the "${g.group_name}" group — manage in Group access`}
-                      >
-                        <Users className="h-3 w-3" />
-                        {g.group_name}
-                      </Badge>
-                    ))}
-                  </div>
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>
-                      {member.has_implicit_access
-                        ? 'Implicit account access'
-                        : inheritedSummary
-                          ? inheritedSummary
-                          : member.project_role
-                            ? `Granted ${formatDate(member.granted_at)}`
-                            : 'No project access'}
-                    </span>
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : member.has_implicit_access ? (
-                    <Badge variant="outline" size="sm">
-                      <Shield className="mr-1 h-3.5 w-3.5" />
-                      Manager
-                    </Badge>
-                  ) : inheritedFromGroup ? (
-                    // Access comes from a group, so there's no per-person grant
-                    // to revoke on this row. The chip shows the effective role;
-                    // the "Manage access" menu exposes the real levers, each
-                    // labelled with its blast radius.
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" size="sm" className="capitalize">
+                      {(member.group_sources ?? []).map((g) => (
+                        <Badge
+                          key={g.group_id}
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 font-normal"
+                          title={`In the "${g.group_name}" group — manage in Group access`}
+                        >
+                          <Users className="h-3 w-3" />
+                          {g.group_name}
+                        </Badge>
+                      ))}
+                    </div>
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>
+                        {member.has_implicit_access
+                          ? 'Implicit account access'
+                          : inheritedSummary
+                            ? inheritedSummary
+                            : member.project_role
+                              ? `Granted ${formatDate(member.granted_at)}`
+                              : 'No project access'}
+                      </span>
+                    </InlineMeta>
+                  }
+                  trailing={
+                    busy ? (
+                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                    ) : member.has_implicit_access ? (
+                      <Badge variant="outline" size="sm">
                         <Shield className="mr-1 h-3.5 w-3.5" />
-                        {member.effective_project_role}
+                        Manager
                       </Badge>
-                      {canManage && (member.group_sources ?? []).length > 0 && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="gap-1.5">
-                              Manage access
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-80">
-                            {(member.group_sources ?? []).flatMap((g) => {
-                              const items = [
-                                <DropdownMenuItem
-                                  key={`${g.group_id}-detach`}
-                                  onSelect={() =>
-                                    setGroupAction({ type: 'detach', member, group: g })
-                                  }
-                                  className="flex-col items-start gap-0.5"
-                                >
-                                  <span>Detach "{g.group_name}" from this project</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    Removes access for everyone in this group, here only
-                                  </span>
-                                </DropdownMenuItem>,
-                              ];
-                              if (accountId) {
-                                items.push(
+                    ) : inheritedFromGroup ? (
+                      // Access comes from a group, so there's no per-person grant
+                      // to revoke on this row. The chip shows the effective role;
+                      // the "Manage access" menu exposes the real levers, each
+                      // labelled with its blast radius.
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" size="sm" className="capitalize">
+                          <Shield className="mr-1 h-3.5 w-3.5" />
+                          {member.effective_project_role}
+                        </Badge>
+                        {canManage && (member.group_sources ?? []).length > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="gap-1.5">
+                                {tI18nHardcoded.raw(
+                                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextManageAccess8bb5d74d',
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-80">
+                              {(member.group_sources ?? []).flatMap((g) => {
+                                const items = [
                                   <DropdownMenuItem
-                                    key={`${g.group_id}-remove`}
+                                    key={`${g.group_id}-detach`}
                                     onSelect={() =>
-                                      setGroupAction({
-                                        type: 'removeFromGroup',
-                                        member,
-                                        group: g,
-                                      })
+                                      setGroupAction({ type: 'detach', member, group: g })
                                     }
                                     className="flex-col items-start gap-0.5"
                                   >
-                                    <span>Remove from "{g.group_name}" group</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      Affects every project this group can access
+                                    <span>
+                                      {tI18nHardcoded.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextDetachab249756',
+                                      )}
+                                      {g.group_name}
+                                      {tI18nHardcoded.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextFromThisaff4c2b1',
+                                      )}
+                                    </span>
+                                    <span className="text-muted-foreground text-xs">
+                                      {tI18nHardcoded.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemovesAccess971d3e55',
+                                      )}
                                     </span>
                                   </DropdownMenuItem>,
-                                );
-                              }
-                              return items;
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Select
-                        value={value}
-                        onValueChange={(next) => setRole(member, next)}
-                        disabled={!canManage}
-                      >
-                        <SelectTrigger className="h-8 w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <ProjectRoleSelectItem role="viewer" />
-                          <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
-                        </SelectContent>
-                      </Select>
-                      {canManage && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setRevokeTarget(member)}
-                          title="Remove this person's access to the project"
-                          className="gap-1.5"
+                                ];
+                                if (accountId) {
+                                  items.push(
+                                    <DropdownMenuItem
+                                      key={`${g.group_id}-remove`}
+                                      onSelect={() =>
+                                        setGroupAction({
+                                          type: 'removeFromGroup',
+                                          member,
+                                          group: g,
+                                        })
+                                      }
+                                      className="flex-col items-start gap-0.5"
+                                    >
+                                      <span>
+                                        {tI18nHardcoded.raw(
+                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemoveFrom9323f47c',
+                                        )}
+                                        {g.group_name}
+                                        {tI18nHardcoded.raw(
+                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGroupdb1c1d43',
+                                        )}
+                                      </span>
+                                      <span className="text-muted-foreground text-xs">
+                                        {tI18nHardcoded.raw(
+                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAffectsEvery735d8dbc',
+                                        )}
+                                      </span>
+                                    </DropdownMenuItem>,
+                                  );
+                                }
+                                return items;
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Select
+                          value={value}
+                          onValueChange={(next) => setRole(member, next)}
+                          disabled={!canManage}
                         >
-                          <X className="h-3.5 w-3.5" />
-                          Revoke
-                        </Button>
-                      )}
-                    </div>
-                  )
-                }
-              />
-            );
-          })}
-        </List>
-      )}
-    </SectionCard>
+                          <SelectTrigger className="h-8 w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="editor" />
+                            <ProjectRoleSelectItem role="manager" />
+                          </SelectContent>
+                        </Select>
+                        {canManage && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setRevokeTarget(member)}
+                            title={tI18nHardcoded.raw(
+                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRemovec6407d5f',
+                            )}
+                            className="gap-1.5"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Revoke
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
 
-    <ConfirmDialog
-      open={revokeTarget !== null}
-      onOpenChange={(open) => {
-        if (!open) setRevokeTarget(null);
-      }}
-      title="Revoke project access?"
-      description={
-        revokeTarget ? (
-          <span>
-            <strong>{userLabel(revokeTarget)}</strong> will lose direct
-            access to this project. If they belong to a group that's
-            attached here, they'll still see the project at the group's
-            role.
-          </span>
-        ) : null
-      }
-      confirmLabel="Revoke access"
-      confirmVariant="destructive"
-      isPending={revokeMutation.isPending}
-      onConfirm={() => {
-        if (!revokeTarget) return;
-        const target = revokeTarget;
-        // Close the dialog optimistically — the mutation's onSuccess
-        // toast is enough feedback, and leaving the modal open while
-        // it fires looks janky.
-        setRevokeTarget(null);
-        revokeMutation.mutate(target.user_id);
-      }}
-    />
-
-    <ConfirmDialog
-      open={groupAction !== null}
-      onOpenChange={(open) => {
-        if (!open) setGroupAction(null);
-      }}
-      title={
-        groupAction?.type === 'detach'
-          ? 'Detach group from project?'
-          : 'Remove from group?'
-      }
-      description={
-        groupAction ? (
-          groupAction.type === 'detach' ? (
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRevoke0cd09fad',
+        )}
+        description={
+          revokeTarget ? (
             <span>
-              <strong>{groupAction.group.group_name}</strong> will be detached
-              from this project. Everyone whose access here comes from this
-              group — including <strong>{userLabel(groupAction.member)}</strong>{' '}
-              — loses it. Anyone with a direct grant or another attached group
-              keeps their access.
+              <strong>{userLabel(revokeTarget)}</strong>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillLoseb378c86b',
+              )}
             </span>
-          ) : (
-            <span>
-              <strong>{userLabel(groupAction.member)}</strong> will be removed
-              from the <strong>{groupAction.group.group_name}</strong> group
-              across the whole account — this affects{' '}
-              <strong>every project</strong> that group can access, not just
-              this one.
-            </span>
-          )
-        ) : null
-      }
-      confirmLabel={
-        groupAction?.type === 'detach' ? 'Detach group' : 'Remove from group'
-      }
-      confirmVariant="destructive"
-      isPending={detachMutation.isPending || removeFromGroupMutation.isPending}
-      onConfirm={() => {
-        if (!groupAction) return;
-        const action = groupAction;
-        setGroupAction(null);
-        if (action.type === 'detach') {
-          detachMutation.mutate(action.group.group_id);
-        } else {
-          removeFromGroupMutation.mutate({
-            groupId: action.group.group_id,
-            userId: action.member.user_id,
-          });
+          ) : null
         }
-      }}
-    />
+        confirmLabel={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelRevokef1b3384e',
+        )}
+        confirmVariant="destructive"
+        isPending={revokeMutation.isPending}
+        onConfirm={() => {
+          if (!revokeTarget) return;
+          const target = revokeTarget;
+          // Close the dialog optimistically — the mutation's onSuccess
+          // toast is enough feedback, and leaving the modal open while
+          // it fires looks janky.
+          setRevokeTarget(null);
+          revokeMutation.mutate(target.user_id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={groupAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setGroupAction(null);
+        }}
+        title={groupAction?.type === 'detach' ? 'Detach group from project?' : 'Remove from group?'}
+        description={
+          groupAction ? (
+            groupAction.type === 'detach' ? (
+              <span>
+                <strong>{groupAction.group.group_name}</strong>{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBeddf66ee4',
+                )}
+                <strong>{userLabel(groupAction.member)}</strong>{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLosesIte94d42a4',
+                )}
+              </span>
+            ) : (
+              <span>
+                <strong>{userLabel(groupAction.member)}</strong>{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBe60764226',
+                )}
+                <strong>{groupAction.group.group_name}</strong>{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGroupAcrossc2ff897e',
+                )}{' '}
+                <strong>
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextEveryProjecta802077b',
+                  )}
+                </strong>{' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextThatGroup4e384269',
+                )}
+              </span>
+            )
+          ) : null
+        }
+        confirmLabel={groupAction?.type === 'detach' ? 'Detach group' : 'Remove from group'}
+        confirmVariant="destructive"
+        isPending={detachMutation.isPending || removeFromGroupMutation.isPending}
+        onConfirm={() => {
+          if (!groupAction) return;
+          const action = groupAction;
+          setGroupAction(null);
+          if (action.type === 'detach') {
+            detachMutation.mutate(action.group.group_id);
+          } else {
+            removeFromGroupMutation.mutate({
+              groupId: action.group.group_id,
+              userId: action.member.user_id,
+            });
+          }
+        }}
+      />
     </>
   );
 }
@@ -889,10 +958,131 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
     <Badge
       variant="outline"
       size="sm"
-      className={role === 'owner' ? 'capitalize border-foreground/30 text-foreground' : 'capitalize'}
+      className={
+        role === 'owner' ? 'border-foreground/30 text-foreground capitalize' : 'capitalize'
+      }
     >
       {role}
     </Badge>
+  );
+}
+
+function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const queryClient = useQueryClient();
+  const queryKey = ['project-access-requests', projectId];
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  const markBusy = (id: string) => setBusyIds((prev) => new Set(prev).add(id));
+  const clearBusy = (id: string) =>
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  const requestsQuery = useQuery({
+    queryKey,
+    queryFn: () => listProjectAccessRequests(projectId),
+    staleTime: 10_000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'viewer'),
+    onMutate: (requestId) => markBusy(requestId),
+    onSettled: (_data, _error, requestId) => clearBusy(requestId),
+    onSuccess: (result) => {
+      toast.success(`${result.member.email ?? 'Requester'} can now view this project`);
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to approve request'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (requestId: string) => rejectProjectAccessRequest(projectId, requestId),
+    onMutate: (requestId) => markBusy(requestId),
+    onSettled: (_data, _error, requestId) => clearBusy(requestId),
+    onSuccess: () => {
+      toast.success('Access request declined');
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to decline request'),
+  });
+
+  const requests = requestsQuery.data?.requests ?? [];
+
+  if (!requestsQuery.isLoading && requests.length === 0) return null;
+
+  return (
+    <SectionCard
+      flush
+      title={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccess7a756f48',
+      )}
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeopleea85927a',
+      )}
+      count={requests.length}
+    >
+      {requestsQuery.isLoading && (
+        <div className="px-6 py-5">
+          <Skeleton className="h-8 w-full" />
+        </div>
+      )}
+
+      {!requestsQuery.isLoading && requests.length > 0 && (
+        <List>
+          {requests.map((request) => {
+            const busy = busyIds.has(request.request_id);
+            return (
+              <ListRow
+                key={request.request_id}
+                leading={
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400">
+                    <MessageSquare className="h-4 w-4" />
+                  </span>
+                }
+                title={request.requester_email}
+                subtitle={
+                  <InlineMeta>
+                    <span>Requested {formatDate(request.created_at)}</span>
+                    {request.message ? <span>“{request.message}”</span> : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => approveMutation.mutate(request.request_id)}
+                        className="gap-1.5"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => rejectMutation.mutate(request.request_id)}
+                        className="gap-1.5"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Decline
+                      </Button>
+                    </div>
+                  )
+                }
+              />
+            );
+          })}
+        </List>
+      )}
+    </SectionCard>
   );
 }
 
@@ -906,15 +1096,13 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
 // settings.
 
 function PendingInvitesCard({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-pending-invites', projectId];
   // Set rather than scalar — multiple rapid revokes shouldn't make the
   // spinner jump between rows. Each row tracks its own pending state.
-  const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const markPending = (id: string) =>
-    setPendingInviteIds((prev) => new Set(prev).add(id));
+  const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) => setPendingInviteIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
     setPendingInviteIds((prev) => {
       const next = new Set(prev);
@@ -924,7 +1112,9 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   // Revoking an invitation is destructive (and may cancel the whole
   // org-level invite when this was the only bootstrap_grant) — gate
   // behind a confirmation.
-  const [revokeTarget, setRevokeTarget] = useState<{ inviteId: string; email: string } | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<{ inviteId: string; email: string } | null>(
+    null,
+  );
 
   const invitesQuery = useQuery({
     queryKey,
@@ -982,118 +1172,137 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
 
   return (
     <>
-    <SectionCard
-      flush
-      title="Pending invitations"
-      description="People you've invited by email who haven't accepted yet. They'll join the project at the chosen role as soon as they sign up."
-      count={pending.length}
-    >
-      {invitesQuery.isLoading && (
-        <div className="px-6 py-5">
-          <Skeleton className="h-8 w-full" />
-        </div>
-      )}
+      <SectionCard
+        flush
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitlePendingbfbe9f8b',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeople552a0c43',
+        )}
+        count={pending.length}
+      >
+        {invitesQuery.isLoading && (
+          <div className="px-6 py-5">
+            <Skeleton className="h-8 w-full" />
+          </div>
+        )}
 
-      {!invitesQuery.isLoading && pending.length > 0 && (
-        <List>
-          {pending.map((invite) => {
-            const busy = pendingInviteIds.has(invite.invite_id);
-            return (
-              <ListRow
-                key={invite.invite_id}
-                leading={
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                    <Mail className="h-4 w-4" />
-                  </span>
-                }
-                title={invite.email}
-                badges={
-                  <Badge variant="outline" size="sm" className="capitalize">
-                    {invite.project_role}
-                  </Badge>
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>Invited {formatDate(invite.created_at)}</span>
-                    {invite.invited_by_email && (
-                      <span>by {invite.invited_by_email}</span>
-                    )}
-                    {invite.invite_expired ? (
-                      <span className="text-amber-700 dark:text-amber-400">
-                        Invite link expired — ask them to request a fresh
-                        one from the email
-                      </span>
+        {!invitesQuery.isLoading && pending.length > 0 && (
+          <List>
+            {pending.map((invite) => {
+              const busy = pendingInviteIds.has(invite.invite_id);
+              return (
+                <ListRow
+                  key={invite.invite_id}
+                  leading={
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                      <Mail className="h-4 w-4" />
+                    </span>
+                  }
+                  title={invite.email}
+                  badges={
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {invite.project_role}
+                    </Badge>
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>Invited {formatDate(invite.created_at)}</span>
+                      {invite.invited_by_email && <span>by {invite.invited_by_email}</span>}
+                      {invite.invite_expired ? (
+                        <span className="text-amber-700 dark:text-amber-400">
+                          {tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextInviteLinkef92ef7c',
+                          )}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLinkExpires4566b25e',
+                          )}
+                          {formatDate(invite.invite_expires_at)}
+                        </span>
+                      )}
+                    </InlineMeta>
+                  }
+                  trailing={
+                    busy ? (
+                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
                     ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        Link expires {formatDate(invite.invite_expires_at)}
-                      </span>
-                    )}
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => resendMutation.mutate(invite.invite_id)}
-                        title="Resend the invitation email and extend the link"
-                        className="gap-1.5"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Resend
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })}
-                        title="Cancel this invitation"
-                        className="gap-1.5"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Revoke
-                      </Button>
-                    </div>
-                  )
-                }
-              />
-            );
-          })}
-        </List>
-      )}
-    </SectionCard>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => resendMutation.mutate(invite.invite_id)}
+                          title={tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleResendc80cacee',
+                          )}
+                          className="gap-1.5"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Resend
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })
+                          }
+                          title={tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleCancel670de1c6',
+                          )}
+                          className="gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Revoke
+                        </Button>
+                      </div>
+                    )
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
 
-    <ConfirmDialog
-      open={revokeTarget !== null}
-      onOpenChange={(open) => {
-        if (!open) setRevokeTarget(null);
-      }}
-      title="Revoke invitation?"
-      description={
-        revokeTarget ? (
-          <span>
-            The invitation for <strong>{revokeTarget.email}</strong> will
-            be cancelled. If they were only invited to this project,
-            the whole invitation is removed and you'd need to invite them
-            again to restore it.
-          </span>
-        ) : null
-      }
-      confirmLabel="Revoke invitation"
-      confirmVariant="destructive"
-      isPending={revokeMutation.isPending}
-      onConfirm={() => {
-        if (!revokeTarget) return;
-        const target = revokeTarget;
-        setRevokeTarget(null);
-        revokeMutation.mutate(target.inviteId);
-      }}
-    />
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRevoke99f32c76',
+        )}
+        description={
+          revokeTarget ? (
+            <span>
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextTheInvitation06f8c62e',
+              )}
+              <strong>{revokeTarget.email}</strong>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBe5ec1d9e8',
+              )}
+            </span>
+          ) : null
+        }
+        confirmLabel={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelRevoke3c3ea8b9',
+        )}
+        confirmVariant="destructive"
+        isPending={revokeMutation.isPending}
+        onConfirm={() => {
+          if (!revokeTarget) return;
+          const target = revokeTarget;
+          setRevokeTarget(null);
+          revokeMutation.mutate(target.inviteId);
+        }}
+      />
     </>
   );
 }
@@ -1109,6 +1318,7 @@ function ProjectGroupGrantsCard({
   accountId: string;
   canManage: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const grantsKey = ['project-group-grants', projectId];
 
@@ -1136,7 +1346,7 @@ function ProjectGroupGrantsCard({
       return t !== 0 ? t : a.group_id.localeCompare(b.group_id);
     });
   }, [grantsQuery.data]);
-  const groups: AccountGroup[] = groupsQuery.data ?? [];
+  const groups: AccountGroup[] = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const attachedIds = useMemo(() => new Set(grants.map((g) => g.group_id)), [grants]);
   const available = useMemo(
     () => groups.filter((g) => !attachedIds.has(g.group_id)),
@@ -1148,11 +1358,8 @@ function ProjectGroupGrantsCard({
   // Set rather than scalar — attach, update, and detach can each be
   // in-flight on different rows at the same time without the spinner
   // jumping to whatever was last written.
-  const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const markPending = (id: string) =>
-    setPendingGroupIds((prev) => new Set(prev).add(id));
+  const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
+  const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
     setPendingGroupIds((prev) => {
       const next = new Set(prev);
@@ -1179,7 +1386,10 @@ function ProjectGroupGrantsCard({
     mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
     // Snapshot pickerGroupId at call-time so onSettled can clear the
     // correct row even if the picker changes before the request lands.
-    onMutate: () => { markPending(pickerGroupId); return { groupId: pickerGroupId }; },
+    onMutate: () => {
+      markPending(pickerGroupId);
+      return { groupId: pickerGroupId };
+    },
     onSettled: (_data, _error, _vars, ctx) => clearPending(ctx!.groupId),
     onSuccess: () => {
       toast.success('Group attached');
@@ -1215,197 +1425,222 @@ function ProjectGroupGrantsCard({
 
   return (
     <>
-    <SectionCard
-      flush
-      title="Group access"
-      description="Attach an account group to this project. Every member of the group gets the chosen role here."
-      count={grants.length}
-      action={
-        canManage && available.length > 0 ? (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!pickerGroupId || attachMutation.isPending) return;
-              attachMutation.mutate();
-            }}
-          >
-            <Select
-              value={pickerGroupId}
-              onValueChange={setPickerGroupId}
-              disabled={attachMutation.isPending}
+      <SectionCard
+        flush
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleGroupfbf9c01c',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAttach372d6d3a',
+        )}
+        count={grants.length}
+        action={
+          canManage && available.length > 0 ? (
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!pickerGroupId || attachMutation.isPending) return;
+                attachMutation.mutate();
+              }}
             >
-              <SelectTrigger className="h-8 w-44 text-xs">
-                <SelectValue placeholder="Pick a group…" />
-              </SelectTrigger>
-              <SelectContent>
-                {available.map((g) => (
-                  <SelectItem key={g.group_id} value={g.group_id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={pickerRole}
-              onValueChange={(v) => setPickerRole(v as ProjectRole)}
-              disabled={attachMutation.isPending}
-            >
-              <SelectTrigger className="h-8 w-28 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              {/* Full blurbs here — choosing the role for a whole group
+              <Select
+                value={pickerGroupId}
+                onValueChange={setPickerGroupId}
+                disabled={attachMutation.isPending}
+              >
+                <SelectTrigger className="h-8 w-44 text-xs">
+                  <SelectValue
+                    placeholder={tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrPlaceholderPickf0432525',
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((g) => (
+                    <SelectItem key={g.group_id} value={g.group_id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={pickerRole}
+                onValueChange={(v) => setPickerRole(v as ProjectRole)}
+                disabled={attachMutation.isPending}
+              >
+                <SelectTrigger className="h-8 w-28 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                {/* Full blurbs here — choosing the role for a whole group
                   attachment is a higher-impact decision than a single
                   per-user grant, so users benefit from the extra context. */}
-              <SelectContent>
-                <ProjectRoleSelectItem role="viewer" />
-                <ProjectRoleSelectItem role="editor" />
-                <ProjectRoleSelectItem role="manager" />
-              </SelectContent>
-            </Select>
-            <Button
-              type="submit"
-              size="sm"
-              variant="outline"
-              disabled={!pickerGroupId || attachMutation.isPending}
-            >
-              Attach
-            </Button>
-          </form>
-        ) : null
-      }
-    >
-      {grantsQuery.isLoading && (
-        <div className="px-6 py-5">
-          <Skeleton className="h-8 w-full" />
-        </div>
-      )}
-
-      {!grantsQuery.isLoading && grants.length === 0 && (
-        <div className="px-6 py-5 text-xs text-muted-foreground">
-          No groups attached yet.
-          {canManage && available.length === 0 && groups.length > 0 && (
-            <> All your groups are already attached.</>
-          )}
-          {canManage && groups.length === 0 && (
-            <>
-              {' '}Create one on the{' '}
-              <a
-                href={`/accounts/${accountId}`}
-                className="underline hover:text-foreground"
+                <SelectContent>
+                  <ProjectRoleSelectItem role="viewer" />
+                  <ProjectRoleSelectItem role="editor" />
+                  <ProjectRoleSelectItem role="manager" />
+                </SelectContent>
+              </Select>
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={!pickerGroupId || attachMutation.isPending}
               >
-                account page
-              </a>
-              .
-            </>
-          )}
-        </div>
-      )}
+                Attach
+              </Button>
+            </form>
+          ) : null
+        }
+      >
+        {grantsQuery.isLoading && (
+          <div className="px-6 py-5">
+            <Skeleton className="h-8 w-full" />
+          </div>
+        )}
 
-      {!grantsQuery.isLoading && grants.length > 0 && (
-        <List>
-          {grants.map((g: ProjectGroupGrant) => {
-            const busy = pendingGroupIds.has(g.group_id);
-            return (
-              <ListRow
-                key={g.group_id}
-                leading={
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                }
-                title={g.group_name}
-                subtitle={
-                  <InlineMeta>
-                    <span>Attached {formatDate(g.created_at)}</span>
-                    {typeof g.member_count === 'number' && (
-                      <span>
-                        {g.member_count}{' '}
-                        {g.member_count === 1 ? 'member' : 'members'}
-                      </span>
-                    )}
-                    {typeof g.override_count === 'number' &&
-                      g.override_count > 0 && (
-                        <span
-                          className="text-amber-700 dark:text-amber-400"
-                          title="Account owners and admins always have Manager access on every project, regardless of this grant's role."
-                        >
-                          {g.override_count} of {g.member_count} get Manager via
-                          account role
+        {!grantsQuery.isLoading && grants.length === 0 && (
+          <div className="text-muted-foreground px-6 py-5 text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextNoGroups09e82ebd',
+            )}
+            {canManage && available.length === 0 && groups.length > 0 && (
+              <>
+                {' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAllYour31c4dcb5',
+                )}
+              </>
+            )}
+            {canManage && groups.length === 0 && (
+              <>
+                {' '}
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextCreateOne549d8748',
+                )}{' '}
+                <a href={`/accounts/${accountId}`} className="hover:text-foreground underline">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccountPage432b8a72',
+                  )}
+                </a>
+                .
+              </>
+            )}
+          </div>
+        )}
+
+        {!grantsQuery.isLoading && grants.length > 0 && (
+          <List>
+            {grants.map((g: ProjectGroupGrant) => {
+              const busy = pendingGroupIds.has(g.group_id);
+              return (
+                <ListRow
+                  key={g.group_id}
+                  leading={
+                    <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
+                      <Users className="text-muted-foreground h-4 w-4" />
+                    </span>
+                  }
+                  title={g.group_name}
+                  subtitle={
+                    <InlineMeta>
+                      <span>Attached {formatDate(g.created_at)}</span>
+                      {typeof g.member_count === 'number' && (
+                        <span>
+                          {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
                         </span>
                       )}
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : canManage ? (
-                    <div className="flex items-center gap-1.5">
-                      <Select
-                        value={g.role}
-                        onValueChange={(v) =>
-                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-28 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <ProjectRoleSelectItem role="viewer" />
-                          <ProjectRoleSelectItem role="editor" />
-                          <ProjectRoleSelectItem role="manager" />
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setDetachTarget(g)}
-                      >
-                        Detach
-                      </Button>
-                    </div>
-                  ) : (
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {g.role}
-                    </Badge>
-                  )
-                }
-              />
-            );
-          })}
-        </List>
-      )}
-    </SectionCard>
+                      {typeof g.override_count === 'number' && g.override_count > 0 && (
+                        <span
+                          className="text-amber-700 dark:text-amber-400"
+                          title={tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
+                          )}
+                        >
+                          {g.override_count} of {g.member_count}{' '}
+                          {tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
+                          )}
+                        </span>
+                      )}
+                    </InlineMeta>
+                  }
+                  trailing={
+                    busy ? (
+                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                    ) : canManage ? (
+                      <div className="flex items-center gap-1.5">
+                        <Select
+                          value={g.role}
+                          onValueChange={(v) =>
+                            updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-28 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <ProjectRoleSelectItem role="viewer" />
+                            <ProjectRoleSelectItem role="editor" />
+                            <ProjectRoleSelectItem role="manager" />
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setDetachTarget(g)}
+                        >
+                          Detach
+                        </Button>
+                      </div>
+                    ) : (
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        {g.role}
+                      </Badge>
+                    )
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
 
-    <ConfirmDialog
-      open={detachTarget !== null}
-      onOpenChange={(open) => {
-        if (!open) setDetachTarget(null);
-      }}
-      title="Detach group from project?"
-      description={
-        detachTarget ? (
-          <span>
-            <strong>{detachTarget.group_name}</strong> will no longer be
-            attached to this project. Members of this group will lose
-            their inherited <strong>{detachTarget.role}</strong> access
-            (unless they also have a direct grant or belong to another
-            attached group). Owners and admins keep their implicit
-            Manager access either way.
-          </span>
-        ) : null
-      }
-      confirmLabel="Detach group"
-      confirmVariant="destructive"
-      isPending={detachMutation.isPending}
-      onConfirm={() => {
-        if (!detachTarget) return;
-        const target = detachTarget;
-        setDetachTarget(null);
-        detachMutation.mutate(target.group_id);
-      }}
-    />
+      <ConfirmDialog
+        open={detachTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetachTarget(null);
+        }}
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleDetach8e4cbc87',
+        )}
+        description={
+          detachTarget ? (
+            <span>
+              <strong>{detachTarget.group_name}</strong>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillNob7c4fd05',
+              )}
+              <strong>{detachTarget.role}</strong>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccessUnless520e90ca',
+              )}
+            </span>
+          ) : null
+        }
+        confirmLabel={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelDetache64492d2',
+        )}
+        confirmVariant="destructive"
+        isPending={detachMutation.isPending}
+        onConfirm={() => {
+          if (!detachTarget) return;
+          const target = detachTarget;
+          setDetachTarget(null);
+          detachMutation.mutate(target.group_id);
+        }}
+      />
     </>
   );
 }

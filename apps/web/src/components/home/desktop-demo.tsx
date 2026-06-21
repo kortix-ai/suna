@@ -2,8 +2,10 @@
 
 import { InteractiveDemo } from '@/components/home/interactive-demo';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 
 export function DesktopDemo({ className }: { className?: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div
       className={cn(
@@ -18,9 +20,15 @@ export function DesktopDemo({ className }: { className?: string }) {
         aside
         activePage="home"
         className="h-full w-full max-w-full"
-        contentClassName="max-w-full mx-0 h-full p-0 md:p-0 lg:p-0"
-        innerClassName="h-full min-h-0 rounded-none border-none bg-card shadow-none"
-        parentClassName="h-full min-h-0"
+        contentClassName={tI18nHardcoded.raw(
+          'autoComponentsHomeDesktopDemoJsxAttrContentClassNameMaxWFull783e15fd',
+        )}
+        innerClassName={tI18nHardcoded.raw(
+          'autoComponentsHomeDesktopDemoJsxAttrInnerClassNameHFullMincaf5a8f0',
+        )}
+        parentClassName={tI18nHardcoded.raw(
+          'autoComponentsHomeDesktopDemoJsxAttrParentClassNameHFullMinb9286cc2',
+        )}
       />
     </div>
   );

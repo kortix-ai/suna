@@ -46,7 +46,7 @@ export function SyncStatusIndicator({
   const getStatusConfig = () => {
     // All status indicators use consistent gray styling
     const grayStyle = { color: 'text-zinc-500', bgColor: 'bg-zinc-500/10' };
-    
+
     switch (status) {
       case 'syncing':
         return {

@@ -244,7 +244,7 @@ function JsonRenderer({ data }: { data: any }) {
 function KeyValueRenderer({ content }: { content: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (!content || typeof content !== 'string') return <div>{tHardcodedUi.raw('componentsThreadToolViewsMcpContentRenderer.line246JsxTextNoContentAvailable')}</div>;
-  
+
   const lines = content.split('\n').filter(line => line.includes(':'));
   const pairs = lines.map(line => {
     const [key, ...valueParts] = line.split(':');
@@ -397,4 +397,4 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
     default:
       return <TextRenderer content={contentStr} />;
   }
-} 
+}

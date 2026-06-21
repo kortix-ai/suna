@@ -2161,13 +2161,17 @@ export default function HomeScreen() {
           animationType="none"
           hardwareAccelerated
         >
-          <Animated.Image
-            source={{ uri: themeTransitionUri }}
-            resizeMode="cover"
-            fadeDuration={0}
+          <Animated.View
             style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
             pointerEvents="none"
-          />
+          >
+            <Animated.Image
+              source={{ uri: themeTransitionUri }}
+              resizeMode="cover"
+              fadeDuration={0}
+              style={StyleSheet.absoluteFillObject}
+            />
+          </Animated.View>
         </Modal>
       )}
     </>

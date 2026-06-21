@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -216,16 +217,16 @@ export function __clearCloneTokenCacheForTests(): void {
 }
 
 async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
-  if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+  if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
   // Universal proxy origin: when the repo is served by the Kortix git proxy
   // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
   // credential IS our own KORTIX_TOKEN — the proxy authenticates it and resolves
   // the real upstream + host credential server-side. No clone-credential round
   // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return cfg.kortixToken
+    return cfg.sandboxToken
   }
-  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.kortixToken}`
+  const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
 
   const rawBase = cfg.apiUrl.replace(/\/+$/, '')
@@ -249,7 +250,7 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
       const res = await fetch(url, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${cfg.kortixToken}`,
+          Authorization: `Bearer ${cfg.sandboxToken}`,
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(CLONE_CRED_TIMEOUT_MS),
@@ -333,7 +334,7 @@ export async function configureGitCredentialHelper(
   cfg: Config,
   home: string,
 ): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
 
@@ -370,7 +371,7 @@ export async function configureGitCredentialHelper(
  * after the repo is materialized.
  */
 export async function configureRepoCredentialHelper(cfg: Config, target: string): Promise<void> {
-  if (!cfg.repoUrl || !cfg.projectId || !cfg.kortixToken) return
+  if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
@@ -598,30 +599,48 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   await mkdir(dirname(target), { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
-    logger.info('[git] using baked repo checkout', { target })
     await configureSafeDirectory(target)
-    const setUrl = await execGit([
-      '-C',
-      target,
-      'remote',
-      'set-url',
-      'origin',
-      cfg.repoUrl,
-    ])
-    if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
-
-    if (cfg.branchName) {
-      await checkoutLocalSessionBranch(target, cfg.branchName)
+    // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
+    // already project-initialized in the snapshot. A fork may reuse it ONLY when
+    // the baked content IS this session's base — i.e. a fresh scaffold-rooted
+    // project (baked HEAD == the server-resolved KORTIX_BASE_SHA). When it isn't
+    // (an imported repo / diverged project), the baked scaffold is the WRONG
+    // content: discard it and re-materialize the real repo below. Restart/resume
+    // (no baseSha) keep the old "reuse whatever's baked" behaviour unchanged.
+    const bakedHead = (await execGit(['-C', target, 'rev-parse', 'HEAD'])).stdout.trim()
+    const mismatched = cfg.sessionFresh && !!cfg.baseSha && bakedHead !== cfg.baseSha
+    if (!mismatched) {
+      logger.info('[git] using baked repo checkout (warm)', { target, head: bakedHead })
+      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+      if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
+      if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
+      await configureRepoGitIdentity(cfg, target)
+      return
     }
-
-    await configureRepoGitIdentity(cfg, target)
-    return
-  } else {
-    // Clone into a tmp sibling, then `rm target + rename`. This preserves any
-    // existing content under `target` until we have a known-good clone — if
-    // the network drops mid-clone we don't wipe a workspace that's still on
-    // disk from a previous boot.
+    logger.info('[git] baked checkout != session base; re-materializing real repo', { bakedHead, baseSha: cfg.baseSha })
+    await rm(target, { recursive: true, force: true })
+  }
+  {
     const cloneToken = await resolveCloneToken(cfg)
+    // Scaffold fast path: the image bakes the canonical starter repo at
+    // /opt/kortix/scaffold.git whose root commit is SHARED with every project
+    // seeded from the starter (deterministic root — comp git-backends/seed.ts).
+    // A local clone is ~50ms and the follow-up fetch transfers only the
+    // project's delta beyond that shared root (a fresh project = ~one tiny
+    // commit) instead of the whole repo over the slow git path (9s through the
+    // dev tunnel, 2026-06-13). Imported repos / other starters share no
+    // ancestor → the fetch degrades to a full pack (same as a clone); ANY
+    // failure falls through to the battle-tested clone path below.
+    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneToken)) {
+      if (cfg.branchName) {
+        // Fresh session → branch == base, create it LOCALLY (zero network).
+        // Restart/resume → the remote branch may carry the agent's commits.
+        if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
+        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+      }
+      await configureRepoGitIdentity(cfg, target)
+      return
+    }
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
@@ -714,12 +733,109 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   if (cfg.branchName) {
-    // resolveCloneToken is memoized — this second call is now ~free.
-    const cloneToken = await resolveCloneToken(cfg)
-    await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+    if (cfg.sessionFresh) {
+      // Fresh session → branch == freshly-cloned base; local, no extra fetch.
+      await checkoutLocalSessionBranch(target, cfg.branchName)
+    } else {
+      // resolveCloneToken is memoized — this second call is now ~free.
+      const cloneToken = await resolveCloneToken(cfg)
+      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+    }
   }
 
   await configureRepoGitIdentity(cfg, target)
+}
+
+const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+
+/**
+ * Seed-only: materialize the image-baked scaffold at `target` with ZERO network,
+ * for the warm-snapshot builder. The seed has no project repo — it clones the
+ * canonical scaffold so opencode can pay its per-directory project init (git
+ * scan / file index / LSP / sqlite) ONCE, frozen into the snapshot. Every fresh
+ * session shares the scaffold root, so a fork resumes with opencode already
+ * 'ok' for /workspace (kills the runtime-ready wall). Returns true on success;
+ * false (no scaffold baked) → caller leaves /workspace empty (degrades to the
+ * old behaviour, never breaks). `base` is checked out as a local branch so the
+ * working tree matches what a fresh session expects.
+ */
+export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
+  if (!existsSync(SCAFFOLD_REPO_PATH)) return false
+  const tmp = join(dirname(target), `.kortix-seed-${process.pid}-${Date.now()}`)
+  const t0 = Date.now()
+  try {
+    await mkdir(dirname(target), { recursive: true })
+    await rm(tmp, { recursive: true, force: true })
+    const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
+    const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
+    if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
+    await rm(target, { recursive: true, force: true })
+    await rename(tmp, target)
+    logger.info('[git] seed scaffold materialized (zero-network)', { ms: Date.now() - t0, base })
+    return true
+  } catch (err) {
+    logger.warn('[git] seed scaffold materialize failed; warm seed will boot repo-less', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    return false
+  }
+}
+
+// Materialize `target` from the image-baked scaffold + a delta fetch from the
+// project origin. Returns true when target is ready on `base` tip; false →
+// caller runs the normal network clone (never leaves a partial target behind).
+async function tryScaffoldDeltaFetch(
+  cfg: Config,
+  target: string,
+  base: string,
+  cloneToken: string | undefined,
+): Promise<boolean> {
+  if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
+  const tmp = join(dirname(target), `.kortix-scaffold-${process.pid}-${Date.now()}`)
+  const t0 = Date.now()
+  try {
+    await rm(tmp, { recursive: true, force: true })
+    const local = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
+    const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
+    if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
+    // ZERO-NETWORK fast path: the image-baked scaffold's root commit is shared,
+    // byte-for-byte, with every project seeded from the starter. When the
+    // project's base tip (resolved server-side, passed as KORTIX_BASE_SHA) IS
+    // that root — a fresh project with no per-project commit — the local clone
+    // already holds the exact base tree, so `git fetch` would transfer ZERO
+    // objects: a pure negotiation round-trip that still hung ~34s through the
+    // flaky dev tunnel (2026-06-13). Skip it: just branch off the local HEAD.
+    const localHead = (await execGit(['-C', tmp, 'rev-parse', 'HEAD'])).stdout.trim()
+    if (cfg.sessionFresh && cfg.baseSha && localHead === cfg.baseSha) {
+      const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
+      if (co.code !== 0) throw new Error(`checkout base (local): ${co.stderr}`)
+      await rm(target, { recursive: true, force: true })
+      await rename(tmp, target)
+      logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
+      return true
+    }
+    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      '-C', tmp,
+      '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+      'fetch', '-q', 'origin', base,
+    ], { timeoutMs: 35_000 })
+    if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
+    const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
+    if (co.code !== 0) throw new Error(`checkout base: ${co.stderr}`)
+    await rm(target, { recursive: true, force: true })
+    await rename(tmp, target)
+    logger.info('[git] repo materialized via scaffold delta-fetch', { ms: Date.now() - t0, base })
+    return true
+  } catch (err) {
+    logger.info('[git] scaffold fast path unavailable; falling back to clone', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    return false
+  }
 }
 
 export type RepoInfo = {
@@ -742,7 +858,7 @@ export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   }
 }
 
-export type CommitPushResult = {
+type CommitPushResult = {
   /** A new commit was created from dirty working-tree changes. */
   committed: boolean
   /** New commits were pushed to origin (false when the remote was already up to date). */

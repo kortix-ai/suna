@@ -62,10 +62,10 @@ export function serializeSession(
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
-  // over the auto title (metadata.name) that opencode mirrors via
-  // /v1/projects/sync-opencode-sessions. `name` is the resolved display value;
+  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
-  // from the auto title (e.g. to beat the live opencode root title).
+  // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
   const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   return {
@@ -104,7 +104,7 @@ export function serializeSession(
  * viewer may manage its sharing (owner or project manager).
  */
 
-export function dashboardBaseUrl(): string {
+function dashboardBaseUrl(): string {
   return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
 }
 
@@ -201,7 +201,7 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
 }
 
 
-export function clientIp(c: Context) {
+function clientIp(c: Context) {
   return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
     || c.req.header('x-real-ip')
     || null;
@@ -520,7 +520,7 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 
-export const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
+const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
 
 export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
 

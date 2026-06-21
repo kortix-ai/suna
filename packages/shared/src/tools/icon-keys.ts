@@ -39,15 +39,15 @@ export type ToolIconKey =
 /**
  * Get the icon key for a tool name
  * This is platform-agnostic - each platform resolves the key to an actual icon component
- * 
+ *
  * @param toolName - The tool name (can be kebab-case or snake_case)
  * @returns The icon key to use
  */
 export function getToolIconKey(toolName: string | undefined): ToolIconKey {
   if (!toolName) return 'wrench';
-  
+
   const normalized = toolName.toLowerCase();
-  
+
   switch (normalized) {
     // Initialization
     case 'initialize-tools':
@@ -73,7 +73,7 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'web-search':
     case 'web_search':
       return 'globe';
-    
+
     case 'image-search':
     case 'image_search':
       return 'image';
@@ -84,15 +84,15 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'edit-file':
     case 'edit_file':
       return 'file-edit';
-    
+
     case 'str-replace':
     case 'str_replace':
       return 'file-search';
-    
+
     case 'full-file-rewrite':
     case 'full_file_rewrite':
       return 'file-plus';
-    
+
     case 'read-file':
     case 'read_file':
     case 'parse-document':
@@ -100,7 +100,7 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'read-document':
     case 'read_document':
       return 'file-text';
-    
+
     case 'delete-file':
     case 'delete_file':
       return 'file-x';
@@ -114,7 +114,7 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'create-tasks':
     case 'create_tasks':
       return 'list';
-    
+
     case 'update-tasks':
     case 'update_tasks':
       return 'list-todo';
@@ -176,11 +176,11 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'monitor-call':
     case 'monitor_call':
       return 'phone';
-    
+
     case 'end-call':
     case 'end_call':
       return 'phone-off';
-    
+
     case 'wait-for-call-completion':
     case 'wait_for_call_completion':
       return 'clock';
@@ -297,7 +297,7 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
         if (parts.length >= 3) {
           const serverName = parts[1];
           const toolNamePart = parts.slice(2).join('_');
-          
+
           if (toolNamePart.includes('search') || toolNamePart.includes('web')) {
             return 'search';
           } else if (toolNamePart.includes('research') || toolNamePart.includes('paper')) {
@@ -308,8 +308,7 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
         }
         return 'plug';
       }
-      
+
       return 'wrench';
   }
 }
-

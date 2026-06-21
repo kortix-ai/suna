@@ -8,6 +8,7 @@ import {
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   materializeRepo,
+  materializeScaffoldSeed,
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
@@ -188,7 +189,108 @@ async function main() {
     })
     .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
 
+  // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
+  // Platinum's stateful-capture machinery to be snapshotted fully warm — repo
+  // cloned, opencode up. Forked sessions land their real env (KORTIX_SESSION_ID,
+  // tokens, branch) in /etc/pt-env via the host's reconfigure; the snapshot
+  // resumes THIS process, so it must adopt that env itself: without this the
+  // fork keeps the seed's baked tokens and stays on the default branch (caught
+  // live 2026-06-10 — forks answered health on `main` with the deriving
+  // session's credentials). Become capture-ready here, but leave the session
+  // runtime (initial session + event relay) to the adopting session.
+  if ((process.env.KORTIX_SESSION_ID ?? '').trim() === '' && cfg.autoClone) {
+    void (async () => {
+      // Keep waiting as long as the platform's capture budget plausibly
+      // allows — a single bounded wait (20s) missed opencode by 4 seconds
+      // once and the seed then NEVER wrote its pin, so every capture of that
+      // template aborted at its 240s budget forever (caught live 2026-06-11).
+      const deadline = Date.now() + 5 * 60_000
+      let ok = false
+      while (!ok && Date.now() < deadline) {
+        ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
+      }
+      if (!ok) {
+        logger.warn('[seed] opencode never became ready; capture will not trigger')
+        return
+      }
+      bootMark('opencode-ready')
+      // Pre-create the root opencode session and pin it, so forks' backend
+      // ensure-opencode resolves 'healed' off the listed session instead of
+      // paying opencode's first-session project init (~2s) on the chat-ready
+      // path. The capture condition requires the pin file, so the snapshot is
+      // guaranteed to contain this session.
+      try {
+        const res = await waitForInitialSessionCreate(
+          `http://127.0.0.1:${cfg.opencodeInternalPort}`,
+          process.env.KORTIX_WORKSPACE || '/workspace',
+        )
+        const session = (await res.json()) as { id?: string }
+        if (session.id) {
+          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          bootMark('seed-opencode-session')
+          logger.info('[seed] pre-created root opencode session', { sessionId: session.id })
+        }
+      } catch (err) {
+        logger.warn('[seed] root opencode session pre-create failed', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
+      logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
+    })()
+    armSeedAdoption(opencode, server, bootState, bootMark)
+    return
+  }
+
   void startSessionRuntime(opencode, cfg, bootState, bootMark)
+}
+
+// Adopt a forked session inside a warm-seed clone. Mirrors the warm-pool claim
+// path, but the repo is already baked — materializeRepo() takes its local-only
+// branch (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
+// Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
+// never contains it — platinum-seed.ts strips it from captureEnv).
+function armSeedAdoption(
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  server: ReturnType<typeof startProxy>,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+): void {
+  let adopted = false
+  const adopt = (trigger: string) => {
+    if (adopted) return
+    adopted = true
+    void (async () => {
+      const t0 = Date.now()
+      reloadSessionEnv()
+      const cfg2 = loadConfig()
+      // Re-arm the proxy with the session's tokens — the seed booted with the
+      // deriving session's credentials, which must never serve this fork.
+      server.reload(cfg2)
+      bootState.initialOpenCodeSessionRequired =
+        (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
+        (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+      logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
+      try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
+      try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
+      if (cfg2.autoClone) {
+        await materializeRepo(cfg2).catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[seed] repo adoption failed', err)
+        })
+        bootMark('seed-repo-adopted')
+        if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
+      }
+      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
+      logger.info('[seed] adoption complete', { adoptMs: Date.now() - t0, timeline: bootState.timeline })
+    })()
+  }
+  process.on('SIGHUP', () => adopt('sighup'))
+  const poll = setInterval(() => {
+    let txt = ''
+    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
+  }, 250)
 }
 
 // Post-opencode session runtime: create the initial opencode session (when a
@@ -240,22 +342,29 @@ async function startSessionRuntime(
   }
 }
 
-// Read KEY=VALUE lines from the per-session env file into process.env. The warm
-// pool stages the claimant's session env there on claim (the API POSTs it via
-// the daemon's /file/upload endpoint), so a fresh loadConfig() resolves the
-// claimant's KORTIX_*. Lives under /tmp (NOT /etc): /file/upload's allowed-roots
-// gate (routes/files.ts) permits /tmp + the workspace but rejects /etc, so the
-// claim-write must target a /tmp path the file router will accept.
-function reloadSessionEnv(path = '/tmp/dnah-env'): void {
-  let txt: string
-  try { txt = readFileSync(path, 'utf8') } catch { return }
-  for (const line of txt.split('\n')) {
-    const t = line.trim()
-    if (!t || t.startsWith('#')) continue
-    const eq = t.indexOf('=')
-    if (eq <= 0) continue
-    const k = t.slice(0, eq)
-    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) process.env[k] = t.slice(eq + 1)
+// Read KEY=VALUE lines from the per-session env file into process.env. TWO
+// writers stage it on DIFFERENT paths and we must accept either:
+//   • /tmp/pt-env — the warm-pool claim POSTs it via the daemon's /file/upload
+//     (its allowed-roots gate, routes/files.ts, permits /tmp + workspace but
+//     REJECTS /etc, so the claim-write must target /tmp).
+//   • /etc/pt-env — the PLATINUM on-demand restore writes it directly into the
+//     guest pre-boot (host-agent writeEnvIntoOverlay via debugfs / writeGuestEnv).
+//     The platinum fork never goes through /file/upload, so its env lands in /etc.
+// Reading both is what makes a pool-mode spare adopt regardless of which flow
+// forked it (the cross-codebase merge left these two paths disagreeing → forks
+// stayed tokenless/unconfigured, hanging at "Starting the agent").
+function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): void {
+  for (const path of paths) {
+    let txt: string
+    try { txt = readFileSync(path, 'utf8') } catch { continue }
+    for (const line of txt.split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const eq = t.indexOf('=')
+      if (eq <= 0) continue
+      const k = t.slice(0, eq)
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) process.env[k] = t.slice(eq + 1)
+    }
   }
 }
 
@@ -289,53 +398,56 @@ async function runPoolMode(
   const projectEnv = createProjectEnvStore()
   writeAgentEnvFile(projectEnv)
 
-  const cloneAtPark =
-    (process.env.KORTIX_WARM_POOL_CLONE_AT_PARK ?? '').trim() === '1' && cfg.autoClone && !!cfg.repoUrl
+  // Scaffold-warm the seed: materialize the image-baked scaffold at /workspace
+  // (zero-network) so opencode pays its per-directory project init (git scan +
+  // file index + LSP + sqlite) ONCE here, FROZEN into the snapshot. Without this
+  // every fork paid that ~3.2s init on its own hot path (the runtime-ready
+  // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
+  // seed (and every fork) runs the real agents/plugins, not the baked default.
+  const scaffolded = await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
+  bootMark('pool-scaffold-materialized')
+  const opencodeConfigDir = scaffolded
+    ? await resolveOpencodeConfigDir(cfg)
+    : cfg.defaultOpencodeConfigDir
+  await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
+  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+  bootMark('pool-opencode-spawned')
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
+  bootMark('pool-ready')
 
-  let opencode: Opencode
-  let server: ReturnType<typeof startProxy>
-
-  if (cloneAtPark) {
-    // STAGE-2: pre-pay the clone + opencode plugin-warm at park.
-    try { await configureGlobalGitIdentity(cfg, OPENCODE_HOME) } catch {}
-    try { await configureGitCredentialHelper(cfg, OPENCODE_HOME) } catch {}
-    // No KORTIX_BRANCH_NAME on a spare → materializeRepo clones the base branch
-    // and stays on it, leaving /workspace/.git present for the claim's fast path.
-    await materializeRepo(cfg).catch((err) => {
-      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-      logger.error('[pool] park-time repo materialization failed', err)
-    })
-    bootMark('pool-repo-materialized')
-    // Resolve the PROJECT opencode config (now that the repo exists) so the warm
-    // loads the project's pty plugin — the actual ~4.7s cost we want pre-paid.
-    const opencodeConfigDir = bootState.repoMaterializationError
-      ? cfg.defaultOpencodeConfigDir
-      : await resolveOpencodeConfigDir(cfg)
-    await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
-    opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
-    if (!bootState.repoMaterializationError) {
-      await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch(() => {})
-    }
-    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-    bootMark('pool-opencode-spawned')
-    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-    installShutdownHandlers(opencode, server, staticWeb)
-    if (!bootState.repoMaterializationError) {
-      const warm = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('pool-opencode-listening'))
-      if (warm) { opencode.markReady(); bootMark('pool-opencode-warm') }
-    }
-    bootMark('pool-ready')
+  // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
+  // and pre-create + pin the root session, so the frozen image has opencode
+  // genuinely 'ok' for /workspace AND a listed root session. The platinum
+  // capture condition gates on the pin file existing, so the snapshot is taken
+  // only AFTER this — making forks resume with runtime-ready instant and the
+  // backend ensure resolving 'healed' (no first-session init). Only when the
+  // scaffold materialized; otherwise the seed stays the old repo-less spare.
+  if (scaffolded) {
+    void (async () => {
+      const deadline = Date.now() + 5 * 60_000
+      let ok = false
+      while (!ok && Date.now() < deadline) ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
+      if (!ok) { logger.warn('[pool] opencode never warmed; capture will not trigger'); return }
+      bootMark('pool-opencode-ready')
+      try {
+        const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
+        const session = (await res.json()) as { id?: string }
+        if (session.id) {
+          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          bootMark('pool-seed-session')
+          logger.info('[pool] pre-created + pinned root opencode session', { sessionId: session.id })
+        }
+      } catch (err) {
+        logger.warn('[pool] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
+      }
+      logger.info('[pool] warm seed ready; awaiting claim', { timeline: bootState.timeline })
+    })()
   } else {
-    // STAGE-1: generic, session-less spare (clone + warm deferred to claim).
-    await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
-    opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
-    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-    bootMark('pool-opencode-spawned')
-    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-    installShutdownHandlers(opencode, server, staticWeb)
-    bootMark('pool-ready')
+    logger.info('[pool] repo-less spare ready; awaiting claim', { timeline: bootState.timeline })
   }
-  logger.info('[pool] warm spare ready; awaiting claim', { cloneAtPark, timeline: bootState.timeline })
 
   let claimed = false
   const claim = (trigger: string) => {
@@ -352,7 +464,7 @@ async function runPoolMode(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone, cloneAtPark })
+      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
@@ -390,10 +502,15 @@ async function runPoolMode(
   }
   process.on('SIGHUP', () => claim('sighup'))
   const poll = setInterval(() => {
-    let txt = ''
-    try { txt = readFileSync('/tmp/dnah-env', 'utf8') } catch { return }
-    if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
-  }, 1000)
+    // The claimant env lands at /tmp/pt-env (warm-pool claim via /file/upload)
+    // OR /etc/pt-env (platinum on-demand restore writes it pre-boot). Poll both
+    // so the spare adopts regardless of which flow forked it.
+    for (const p of ['/etc/pt-env', '/tmp/pt-env']) {
+      let txt = ''
+      try { txt = readFileSync(p, 'utf8') } catch { continue }
+      if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim(`env-poll:${p}`); return }
+    }
+  }, 200)  // tight: the warm daemon idles until env lands; a slow poll just delays adoption ~1s
 }
 
 // Establish the session's canonical opencode root and (once) deliver the
@@ -613,7 +730,15 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
 async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  // /turn-stream accepts EITHER the session token or the sandbox credential
+  // (it's a sandbox-identity route). Prefer the session token; fall back to the
+  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
+  const token = (
+    process.env.KORTIX_CLI_TOKEN ||
+    process.env.KORTIX_SANDBOX_TOKEN ||
+    process.env.KORTIX_TOKEN ||
+    ''
+  ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) return
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
@@ -674,7 +799,15 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
   if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  // /turn-stream accepts EITHER the session token or the sandbox credential
+  // (it's a sandbox-identity route). Prefer the session token; fall back to the
+  // sandbox credential — canonical name first, legacy KORTIX_TOKEN alias last.
+  const token = (
+    process.env.KORTIX_CLI_TOKEN ||
+    process.env.KORTIX_SANDBOX_TOKEN ||
+    process.env.KORTIX_TOKEN ||
+    ''
+  ).trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
     logger.warn('[opencode-events] missing env to relay to apps/api', {

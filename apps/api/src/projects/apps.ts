@@ -208,7 +208,7 @@ export function manifestHashForApp(spec: AppSpec): string {
  * short hash keeps it unique across the shared Freestyle account so two
  * projects can both have an app called "site" without colliding.
  */
-export function defaultAppDomain(projectId: string, slug: string): string {
+function defaultAppDomain(projectId: string, slug: string): string {
   const hash = createHash('sha256').update(`${projectId}:${slug}`).digest('hex').slice(0, 8);
   const label = slug.replace(/_/g, '-').slice(0, 40).replace(/^-+|-+$/g, '') || 'app';
   return `${label}-${hash}.style.dev`;

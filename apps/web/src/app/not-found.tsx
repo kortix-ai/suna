@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 const NotFound = () => {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <section>
       <div className="flex h-dvh flex-col items-center justify-center gap-12 text-center">
@@ -18,14 +20,18 @@ const NotFound = () => {
           </svg>
 
           <div className="space-y-1">
-            <h1 className="text-base-900 text-base sm:text-lg md:text-xl">404 Page not found</h1>
+            <h1 className="text-base-900 text-base sm:text-lg md:text-xl">
+              {tI18nHardcoded.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161')}
+            </h1>
             <p className="text-base-500 text-base text-balance">
-              The page you are looking for does not exist.
+              {tI18nHardcoded.raw('autoAppNotFoundJsxTextThePageYouAreLookingccf1ecc5')}
             </p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 lg:grid-cols-2">
             <Button asChild variant="secondary" className="w-full">
-              <Link href="/">Go back to home</Link>
+              <Link href="/">
+                {tI18nHardcoded.raw('autoAppNotFoundJsxTextGoBackToHome7b70f24a')}
+              </Link>
             </Button>
             <Button asChild className="w-full">
               <Link href="/docs">Documentation</Link>

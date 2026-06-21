@@ -39,6 +39,7 @@ import {
 } from '../../snapshots/builder';
 import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
+import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
@@ -119,6 +120,9 @@ async function mintExecutorToken(opts: {
       accountId: opts.accountId,
       userId: opts.userId,
       projectId: opts.projectId,
+      // session_id == sandbox_id by construction — lets the LLM gateway attribute
+      // usage_events to this session (the reaper's reliable activity signal).
+      sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
     });
@@ -177,14 +181,23 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
+  /**
+   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
+   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
+   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
+   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
+   */
+  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
-  const providerName = opts.provider || (await selectProvider());
-  const provider = getProvider(providerName);
+  // `let`, not `const`: provider failover (one-shot, admin-gated) reassigns
+  // these in the provision loop's catch when the primary fails at birth.
+  let providerName = opts.provider || (await selectProvider());
+  let provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
@@ -344,15 +357,27 @@ export async function provisionSessionSandbox(opts: {
     location,
     envVars: {
       ...(opts.extraEnvVars ?? {}),
+      // ── Sandbox token model — TWO credentials, two principals ──────────────
+      // 1) The SANDBOX credential (`kortix_sb_…`): the daemon's identity. It is
+      //    the HMAC key the API signs `X-Kortix-User-Context` with (the daemon
+      //    verifies it) AND the bearer for the 3 sandbox-identity routes
+      //    (/git/clone-credential, /turn-stream, /turn-question). It carries NO
+      //    user identity, so project-scoped routes reject it. Injected under the
+      //    self-documenting `KORTIX_SANDBOX_TOKEN`; `KORTIX_TOKEN` is kept as a
+      //    back-compat alias for daemons baked before the rename.
+      // 2) The SESSION credential (`kortix_pat_…`, `executorToken`): acts AS the
+      //    launching user, scoped by the agent grant. It backs the Executor
+      //    gateway AND the in-sandbox `kortix` CLI. Injected under
+      //    `KORTIX_CLI_TOKEN` (+ `KORTIX_EXECUTOR_TOKEN` alias for the executor).
+      // The agent never needs the sandbox credential — see apps/cli config.ts
+      // (activeHost() resolves only the session token).
+      // Phase 2 (after baked images cycle): drop the `KORTIX_TOKEN` /
+      // `KORTIX_EXECUTOR_TOKEN` aliases and let `KORTIX_TOKEN` MEAN the session
+      // token, so the agent world has exactly one obvious var.
+      KORTIX_SANDBOX_TOKEN: sandboxKey.secretKey,
       KORTIX_TOKEN: sandboxKey.secretKey,
-      // The project-scoped PAT does double duty: it backs the executor MCP
-      // gateway AND the in-sandbox `kortix` CLI. KORTIX_TOKEN (the sandbox
-      // service key) is rejected by the project-scoped routes the CLI hits
-      // (change-requests, secrets, …) — only this account token authenticates
-      // there. Inject it under KORTIX_CLI_TOKEN so `kortix …` is pre-authed
-      // with zero setup; see apps/cli/src/api/config.ts (activeHost()).
       ...(executorToken
-        ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken }
+        ? { KORTIX_CLI_TOKEN: executorToken, KORTIX_EXECUTOR_TOKEN: executorToken }
         : {}),
       ...(gatewayLlmKey
         ? {
@@ -363,6 +388,17 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
+    // Idle lifecycle is owned by the provider-agnostic reaper (projects/
+    // sandbox-reaper.ts), keyed off MEANINGFUL activity (real turns), with each
+    // provider's native auto-stop as a secondary backstop. We pass NO explicit
+    // autoStopInterval for a normal session so each provider applies its own
+    // policy via daytonaLifecycle(): Daytona → KORTIX_SANDBOX_AUTOSTOP_MINUTES
+    // (default 15); Platinum → persistent (autoStop=0) because its stop→resume
+    // is broken (CH resume-freeze) — the reaper stops idle Platinum boxes and
+    // flags reprovision-on-open instead. (The old divergent KORTIX_SANDBOX_AUTO_
+    // STOP_MIN env, default 30, also wrongly made Platinum ephemeral — removed.)
+    // Warm-pool spares (legacy; pool disabled) stay persistent until claimed.
+    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -373,6 +409,9 @@ export async function provisionSessionSandbox(opts: {
     // and reports "not found", we rebuild and retry once. More than once means
     // something is genuinely broken — surface the error.
     let healedStaleSnapshot = false;
+    // Provider failover (one-shot, on init): set true once we've handed off to a
+    // second provider, so a session never bounces between providers forever.
+    let fallbackAttempted = false;
     let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
     provisioning: while (true) {
     try {
@@ -647,6 +686,51 @@ export async function provisionSessionSandbox(opts: {
       }
 
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      // ── Provider failover (one-shot, on init) ────────────────────────────
+      // Admin-gated (DB `provider_fallback`, OFF by default). When ON, a
+      // provider that fails to provision the session AT BIRTH hands off ONCE to
+      // the next allowed provider before the session is marked failed. Init
+      // only — a running box is never migrated here. The new provider re-resolves
+      // its own image (the snapshot is provider-specific), so we clear all image
+      // state and re-enter the loop.
+      if (!fallbackAttempted && providerFallbackSetting().enabled) {
+        const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
+        if (next) {
+          fallbackAttempted = true;
+          console.warn(
+            `[session-sandbox] ${providerName} provisioning failed for ${sandbox.sandboxId} — failing over to ${next}: ${bgMessage.slice(0, 160)}`,
+          );
+          const foTl = tl.summary();
+          recordProviderEvent({
+            provider: providerName, kind: 'provision', outcome: 'error',
+            totalMs: foTl.totalMs, marks: foTl.marks,
+            errorClass: 'other', error: `failover→${next}: ${bgMessage}`,
+            sessionId: sandbox.sandboxId, accountId,
+          });
+          if (bgExternalId) {
+            await provider.remove(bgExternalId).catch(() => {});
+            bgExternalId = null;
+          }
+          providerName = next;
+          provider = getProvider(next);
+          warmBase = null;
+          warmIsProjectSnapshot = false;
+          providerCreateInput.snapshot = undefined;
+          providerCreateInput.warmBaseSnapshot = undefined;
+          firstImagePromise = null;
+          imageInfo = null;
+          healedStaleSnapshot = false;
+          await db
+            .update(sessionSandboxes)
+            .set({ provider: next, status: 'provisioning', updatedAt: new Date() })
+            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
+            .catch(() => {});
+          tl.mark(`failover:${next}`);
+          continue provisioning;
+        }
+      }
+
       // Provider-capacity errors (Daytona "No available runners", rate limits)
       // are transient outages, not session failures. Log them as a warning so
       // they don't read as code bugs in the console, and present a friendly

@@ -795,6 +795,7 @@ function ApiKeyConnectForm({
   onBack: () => void;
   onConnected: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   // One entry per env var the provider declares. Render order is the order in
@@ -954,8 +955,9 @@ function ApiKeyConnectForm({
         <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
           <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
           <p className="text-foreground/80 text-xs leading-relaxed">
-            A sandbox picks up new providers when it starts. To use this in a running session,
-            restart its sandbox from the session list.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
+            )}
           </p>
         </div>
 
@@ -999,6 +1001,7 @@ function ChatGptSubscriptionConnect({
   sharing: SharingSelection;
   onConnected: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -1092,10 +1095,15 @@ function ChatGptSubscriptionConnect({
       <div className="flex items-start gap-3">
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">ChatGPT Plus/Pro</div>
+          <div className="text-foreground text-sm font-medium">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530',
+            )}
+          </div>
           <p className="text-muted-foreground mt-0.5 text-xs leading-5">
-            Sign in with your ChatGPT subscription. We save the login as an encrypted project secret
-            so future sessions reuse it.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c',
+            )}
           </p>
         </div>
       </div>
@@ -1104,7 +1112,11 @@ function ChatGptSubscriptionConnect({
         <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
           {challenge ? (
             <>
-              <div className="text-foreground text-xs font-medium">Authorize in the browser</div>
+              <div className="text-foreground text-xs font-medium">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
+                )}
+              </div>
               {challenge.url && (
                 <Button
                   type="button"
@@ -1114,13 +1126,17 @@ function ChatGptSubscriptionConnect({
                   onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                  Open auth page
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsProjectProviderModalJsxTextOpenAuthPaged0381841',
+                  )}
                 </Button>
               )}
               {challenge.code ? (
                 <div className="mt-3">
                   <div className="text-muted-foreground text-xs">
-                    Enter this code on the auth page:
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
+                    )}
                   </div>
                   <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
                     {challenge.code}
@@ -1129,7 +1145,11 @@ function ChatGptSubscriptionConnect({
               ) : null}
             </>
           ) : (
-            <div className="text-foreground text-xs font-medium">Starting authorization…</div>
+            <div className="text-foreground text-xs font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectProviderModalJsxTextStartingAuthorization35b1fe13',
+              )}
+            </div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1140,7 +1160,9 @@ function ChatGptSubscriptionConnect({
 
       {phase === 'done' && (
         <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
-          ChatGPT subscription connected.
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
+          )}
         </div>
       )}
 
@@ -1603,6 +1625,7 @@ function ModelsTab({
   connectedProviders: LlmProviderEntry[];
   search: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   // Visibility (show/hide per model in the picker) is a global, browser-level
@@ -1671,7 +1694,10 @@ function ModelsTab({
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
           <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {flatModels.length} shown in the model picker
+            {enabledCount} of {flatModels.length}{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
+            )}
           </p>
           {hasOverrides && (
             <Button
@@ -1680,7 +1706,9 @@ function ModelsTab({
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
               onClick={() => modelStore.resetVisibility()}
             >
-              Reset to defaults
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
+              )}
             </Button>
           )}
         </div>

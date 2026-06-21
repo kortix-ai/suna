@@ -26,58 +26,53 @@ const MCP_SERVER_NAMES: Record<string, string> = {
  * Known MCP server names for detection
  */
 const KNOWN_MCP_SERVERS = new Set([
-  'exa', 'github', 'notion', 'slack', 'filesystem', 
-  'memory', 'anthropic', 'openai', 'composio', 
+  'exa', 'github', 'notion', 'slack', 'filesystem',
+  'memory', 'anthropic', 'openai', 'composio',
   'langchain', 'llamaindex'
 ]);
 
 /**
  * Format an MCP tool name for display
  * Converts "mcp_serverName_toolName" to "Server Name: Tool Name"
- * 
+ *
  * @param serverName - The MCP server name
  * @param toolName - The tool name within the server
  * @returns Formatted display name
  */
 export function formatMCPToolName(serverName: string, toolName: string): string {
-  const formattedServerName = MCP_SERVER_NAMES[serverName.toLowerCase()] || 
+  const formattedServerName = MCP_SERVER_NAMES[serverName.toLowerCase()] ||
     serverName.charAt(0).toUpperCase() + serverName.slice(1);
-  
-  let formattedToolName = toolName;
-  
-  if (toolName.includes('-')) {
-    formattedToolName = toolName
+
+  const formattedToolName = toolName.includes('-')
+    ? toolName
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else if (toolName.includes('_')) {
-    formattedToolName = toolName
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else if (/[a-z][A-Z]/.test(toolName)) {
-    // camelCase to Title Case
-    formattedToolName = toolName
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  } else {
-    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1);
-  }
-  
+      .join(' ')
+    : toolName.includes('_')
+      ? toolName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+      : /[a-z][A-Z]/.test(toolName)
+        ? toolName
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ')
+        : toolName.charAt(0).toUpperCase() + toolName.slice(1);
+
   return `${formattedServerName}: ${formattedToolName}`;
 }
 
 /**
  * Get a user-friendly display name for a tool
- * 
+ *
  * @param toolName - The tool identifier (can be kebab-case, snake_case, or MCP format)
  * @returns Human-readable display name
  */
 export function getUserFriendlyToolName(toolName: string): string {
   if (!toolName) return 'Unknown Tool';
-  
+
   // Handle MCP tools: mcp_serverName_toolName
   if (toolName.startsWith('mcp_')) {
     const parts = toolName.split('_');
@@ -87,7 +82,7 @@ export function getUserFriendlyToolName(toolName: string): string {
       return formatMCPToolName(serverName, toolNamePart);
     }
   }
-  
+
   // Handle MCP tools in kebab-case: serverName-toolName (if not in display names map)
   if (toolName.includes('-') && !TOOL_DISPLAY_NAMES.has(toolName)) {
     const parts = toolName.split('-');
@@ -100,7 +95,7 @@ export function getUserFriendlyToolName(toolName: string): string {
       }
     }
   }
-  
+
   // Return mapped display name or the tool name itself
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
@@ -108,22 +103,22 @@ export function getUserFriendlyToolName(toolName: string): string {
 /**
  * Get a completed/past-tense display name for a tool
  * Falls back to the regular display name if no completed name exists
- * 
+ *
  * @param toolName - The tool identifier
  * @returns Human-readable completed display name
  */
 export function getCompletedToolName(toolName: string): string {
   if (!toolName) return 'Unknown Tool';
-  
+
   const completedName = TOOL_COMPLETED_NAMES.get(toolName);
   if (completedName) return completedName;
-  
+
   return getUserFriendlyToolName(toolName);
 }
 
 /**
  * Extract app slug from a Composio tool call
- * 
+ *
  * @param toolCall - The tool call object
  * @returns The app slug, or null if not found
  */
@@ -159,7 +154,7 @@ export function extractAppSlugFromToolCall(toolCall: any): string | null {
   // Check function name for known apps
   if (toolCall.function_name) {
     const functionName = toolCall.function_name;
-    
+
     const knownApps = [
       'TWITTER', 'GITHUB', 'SLACK', 'GMAIL', 'GOOGLE', 'NOTION', 'ASANA', 'JIRA',
       'TRELLO', 'DISCORD', 'LINKEDIN', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'SPOTIFY',
@@ -168,13 +163,13 @@ export function extractAppSlugFromToolCall(toolCall: any): string | null {
       'FIGMA', 'MIRO', 'SHOPIFY', 'WOOCOMMERCE', 'WORDPRESS', 'MEDIUM', 'REDDIT',
       'TELEGRAM', 'WHATSAPP', 'ZOOM', 'CALENDAR', 'DRIVE', 'SHEETS', 'DOCS', 'SLIDES'
     ];
-    
+
     for (const app of knownApps) {
       if (functionName.startsWith(app + '_')) {
         return app.toLowerCase();
       }
     }
-    
+
     // Check if function name starts with an uppercase word (likely app name)
     const parts = functionName.split('_');
     if (parts.length >= 2 && parts[0].length > 0 && parts[0] === parts[0].toUpperCase()) {
@@ -184,4 +179,3 @@ export function extractAppSlugFromToolCall(toolCall: any): string | null {
 
   return null;
 }
-

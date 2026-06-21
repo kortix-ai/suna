@@ -24,8 +24,7 @@ describe('buildOpencodeConfigContent', () => {
       enabled: true,
       environment: { KORTIX_EXECUTOR_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' },
     })
-    expect(server.command[0]).toBe('bun')
-    expect(server.command[1]).toContain('executor-mcp.ts')
+    expect(server.command).toEqual(['kortix', 'executor', 'mcp'])
   })
 
   test('returns undefined when the gateway is unreachable', () => {

@@ -6,6 +6,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
 import { FolderGit2, GitBranch, Loader2, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { PageHead } from '../primitives';
 import type { ProjectCard } from '../types';
 
@@ -79,14 +80,20 @@ function ProjectRow({ project }: { project: ProjectCard }) {
 }
 
 export function ProjectsPage({ projects }: { projects: ProjectCard[] }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div>
       <PageHead
         title="Projects"
-        sub="Each project is a repo your agents run from — scaffolded with kortix init, deployed with kortix ship."
+        sub={tI18nHardcoded.raw(
+          'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxAttrSub90e41adc',
+        )}
         action={
           <Button variant="default" size="sm">
-            <Plus className="size-3.5" /> New project
+            <Plus className="size-3.5" />{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextNewba012455',
+            )}
           </Button>
         }
       />
@@ -97,10 +104,21 @@ export function ProjectsPage({ projects }: { projects: ProjectCard[] }) {
             <FolderGit2 className="text-muted-foreground/70 size-5" />
           </span>
           <div className="space-y-1">
-            <div className="text-foreground text-sm font-medium">No projects yet</div>
+            <div className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextNo21ae83eb',
+              )}
+            </div>
             <div className="text-muted-foreground text-xs">
-              Run <span className="text-foreground font-mono">kortix init</span> in your terminal to
-              scaffold one.
+              Run{' '}
+              <span className="text-foreground font-mono">
+                {tI18nHardcoded.raw(
+                  'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextKortixa20df451',
+                )}
+              </span>{' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsHomeInteractiveDemoPagesProjectsPageJsxTextIn2531c25e',
+              )}
             </div>
           </div>
         </div>

@@ -265,6 +265,7 @@ mock.module('../projects/secrets', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
@@ -422,6 +423,7 @@ mock.module('../shared/db', () => ({
           return {
             returning: async () => apply(),
             then: (resolve: (v: any) => unknown) => resolve(apply()),
+            catch: () => undefined,
           };
         },
       }),
@@ -772,7 +774,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(body.session_id).toBeTruthy();
-    expect(branchCreateCalls).toBe(0);
+    expect(branchCreateCalls).toBe(1);
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);

@@ -85,7 +85,23 @@ export interface GitTriggerSpec {
    * signing secret. The actual secret value is never inline.
    */
   secretEnv: string | null;
+  /**
+   * Session reuse policy.
+   * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
+   *   new ephemeral branch) — the historical behavior.
+   * - `'reuse'`: re-prompt the most recent session this trigger created
+   *   (resuming its sandbox + opencode root) so ONE long-lived session
+   *   accumulates context across fires. If no reusable session exists yet (or
+   *   the last one is dead/failed), a fresh one is created and becomes the
+   *   canonical session going forward. Primarily meant for recurring cron
+   *   triggers that should feel like a single persistent agent run.
+   */
+  sessionMode: GitTriggerSessionMode;
 }
+
+export type GitTriggerSessionMode = 'fresh' | 'reuse';
+
+export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = ['fresh', 'reuse'];
 
 export interface GitTriggerParseError {
   slug: string;
@@ -253,6 +269,11 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     agent: spec.agent,
     enabled: spec.enabled,
   };
+  // Only emit session_mode when it deviates from the default ('fresh') so
+  // existing manifests stay byte-stable on round-trip.
+  if (spec.sessionMode === 'reuse') {
+    entry.session_mode = spec.sessionMode;
+  }
   if (spec.type === 'cron') {
     if (spec.runAt) {
       entry.run_at = spec.runAt;
@@ -274,6 +295,20 @@ interface ParseOk {
 interface ParseErr {
   ok: false;
   error: GitTriggerParseError;
+}
+
+// A bad IANA timezone (typo, or an abbreviation like "PST") otherwise slips
+// through parsing and only fails later inside the cron due-check, where it's
+// swallowed to `false` — the trigger then silently never fires. Catch it at
+// parse time so it surfaces as a visible trigger error instead.
+function isValidTimeZone(tz: string): boolean {
+  if (tz === 'UTC') return true;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
@@ -311,6 +346,16 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       : 'default';
   const enabled = coerceBool(row.enabled, true);
 
+  const sessionModeRaw = typeof row.session_mode === 'string'
+    ? row.session_mode.trim().toLowerCase()
+    : typeof row.sessionMode === 'string'
+      ? row.sessionMode.trim().toLowerCase()
+      : '';
+  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
+    return err(slug, `session_mode must be "fresh" or "reuse" (got "${sessionModeRaw}")`);
+  }
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
@@ -327,6 +372,9 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
     const timezone = typeof row.timezone === 'string' && row.timezone.trim()
       ? row.timezone.trim()
       : 'UTC';
+    if (!isValidTimeZone(timezone)) {
+      return err(slug, `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`);
+    }
 
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
     if (runAtRaw) {
@@ -348,6 +396,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
           runAt: new Date(parsed).toISOString(),
           timezone,
           secretEnv: null,
+          sessionMode,
         },
       };
     }
@@ -367,6 +416,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
         runAt: null,
         timezone,
         secretEnv: null,
+        sessionMode,
       },
     };
   }
@@ -397,6 +447,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       runAt: null,
       timezone: 'UTC',
       secretEnv,
+      sessionMode,
     },
   };
 }

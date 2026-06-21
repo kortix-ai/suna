@@ -173,7 +173,9 @@ mock.module('../config', () => ({
 mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),
   getCustomerByStripeId: async () => null,
+  listAccountStripeCustomerIds: async () => ['cus_test_123'],
   upsertCustomer: async () => {},
+  deleteCustomerByStripeId: async () => {},
 }));
 
 // Account deletion repository mock

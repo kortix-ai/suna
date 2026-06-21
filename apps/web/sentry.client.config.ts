@@ -46,7 +46,7 @@ if (SENTRY_DSN) {
       // User-initiated aborts
       'AbortError',
       'The operation was aborted',
-      // PostHog retry noise
+      // Ad-blocker blocked requests
       'ERR_BLOCKED_BY_CLIENT',
       // External Safari / WebView video probing noise
       'webkitPresentationMode',

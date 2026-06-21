@@ -130,9 +130,9 @@ echo ""
 echo "  API Proxy (/v1)"
 echo ""
 
-API_CODE=$(curl -s -k $AUTH_ARGS -o /dev/null -w "%{http_code}" "${BASE_URL}/v1/setup/health" 2>/dev/null)
-if [ "$API_CODE" = "200" ] || [ "$API_CODE" = "401" ]; then
-  pass "API at /v1/setup/health responds (${API_CODE})"
+API_CODE=$(curl -s -k $AUTH_ARGS -o /dev/null -w "%{http_code}" "${BASE_URL}/v1/health" 2>/dev/null)
+if [ "$API_CODE" = "200" ]; then
+  pass "API at /v1/health responds (${API_CODE})"
 else
   fail "API proxy at /v1 (got: ${API_CODE})"
 fi

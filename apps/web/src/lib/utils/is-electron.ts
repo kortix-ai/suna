@@ -34,20 +34,20 @@ export function getAuthCallbackUrl(returnUrl?: string, termsAccepted?: boolean):
   const params = new URLSearchParams();
   if (returnUrl) params.set('returnUrl', returnUrl);
   if (termsAccepted) params.set('terms_accepted', 'true');
-  
+
   const queryString = params.toString();
   const callbackPath = `auth/callback${queryString ? `?${queryString}` : ''}`;
-  
+
   if (isElectron()) {
     // Use custom protocol for Electron - this will open the app
     return `${ELECTRON_PROTOCOL}://${callbackPath}`;
   }
-  
+
   // Web - use standard origin
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/${callbackPath}`;
   }
-  
+
   return `/${callbackPath}`;
 }
 
@@ -60,10 +60,10 @@ export function getAuthOrigin(): string {
   if (isElectron()) {
     return `${ELECTRON_PROTOCOL}://`;
   }
-  
+
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }
-  
+
   return '';
 }

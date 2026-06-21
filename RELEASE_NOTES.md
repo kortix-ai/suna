@@ -1,3 +1,8 @@
-Fix private repo provisioning failures
+Sandboxes auto-stop reliably + deterministic compute billing
 
-Fixes an intermittent production session provisioning failure for private GitHub repos. The shared per-project git mirror now resolves stored project credentials before clone/fetch even when a tokenless background caller wins the refresh lock, preventing unauthenticated cold-cache clones. Git repository authentication failures are also categorized as git-auth instead of being misreported as a Daytona provider failure.
+## Sandbox lifecycle + compute billing (headline)
+- Idle sandboxes now reliably **auto-stop after 15 min of no real activity** on every provider, and compute billing **closes deterministically** the moment a box stops — fixes sandboxes that kept running (and billing) for hours/days after work finished.
+- Provider-agnostic reaper (real provider state = source of truth; idleness keyed off real turns), quiesce so an open tab can't resurrect a finished box, Platinum reprovision-on-open, gateway per-session usage attribution, provider lifecycle webhooks (/v1/webhooks/sandbox/*) with the reaper as a zero-config backstop, and a billing-invariant monitor.
+
+## Also in this release
+- Executor unified into one CLI/MCP/SDK (#3541, #3549); OpenCode title sync (#3544); compact session digests (#3534); preview env-sync retries (#3538, #3539); revert Bedrock (#3545); credits never render as -0 (#3415); dep bumps.

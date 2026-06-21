@@ -40,9 +40,10 @@ context = "."                       # build context
 config_dir = ".kortix/opencode"
 
 # ─── Triggers ─────────────────────────────────────────────────────
-# Each `[[triggers]]` entry spawns a fresh session that runs `prompt`
-# as its initial message. Slugs must be lowercase URL-safe and
-# unique among triggers.
+# Each `[[triggers]]` entry runs `prompt` as a session's initial
+# message. By default each fire spawns a fresh session; set
+# `session_mode = "reuse"` to re-prompt one persistent session
+# instead. Slugs must be lowercase URL-safe and unique among triggers.
 
 [[triggers]]
 slug = "daily-digest"
@@ -237,6 +238,7 @@ output — UI ordering is stable, not authoring-order.
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `"default"` | OpenCode agent name. Alias: `agent_name`.                      |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` mints a new session every fire; `"reuse"` re-prompts ONE persistent session. See below. |
 
 **Alias note:** the parser accepts both forms (`prompt` /
 `prompt_template`, `agent` / `agent_name`, `cron` / `schedule`,
@@ -246,6 +248,25 @@ aliases away.
 
 **Slug uniqueness is per-section.** A trigger and an app may share
 a slug; two triggers may not.
+
+### Session reuse (`session_mode`)
+
+By default every fire of a trigger spawns a **fresh** session (new sandbox
++ new ephemeral branch). Set `session_mode = "reuse"` to instead re-prompt
+the **most recent session this trigger created** — resuming its sandbox and
+opencode root — so ONE long-lived session accumulates context across fires.
+This is what makes a recurring cron feel like a single persistent agent that
+remembers what it did last time (e.g. a 6-hourly error-triage loop).
+
+- The reused session is matched by the `trigger_slug` stamped into session
+  metadata at fire time. If no reusable session exists yet — or the last one
+  died/failed — a fresh one is created and becomes the canonical session for
+  next time (self-healing).
+- Mostly meaningful for `type = "cron"`. Webhooks already get per-thread
+  continuity via chat-thread binding.
+- The agent should still **dedupe its own outputs** (e.g. don't open a second
+  PR for an error already being handled) — reuse gives continuity, not
+  idempotency.
 
 ### Cron-only fields
 

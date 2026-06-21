@@ -8,7 +8,7 @@ export interface AnnouncementComponentProps {
 export const announcementRegistry: Record<string, ComponentType<AnnouncementComponentProps>> = {};
 
 export function registerAnnouncement(
-  name: string, 
+  name: string,
   component: ComponentType<AnnouncementComponentProps>
 ) {
   announcementRegistry[name] = component;

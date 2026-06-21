@@ -26,7 +26,6 @@ required_local_checks=(
   api_rate_limit_tests
   api_proxy_contract_tests
   api_audit_tests
-  api_usage_tests
   api_github_app_tests
   api_create_repo_starter_tests
   legacy_migration_tooling
@@ -44,9 +43,8 @@ required_local_checks=(
 )
 
 required_self_hosted_titles=(
+  "API install-status endpoint works"
   "owner can authenticate via Supabase API"
-  "authenticated user can access setup-wizard-step"
-  "authenticated user can read available sandbox providers"
   "browser login flow reaches wizard"
   "API and web enforce account roles plus project-scoped access"
   "admin overview and operations dashboard use the supported ops API cleanly"
@@ -113,7 +111,7 @@ Checks:
   - Target API curl proof verifies health, accounts, account detail/members/invites, projects, project detail/files/content, project sessions, single session, session sandbox, proxy health, proxied OpenCode SPA, proxied .opencode starter config, signed daemon refresh, and ops overview.
   - Target Playwright JSON report proves account/project access, admin ops, SPEC 10.5 golden paths, and SPEC 10.6/10.7 boundary/SLO specs ran without failures.
   - Target summary proves the guarded runner used daytona, GitHub App auth, golden paths, managed observability, enforced SLO checks, and zero active legacy gating.
-  - Target ops overview proves API/tunnel, sessions, sandboxes/providers, queues, audit, usage, observability, and migration health.
+  - Target ops overview proves API/tunnel, sessions, sandboxes/providers, audit, usage, observability, and migration health.
   - Target observability proof files prove the rehearsal probe request_id arrived in the managed log sink and the probe trace_id arrived in the OTLP trace backend.
   - Target SLO proof proves §10.6.C latency budgets were measured and stayed under the SPEC thresholds.
   - Target concurrency proof proves §10.6.B parallel session, invite, sandbox race, and cap behavior.
@@ -390,11 +388,11 @@ jq -e '
   and .golden_backpressure_enabled == "1"
   and .provider == "local_docker"
 ' "$self_hosted_summary_file" >/dev/null
-jq -e '
+jq -e --argjson min_expected "${#required_self_hosted_titles[@]}" '
   (.errors | length) == 0
   and .stats.unexpected == 0
   and .stats.flaky == 0
-  and .stats.expected >= 13
+  and .stats.expected >= $min_expected
   and .stats.skipped == 0
   and ([.. | objects | select(has("file")) | .file] | any(. == "04-auth-flow.spec.ts"))
   and ([.. | objects | select(has("file")) | .file] | any(. == "08-accounts-project-access.spec.ts"))
@@ -439,9 +437,6 @@ jq -e '
   and (.sandboxes.by_provider | type == "object")
   and ((.sandboxes.by_provider.daytona // 0) >= 1)
   and (.sandboxes.errored | type == "number")
-  and (.queues.trigger_events_by_status | type == "object")
-  and (.queues.channel_events_by_status | type == "object")
-  and (.queues.queued_total | type == "number")
   and (.audit.events_24h | type == "number")
   and (.audit.recent | type == "array")
   and (.usage.last_24h_by_provider | type == "array")
@@ -624,8 +619,7 @@ jq -e '.api.status == "ok"' "$api_ops_file" >/dev/null
 ops_exception_signals_json="$(jq -c '
   [
     (if (.sessions.errored // 0) > 0 then "sessions.errored" else empty end),
-    (if (.sandboxes.errored // 0) > 0 then "sandboxes.errored" else empty end),
-    (if (.queues.queued_total // 0) > 0 then "queues.queued_total" else empty end)
+    (if (.sandboxes.errored // 0) > 0 then "sandboxes.errored" else empty end)
   ]
 ' "$ops_file")"
 ops_exception_count="$(jq -r 'length' <<<"$ops_exception_signals_json")"
@@ -884,7 +878,7 @@ jq -n \
     insecure_evidence_url_seen: ($insecure_evidence_url_seen == "1"),
     non_release_manifest_acknowledged: ($non_release_manifest_acknowledged == "1"),
     generated_at: $generated_at,
-    objective: "Complete docs/SPEC.md Gate 5 production-ready v1",
+    objective: "Complete Gate 5 production-ready v1 verification",
     canonical_spec_sections: ["0.2", "3", "5", "7", "10", "12"],
     local_verification: $local[0],
     self_hosted_golden: {
@@ -906,7 +900,6 @@ jq -n \
       totals: $ops[0].totals,
       sessions: $ops[0].sessions,
       sandboxes: $ops[0].sandboxes,
-      queues: $ops[0].queues,
       audit: $ops[0].audit,
       usage: $ops[0].usage,
       observability: $ops[0].observability,

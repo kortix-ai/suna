@@ -30,7 +30,7 @@ class SmoothStreamStore {
   private tick = () => {
     const now = performance.now();
     const targetLen = this.targetText.length;
-    
+
     if (this.revealedLen >= targetLen) {
       this.animationId = null;
       this.isFinishingAnimation = false;
@@ -43,7 +43,7 @@ class SmoothStreamStore {
 
     const elapsed = now - this.lastUpdateTime;
     const charsToReveal = Math.floor(elapsed / MS_PER_CHAR);
-    
+
     if (charsToReveal > 0) {
       this.revealedLen = Math.min(this.revealedLen + charsToReveal, targetLen);
       this.lastUpdateTime = now - (elapsed % MS_PER_CHAR);
@@ -80,7 +80,7 @@ class SmoothStreamStore {
       }
       return;
     }
-    
+
     if (!newText && this.targetText && this.revealedLen < this.targetText.length) {
       this.isFinishingAnimation = true;
       this.startAnimation();
@@ -130,10 +130,10 @@ class SmoothStreamStore {
     // Check if new text is a continuation (starts with current target)
     // OR if current target starts with new text (text was trimmed/partial - don't reset)
     const isContinuation = this.targetText.length > 0 && (
-      newText.startsWith(this.targetText) || 
+      newText.startsWith(this.targetText) ||
       this.targetText.startsWith(newText)
     );
-    
+
     // Only reset if it's genuinely new/different content
     if (!isContinuation) {
       this.stopAnimation();
@@ -141,9 +141,9 @@ class SmoothStreamStore {
       this.lastUpdateTime = 0;
       this.isFinishingAnimation = false;
     }
-    
+
     this.targetText = newText;
-    
+
     if (this.revealedLen < newText.length) {
       this.startAnimation();
     }
@@ -165,18 +165,18 @@ export function useSmoothStream(
   _speed?: number
 ): string {
   const storeRef = useRef<SmoothStreamStore | null>(null);
-  
+
   if (!storeRef.current) {
     storeRef.current = new SmoothStreamStore();
     storeRef.current.update(text, enabled);
   }
-  
+
   const store = storeRef.current;
-  
+
   useLayoutEffect(() => {
     store.update(text, enabled);
   }, [store, text, enabled]);
-  
+
   useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,

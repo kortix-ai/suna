@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +56,7 @@ function OpenCrChooser({
   baseRef: string;
   onPick: (id: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="w-full overflow-hidden py-1">
       <div className="border-border flex items-center justify-between gap-3 border-b px-3.5 py-1.5">
@@ -63,9 +65,17 @@ function OpenCrChooser({
             <GitPullRequest className="size-4" />
           </span>
           <div className="min-w-0">
-            <h3 className="text-foreground truncate text-sm font-medium">Open changes</h3>
+            <h3 className="text-foreground truncate text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarFooterProjectChangeRequestsNav63c4c66f',
+              )}
+            </h3>
             <p className="text-muted-foreground truncate text-xs">
-              {crs.length} ready for {baseRef || 'main'}
+              {crs.length}{' '}
+              {tI18nHardcoded.raw(
+                'autoFeaturesCoWorkerProjectSidebarFooterProjectChangeRequestsNavafed4c1a',
+              )}
+              {baseRef || 'main'}
             </p>
           </div>
         </div>

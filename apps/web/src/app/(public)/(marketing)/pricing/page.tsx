@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { cn } from '@/lib/utils';
 import { ArrowRight, Check } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 const START_URL = '/auth';
@@ -75,8 +76,14 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
 
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
   { label: 'A quick task', body: 'Summarize a thread or fix a small bug — a few cents.' },
-  { label: 'A working session', body: 'An agent coding for an hour — around $0.10 of compute plus model calls.' },
-  { label: 'A full project', body: 'Research and ship across many steps — scales with the work, not a flat fee.' },
+  {
+    label: 'A working session',
+    body: 'An agent coding for an hour — around $0.10 of compute plus model calls.',
+  },
+  {
+    label: 'A full project',
+    body: 'Research and ship across many steps — scales with the work, not a flat fee.',
+  },
 ];
 
 const FAQ: [string, string][] = [
@@ -143,17 +150,17 @@ function PlanCard({ plan }: { plan: Plan }) {
 }
 
 export default function PricingPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="bg-background relative pt-28 sm:pt-40">
       <div className="mx-auto max-w-5xl px-4 md:px-0">
         {/* ── Hero ─────────────────────────────────────────────── */}
         <div className="mx-auto text-center">
           <h1 className="text-3xl font-medium text-balance md:text-4xl lg:text-5xl lg:tracking-tight">
-            Simple per-seat pricing. Pay for what you use.
+            {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextSimplePerSeat194cf521')}
           </h1>
           <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-lg text-balance">
-            Every seat gets the full platform plus a monthly credit allowance. Pay only for the
-            models and compute your agents actually run — no token math, no surprise bills.
+            {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxTextEverySeatGets58d131e8')}
           </p>
         </div>
 
@@ -168,10 +175,14 @@ export default function PricingPage() {
         <section className="border-border/50 mt-24 border-t pt-16">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-              Credits power everything
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingPricingPageJsxTextCreditsPowerEverything0f094b3e',
+              )}
             </h2>
             <p className="text-muted-foreground mt-3 text-balance">
-              One simple balance for models and Agent Computers — no token math, no surprise bills.
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingPricingPageJsxTextOneSimpleBalancef877f3a6',
+              )}
             </p>
           </div>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
@@ -196,7 +207,9 @@ export default function PricingPage() {
         <section className="border-border/50 mt-20 border-t px-4 py-16 sm:py-24">
           <div className="space-y-8">
             <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-              Pricing questions
+              {tI18nHardcoded.raw(
+                'autoAppPublicMarketingPricingPageJsxTextPricingQuestionsa7129c6e',
+              )}
             </h2>
             <div className="divide-border divide-y">
               {FAQ.map(([q, a]) => (
@@ -217,26 +230,35 @@ export default function PricingPage() {
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
               <div className="space-y-2">
                 <Badge variant="update" className="rounded">
-                  Start building
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingPricingPageJsxTextStartBuilding8d5b4add',
+                  )}
                 </Badge>
                 <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                  Get your team started
+                  {tI18nHardcoded.raw(
+                    'autoAppPublicMarketingPricingPageJsxTextGetYourTeam34f94a76',
+                  )}
                 </h2>
                 <p className="text-muted-foreground mt-6 pb-8 text-sm leading-relaxed">
-                  $40 per seat, with $20 of usage credits each. Auto-prorated, cancel anytime — or
-                  talk to us about Enterprise.
+                  {tI18nHardcoded.raw('autoAppPublicMarketingPricingPageJsxText40PerSeat60546e3a')}
                 </p>
               </div>
 
               <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                 <Button size="lg" className="w-full" variant="outline" asChild>
                   <Link href={DEMO_URL}>
-                    Contact sales
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingPricingPageJsxTextContactSales8f878231',
+                    )}
                     <ArrowRight className="size-3.5" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" className="w-full" variant="accent">
-                  <Link href={START_URL}>Get started</Link>
+                  <Link href={START_URL}>
+                    {tI18nHardcoded.raw(
+                      'autoAppPublicMarketingPricingPageJsxTextGetStarted9675943d',
+                    )}
+                  </Link>
                 </Button>
               </div>
             </div>

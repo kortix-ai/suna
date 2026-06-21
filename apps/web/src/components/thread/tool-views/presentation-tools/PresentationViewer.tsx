@@ -87,19 +87,19 @@ export function PresentationViewer({
   const hasLoadedRef = useRef(false);
   const sandboxCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isEnsuringSandboxRef = useRef(false);
-  
+
   // Cache metadata by presentation name to avoid re-loading when switching between tool calls
   const metadataCacheRef = useRef<Map<string, PresentationMetadata>>(new Map());
   const lastPresentationNameRef = useRef<string | null>(null);
 
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  
+
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'presentations',
   });
-  
+
   // Use shared modal store for full screen viewer
   const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
   const viewerState = { isOpen, presentationName, sandboxUrl, initialSlide };
@@ -113,12 +113,12 @@ export function PresentationViewer({
   const parsedStreamingArgs = useMemo(() => {
     const args = toolCall?.arguments;
     if (!args) return {};
-    if (typeof args === 'object' && args !== null) return args as Record<string, unknown>;
+    if (typeof args === 'object') return args as Record<string, unknown>;
     if (typeof args !== 'string') return {};
-    
+
     // args is now typed as string
     const argsStr: string = args;
-    
+
     // Try to parse string arguments
     try {
       return JSON.parse(argsStr);
@@ -196,7 +196,7 @@ export function PresentationViewer({
   if (toolResult?.output) {
     try {
       let output = toolResult.output;
-      
+
       // Handle string output
       if (typeof output === 'string') {
         // Check if the string looks like an error message
@@ -214,14 +214,14 @@ export function PresentationViewer({
           }
         }
       }
-      
+
       // Only extract data if we have a valid parsed object
       if (output && typeof output === 'object' && !toolExecutionError) {
         extractedPresentationName = output.presentation_name;
         extractedPresentationPath = output.presentation_path;
         currentSlideNumber = output.slide_number;
         presentationTitle = output.presentation_title || output.title;
-        
+
         console.log('[PresentationViewer] Extracted presentation data:', {
           presentationName: extractedPresentationName,
           presentationPath: extractedPresentationPath,
@@ -249,7 +249,7 @@ export function PresentationViewer({
     }
 
     isEnsuringSandboxRef.current = true;
-    
+
     try {
       const response = await backendApi.post(
         `/project/${project.id}/sandbox/ensure-active`,
@@ -262,12 +262,12 @@ export function PresentationViewer({
         isEnsuringSandboxRef.current = false;
         return;
       }
-      
+
       // Dispatch event for other components
       window.dispatchEvent(new CustomEvent('sandbox-active', {
         detail: { sandboxId: project.sandbox.id, projectId: project.id }
       }));
-      
+
       isEnsuringSandboxRef.current = false;
     } catch (err) {
       console.error('Error ensuring sandbox is active:', err);
@@ -283,10 +283,10 @@ export function PresentationViewer({
     }
 
     const sanitizedPresentationName = sanitizeFilename(extractedPresentationName);
-    
+
     // Check if we have cached metadata for this presentation FIRST
     const cachedMetadata = metadataCacheRef.current.get(sanitizedPresentationName);
-    
+
     // If we have cached data and this is not a force refresh, use it immediately
     if (cachedMetadata && !forceRefresh) {
       setMetadata(cachedMetadata);
@@ -298,66 +298,66 @@ export function PresentationViewer({
       }
       return;
     }
-    
+
     // If sandbox URL isn't available yet, wait and don't set loading state
     // But if we have cached data, we already returned above
     if (!project?.sandbox?.sandbox_url) {
       setIsLoadingMetadata(false);
       return;
     }
-    
+
     // Only show loading if we don't have any cached data
     if (!cachedMetadata) {
       setIsLoadingMetadata(true);
     }
     setError(null);
     setRetryAttempt(retryCount);
-    
+
     try {
       const metadataUrl = constructHtmlPreviewUrl(
         `presentations/${sanitizedPresentationName}/metadata.json`,
         subdomainOpts,
       );
-      
+
       // Add cache-busting parameter to ensure fresh data
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-      
+
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: {
           'Cache-Control': 'no-cache'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
-        
+
         console.log('[PresentationViewer] Metadata loaded successfully:', {
           presentationName: sanitizedPresentationName,
           slideCount: Object.keys(data.slides || {}).length,
           metadata: data
         });
-        
+
         // Cache the metadata
         metadataCacheRef.current.set(sanitizedPresentationName, data);
-        
+
         setMetadata(data);
         hasLoadedRef.current = true;
         setIsLoadingMetadata(false);
-        
+
         // Clear any pending retry timeout on success
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
-        
+
         return; // Success, exit early
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (err) {
       console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
-      
+
       // If we get HTTP 400 or 502, the sandbox might be stopped - try to wake it up
       const errorMessage = err instanceof Error ? err.message : String(err);
       if (errorMessage.includes('400') || errorMessage.includes('502') || errorMessage.includes('503')) {
@@ -366,22 +366,22 @@ export function PresentationViewer({
         // Trigger sandbox wake-up
         ensureSandboxActive();
       }
-      
+
       // If we have cached data, don't show loading state during retries
       if (cachedMetadata) {
         setIsLoadingMetadata(false);
       }
-      
+
       // Calculate delay with exponential backoff, capped at 10 seconds
-      const delay = retryCount < 5 
+      const delay = retryCount < 5
         ? Math.min(1000 * Math.pow(2, retryCount), 10000)
         : 5000;
-      
+
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
         loadMetadata(retryCount + 1, maxRetries, forceRefresh);
       }, delay);
-      
+
       return;
     }
   }, [extractedPresentationName, project?.sandbox?.sandbox_url, ensureSandboxActive, subdomainOpts]);
@@ -428,19 +428,19 @@ export function PresentationViewer({
     // Check if presentation changed
     const sanitizedName = extractedPresentationName ? sanitizeFilename(extractedPresentationName) : null;
     const presentationChanged = sanitizedName !== lastPresentationNameRef.current;
-    
+
     // Only reset loaded flag if presentation actually changed
     if (presentationChanged) {
       hasLoadedRef.current = false;
       lastPresentationNameRef.current = sanitizedName;
     }
-    
+
     // Clear any existing retry timeout when dependencies change
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
-    
+
     // FIRST: Check for cached metadata and use it immediately if available
     if (sanitizedName) {
       const cachedMetadata = metadataCacheRef.current.get(sanitizedName);
@@ -456,7 +456,7 @@ export function PresentationViewer({
         hasLoadedRef.current = true;
       }
     }
-    
+
     // THEN: Start loading fresh data if we have the required data
     if (extractedPresentationName && project?.sandbox?.sandbox_url) {
       console.log('[PresentationViewer] Starting metadata load:', {
@@ -495,11 +495,11 @@ export function PresentationViewer({
 
   // Poll for metadata updates during streaming to replace skeletons with real slides
   const streamingPollingRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   useEffect(() => {
     // Only poll during streaming when we have a presentation name and sandbox URL
     const presentationToLoad = streamingPresentationName || extractedPresentationName;
-    
+
     if (isStreaming && presentationToLoad && project?.sandbox?.sandbox_url) {
       // Poll every 2 seconds during streaming
       const pollMetadata = async () => {
@@ -508,13 +508,13 @@ export function PresentationViewer({
           `presentations/${sanitizedName}/metadata.json`,
           subdomainOpts,
         );
-        
+
         try {
           const response = await fetch(`${metadataUrl}?t=${Date.now()}`, {
             cache: 'no-cache',
             headers: { 'Cache-Control': 'no-cache' }
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             // Update metadata and cache
@@ -526,13 +526,13 @@ export function PresentationViewer({
           // Silently ignore errors during polling - will retry
         }
       };
-      
+
       // Initial load
       pollMetadata();
-      
+
       // Poll every 2 seconds
       streamingPollingRef.current = setInterval(pollMetadata, 2000);
-      
+
       return () => {
         if (streamingPollingRef.current) {
           clearInterval(streamingPollingRef.current);
@@ -583,7 +583,7 @@ export function PresentationViewer({
     setVisibleSlide(slides[0].number);
 
     const handleScroll = () => {
-      
+
       const scrollArea = document.querySelector('[data-radix-scroll-area-viewport]');
       if (!scrollArea || slides.length === 0) return;
 
@@ -616,7 +616,7 @@ export function PresentationViewer({
         const distanceFromCenter = Math.abs(slideCenter - viewportCenter);
 
         // Only consider slides that are at least partially visible
-        const isPartiallyVisible = slideRect.bottom > scrollViewportRect.top && 
+        const isPartiallyVisible = slideRect.bottom > scrollViewportRect.top &&
                                  slideRect.top < scrollViewportRect.bottom;
 
         if (isPartiallyVisible && distanceFromCenter < smallestDistance) {
@@ -653,13 +653,13 @@ export function PresentationViewer({
   // Helper function to scroll to current slide
   const scrollToCurrentSlide = (delay: number = 200) => {
     if (!currentSlideNumber || !metadata) return;
-    
+
     setTimeout(() => {
       const slideElement = document.getElementById(`slide-${currentSlideNumber}`);
-      
+
       if (slideElement) {
-        slideElement.scrollIntoView({ 
-          behavior: 'smooth', 
+        slideElement.scrollIntoView({
+          behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
@@ -668,8 +668,8 @@ export function PresentationViewer({
         setTimeout(() => {
           const retryElement = document.getElementById(`slide-${currentSlideNumber}`);
           if (retryElement) {
-            retryElement.scrollIntoView({ 
-              behavior: 'smooth', 
+            retryElement.scrollIntoView({
+              behavior: 'smooth',
               block: 'center',
               inline: 'nearest'
             });
@@ -685,14 +685,14 @@ export function PresentationViewer({
       openUpgradeModal();
       return;
     }
-    
+
     if (!project?.sandbox?.sandbox_url || !extractedPresentationName) return;
 
     setIsDownloading(true);
     try{
       // Use sanitized name for the path (matching backend directory structure)
       const sanitizedName = sanitizeFilename(extractedPresentationName);
-      
+
       if (format === DownloadFormat.GOOGLE_SLIDES){
         const result = await handleGoogleSlidesUpload(project!.sandbox!.sandbox_url, `/workspace/presentations/${sanitizedName}`);
         // If redirected to auth, don't show error
@@ -708,7 +708,7 @@ export function PresentationViewer({
       setIsDownloading(false);
     }
   };
-  
+
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -749,12 +749,12 @@ export function PresentationViewer({
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </Button>
-                
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="w-8 p-0"
                       title={tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line757JsxAttrTitleExportPresentation')}
                       disabled={isDownloading}
@@ -767,7 +767,7 @@ export function PresentationViewer({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-32">
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => handleDownload(setIsDownloading, DownloadFormat.PDF)}
                       className="cursor-pointer"
                       disabled={isDownloading}
@@ -775,7 +775,7 @@ export function PresentationViewer({
                       <FileText className="h-4 w-4 mr-2" />
                       PDF
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => handleDownload(setIsDownloading, DownloadFormat.PPTX)}
                       className="cursor-pointer"
                       disabled={isDownloading}
@@ -783,7 +783,7 @@ export function PresentationViewer({
                       <Presentation className="h-4 w-4 mr-2" />
                       PPTX
                     </DropdownMenuItem>
-                    <DropdownMenuItem 
+                    <DropdownMenuItem
                       onClick={() => handleDownload(setIsDownloading, DownloadFormat.GOOGLE_SLIDES)}
                       className="cursor-pointer"
                       disabled={isDownloading}
@@ -821,7 +821,7 @@ export function PresentationViewer({
                   />
                 </div>
               ))}
-              
+
               {/* Show skeleton for the slide currently being generated (if it's not in metadata yet) */}
               {streamingSlideNumber && !slides.find(s => s.number === streamingSlideNumber) && (
                 <div key={streamingSlideNumber} id={`slide-${streamingSlideNumber}`}>
@@ -833,7 +833,7 @@ export function PresentationViewer({
                   />
                 </div>
               )}
-              
+
               {/* If no slides and no streaming slide number, show a single generating placeholder */}
               {slides.length === 0 && !streamingSlideNumber && (
                 <div key="generating" id="slide-generating">
@@ -854,14 +854,14 @@ export function PresentationViewer({
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line855JsxTextToolExecutionError')}</h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-4">{tHardcodedUi.raw('componentsThreadToolViewsPresentationToolsPresentationviewer.line858JsxTextThePresentationToolEncounteredAnErrorDuringExecution')}</p>
             <div className="w-full max-w-2xl">
-              <CodeBlockCode 
-                code={toolExecutionError} 
+              <CodeBlockCode
+                code={toolExecutionError}
                 language="text"
                 className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-2xl border"
               />
             </div>
           </div>
-        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || (!toolResult && !isStreaming) ? (
+        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || !toolResult ? (
           // Loading state - show skeleton slides while:
           // 1. Fetching metadata, OR
           // 2. Have presentation name but no metadata yet, OR

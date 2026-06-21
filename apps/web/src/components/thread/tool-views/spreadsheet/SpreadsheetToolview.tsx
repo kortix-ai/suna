@@ -17,22 +17,22 @@ export function SpreadsheetToolView({
   project,
 }: ToolViewProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [syncState, setSyncState] = useState<SyncState>({ 
-    status: 'idle', 
-    lastSyncedAt: null, 
-    pendingChanges: false, 
-    retryCount: 0 
+  const [syncState, setSyncState] = useState<SyncState>({
+    status: 'idle',
+    lastSyncedAt: null,
+    pendingChanges: false,
+    retryCount: 0
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [actions, setActions] = useState<{ 
-    forceRefresh: () => Promise<boolean>; 
-    forceSave: () => void; 
-    resolveConflict: (keepLocal: boolean) => Promise<void> 
-  }>({ 
-    forceRefresh: async () => false, 
+  const [actions, setActions] = useState<{
+    forceRefresh: () => Promise<boolean>;
+    forceSave: () => void;
+    resolveConflict: (keepLocal: boolean) => Promise<void>
+  }>({
+    forceRefresh: async () => false,
     forceSave: () => {},
-    resolveConflict: async () => {} 
+    resolveConflict: async () => {}
   });
   const [handleDownload, setHandleDownload] = useState<() => void>(() => () => {});
 
@@ -44,10 +44,10 @@ export function SpreadsheetToolView({
     setIsLoading(loading);
   }, []);
 
-  const handleActionsReady = useCallback((newActions: { 
-    forceRefresh: () => Promise<boolean>; 
-    forceSave: () => void; 
-    resolveConflict: (keepLocal: boolean) => Promise<void> 
+  const handleActionsReady = useCallback((newActions: {
+    forceRefresh: () => Promise<boolean>;
+    forceSave: () => void;
+    resolveConflict: (keepLocal: boolean) => Promise<void>
   }) => {
     setActions(newActions);
   }, []);

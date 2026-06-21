@@ -8,10 +8,6 @@ import { useTranslations } from 'next-intl';
 // iam.group.*, iam.member.super_admin.*). Cursor-paginated, with a quick
 // filter chip set for the most common admin questions.
 
-import { useMemo, useState } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
-import { toast } from '@/lib/toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,17 +16,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import { toast } from '@/lib/toast';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
 import { listAccountMembers } from '@/lib/projects-client';
-import {
-  KIND_DOT_CLASS,
-  formatResourcePill,
-  humanizeAuditAction,
-} from './audit-display-helpers';
+import { KIND_DOT_CLASS, formatResourcePill, humanizeAuditAction } from './audit-display-helpers';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────
 
@@ -43,14 +39,14 @@ interface QuickFilter {
 }
 
 const QUICK_FILTERS: QuickFilter[] = [
-  { label: 'All events',         action: null,                           daysBack: null },
-  { label: 'IAM only',           action: 'iam.',                         daysBack: null },
-  { label: 'Group changes',      action: 'iam.group',                    daysBack: null },
-  { label: 'Project access',     action: 'iam.project.group',            daysBack: null },
-  { label: 'Super-admin grants', action: 'iam.member.super_admin',       daysBack: null },
-  { label: 'Last 24 hours',      action: null,                           daysBack: 1 },
-  { label: 'Last 7 days',        action: null,                           daysBack: 7 },
-  { label: 'Last 30 days',       action: null,                           daysBack: 30 },
+  { label: 'All events', action: null, daysBack: null },
+  { label: 'IAM only', action: 'iam.', daysBack: null },
+  { label: 'Group changes', action: 'iam.group', daysBack: null },
+  { label: 'Project access', action: 'iam.project.group', daysBack: null },
+  { label: 'Super-admin grants', action: 'iam.member.super_admin', daysBack: null },
+  { label: 'Last 24 hours', action: null, daysBack: 1 },
+  { label: 'Last 7 days', action: null, daysBack: 7 },
+  { label: 'Last 30 days', action: null, daysBack: 30 },
 ];
 
 function daysAgoIso(days: number): string {
@@ -161,10 +157,12 @@ export function AuditTab({ accountId }: AuditTabProps) {
   return (
     <SectionCard
       title={tHardcodedUi.raw('componentsIamAuditTab.line90JsxAttrTitleAuditLog')}
-      description={tHardcodedUi.raw('componentsIamAuditTab.line91JsxAttrDescriptionEveryStateChangingApiHitPlusBeforeAfter')}
+      description={tHardcodedUi.raw(
+        'componentsIamAuditTab.line91JsxAttrDescriptionEveryStateChangingApiHitPlusBeforeAfter',
+      )}
       flush
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-3">
+      <div className="border-border/60 flex items-center justify-between gap-3 border-b px-6 py-3">
         <div className="flex flex-wrap gap-1.5">
           {QUICK_FILTERS.map((f, i) => (
             <button
@@ -194,31 +192,28 @@ export function AuditTab({ accountId }: AuditTabProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
             <DropdownMenuItem onSelect={() => exportEvents('csv')}>
-              {tHardcodedUi.raw('componentsIamAuditTab.line192JsxTextDownloadCSV')}</DropdownMenuItem>
+              {tHardcodedUi.raw('componentsIamAuditTab.line192JsxTextDownloadCSV')}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => exportEvents('jsonl')}>
-              {tHardcodedUi.raw('componentsIamAuditTab.line195JsxTextDownloadJSONL')}</DropdownMenuItem>
+              {tHardcodedUi.raw('componentsIamAuditTab.line195JsxTextDownloadJSONL')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {query.isError && (
         <div className="px-6 py-5">
-          <p className="text-sm text-destructive">
+          <p className="text-destructive text-sm">
             {(query.error as Error)?.message || 'Failed to load audit events'}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => query.refetch()}
-          >
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => query.refetch()}>
             Retry
           </Button>
         </div>
       )}
 
       {query.isLoading && (
-        <div className="divide-y divide-border/60">
+        <div className="divide-border/60 divide-y">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="px-6 py-3">
               <Skeleton className="h-4 w-3/4" />
@@ -230,25 +225,31 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
       {!query.isLoading && allEvents.length === 0 && (
         <div className="px-6 py-12 text-center">
-          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line140JsxTextNoEventsMatchThisFilter')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line142JsxTextTryABroaderFilterOrCheckBackAfter')}</p>
+          <p className="text-foreground text-sm font-medium">
+            {tHardcodedUi.raw('componentsIamAuditTab.line140JsxTextNoEventsMatchThisFilter')}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {tHardcodedUi.raw(
+              'componentsIamAuditTab.line142JsxTextTryABroaderFilterOrCheckBackAfter',
+            )}
+          </p>
         </div>
       )}
 
       {!query.isLoading && allEvents.length > 0 && (
-        <ul className="divide-y divide-border/60">
+        <ul className="divide-border/60 divide-y">
           {allEvents.map((e) => (
             <AuditRow
               key={e.event_id}
               event={e}
-              actorEmail={e.actor_user_id ? emailByUserId.get(e.actor_user_id) ?? null : null}
+              actorEmail={e.actor_user_id ? (emailByUserId.get(e.actor_user_id) ?? null) : null}
             />
           ))}
         </ul>
       )}
 
       {query.hasNextPage && (
-        <div className="flex justify-center border-t border-border/60 px-6 py-3">
+        <div className="border-border/60 flex justify-center border-t px-6 py-3">
           <Button
             variant="outline"
             size="sm"
@@ -256,7 +257,9 @@ export function AuditTab({ accountId }: AuditTabProps) {
             disabled={query.isFetchingNextPage}
             className="gap-1.5"
           >
-            {query.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{tHardcodedUi.raw('componentsIamAuditTab.line169JsxTextLoadMore')}</Button>
+            {query.isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {tHardcodedUi.raw('componentsIamAuditTab.line169JsxTextLoadMore')}
+          </Button>
         </div>
       )}
     </SectionCard>
@@ -265,13 +268,8 @@ export function AuditTab({ accountId }: AuditTabProps) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function AuditRow({
-  event,
-  actorEmail,
-}: {
-  event: AuditEvent;
-  actorEmail: string | null;
-}) {
+function AuditRow({ event, actorEmail }: { event: AuditEvent; actorEmail: string | null }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const hasDiff = event.before !== null || event.after !== null;
   const actorLabel = actorEmail ?? event.actor_user_id ?? 'system';
@@ -290,7 +288,7 @@ function AuditRow({
         onClick={() => canExpand && setExpanded((v) => !v)}
         disabled={!canExpand}
         className={`flex w-full items-start gap-3 px-6 py-3 text-left transition-colors ${
-          canExpand ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'
+          canExpand ? 'hover:bg-muted/30 cursor-pointer' : 'cursor-default'
         }`}
       >
         {/* Coloured kind dot — replaces the raw action code as the
@@ -304,16 +302,16 @@ function AuditRow({
           {/* Primary line: humanised title + optional detail (the resource
               name parsed out of the path, e.g. the secret name). */}
           <div className="flex items-baseline gap-2 text-sm">
-            <span className="font-medium text-foreground">{human.title}</span>
+            <span className="text-foreground font-medium">{human.title}</span>
             {human.detail && (
-              <code className="truncate rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+              <code className="bg-muted/40 text-foreground truncate rounded px-1.5 py-0.5 font-mono text-[11px]">
                 {human.detail}
               </code>
             )}
           </div>
           {/* Secondary line: actor · time · resource pill · IP. All
               muted; the actor name highlighted slightly. */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <span>
               by <span className="text-foreground/80">{actorLabel}</span>
             </span>
@@ -323,11 +321,11 @@ function AuditRow({
               <>
                 <span className="text-muted-foreground/40">·</span>
                 <span
-                  className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize"
+                  className="border-border/60 rounded border px-1.5 py-0.5 text-[10px] font-normal capitalize"
                   title={
                     event.resource_id
                       ? `${event.resource_type} ${event.resource_id}`
-                      : event.resource_type ?? undefined
+                      : (event.resource_type ?? undefined)
                   }
                 >
                   {resourcePill}
@@ -343,7 +341,7 @@ function AuditRow({
           </div>
         </div>
         {canExpand && (
-          <span className="mt-0.5 shrink-0 text-muted-foreground/60">
+          <span className="text-muted-foreground/60 mt-0.5 shrink-0">
             {expanded ? (
               <ChevronDown className="h-3.5 w-3.5" />
             ) : (
@@ -353,26 +351,28 @@ function AuditRow({
         )}
       </button>
       {expanded && canExpand && (
-        <div className="space-y-3 border-t border-border/40 bg-muted/10 px-6 py-3">
+        <div className="border-border/40 bg-muted/10 space-y-3 border-t px-6 py-3">
           {/* Raw action code — the one the humanizer hid. Visible on
               expand so the dev side of the audit (filtering, support
               tickets) stays one click away. */}
           <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Raw request
+            <p className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+              {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextRawRequeste6f7c98c')}
             </p>
-            <code className="block break-all rounded border border-border/60 bg-background px-2 py-1.5 font-mono text-[11px] text-foreground">
+            <code className="border-border/60 bg-background text-foreground block rounded border px-2 py-1.5 font-mono text-[11px] break-all">
               {event.action}
             </code>
           </div>
           {/* Full timestamp + event id — useful for cross-referencing
               from server logs. */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+          <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
             <span>
-              Occurred at <span className="font-mono">{occurred.toISOString()}</span>
+              {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextOccurredAteaaebdde')}
+              <span className="font-mono">{occurred.toISOString()}</span>
             </span>
             <span>
-              Event id <span className="font-mono">{event.event_id}</span>
+              {tI18nHardcoded.raw('autoComponentsIamAuditTabJsxTextEventIde196847b')}
+              <span className="font-mono">{event.event_id}</span>
             </span>
           </div>
           {hasDiff && (
@@ -391,11 +391,17 @@ function DiffPane({ label, data }: { label: string; data: Record<string, unknown
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div>
-      <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <p className="text-muted-foreground mb-1 text-xs font-medium tracking-wider uppercase">
         {label}
       </p>
-      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground">
-        {data === null ? <span className="text-muted-foreground">{tHardcodedUi.raw('componentsIamAuditTab.line251JsxTextNone')}</span> : JSON.stringify(data, null, 2)}
+      <pre className="border-border/60 bg-background text-foreground max-h-48 overflow-auto rounded-2xl border px-2.5 py-2 text-xs leading-relaxed">
+        {data === null ? (
+          <span className="text-muted-foreground">
+            {tHardcodedUi.raw('componentsIamAuditTab.line251JsxTextNone')}
+          </span>
+        ) : (
+          JSON.stringify(data, null, 2)
+        )}
       </pre>
     </div>
   );

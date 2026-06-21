@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Changes — the Customize section for reviewing & landing work.
  *
@@ -14,16 +15,10 @@
  * in it (same as the Files section).
  */
 
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import {
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  Loader2,
-  XCircle,
-} from 'lucide-react';
+import { GitBranch, GitMerge, GitPullRequest, Loader2, XCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -68,6 +63,7 @@ export function ChangesView({ projectId }: { projectId: string }) {
 }
 
 function ChangesInner({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [tab, setTab] = useState<'crs' | 'versions'>('crs');
   const [detailCrId, setDetailCrId] = useState<string | null>(null);
 
@@ -75,7 +71,7 @@ function ChangesInner({ projectId }: { projectId: string }) {
     useChangeRequests('open', { refetchInterval: 8_000 }).data?.change_requests.length ?? 0;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader
         icon={GitPullRequest}
         title="Changes"
@@ -83,9 +79,11 @@ function ChangesInner({ projectId }: { projectId: string }) {
       />
 
       {/* Tabs */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-3 py-2">
+      <div className="border-border/60 flex shrink-0 items-center gap-1 border-b px-3 py-2">
         <SegTab active={tab === 'crs'} onClick={() => setTab('crs')}>
-          Change requests
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChangesViewJsxTextChangeRequestsb28a4513',
+          )}
         </SegTab>
         <SegTab active={tab === 'versions'} onClick={() => setTab('versions')}>
           Versions
@@ -217,7 +215,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
             return (
               <li
                 key={cr.cr_id}
-                className="group flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3 transition-colors hover:border-foreground/20"
+                className="group border-border/60 bg-card hover:border-foreground/20 flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition-colors"
               >
                 <CrStatusIcon status={cr.status} />
                 <button
@@ -226,10 +224,10 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs text-muted-foreground">#{cr.number}</span>
-                    <span className="truncate text-sm font-medium text-foreground">{cr.title}</span>
+                    <span className="text-muted-foreground font-mono text-xs">#{cr.number}</span>
+                    <span className="text-foreground truncate text-sm font-medium">{cr.title}</span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
                     <GitBranch className="h-3 w-3 shrink-0" />
                     <span className="max-w-[140px] truncate font-mono">{cr.head_ref}</span>
                     <span className="text-muted-foreground/40">→</span>
@@ -250,7 +248,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                      className="text-muted-foreground hover:text-foreground h-7 px-2.5 text-xs"
                       onClick={() => onClose(cr.cr_id)}
                       disabled={busy}
                     >
@@ -301,6 +299,7 @@ function CrStatusIcon({ status }: { status: ChangeRequestStatus }) {
 /* ─── Versions (branches) ───────────────────────────────────────────────── */
 
 function VersionsTab({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { data, isLoading } = useQuery({
     queryKey: ['project-files', 'branches', projectId],
     queryFn: () => listProjectBranches(projectId),
@@ -323,8 +322,12 @@ function VersionsTab({ projectId }: { projectId: string }) {
       <EmptyState
         icon={GitBranch}
         size="sm"
-        title="No versions"
-        description="Branches show up here as sessions create them."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrTitleNoc31e05e1',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrDescriptionBranches801ec5e2',
+        )}
       />
     );
   }
@@ -334,25 +337,29 @@ function VersionsTab({ projectId }: { projectId: string }) {
       {branches.map((b) => (
         <li
           key={b.name}
-          className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-3.5 py-3"
+          className="border-border/60 bg-card flex items-center gap-3 rounded-2xl border px-3.5 py-3"
         >
-          <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <GitBranch className="text-muted-foreground h-4 w-4 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate font-mono text-sm font-medium text-foreground">{b.name}</span>
+              <span className="text-foreground truncate font-mono text-sm font-medium">
+                {b.name}
+              </span>
               {b.is_default && (
                 <Badge variant="secondary" size="sm">
                   default
                 </Badge>
               )}
             </div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            <div className="text-muted-foreground mt-0.5 truncate text-xs">
               {b.subject || '(no commits)'}
-              {b.committed_at && <span className="text-muted-foreground/60"> · {rel(b.committed_at)}</span>}
+              {b.committed_at && (
+                <span className="text-muted-foreground/60"> · {rel(b.committed_at)}</span>
+              )}
             </div>
           </div>
           {!b.is_default && (b.ahead != null || b.behind != null) && (
-            <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground/70">
+            <span className="text-muted-foreground/70 shrink-0 font-mono text-xs tabular-nums">
               {b.ahead != null && `↑${b.ahead}`} {b.behind != null && `↓${b.behind}`}
             </span>
           )}

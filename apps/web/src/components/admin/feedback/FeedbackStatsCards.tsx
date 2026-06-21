@@ -15,7 +15,7 @@ export function FeedbackStatsCards() {
   const renderStarRating = (rating: number) => {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
-    
+
     return (
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-0.5">

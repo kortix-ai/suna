@@ -134,12 +134,18 @@ export interface ProjectTrigger {
   timezone: string;
   secret_env: string | null;
   prompt_template: string;
+  /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
+  session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
   webhook_url: string | null;
 }
 
 export interface ProjectTriggersResponse {
   triggers: ProjectTrigger[];
+  // Server-side per-project activation state. When true, the platform won't
+  // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
+  // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
+  triggers_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
 

@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import type { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
 
@@ -48,7 +49,11 @@ export type DemoStep =
       durationMs: number;
     }
   | { id: string; kind: 'text'; markdown: string }
-  | { id: string; kind: 'result'; render: () => ReactNode };
+  | {
+      id: string;
+      kind: 'result';
+      render: (tHardcodedUi: ReturnType<typeof useTranslations>) => ReactNode;
+    };
 
 export type DemoScenario = {
   id: string;

@@ -50,6 +50,13 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        'kortix-base': 'hsl(var(--kortix-base))',
+        'kortix-blue': 'hsl(var(--kortix-blue))',
+        'kortix-yellow': 'hsl(var(--kortix-yellow))',
+        'kortix-orange': 'hsl(var(--kortix-orange))',
+        'kortix-green': 'hsl(var(--kortix-green))',
+        'kortix-purple': 'hsl(var(--kortix-purple))',
+        'kortix-red': 'hsl(var(--kortix-red))',
       },
       borderRadius: {
         lg: 'var(--radius)',

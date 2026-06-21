@@ -28,7 +28,7 @@ export const ALLOWED_MIME_TYPES = [
   'application/vnd.oasis.opendocument.presentation',
   'application/rtf',
   'application/epub+zip',
-  
+
   // Text & Code
   'text/plain',
   'text/csv',
@@ -45,7 +45,7 @@ export const ALLOWED_MIME_TYPES = [
   'application/xml',
   'application/javascript',
   'application/typescript',
-  
+
   // Images
   'image/jpeg',
   'image/png',
@@ -56,33 +56,33 @@ export const ALLOWED_MIME_TYPES = [
   'image/x-icon',
   'image/heic',
   'image/heif',
-  
+
   // Video
   'video/mp4',
   'video/webm',
   'video/quicktime',
   'video/x-msvideo',
   'video/x-matroska',
-  
+
   // Audio
   'audio/mpeg',
   'audio/mp4',
   'audio/wav',
   'audio/ogg',
   'audio/webm',
-  
+
   // Archives
   'application/zip',
   'application/x-tar',
   'application/gzip',
   'application/x-7z-compressed',
   'application/x-rar-compressed',
-  
+
   // Data formats
   'application/yaml',
   'text/yaml',
   'application/toml',
-  
+
   // Fonts
   'font/ttf',
   'font/otf',
@@ -90,7 +90,7 @@ export const ALLOWED_MIME_TYPES = [
   'font/woff2',
   'application/font-woff',
   'application/font-woff2',
-  
+
   // Binary/Other
   'application/octet-stream',
 ] as const;
@@ -99,10 +99,10 @@ export const ALLOWED_EXTENSIONS = [
   // Documents
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
   '.odt', '.ods', '.odp', '.rtf', '.epub',
-  
+
   // Text & Markup
   '.txt', '.csv', '.md', '.markdown', '.html', '.htm', '.css',
-  
+
   // Code
   '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
   '.py', '.pyw', '.pyi',
@@ -123,43 +123,43 @@ export const ALLOWED_EXTENSIONS = [
   '.lua',
   '.pl',
   '.dart',
-  
+
   // Config & Data
   '.yaml', '.yml', '.toml', '.xml', '.json', '.jsonc', '.json5',
   '.env', '.ini', '.cfg', '.conf',
   '.lock',
-  
+
   // Web & Templates
   '.vue', '.svelte', '.astro',
   '.ejs', '.pug', '.hbs', '.handlebars',
-  
+
   // Images
   '.jpeg', '.jpg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico',
   '.heic', '.heif', '.tiff', '.tif',
-  
+
   // Video
   '.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v', '.flv', '.wmv',
-  
+
   // Audio
   '.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma',
-  
+
   // Archives
   '.zip', '.tar', '.gz', '.7z', '.rar', '.bz2', '.xz',
-  
+
   // Fonts
   '.ttf', '.otf', '.woff', '.woff2', '.eot',
-  
+
   // 3D & Design
   '.svg', '.ai', '.sketch', '.fig', '.xd',
   '.obj', '.stl', '.gltf', '.glb', '.fbx',
-  
+
   // Binary & Executables (for development/analysis)
   '.bin', '.exe', '.dll', '.so', '.dylib',
   '.wasm',
-  
+
   // Database
   '.db', '.sqlite', '.sqlite3',
-  
+
   // Notebooks
   '.ipynb',
 
@@ -177,18 +177,18 @@ export function formatFileSize(bytes: number): string {
 
 export function isAllowedFile(file: { name: string; size?: number }): { allowed: boolean; reason?: string } {
   const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-  
+
   if (!ALLOWED_EXTENSIONS.includes(ext as any)) {
     return { allowed: false, reason: `File type ${ext} is not supported` };
   }
-  
+
   if (file.size && file.size > UPLOAD_LIMITS.MAX_FILE_SIZE_BYTES) {
-    return { 
-      allowed: false, 
-      reason: `File size (${formatFileSize(file.size)}) exceeds ${UPLOAD_LIMITS.MAX_FILE_SIZE_MB}MB limit` 
+    return {
+      allowed: false,
+      reason: `File size (${formatFileSize(file.size)}) exceeds ${UPLOAD_LIMITS.MAX_FILE_SIZE_MB}MB limit`
     };
   }
-  
+
   return { allowed: true };
 }
 
@@ -196,4 +196,3 @@ export function isExtractableArchive(file: { name: string }): boolean {
   const ext = '.' + file.name.split('.').pop()?.toLowerCase();
   return EXTRACTABLE_EXTENSIONS.includes(ext as any);
 }
-

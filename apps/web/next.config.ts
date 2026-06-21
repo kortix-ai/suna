@@ -3,6 +3,7 @@ import { withSentryConfig } from '@sentry/nextjs';
 import fs from 'fs';
 import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 
 // Unified platform version. Prefer the explicit build env (CI passes
@@ -251,9 +252,10 @@ const nextConfig = (): NextConfig => ({
 });
 
 const withMDX = createMDX();
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
-// Compose config wrappers: MDX → Better Stack (structured logs) → Sentry (error tracking)
-export default withSentryConfig(withBetterStack(withMDX(nextConfig())), {
+// Compose config wrappers: next-intl → MDX → Better Stack (structured logs) → Sentry (error tracking)
+export default withSentryConfig(withBetterStack(withMDX(withNextIntl(nextConfig()))), {
   // Suppresses source map uploading logs during build
   silent: true,
 

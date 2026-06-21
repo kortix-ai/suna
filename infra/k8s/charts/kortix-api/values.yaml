@@ -159,6 +159,54 @@ ingress:
 topologySpread:
   enabled: true
 
+# Pod/container hardening. The non-root baseline is safe for the bun image (it
+# already runs as USER bun) and is on by default. readOnlyRootFilesystem is
+# opt-in: it requires an emptyDir for every runtime write path (writableMounts),
+# so it stays off until validated per env (the API writes to /tmp + .kortix-data).
+security:
+  enabled: true
+  runAsNonRoot: true
+  # Numeric UID/GID of the image's non-root user (oven/bun ships bun=1000). REQUIRED:
+  # with a non-numeric USER (bun) the kubelet can't verify runAsNonRoot and the pod
+  # fails CreateContainerConfigError.
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile: RuntimeDefault
+  allowPrivilegeEscalation: false
+  dropAllCapabilities: true
+  readOnlyRootFilesystem: false
+  writableMounts:
+    - /tmp
+
+priorityClassName: ""
+
+# ServiceMonitor for Prometheus-operator scraping. OFF until (a) the operator CRDs
+# exist in the target cluster and (b) the API exposes a Prometheus /metrics route.
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 30s
+  labels: {}
+
+# Default-deny NetworkPolicy. OFF by default: ingress is restricted to the API
+# port from allowIngressCidrs (the ALB), egress is open to the internet EXCEPT the
+# instance metadata endpoint (SSRF/credential-theft hardening; IRSA uses STS, not
+# IMDS). Validate on dev before enabling — a misjudged CIDR drops live traffic.
+networkPolicy:
+  enabled: false
+  allowIngressCidrs:
+    - 0.0.0.0/0
+
+# PodSecurityAdmission labels on the chart-owned namespace (previews). enforce is
+# empty (audit/warn only) so it never blocks; set it to 'baseline' or 'restricted'
+# per env once violations are clean. dev/prod namespaces are external — label them
+# out-of-band.
+podSecurity:
+  enforce: ""
+  audit: restricted
+  warn: restricted
+  version: latest
+
 # Progressive delivery (Argo Rollouts). enabled=false → a plain Deployment.
 # enabled=true → a canary Rollout that shifts traffic through `steps` while a
 # background CloudWatch AnalysisRun watches ALB error-rate + latency and ABORTS

@@ -3,9 +3,9 @@
  *
  * Contract (spec §3.5):
  * - `/kortix/health` is always reachable — even unauthenticated, even when
- *   opencode isn't ready, even when KORTIX_TOKEN is unset.
+ *   opencode isn't ready, even when the sandbox token is unset.
  * - Every other path requires a valid `X-Kortix-User-Context` header signed
- *   with `KORTIX_TOKEN`. Missing/invalid → 401. KORTIX_TOKEN unset → 503
+ *   with the sandbox token. Missing/invalid → 401. Token unset → 503
  *   (daemon misconfigured — never silently bypass).
  */
 
@@ -40,7 +40,9 @@ function baseConfig(over: Partial<Config> = {}): Config {
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
-    kortixToken: TEST_TOKEN,
+    sessionFresh: false,
+    baseSha: undefined,
+    sandboxToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
@@ -114,14 +116,24 @@ describe('daemon proxy auth gate', () => {
     __clearRepoIdentityMemoForTests()
   })
 
-  it('uses KORTIX_TOKEN as the only sandbox auth token', () => {
+  it('uses KORTIX_SANDBOX_TOKEN as the canonical sandbox auth token', () => {
     const cfg = loadConfig({
-      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_SANDBOX_TOKEN: TEST_TOKEN,
+      KORTIX_TOKEN: 'legacy-alias-that-must-not-win',
       KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
     } as NodeJS.ProcessEnv)
 
-    expect(cfg.kortixToken).toBe(TEST_TOKEN)
+    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
     expect('apiToken' in cfg).toBe(false)
+  })
+
+  it('falls back to the legacy KORTIX_TOKEN sandbox auth alias', () => {
+    const cfg = loadConfig({
+      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_CLI_TOKEN: 'project-pat-that-must-not-shadow',
+    } as NodeJS.ProcessEnv)
+
+    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
   })
 
   it('scopes git auth headers to the project repo host', () => {
@@ -272,6 +284,8 @@ describe('daemon proxy auth gate', () => {
         repoUrl: remote,
         defaultBranch: 'main',
         branchName: 'session-branch',
+        sessionFresh: false,
+    baseSha: undefined,
       }))
 
       // Baked checkout means no clone-credential fetch should happen.
@@ -310,8 +324,8 @@ describe('daemon proxy auth gate', () => {
     expect(body.auth).toBe('configured')
   })
 
-  it('reports auth=unconfigured when KORTIX_TOKEN is unset', async () => {
-    const app = buildOpencodeApp(baseConfig({ kortixToken: undefined }), fakeOpencode(), Date.now())
+  it('reports auth=unconfigured when the sandbox token is unset', async () => {
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     const body = (await res.json()) as { auth: string }
     expect(body.auth).toBe('unconfigured')
@@ -437,8 +451,8 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('expired')
   })
 
-  it('refuses to proxy when KORTIX_TOKEN is unset → 503 (never silently bypass)', async () => {
-    const app = buildOpencodeApp(baseConfig({ kortixToken: undefined }), fakeOpencode('ok'), Date.now())
+  it('refuses to proxy when the sandbox token is unset → 503 (never silently bypass)', async () => {
+    const app = buildOpencodeApp(baseConfig({ sandboxToken: undefined }), fakeOpencode('ok'), Date.now())
     const res = await app.request('/session/anything')
     expect(res.status).toBe(503)
     const body = (await res.json()) as { error: string; detail: string }
@@ -511,6 +525,8 @@ describe('daemon proxy auth gate', () => {
           repoUrl: remote,
           defaultBranch: 'main',
           branchName: 'main',
+          sessionFresh: false,
+    baseSha: undefined,
         }),
         fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
         Date.now(),

@@ -115,4 +115,3 @@ export function useTransactionsSummary(days: number = 30) {
     staleTime: 60000,
   });
 }
-

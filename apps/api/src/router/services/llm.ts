@@ -99,5 +99,5 @@ export function extractUsage(responseBody: any): UsageInfo | null {
   };
 }
 
-// Re-export model functions
-export { getModel, getAllModels, resolveOpenRouterId } from '../config/models';
+// Re-export model functions used by router handlers.
+export { getModel, getAllModels } from '../config/models';

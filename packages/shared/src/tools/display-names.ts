@@ -41,7 +41,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['terminate_command', 'Terminating Command'],
   ['list-commands', 'Listing Commands'],
   ['list_commands', 'Listing Commands'],
-  
+
   // File operations
   ['create-file', 'Creating File'],
   ['create_file', 'Creating File'],
@@ -71,7 +71,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['create_tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
   ['update_tasks', 'Updating Tasks'],
-  
+
   // Browser operations
   ['browser-navigate-to', 'Navigating to Page'],
   ['browser_navigate_to', 'Navigating to Page'],
@@ -93,7 +93,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['execute_data-provider_call', 'Calling Data Provider'],
   ['get-data-provider-endpoints', 'Getting Endpoints'],
   ['call-data-provider', 'Calling Data Provider'],
-  
+
   // Core tools
   ['ask', 'Ask'],
   ['wait', 'Wait'],
@@ -108,11 +108,11 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['web_search', 'Searching Web'],
   ['image-search', 'Searching Images'],
   ['image_search', 'Searching Images'],
-  
+
   // Port operations
   ['expose-port', 'Exposing Port'],
   ['expose_port', 'Exposing Port'],
-  
+
   // Image operations
   ['load-image', 'Loaded Image'],
   ['load_image', 'Loaded Image'],
@@ -329,4 +329,3 @@ export const STREAMABLE_TOOLS: ReadonlySet<string> = new Set([
   'search-mcp-servers',
   'create-credential-profile',
 ]);
-

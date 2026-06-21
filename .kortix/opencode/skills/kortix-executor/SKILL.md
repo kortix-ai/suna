@@ -102,8 +102,9 @@ expose the whole spec as named tools, so they don't need `request`.)
 - To add a connector to the repo, edit `kortix.toml` `[[connectors]]` (see the
   `kortix-system` skill for the manifest); the secret value + sharing are then
   set in the dashboard.
-- An `executor` CLI exists on `$PATH` as a fallback (same gateway, same auth),
-  but the MCP tools are the primary path — prefer them.
+- A `kortix executor` CLI exists too (same gateway, same auth) — and the same
+  Executor core is also the `@kortix/executor-sdk` TypeScript framework. The MCP
+  tools are the primary path, though — prefer them.
 </rules>
 
 <adding-connectors>

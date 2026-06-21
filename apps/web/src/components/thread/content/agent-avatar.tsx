@@ -72,7 +72,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   if (iconName) {
     // Normalize and validate the icon name
     const normalizedIconName = normalizeIconName(iconName);
-    
+
     // If icon name is invalid, fall through to default bot icon
     if (normalizedIconName) {
       try {

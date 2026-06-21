@@ -167,6 +167,7 @@ function rememberGitHubSetupReturn(path: string) {
 }
 
 export default function AccountSettingsPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -254,7 +255,9 @@ export default function AccountSettingsPage() {
               </h1>
               {account && (
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Manage account settings, members, and access.
+                  {tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxTextManageAccountSettings5130f3ea',
+                  )}
                 </p>
               )}
             </div>
@@ -294,7 +297,11 @@ export default function AccountSettingsPage() {
                     holds the per-transaction history. Both are gated on
                     account.write so non-admins don't see money surfaces. */}
               {canWriteAccount && <TabsTrigger value="billing">Billing</TabsTrigger>}
-              {canWriteAccount && <TabsTrigger value="transactions">Credits ledger</TabsTrigger>}
+              {canWriteAccount && (
+                <TabsTrigger value="transactions">
+                  {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextCreditsLedger313d0d27')}
+                </TabsTrigger>
+              )}
               {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
               {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
               {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
@@ -384,16 +391,23 @@ export default function AccountSettingsPage() {
                     "Advanced" disclosure (closed by default). */}
                 <SettingsGroup
                   title="Security"
-                  description="Account-wide gates that apply to every member."
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionAccountWide0fbfc59e',
+                  )}
                 >
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
                   <Collapsible>
                     <CollapsibleTrigger className="group border-border/60 bg-card/30 hover:border-border hover:bg-card/60 flex w-full items-center justify-between rounded-2xl border border-dashed px-4 py-3 text-left text-sm transition">
                       <div>
-                        <div className="text-foreground font-medium">Advanced security</div>
+                        <div className="text-foreground font-medium">
+                          {tI18nHardcoded.raw(
+                            'autoAppAppAccountsIdPageJsxTextAdvancedSecurity9ca9f4b4',
+                          )}
+                        </div>
                         <div className="text-muted-foreground text-xs">
-                          Session lifetimes, idle timeouts, and force-logout. Defaults are fine for
-                          most teams.
+                          {tI18nHardcoded.raw(
+                            'autoAppAppAccountsIdPageJsxTextSessionLifetimesIdleaa3d2f86',
+                          )}
                         </div>
                       </div>
                       <ChevronDown className="text-muted-foreground h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
@@ -415,8 +429,12 @@ export default function AccountSettingsPage() {
                     (402 for non-entitled accounts). */}
                 {enterpriseIdentityEnabled && (
                   <SettingsGroup
-                    title="Identity & directory"
-                    description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
+                    title={tI18nHardcoded.raw(
+                      'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
+                    )}
+                    description={tI18nHardcoded.raw(
+                      'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
+                    )}
                   >
                     <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                     <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
@@ -425,8 +443,12 @@ export default function AccountSettingsPage() {
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup
-                  title="Tokens & automation"
-                  description="Programmatic access for CI/CD and headless agents."
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrTitleTokensAutomation0764b2bd',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionProgrammaticAccess21449ecb',
+                  )}
                 >
                   <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
                   <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
@@ -435,13 +457,19 @@ export default function AccountSettingsPage() {
                 {/* ── Observability ─────────────────────────────── */}
                 <SettingsGroup
                   title="Observability"
-                  description="Forward audit events to your own pipeline."
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionForwardAudit00c0c84a',
+                  )}
                 >
                   <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
                 </SettingsGroup>
 
                 {canDeleteAccount && (
-                  <SettingsGroup title="Danger zone">
+                  <SettingsGroup
+                    title={tI18nHardcoded.raw(
+                      'autoAppAppAccountsIdPageJsxAttrTitleDangerZonebdaa0f25',
+                    )}
+                  >
                     <DangerZoneCard />
                   </SettingsGroup>
                 )}
@@ -831,6 +859,7 @@ function MembersCard({
   canRemove: boolean;
   canUpdateRole: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -1109,7 +1138,9 @@ function MembersCard({
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by email…"
+              placeholder={tI18nHardcoded.raw(
+                'autoAppAppAccountsIdPageJsxAttrPlaceholderSearchBy353c608c',
+              )}
               className="h-9 pl-9"
             />
           </div>
@@ -1147,7 +1178,7 @@ function MembersCard({
               onClick={() => setBulkDialog('add_to_group')}
               disabled={bulkBusy}
             >
-              Add to group
+              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddToGroupac0cb8ad')}
             </Button>
           )}
           {canUpdateRole && (
@@ -1157,7 +1188,7 @@ function MembersCard({
               onClick={() => setBulkDialog('set_role')}
               disabled={bulkBusy}
             >
-              Change role
+              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextChangeRoled818ca7f')}
             </Button>
           )}
           {canRemove && (
@@ -1185,7 +1216,9 @@ function MembersCard({
 
       {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
         <div className="text-muted-foreground px-6 py-8 text-center text-sm">
-          No members match &quot;{search.trim()}&quot;.
+          {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNoMembersMatch116fd46e')}
+          {search.trim()}
+          {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxText12d5475e')}
         </div>
       )}
 
@@ -1465,15 +1498,15 @@ function MembersCard({
       <ConfirmDialog
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
-        title="Remove members"
+        title={tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxAttrTitleRemoveMembers760ca889')}
         description={
           <span>
             Remove{' '}
             <span className="text-foreground font-medium">
               {selectedCount} member{selectedCount === 1 ? '' : 's'}
             </span>{' '}
-            from <span className="text-foreground font-medium">{account.name}</span>? They lose
-            access immediately.
+            from <span className="text-foreground font-medium">{account.name}</span>
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextTheyLoseAccess4aa2ae68')}
           </span>
         }
         confirmLabel={`Remove ${selectedCount}`}
@@ -1509,6 +1542,7 @@ function InviteMemberModal({
   accountId: string;
   onInvited: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -1768,7 +1802,7 @@ function InviteMemberModal({
                 />
               </div>
               <p className="text-muted-foreground text-xs">
-                Add several at once — separate with commas, spaces, or Enter.
+                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddSeveralAtb6d9bf70')}
               </p>
             </div>
 
@@ -2066,6 +2100,7 @@ function BulkAddToGroupDialog({
   busy: boolean;
   onConfirm: (groupId: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [groupId, setGroupId] = useState<string | undefined>(undefined);
   const groupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
@@ -2085,11 +2120,11 @@ function BulkAddToGroupDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
+            Add {selectedCount} member{selectedCount === 1 ? '' : 's'}{' '}
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextToAGroupd710c223')}
           </DialogTitle>
           <DialogDescription>
-            Pick the group these members should join. Members already in the group are skipped —
-            re-adding is a no-op.
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextPickTheGroupbdff5ffe')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5 py-1">
@@ -2098,12 +2133,16 @@ function BulkAddToGroupDialog({
             <Skeleton className="h-9 w-full" />
           ) : groups.length === 0 ? (
             <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
-              No groups exist on this account yet. Create one from the Groups tab first.
+              {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNoGroupsExista83435a9')}
             </p>
           ) : (
             <Select value={groupId ?? ''} onValueChange={(v) => setGroupId(v || undefined)}>
               <SelectTrigger id="bulk-group">
-                <SelectValue placeholder="Choose a group…" />
+                <SelectValue
+                  placeholder={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrPlaceholderChooseA728f4999',
+                  )}
+                />
               </SelectTrigger>
               <SelectContent>
                 {groups.map((g) => (
@@ -2125,7 +2164,7 @@ function BulkAddToGroupDialog({
             className="gap-1.5"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Add to group
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAddToGroupac0cb8ad')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2146,6 +2185,7 @@ function BulkSetRoleDialog({
   busy: boolean;
   onConfirm: (role: AccountRole) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [role, setRole] = useState<AccountRole>('member');
   function handleOpenChange(v: boolean) {
     if (v) setRole('member');
@@ -2156,23 +2196,31 @@ function BulkSetRoleDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextChangeRoleFor52ff6528')}
+            {selectedCount} member{selectedCount === 1 ? '' : 's'}
           </DialogTitle>
           <DialogDescription>
-            Owners and admins have implicit Manager on every project. Members get access only via
-            direct grants or group membership.
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextOwnersAndAdminsb262a85e')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5 py-1">
-          <Label htmlFor="bulk-role">New role</Label>
+          <Label htmlFor="bulk-role">
+            {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextNewRole425b849a')}
+          </Label>
           <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
             <SelectTrigger id="bulk-role">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="owner">Owner — full control + can delete the account</SelectItem>
-              <SelectItem value="admin">Admin — everything except account deletion</SelectItem>
-              <SelectItem value="member">Member — no implicit project access</SelectItem>
+              <SelectItem value="owner">
+                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextOwnerFullControlbdd4292e')}
+              </SelectItem>
+              <SelectItem value="admin">
+                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextAdminEverythingExceptfe47cdf0')}
+              </SelectItem>
+              <SelectItem value="member">
+                {tI18nHardcoded.raw('autoAppAppAccountsIdPageJsxTextMemberNoImplicit64132e74')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>

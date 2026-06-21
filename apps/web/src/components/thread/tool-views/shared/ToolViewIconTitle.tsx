@@ -55,4 +55,3 @@ export function ToolViewIconTitle({
     </div>
   );
 }
-

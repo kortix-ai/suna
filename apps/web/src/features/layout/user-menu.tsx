@@ -65,6 +65,7 @@ export function UserMenu({
   user: UserMenuUser;
   variant?: UserMenuVariant;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
@@ -125,7 +126,7 @@ export function UserMenu({
       >
         <UserAvatar
           email={user.email}
-          name={currentAccount?.name}
+          name={user?.name}
           avatarUrl={user.avatar}
           size="sm"
           className="size-full rounded-sm"
@@ -185,7 +186,7 @@ export function UserMenu({
                   {currentAccount.name}
                 </div>
                 <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
-                  Account settings
+                  {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
                 </div>
               </div>
             </DropdownMenuItem>
@@ -217,7 +218,7 @@ export function UserMenu({
 
         <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))}>
           <Download />
-          Download apps
+          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
         <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))}>
@@ -283,9 +284,11 @@ export function UserMenu({
       <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Log out of your account?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextLogOutOfYour4770ea0c')}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              You&apos;ll need to sign in again to continue.
+              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextYouLlNeedToee9fad67')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

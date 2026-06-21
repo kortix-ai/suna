@@ -13,7 +13,6 @@ import { PlatinumProvider } from './platinum';
  *   - local_docker — self-hosted/local Docker runtime
  */
 export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
-export type { SandboxProviderName } from '../../config';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -73,7 +72,7 @@ export interface ResolvedEndpoint {
   headers: Record<string, string>;
 }
 
-export interface ProvisioningStage {
+interface ProvisioningStage {
   id: string;
   progress: number;
   message: string;
@@ -151,16 +150,4 @@ export function getProvider(name: ProviderName): SandboxProvider {
 
   providers.set(name, provider);
   return provider;
-}
-
-export function getDefaultProviderName(): ProviderName {
-  return config.getDefaultProvider();
-}
-
-export function getAvailableProviders(): ProviderName[] {
-  const available: ProviderName[] = [];
-  if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  if (config.isPlatinumEnabled()) available.push('platinum');
-  return available;
 }

@@ -27,7 +27,6 @@ const includeGenerated = args.get('include-generated') === 'true';
 const ignoredPathParts = [
   '/.next/',
   '/node_modules/',
-  '/src/lib/llm-catalog.generated.json',
   '/src/components/ui/',
   '/src/app/fonts/',
   '/src/types/',
@@ -152,7 +151,7 @@ function isHumanText(value) {
   if (!text || allowedLiteralValues.has(text)) return false;
   if (text.length < 2) return false;
   if (/^[\W\d_]+$/.test(text)) return false;
-  if (/^[a-z0-9_.:/?#[\]{}()[\]-]+$/i.test(text) && !/\s/.test(text)) return false;
+  if (/^[a-z0-9.:/?#[\]{}()_-]+$/i.test(text) && !/\s/.test(text)) return false;
   if (/^https?:\/\//.test(text)) return false;
   if (/^[A-Z0-9_]+$/.test(text)) return false;
   return /[A-Za-z\u00C0-\uFFFF]/.test(text);

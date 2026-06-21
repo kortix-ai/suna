@@ -83,7 +83,6 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
   // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
@@ -132,14 +131,15 @@ const envSchema = z.object({
   // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
   // bound to a session id on create — decoupled from the durable session row).
   // Per-template default ready-count when a template is first opted in via the
-  // UI (per-template UI value overrides). Only matters when the pool is enabled.
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
-  // Master on/off for the warm pool subsystem. Default ON = the feature is
-  // AVAILABLE: the per-template opt-in toggles render in Customize → Sandbox, but
-  // every template still defaults OFF, so nothing warms — and nothing is billed —
-  // until a template is explicitly opted in. Set false to kill the subsystem
-  // fleet-wide (allocator skips the claim path; every create cold-provisions).
-  KORTIX_WARM_POOL_ENABLED:        optBoolTrue,
+  // UI (per-template UI value overrides). FALLBACK DEFAULT ONLY — the live value
+  // is the DB `warm_pool` setting (admin Providers panel / runtime-settings.ts).
+  KORTIX_WARM_POOL_SIZE:           optInt(0),
+  // Master on/off for the warm pool subsystem. Default OFF — we don't run warm
+  // pools by default (they hold idle boxes for no reason). This env is only the
+  // FALLBACK default; the live master gate is the DB `warm_pool` setting flipped
+  // from the admin Providers panel (runtime-settings.ts → warmPoolEnabled()).
+  // When OFF the allocator skips the claim path and every create cold-provisions.
+  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
   // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
   // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
   // base branch + warm the opencode project plugin AT PARK — so a claim only
@@ -230,6 +230,10 @@ const envSchema = z.object({
   DAYTONA_API_KEY:             optStr,
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
+  // Org-level Daytona webhook signing secret (Svix `whsec_…`). When set, the
+  // /v1/billing/webhooks/daytona endpoint closes compute billing the instant a
+  // box stops; the reaper sweep is the backstop, so this is optional.
+  DAYTONA_WEBHOOK_SECRET:      optStr,
 
   // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
   // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
@@ -265,6 +269,9 @@ const envSchema = z.object({
   PLATINUM_API_KEY:            optStr,
   PLATINUM_API_URL:            optStr,
   PLATINUM_TEMPLATE:           optStr,
+  // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
+  // once at registration). Optional — same backstop story as Daytona's.
+  PLATINUM_WEBHOOK_SECRET:     optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
@@ -275,8 +282,8 @@ const envSchema = z.object({
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
-  // Default port base for sandbox port mapping; kept for the queue drainer
-  // and deployments router which still reference it.
+  KORTIX_LOCAL_DOCKER_HOST:    optStr,
+  // Default port base for local Docker sandbox port mapping.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
@@ -505,7 +512,6 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
-  KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
   KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
   // ─── Database ──────────────────────────────────────────────────────────────
@@ -597,6 +603,7 @@ export const config = {
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
+  DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
@@ -611,6 +618,7 @@ export const config = {
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
+  PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
@@ -620,6 +628,7 @@ export const config = {
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
   DOCKER_HOST: env.DOCKER_HOST,
   SANDBOX_NETWORK: env.SANDBOX_NETWORK,
+  KORTIX_LOCAL_DOCKER_HOST: env.KORTIX_LOCAL_DOCKER_HOST,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 

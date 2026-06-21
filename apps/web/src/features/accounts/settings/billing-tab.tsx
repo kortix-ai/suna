@@ -26,6 +26,7 @@ import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { formatCredits } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Zap } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 const CREDIT_PACKAGES: { credits: number; price: number }[] = [
@@ -38,6 +39,7 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
 ];
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { session, isLoading: authLoading } = useAuth();
   const highlight = useUserSettingsModalStore((s) => s.highlight);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -158,10 +160,15 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         <>
           <Card className="gap-4">
             <CardHeader>
-              <CardTitle>Kortix Team</CardTitle>
+              <CardTitle>
+                {tI18nHardcoded.raw(
+                  'autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b',
+                )}
+              </CardTitle>
               <CardDescription>
-                Subscribe to put your whole team on Kortix — LLM compute and AI Computers, one
-                wallet.
+                {tI18nHardcoded.raw(
+                  'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
+                )}
               </CardDescription>
             </CardHeader>
             <CardFooter>
@@ -174,7 +181,9 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                 }
                 className="w-full shrink-0 sm:w-auto"
               >
-                Subscribe to Team plan
+                {tI18nHardcoded.raw(
+                  'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73',
+                )}
               </Button>
             </CardFooter>
           </Card>
@@ -193,7 +202,13 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
       ) : (
         <>
           {highlight === 'credits' && totalCredits <= 0 && (
-            <InfoBanner tone="warning" icon={AlertTriangle} title="You ran out of credits">
+            <InfoBanner
+              tone="warning"
+              icon={AlertTriangle}
+              title={tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxAttrTitleYouRanefc3b00e',
+              )}
+            >
               {canPurchaseCredits
                 ? 'Buy credits below or turn on auto top-up so it never happens again.'
                 : 'Top up your wallet to keep your agents running.'}
@@ -211,9 +226,15 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
               <div className="flex items-center justify-between">
                 <p className="text-muted-foreground flex items-center gap-1.5 text-xs tracking-widest uppercase">
                   <Zap className="size-3" />
-                  Auto top-up
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextAutoTopUp9c42761a',
+                  )}
                 </p>
-                <p className="text-muted-foreground/60 text-xs">Never run out again</p>
+                <p className="text-muted-foreground/60 text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
+                  )}
+                </p>
               </div>
               <AutoTopupCard fetchSettings showSaveButton />
             </div>
@@ -223,9 +244,15 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
             <div className="border-border space-y-3 border-t pt-4">
               <div className="flex items-center justify-between">
                 <p className="text-muted-foreground text-xs tracking-widest uppercase">
-                  Buy credits
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextBuyCreditsd35e7077',
+                  )}
                 </p>
-                <p className="text-muted-foreground/60 text-xs">One-time top-up</p>
+                <p className="text-muted-foreground/60 text-xs">
+                  {tI18nHardcoded.raw(
+                    'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
+                  )}
+                </p>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {CREDIT_PACKAGES.map((pkg) => {

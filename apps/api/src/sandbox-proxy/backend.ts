@@ -20,8 +20,9 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { config } from '../config';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
@@ -47,6 +48,8 @@ export interface SandboxRecord {
   status: string;
   /** Provider base URL stored on the row (used by the share endpoints). */
   baseUrl: string;
+  /** Host-mapped provider ports, when the provider records them. */
+  mappedPorts: Record<string, string>;
   /** Sandbox INTERNAL_SERVICE_KEY — proxy authenticates upstream with this. */
   serviceKey: string | null;
 }
@@ -75,6 +78,19 @@ function previewLinkKey(sandboxId: string, port: number): string {
   return `${sandboxId}:${port}`;
 }
 
+function preferredSandboxOrder() {
+  return [
+    sql`case
+      when ${sessionSandboxes.status} = 'active' then 0
+      when ${sessionSandboxes.status} = 'provisioning' then 1
+      when ${sessionSandboxes.status} = 'stopped' then 2
+      else 3
+    end`,
+    sql`case when ${sessionSandboxes.poolState} is null then 0 else 1 end`,
+    sql`${sessionSandboxes.updatedAt} desc`,
+  ];
+}
+
 // ── Row loading ────────────────────────────────────────────────────────────
 
 /**
@@ -94,15 +110,25 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       status: sessionSandboxes.status,
       baseUrl: sessionSandboxes.baseUrl,
       config: sessionSandboxes.config,
+      metadata: sessionSandboxes.metadata,
     })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
+    .orderBy(...preferredSandboxOrder())
     .limit(1);
 
   if (!row) return null;
 
   const config = (row.config || {}) as Record<string, unknown>;
+  const metadata = (row.metadata || {}) as Record<string, unknown>;
   const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+  const mappedPorts =
+    metadata.mappedPorts && typeof metadata.mappedPorts === 'object' && !Array.isArray(metadata.mappedPorts)
+      ? Object.fromEntries(
+          Object.entries(metadata.mappedPorts as Record<string, unknown>)
+            .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        )
+      : {};
   setCachedServiceKey(externalId, serviceKey);
 
   return {
@@ -114,6 +140,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     provider: row.provider,
     status: row.status,
     baseUrl: row.baseUrl || '',
+    mappedPorts,
     serviceKey,
   };
 }
@@ -155,19 +182,34 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 // 502/503 every non-Daytona sandbox hit through `/v1/p/`.)
 
 export async function resolvePreviewLink(
-  externalId: string,
+  sandboxRef: string | SandboxRecord,
   port: number,
 ): Promise<{ url: string; token: string | null }> {
-  const key = previewLinkKey(externalId, port);
+  if (typeof sandboxRef !== 'string' && sandboxRef.provider === 'local_docker') {
+    const mappedPort = sandboxRef.mappedPorts[String(port)] || new URL(sandboxRef.baseUrl || 'http://localhost').port;
+    const base = new URL(sandboxRef.baseUrl || `http://localhost:${mappedPort}`);
+    const host =
+      config.KORTIX_LOCAL_DOCKER_HOST ||
+      (['localhost', '127.0.0.1', '0.0.0.0'].includes(base.hostname) ? base.hostname : base.hostname);
+    base.hostname = host;
+    if (mappedPort) base.port = mappedPort;
+    base.pathname = '';
+    base.search = '';
+    base.hash = '';
+    return { url: base.toString().replace(/\/$/, ''), token: null };
+  }
+
+  const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
+  const key = previewLinkKey(sandboxId, port);
   const cached = previewLinkCache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
     return { url: cached.url, token: cached.token };
   }
   previewLinkCache.delete(key);
 
-  const record = await loadSandbox(externalId);
-  if (!record) throw new Error(`[proxy] no sandbox row for ${externalId}`);
-  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(externalId, port);
+  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
+  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
+  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(record.externalId, port);
 
   previewLinkCache.set(key, { url, token, expiresAt: Date.now() + CACHE_TTL_MS });
   return { url, token };
@@ -218,10 +260,32 @@ export async function wakeSandbox(externalId: string): Promise<void> {
   try {
     const record = await loadSandbox(externalId);
     if (!record) return;
+    // Don't let passive preview/share traffic resurrect a box the reaper
+    // deliberately idle-stopped (quiesced) — that endless resurrection is what
+    // kept boxes alive past the auto-stop window. A quiesced box returns only on
+    // an explicit open / a real new turn (which clears the flag).
+    if (await isSandboxQuiesced(record.sandboxId)) {
+      console.log(`[PREVIEW] Skipping wake for quiesced (idle-stopped) sandbox ${externalId}`);
+      return;
+    }
     await getProvider(record.provider as ProviderName).ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
   } catch (e) {
     console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
+  }
+}
+
+/** True when the sandbox row carries the reaper's idle-quiesce marker. */
+async function isSandboxQuiesced(sandboxId: string): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ metadata: sessionSandboxes.metadata })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, sandboxId))
+      .limit(1);
+    return !!(row?.metadata as Record<string, unknown> | null)?.idleQuiesced;
+  } catch {
+    return false;
   }
 }
 
@@ -243,9 +307,11 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
         sandboxId: sessionSandboxes.sandboxId,
         sessionId: sessionSandboxes.sessionId,
         status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
+      .orderBy(...preferredSandboxOrder())
       .limit(1);
     if (!row) return;
 
@@ -253,6 +319,13 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
       .update(sessionSandboxes)
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    // A box the reaper idle-stopped is QUIESCED: passive proxy traffic (an open
+    // tab polling opencode, a background stream reconnect) must NOT heal it back
+    // to active — that resurrection is exactly what kept boxes alive forever.
+    // Only an explicit open / a real new turn (which clears the flag in
+    // resumeStoppedSandbox) brings it back.
+    if ((row.metadata as Record<string, unknown> | null)?.idleQuiesced) return;
 
     if (['error', 'stopped'].includes(row.status)) {
       await db
@@ -281,6 +354,7 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
       .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.externalId, externalId), ne(sessionSandboxes.status, 'archived')))
+      .orderBy(...preferredSandboxOrder())
       .limit(1);
     if (!row) return;
     await db

@@ -4,7 +4,7 @@
  *
  *   seed a no-auth httpbin connector on a real project
  *   → mint a real project-scoped executor token
- *   → spawn the REAL executor-mcp stdio server pointed at the LIVE gateway
+ *   → spawn the REAL `kortix executor mcp` stdio server pointed at the LIVE gateway
  *   → drive initialize → tools/list → connectors → discover → describe → call
  *   → assert the call made a real outbound request (httpbin echo)
  *   → assert an audit row was written to the live DB
@@ -22,7 +22,7 @@ const API_URL = process.env.LIVE_API_URL ?? 'http://localhost:8008/v1';
 const PROJECT_ID = process.env.LIVE_PROJECT_ID ?? '0e96d960-42ff-4f71-a65a-7026848c1d1d';
 const SLUG = 'httpbin-live';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const EXECUTOR_MCP = resolve(REPO_ROOT, 'apps/sandbox/agent-cli/connectors/executor-mcp.ts');
+const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 let passed = 0;
 let failed = 0;
@@ -67,7 +67,7 @@ async function seed(): Promise<string> {
 
 async function driveMcp(token: string) {
   const proc = Bun.spawn({
-    cmd: ['bun', EXECUTOR_MCP],
+    cmd: ['bun', CLI_ENTRY, 'executor', 'mcp'],
     cwd: REPO_ROOT,
     env: { PATH: process.env.PATH, HOME: process.env.HOME, KORTIX_API_URL: API_URL, KORTIX_EXECUTOR_TOKEN: token },
     stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
@@ -95,7 +95,12 @@ async function driveMcp(token: string) {
 
     const listed = await rpc(2, 'tools/list');
     const names = (listed.tools ?? []).map((t: { name: string }) => t.name);
-    check('tools/list → 4 stable meta-tools', JSON.stringify(names) === JSON.stringify(['connectors', 'discover', 'describe', 'call']), names);
+    check(
+      'tools/list → stable meta-tools',
+      JSON.stringify(names) ===
+        JSON.stringify(['connectors', 'discover', 'describe', 'call', 'connect', 'request_secret', 'add_connector', 'remove_connector']),
+      names,
+    );
 
     const conns = JSON.parse((await rpc(3, 'tools/call', { name: 'connectors', arguments: {} })).content[0].text);
     const seen = (conns.connectors ?? []).find((c: { slug: string }) => c.slug === SLUG);

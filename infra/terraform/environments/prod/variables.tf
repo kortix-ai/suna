@@ -37,7 +37,7 @@ variable "api_domain" {
     Public FQDN for the prod API. Defaults to the final api.kortix.com, but the
     stack is first brought up under new-api.kortix.com (set api_domain =
     "new-api.kortix.com" in tfvars) so it runs in parallel with the live
-    Lightsail prod without touching api.kortix.com. At go-live, change this back
+    production API without touching api.kortix.com. At go-live, change this back
     to "api.kortix.com" and re-apply — the ALB/ECS/cert all just re-point, no
     rebuild. The Cloudflare record name + ACM SAN derive from this.
   EOT

@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "dotenvx run -f .env -- bun run --hot src/index.ts",
+    "dev": "dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- bun run --hot src/index.ts",
     "dev:dev-env": "dotenvx run -f .env.dev -- bun run --hot src/index.ts",
     "dev:prod-env": "dotenvx run -f .env.prod -- bun run --hot src/index.ts",
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
@@ -35,7 +35,6 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.4.0",
-    "opencode-ai": "1.14.28",
     "postgres": "^3.4.8",
     "smol-toml": "^1.6.1",
     "stripe": "^14.0.0",

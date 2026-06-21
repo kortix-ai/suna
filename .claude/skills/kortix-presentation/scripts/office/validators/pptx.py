@@ -211,7 +211,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
         import lxml.etree
 
         errors = []
-        notes_slide_references = {}  
+        notes_slide_references = {}
 
         slide_rels_files = list(self.unpacked_dir.glob("ppt/slides/_rels/*.xml.rels"))
 
@@ -235,7 +235,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
 
                             slide_name = rels_file.stem.replace(
                                 ".xml", ""
-                            )  
+                            )
 
                             if normalized_target not in notes_slide_references:
                                 notes_slide_references[normalized_target] = []

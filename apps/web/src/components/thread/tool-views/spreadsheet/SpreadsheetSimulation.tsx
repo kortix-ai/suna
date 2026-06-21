@@ -65,7 +65,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
 
       setPhase(4);
       setActiveCell(null);
-      
+
       await new Promise(r => setTimeout(r, 1500));
       setPhase(0);
       setFilledCells(new Set());
@@ -83,7 +83,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
       <div className="flex items-center justify-center h-full w-full min-h-[200px]">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <motion.div 
+            <motion.div
               className="grid grid-cols-4 gap-1"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -93,7 +93,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                   key={i}
                   className="h-6 w-10 rounded-sm bg-zinc-200 dark:bg-zinc-700"
                   animate={{
-                    backgroundColor: i < 4 
+                    backgroundColor: i < 4
                       ? [
                           'rgb(228 228 231)',
                           'rgb(31 78 121)',
@@ -126,7 +126,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
               }}
             />
           </div>
-          <motion.p 
+          <motion.p
             className="text-sm text-muted-foreground"
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ duration: 1.5, repeat: Infinity }}
@@ -144,7 +144,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
           animate={{ opacity: 1, y: 0 }}
           className="space-y-4"
         >
-          <motion.div 
+          <motion.div
             className="rounded-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden shadow-2xl shadow-zinc-200/50 dark:shadow-zinc-900/50"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -170,7 +170,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
 
               {[...Array(ROWS)].map((_, rowIndex) => (
                 <div key={rowIndex} className="flex">
-                  <motion.div 
+                  <motion.div
                     className="w-10 h-7 bg-zinc-50 dark:bg-zinc-800/50 border-r border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-center text-xs text-zinc-400 font-medium"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -196,9 +196,9 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                           )}
                           initial={{ backgroundColor: 'transparent' }}
                           animate={{
-                            backgroundColor: isHeader 
+                            backgroundColor: isHeader
                               ? HEADER_COLOR
-                              : isFilled 
+                              : isFilled
                                 ? 'rgba(16, 185, 129, 0.08)'
                                 : 'transparent',
                           }}
@@ -240,8 +240,8 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                                   <motion.div
                                     className={cn(
                                       "h-1.5 rounded-full",
-                                      isHeader 
-                                        ? "bg-white/60" 
+                                      isHeader
+                                        ? "bg-white/60"
                                         : "bg-zinc-300 dark:bg-zinc-600"
                                     )}
                                     initial={{ width: 0 }}

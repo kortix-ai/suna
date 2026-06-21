@@ -1,0 +1,43 @@
+# Audit: every container must declare resource requests (cpu + memory) and a
+# memory limit, so the scheduler can bin-pack and a pod can't starve a node. Audit.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resources
+  annotations:
+    policies.kyverno.io/title: Require Resource Requests and Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Every container must set resources.requests (cpu and memory) and a memory
+      limit, so scheduling is predictable and a single pod cannot exhaust a node.
+spec:
+  background: true
+  rules:
+    - name: require-requests-and-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+      validate:
+        failureAction: Audit
+        message: >-
+          Every container must set resources.requests.cpu, resources.requests.memory
+          and resources.limits.memory.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    memory: "?*"

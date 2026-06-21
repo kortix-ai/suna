@@ -1,13 +1,12 @@
 /**
  * Canonical kortix.toml schema + validator.
  *
- * One source of truth, exercised in three places:
+ * One source of truth, exercised wherever manifest input is accepted:
  *
  *   1. `kortix ship` (CLI) — pre-flight validation before push. A broken
  *      manifest fails fast with a colored diagnostic, no push happens.
- *   2. Backend `POST /v1/projects/:id/manifest/validate` + CR-merge gate —
- *      backstop so manifests pushed without the CLI (raw git push, web
- *      edit) still can't take a project down.
+ *   2. Backend CR-merge gate — backstop so manifests pushed without the CLI
+ *      (raw git push, web edit) still can't take a project down.
  *   3. `kortix validate` (CLI) — explicit subcommand that just runs the
  *      validator and prints a report.
  *
@@ -19,13 +18,13 @@
 import { parse as parseToml, TomlError } from 'smol-toml';
 
 /** Maximum manifest schema version this validator understands. */
-export const KNOWN_SCHEMA_VERSION = 1;
+const KNOWN_SCHEMA_VERSION = 1;
 
 /** The slug reserved for the platform-shared default sandbox template. */
-export const RESERVED_SANDBOX_SLUG = 'default';
+const RESERVED_SANDBOX_SLUG = 'default';
 
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
-export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
@@ -78,12 +77,13 @@ export function validateManifest(
       parsed = parseToml(input) as Record<string, unknown>;
     } catch (err) {
       if (err instanceof TomlError) {
+        const tomlError = err as Error & { line?: unknown; column?: unknown };
         issues.push({
           path: '<toml>',
-          message: `Syntax error: ${err.message}`,
+          message: `Syntax error: ${tomlError.message}`,
           severity: 'error',
-          line: typeof (err as any).line === 'number' ? (err as any).line : undefined,
-          column: typeof (err as any).column === 'number' ? (err as any).column : undefined,
+          line: typeof tomlError.line === 'number' ? tomlError.line : undefined,
+          column: typeof tomlError.column === 'number' ? tomlError.column : undefined,
         });
       } else {
         issues.push({
@@ -221,16 +221,11 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
     issues.push({
       path: 'kortix_version',
       message: 'kortix_version is required — add `kortix_version = 1` at the top.',
-      severity: 'warning',
+      severity: 'error',
     });
     return;
   }
-  const version =
-    typeof versionRaw === 'number'
-      ? versionRaw
-      : typeof versionRaw === 'string'
-        ? Number(versionRaw)
-        : NaN;
+  const version = typeof versionRaw === 'number' ? versionRaw : NaN;
   if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
     issues.push({
       path: 'kortix_version',
@@ -535,12 +530,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         severity: 'error',
       });
     }
-    const prompt =
-      typeof entry.prompt === 'string'
-        ? entry.prompt
-        : typeof entry.prompt_template === 'string'
-          ? entry.prompt_template
-          : '';
+    const prompt = typeof entry.prompt === 'string' ? entry.prompt : '';
     if (!prompt.trim()) {
       issues.push({
         path: `${where}.prompt`,
@@ -549,20 +539,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
       });
     }
     if (type === 'cron') {
-      const cron =
-        typeof entry.cron === 'string'
-          ? entry.cron.trim()
-          : typeof entry.schedule === 'string'
-            ? entry.schedule.trim()
-            : '';
+      const cron = typeof entry.cron === 'string' ? entry.cron.trim() : '';
       // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
       // instead of a recurring `cron` expression — exactly one must be set.
-      const runAt =
-        typeof entry.run_at === 'string'
-          ? entry.run_at.trim()
-          : typeof entry.runAt === 'string'
-            ? entry.runAt.trim()
-            : '';
+      const runAt = typeof entry.run_at === 'string' ? entry.run_at.trim() : '';
       if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
@@ -586,12 +566,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         });
       }
     } else if (type === 'webhook') {
-      const secret =
-        typeof entry.secret_env === 'string'
-          ? entry.secret_env.trim()
-          : typeof entry.secretEnv === 'string'
-            ? entry.secretEnv.trim()
-            : '';
+      const secret = typeof entry.secret_env === 'string' ? entry.secret_env.trim() : '';
       if (!secret) {
         issues.push({
           path: `${where}.secret_env`,
@@ -612,6 +587,17 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         message: 'enabled must be a boolean.',
         severity: 'error',
       });
+    }
+    if (entry.session_mode !== undefined) {
+      const sessionMode =
+        typeof entry.session_mode === 'string' ? entry.session_mode.trim() : '';
+      if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
+        issues.push({
+          path: `${where}.session_mode`,
+          message: 'session_mode must be "fresh" or "reuse".',
+          severity: 'error',
+        });
+      }
     }
   });
 }
@@ -676,7 +662,7 @@ function validateConnectors(
         severity: 'error',
       });
     }
-    if (provider === 'http' && typeof entry.base_url !== 'string' && typeof entry.baseUrl !== 'string') {
+    if (provider === 'http' && typeof entry.base_url !== 'string') {
       issues.push({
         path: `${where}.base_url`,
         message: 'http connectors require `base_url`.',
@@ -697,16 +683,10 @@ function validateConnectors(
             severity: 'error',
           });
         }
-        if (t !== 'none' && typeof auth.secret !== 'string') {
+        if (auth.secret !== undefined) {
           issues.push({
             path: `${where}.auth.secret`,
-            message: 'auth.secret (project-secret name) is required when type ≠ "none".',
-            severity: 'error',
-          });
-        } else if (typeof auth.secret === 'string' && !ENV_NAME_RE.test(auth.secret.trim())) {
-          issues.push({
-            path: `${where}.auth.secret`,
-            message: `"${auth.secret}" is not a valid env-var / secret name.`,
+            message: 'auth.secret is no longer supported; set connector credentials in the platform.',
             severity: 'error',
           });
         }

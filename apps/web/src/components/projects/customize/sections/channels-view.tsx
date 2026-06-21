@@ -1,55 +1,51 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  Check,
-  ChevronDown,
-  Copy,
-  ExternalLink,
-  Loader2,
-  Slack,
-  X,
-} from 'lucide-react';
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
+  useConnectSlack,
+  useDisconnectSlack,
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
-  useConnectSlack,
-  useDisconnectSlack,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-
+import { cn } from '@/lib/utils';
+import { Check, ChevronDown, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   const loading = loadingInstall || loadingMode;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Slack} title="Channels" />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
           <header className="space-y-1">
-            <h2 className="text-base font-semibold text-foreground">Channels</h2>
-            <p className="text-xs text-muted-foreground">
-              Run this project from chat — connect a Slack workspace and your agent
-              responds in the channels you invite it to.
+            <h2 className="text-foreground text-base font-semibold">Channels</h2>
+            <p className="text-muted-foreground text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
+              )}
             </p>
           </header>
 
           {!projectId ? (
             <InfoBanner tone="neutral">
-              Open a project to manage its Slack connection.
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
+              )}
             </InfoBanner>
           ) : loading ? (
             <Skeleton className="h-32 w-full rounded-2xl" />
@@ -74,13 +70,18 @@ function DisconnectedPanel({
   projectId: string;
   oauthInstallUrl: string | null;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [showByo, setShowByo] = useState(!oauthInstallUrl);
 
   if (!oauthInstallUrl) {
     return (
       <SectionCard
-        title="Bring your own Slack app"
-        description="Self-hosted setups don't have OAuth wired up — paste a manifest and tokens to finish the install. Stored encrypted in this project's secrets."
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4',
+        )}
+        description={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf843645ea',
+        )}
       >
         <SelfInstall projectId={projectId} />
       </SectionCard>
@@ -91,16 +92,19 @@ function DisconnectedPanel({
     <SectionCard flush>
       <div className="flex flex-col items-start gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/40">
+          <span className="border-border/60 bg-muted/40 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border">
             <Slack className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">
-              Add Kortix to your Slack workspace
+            <p className="text-foreground text-sm font-medium">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddKortix0e416aa2',
+              )}
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              One click — approve scopes in Slack and we&apos;ll wire this project
-              to the workspace you choose. Tokens stay encrypted in this project&apos;s secrets.
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOneClick68f102dc',
+              )}
             </p>
           </div>
         </div>
@@ -112,7 +116,9 @@ function DisconnectedPanel({
         >
           <Button size="sm" className="gap-1.5">
             <Slack className="h-3.5 w-3.5" />
-            Add to Slack
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddTo1729c1b6',
+            )}
             <ExternalLink className="h-3 w-3" />
           </Button>
         </a>
@@ -121,26 +127,30 @@ function DisconnectedPanel({
       <button
         type="button"
         onClick={() => setShowByo((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 border-t border-border/60 px-6 py-3 text-left transition-colors hover:bg-muted/30"
+        className="border-border/60 hover:bg-muted/30 flex w-full items-center justify-between gap-3 border-t px-6 py-3 text-left transition-colors"
         aria-expanded={showByo}
       >
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">
-            Bring your own Slack app
+          <p className="text-foreground text-sm font-medium">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBringYourc7326733',
+            )}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            For self-hosted setups or custom-scoped installs.
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextForSelf3fbeca22',
+            )}
           </p>
         </div>
         <ChevronDown
           className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            'text-muted-foreground h-4 w-4 shrink-0 transition-transform',
             showByo && 'rotate-180',
           )}
         />
       </button>
       {showByo && (
-        <div className="border-t border-border/60 px-6 py-5">
+        <div className="border-border/60 border-t px-6 py-5">
           <SelfInstall projectId={projectId} />
         </div>
       )}
@@ -155,6 +165,7 @@ function ConnectedPanel({
   projectId: string;
   installation: SlackInstallation;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const disconnect = useDisconnectSlack();
   const [confirming, setConfirming] = useState(false);
 
@@ -169,11 +180,23 @@ function ConnectedPanel({
         {' · '}Team <code className="font-mono">{installation.workspaceId}</code>
       </InfoBanner>
 
-      <SectionCard title="How to use">
-        <p className="text-sm text-muted-foreground">
-          Invite the bot to any channel and{' '}
-          <code className="font-mono text-xs">@mention</code> it. A session spawns
-          in this project&apos;s sandbox and the agent replies in-thread via the{' '}
+      <SectionCard
+        title={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleHow8e991872',
+        )}
+      >
+        <p className="text-muted-foreground text-sm">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
+          )}{' '}
+          <code className="font-mono text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextMention67ed74a7',
+            )}
+          </code>{' '}
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextItA7139ed4f',
+          )}{' '}
           <code className="font-mono text-xs">slack</code> CLI.
         </p>
       </SectionCard>
@@ -181,8 +204,10 @@ function ConnectedPanel({
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
           <>
-            <span className="text-xs text-muted-foreground">
-              Removes the secrets and stops events for this project.
+            <span className="text-muted-foreground text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRemovesTheb460240b',
+              )}
             </span>
             <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
               Cancel
@@ -197,9 +222,7 @@ function ConnectedPanel({
                 })
               }
             >
-              {disconnect.isPending ? (
-                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              ) : null}
+              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
               Disconnect
             </Button>
           </>
@@ -215,6 +238,7 @@ function ConnectedPanel({
 }
 
 function SelfInstall({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [step, setStep] = useState<1 | 2>(1);
   const [copied, setCopied] = useState(false);
   const [botToken, setBotToken] = useState('');
@@ -247,14 +271,18 @@ function SelfInstall({ projectId }: { projectId: string }) {
   if (step === 1) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Step 1 of 2 — paste the manifest into Slack and install the app.
+        <p className="text-muted-foreground text-sm">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep12c389f4e',
+          )}
         </p>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              App manifest
+            <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAppManifest040b924e',
+              )}
             </span>
             <div className="flex items-center gap-2">
               <Button
@@ -264,11 +292,7 @@ function SelfInstall({ projectId }: { projectId: string }) {
                 disabled={!manifestText}
                 className="h-7 gap-1.5"
               >
-                {copied ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                 {copied ? 'Copied' : 'Copy'}
               </Button>
               <a
@@ -278,13 +302,15 @@ function SelfInstall({ projectId }: { projectId: string }) {
                 className="inline-flex"
               >
                 <Button variant="outline" size="sm" className="h-7 gap-1.5">
-                  Open Slack
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenSlacka088997c',
+                  )}
                   <ExternalLink className="h-3 w-3" />
                 </Button>
               </a>
             </div>
           </div>
-          <pre className="max-h-64 overflow-auto rounded-2xl border border-border bg-muted/30 p-3 text-xs leading-relaxed">
+          <pre className="border-border bg-muted/30 max-h-64 overflow-auto rounded-2xl border p-3 text-xs leading-relaxed">
             {manifest.isLoading
               ? 'Loading manifest...'
               : manifest.error
@@ -300,7 +326,7 @@ function SelfInstall({ projectId }: { projectId: string }) {
             'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
           ].map((line, i) => (
             <li key={i} className="flex gap-3">
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+              <span className="bg-muted text-muted-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
                 {i + 1}
               </span>
               <span className="text-muted-foreground">{line}</span>
@@ -310,7 +336,9 @@ function SelfInstall({ projectId }: { projectId: string }) {
 
         <div className="flex justify-end">
           <Button size="sm" onClick={() => setStep(2)}>
-            Next: paste tokens
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextNextPasted1384aaa',
+            )}
           </Button>
         </div>
       </div>
@@ -319,29 +347,45 @@ function SelfInstall({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Step 2 of 2 — paste the two values. They&apos;re stored in{' '}
-        <code className="font-mono text-xs">project_secrets</code> alongside any
-        other secrets the project uses.
+      <p className="text-muted-foreground text-sm">
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep22f8cae80',
+        )}{' '}
+        <code className="font-mono text-xs">project_secrets</code>{' '}
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAlongsideAny8e77bd03',
+        )}
       </p>
 
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="bot-token">Bot User OAuth Token</Label>
+          <Label htmlFor="bot-token">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBotUser193e4bfd',
+            )}
+          </Label>
           <Input
             id="bot-token"
-            placeholder="xoxb-…"
+            placeholder={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrPlaceholderXoxb84fe69f4',
+            )}
             value={botToken}
             onChange={(e) => setBotToken(e.target.value)}
             autoComplete="off"
             spellCheck={false}
           />
-          <p className="text-xs text-muted-foreground">
-            Slack → Your App → OAuth &amp; Permissions → Bot User OAuth Token.
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYouraeeca6ed',
+            )}
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="signing-secret">Signing Secret</Label>
+          <Label htmlFor="signing-secret">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSigningSecret2762795e',
+            )}
+          </Label>
           <Input
             id="signing-secret"
             placeholder="••••••••"
@@ -351,15 +395,16 @@ function SelfInstall({ projectId }: { projectId: string }) {
             autoComplete="off"
             spellCheck={false}
           />
-          <p className="text-xs text-muted-foreground">
-            Slack → Your App → Basic Information → App Credentials → Signing
-            Secret.
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYour09fe8ce8',
+            )}
           </p>
         </div>
       </div>
 
       {error ? (
-        <p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="border-destructive/30 bg-destructive/5 text-destructive rounded-2xl border px-3 py-2 text-xs">
           {error}
         </p>
       ) : null}
@@ -373,10 +418,10 @@ function SelfInstall({ projectId }: { projectId: string }) {
           onClick={submit}
           disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
         >
-          {connect.isPending ? (
-            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-          ) : null}
-          Connect Slack
+          {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextConnectSlack5ad82c3b',
+          )}
         </Button>
       </div>
     </div>

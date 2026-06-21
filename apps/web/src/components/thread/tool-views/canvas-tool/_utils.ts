@@ -78,7 +78,7 @@ export function extractCanvasData(
 
   // Extract from tool call arguments
   const args = toolCall.arguments || {};
-  
+
   let canvasName = args.name || args.canvas_name || null;
   let canvasPath = args.canvas_path || null;
   let background = args.background || '#1a1a1a';
@@ -142,7 +142,7 @@ export function parseCanvasFilePath(filePath: string | null): {
   if (!filePath) {
     return { isValid: false, canvasName: null };
   }
-  
+
   // Match patterns like:
   // - canvases/[name].kanvax
   // - /workspace/canvases/[name].kanvax
@@ -154,7 +154,6 @@ export function parseCanvasFilePath(filePath: string | null): {
       canvasName: match[1]
     };
   }
-  
+
   return { isValid: false, canvasName: null };
 }
-

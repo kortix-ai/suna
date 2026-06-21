@@ -3,21 +3,16 @@ import {
   reopenComputeForSandbox,
 } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
-import { PROJECT_ACTIONS, authorize } from '../../iam';
-import { deriveRequestContext } from '../../iam/cache';
 import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import {
   ProjectRow,
-  isPlainObject,
-  normalizeString,
-  readBody,
   serializeSessionSandboxConfig,
 } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -26,155 +21,6 @@ import {
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
-
-export const syncOpencodeSessionsHandler = async (c: any) => {
-  const userId = c.get('userId') as string;
-  const body = await readBody(c);
-  const rawEntries = body.entries;
-  if (!Array.isArray(rawEntries)) {
-    return c.json({ error: 'entries must be an array' }, 400);
-  }
-
-  type OpenCodeSessionSnapshot = {
-    id: string;
-    title: string | null;
-    parent_id: string | null;
-    project_id: string | null;
-    created_at: number | null;
-    updated_at: number | null;
-    archived_at: number | null;
-  };
-
-  const desiredByOcId = new Map<string, OpenCodeSessionSnapshot>();
-  for (const raw of rawEntries) {
-    if (!isPlainObject(raw)) continue;
-    const opencodeSessionId = normalizeString(
-      raw.opencode_session_id ?? raw.opencodeSessionId,
-    );
-    if (!opencodeSessionId) continue;
-    const title = normalizeString(raw.title);
-    const parentId = normalizeString(
-      raw.parent_id ?? raw.parentID ?? raw.parentId,
-    );
-    const projectId = normalizeString(
-      raw.project_id ?? raw.projectID ?? raw.projectId,
-    );
-    const createdAt =
-      typeof raw.created_at === 'number'
-        ? raw.created_at
-        : typeof raw.createdAt === 'number'
-          ? raw.createdAt
-          : null;
-    const updatedAt =
-      typeof raw.updated_at === 'number'
-        ? raw.updated_at
-        : typeof raw.updatedAt === 'number'
-          ? raw.updatedAt
-          : null;
-    const archivedAt =
-      typeof raw.archived_at === 'number'
-        ? raw.archived_at
-        : typeof raw.archivedAt === 'number'
-          ? raw.archivedAt
-          : null;
-    desiredByOcId.set(opencodeSessionId, {
-      id: opencodeSessionId,
-      title,
-      parent_id: parentId,
-      project_id: projectId,
-      created_at: createdAt,
-      updated_at: updatedAt,
-      archived_at: archivedAt,
-    });
-  }
-  if (desiredByOcId.size === 0) return c.json({ updated: 0 });
-
-  const ids = Array.from(desiredByOcId.keys());
-  const rootByOcId = new Map<string, string>();
-  const resolveRoot = (id: string): string => {
-    const cached = rootByOcId.get(id);
-    if (cached) return cached;
-    const seen = new Set<string>();
-    let current = id;
-    while (true) {
-      if (seen.has(current)) break;
-      seen.add(current);
-      const parent = desiredByOcId.get(current)?.parent_id;
-      if (!parent) break;
-      if (!desiredByOcId.has(parent)) {
-        current = parent;
-        break;
-      }
-      current = parent;
-    }
-    for (const seenId of seen) rootByOcId.set(seenId, current);
-    return current;
-  };
-  for (const id of ids) resolveRoot(id);
-  const rootIds = Array.from(new Set(Array.from(rootByOcId.values())));
-  const rows = await db
-    .select()
-    .from(projectSessions)
-    .where(
-      inArray(
-        projectSessions.opencodeSessionId,
-        Array.from(new Set([...ids, ...rootIds])),
-      ),
-    );
-  if (rows.length === 0) return c.json({ updated: 0 });
-
-  // Per-row IAM authz. The engine answers from a per-request cache
-  // (see iam/cache.ts) so duplicate (account, project) probes collapse
-  // to a single SQL pass — N rows over K distinct projects = K
-  // authorize() calls, not N.
-  const requestCtx = deriveRequestContext(c);
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-
-  let updated = 0;
-  for (const row of rows) {
-    const verdict = await authorize(
-      userId,
-      row.accountId,
-      PROJECT_ACTIONS.PROJECT_WRITE,
-      { type: 'project', id: row.projectId },
-      actingTokenId,
-      requestCtx,
-    );
-    if (!verdict.allowed) continue;
-    const ocId = row.opencodeSessionId;
-    if (!ocId) continue;
-    const rootId = rootByOcId.get(ocId) ?? ocId;
-    const current =
-      typeof row.metadata?.name === 'string' ? row.metadata.name : null;
-    const rootEntry = desiredByOcId.get(ocId);
-    // Title mirror is MONOTONIC: a row that's in the snapshot but still has a
-    // null title (OpenCode hasn't auto-titled it yet) must NOT erase a name we
-    // already wrote. `?? current` keeps the existing name until a real title
-    // arrives — fixes "title generated then vanishes on a later list snapshot".
-    const desired = (rootEntry ? rootEntry.title : current) ?? current;
-    const scopedSessions = Array.from(desiredByOcId.values())
-      .filter((entry) => (rootByOcId.get(entry.id) ?? entry.id) === rootId)
-      .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
-    const currentSessions = JSON.stringify(
-      row.metadata?.opencode_sessions ?? [],
-    );
-    const nextSessions = JSON.stringify(scopedSessions);
-    if (desired === current && currentSessions === nextSessions) continue;
-    const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
-    if (desired) nextMetadata.name = desired;
-    // no `else delete` — never wipe an existing name because a snapshot lacked a title.
-    nextMetadata.opencode_sessions = scopedSessions;
-    await db
-      .update(projectSessions)
-      .set({ metadata: nextMetadata, updatedAt: new Date() })
-      .where(eq(projectSessions.sessionId, row.sessionId));
-    updated += 1;
-  }
-  return c.json({ updated });
-};
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
@@ -215,7 +61,14 @@ export async function resumeStoppedSandbox(row: {
   // proceeds to start the VM. Concurrent polls see `active` and just return it.
   const [won] = await db
     .update(sessionSandboxes)
-    .set({ status: 'active', updatedAt: now })
+    .set({
+      status: 'active',
+      updatedAt: now,
+      // Explicit resume clears the reaper's idle-quiesce marker so the resumed
+      // box is treated normally again (passive traffic can keep it warm until
+      // the next idle window).
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'idleQuiesced' - 'idleQuiescedAt'`,
+    })
     .where(
       and(
         eq(sessionSandboxes.sandboxId, row.sandboxId),
@@ -595,6 +448,13 @@ export async function openSession(args: {
       row.provider,
     )
   ) {
+    // A box the reaper idle-stopped with `needsReprovision` cannot be safely
+    // resumed in place (Platinum's stop→resume wedges the guest — the CH
+    // resume-freeze). Replace it with a fresh box on open instead. This is an
+    // EXPLICIT open, so it clears the idle state by re-provisioning.
+    if ((row.metadata as Record<string, unknown> | null)?.needsReprovision) {
+      return replaceStaleRuntimeOnOpen(loaded, visible, projectId, sessionId, row, 'reprovision_on_open');
+    }
     await resumeStoppedSandbox({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,

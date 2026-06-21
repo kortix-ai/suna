@@ -41,7 +41,7 @@ jobs:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      api: ${{ steps.filter.outputs.api }}
+      api: ${{ steps.outputs.outputs.api }}
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
     steps:
@@ -58,6 +58,9 @@ jobs:
               - 'apps/sandbox/**'
               - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
               - 'packages/**'
+              - 'infra/k8s/charts/kortix-api/**'
+              - 'infra/k8s/envs/dev/**'
+              - '.github/workflows/deploy-dev.yml'
               - 'supabase/migrations/**' # run by ensureSchema at boot — must redeploy to apply
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -76,11 +79,17 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'VERSION'
+      - name: Normalize outputs
+        id: outputs
+        run: |
+          api="${{ steps.filter.outputs.api }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then api=true; fi
+          echo "api=$api" >> "$GITHUB_OUTPUT"
       - name: Summary
         run: |
           {
             echo "### Changes detected"
-            echo "- API: ${{ steps.filter.outputs.api }}"
+            echo "- API: ${{ steps.outputs.outputs.api }}"
             echo "- Frontend: ${{ steps.filter.outputs.frontend }}"
             echo "- CLI: ${{ steps.filter.outputs.cli }}"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -178,6 +187,63 @@ jobs:
             "kortix/kortix-api:dev-latest"
           echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
+  # ── Supply chain: scan, SBOM, sign, provenance (SLSA) on the immutable tag ──
+  supply-chain:
+    name: Scan + SBOM + sign API image
+    needs: [detect-changes, tag-api]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    env:
+      IMAGE: ${{ needs.tag-api.outputs.image }}
+    steps:
+      - name: Trivy image scan (fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.digest.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign + attest SBOM (keyless)
+        env:
+          REF: ${{ steps.digest.outputs.ref }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$REF"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+      - name: SLSA build provenance
+        uses: actions/attest-build-provenance@7668571508540a607bdfd90a87a560489fe372eb # v2.1.0
+        with:
+          subject-name: docker.io/kortix/kortix-api
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+
   # ── Deploy the freshly-built image to the dev EKS cluster (GitOps) ──────────
   # Bump infra/k8s/envs/dev/values.yaml to the immutable :dev-<sha8> tag and
   # commit it to main ([skip ci] so this push doesn't re-trigger the workflow);
@@ -273,6 +339,39 @@ jobs:
           done
           echo "::error::dev Deployment did not roll out to :${TAG} within ~15m (Argo lag, stuck, or pods never Ready)."
           exit 1
+
+      - name: Debug failed dev rollout
+        if: failure() && steps.guard.outputs.exists == 'true'
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set +e
+          echo "::group::Deployment"
+          kubectl -n "$NAMESPACE" get deploy "$APP" -o wide
+          kubectl -n "$NAMESPACE" describe deploy "$APP"
+          echo "::endgroup::"
+
+          echo "::group::ReplicaSets"
+          kubectl -n "$NAMESPACE" get rs -l app.kubernetes.io/name="$APP" -o wide
+          kubectl -n "$NAMESPACE" describe rs -l app.kubernetes.io/name="$APP"
+          echo "::endgroup::"
+
+          echo "::group::Pods"
+          kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o wide
+          kubectl -n "$NAMESPACE" describe pods -l app.kubernetes.io/name="$APP"
+          echo "::endgroup::"
+
+          echo "::group::Recent events"
+          kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -120
+          echo "::endgroup::"
+
+          echo "::group::New image pod logs"
+          for pod in $(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name="$APP" -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.containers[0].image}{"\n"}{end}' | awk -v tag=":${TAG}" '$2 ~ tag {print $1}'); do
+            echo "### $pod"
+            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=200
+            kubectl -n "$NAMESPACE" logs "$pod" --all-containers --previous --tail=200
+          done
+          echo "::endgroup::"
 
       - name: Summary
         if: always() && steps.guard.outputs.exists == 'true'

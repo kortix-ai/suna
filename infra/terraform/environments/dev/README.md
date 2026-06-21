@@ -58,22 +58,6 @@ the port the image binds (it's also injected as `PORT`).
 GHCR image, add `repositoryCredentials` to the task def or mirror into ECR. Pin
 to a tag/sha for reproducible deploys.
 
-## Lightsail → ECS cutover (the current dev-api box)
-
-`dev-api.kortix.com` is **currently the Lightsail box** (`modules/api-host`,
-kept in-tree as legacy; this env no longer references it). This stack does
-**not** touch the box until you apply. Staged cutover (no downtime):
-
-1. `terraform apply` here — brings up the ECS stack. ACM validation adds a
-   temporary CNAME in Cloudflare; the `dev-api` record is **not** flipped yet.
-2. Smoke-test the ALB directly:
-   `curl -H 'Host: dev-api.kortix.com' https://<alb_dns_name>/v1/health`.
-3. The `module.dns` `dev-api` CNAME → ALB **replaces** the old A → box. Apply,
-   watch traffic shift.
-4. Once green, decommission the box and retire the SSH-based `deploy-dev.yml`
-   API deploy in favour of an ECS deploy (`aws ecs update-service
-   --force-new-deployment`, or bump `api_image` + apply).
-
 > ⚠️ `terraform apply` here creates real, billable AWS resources (ALB + NAT +
 > Fargate). Nothing applies automatically.
 

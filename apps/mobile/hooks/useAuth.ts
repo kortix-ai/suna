@@ -8,6 +8,7 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
+import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 
 let useTracking: any = null;
 try {
@@ -24,7 +25,7 @@ import type {
   PasswordResetRequest,
   AuthError,
 } from '@/lib/utils/auth-types';
-import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
 
 // Complete any pending auth sessions (required for web)
@@ -53,9 +54,9 @@ function redactAuthUrl(url: string): string {
 function isExpectedAuthCallbackUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'kortix:' &&
-      parsed.hostname === 'auth' &&
-      parsed.pathname === '/callback';
+    return (
+      parsed.protocol === 'kortix:' && parsed.hostname === 'auth' && parsed.pathname === '/callback'
+    );
   } catch {
     return false;
   }
@@ -69,8 +70,7 @@ function extractAuthCallbackState(url: string): string | null {
     if (parsed.hash.startsWith('#')) {
       return new URLSearchParams(parsed.hash.slice(1)).get('state');
     }
-  } catch {
-  }
+  } catch {}
   return null;
 }
 
@@ -78,7 +78,10 @@ function extractAuthCallbackState(url: string): string | null {
  * Extract tokens from OAuth callback URL
  * Handles both hash fragment (#) and query params (?)
  */
-function extractTokensFromUrl(url: string): { access_token: string | null; refresh_token: string | null } {
+function extractTokensFromUrl(url: string): {
+  access_token: string | null;
+  refresh_token: string | null;
+} {
   try {
     // Try hash fragment first (Supabase implicit flow)
     const hashIndex = url.indexOf('#');
@@ -91,7 +94,7 @@ function extractTokensFromUrl(url: string): { access_token: string | null; refre
         return { access_token, refresh_token };
       }
     }
-    
+
     // Try query params (PKCE flow or custom redirect)
     const { params } = QueryParams.getQueryParams(url);
     return {
@@ -109,36 +112,24 @@ function extractTokensFromUrl(url: string): { access_token: string | null; refre
  */
 async function createSessionFromUrl(url: string) {
   const { access_token, refresh_token } = extractTokensFromUrl(url);
-  
+
   if (!access_token || !refresh_token) {
     log.log('⚠️ No tokens found in URL');
     return null;
   }
-  
+
   log.log('✅ Tokens extracted, setting session...');
   const { data, error } = await supabase.auth.setSession({
     access_token,
     refresh_token,
   });
-  
+
   if (error) {
     log.error('❌ Failed to set session:', error);
     throw error;
   }
-  
-  return data.session;
-}
 
-/**
- * Mobile is login-only. A user whose account was created moments ago (as part of
- * the OAuth flow that just completed) must not be allowed in — registration only
- * happens on the web. Password sign-up is web-only and magic link uses
- * `shouldCreateUser: false`, so OAuth is the only path that can mint a new user.
- */
-function isNewlyCreatedUser(user: User): boolean {
-  const created = user.created_at ? new Date(user.created_at).getTime() : 0;
-  if (!created) return false;
-  return Date.now() - created < 30_000;
+  return data.session;
 }
 
 export function useAuth() {
@@ -158,41 +149,44 @@ export function useAuth() {
   const initializedUserIdRef = useRef<string | null>(null);
   const initializedCanTrackRef = useRef<boolean | null>(null);
   const oauthSessionActiveRef = useRef<boolean>(false);
+  const mobileOAuthAdmissionPendingRef = useRef<boolean>(false);
 
   // Initialize session once on mount
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
-      if (!mounted) return;
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session } }: { data: { session: Session | null } }) => {
+        if (!mounted) return;
 
-      // Update logger with user ID
-      setLoggerUserId(session?.user?.id || null);
+        // Update logger with user ID
+        setLoggerUserId(session?.user?.id || null);
 
-      setAuthState({
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-        isAuthenticated: !!session,
-      });
+        setAuthState({
+          user: session?.user ?? null,
+          session,
+          isLoading: false,
+          isAuthenticated: !!session,
+        });
 
-      if (session?.user && shouldUseRevenueCat()) {
-        // Only initialize if user changed or canTrack changed from false to true
-        const shouldInitialize = 
-          initializedUserIdRef.current !== session.user.id ||
-          (canTrack && initializedCanTrackRef.current !== canTrack);
+        if (session?.user && shouldUseRevenueCat()) {
+          // Only initialize if user changed or canTrack changed from false to true
+          const shouldInitialize =
+            initializedUserIdRef.current !== session.user.id ||
+            (canTrack && initializedCanTrackRef.current !== canTrack);
 
-        if (shouldInitialize) {
-        try {
-          await initializeRevenueCat(session.user.id, session.user.email, canTrack);
-            initializedUserIdRef.current = session.user.id;
-            initializedCanTrackRef.current = canTrack;
-        } catch (error) {
-          log.warn('⚠️ Failed to initialize RevenueCat:', error);
+          if (shouldInitialize) {
+            try {
+              await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+              initializedUserIdRef.current = session.user.id;
+              initializedCanTrackRef.current = canTrack;
+            } catch (error) {
+              log.warn('⚠️ Failed to initialize RevenueCat:', error);
+            }
           }
         }
-      }
-    });
+      });
 
     return () => {
       mounted = false;
@@ -201,7 +195,9 @@ export function useAuth() {
 
   // Handle auth state changes and canTrack changes
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
         // Update logger with user ID
         setLoggerUserId(session?.user?.id || null);
@@ -211,16 +207,19 @@ export function useAuth() {
           log.log('🔄 Auth state changed:', _event);
         }
 
-        // Login-only gate: a brand-new account signing in here came from OAuth
-        // (the only remaining create path on mobile). Reject it before it's ever
-        // marked authenticated so no redirect fires, and tell the user to
-        // register on the web. The signOut below emits SIGNED_OUT which keeps
-        // the state cleared.
-        if (_event === 'SIGNED_IN' && session?.user && isNewlyCreatedUser(session.user)) {
-          log.warn('🚫 New OAuth user on mobile — signing out (register on the web)');
-          setOauthRejection('No account found. Create an account on the web first.');
-          await supabase.auth.signOut().catch(() => {});
-          return;
+        // Login-only gate for direct mobile OAuth sign-up only. Password and magic
+        // link sign-in, plus session hydration, must not consult the new-user window
+        // — a user who registered separately on the web can sign in immediately.
+        if (_event === 'SIGNED_IN' && mobileOAuthAdmissionPendingRef.current) {
+          mobileOAuthAdmissionPendingRef.current = false;
+          if (!(await admitMobileOAuthSession(session))) {
+            log.warn(
+              '🚫 New direct OAuth user on mobile — signing out (register on the web first)'
+            );
+            setOauthRejection('No account found. Create an account on the web first.');
+            await supabase.auth.signOut().catch(() => {});
+            return;
+          }
         }
 
         setAuthState({
@@ -232,18 +231,18 @@ export function useAuth() {
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
           // Only initialize if user changed or canTrack changed from false to true
-          const shouldInitialize = 
+          const shouldInitialize =
             initializedUserIdRef.current !== session.user.id ||
             (canTrack && initializedCanTrackRef.current !== canTrack);
 
           if (shouldInitialize) {
-          try {
-            await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+            try {
+              await initializeRevenueCat(session.user.id, session.user.email, canTrack);
               initializedUserIdRef.current = session.user.id;
               initializedCanTrackRef.current = canTrack;
-          } catch (error) {
-            log.warn('⚠️ Failed to initialize RevenueCat:', error);
-          }
+            } catch (error) {
+              log.warn('⚠️ Failed to initialize RevenueCat:', error);
+            }
           }
         } else if (_event === 'SIGNED_OUT') {
           initializedUserIdRef.current = null;
@@ -262,7 +261,10 @@ export function useAuth() {
     }
 
     // If RevenueCat was initialized with canTrack=false but now it's true, update it
-    if (initializedUserIdRef.current === authState.user.id && initializedCanTrackRef.current !== canTrack) {
+    if (
+      initializedUserIdRef.current === authState.user.id &&
+      initializedCanTrackRef.current !== canTrack
+    ) {
       initializeRevenueCat(authState.user.id, authState.user.email, canTrack)
         .then(() => {
           initializedCanTrackRef.current = canTrack;
@@ -273,40 +275,43 @@ export function useAuth() {
     }
   }, [canTrack, authState.user]); // Update when canTrack or user changes
 
-  const signIn = useCallback(async ({ email, password }: SignInCredentials) => {
-    try {
-      log.log('🎯 Sign in attempt:', email);
-      setError(null);
-      setAuthState((prev) => ({ ...prev, isLoading: true }));
+  const signIn = useCallback(
+    async ({ email, password }: SignInCredentials) => {
+      try {
+        log.log('🎯 Sign in attempt:', email);
+        setError(null);
+        setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      if (signInError) {
-        log.error('❌ Sign in error:', signInError.message);
-        setError({ message: signInError.message, status: signInError.status });
+        if (signInError) {
+          log.error('❌ Sign in error:', signInError.message);
+          setError({ message: signInError.message, status: signInError.status });
+          setAuthState((prev) => ({ ...prev, isLoading: false }));
+          return { success: false, error: signInError };
+        }
+
+        log.log('✅ Sign in successful:', data.user?.email);
+
+        // Immediately invalidate React Query cache to fetch fresh account state
+        log.log('🔄 Invalidating cache to fetch fresh account state');
+        queryClient.invalidateQueries({ queryKey: ['account-state'] });
+
         setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: false, error: signInError };
+        return { success: true, data };
+      } catch (err: any) {
+        log.error('❌ Sign in exception:', err);
+        const error = { message: err.message || 'An unexpected error occurred' };
+        setError(error);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        return { success: false, error };
       }
-
-      log.log('✅ Sign in successful:', data.user?.email);
-      
-      // Immediately invalidate React Query cache to fetch fresh account state
-      log.log('🔄 Invalidating cache to fetch fresh account state');
-      queryClient.invalidateQueries({ queryKey: ['account-state'] });
-      
-      setAuthState((prev) => ({ ...prev, isLoading: false }));
-      return { success: true, data };
-    } catch (err: any) {
-      log.error('❌ Sign in exception:', err);
-      const error = { message: err.message || 'An unexpected error occurred' };
-      setError(error);
-      setAuthState((prev) => ({ ...prev, isLoading: false }));
-      return { success: false, error };
-    }
-  }, [queryClient]);
+    },
+    [queryClient]
+  );
 
   const signUp = useCallback(
     async ({ email, password, fullName }: SignUpCredentials) => {
@@ -383,7 +388,7 @@ export function useAuth() {
 
   /**
    * Sign in with OAuth provider (Supabase standard implementation)
-   * 
+   *
    * Uses Supabase's OAuth flow:
    * - iOS Google: WebBrowser.openAuthSessionAsync (ASWebAuthenticationSession)
    * - Android Google: Linking.openURL (external browser) + deep link callback
@@ -402,7 +407,8 @@ export function useAuth() {
       // ========================================
       if (provider === 'apple' && Platform.OS === 'ios') {
         log.log('🍎 Using native Apple Authentication for iOS');
-        
+        mobileOAuthAdmissionPendingRef.current = true;
+
         try {
           const credential = await AppleAuthentication.signInAsync({
             requestedScopes: [
@@ -420,6 +426,7 @@ export function useAuth() {
           });
 
           if (appleError) {
+            mobileOAuthAdmissionPendingRef.current = false;
             log.error('❌ Apple sign in error:', appleError.message);
             setError({ message: appleError.message });
             setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -427,14 +434,15 @@ export function useAuth() {
           }
 
           log.log('✅ Apple sign in successful');
-          
+
           // Immediately invalidate React Query cache to fetch fresh account state
           log.log('🔄 Invalidating cache to fetch fresh account state');
           queryClient.invalidateQueries({ queryKey: ['account-state'] });
-          
+
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: true, data };
         } catch (appleErr: any) {
+          mobileOAuthAdmissionPendingRef.current = false;
           if (appleErr.code === 'ERR_REQUEST_CANCELED') {
             log.log('⚠️ Apple sign in cancelled by user');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -451,7 +459,7 @@ export function useAuth() {
       // - Android Google: External browser via Linking.openURL (reliable callback handling)
       // - Other providers: Platform-specific browser handling
       // ========================================
-      
+
       const redirectTo = await createAuthCallbackRedirect();
 
       log.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
@@ -481,17 +489,21 @@ export function useAuth() {
       }
 
       log.log('🌐 Opening OAuth URL:', data.url);
-      
+
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
         log.warn('⚠️ OAuth session already in progress');
         setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: false, error: { message: 'An authentication session is already in progress' } };
+        return {
+          success: false,
+          error: { message: 'An authentication session is already in progress' },
+        };
       }
 
       try {
         oauthSessionActiveRef.current = true;
-        
+        mobileOAuthAdmissionPendingRef.current = true;
+
         // ========================================
         // ANDROID: Use external browser via Linking.openURL
         // Chrome Custom Tabs don't properly handle custom URL scheme redirects
@@ -499,18 +511,18 @@ export function useAuth() {
         // ========================================
         if (Platform.OS === 'android') {
           log.log('🤖 Android: Opening OAuth in external browser');
-          
+
           // Open OAuth URL in external browser
           await Linking.openURL(data.url);
-          
+
           // Wait for the app to return from browser and check for session
           // The deep link handler in _layout.tsx will process the callback
           log.log('⏳ Android: Waiting for OAuth callback...');
-          
+
           return new Promise((resolve) => {
             let hasResolved = false;
             let appStateSubscription: any = null;
-            
+
             // Timeout after 2 minutes
             const timeout = setTimeout(() => {
               if (!hasResolved) {
@@ -519,50 +531,58 @@ export function useAuth() {
                 log.log('❌ Android: OAuth timeout');
                 setAuthState((prev) => ({ ...prev, isLoading: false }));
                 oauthSessionActiveRef.current = false;
-                resolve({ success: false, error: { message: 'Authentication timed out. Please try again.' } });
+                mobileOAuthAdmissionPendingRef.current = false;
+                resolve({
+                  success: false,
+                  error: { message: 'Authentication timed out. Please try again.' },
+                });
               }
             }, 120000);
-            
+
             const handleAppStateChange = async (nextAppState: AppStateStatus) => {
               log.log('📱 Android: AppState changed to:', nextAppState);
-              
+
               // When app comes back to foreground
               if (nextAppState === 'active' && !hasResolved) {
                 // Give deep link handler time to process the callback
-                await new Promise(r => setTimeout(r, 1500));
-                
+                await new Promise((r) => setTimeout(r, 1500));
+
                 // Check if session was set by deep link handler in _layout.tsx
-                const { data: { session } } = await supabase.auth.getSession();
-                
+                const {
+                  data: { session },
+                } = await supabase.auth.getSession();
+
                 if (session) {
                   hasResolved = true;
                   clearTimeout(timeout);
                   appStateSubscription?.remove();
                   log.log('✅ Android: Session found - OAuth successful:', session.user?.email);
-                  
+
                   // Immediately invalidate React Query cache to fetch fresh account state
                   log.log('🔄 Invalidating cache to fetch fresh account state');
                   queryClient.invalidateQueries({ queryKey: ['account-state'] });
-                  
+
                   setAuthState((prev) => ({ ...prev, isLoading: false }));
                   oauthSessionActiveRef.current = false;
                   resolve({ success: true, data: session });
                 } else {
                   // User might have returned without completing auth
                   // Wait a bit more in case deep link is still processing
-                  await new Promise(r => setTimeout(r, 1000));
-                  const { data: { session: retrySession } } = await supabase.auth.getSession();
-                  
+                  await new Promise((r) => setTimeout(r, 1000));
+                  const {
+                    data: { session: retrySession },
+                  } = await supabase.auth.getSession();
+
                   if (retrySession) {
                     hasResolved = true;
                     clearTimeout(timeout);
                     appStateSubscription?.remove();
                     log.log('✅ Android: Session found on retry - OAuth successful');
-                    
+
                     // Immediately invalidate React Query cache to fetch fresh account state
                     log.log('🔄 Invalidating cache to fetch fresh account state');
                     queryClient.invalidateQueries({ queryKey: ['account-state'] });
-                    
+
                     setAuthState((prev) => ({ ...prev, isLoading: false }));
                     oauthSessionActiveRef.current = false;
                     resolve({ success: true, data: retrySession });
@@ -573,33 +593,33 @@ export function useAuth() {
                     log.log('❌ Android: No session after returning from browser');
                     setAuthState((prev) => ({ ...prev, isLoading: false }));
                     oauthSessionActiveRef.current = false;
-                    resolve({ success: false, error: { message: 'Authentication was not completed. Please try again.' } });
+                    mobileOAuthAdmissionPendingRef.current = false;
+                    resolve({
+                      success: false,
+                      error: { message: 'Authentication was not completed. Please try again.' },
+                    });
                   }
                 }
               }
             };
-            
+
             appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
           });
         }
-        
+
         // ========================================
         // iOS: Use WebBrowser.openAuthSessionAsync
         // ASWebAuthenticationSession works perfectly with custom URL schemes
         // ========================================
         log.log('🍎 iOS: Opening OAuth in auth session');
-        
+
         await WebBrowser.maybeCompleteAuthSession();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const result = await WebBrowser.openAuthSessionAsync(
-          data.url,
-          redirectTo,
-          {
-            preferEphemeralSession: true,
-            showInRecents: true,
-          }
-        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, {
+          preferEphemeralSession: true,
+          showInRecents: true,
+        });
 
         log.log('📊 WebBrowser result type:', result.type);
 
@@ -607,60 +627,66 @@ export function useAuth() {
           const url = result.url;
           log.log('✅ OAuth redirect received:', redactAuthUrl(url));
 
-          if (!isExpectedAuthCallbackUrl(url) || !(await consumeAuthCallbackState(extractAuthCallbackState(url)))) {
-            const stateError = { message: 'Invalid authentication callback. Please try signing in again.' };
+          if (
+            !isExpectedAuthCallbackUrl(url) ||
+            !(await consumeAuthCallbackState(extractAuthCallbackState(url)))
+          ) {
+            const stateError = {
+              message: 'Invalid authentication callback. Please try signing in again.',
+            };
             log.warn('⚠️ OAuth callback rejected: invalid redirect or state');
             setError(stateError);
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             oauthSessionActiveRef.current = false;
+            mobileOAuthAdmissionPendingRef.current = false;
             return { success: false, error: stateError };
           }
-          
+
           // Check for access_token in URL fragment (implicit flow)
           if (url.includes('access_token=')) {
             log.log('✅ Access token found in URL, setting session');
-            
+
             // Extract tokens from URL fragment
             const hashParams = new URLSearchParams(url.split('#')[1] || '');
             const accessToken = hashParams.get('access_token');
             const refreshToken = hashParams.get('refresh_token');
-            
+
             if (accessToken && refreshToken) {
               // Set the session with the tokens
-              const { data: sessionData, error: sessionError } = 
-                await supabase.auth.setSession({
-                  access_token: accessToken,
-                  refresh_token: refreshToken,
-                });
+              const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
 
               if (sessionError) {
                 log.error('❌ Session error:', sessionError.message);
                 setError({ message: sessionError.message });
                 setAuthState((prev) => ({ ...prev, isLoading: false }));
                 oauthSessionActiveRef.current = false;
+                mobileOAuthAdmissionPendingRef.current = false;
                 return { success: false, error: sessionError };
               }
 
               log.log('✅ OAuth sign in successful');
-              
+
               // Immediately invalidate React Query cache to fetch fresh account state
               log.log('🔄 Invalidating cache to fetch fresh account state');
               queryClient.invalidateQueries({ queryKey: ['account-state'] });
-              
+
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
               return { success: true, data: sessionData };
             }
           }
-          
+
           // Check for code in query params (PKCE flow)
           const urlObj = new URL(url);
           const code = urlObj.searchParams.get('code');
-          
+
           if (code) {
             log.log('✅ OAuth code received, exchanging for session');
-            
-            const { data: sessionData, error: sessionError } = 
+
+            const { data: sessionData, error: sessionError } =
               await supabase.auth.exchangeCodeForSession(code);
 
             if (sessionError) {
@@ -668,15 +694,16 @@ export function useAuth() {
               setError({ message: sessionError.message });
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
+              mobileOAuthAdmissionPendingRef.current = false;
               return { success: false, error: sessionError };
             }
 
             log.log('✅ OAuth sign in successful');
-            
+
             // Immediately invalidate React Query cache to fetch fresh account state
             log.log('🔄 Invalidating cache to fetch fresh account state');
             queryClient.invalidateQueries({ queryKey: ['account-state'] });
-            
+
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             oauthSessionActiveRef.current = false;
             return { success: true, data: sessionData };
@@ -685,35 +712,39 @@ export function useAuth() {
           log.log('⚠️ OAuth cancelled/dismissed by user');
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           oauthSessionActiveRef.current = false;
+          mobileOAuthAdmissionPendingRef.current = false;
           return { success: false, error: { message: 'Sign in cancelled' } };
         }
 
         log.log('❌ OAuth failed - unexpected result type:', result.type);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         oauthSessionActiveRef.current = false;
+        mobileOAuthAdmissionPendingRef.current = false;
         return { success: false, error: { message: 'Authentication failed' } };
       } catch (sessionErr: any) {
         // Reset session flag on error within try block
         oauthSessionActiveRef.current = false;
+        mobileOAuthAdmissionPendingRef.current = false;
         throw sessionErr;
       }
     } catch (err: any) {
       log.error('❌ OAuth exception:', err);
-      
+
       // Reset session flag on error
       oauthSessionActiveRef.current = false;
-      
+      mobileOAuthAdmissionPendingRef.current = false;
+
       // Handle specific WebBrowser auth session error
       if (err.message?.includes('invalid state') || err.message?.includes('redirect handler')) {
         log.warn('⚠️ WebBrowser auth session conflict, attempting cleanup...');
         try {
           await WebBrowser.maybeCompleteAuthSession();
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 200));
         } catch (cleanupError) {
           log.warn('⚠️ Cleanup attempt failed:', cleanupError);
         }
       }
-      
+
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -726,57 +757,56 @@ export function useAuth() {
    * Auto-creates account if it doesn't exist
    * Uses kortix:// deep link - works when app is installed
    */
-  const signInWithMagicLink = useCallback(async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
-    try {
-      log.log('🎯 Magic link sign in request:', email);
-      setError(null);
-      setAuthState((prev) => ({ ...prev, isLoading: true }));
+  const signInWithMagicLink = useCallback(
+    async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
+      try {
+        log.log('🎯 Magic link sign in request:', email);
+        setError(null);
 
-      const emailRedirectTo = await createAuthCallbackRedirect({
-        terms_accepted: acceptedTerms ? 'true' : undefined,
-      });
-
-      log.log('📱 Magic link redirect URL:', emailRedirectTo);
-
-      const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
-        options: {
-          emailRedirectTo,
-          shouldCreateUser: false, // Login only — new accounts are created on the web
-        },
-      });
-
-      if (magicLinkError) {
-        log.error('❌ Supabase rejected redirect URL:', {
-          message: magicLinkError.message,
-          status: magicLinkError.status,
-          attemptedUrl: emailRedirectTo,
-          hint: 'Make sure kortix://auth/callback is in Supabase Dashboard → Auth → Redirect URLs',
+        const emailRedirectTo = await createAuthCallbackRedirect({
+          terms_accepted: acceptedTerms ? 'true' : undefined,
         });
+
+        log.log('📱 Magic link redirect URL:', emailRedirectTo);
+
+        const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
+          email: email.trim().toLowerCase(),
+          options: {
+            emailRedirectTo,
+            shouldCreateUser: false, // Login only — new accounts are created on the web
+          },
+        });
+
+        if (magicLinkError) {
+          log.error('❌ Supabase rejected redirect URL:', {
+            message: magicLinkError.message,
+            status: magicLinkError.status,
+            attemptedUrl: emailRedirectTo,
+            hint: 'Make sure kortix://auth/callback is in Supabase Dashboard → Auth → Redirect URLs',
+          });
+        }
+
+        if (magicLinkError) {
+          log.error('❌ Magic link error:', magicLinkError.message);
+          setError({ message: magicLinkError.message });
+          return { success: false, error: magicLinkError };
+        }
+
+        // If user accepted terms and magic link was sent, update metadata after successful auth
+        // Note: This will be handled when the user clicks the magic link and signs in
+        // For now, we store it in the signup data which will be saved when account is created
+
+        log.log('✅ Magic link email sent');
+        return { success: true };
+      } catch (err: any) {
+        log.error('❌ Magic link exception:', err);
+        const error = { message: err.message || 'An unexpected error occurred' };
+        setError(error);
+        return { success: false, error };
       }
-
-      if (magicLinkError) {
-        log.error('❌ Magic link error:', magicLinkError.message);
-        setError({ message: magicLinkError.message });
-        setAuthState((prev) => ({ ...prev, isLoading: false }));
-        return { success: false, error: magicLinkError };
-      }
-
-      // If user accepted terms and magic link was sent, update metadata after successful auth
-      // Note: This will be handled when the user clicks the magic link and signs in
-      // For now, we store it in the signup data which will be saved when account is created
-
-      log.log('✅ Magic link email sent');
-      setAuthState((prev) => ({ ...prev, isLoading: false }));
-      return { success: true };
-    } catch (err: any) {
-      log.error('❌ Magic link exception:', err);
-      const error = { message: err.message || 'An unexpected error occurred' };
-      setError(error);
-      setAuthState((prev) => ({ ...prev, isLoading: false }));
-      return { success: false, error };
-    }
-  }, []);
+    },
+    []
+  );
 
   /**
    * Request password reset email
@@ -806,7 +836,6 @@ export function useAuth() {
     }
   }, []);
 
-
   const updatePassword = useCallback(async (newPassword: string) => {
     try {
       log.log('🎯 Password update attempt');
@@ -834,16 +863,16 @@ export function useAuth() {
 
   /**
    * Sign out - Best practice implementation
-   * 
+   *
    * 1. Attempts global sign out (server + local)
    * 2. Falls back to local-only if global fails
    * 3. Manually clears all Supabase keys from AsyncStorage as failsafe
    * 4. Forces React state update
    * 5. Preserves user preferences (theme, language, onboarding cache)
-   * 
+   *
    * Note: Onboarding status is stored in user_metadata (backend), so it persists
    * across devices and logins. AsyncStorage cache is kept for faster checks.
-   * 
+   *
    * Always succeeds from UI perspective to prevent stuck states
    */
   const signOut = useCallback(async () => {
@@ -854,7 +883,7 @@ export function useAuth() {
     }
 
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    
+
     /**
      * Helper to clear all Supabase-related keys from AsyncStorage
      * This is a nuclear option that ensures complete sign out
@@ -862,12 +891,11 @@ export function useAuth() {
     const clearSupabaseStorage = async () => {
       try {
         const allKeys = await AsyncStorage.getAllKeys();
-        const supabaseKeys = allKeys.filter((key: string) => 
-          key.includes('supabase') || 
-          key.includes('sb-') || 
-          key.includes('-auth-token')
+        const supabaseKeys = allKeys.filter(
+          (key: string) =>
+            key.includes('supabase') || key.includes('sb-') || key.includes('-auth-token')
         );
-        
+
         if (supabaseKeys.length > 0) {
           log.log(`🗑️  Removing ${supabaseKeys.length} Supabase keys from storage`);
           await AsyncStorage.multiRemove(supabaseKeys);
@@ -879,20 +907,21 @@ export function useAuth() {
 
     const clearAppData = async () => {
       try {
-        const allKeys = await AsyncStorage.getAllKeys()
-        const appDataKeys = allKeys.filter((key: string) => 
-          key.startsWith('@') && 
-          !key.includes('language') &&
-          !key.includes('theme') &&
-          !key.includes('onboarding_completed')
+        const allKeys = await AsyncStorage.getAllKeys();
+        const appDataKeys = allKeys.filter(
+          (key: string) =>
+            key.startsWith('@') &&
+            !key.includes('language') &&
+            !key.includes('theme') &&
+            !key.includes('onboarding_completed')
         );
-        
+
         log.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
-        
+
         if (appDataKeys.length > 0) {
           await AsyncStorage.multiRemove(appDataKeys);
         }
-        
+
         log.log('✅ All app data cleared (except preferences and onboarding status)');
       } catch (error) {
         log.warn('⚠️  Failed to clear app data:', error);
@@ -913,7 +942,7 @@ export function useAuth() {
     try {
       log.log('🎯 Sign out initiated');
       setIsSigningOut(true);
-      
+
       if (shouldUseRevenueCat()) {
         try {
           const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
@@ -928,9 +957,9 @@ export function useAuth() {
 
       if (globalError) {
         log.warn('⚠️  Global sign out failed:', globalError.message);
-        
+
         const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
-        
+
         if (localError) {
           log.warn('⚠️  Local sign out also failed:', localError.message);
         }
@@ -949,7 +978,6 @@ export function useAuth() {
       log.log('✅ Sign out completed successfully - all data cleared');
       setIsSigningOut(false);
       return { success: true };
-
     } catch (error: any) {
       log.error('❌ Sign out exception:', error);
 

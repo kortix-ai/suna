@@ -20,8 +20,8 @@ import {
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useProjectPresence } from '@/hooks/platform/use-project-presence';
+import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
@@ -31,7 +31,6 @@ import {
   restartProjectSession,
   sessionStartKey,
   startProjectSession,
-  syncOpencodeSessionData,
 } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
@@ -63,6 +62,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
  * The URL stays at `/projects/<id>/sessions/<sessionId>` the whole time.
  */
 export default function ProjectSessionPage() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
@@ -167,7 +167,7 @@ export default function ProjectSessionPage() {
         switchingRef.current = false;
       }
     })();
-  }, [sandbox, projectId, activeInstanceId]);
+  }, [sandbox, projectId, activeInstanceId, start?.stage, start?.opencode_session_id]);
 
   // Belt-and-suspenders: clear the legacy cookie once on mount for this route.
   // setActiveInstanceCookie already force-clears on any /projects path and is the
@@ -271,15 +271,21 @@ export default function ProjectSessionPage() {
     if (gated) {
       return (
         <InlineSessionError
-          title="Subscribe to start sessions"
-          message="Your team isn't on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate."
+          title={tI18nHardcoded.raw(
+            'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrTitlebf9bba8c',
+          )}
+          message={tI18nHardcoded.raw(
+            'autoAppAppProjectsIdSessionsSessionIdPageJsxAttrMessage93bc2779',
+          )}
           action={
             <Button
               onClick={() =>
                 openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId })
               }
             >
-              Subscribe to Team plan
+              {tI18nHardcoded.raw(
+                'autoAppAppProjectsIdSessionsSessionIdPageJsxTextSubscribe40f5b8e1',
+              )}
             </Button>
           }
         />
@@ -565,33 +571,6 @@ function ActiveSessionChat({
     projectId,
     sessionId,
   ]);
-
-  // Mirror the sandbox-local OpenCode session tree into our cloud DB. The
-  // project session row stays the branch/sandbox root; this metadata lets the
-  // project sidebar and session list render sub-sessions without guessing.
-  // Must run BEFORE any conditional return — otherwise the runtimeError branch
-  // below would skip this hook and trigger "rendered fewer hooks than expected".
-  const activeSession = opencodeSessions.find((s) => s.id === chatSessionId);
-  const activeTitle = activeSession?.title || null;
-  useEffect(() => {
-    if (opencodeSessions.length === 0) return;
-    void syncOpencodeSessionData(
-      opencodeSessions.map((session) => ({
-        opencode_session_id: session.id,
-        title: session.title || null,
-        parent_id: session.parentID ?? null,
-        project_id: session.projectID ?? null,
-        created_at: session.time?.created ?? null,
-        updated_at: session.time?.updated ?? null,
-        archived_at: session.time?.archived ?? null,
-      })),
-    )
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        queryClient.invalidateQueries({ queryKey: ['project-session', projectId, sessionId] });
-      })
-      .catch(() => {});
-  }, [opencodeSessions, activeTitle, queryClient, projectId, sessionId]);
 
   // (The home-composer first-message handoff is migrated synchronously during
   // render above — see promptMigratedForRef — so SessionChat's consumer always

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 /**
  * Connectors — a master/detail surface (no management dialogs). The left rail
  * lists every connected app + a pinned "Global rules" entry + "Add app"; the
@@ -219,6 +220,7 @@ export function ConnectorsView({ projectId }: { projectId: string }) {
 }
 
 function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-connectors', projectId];
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
@@ -267,8 +269,16 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   if (isForbidden) {
     return (
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
-        <InfoBanner tone="warning" icon={ShieldAlert} title="Admin access required">
-          Only project managers can manage connectors.
+        <InfoBanner
+          tone="warning"
+          icon={ShieldAlert}
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleAdminb2173330',
+          )}
+        >
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOnlyProject51266c7d',
+          )}
         </InfoBanner>
       </div>
     );
@@ -278,7 +288,9 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
       <div className="mx-auto w-full max-w-2xl px-6 py-10">
         <InfoBanner
           tone="destructive"
-          title="Failed to load connectors"
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleFailed959d47d5',
+          )}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
               Retry
@@ -331,8 +343,12 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
           <div className="grid h-full place-items-center p-10">
             <EmptyState
               icon={Plug}
-              title="Pick a connector"
-              description="Choose one on the left, or add an app."
+              title={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2',
+              )}
+              description={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e',
+              )}
             />
           </div>
         )}
@@ -351,6 +367,7 @@ function statusDot(c: AdminConnector): string {
 
 /** Forward-facing status as a calm badge (the detail header). */
 function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   if (connector.status === 'error')
     return (
       <Badge variant="destructive" size="sm">
@@ -360,13 +377,17 @@ function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   if (!connector.authSecret)
     return (
       <Badge variant="outline" size="sm">
-        No auth needed
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558',
+        )}
       </Badge>
     );
   if (!connector.secretSet)
     return (
       <Badge variant="warning" size="sm">
-        Needs setup
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49',
+        )}
       </Badge>
     );
   return (
@@ -397,12 +418,15 @@ function SaveBar({
   onReset?: () => void;
   label?: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   if (!dirty) return null;
   return (
     <div className="border-border/60 mt-5 flex items-center justify-end gap-2 border-t pt-4">
       <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs">
         <span className="size-1.5 rounded-full bg-amber-500" />
-        Unsaved changes
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextUnsavedChanges4682b870',
+        )}
       </span>
       {onReset && (
         <Button size="sm" variant="ghost" onClick={onReset} disabled={saving}>
@@ -430,6 +454,7 @@ function ConnectorRail({
   onSync: () => void;
   syncing: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const filtered = q.trim()
     ? connectors.filter((c) => c.slug.toLowerCase().includes(q.trim().toLowerCase()))
@@ -451,14 +476,18 @@ function ConnectorRail({
           onClick={() => onSelect({ kind: 'add' })}
         >
           <Plus className="h-4 w-4" />
-          Add app
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa',
+          )}
         </Button>
         <div className="relative">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search connectors…"
+            placeholder={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc',
+            )}
             className="h-8 pl-8 text-sm"
           />
         </div>
@@ -467,15 +496,21 @@ function ConnectorRail({
       <div className="min-h-0 flex-1 [scrollbar-width:none] overflow-y-auto p-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <RailItem
           icon={ShieldCheck}
-          title="Global rules"
-          subtitle="Apply across all apps"
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleGlobal199e18a1',
+          )}
+          subtitle={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleApply5b0aa03c',
+          )}
           active={selection.kind === 'global'}
           onClick={() => onSelect({ kind: 'global' })}
         />
 
         {connectors.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No connectors yet. Add an app to start.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoConnectors6d11de92',
+            )}
           </p>
         ) : (
           <>
@@ -491,13 +526,21 @@ function ConnectorRail({
                 onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
               />
             ))}
-            {needsSetup.length > 0 && <RailGroupLabel>Needs setup</RailGroupLabel>}
+            {needsSetup.length > 0 && (
+              <RailGroupLabel>
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49',
+                )}
+              </RailGroupLabel>
+            )}
             {needsSetup.map((c) => (
               <RailItem
                 key={c.slug}
                 appIcon={PROVIDER_ICON[c.provider] ?? Plug}
                 title={c.name || c.slug}
-                subtitle="Not connected"
+                subtitle={tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleNot1feeff2e',
+                )}
                 dot={statusDot(c)}
                 active={isSel(c.slug)}
                 onClick={() => onSelect({ kind: 'connector', slug: c.slug })}
@@ -505,7 +548,10 @@ function ConnectorRail({
             ))}
             {filtered.length === 0 && (
               <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                No match for “{q}”.
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoMatchf1f9a197',
+                )}
+                {q}”.
               </p>
             )}
           </>
@@ -525,7 +571,9 @@ function ConnectorRail({
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          Sync from kortix.toml
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSyncFromb820661f',
+          )}
         </Button>
       </div>
     </nav>
@@ -598,6 +646,7 @@ function ConnectorDetail({
   onChanged: () => void;
   onRemoved: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const Icon = PROVIDER_ICON[connector.provider] ?? Plug;
   const isPipedream = connector.provider === 'pipedream';
   const connected = connector.secretSet;
@@ -661,7 +710,9 @@ function ConnectorDetail({
                 variant="ghost"
                 className="h-9 w-9"
                 disabled={rename.isPending}
-                aria-label="Save name"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabela08f6c74',
+                )}
               >
                 {rename.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -749,8 +800,12 @@ function ConnectorDetail({
 
         <SectionCard
           tone="destructive"
-          title="Remove connector"
-          description="Deletes it from kortix.toml. Stored profiles and permission rules are dropped."
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleRemove74be1411',
+          )}
+          description={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionDeletes0a130396',
+          )}
           action={
             <Button
               size="sm"
@@ -771,11 +826,18 @@ function ConnectorDetail({
         title={`Remove ${displayName}?`}
         description={
           <>
-            This removes <code className="font-mono">{connector.slug}</code> from kortix.toml and
-            drops its stored profile and permission rules. This can’t be undone.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextThisRemoves82d0b969',
+            )}
+            <code className="font-mono">{connector.slug}</code>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextFromKortixeb47b479',
+            )}
           </>
         }
-        confirmLabel="Remove connector"
+        confirmLabel={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrConfirmLabelRemoved2120640',
+        )}
         confirmVariant="destructive"
         confirmIcon={<Trash2 className="h-4 w-4" />}
         isPending={remove.isPending}
@@ -812,6 +874,7 @@ function ProfileSection({
   connector: AdminConnector;
   onChanged: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
@@ -862,7 +925,9 @@ function ProfileSection({
   return (
     <SectionCard
       title="Profile"
-      description="The account this connector signs in with, and who may use it."
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionThe33be3829',
+      )}
     >
       <RadioGroup
         value={credential}
@@ -871,18 +936,32 @@ function ProfileSection({
       >
         <ShareOption
           value="shared"
-          label="One shared profile"
-          desc="Connect the app once — every session uses that same account."
+          label={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
+          )}
+          desc={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
+          )}
         />
         <ShareOption
           value="per_user"
-          label="Each member brings their own profile"
-          desc="Every member links their own account the first time they use it (BYO)."
+          label={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
+          )}
+          desc={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
+          )}
         />
       </RadioGroup>
 
       {modeChanged && (
-        <InfoBanner tone="warning" title="This changes how members sign in" className="mt-3">
+        <InfoBanner
+          tone="warning"
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleThis580eabca',
+          )}
+          className="mt-3"
+        >
           {credential === 'per_user'
             ? 'The shared profile stops being used — each member will be asked to connect their own.'
             : 'Each member’s personal profile stops being used — connect one shared profile after saving.'}
@@ -891,7 +970,11 @@ function ProfileSection({
 
       {credential === 'shared' && (
         <div className="mt-4 space-y-1.5">
-          <Label className="text-muted-foreground text-xs">Who can use it</Label>
+          <Label className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
+            )}
+          </Label>
           <SharingPicker
             projectId={projectId}
             showHeading={false}
@@ -918,7 +1001,9 @@ function ProfileSection({
         disabled={credential === 'shared' && access === 'members' && memberIds.length === 0}
         onSave={() => save.mutate()}
         onReset={reset}
-        label="Save profile"
+        label={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave5ba72522',
+        )}
       />
     </SectionCard>
   );
@@ -976,6 +1061,7 @@ function ConnectionSection({
   connector: AdminConnector;
   onChanged: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const configQuery = useQuery({
     queryKey: ['connector-config', projectId, connector.slug],
@@ -1016,12 +1102,16 @@ function ConnectionSection({
   return (
     <SectionCard
       title="Connection"
-      description="How Kortix reaches this connector — the same settings used when it was added."
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionHowa31daf50',
+      )}
     >
       {configQuery.isError ? (
         <InfoBanner
           tone="destructive"
-          title="Couldn’t load connection"
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCouldn277b73a0',
+          )}
           action={
             <Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>
               Retry
@@ -1045,7 +1135,9 @@ function ConnectionSection({
             disabled={!connectionValid(draft)}
             onSave={() => save.mutate()}
             onReset={reset}
-            label="Save connection"
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave8c6f945f',
+            )}
           />
         </div>
       )}
@@ -1168,6 +1260,7 @@ function PermissionsSection({
   projectId: string;
   connector: AdminConnector;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const tools = connector.actions;
   const toolPaths = useMemo(() => new Set(tools.map((t) => t.path)), [tools]);
@@ -1288,7 +1381,9 @@ function PermissionsSection({
   return (
     <SectionCard
       title="Permissions"
-      description="What the agent may do with this app — Allow, Ask first, or Block. Default follows global rules & risk."
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionWhat4e375237',
+      )}
       action={
         tools.length > 6 ? (
           <div className="relative w-48">
@@ -1296,7 +1391,9 @@ function PermissionsSection({
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter tools…"
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderFiltere5f64efb',
+              )}
               className="h-8 pl-8 text-sm"
             />
           </div>
@@ -1305,8 +1402,15 @@ function PermissionsSection({
     >
       <div className="space-y-4">
         {tools.length === 0 ? (
-          <InfoBanner tone="neutral" title="No tools yet">
-            Connect the profile, then Sync to pull this app’s tools.
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNo0e439be9',
+            )}
+          >
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextConnectThec56fd30b',
+            )}
           </InfoBanner>
         ) : (
           <div className="border-border/60 overflow-hidden rounded-2xl border">
@@ -1317,7 +1421,9 @@ function PermissionsSection({
                   allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false
                 }
                 onCheckedChange={toggleAllFiltered}
-                aria-label="Select all tools"
+                aria-label={tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabel924a321f',
+                )}
                 className="size-3.5"
               />
               {selected.size > 0 ? (
@@ -1325,7 +1431,11 @@ function PermissionsSection({
                   <span className="text-foreground text-xs font-medium">
                     {selected.size} selected
                   </span>
-                  <span className="text-muted-foreground text-xs">· set to</span>
+                  <span className="text-muted-foreground text-xs">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetToff934ec7',
+                    )}
+                  </span>
                   {POLICY_CHOICES.map((c) => (
                     <button
                       key={c.value}
@@ -1351,8 +1461,10 @@ function PermissionsSection({
                 </>
               ) : (
                 <span className="text-muted-foreground text-xs">
-                  {filtered.length} {filtered.length === 1 ? 'tool' : 'tools'} · tap a permission to
-                  change it
+                  {filtered.length} {filtered.length === 1 ? 'tool' : 'tools'}{' '}
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTapA9c38f324',
+                  )}
                 </span>
               )}
             </div>
@@ -1402,7 +1514,10 @@ function PermissionsSection({
                           )}
                           title={`From pattern rule: ${ruled.match}`}
                         >
-                          {POLICY_LABEL[ruled.action].label} · rule
+                          {POLICY_LABEL[ruled.action].label}{' '}
+                          {tI18nHardcoded.raw(
+                            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextRulebbcba279',
+                          )}
                         </span>
                       )}
                       <ChevronRight
@@ -1445,7 +1560,10 @@ function PermissionsSection({
               })}
               {filtered.length === 0 && (
                 <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                  No tools match “{search}”.
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoTools69d22076',
+                  )}
+                  {search}”.
                 </p>
               )}
             </div>
@@ -1466,22 +1584,42 @@ function PermissionsSection({
                   showRules && 'rotate-90',
                 )}
               />
-              Pattern rules
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPatternRules6a07e5a7',
+              )}
               {rules.length > 0 && (
                 <Badge variant="secondary" size="sm">
                   {rules.length}
                 </Badge>
               )}
               <span className="text-muted-foreground ml-auto text-xs font-normal">
-                cover many tools at once
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCoverMany170203ce',
+                )}
               </span>
             </button>
             {showRules && (
               <div className="border-border/60 space-y-2 border-t px-3 py-3">
                 <p className="text-muted-foreground text-xs">
-                  Match by glob (<code className="bg-muted rounded px-1 font-mono">send_*</code>) or
-                  regex (<code className="bg-muted rounded px-1 font-mono">/^delete_.+/</code>).
-                  Per-tool choices above win.
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMatchBy60561318',
+                  )}
+                  <code className="bg-muted rounded px-1 font-mono">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSend0110e0d9',
+                    )}
+                  </code>
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOrRegexf5a26a27',
+                  )}
+                  <code className="bg-muted rounded px-1 font-mono">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextDelete37c77402',
+                    )}
+                  </code>
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPerTool4d0d7e9f',
+                  )}
                 </p>
                 {rules.map((r) => (
                   <div key={r.id} className="flex items-center gap-2">
@@ -1492,7 +1630,9 @@ function PermissionsSection({
                           rs.map((x) => (x.id === r.id ? { ...x, match: e.target.value } : x)),
                         )
                       }
-                      placeholder="send_*  or  /^delete_.+/"
+                      placeholder={tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSend3b0a4ee1',
+                      )}
                       className="h-8 flex-1 font-mono text-xs"
                     />
                     <Select
@@ -1523,7 +1663,9 @@ function PermissionsSection({
                       variant="ghost"
                       className="hover:text-destructive h-8 w-8 shrink-0"
                       onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
-                      aria-label="Remove rule"
+                      aria-label={tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrAriaLabeld2296c34',
+                      )}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -1541,7 +1683,9 @@ function PermissionsSection({
                   }
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Add rule
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddRule873a093f',
+                  )}
                 </Button>
               </div>
             )}
@@ -1554,7 +1698,9 @@ function PermissionsSection({
         saving={save.isPending}
         onSave={() => save.mutate()}
         onReset={reset}
-        label="Save permissions"
+        label={tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSave783950c7',
+        )}
       />
     </SectionCard>
   );
@@ -1563,14 +1709,21 @@ function PermissionsSection({
 // ─── Global rules ────────────────────────────────────────────────────────────
 
 function GlobalRulesPanel({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-7">
       <div className="mb-6 flex items-start gap-3.5">
         <EntityAvatar icon={ShieldCheck} size="lg" />
         <div>
-          <h2 className="text-foreground text-lg font-semibold">Global rules</h2>
+          <h2 className="text-foreground text-lg font-semibold">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextGlobalRules436bcada',
+            )}
+          </h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Permissions that apply across every connector. These override each app’s own rules.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextPermissionsThat70379f46',
+            )}
           </p>
         </div>
       </div>
@@ -1606,13 +1759,18 @@ function ConnectorSetupFields({
   value: ConnectorSetup;
   onChange: (s: ConnectorSetup) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const isShared = value.credential === 'shared';
   return (
     <div className="space-y-5">
       <div className="space-y-2">
         <div className="space-y-0.5">
           <Label>Profile</Label>
-          <p className="text-muted-foreground text-xs">The account this connector signs in with.</p>
+          <p className="text-muted-foreground text-xs">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextTheAccount7df6646c',
+            )}
+          </p>
         </div>
         <RadioGroup
           value={value.credential}
@@ -1628,22 +1786,36 @@ function ConnectorSetupFields({
         >
           <ShareOption
             value="shared"
-            label="One shared profile"
-            desc="Connect the app once — every session uses that same account."
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelOnec565aa8b',
+            )}
+            desc={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescConnect5c9357c5',
+            )}
           />
           <ShareOption
             value="per_user"
-            label="Each member brings their own profile"
-            desc="Every member links their own account the first time they use it (BYO)."
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelEache6c3d706',
+            )}
+            desc={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescEvery9811ed05',
+            )}
           />
         </RadioGroup>
       </div>
       {isShared && (
         <div className="space-y-2">
           <div className="space-y-0.5">
-            <Label>Who can use it</Label>
+            <Label>
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
+              )}
+            </Label>
             <p className="text-muted-foreground text-xs">
-              Members allowed to run tools with the shared profile.
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMembersAllowede220ec02',
+              )}
             </p>
           </div>
           <SharingPicker
@@ -1673,17 +1845,28 @@ function AddAppPanel({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-7">
       <div className="mb-5">
-        <h2 className="text-foreground text-lg font-semibold">Add a connector</h2>
+        <h2 className="text-foreground text-lg font-semibold">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddA02e6aec7',
+          )}
+        </h2>
         <p className="text-muted-foreground mt-0.5 text-sm">
-          One-click connect a popular app, or add a custom API.
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOneClicke48f34c9',
+          )}
         </p>
       </div>
       <Tabs defaultValue="apps">
         <TabsList>
-          <TabsTrigger value="apps">Easy connect</TabsTrigger>
+          <TabsTrigger value="apps">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
+            )}
+          </TabsTrigger>
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
         <TabsContent value="apps" className="mt-4">
@@ -1705,6 +1888,7 @@ function AppCatalogue({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const appsQuery = useInfiniteQuery({
     queryKey: ['easy-connect-apps', projectId, q],
@@ -1726,14 +1910,23 @@ function AppCatalogue({
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search apps — Gmail, Slack, Stripe, Notion…"
+          placeholder={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch9d26aaaa',
+          )}
           className="h-10 pl-9"
         />
       </div>
       <div className="max-h-[62vh] overflow-y-auto py-4">
         {notConfigured ? (
-          <InfoBanner tone="neutral" title="Easy connect isn’t configured">
-            Easy-connect apps need the Connect provider configured.
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleEasy58e9c7b1',
+            )}
+          >
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
+            )}
           </InfoBanner>
         ) : appsQuery.isLoading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -1744,7 +1937,9 @@ function AppCatalogue({
         ) : apps.length === 0 ? (
           <EmptyState
             icon={Search}
-            title="No apps found"
+            title={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleNof8067eda',
+            )}
             description={q ? `Nothing matches "${q}".` : 'Try a search.'}
           />
         ) : (
@@ -1798,7 +1993,9 @@ function AppCatalogue({
                   {appsQuery.isFetchingNextPage ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading…
+                      {tI18nHardcoded.raw(
+                        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18',
+                      )}
                     </>
                   ) : (
                     'Load more'
@@ -1837,6 +2034,7 @@ function ConfigureAppDialog({
   onOpenChange: (o: boolean) => void;
   onAdded: (slug: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [setup, setSetup] = useState<ConnectorSetup>({
     credential: 'per_user',
     access: 'project',
@@ -1868,7 +2066,11 @@ function ConfigureAppDialog({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
           <DialogTitle>Add {app?.name}</DialogTitle>
-          <DialogDescription>Choose the profile, then who can use it.</DialogDescription>
+          <DialogDescription>
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextChooseThe068cf710',
+            )}
+          </DialogDescription>
         </DialogHeader>
         <div className="max-h-[58vh] overflow-y-auto px-6 py-5">
           <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
@@ -1906,6 +2108,7 @@ function ConnectorConfigFields({
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
   const setAuth = (patch: Partial<NonNullable<ConnectorDraftInput['auth']>>) =>
     onChange({ ...draft, auth: { ...draft.auth, ...patch } });
@@ -1946,7 +2149,11 @@ function ConnectorConfigFields({
         </div>
       </div>
       {p === 'openapi' && (
-        <Field label="Spec URL or repo path">
+        <Field
+          label={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
+          )}
+        >
           <Input
             value={draft.spec ?? ''}
             onChange={(e) => set({ spec: e.target.value })}
@@ -1965,7 +2172,11 @@ function ConnectorConfigFields({
               required
             />
           </Field>
-          <Field label="SDL spec (optional)">
+          <Field
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSDL2325b707',
+            )}
+          >
             <Input
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
@@ -2003,7 +2214,11 @@ function ConnectorConfigFields({
       )}
       {p === 'http' && (
         <>
-          <Field label="Base URL">
+          <Field
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelBase744ecef9',
+            )}
+          >
             <Input
               value={draft.baseUrl ?? ''}
               onChange={(e) => set({ baseUrl: e.target.value })}
@@ -2011,7 +2226,11 @@ function ConnectorConfigFields({
               required
             />
           </Field>
-          <Field label="Routes spec (optional)">
+          <Field
+            label={tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelRoutes38b14436',
+            )}
+          >
             <Input
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
@@ -2035,12 +2254,20 @@ function ConnectorConfigFields({
                 <SelectItem value="none">None</SelectItem>
                 <SelectItem value="bearer">Bearer</SelectItem>
                 <SelectItem value="basic">Basic</SelectItem>
-                <SelectItem value="custom">Custom header</SelectItem>
+                <SelectItem value="custom">
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextCustomHeader1e0e82ed',
+                  )}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
           {draft.auth?.type === 'custom' && (
-            <Field label="Header name">
+            <Field
+              label={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelHeader9b2e0143',
+              )}
+            >
               <Input
                 value={draft.auth?.name ?? ''}
                 onChange={(e) => setAuth({ name: e.target.value })}
@@ -2072,6 +2299,7 @@ function CustomConnectorForm({
   projectId: string;
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({
     slug: '',
     provider: 'openapi',
@@ -2099,8 +2327,12 @@ function CustomConnectorForm({
 
   return (
     <SectionCard
-      title="Custom connector"
-      description="Connect any OpenAPI, GraphQL, MCP, or HTTP service."
+      title={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCustom9bbc53a1',
+      )}
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionConnect813a46e7',
+      )}
     >
       <form
         onSubmit={(e) => {
@@ -2112,7 +2344,9 @@ function CustomConnectorForm({
         <ConnectorConfigFields draft={draft} onChange={setDraft} slugEditable />
         {authActive && (
           <InfoBanner tone="info">
-            You’ll set the credential value after adding, from the connector’s page.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626',
+            )}
           </InfoBanner>
         )}
         <div className="border-border/60 border-t pt-4">
@@ -2129,7 +2363,10 @@ function CustomConnectorForm({
             }
             className="gap-1.5"
           >
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Add connector
+            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddConnectore01e22fc',
+            )}
           </Button>
         </div>
       </form>
@@ -2161,6 +2398,7 @@ function SetCredentialDialog({
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [value, setValue] = useState('');
   const save = useMutation({
     mutationFn: () => setConnectorCredential(projectId, connector!.slug, value),
@@ -2181,10 +2419,20 @@ function SetCredentialDialog({
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle>Set credential for {connector?.slug}</DialogTitle>
+          <DialogTitle>
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
+            )}
+            {connector?.slug}
+          </DialogTitle>
           <DialogDescription>
-            Stored encrypted as <code className="font-mono">{connector?.authSecret}</code> and
-            resolved server-side, never injected into the sandbox.
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextStoredEncryptedc3eb374b',
+            )}
+            <code className="font-mono">{connector?.authSecret}</code>{' '}
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e',
+            )}
           </DialogDescription>
         </DialogHeader>
         <form

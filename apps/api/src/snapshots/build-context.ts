@@ -12,7 +12,7 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdtemp, stat } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,10 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile } from './dockerfile-layer';
+import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -79,6 +83,25 @@ export async function stageBuildContext(
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
+  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
+  // dist binary — an edited src/ with a stale dist/ ships old code under a
+  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
+  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
+  // binary). Refuse to stage a context whose binary predates the source.
+  // Env-overridden binary paths skip this — the caller is pinning on purpose.
+  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
+    const binMtime = (await stat(AGENT_BIN_PATH)).mtimeMs;
+    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+    const newestSrc = await newestMtimeMs(srcDir);
+    if (newestSrc > binMtime) {
+      throw new Error(
+        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
+        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
+        `or the image will bake stale code under a fresh content hash`,
+      );
+    }
+  }
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
@@ -96,6 +119,15 @@ export async function stageBuildContext(
     });
     opencodeConfigPath = 'kortix-opencode-config';
   }
+
+  // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
+  // DEFAULT starter with the SAME pinned commit metadata the project seeder
+  // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
+  // root — the daemon then materializes a project repo as local-clone +
+  // delta-fetch instead of a full clone over the (slow) git path. Non-matching
+  // repos (imported, other starters) share no ancestor and transparently fall
+  // back to a full fetch through the same code.
+  await stageScaffoldRepo(contextDir);
 
   const dockerfileName = '.kortix-snapshot.Dockerfile';
   const composedPath = join(contextDir, dockerfileName);
@@ -118,6 +150,17 @@ export async function stageBuildContext(
   }
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
+}
+
+async function newestMtimeMs(dir: string): Promise<number> {
+  const { readdir } = await import('node:fs/promises');
+  let newest = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const s = await stat(join(entry.parentPath ?? (entry as any).path ?? dir, entry.name)).catch(() => null);
+    if (s && s.mtimeMs > newest) newest = s.mtimeMs;
+  }
+  return newest;
 }
 
 async function assertExists(path: string, envVarHint: string): Promise<void> {
@@ -164,4 +207,29 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
     createGzip({ level: 9 }),
     createWriteStream(targetPath),
   );
+}
+
+async function stageScaffoldRepo(contextDir: string): Promise<void> {
+  const work = join(contextDir, '.scaffold-work');
+  await mkdir(work, { recursive: true });
+  const files = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: DEFAULT_STARTER_TEMPLATE_ID });
+  for (const f of files) {
+    const full = join(work, f.path);
+    await mkdir(dirname(full), { recursive: true });
+    await writeFileFs(full, f.content, 'utf8');
+  }
+  const env = {
+    ...process.env, GIT_TERMINAL_PROMPT: '0',
+    GIT_AUTHOR_NAME: 'Kortix', GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+    GIT_COMMITTER_NAME: 'Kortix', GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+  };
+  const g = (args: string[], cwd: string) => execFileAsyncBC('git', args, { cwd, env, timeout: 60_000 });
+  await g(['init', '-b', 'main'], work);
+  await g(['config', 'user.name', 'Kortix'], work);
+  await g(['config', 'user.email', 'noreply@kortix.ai'], work);
+  await g(['add', '-A'], work);
+  await g(['commit', '-m', 'chore: scaffold Kortix project'], work);
+  await g(['clone', '--bare', '-q', work, join(contextDir, 'scaffold.git')], contextDir);
+  await rm(work, { recursive: true, force: true });
 }

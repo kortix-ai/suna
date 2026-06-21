@@ -1,28 +1,5 @@
-// ─── Sentry (Better Stack error tracking) ───────────────────────────────────
-// Must be imported before PostHog so exceptions are captured first.
 import './sentry.client.config';
 import * as Sentry from '@sentry/nextjs';
 
 // Instrument client-side navigations for performance tracing
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
-
-// ─── PostHog (product analytics) ────────────────────────────────────────────
-import posthog from 'posthog-js';
-
-if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-    api_host: '/ingest',
-    ui_host: 'https://eu.posthog.com',
-    defaults: '2025-05-24',
-    // Disable PostHog's built-in exception capture — Sentry handles this now
-    capture_exceptions: false,
-    // Disable debug mode to suppress noisy PostHog retry logs in dev console
-    // (ERR_BLOCKED_BY_CLIENT from ad blockers causes endless retry spam)
-    debug: false,
-    // Use localStorage only to avoid cookie header size issues (431 errors)
-    // This prevents PostHog from storing data in cookies, which can cause headers to exceed size limits
-    persistence: 'localStorage',
-    // Disable session recording to reduce data storage
-    disable_session_recording: true,
-  });
-}

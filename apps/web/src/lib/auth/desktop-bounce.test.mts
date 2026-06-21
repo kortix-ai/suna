@@ -1,8 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   buildDesktopBounceHtml,
   buildDesktopDeepLink,
+  buildMobileBounceHtml,
+  buildMobileDeepLink,
   escapeHtmlAttribute,
   serializeForInlineScript,
 } from './desktop-bounce.ts';
@@ -61,6 +63,42 @@ test('buildDesktopDeepLink drops the desktop flag and re-encodes values', () => 
 
 test('buildDesktopDeepLink with no params yields a bare deep link', () => {
   assert.equal(buildDesktopDeepLink(new URLSearchParams()), 'kortix://auth/callback');
+});
+
+// ── mobile handoff ─────────────────────────────────────────────────────────
+
+test('buildMobileDeepLink keeps the auth code, state, and registration marker', () => {
+  const sp = new URLSearchParams();
+  sp.set('mobile_callback', '1');
+  sp.set('code', 'a b');
+  sp.set('state', 'native-state');
+  sp.set('x', '</script>');
+
+  const link = buildMobileDeepLink(sp);
+
+  assert.equal(
+    link,
+    'kortix://auth/callback?mobile_callback=1&code=a+b&state=native-state&x=%3C%2Fscript%3E',
+  );
+});
+
+test('buildMobileBounceHtml keeps a state-validated callback safe without an automatic custom-scheme redirect', () => {
+  const sp = new URLSearchParams();
+  sp.set('mobile_callback', '1');
+  sp.set('code', 'abc123');
+  sp.set('state', 'native-state');
+  sp.set('x', '</script><script>alert(1)</script>');
+
+  const html = buildMobileBounceHtml(sp);
+
+  assert.equal((html.match(/<script/gi) ?? []).length, 0);
+  assert.equal((html.match(/<\/script>/gi) ?? []).length, 0);
+  assert.ok(
+    html.includes(
+      'kortix://auth/callback?mobile_callback=1&amp;code=abc123&amp;state=native-state',
+    ),
+  );
+  assert.ok(html.includes('Open Kortix'));
 });
 
 // ── buildDesktopBounceHtml: end-to-end, with a malicious payload ────────────

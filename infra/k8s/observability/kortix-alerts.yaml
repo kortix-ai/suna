@@ -1,0 +1,67 @@
+# Kortix workload alerts. These fire off metrics that already exist
+# (kube-state-metrics + node-exporter) — deployment availability, crashloops,
+# OOMs — so they work today without any app-side instrumentation. API-level SLO
+# burn-rate alerts (5xx/latency) need a /metrics endpoint on the API and are
+# tracked separately. The `release: kps` label is what the Prometheus operator
+# selects on.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kortix-workloads
+  namespace: monitoring
+  labels:
+    release: kps
+    app.kubernetes.io/name: kortix-api
+spec:
+  groups:
+    - name: kortix-api.rules
+      rules:
+        - alert: KortixApiDeploymentUnavailable
+          expr: kube_deployment_status_replicas_available{deployment="kortix-api"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "kortix-api has zero available replicas in {{ $labels.namespace }}"
+            description: "The kortix-api Deployment in {{ $labels.namespace }} has had no available replicas for 5m."
+            runbook_url: "https://github.com/kortix-ai/suna/blob/main/docs/runbooks/incident-response.md"
+        - alert: KortixApiDegraded
+          expr: |
+            kube_deployment_status_replicas_available{deployment="kortix-api"}
+              < kube_deployment_spec_replicas{deployment="kortix-api"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "kortix-api degraded in {{ $labels.namespace }}"
+            description: "Available replicas have been below desired for 15m."
+            runbook_url: "https://github.com/kortix-ai/suna/blob/main/docs/runbooks/scaling-procedure.md"
+        - alert: KortixPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace=~"kortix-.*"}[15m]) > 3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+            description: "Container {{ $labels.container }} has restarted more than 3 times in 15m."
+            runbook_url: "https://github.com/kortix-ai/suna/blob/main/docs/runbooks/incident-response.md"
+        - alert: KortixContainerOOMKilled
+          expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace=~"kortix-.*"} > 0
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Container {{ $labels.namespace }}/{{ $labels.pod }} was OOMKilled"
+            description: "Raise the memory limit or investigate a leak."
+            runbook_url: "https://github.com/kortix-ai/suna/blob/main/docs/runbooks/scaling-procedure.md"
+    - name: kortix-platform.rules
+      rules:
+        - alert: KortixPlatformComponentDown
+          expr: kube_deployment_status_replicas_available{namespace="kortix-platform"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Platform component {{ $labels.deployment }} is down"
+            description: "A devops-platform component (console/observability) has no available replicas."
+            runbook_url: "https://github.com/kortix-ai/suna/blob/main/docs/runbooks/incident-response.md"

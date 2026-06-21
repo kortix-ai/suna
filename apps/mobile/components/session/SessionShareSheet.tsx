@@ -13,9 +13,14 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  TouchableOpacity as BottomSheetTouchable,
+} from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,6 +84,9 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
     // Only fetch the member list while the sheet is open — this component is
     // permanently mounted on the project screen (web fetches on dialog open).
     const [open, setOpen] = useState(false);
+    // Pin the Kortix session id when the sheet opens so Save still works if the
+    // parent briefly clears activeProjectSession while this modal is up.
+    const sessionIdRef = useRef<string | null>(null);
 
     const access = useProjectAccess(open ? projectId : null);
     const members = access.data?.members ?? [];
@@ -95,10 +103,21 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
       return [...members].sort((a, b) => Number(sel.has(b.user_id)) - Number(sel.has(a.user_id)));
     }, [members, memberIds]);
 
-    // Own the sheet ref internally so dismiss works regardless of how the
-    // parent's ref is shaped; expose it unchanged to the parent.
     const sheetRef = useRef<BottomSheetModal>(null);
-    useImperativeHandle(ref, () => sheetRef.current!, []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        present: (...args) => sheetRef.current?.present(...args),
+        dismiss: (...args) => sheetRef.current?.dismiss(...args),
+        snapToIndex: (...args) => sheetRef.current?.snapToIndex(...args),
+        snapToPosition: (...args) => sheetRef.current?.snapToPosition(...args),
+        expand: (...args) => sheetRef.current?.expand(...args),
+        collapse: (...args) => sheetRef.current?.collapse(...args),
+        close: (...args) => sheetRef.current?.close(...args),
+        forceClose: (...args) => sheetRef.current?.forceClose(...args),
+      }),
+      [],
+    );
 
     const dismiss = useCallback(() => {
       sheetRef.current?.dismiss();
@@ -106,6 +125,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
 
     // Seed mode/members from the session's current sharing on each open.
     const seedFromSession = useCallback(() => {
+      sessionIdRef.current = session?.session_id ?? null;
       const sharing = session?.sharing;
       if (sharing?.mode === 'members') {
         setMode('members');
@@ -124,13 +144,17 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
 
     const save = useMutation({
       mutationFn: () => {
+        const sessionId = sessionIdRef.current ?? session?.session_id;
+        if (!sessionId) {
+          throw new Error('No session selected. Close and try again.');
+        }
         const intent: SessionSharing =
           mode === 'project'
             ? { mode: 'project' }
             : mode === 'members'
               ? { mode: 'members', memberIds, groupIds }
               : { mode: 'private', ownerId: '' }; // ownerId resolved server-side (web parity)
-        return setProjectSessionSharing(projectId, session!.session_id, intent);
+        return setProjectSessionSharing(projectId, sessionId, intent);
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
@@ -145,10 +169,22 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
 
     const incomplete = mode === 'members' && memberIds.length === 0;
 
+    const handleSave = useCallback(() => {
+      if (save.isPending || incomplete) return;
+      const sessionId = sessionIdRef.current ?? session?.session_id;
+      if (!sessionId) {
+        haptics.warning();
+        Alert.alert('Sharing failed', 'No session selected. Close and try again.');
+        return;
+      }
+      haptics.tap();
+      save.mutate();
+    }, [save, incomplete, session?.session_id]);
+
     const toggleMember = useCallback((userId: string) => {
       haptics.selection();
       setMemberIds((ids) =>
-        ids.includes(userId) ? ids.filter((id) => id !== userId) : [...ids, userId]
+        ids.includes(userId) ? ids.filter((id) => id !== userId) : [...ids, userId],
       );
     }, []);
 
@@ -156,7 +192,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
       (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
       ),
-      []
+      [],
     );
 
     return (
@@ -166,8 +202,6 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         onChange={(index) => setOpen(index >= 0)}
-        // Seed on presentation only (from -1), and re-seed on dismiss so the
-        // next open never flashes the previous open's state for a frame.
         onAnimate={(from, to) => {
           if (from === -1 && to === 0) seedFromSession();
         }}
@@ -183,12 +217,11 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
           height: 5,
           borderRadius: 3,
         }}>
-        {/* Root scrollable (library-integrated): with enableDynamicSizing the
-            sheet sizes to content and caps at the container height, keeping
-            Save reachable on small screens — and a single scrollable means no
-            gesture fight between the sheet pan and an inner list. */}
+        {/* Single scrollable child — required for enableDynamicSizing to size
+            correctly and keep the primary action visible at the bottom. */}
         <BottomSheetScrollView
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingTop: 8,
@@ -220,15 +253,20 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
           {MODE_OPTIONS.map((opt) => {
             const on = mode === opt.mode;
             return (
-              <TouchableOpacity
+              <BottomSheetTouchable
                 key={opt.mode}
                 onPress={() => {
                   haptics.selection();
                   setMode(opt.mode);
                 }}
                 activeOpacity={0.7}
-                className="mb-2 flex-row items-center rounded-2xl px-4 py-3"
                 style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  borderRadius: 16,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  marginBottom: 8,
                   borderWidth: 1,
                   borderColor: on ? theme.primary : border,
                   backgroundColor: on
@@ -238,7 +276,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                     : 'transparent',
                 }}>
                 <Ionicons name={opt.icon} size={19} color={on ? theme.primary : mutedColor} />
-                <View className="ml-3 flex-1">
+                <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text className="font-roobert-medium text-[15px]" style={{ color: fgColor }}>
                     {opt.label}
                   </Text>
@@ -247,7 +285,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                   </Text>
                 </View>
                 {on && <Ionicons name="checkmark" size={18} color={theme.primary} />}
-              </TouchableOpacity>
+              </BottomSheetTouchable>
             );
           })}
 
@@ -267,44 +305,48 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                   No other members in this project yet.
                 </Text>
               ) : (
-                <>
-                  {sortedMembers.map((m) => {
-                    const on = memberIds.includes(m.user_id);
-                    const isViewer = m.user_id === viewerUserId;
-                    return (
-                      <TouchableOpacity
-                        key={m.user_id}
-                        onPress={() => toggleMember(m.user_id)}
-                        activeOpacity={0.7}
-                        className="flex-row items-center px-4 py-3"
-                        style={{ borderBottomWidth: 1, borderBottomColor: border }}>
-                        <View
-                          className="mr-3 h-8 w-8 items-center justify-center rounded-full"
-                          style={{
-                            backgroundColor: isDark
-                              ? 'rgba(248, 248, 248, 0.08)'
-                              : 'rgba(18, 18, 21, 0.06)',
-                          }}>
-                          <Text className="font-roobert-medium text-xs" style={{ color: fgColor }}>
-                            {(m.email ?? m.user_id).slice(0, 1).toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text
-                          className="flex-1 font-roobert text-sm"
-                          style={{ color: fgColor }}
-                          numberOfLines={1}>
-                          {m.email ?? m.user_id}
-                          {isViewer ? ' (you)' : ''}
+                sortedMembers.map((m) => {
+                  const on = memberIds.includes(m.user_id);
+                  const isViewer = m.user_id === viewerUserId;
+                  return (
+                    <BottomSheetTouchable
+                      key={m.user_id}
+                      onPress={() => toggleMember(m.user_id)}
+                      activeOpacity={0.7}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderBottomWidth: 1,
+                        borderBottomColor: border,
+                      }}>
+                      <View
+                        className="mr-3 h-8 w-8 items-center justify-center rounded-full"
+                        style={{
+                          backgroundColor: isDark
+                            ? 'rgba(248, 248, 248, 0.08)'
+                            : 'rgba(18, 18, 21, 0.06)',
+                        }}>
+                        <Text className="font-roobert-medium text-xs" style={{ color: fgColor }}>
+                          {(m.email ?? m.user_id).slice(0, 1).toUpperCase()}
                         </Text>
-                        <Ionicons
-                          name={on ? 'checkbox' : 'square-outline'}
-                          size={20}
-                          color={on ? theme.primary : mutedColor}
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
+                      </View>
+                      <Text
+                        className="flex-1 font-roobert text-sm"
+                        style={{ color: fgColor }}
+                        numberOfLines={1}>
+                        {m.email ?? m.user_id}
+                        {isViewer ? ' (you)' : ''}
+                      </Text>
+                      <Ionicons
+                        name={on ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color={on ? theme.primary : mutedColor}
+                      />
+                    </BottomSheetTouchable>
+                  );
+                })
               )}
             </View>
           )}
@@ -317,15 +359,15 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
             </Text>
           )}
 
-          {/* Save */}
-          <TouchableOpacity
-            onPress={() => {
-              if (!save.isPending && !incomplete && session) save.mutate();
-            }}
+          <BottomSheetTouchable
+            onPress={handleSave}
             disabled={save.isPending || incomplete}
             activeOpacity={0.7}
-            className="mt-2 items-center justify-center rounded-full"
             style={{
+              marginTop: 8,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 9999,
               paddingVertical: 14,
               backgroundColor: isDark ? '#F8F8F8' : '#121215',
               opacity: save.isPending || incomplete ? 0.5 : 1,
@@ -336,12 +378,12 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
               <Text
                 className="font-roobert-medium text-[15px]"
                 style={{ color: isDark ? '#121215' : '#F8F8F8' }}>
-                Save
+                Done
               </Text>
             )}
-          </TouchableOpacity>
+          </BottomSheetTouchable>
         </BottomSheetScrollView>
       </BottomSheetModal>
     );
-  }
+  },
 );

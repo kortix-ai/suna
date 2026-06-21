@@ -98,9 +98,9 @@ export function ListPresentationTemplatesToolView({
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
           <div className="flex flex-row items-center justify-between">
-            <ToolViewIconTitle 
-              icon={Palette} 
-              title={template?.name.replace(/_/g, " ") || selectedTemplate.replace(/_/g, " ") || "Template Preview"} 
+            <ToolViewIconTitle
+              icon={Palette}
+              title={template?.name.replace(/_/g, " ") || selectedTemplate.replace(/_/g, " ") || "Template Preview"}
             />
             {showBackButton && (
               <Button
@@ -197,14 +197,14 @@ export function ListPresentationTemplatesToolView({
                                 </div>
                               </div>
                             )}
-                            
+
                             {/* Image with fade-in transition */}
                             <Image
                               src={imageUrl}
                               alt={template.name}
                               width={400}
                               height={192}
-                              className={cn('w-full h-full object-contain transition-opacity duration-300', 
+                              className={cn('w-full h-full object-contain transition-opacity duration-300',
                                 isLoaded ? 'opacity-100' : 'opacity-0'
                               )}
                               onLoad={() => handleImageLoad(template.id)}

@@ -48,12 +48,18 @@ Mint a real JWT against local Supabase, then call the API with it:
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
+### End-to-end harnesses
+- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
+- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
+- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
+- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+
 ### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
   a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate enforces that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`, 328 routes).
+  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
+  authoritative route manifest (`tests/spec/routes.generated.json`).
 - **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
   written yet) and does **not** gate PRs, promotes, or deploys right now. The
   intended end-state is test-as-source-of-truth (touch an API contract → update
@@ -84,3 +90,21 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - `apps/web` `tsc --noEmit` emits ~1500 BOGUS `TS2786` / `IntrinsicAttributes`
   errors from a React 19↔18 types mismatch — ignore those; grep for YOUR files.
 - `npx eslint <files>` should be clean.
+
+### Frontend design standard — Jay/Kortix bar
+
+When touching any visual surface in `apps/web`, treat brand fit as a release
+gate, not polish:
+
+- Read `.claude/skills/kortix-design-system/SKILL.md` first and compose existing
+  primitives from `@/components/ui/*` before inventing local chrome.
+- Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
+  dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
+  and no decorative color, glow, or one-off rounded boxes.
+- Use recent product surfaces as references before editing: `/design-system`,
+  `apps/web/src/features/co-worker/project-layout/project-home.tsx`,
+  `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
+  screens called out by the design-system skill.
+- Verify visual work in the browser and include the exact lint/typecheck commands
+  you ran in the PR. If it does not look native beside Jay-authored UI, keep
+  iterating before shipping.

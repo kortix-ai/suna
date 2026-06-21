@@ -9,7 +9,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 
 export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context'
 
-export interface KortixUserContext {
+interface KortixUserContext {
   userId: string
   sandboxId: string
   sandboxRole: 'owner' | 'admin' | 'member' | 'platform_admin'
@@ -18,7 +18,7 @@ export interface KortixUserContext {
   exp: number
 }
 
-export type VerifyResult =
+type VerifyResult =
   | { ok: true; context: KortixUserContext }
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'invalid_json' }
 

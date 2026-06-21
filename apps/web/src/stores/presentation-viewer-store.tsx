@@ -8,7 +8,7 @@ interface PresentationViewerState {
   presentationName?: string;
   sandboxUrl?: string;
   initialSlide?: number;
-  
+
   openPresentation: (presentationName: string, sandboxUrl: string, initialSlide?: number) => void;
   closePresentation: () => void;
 }
@@ -20,7 +20,7 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
       presentationName: undefined,
       sandboxUrl: undefined,
       initialSlide: undefined,
-      
+
       openPresentation: (presentationName: string, sandboxUrl: string, initialSlide: number = 1) => {
         set({
           isOpen: true,
@@ -29,7 +29,7 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
           initialSlide,
         });
       },
-      
+
       closePresentation: () => {
         set({
           isOpen: false,
@@ -48,7 +48,7 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
 // Backward compatibility hook
 export function usePresentationViewerContext() {
   const store = usePresentationViewerStore();
-  
+
   return {
     openPresentation: store.openPresentation,
     closePresentation: store.closePresentation,
@@ -58,7 +58,7 @@ export function usePresentationViewerContext() {
 // Hook for backward compatibility with usePresentationViewer
 export function usePresentationViewer() {
   const store = usePresentationViewerStore();
-  
+
   return {
     viewerState: {
       isOpen: store.isOpen,
@@ -74,7 +74,7 @@ export function usePresentationViewer() {
 // Component wrapper to render the FullScreenPresentationViewer
 export function PresentationViewerWrapper() {
   const { isOpen, presentationName, sandboxUrl, initialSlide, closePresentation } = usePresentationViewerStore();
-  
+
   return (
     <FullScreenPresentationViewer
       isOpen={isOpen}
@@ -85,4 +85,3 @@ export function PresentationViewerWrapper() {
     />
   );
 }
-

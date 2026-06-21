@@ -21,7 +21,7 @@ import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProje
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
-import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -100,6 +100,13 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
         .update(signatureHeader ?? '')
         .update(staticAuthFingerprint)
         .digest('hex')}`;
+
+  // Server-side per-project kill-switch: a paused project ignores inbound
+  // webhooks (acknowledged, not fired) so a repo deployed to two control planes
+  // doesn't double-fire. Manual `…/fire` is unaffected. See triggersPausedForProject.
+  if (triggersPausedForProject(project.metadata)) {
+    return c.json({ status: 'skipped', reason: 'triggers are paused server-side for this project' }, 200);
+  }
 
   const result = await fireGitTrigger({
     spec,
@@ -486,10 +493,23 @@ projectsApp.openapi(
     try {
       if (!pushToken) throw new Error('no push credential resolved for seeding');
       const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug, template: starterTemplate });
+      // Constant-var render of the same starter → identical root commit across
+      // all projects of this template (see seedRepoViaGitPush.baseFiles +
+      // snapshots/build-context.ts baked scaffold).
+      const starterBase = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: starterTemplate });
       if (backend.seedFiles) {
-        await backend.seedFiles(connRef, pushToken, starter, {
+        // Seed the project tip == the deterministic scaffold root (the constant
+        // 'kortix-project' render), byte-identical to the image-baked scaffold
+        // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
+        // the warm-seed's already-opencode-initialized /workspace with ZERO
+        // network (git.ts baked-checkout reuse fires when baseSha == scaffold
+        // root) — the single biggest spawn-latency win. The per-project name
+        // customization is applied in-sandbox at fork (not committed to the
+        // shared remote root) so the warm reuse is never broken by a divergent tip.
+        await backend.seedFiles(connRef, pushToken, starterBase, {
           branch: provisioned.defaultBranch,
           message: 'chore: scaffold Kortix project',
+          baseFiles: starterBase,
         });
       } else {
         await seedRepoViaGitPush({
@@ -498,6 +518,7 @@ projectsApp.openapi(
           files: starter,
           branch: provisioned.defaultBranch,
           commitMessage: 'chore: scaffold Kortix project',
+          baseFiles: starterBase,
         });
       }
       seeded = true;

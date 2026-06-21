@@ -1,13 +1,14 @@
 'use client';
 
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { ArrowUp, Paperclip } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { RiMicAiFill, RiRobot3Fill } from 'react-icons/ri';
+import { RiMicAiFill } from 'react-icons/ri';
 import { SCENARIOS } from './scenarios';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 /** Clickable demo prompts — each maps to a scripted scenario. */
 export const DEMO_PROMPTS = SCENARIOS.map((s) => s.prompt);
@@ -25,7 +26,7 @@ function DemoPromptChips({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex overflow-x-auto gap-1.5">
+    <div className="flex gap-1.5 overflow-x-auto">
       {SCENARIOS.slice(0, 2).map((s) => (
         <button
           key={s.id}
@@ -91,6 +92,7 @@ export function Composer({
   onPromptPick?: (prompt: string) => void;
   disabled?: boolean;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const [focused, setFocused] = useState(false);
   const showCycling = variant === 'home' && value.length === 0 && !focused;
 
@@ -144,7 +146,9 @@ export function Composer({
                 </span>
                 <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
                   <Icon.Claude className="size-3.5" />
-                  Claude Opus 4.8
+                  {tI18nHardcoded.raw(
+                    'autoComponentsHomeInteractiveDemoChatComposerJsxTextClaudeOpusf5c492d2',
+                  )}
                 </span>
               </>
             )}

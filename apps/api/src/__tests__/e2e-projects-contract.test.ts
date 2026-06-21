@@ -342,6 +342,9 @@ mock.module('../projects/git', () => ({
   }),
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
+    if (path === 'missing.txt') {
+      throw new Error("fatal: path 'missing.txt' does not exist in 'feature'");
+    }
     return `content:${path}@${ref}`;
   },
   archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
@@ -383,13 +386,21 @@ mock.module("../snapshots/builder", () => ({
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   kickPreBuild: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
@@ -397,10 +408,14 @@ mock.module('../projects/github', () => ({
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
+  deleteRepo: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
     throw new Error('create-repo route is covered separately');
@@ -453,7 +468,9 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
@@ -510,6 +527,7 @@ mock.module('../shared/db', () => ({
             }
             return Promise.resolve([]).then(resolve, reject);
           },
+          catch: () => undefined,
         }),
       }),
     }),
@@ -521,7 +539,15 @@ mock.module('../shared/db', () => ({
             if (table !== projects) return [];
             const row = projectRows.find((project) => project.projectId === values.project_id);
             if (!row) return [];
-            Object.assign(row, updates);
+            const normalizedUpdates = { ...updates };
+            if (
+              normalizedUpdates.metadata &&
+              typeof normalizedUpdates.metadata === 'object' &&
+              'queryChunks' in normalizedUpdates.metadata
+            ) {
+              delete normalizedUpdates.metadata;
+            }
+            Object.assign(row, normalizedUpdates);
             return [row];
           };
           return {
@@ -679,6 +705,11 @@ describe('projects API contract', () => {
       content: 'content:README.md@feature',
     });
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'README.md', ref: 'feature' });
+
+    const missingFile = await app.request(`/v1/projects/${PROJECT_ID}/files/content?path=missing.txt&ref=feature`);
+    expect(missingFile.status).toBe(404);
+    expect(await missingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);

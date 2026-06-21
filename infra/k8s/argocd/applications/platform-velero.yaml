@@ -1,0 +1,85 @@
+# Backup/restore — Velero with the AWS provider. Takes scheduled cluster backups
+# (resource manifests + EBS volume snapshots) to S3, restorable per-namespace or
+# whole-cluster. A daily backup of all namespaces is kept for 30 days (TTL 720h).
+#
+# PREREQUISITES (Terraform first — the values below are placeholders):
+#   1. An S3 bucket for backups (here: kortix-velero-backups, eu-west-2).
+#   2. An IRSA role granting Velero S3 access to that bucket AND EC2 snapshot
+#      permissions (CreateSnapshot / DeleteSnapshot / DescribeSnapshots /
+#      CreateVolume / DescribeVolumes etc). Wire its ARN into
+#      serviceAccount.server.annotations below before this syncs cleanly.
+#
+# Single-source: chart from the upstream helm repo, all config inline.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-velero
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: 12.0.3
+    helm:
+      releaseName: velero
+      values: |
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.11.1
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: plugins
+                mountPath: /target
+        serviceAccount:
+          server:
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/kortix-velero
+        credentials:
+          useSecret: false
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: aws
+              bucket: kortix-velero-backups
+              default: true
+              config:
+                region: eu-west-2
+          volumeSnapshotLocation:
+            - name: default
+              provider: aws
+              config:
+                region: eu-west-2
+        schedules:
+          daily-all-namespaces:
+            disabled: false
+            schedule: "0 3 * * *"
+            useOwnerReferencesInBackup: false
+            template:
+              ttl: 720h
+              includedNamespaces:
+                - "*"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

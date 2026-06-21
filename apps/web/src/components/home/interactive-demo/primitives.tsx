@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
 import { favicon } from './data';
 
@@ -136,6 +137,7 @@ export function StatusDot({ on, label }: { on: boolean; label?: [string, string]
 }
 
 export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
     'flex h-5 w-9 items-center rounded-full p-0.5 transition-colors',
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
@@ -148,7 +150,9 @@ export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label="Toggle schedule"
+      aria-label={tI18nHardcoded.raw(
+        'autoComponentsHomeInteractiveDemoPrimitivesJsxAttrAriaLabelToggleb5696af5',
+      )}
       onClick={onClick}
       className={className}
     >

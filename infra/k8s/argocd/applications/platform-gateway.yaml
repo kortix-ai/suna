@@ -1,0 +1,35 @@
+# The consolidated DevOps gateway — one shared ALB (group kortix-devops) fronting
+# Headlamp (/), Argo CD (/argo), Grafana (/grafana) and OpenCost (/cost) under
+# devops.kortix.com, gated by Cloudflare Access. This app syncs the Argo CD
+# Ingress + cmd-params ConfigMap; see docs/runbooks/devops-gateway.md for bring-up.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: main
+    path: infra/k8s/platform/gateway
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

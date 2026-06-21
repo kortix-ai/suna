@@ -15,7 +15,6 @@ test('ALLOWED_SANDBOX_PROVIDERS=platinum makes Platinum the active provider', as
   const m = await import('./index');
   expect(config.isPlatinumEnabled()).toBe(true);
   expect(config.getDefaultProvider()).toBe('platinum');
-  expect(m.getAvailableProviders()).toContain('platinum');
   const p = m.getProvider('platinum');
   expect(p.name).toBe('platinum');
 });

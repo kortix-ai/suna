@@ -14,6 +14,18 @@ metadata:
 spec:
   serviceAccountName: {{ .Values.serviceAccount.name }}
   terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+  {{- if .Values.priorityClassName }}
+  priorityClassName: {{ .Values.priorityClassName }}
+  {{- end }}
+  {{- if .Values.security.enabled }}
+  securityContext:
+    runAsNonRoot: {{ .Values.security.runAsNonRoot }}
+    runAsUser: {{ .Values.security.runAsUser }}
+    runAsGroup: {{ .Values.security.runAsGroup }}
+    fsGroup: {{ .Values.security.runAsGroup }}
+    seccompProfile:
+      type: {{ .Values.security.seccompProfile }}
+  {{- end }}
   {{- if .Values.topologySpread.enabled }}
   # Keep replicas spread across AZs first, then nodes — a node or full-AZ loss
   # can never take out all pods. ScheduleAnyway so a temporary skew never blocks
@@ -105,4 +117,27 @@ spec:
         failureThreshold: 3
       resources:
         {{- toYaml .Values.resources | nindent 8 }}
+      {{- if .Values.security.enabled }}
+      securityContext:
+        allowPrivilegeEscalation: {{ .Values.security.allowPrivilegeEscalation }}
+        readOnlyRootFilesystem: {{ .Values.security.readOnlyRootFilesystem }}
+        {{- if .Values.security.dropAllCapabilities }}
+        capabilities:
+          drop: ["ALL"]
+        {{- end }}
+      {{- end }}
+      {{- if and .Values.security.enabled .Values.security.readOnlyRootFilesystem }}
+      volumeMounts:
+        {{- range $i, $p := .Values.security.writableMounts }}
+        - name: writable-{{ $i }}
+          mountPath: {{ $p }}
+        {{- end }}
+      {{- end }}
+  {{- if and .Values.security.enabled .Values.security.readOnlyRootFilesystem }}
+  volumes:
+    {{- range $i, $p := .Values.security.writableMounts }}
+    - name: writable-{{ $i }}
+      emptyDir: {}
+    {{- end }}
+  {{- end }}
 {{- end -}}

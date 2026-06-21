@@ -14,7 +14,7 @@ import { discoverFlows, runSuite } from "../src/core/runner";
 import { renderStepSummary, writeResults } from "../src/core/report";
 import { describeEnv, loadEnv } from "../src/core/env";
 import { log } from "../src/core/log";
-import { runCoverage } from "../src/coverage/check-coverage";
+import { runCoverage } from "../src/core/coverage-check";
 import { runGc } from "../src/fixtures/gc";
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {

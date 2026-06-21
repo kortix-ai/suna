@@ -1,20 +1,11 @@
 /**
  * The long tail — routes coverable via auth/validation boundaries without a live
- * funded session or destructive side effects. Maps to ACC-3, INV-2, SEC-5,
- * TRG-5/7, CONN-10/11, SESS-6/9/11/12/13/14, DEL-3.
+ * funded session or destructive side effects. Maps to INV-2, SEC-5, TRG-5/7,
+ * CONN-10/11, SESS-6/9/11/12/13/14, DEL-3.
  */
 import { flow } from "../core/flow";
 
 const BOGUS_UUID = "00000000-0000-4000-a000-000000000000";
-
-flow("ACC-3", { domain: "access", routes: ["POST /v1/access/request-access"] }, async (ctx) => {
-  await ctx.step("request access (waitlist) → 200", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).post("/v1/access/request-access", {
-      email: `wl-${Date.now()}@ke2e.kortix.test`,
-    });
-    r.status([200, 201, 400]);
-  });
-});
 
 flow(
   "INV-2",
@@ -211,15 +202,11 @@ flow(
   "DEL-3",
   {
     domain: "billing",
-    routes: ["DELETE /v1/account/delete-immediately", "DELETE /v1/billing/account/delete-immediately"],
+    routes: ["DELETE /v1/billing/account/delete-immediately"],
   },
   async (ctx) => {
     // Destructive — assert the auth boundary only (ANON), never delete a real account.
     await ctx.step("ANON delete-immediately → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del("/v1/account/delete-immediately");
-      r.status(401);
-    });
-    await ctx.step("ANON billing-mirror delete-immediately → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).del("/v1/billing/account/delete-immediately");
       r.status(401);
     });

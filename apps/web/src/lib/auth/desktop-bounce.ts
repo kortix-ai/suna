@@ -43,23 +43,43 @@ export function serializeForInlineScript(value: unknown): string {
 }
 
 /**
- * Build the `kortix://auth/callback` deep link from the inbound query params,
- * dropping the `desktop` flag. Every value is re-encoded via URLSearchParams.
+ * Build the `kortix://auth/callback` deep link from an inbound web callback.
+ * A supplied transport marker is omitted; every value is re-encoded via
+ * URLSearchParams before it reaches either native client.
  */
-export function buildDesktopDeepLink(searchParams: URLSearchParams): string {
+export function buildNativeDeepLink(searchParams: URLSearchParams, transportFlag?: string): string {
   const forwardParams = new URLSearchParams();
   for (const [k, v] of searchParams) {
-    if (k !== 'desktop') forwardParams.set(k, v);
+    if (!transportFlag || k !== transportFlag) forwardParams.set(k, v);
   }
   const qs = forwardParams.toString();
   return `kortix://auth/callback${qs ? `?${qs}` : ''}`;
 }
 
-/** Render the full desktop-bounce HTML document for the given query params. */
-export function buildDesktopBounceHtml(searchParams: URLSearchParams): string {
-  const deepLink = buildDesktopDeepLink(searchParams);
+/** Build the desktop callback deep link, dropping the desktop marker. */
+export function buildDesktopDeepLink(searchParams: URLSearchParams): string {
+  return buildNativeDeepLink(searchParams, 'desktop');
+}
+
+/** Build the mobile callback deep link, retaining the registration marker. */
+export function buildMobileDeepLink(searchParams: URLSearchParams): string {
+  // Unlike desktop, mobile needs this marker after the browser fallback so it
+  // can admit a newly-created user only for a state-validated web handoff.
+  return buildNativeDeepLink(searchParams);
+}
+
+/** Render the native handoff document, optionally starting the app automatically. */
+function buildNativeBounceHtml(deepLink: string, autoOpen: boolean): string {
   const hrefSafe = escapeHtmlAttribute(deepLink);
   const scriptSafe = serializeForInlineScript(deepLink);
+  const message = autoOpen
+    ? `Opening Kortix… you can close this tab.<br/>
+    If nothing happens, <a href="${hrefSafe}">click here</a> to open the app.`
+    : `Your sign-in is ready.<br/>
+    <a href="${hrefSafe}">Open Kortix</a> to continue.`;
+  const automaticRedirect = autoOpen
+    ? `<script>window.location.replace(${scriptSafe});</script>`
+    : '';
 
   return `<!doctype html><html><head><meta charset="utf-8"/>
 <title>Opening Kortix…</title>
@@ -80,9 +100,21 @@ export function buildDesktopBounceHtml(searchParams: URLSearchParams): string {
 <div class="wrap"><div>
   <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
   <h1>You're signed in</h1>
-  <p>Opening Kortix… you can close this tab.<br/>
-    If nothing happens, <a href="${hrefSafe}">click here</a> to open the app.</p>
+  <p>${message}</p>
 </div></div>
-<script>window.location.replace(${scriptSafe});</script>
+${automaticRedirect}
 </body></html>`;
+}
+
+/** Render the desktop browser fallback page. */
+export function buildDesktopBounceHtml(searchParams: URLSearchParams): string {
+  return buildNativeBounceHtml(buildDesktopDeepLink(searchParams), true);
+}
+
+/** Render the mobile browser fallback page. */
+export function buildMobileBounceHtml(searchParams: URLSearchParams): string {
+  // iOS Safari rejects programmatic custom-scheme navigation as an invalid
+  // address. The universal link opens the installed app automatically; this
+  // page is only its browser fallback, where an explicit user tap is reliable.
+  return buildNativeBounceHtml(buildMobileDeepLink(searchParams), false);
 }

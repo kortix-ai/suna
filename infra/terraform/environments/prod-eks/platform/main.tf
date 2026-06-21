@@ -95,9 +95,12 @@ module "platform" {
   cloudflare_api_token = var.cloudflare_api_token
   cloudflare_zone_id   = var.cloudflare_zone_id
 
-  # Argo CD UI (ops.kortix.com) — opt-in; gate with Cloudflare Access first.
+  # Argo CD is exposed via the shared DevOps gateway at argocd_domain_override
+  # (argo.kortix.com) — not its own ALB — so argocd_ui_enabled stays false and
+  # the override drives the SSO `url`/dex callback base. Falls back to the
+  # cluster's argocd_domain when no override is set.
   argocd_ui_enabled      = var.argocd_ui_enabled
-  argocd_domain          = local.cluster.argocd_domain
+  argocd_domain          = coalesce(var.argocd_domain_override, local.cluster.argocd_domain)
   argocd_certificate_arn = local.cluster.acm_argocd_certificate_arn
 
   # GitHub-org SSO for Argo CD login.

@@ -16,7 +16,7 @@ import { AlertCircle, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
+import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { getEnv } from '@/lib/env-config';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
@@ -75,7 +76,14 @@ function LiveClock() {
 
 /* ─── Form inside the frosted-glass card ───────────────────────────────── */
 
-function AuthCardForm({ returnUrl }: { returnUrl: string }) {
+function AuthCardForm({
+  returnUrl,
+  mobileCallbackState,
+}: {
+  returnUrl: string;
+  mobileCallbackState: string | null;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('signup');
@@ -128,6 +136,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     const formData = new FormData(form);
     formData.set('returnUrl', returnUrl);
     formData.set('origin', window.location.origin);
+    if (mobileCallbackState) {
+      formData.set('mobileCallback', 'true');
+      formData.set('mobileCallbackState', mobileCallbackState);
+    }
     if (method === 'magic' && mode === 'signup') {
       formData.set('acceptedTerms', 'true');
     }
@@ -158,6 +170,12 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         setInfo((result as any).message || 'Check your email for a magic link');
         setSentEmail((result as any).email || (formData.get('email') as string));
         setCode('');
+        return;
+      }
+
+      const mobileHandoffUrl = (result as any)?.mobileHandoffUrl as string | null | undefined;
+      if (mobileHandoffUrl) {
+        window.location.assign(mobileHandoffUrl);
         return;
       }
 
@@ -204,6 +222,11 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     formData.set('email', sentEmail);
     formData.set('token', code);
     formData.set('returnUrl', returnUrl);
+    formData.set('origin', window.location.origin);
+    if (mobileCallbackState) {
+      formData.set('mobileCallback', 'true');
+      formData.set('mobileCallbackState', mobileCallbackState);
+    }
 
     try {
       const result = await verifyOtp(null, formData);
@@ -212,6 +235,12 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         const msg = (result as any).message || 'Invalid or expired code';
         setErrorMessage(msg);
         toast.error(msg);
+        return;
+      }
+
+      const mobileHandoffUrl = (result as any)?.mobileHandoffUrl as string | null | undefined;
+      if (mobileHandoffUrl) {
+        window.location.assign(mobileHandoffUrl);
         return;
       }
 
@@ -256,6 +285,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
     formData.set('email', sentEmail);
     formData.set('returnUrl', returnUrl);
     formData.set('origin', window.location.origin);
+    if (mobileCallbackState) {
+      formData.set('mobileCallback', 'true');
+      formData.set('mobileCallbackState', mobileCallbackState);
+    }
     if (mode === 'signup') formData.set('acceptedTerms', 'true');
 
     try {
@@ -287,7 +320,9 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       {/* Tabs */}
       <div
         role="tablist"
-        aria-label="Authentication mode"
+        aria-label={tI18nHardcoded.raw(
+          'autoAppAuthAuthPageJsxAttrAriaLabelAuthenticationMode01efd9f8',
+        )}
         className="bg-foreground/[0.05] mx-auto mb-5 flex w-fit items-center gap-1 rounded-full p-1"
       >
         <button
@@ -401,7 +436,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
               onClick={resetTransientState}
               className="hover:text-foreground/70 underline-offset-4 hover:underline"
             >
-              Use a different email
+              {tI18nHardcoded.raw('autoAppAuthAuthPageJsxTextUseADifferentEmail8da2cdb0')}
             </button>
           </div>
         </div>
@@ -494,7 +529,10 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
                 <div className="bg-foreground/[0.08] h-px flex-1" />
               </div>
               <Suspense fallback={null}>
-                <GoogleSignIn returnUrl={returnUrl} />
+                <GoogleSignIn
+                  returnUrl={returnUrl}
+                  mobileCallbackState={mobileCallbackState ?? undefined}
+                />
               </Suspense>
             </>
           )}
@@ -521,18 +559,44 @@ function AuthContent() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, isLoading } = useAuth();
+  const { user, session, isLoading } = useAuth();
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
+  const mobileCallbackState =
+    searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
   const prefersReducedMotion = useReducedMotion();
+  const hasStartedMobileHandoff = useRef(false);
 
-  // After auth, leave the auth flow.
+  // A web session may already exist when the mobile user returns to this page.
+  // Preserve the native handoff instead of routing that browser session to the
+  // web dashboard and stranding the mobile app on its auth screen.
   useEffect(() => {
     if (isLoading || !user) return;
+
+    if (mobileCallbackState) {
+      // Strict Mode re-runs effects after the deep-link navigation begins.
+      // Do not fall through to the web dashboard on that second pass: it can
+      // cancel the native handoff before the OS claims the app link.
+      if (hasStartedMobileHandoff.current) return;
+      if (!session?.access_token || !session.refresh_token) return;
+
+      const handoffUrl = buildMobileSessionHandoffUrl({
+        origin: window.location.origin,
+        state: mobileCallbackState,
+        accessToken: session.access_token,
+        refreshToken: session.refresh_token,
+      });
+      if (handoffUrl) {
+        hasStartedMobileHandoff.current = true;
+        window.location.assign(handoffUrl);
+        return;
+      }
+    }
+
     router.replace(returnUrl);
-  }, [isLoading, user, returnUrl, router]);
+  }, [isLoading, mobileCallbackState, returnUrl, router, session, user]);
 
   // Keyboard: Enter/Space opens form, Escape closes it.
   useEffect(() => {
@@ -638,7 +702,7 @@ function AuthContent() {
               transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="bg-background/75 dark:bg-background/70 border-foreground/[0.08] max-h-[calc(100vh-4rem)] overflow-y-auto rounded-2xl border p-7 backdrop-blur-2xl">
-                <AuthCardForm returnUrl={returnUrl} />
+                <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
               </div>
             </motion.div>
           </motion.div>

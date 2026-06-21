@@ -50,11 +50,11 @@ async function makeRequest<T = any>(
     // Don't set Content-Type for FormData - browser will set it automatically with boundary
     const isFormData = fetchOptions.body instanceof FormData;
     const headers: Record<string, string> = {};
-    
+
     if (!isFormData) {
       headers['Content-Type'] = 'application/json';
     }
-    
+
     // Merge with any headers from fetchOptions
     Object.assign(headers, fetchOptions.headers as Record<string, string>);
 
@@ -144,7 +144,7 @@ async function makeRequest<T = any>(
 
     let data: T;
     const contentType = response.headers.get('content-type');
-    
+
     if (contentType?.includes('application/json')) {
       data = await response.json();
     } else if (contentType?.includes('text/')) {
@@ -166,7 +166,7 @@ async function makeRequest<T = any>(
     }
 
     // Check if this is an abort error (timeout or manual abort)
-    const isAbortError = error?.name === 'AbortError' || 
+    const isAbortError = error?.name === 'AbortError' ||
                          error?.name === 'AbortSignal' ||
                          (error instanceof Error && error.message.includes('aborted'));
 
@@ -176,7 +176,7 @@ async function makeRequest<T = any>(
     }
 
     let apiError: ApiError;
-    
+
     if (isAbortError) {
       // An external abort (Next.js client navigation, tab close, React Query
       // cancelling an in-flight request, a dropped connection) is NOT a
@@ -267,7 +267,7 @@ export const supabaseClient = {
         success: true,
       };
     } catch (error: any) {
-      const apiError: ApiError = error instanceof Error 
+      const apiError: ApiError = error instanceof Error
         ? Object.assign(Object.create(Error.prototype), {
             message: error.message,
             name: error.name || 'ApiError',
@@ -277,7 +277,7 @@ export const supabaseClient = {
             message: String(error),
             name: 'ApiError'
           });
-      
+
       handleApiError(apiError, errorContext);
 
       return {
@@ -341,4 +341,4 @@ export const backendApi = {
       headers: uploadHeaders,
     });
   },
-}; 
+};

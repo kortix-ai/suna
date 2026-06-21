@@ -1,10 +1,14 @@
 {
   "generatedAt": "static",
-  "count": 333,
+  "count": 383,
   "routes": [
     {
       "method": "GET",
       "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/health/live"
     },
     {
       "method": "GET",
@@ -339,8 +343,48 @@
       "path": "/v1/admin/api/accounts/:id/ledger"
     },
     {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/tier"
+    },
+    {
       "method": "GET",
       "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/provider-analytics"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/provider-distribution"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/provider-distribution"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/provider-fallback"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/provider-fallback"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/sandboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/warm-pool-config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/warm-pool-config"
     },
     {
       "method": "POST",
@@ -535,8 +579,28 @@
       "path": "/v1/executor/projects/:projectId/connectors/:slug/connect/finalize"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/credential"
+    },
+    {
       "method": "PUT",
       "path": "/v1/executor/projects/:projectId/connectors/:slug/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/credential-mode"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/policies"
     },
     {
       "method": "PUT",
@@ -580,6 +644,42 @@
     },
     {
       "method": "GET",
+      "path": "/v1/health/live"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/items"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/items/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/items/:id/file"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/marketplaces"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/marketplaces/featured"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/marketplace/sources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/marketplace/sources"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/marketplace/sources/:id"
+    },
+    {
+      "method": "GET",
       "path": "/v1/oauth/authorize"
     },
     {
@@ -617,6 +717,10 @@
     {
       "method": "POST",
       "path": "/v1/p/auth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/p/public-share/:token"
     },
     {
       "method": "GET",
@@ -697,6 +801,22 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/access"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/access-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/access-requests/:requestId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/access-requests/:requestId/reject"
     },
     {
       "method": "DELETE",
@@ -835,6 +955,10 @@
       "path": "/v1/projects/:projectId/commits/:sha/diff"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connect-requests"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
     },
@@ -919,6 +1043,34 @@
       "path": "/v1/projects/:projectId/onboarding"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/presence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/presence/leave"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/registry"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/registry/:name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/registry/install"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/registry/update"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/registry/updates"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sandbox-health"
     },
@@ -945,6 +1097,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sandboxes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/secret-requests"
     },
     {
       "method": "GET",
@@ -991,16 +1147,24 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/previews"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
+    },
+    {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/ensure-opencode"
+      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/public-shares/:shareId"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/sandbox"
     },
     {
       "method": "PUT",
@@ -1008,7 +1172,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/wake"
+      "path": "/v1/projects/:projectId/sessions/:sessionId/start"
     },
     {
       "method": "GET",
@@ -1111,8 +1275,16 @@
       "path": "/v1/projects/provision"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/suna-migration/eligibility"
+    },
+    {
       "method": "POST",
-      "path": "/v1/projects/sync-opencode-sessions"
+      "path": "/v1/projects/suna-migration/start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/suna-migration/status"
     },
     {
       "method": "POST",
@@ -1173,6 +1345,22 @@
     {
       "method": "PUT",
       "path": "/v1/servers/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup-links/connector/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/connector/:token/start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup-links/secret/:token"
     },
     {
       "method": "POST",
@@ -1317,6 +1505,18 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/slack/:projectId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack/:projectId/commands"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack/:projectId/interactivity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/slack/:projectId/manifest"
     },
     {
       "method": "POST",

@@ -5,59 +5,61 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  globToRegex,
-  isRegexMatcher,
   isValidMatcher,
-  isVisible,
-  isVisibleEffective,
-  matchesPolicy,
   resolveEffectiveAction,
-  resolvePolicyAction,
-  riskDefaultAction,
   type Policy,
 } from '../executor/policy';
 
-describe('matchesPolicy', () => {
+function resolveWithConnector(path: string, policies: Policy[]) {
+  return resolveEffectiveAction({
+    fullPath: `connector.${path}`,
+    relPath: path,
+    projectPolicies: [],
+    connectorPolicies: policies,
+    risk: 'write',
+    defaultMode: 'risk',
+  });
+}
+
+describe('matcher semantics', () => {
   test('* matches everything', () => {
-    expect(matchesPolicy('*', 'charges.create')).toBe(true);
+    expect(resolveWithConnector('charges.create', [{ match: '*', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
   });
   test('exact', () => {
-    expect(matchesPolicy('charges.create', 'charges.create')).toBe(true);
-    expect(matchesPolicy('charges.create', 'charges.list')).toBe(false);
+    expect(resolveWithConnector('charges.create', [{ match: 'charges.create', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
+    expect(resolveWithConnector('charges.list', [{ match: 'charges.create', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
   });
   test('trailing wildcard', () => {
-    expect(matchesPolicy('charges.*', 'charges.create')).toBe(true);
-    expect(matchesPolicy('charges.*', 'refunds.create')).toBe(false);
+    expect(resolveWithConnector('charges.create', [{ match: 'charges.*', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
+    expect(resolveWithConnector('refunds.create', [{ match: 'charges.*', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
   });
   test('mid/leading wildcard (e.g. *.delete*)', () => {
-    expect(matchesPolicy('*.delete*', 'pets.deletePet')).toBe(true);
-    expect(matchesPolicy('*.delete*', 'pets.getPet')).toBe(false);
+    expect(resolveWithConnector('pets.deletePet', [{ match: '*.delete*', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
+    expect(resolveWithConnector('pets.getPet', [{ match: '*.delete*', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
   });
   test('case-insensitive', () => {
-    expect(matchesPolicy('Charges.*', 'charges.create')).toBe(true);
+    expect(resolveWithConnector('charges.create', [{ match: 'Charges.*', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
   });
-  test('globToRegex anchors', () => {
-    expect(globToRegex('a.b').test('xa.by')).toBe(false);
+  test('glob matching is anchored', () => {
+    expect(resolveWithConnector('xa.by', [{ match: 'a.b', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
   });
   test('regex matcher /.../ — not auto-anchored, case-insensitive by default', () => {
-    expect(matchesPolicy('/^delete_/', 'delete_message')).toBe(true);
-    expect(matchesPolicy('/^delete_/', 'send_message')).toBe(false);
-    expect(matchesPolicy('/(create|update)/', 'charges.update')).toBe(true);   // unanchored
-    expect(matchesPolicy('/SEND/', 'send_email')).toBe(true);                  // default i flag
+    expect(resolveWithConnector('delete_message', [{ match: '/^delete_/', action: 'block' }])).toEqual({ action: 'block', source: 'connector' });
+    expect(resolveWithConnector('send_message', [{ match: '/^delete_/', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
+    expect(resolveWithConnector('charges.update', [{ match: '/(create|update)/', action: 'block' }])).toEqual({ action: 'block', source: 'connector' }); // unanchored
+    expect(resolveWithConnector('send_email', [{ match: '/SEND/', action: 'block' }])).toEqual({ action: 'block', source: 'connector' }); // default i flag
   });
   test('invalid regex never matches (fail-safe, never allow-all)', () => {
-    expect(matchesPolicy('/(/', 'anything')).toBe(false);
+    expect(resolveWithConnector('anything', [{ match: '/(/', action: 'block' }])).toEqual({ action: 'require_approval', source: 'risk_default' });
   });
-  test('isRegexMatcher / isValidMatcher', () => {
-    expect(isRegexMatcher('/^x$/')).toBe(true);
-    expect(isRegexMatcher('send_*')).toBe(false);
+  test('validates matcher syntax', () => {
     expect(isValidMatcher('/(/')).toBe(false);
     expect(isValidMatcher('/^ok$/')).toBe(true);
     expect(isValidMatcher('send_*')).toBe(true);
   });
 });
 
-describe('resolvePolicyAction — first match wins, position order', () => {
+describe('policy position resolution', () => {
   const policies: Policy[] = [
     { match: '*.delete*', action: 'block', position: 0 },
     { match: 'charges.create', action: 'require_approval', position: 1 },
@@ -65,39 +67,40 @@ describe('resolvePolicyAction — first match wins, position order', () => {
   ];
 
   test('block wins for delete', () => {
-    expect(resolvePolicyAction('pets.deletePet', policies)).toBe('block');
+    expect(resolveWithConnector('pets.deletePet', policies)).toEqual({ action: 'block', source: 'connector' });
   });
   test('require_approval for the specific create', () => {
-    expect(resolvePolicyAction('charges.create', policies)).toBe('require_approval');
+    expect(resolveWithConnector('charges.create', policies)).toEqual({ action: 'require_approval', source: 'connector' });
   });
   test('catch-all always_run otherwise', () => {
-    expect(resolvePolicyAction('charges.list', policies)).toBe('always_run');
+    expect(resolveWithConnector('charges.list', policies)).toEqual({ action: 'always_run', source: 'connector' });
   });
-  test('no policies → always_run (allow-all default)', () => {
-    expect(resolvePolicyAction('anything', [])).toBe('always_run');
+  test('no policies → allow_all default can still run', () => {
+    expect(
+      resolveEffectiveAction({
+        fullPath: 'connector.anything',
+        relPath: 'anything',
+        projectPolicies: [],
+        connectorPolicies: [],
+        risk: 'write',
+        defaultMode: 'allow_all',
+      }),
+    ).toEqual({ action: 'always_run', source: 'allow_all' });
   });
   test('position controls precedence regardless of array order', () => {
     const reordered: Policy[] = [
       { match: '*', action: 'always_run', position: 5 },
       { match: 'secret.*', action: 'block', position: 0 },
     ];
-    expect(resolvePolicyAction('secret.read', reordered)).toBe('block');
+    expect(resolveWithConnector('secret.read', reordered)).toEqual({ action: 'block', source: 'connector' });
   });
 });
 
-describe('isVisible', () => {
+describe('visibility', () => {
   test('blocked tools are hidden', () => {
     const policies: Policy[] = [{ match: 'admin.*', action: 'block' }];
-    expect(isVisible('admin.reset', policies)).toBe(false);
-    expect(isVisible('users.list', policies)).toBe(true);
-  });
-});
-
-describe('riskDefaultAction', () => {
-  test('read → always_run, write/destructive → require_approval', () => {
-    expect(riskDefaultAction('read')).toBe('always_run');
-    expect(riskDefaultAction('write')).toBe('require_approval');
-    expect(riskDefaultAction('destructive')).toBe('require_approval');
+    expect(resolveWithConnector('admin.reset', policies).action !== 'block').toBe(false);
+    expect(resolveWithConnector('users.list', policies).action !== 'block').toBe(true);
   });
 });
 
@@ -221,29 +224,29 @@ describe('resolveEffectiveAction — layered (project → connector → default)
   });
 });
 
-describe('isVisibleEffective — blocked-from-search across layers', () => {
+describe('blocked-from-search behavior', () => {
   test('project block hides the tool from search', () => {
     expect(
-      isVisibleEffective({
+      resolveEffectiveAction({
         fullPath: 'pets.deletePet',
         relPath: 'deletePet',
         projectPolicies: [{ match: '*.delete*', action: 'block', position: 0 }],
         connectorPolicies: [],
         risk: 'destructive',
         defaultMode: 'risk',
-      }),
+      }).action !== 'block',
     ).toBe(false);
   });
   test('connector require_approval is still visible', () => {
     expect(
-      isVisibleEffective({
+      resolveEffectiveAction({
         fullPath: 'pets.create',
         relPath: 'create',
         projectPolicies: [],
         connectorPolicies: [{ match: '*', action: 'require_approval' }],
         risk: 'write',
         defaultMode: 'risk',
-      }),
+      }).action !== 'block',
     ).toBe(true);
   });
 });

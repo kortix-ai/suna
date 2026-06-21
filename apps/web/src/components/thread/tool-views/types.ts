@@ -26,7 +26,7 @@ export interface ToolViewProps {
   // Structured data from metadata - NO CONTENT PARSING
   toolCall: ToolCallData;
   toolResult?: ToolResultData;
-  
+
   // Metadata
   assistantTimestamp?: string;
   toolTimestamp?: string;

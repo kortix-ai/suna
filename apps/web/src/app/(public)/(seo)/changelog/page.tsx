@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
@@ -77,22 +77,22 @@ function ReleaseNotes({ body }: { body: string }) {
   return (
     <div
       className={
-        'text-sm leading-relaxed text-muted-foreground break-words ' +
-        '[&_a]:break-words [&_code]:break-words ' +
-        '[&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-foreground [&_h1]:mt-6 [&_h1]:mb-2 ' +
-        '[&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-foreground [&_h2]:mt-6 [&_h2]:mb-2 ' +
-        '[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-foreground [&_h3]:mt-5 [&_h3]:mb-2 ' +
-        '[&_p]:my-3 ' +
-        '[&_ul]:my-3 [&_ul]:space-y-1.5 [&_ul]:list-disc [&_ul]:pl-5 ' +
-        '[&_ol]:my-3 [&_ol]:space-y-1.5 [&_ol]:list-decimal [&_ol]:pl-5 ' +
-        '[&_li]:marker:text-muted-foreground/50 ' +
-        '[&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-4 [&_a]:decoration-foreground/20 hover:[&_a]:decoration-foreground/50 ' +
-        '[&_code]:rounded-md [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_code]:text-foreground ' +
-        '[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-2xl [&_pre]:bg-muted [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 ' +
-        '[&_strong]:text-foreground [&_strong]:font-medium ' +
-        '[&_img]:rounded-2xl [&_img]:my-4 [&_img]:border [&_img]:border-border/60 ' +
-        '[&_hr]:my-6 [&_hr]:border-border/60 ' +
-        '[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic'
+        'text-muted-foreground text-sm leading-relaxed break-words ' +
+        '[&_a]:break-words [&_code]:break-words' +
+        '[&_h1]:text-foreground [&_h1]:mt-6 [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold' +
+        '[&_h2]:text-foreground [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold' +
+        '[&_h3]:text-foreground [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold' +
+        '[&_p]:my-3' +
+        '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5' +
+        '[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5' +
+        '[&_li]:marker:text-muted-foreground/50' +
+        '[&_a]:text-foreground [&_a]:decoration-foreground/20 hover:[&_a]:decoration-foreground/50 [&_a]:underline [&_a]:underline-offset-4' +
+        '[&_code]:bg-muted [&_code]:text-foreground [&_code]:rounded-md [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[0.85em]' +
+        '[&_pre]:bg-muted [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0' +
+        '[&_strong]:text-foreground [&_strong]:font-medium' +
+        '[&_img]:border-border/60 [&_img]:my-4 [&_img]:rounded-2xl [&_img]:border' +
+        '[&_hr]:border-border/60 [&_hr]:my-6' +
+        '[&_blockquote]:border-border [&_blockquote]:border-l-2 [&_blockquote]:pl-4 [&_blockquote]:italic'
       }
     >
       <ReactMarkdown
@@ -113,26 +113,26 @@ function ReleaseNotes({ body }: { body: string }) {
 }
 
 export default async function ChangelogPage() {
+  const tI18nHardcoded = await getTranslations('hardcodedUi');
   const releases = await getReleases();
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 pt-24 sm:pt-32 pb-24 sm:pb-32">
+    <main className="bg-background min-h-screen">
+      <div className="mx-auto max-w-3xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
         {/* Hero */}
         <Reveal>
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-medium tracking-tight text-foreground mb-3">
+          <h1 className="text-foreground mb-3 text-3xl font-medium tracking-tight sm:text-4xl md:text-5xl">
             Changelog
           </h1>
-          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
-            Every release, straight from the source. New features, fixes, and improvements —
-            versioned and dated.{' '}
+          <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
+            {tI18nHardcoded.raw('autoAppPublicSeoChangelogPageJsxTextEveryReleaseStraight4acc5a00')}{' '}
             <a
               href={`https://github.com/${REPO}/releases`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+              className="text-foreground decoration-foreground/20 hover:decoration-foreground/50 underline underline-offset-4 transition-colors"
             >
-              View on GitHub
+              {tI18nHardcoded.raw('autoAppPublicSeoChangelogPageJsxTextViewOnGitHubfc7627d4')}
             </a>
             .
           </p>
@@ -140,15 +140,15 @@ export default async function ChangelogPage() {
 
         {/* Releases */}
         {releases.length === 0 ? (
-          <div className="mt-16 text-sm text-muted-foreground">
-            Couldn&apos;t load releases right now.{' '}
+          <div className="text-muted-foreground mt-16 text-sm">
+            {tI18nHardcoded.raw('autoAppPublicSeoChangelogPageJsxTextCouldnTLoad69c0f1db')}{' '}
             <a
               href={`https://github.com/${REPO}/releases`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50"
+              className="text-foreground decoration-foreground/20 hover:decoration-foreground/50 underline underline-offset-4"
             >
-              See the full changelog on GitHub
+              {tI18nHardcoded.raw('autoAppPublicSeoChangelogPageJsxTextSeeTheFull556e8abb')}
             </a>
             .
           </div>
@@ -157,7 +157,7 @@ export default async function ChangelogPage() {
           // Reveal/IntersectionObserver wrapper — a very long release body (v0.9.0
           // is ~60KB) is taller than the observer's threshold can ever satisfy, so
           // it would stay at opacity:0 forever and read as a huge blank gap.
-          <div className="mt-12 sm:mt-16 divide-y divide-border/60">
+          <div className="divide-border/60 mt-12 divide-y sm:mt-16">
             {releases.map((release, i) => {
               const isLatest = i === 0 && !release.prerelease;
               // Huge auto-generated bodies (v0.9.0 is ~800 PR lines) would swallow
@@ -166,7 +166,7 @@ export default async function ChangelogPage() {
               return (
                 <article key={release.tag_name} className="py-10 first:pt-0 last:pb-0">
                   <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <h2 className="text-xl font-medium tracking-tight text-foreground">
+                    <h2 className="text-foreground text-xl font-medium tracking-tight">
                       {release.tag_name}
                     </h2>
                     {isLatest && (
@@ -182,12 +182,9 @@ export default async function ChangelogPage() {
                     {release.published_at && (
                       <time
                         dateTime={release.published_at}
-                        className="text-xs text-muted-foreground"
+                        className="text-muted-foreground text-xs"
                       >
-                        <LocalTime
-                          value={release.published_at}
-                          options={RELEASE_DATE_FORMAT}
-                        />
+                        <LocalTime value={release.published_at} options={RELEASE_DATE_FORMAT} />
                       </time>
                     )}
                   </div>
@@ -203,14 +200,16 @@ export default async function ChangelogPage() {
                       <ReleaseNotes body={release.body} />
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No notes for this release.</p>
+                    <p className="text-muted-foreground text-sm">
+                      {tI18nHardcoded.raw('autoAppPublicSeoChangelogPageJsxTextNoNotesFord9403c55')}
+                    </p>
                   )}
 
                   <a
                     href={release.html_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-4 inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+                    className="text-muted-foreground hover:text-foreground decoration-foreground/20 hover:decoration-foreground/50 mt-4 inline-block text-xs underline underline-offset-4 transition-colors"
                   >
                     {isLong ? 'Read the full release on GitHub →' : 'Release on GitHub →'}
                   </a>

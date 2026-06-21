@@ -10,15 +10,15 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { 
+import {
   useAdminFeedbackAnalysis,
   type LLMAnalysisResponse,
-  type LLMAnalysisRequest 
+  type LLMAnalysisRequest
 } from '@/hooks/admin/use-admin-feedback';
-import { 
-  Sparkles, 
+import {
+  Sparkles,
   AlertTriangle,
-  CheckCircle2, 
+  CheckCircle2,
   Lightbulb,
   Target,
   MessageSquareQuote,
@@ -32,7 +32,7 @@ export function LLMAnalysisPanel() {
   const [focusArea, setFocusArea] = useState<string>('all');
   const [days, setDays] = useState(30);
   const [analysis, setAnalysis] = useState<LLMAnalysisResponse | null>(null);
-  
+
   const analysisMutation = useAdminFeedbackAnalysis();
 
   const handleAnalyze = async () => {
@@ -41,7 +41,7 @@ export function LLMAnalysisPanel() {
       days,
       max_feedback: 200,
     };
-    
+
     const result = await analysisMutation.mutateAsync(request);
     setAnalysis(result);
   };
@@ -56,9 +56,9 @@ export function LLMAnalysisPanel() {
     return (
       <div className="flex gap-0.5">
         {[1, 2, 3].map((i) => (
-          <div 
-            key={i} 
-            className={cn('w-1.5 h-1.5 rounded-full', i <= count ? 'bg-secondary' : 'bg-muted')} 
+          <div
+            key={i}
+            className={cn('w-1.5 h-1.5 rounded-full', i <= count ? 'bg-secondary' : 'bg-muted')}
           />
         ))}
       </div>
@@ -95,7 +95,7 @@ export function LLMAnalysisPanel() {
                 <SelectItem value="90">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line92JsxTextText90Days')}</SelectItem>
               </SelectContent>
             </Select>
-            <Button 
+            <Button
               onClick={handleAnalyze}
               disabled={analysisMutation.isPending}
               size="sm"
@@ -152,8 +152,8 @@ export function LLMAnalysisPanel() {
                   <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line153JsxTextKeyThemes')}</h4>
                   <div className="flex flex-wrap gap-2">
                     {analysis.key_themes.map((theme, i) => (
-                      <span 
-                        key={i} 
+                      <span
+                        key={i}
                         className="px-3 py-1.5 rounded-full text-sm font-medium bg-secondary/10 text-secondary"
                       >
                         {theme}
@@ -193,7 +193,7 @@ export function LLMAnalysisPanel() {
                     <div className="space-y-2">
                       {analysis.improvement_areas.slice(0, 4).map((area, i) => (
                         <div key={i} className="flex items-center gap-2 text-sm">
-                          <div className={cn('w-2 h-2 rounded-full shrink-0', 
+                          <div className={cn('w-2 h-2 rounded-full shrink-0',
                             area.severity === 'high' ? 'bg-destructive' : 'bg-secondary'
                           )} />
                           <span className="text-muted-foreground truncate">{area.area}</span>
@@ -211,19 +211,19 @@ export function LLMAnalysisPanel() {
                   <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line214JsxTextImprovementDetails')}</h4>
                   <div className="space-y-3">
                     {analysis.improvement_areas.map((area, i) => (
-                      <div 
-                        key={i} 
+                      <div
+                        key={i}
                         className={cn('rounded-2xl border-l-4 p-4', getSeverityStyles(area.severity))}
                       >
                         <div className="flex items-start justify-between gap-4 mb-2">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-medium">{area.area}</span>
-                              <Badge 
-                                variant="outline" 
+                              <Badge
+                                variant="outline"
                                 className={cn('text-xs uppercase',
-                                  area.severity === 'high' 
-                                    ? 'border-destructive/50 text-destructive' 
+                                  area.severity === 'high'
+                                    ? 'border-destructive/50 text-destructive'
                                     : 'border-secondary/50 text-secondary'
                                 )}
                               >
@@ -255,8 +255,8 @@ export function LLMAnalysisPanel() {
                   <h4 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsAdminFeedbackLlmanalysispanel.line260JsxTextRecommendedActions')}</h4>
                   <div className="space-y-3">
                     {analysis.actionable_recommendations.map((rec, i) => (
-                      <div 
-                        key={i} 
+                      <div
+                        key={i}
                         className="group rounded-2xl border bg-card p-4 hover:border-secondary/50 transition-colors"
                       >
                         <div className="flex items-start gap-4">

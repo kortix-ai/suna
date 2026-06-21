@@ -3,7 +3,7 @@ import { config } from '../../config';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
-export type BillingGateReason =
+type BillingGateReason =
   | 'subscription_required'
   | 'insufficient_credits'
   | 'no_account';

@@ -5,8 +5,8 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.65"
-kortixVersion: "0.9.65"
+  tag: "0.9.66"
+kortixVersion: "0.9.66"
 env:
   internalKortixEnv: prod
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
@@ -61,6 +61,10 @@ ingress:
   host: api-eks.kortix.com
   certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/27dd2310-c468-428c-b97a-ec46b1eed6fd
   cloudflareProxied: true
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kps
 # Plain rolling Deployment (no canary). The EKS wins we actually want —
 # auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
 # autoscaler), zero-downtime rolling deploys — all come from the Deployment, not
@@ -70,9 +74,12 @@ ingress:
 rollout:
   enabled: false
   analysis:
-    # CloudWatch 5xx + p95-latency, auto-rollback on breach. successCondition
-    # short-circuits cleanly on no-data (pre-cutover api-eks has ~no traffic →
-    # passes), and does real assessment once api.kortix.com cuts over to EKS.
-    enabled: true
+    # DISABLED during the dual-run. api-eks has ~no traffic, and metric-based
+    # canary analysis is unreliable without volume — both error-rate (1 5xx = huge
+    # %) and p95-latency (cold-start pods) false-abort on the noise. The canary
+    # still protects via POD HEALTH (a bad image → pods never go Ready → canary
+    # holds/aborts). FLIP TRUE AT THE api.kortix.com CUTOVER, when real traffic
+    # makes the analysis meaningful (template + guard are ready and correct).
+    enabled: false
     lbArnSuffix: "app/k8s-kortixpr-kortixap-b24c15d61b/a294c0dfce97d54d"
     tgArnSuffix: "targetgroup/k8s-kortixpr-kortixap-0d85bef361/b3b73cd646a9caf2"

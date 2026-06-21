@@ -1,0 +1,63 @@
+# Traces — Grafana Tempo (single-binary). The trace store that lands spans sent
+# by the OpenTelemetry Collector (platform-otel-collector). Grafana
+# (platform-metrics) queries Tempo via its datasource so traces join logs +
+# metrics in the one pane.
+#
+# PREREQUISITE — collects NOTHING yet: this is backend-only infrastructure. The
+# application is NOT OTel-instrumented, so no spans flow until app-side tracing
+# is added. This stands up where traces will land, ahead of that work.
+#
+# Single-binary on a gp2 PVC (filesystem) — simple and reliable at this scale.
+# Graduating to distributed Tempo + S3 is a values change, not a re-architecture.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-tracing
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo
+    targetRevision: 1.24.4
+    helm:
+      releaseName: tempo
+      values: |
+        fullnameOverride: tempo
+        persistence:
+          enabled: true
+          storageClassName: gp2
+          size: 10Gi
+        tempo:
+          retention: 72h
+          storage:
+            trace:
+              backend: local
+              local:
+                path: /var/tempo/traces
+              wal:
+                path: /var/tempo/wal
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

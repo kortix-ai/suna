@@ -404,7 +404,7 @@ export function useSpreadsheetSync({
     if (!enabled || !hasInitiallyLoadedRef.current) return;
 
     lastEditTimeRef.current = Date.now();
-    
+
     setSyncState(prev => {
       if (prev.status === 'synced' || prev.status === 'idle') {
         return { ...prev, pendingChanges: true, status: 'idle' };
@@ -572,11 +572,11 @@ export function useSpreadsheetSync({
             console.log('[SpreadsheetSync] External changes detected, auto-refreshing...');
             lastKnownHashRef.current = hash;
             currentVersionRef.current = hash;
-            
+
             if (cacheKey) {
               await setCachedFile(cacheKey, blob, hash);
             }
-            
+
             const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
             const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
             const fileExt = fileName.split('.').pop()?.toLowerCase();
@@ -588,14 +588,14 @@ export function useSpreadsheetSync({
             } else if (fileExt === 'csv') {
               mimeType = 'text/csv';
             }
-            
+
             const fileBlob = new Blob([blob], { type: mimeType });
             const file = new File([fileBlob], fileName, { type: mimeType });
-            
+
             if (spreadsheetRef.current) {
               spreadsheetRef.current.open({ file });
             }
-            
+
             setSyncState(prev => ({
               ...prev,
               status: 'synced',

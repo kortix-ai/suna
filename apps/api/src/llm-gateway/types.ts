@@ -1,11 +1,18 @@
-export interface AuthedPrincipal {
+interface AuthedPrincipal {
   userId: string;
   accountId: string;
+  /** Project + session the calling token is scoped to (sandbox executor token),
+   *  so usage is attributed per-session — the reaper's reliable activity signal
+   *  and precise billing attribution. Null for legacy/non-session tokens. */
+  projectId?: string | null;
+  sessionId?: string | null;
 }
 
 export interface UsageEvent {
   accountId: string;
   actorUserId: string;
+  projectId?: string | null;
+  sessionId?: string | null;
   provider: string;
   model: string;
   promptTokens: number;

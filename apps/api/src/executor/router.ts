@@ -22,9 +22,6 @@ import type { AgentGrant } from '@kortix/db';
 import { parseSharingIntent, type SharingIntent } from './share';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-// Re-exported for callers that historically imported it from here.
-export { parseSharingIntent };
-
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
 // /call result `data` and the pipedream/policy payloads are modeled loosely
@@ -95,7 +92,7 @@ export interface ExecutorPrincipal {
   agentGrant?: AgentGrant | null;
 }
 
-export interface CatalogAction {
+interface CatalogAction {
   path: string; // connector-relative
   name: string;
   description: string;
@@ -120,16 +117,16 @@ export interface AdminConnectorView extends CatalogConnector {
   secretSet: boolean;
 }
 
-export interface SyncResult {
+interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
 }
 
-export type CrudOutcome =
+type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
-export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface ProjectPolicyView {
@@ -146,6 +143,12 @@ export interface ProjectPoliciesViewResponse {
 export interface ExecutorRouterDeps {
   /** Gateway auth: resolve the executor token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null>;
+  /**
+   * Gateway auth for the project-EXPLICIT routes (/projects/:id/{catalog,call}).
+   * Runs under combinedAuth; accepts ANY valid principal (session token OR a
+   * logged-in user token) and pins the project from the path. Null → 403.
+   */
+  resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null>;
   /** Build the DB-backed (or fake) gateway deps for a principal. */
   makeGatewayDeps(p: ExecutorPrincipal): GatewayDeps;
   /** The catalog the principal can actually use (sharing-filtered, blocked hidden). */
@@ -215,6 +218,56 @@ const ProjectSlugParam = z.object({ projectId: z.string(), slug: z.string() });
 export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
+  // Shared gateway logic — used by BOTH the legacy flat routes (project derived
+  // from a project-scoped session token) and the project-EXPLICIT routes
+  // (project from the path, any valid principal). One implementation, two faces.
+  const catalogResponse = async (c: any, p: ExecutorPrincipal) => {
+    const connectors = await deps.listCatalog(p);
+    return c.json({ connectors });
+  };
+  const callResponse = async (c: any, p: ExecutorPrincipal) => {
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    const connectorSlug = typeof body?.connector === 'string' ? body.connector.trim() : '';
+    const actionPath = typeof body?.action === 'string' ? body.action.trim() : '';
+    if (!connectorSlug || !actionPath) {
+      return c.json({ error: 'connector and action are required' }, 400);
+    }
+    // Per-agent connector assignment: a scoped agent may call only the connector
+    // profiles its kortix.toml overlay lists. Default-deny otherwise.
+    if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
+      return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
+    }
+    const args = body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+    const result = await handleCall(deps.makeGatewayDeps(p), {
+      projectId: p.projectId,
+      accountId: p.accountId,
+      subject: p.subject,
+      sessionId: p.sessionId,
+      connectorSlug,
+      actionPath,
+      args,
+    });
+    switch (result.status) {
+      case 'ok':
+        return c.json({ ok: true, data: result.data, risk: result.risk });
+      case 'pending_approval':
+        return c.json({ ok: false, status: 'pending_approval', reason: result.reason }, 202);
+      case 'denied':
+        return c.json(
+          { ok: false, status: 'denied', reason: result.reason },
+          result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
+        );
+      default:
+        // 500, not 502 — Cloudflare eats 502 bodies (see route schema note).
+        return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
+    }
+  };
+
   // ── Gateway: list usable connectors ──────────────────────────────────────
   app.openapi(
     createRoute({
@@ -231,8 +284,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
-      const connectors = await deps.listCatalog(p);
-      return c.json({ connectors });
+      return catalogResponse(c, p);
     },
   );
 
@@ -282,49 +334,71 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     async (c: any) => {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
+      return callResponse(c, p);
+    },
+  );
 
-      let body: any;
-      try {
-        body = await c.req.json();
-      } catch {
-        return c.json({ error: 'invalid_json' }, 400);
-      }
-      const connectorSlug = typeof body?.connector === 'string' ? body.connector.trim() : '';
-      const actionPath = typeof body?.action === 'string' ? body.action.trim() : '';
-      if (!connectorSlug || !actionPath) {
-        return c.json({ error: 'connector and action are required' }, 400);
-      }
-      // Per-agent connector assignment: a scoped agent may call only the
-      // connector profiles its kortix.toml overlay lists. Default-deny otherwise.
-      if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
-        return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
-      }
-      const args = body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
+  // ── Gateway (project-explicit): list usable connectors ───────────────────
+  // Same as GET /connectors, but the project comes from the PATH and runs under
+  // combinedAuth — so it accepts a logged-in user token (laptop) as well as an
+  // in-sandbox session token. This is what makes `kortix executor` work locally.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/catalog',
+      tags: ['executor'],
+      summary: 'List the connectors usable in a project (any valid principal)',
+      ...auth,
+      request: { params: ProjectParam },
+      responses: {
+        200: json(ConnectorsResponseSchema, 'Sharing-filtered connector catalog'),
+        ...errors(403),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const p = await deps.resolveProjectPrincipal(c, projectId);
+      if (!p) return c.json({ error: 'forbidden' }, 403);
+      return catalogResponse(c, p);
+    },
+  );
 
-      const result = await handleCall(deps.makeGatewayDeps(p), {
-        projectId: p.projectId,
-        accountId: p.accountId,
-        subject: p.subject,
-        sessionId: p.sessionId,
-        connectorSlug,
-        actionPath,
-        args,
-      });
-
-      switch (result.status) {
-        case 'ok':
-          return c.json({ ok: true, data: result.data, risk: result.risk });
-        case 'pending_approval':
-          return c.json({ ok: false, status: 'pending_approval', reason: result.reason }, 202);
-        case 'denied':
-          return c.json(
-            { ok: false, status: 'denied', reason: result.reason },
-            result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
-          );
-        default:
-          // 500, not 502 — see the route schema note (Cloudflare eats 502 bodies).
-          return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
-      }
+  // ── Gateway (project-explicit): run a tool call ──────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/projects/{projectId}/call',
+      tags: ['executor'],
+      summary: 'Run a connector action in a project (any valid principal)',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                connector: z.string().optional(),
+                action: z.string().optional(),
+                args: z.record(z.string(), z.any()).optional(),
+              }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(CallResponseSchema, 'Tool result (ok)'),
+        202: json(CallResponseSchema, 'Pending approval'),
+        400: json(CallResponseSchema, 'Bad request (invalid_json / missing fields)'),
+        403: json(CallResponseSchema, 'Denied'),
+        404: json(CallResponseSchema, 'Connector or action not found'),
+        500: json(CallResponseSchema, 'Execution error'),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const p = await deps.resolveProjectPrincipal(c, projectId);
+      if (!p) return c.json({ error: 'forbidden' }, 403);
+      return callResponse(c, p);
     },
   );
 

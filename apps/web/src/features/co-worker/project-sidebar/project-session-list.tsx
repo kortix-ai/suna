@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import {
   directSubsessions,
   matchesSessionFilter,
-  rootOpenCodeSession,
   sessionSource,
   type SessionFilterValue,
   type SessionSourceKind,
@@ -48,6 +47,9 @@ interface ProjectSessionListProps {
 
 const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = ['queued', 'branching', 'provisioning'];
 
+const SESSION_RELATIVE_TIME_CLASS =
+  'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
+
 const SOURCE_ICONS: Record<
   Exclude<SessionSourceKind, 'chat'>,
   LucideIcon | IconMynauiType | IconType
@@ -63,6 +65,7 @@ function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): bool
 }
 
 export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -133,7 +136,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   if (visibleSessions.length === 0) {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
-        No sessions match this filter.
+        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
       </div>
     );
   }
@@ -144,7 +147,6 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         {visibleSessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          const root = rootOpenCodeSession(session);
           const children = directSubsessions(session);
           return (
             <div key={session.session_id} className="space-y-px">
@@ -152,7 +154,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 session={session}
                 href={href}
                 isActive={!!isActive && !activeOpenCodeSessionId}
-                displayTitle={getSessionDisplayTitle(session, root?.title ?? undefined)}
+                displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
@@ -268,103 +270,109 @@ function ProjectSessionRow({
         <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 self-stretch">
           <SessionStatusDot status={session.status} />
 
-          <span className={cn('flex-1 truncate pr-1 text-sm', isActive && 'font-medium')}>
+          <span className={cn('min-w-0 flex-1 truncate text-sm', isActive && 'font-medium')}>
             {displayTitle}
           </span>
 
-          {SourceIcon && (
-            <Hint
-              side="top"
-              label={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-            >
-              <span className="text-muted-foreground/70 flex h-4 w-4 shrink-0 items-center justify-center">
-                <SourceIcon className="h-3 w-3" />
-              </span>
-            </Hint>
-          )}
-
           {childCount > 0 && (
-            <span className="bg-sidebar-accent/60 text-muted-foreground rounded-full px-1.5 py-0.5 text-xs tabular-nums">
+            <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
               {childCount}
             </span>
           )}
         </Link>
 
-        <div className="relative shrink-0">
-          {relative && (
-            <span
-              className={cn(
-                'text-muted-foreground/60 pr-1.5 text-xs tabular-nums transition-opacity duration-150',
-                'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
-              )}
-            >
-              {shortRelative(relative)}
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-0">
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            {SourceIcon && (
+              <Hint
+                side="top"
+                label={
+                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
+                }
+              >
+                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                  <SourceIcon className="size-3" />
+                </span>
+              </Hint>
+            )}
+          </span>
 
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label={tHardcodedUi.raw(
-                  'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
-                )}
+          <div className="relative w-10 min-w-10 shrink-0">
+            {relative && (
+              <span
                 className={cn(
-                  'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
-                  relative
-                    ? cn(
-                        'pointer-events-none opacity-0',
-                        'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
-                        'focus-visible:pointer-events-auto focus-visible:opacity-100',
-                        'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
-                      )
-                    : 'opacity-100',
+                  SESSION_RELATIVE_TIME_CLASS,
+                  'pr-1.5 transition-opacity duration-150',
+                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
                 )}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
               >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
-              >
-                <Pencil />
-                Rename
-              </DropdownMenuItem>
-              {session.can_manage_sharing !== false && (
+                {shortRelative(relative)}
+              </span>
+            )}
+
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  aria-label={tHardcodedUi.raw(
+                    'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
+                  )}
+                  className={cn(
+                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150 focus:ring-0 focus-visible:ring-0',
+                    relative
+                      ? cn(
+                          'pointer-events-none opacity-0',
+                          'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
+                          'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
+                        )
+                      : 'opacity-100',
+                  )}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-44">
                 <DropdownMenuItem
                   className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onShare(session))}
+                  onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
                 >
-                  <Share />
-                  Share
+                  <Pencil />
+                  Rename
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                className="cursor-pointer"
-                disabled={isRestarting}
-                onSelect={() => deferAfterClose(() => onRestart(session.session_id))}
-              >
-                {isRestarting ? <Loading /> : <RotateCcw />}
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="cursor-pointer"
-                onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-                variant="destructive"
-              >
-                <TrashSolid />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {session.can_manage_sharing !== false && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    onSelect={() => deferAfterClose(() => onShare(session))}
+                  >
+                    <Share />
+                    Share
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  disabled={isRestarting}
+                  onSelect={() => deferAfterClose(() => onRestart(session.session_id))}
+                >
+                  {isRestarting ? <Loading /> : <RotateCcw />}
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+                  variant="destructive"
+                >
+                  <TrashSolid />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
     </div>
@@ -396,9 +404,7 @@ function ProjectSubsessionRow({
       >
         <span className="bg-muted-foreground/40 h-1 w-1 shrink-0 rounded-full" />
         <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
-        {relative && (
-          <span className="text-muted-foreground/60 text-xs tabular-nums">{relative}</span>
-        )}
+        {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
       </div>
     </Link>
   );
@@ -409,12 +415,12 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
 
   return (
     <Hint side="right" label={<span className="text-xs capitalize">{status}</span>}>
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center">
+      <div className="flex size-4 shrink-0 items-center justify-center">
         <svg
           height="16"
           viewBox="0 0 16 16"
           width="16"
-          stroke-linejoin="round"
+          strokeLinejoin="round"
           style={{
             color: isProvisioning
               ? 'var(--kortix-yellow)'
@@ -449,14 +455,13 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
   );
 }
 
-function getSessionDisplayTitle(session: ProjectSession, titleOverride?: string): string {
+function getSessionDisplayTitle(session: ProjectSession): string {
   const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
   const titleCandidate =
     session.custom_name?.trim() ||
-    titleOverride?.trim() ||
     session.name?.trim() ||
     legacyMetadataName?.trim();
 
@@ -465,8 +470,10 @@ function getSessionDisplayTitle(session: ProjectSession, titleOverride?: string)
 }
 
 function shortRelative(input: string): string {
+  if (input === 'less than a minute') return 'now';
   const match = input.match(/^(\d+)\s+(second|minute|hour|day|month|year)s?$/);
   if (!match) return input;
+  if (match[1] === '0' && match[2] === 'second') return 'now';
   const [, n, unit] = match;
   const suffix =
     unit === 'second'

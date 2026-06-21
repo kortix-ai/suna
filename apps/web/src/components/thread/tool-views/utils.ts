@@ -55,7 +55,7 @@ export function getToolTitle(toolName: string): string {
     'initialize-tools': 'Mode Activated',
     'initialize_tools': 'Mode Activated',
 
-    
+
     'ask': 'Ask',
     'complete': 'Task Complete',
     'search-mcp-servers': 'Search MCP Servers',
@@ -76,7 +76,7 @@ export function getToolTitle(toolName: string): string {
     'export-to-pdf': 'Export to PDF',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
-    
+
     // Agent Creation Tools
     'create-new-agent': 'Create New Worker',
     'update-agent': 'Update Worker',
@@ -174,18 +174,18 @@ export function getToolTitle(toolName: string): string {
 export function extractCommand(content: string | object | undefined | null): string | null {
   const contentStr = normalizeContentToString(content);
   if (!contentStr) return null;
-  
+
   // Try to find command in JSON structure (for native tool calls)
   try {
     const parsed = JSON.parse(contentStr);
     if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-      const execCommand = parsed.tool_calls.find((tc: any) => 
-        tc.function?.name === 'execute-command' || 
+      const execCommand = parsed.tool_calls.find((tc: any) =>
+        tc.function?.name === 'execute-command' ||
         tc.function?.name === 'execute_command'
       );
       if (execCommand && execCommand.function?.arguments) {
         try {
-          const args = typeof execCommand.function.arguments === 'string' 
+          const args = typeof execCommand.function.arguments === 'string'
             ? JSON.parse(execCommand.function.arguments)
             : execCommand.function.arguments;
           if (args.command) return args.command;
@@ -200,7 +200,7 @@ export function extractCommand(content: string | object | undefined | null): str
   } catch (e) {
     // Not JSON, continue with other checks
   }
-  
+
   // Check if the content itself is the command (plain text)
   if (!contentStr.startsWith('{') && !contentStr.startsWith('[')) {
     // Don't return content that looks like a tool result or error message
@@ -215,18 +215,18 @@ export function extractCommand(content: string | object | undefined | null): str
 export function extractSessionName(content: string | object | undefined | null): string | null {
   const contentStr = normalizeContentToString(content);
   if (!contentStr) return null;
-  
+
   // Try to find session_name in JSON structure (for native tool calls)
   try {
     const parsed = JSON.parse(contentStr);
     if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-      const checkCommand = parsed.tool_calls.find((tc: any) => 
-        tc.function?.name === 'check-command-output' || 
+      const checkCommand = parsed.tool_calls.find((tc: any) =>
+        tc.function?.name === 'check-command-output' ||
         tc.function?.name === 'check_command_output'
       );
       if (checkCommand && checkCommand.function?.arguments) {
         try {
-          const args = typeof checkCommand.function.arguments === 'string' 
+          const args = typeof checkCommand.function.arguments === 'string'
             ? JSON.parse(checkCommand.function.arguments)
             : checkCommand.function.arguments;
           if (args.session_name) return args.session_name;
@@ -241,13 +241,13 @@ export function extractSessionName(content: string | object | undefined | null):
   } catch (e) {
     // Not JSON, continue with other checks
   }
-  
+
   // Look for session_name in the content
   const sessionNameMatch = contentStr.match(/session_name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
   if (sessionNameMatch) {
     return sessionNameMatch[1].trim();
   }
-  
+
   return null;
 }
 
@@ -261,12 +261,12 @@ export function extractCommandOutput(
   try {
     // First try to parse the JSON content
     const parsedContent = JSON.parse(contentStr);
-    
+
     // Handle check-command-output specific format
     if (parsedContent.output && typeof parsedContent.output === 'string') {
       return parsedContent.output;
     }
-    
+
     if (parsedContent.content && typeof parsedContent.content === 'string') {
       // Look for output field in a ToolResult pattern
       const outputMatch = parsedContent.content.match(
@@ -279,7 +279,7 @@ export function extractCommandOutput(
       // Return the content itself as a fallback
       return parsedContent.content;
     }
-    
+
     // If parsedContent is the actual output (new format)
     if (typeof parsedContent === 'string') {
       return parsedContent;
@@ -292,7 +292,7 @@ export function extractCommandOutput(
     if (outputMatch) {
       return outputMatch[1];
     }
-    
+
     // If no special format is found, return the content as-is
     // This handles cases where the output is stored directly
     if (!contentStr.startsWith('{') && !contentStr.includes('ToolResult')) {
@@ -379,17 +379,17 @@ export function extractFilePath(content: string | object | undefined | null): st
           return cleanFilePath(filePathMatch[1]);
         }
       }
-      
+
       // Check for direct file_path property
       if ('file_path' in content) {
         return cleanFilePath(content.file_path as string);
       }
-      
+
       // Check for direct target_file property (edit-file tool)
       if ('target_file' in content) {
         return cleanFilePath(content.target_file as string);
       }
-      
+
       // Check for arguments.file_path
       if ('arguments' in content && content.arguments && typeof content.arguments === 'object') {
         const args = content.arguments as any;
@@ -449,17 +449,31 @@ export function extractFilePath(content: string | object | undefined | null): st
 }
 
 // Helper to clean and process a file path string, handling escaped chars
+function decodeCommonEscapes(value: string): string {
+  return value.replace(/\\([ntr"'\\])/g, (_match, escape: string) => {
+    switch (escape) {
+      case 'n':
+        return '\n';
+      case 't':
+        return '\t';
+      case 'r':
+        return '';
+      case '"':
+        return '"';
+      case "'":
+        return "'";
+      case '\\':
+        return '\\';
+      default:
+        return escape;
+    }
+  });
+}
+
 function cleanFilePath(path: string): string {
   if (!path) return path;
 
-  // Handle escaped newlines and other escaped characters
-  return path
-    .replace(/\\n/g, '\n') // Replace \n with actual newlines
-    .replace(/\\t/g, '\t') // Replace \t with actual tabs
-    .replace(/\\r/g, '') // Remove \r
-    .replace(/\\\\/g, '\\') // Replace \\ with \
-    .replace(/\\"/g, '"') // Replace \" with "
-    .replace(/\\'/g, "'") // Replace \' with '
+  return decodeCommonEscapes(path)
     .split('\n')[0] // Take only the first line if multiline
     .trim(); // Trim whitespace
 }
@@ -515,7 +529,7 @@ export function extractFileContent(
   try {
     // Try to parse content as JSON first
     const parsedContent = JSON.parse(contentStr);
-    
+
     // Check for file_contents or code_edit fields
     if (toolType === 'edit-file' && parsedContent.code_edit) {
       return processFileContent(parsedContent.code_edit);
@@ -523,11 +537,11 @@ export function extractFileContent(
     if ((toolType === 'create-file' || toolType === 'full-file-rewrite') && parsedContent.file_contents) {
       return processFileContent(parsedContent.file_contents);
     }
-    
+
     // Check in arguments
     if (parsedContent.arguments) {
-      const args = typeof parsedContent.arguments === 'string' 
-        ? JSON.parse(parsedContent.arguments) 
+      const args = typeof parsedContent.arguments === 'string'
+        ? JSON.parse(parsedContent.arguments)
         : parsedContent.arguments;
       if (toolType === 'edit-file' && args.code_edit) {
         return processFileContent(args.code_edit);
@@ -536,7 +550,7 @@ export function extractFileContent(
         return processFileContent(args.file_contents);
       }
     }
-    
+
     // Check in content field
     if (parsedContent.content) {
       if (typeof parsedContent.content === 'string') {
@@ -572,7 +586,7 @@ function processFileContent(content: string | object): string {
   const trimmedContent = typeof content === 'string' ? content.trim() : '';
   const isLikelyJson = (trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
                        (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'));
-  
+
   if (isLikelyJson) {
     try {
       const parsed = JSON.parse(content);
@@ -580,13 +594,7 @@ function processFileContent(content: string | object): string {
     } catch (e) {
     }
   }
-  return content
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t')
-    .replace(/\\r/g, '')
-    .replace(/\\\\/g, '\\')
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'");
+  return decodeCommonEscapes(content);
 }
 
 // Helper to determine file type (for syntax highlighting)
@@ -620,7 +628,7 @@ export function getFileType(filePath: string): string {
 export function extractBrowserUrl(content: string | object | undefined | null): string | null {
   const contentStr = normalizeContentToString(content);
   if (!contentStr) return null;
-  
+
   const urlMatch = contentStr.match(/url=["'](https?:\/\/[^"']+)["']/);
   return urlMatch ? urlMatch[1] : null;
 }
@@ -642,12 +650,12 @@ export function extractSearchQuery(content: string | object | undefined | null):
   const toolResultMatch = contentStr.match(
     /ToolResult\(.*?output='([\s\S]*?)'.*?\)/,
   );
-  
+
   if (toolResultMatch) {
     try {
       // Parse the output JSON from ToolResult
       const outputJson = JSON.parse(toolResultMatch[1]);
-      
+
       // Check if this is the new Tavily response format with query field
       if (outputJson.query && typeof outputJson.query === 'string') {
         return outputJson.query;
@@ -662,12 +670,12 @@ export function extractSearchQuery(content: string | object | undefined | null):
   // Try parsing as JSON first
   try {
     const parsedContent = JSON.parse(contentStr);
-    
+
     // Check if it's the new Tavily response format
     if (parsedContent.query && typeof parsedContent.query === 'string') {
       return parsedContent.query;
     }
-    
+
     // Continue with existing logic for backward compatibility
     if (typeof parsedContent.content === 'string') {
       // If the outer content is JSON and has a 'content' string field,
@@ -925,7 +933,7 @@ export function extractWebpageContent(
           text: content.Text || content.text || content.content || '',
         };
       }
-      
+
       // Content is a string, try to parse it
       if (typeof parsedContent.content === 'string') {
         try {
@@ -973,7 +981,7 @@ export function extractWebpageContent(
             '',
         };
       }
-      
+
       // Otherwise, try to stringify it
       return {
         title: 'Webpage Content',
@@ -1035,19 +1043,19 @@ export function extractSearchResults(
   if (!contentStr) return [];
 
     try {
-    // Instead of trying to parse the complex ToolResult JSON, 
+    // Instead of trying to parse the complex ToolResult JSON,
     // let's look for the results array pattern directly in the content
-    
+
     // Look for the results array pattern within the content
     const resultsPattern = /"results":\s*\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]/;
     const resultsMatch = contentStr.match(resultsPattern);
-    
+
     if (resultsMatch) {
       try {
         // Extract just the results array and parse it
         const resultsArrayStr = '[' + resultsMatch[1] + ']';
         const results = JSON.parse(resultsArrayStr);
-        
+
         if (Array.isArray(results)) {
           return results.map(result => ({
             title: result.title || '',
@@ -1059,12 +1067,12 @@ export function extractSearchResults(
         console.warn('Failed to parse results array:', e);
       }
     }
-    
+
     // Fallback: Look for individual result objects
     const resultObjectPattern = /\{\s*"url":\s*"([^"]+)"\s*,\s*"title":\s*"([^"]+)"\s*,\s*"content":\s*"([^"]*)"[^}]*\}/g;
     const results = [];
     let match;
-    
+
     while ((match = resultObjectPattern.exec(contentStr)) !== null) {
       results.push({
         url: match[1],
@@ -1072,14 +1080,14 @@ export function extractSearchResults(
         snippet: match[3],
       });
     }
-    
+
     if (results.length > 0) {
       return results;
     }
 
     // Try parsing the entire content as JSON (for direct Tavily responses)
     const parsedContent = JSON.parse(contentStr);
-    
+
     // Check if this is the new Tavily response format
     if (parsedContent.results && Array.isArray(parsedContent.results)) {
       return parsedContent.results.map((result: any) => ({
@@ -1088,7 +1096,7 @@ export function extractSearchResults(
         snippet: result.content || '',
       }));
     }
-    
+
     // Continue with existing logic for backward compatibility
     if (parsedContent.content && typeof parsedContent.content === 'string') {
       // Try to find JSON array in the content
@@ -1203,7 +1211,7 @@ export function getToolComponent(toolName: string): string {
 // Helper function to normalize content to string
 export function normalizeContentToString(content: string | object | undefined | null): string | null {
   if (!content) return null;
-  
+
   if (typeof content === 'string') {
     // Check if it's a double-escaped JSON string (old format)
     if (content.startsWith('"{') && content.endsWith('}"')) {
@@ -1224,13 +1232,13 @@ export function normalizeContentToString(content: string | object | undefined | 
     }
     return content;
   }
-  
-  if (typeof content === 'object' && content !== null) {
+
+  if (typeof content === 'object') {
     try {
       // Handle case where content is a parsed object with content field (new format)
       if ('content' in content && typeof content.content === 'string') {
         return content.content;
-      } 
+      }
       // Handle case where content is a parsed object with content field that's also an object
       else if ('content' in content && typeof content.content === 'object' && content.content !== null) {
         // Check if the nested content has a content field
@@ -1243,7 +1251,7 @@ export function normalizeContentToString(content: string | object | undefined | 
       // Handle message format {role: 'tool', content: '...'}
       else if ('role' in content && 'content' in content && typeof content.content === 'string') {
         return content.content;
-      } 
+      }
       // Handle nested message format {role: 'assistant', content: {role: 'assistant', content: '...'}}
       else if ('role' in content && 'content' in content && typeof content.content === 'object' && content.content !== null) {
         if ('content' in content.content && typeof content.content.content === 'string') {
@@ -1251,7 +1259,7 @@ export function normalizeContentToString(content: string | object | undefined | 
         }
         // Try to stringify nested content object
         return JSON.stringify(content.content);
-      } 
+      }
       // Handle direct object that might be the content itself (new format)
       else {
         // If it looks like it might contain structured content, stringify it
@@ -1268,7 +1276,7 @@ export function normalizeContentToString(content: string | object | undefined | 
       return null;
     }
   }
-  
+
   return null;
 }
 
@@ -1281,7 +1289,7 @@ export function extractStreamingFileContent(
   if (!contentStr) return null;
 
   const tagName = toolType === 'create-file' ? 'create-file' : toolType === 'edit-file' ? 'edit-file' : 'full-file-rewrite';
-  
+
   // First check if content is already a parsed object (new format)
   if (typeof content === 'object' && content !== null) {
     try {
@@ -1293,7 +1301,7 @@ export function extractStreamingFileContent(
           const tagEndIndex = content.content.indexOf(openTagMatch[0]) + openTagMatch[0].length;
           // Extract everything after the opening tag
           const afterTag = content.content.substring(tagEndIndex);
-          
+
           // Check if there's a closing tag
           const closeTagMatch = afterTag.match(new RegExp(`<\\/${tagName}>`, 'i'));
           if (closeTagMatch) {
@@ -1318,7 +1326,7 @@ export function extractStreamingFileContent(
     const tagEndIndex = contentStr.indexOf(openTagMatch[0]) + openTagMatch[0].length;
     // Extract everything after the opening tag
     const afterTag = contentStr.substring(tagEndIndex);
-    
+
     // Check if there's a closing tag
     const closeTagMatch = afterTag.match(new RegExp(`<\\/${tagName}>`, 'i'));
     if (closeTagMatch) {
@@ -1335,13 +1343,13 @@ export function extractStreamingFileContent(
 
 export const getFileIconAndColor = (filename: string) => {
   const ext = filename.split('.').pop()?.toLowerCase();
-  
+
   // All file types use consistent gray styling
-  const grayStyle = { 
-    color: 'text-zinc-500 dark:text-zinc-400', 
-    bgColor: 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20' 
+  const grayStyle = {
+    color: 'text-zinc-500 dark:text-zinc-400',
+    bgColor: 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20'
   };
-  
+
   switch (ext) {
     case 'js':
     case 'jsx':
@@ -1355,13 +1363,13 @@ export const getFileIconAndColor = (filename: string) => {
     case 'yaml':
     case 'yml':
       return { icon: FileCode, ...grayStyle };
-    
+
     // Data files
     case 'json':
       return { icon: FileJson, ...grayStyle };
     case 'csv':
       return { icon: Table, ...grayStyle };
-    
+
     // Image files
     case 'jpg':
     case 'jpeg':
@@ -1370,7 +1378,7 @@ export const getFileIconAndColor = (filename: string) => {
     case 'svg':
     case 'webp':
       return { icon: FileImage, ...grayStyle };
-    
+
     // Document files
     case 'md':
     case 'mdx':
@@ -1378,7 +1386,7 @@ export const getFileIconAndColor = (filename: string) => {
       return { icon: FileText, ...grayStyle };
     case 'pdf':
       return { icon: FileType, ...grayStyle };
-    
+
     // Media files
     case 'mp4':
     case 'avi':
@@ -1388,14 +1396,14 @@ export const getFileIconAndColor = (filename: string) => {
     case 'wav':
     case 'ogg':
       return { icon: FileAudio, ...grayStyle };
-    
+
     // Archive files
     case 'zip':
     case 'tar':
     case 'gz':
     case 'rar':
       return { icon: FileArchive, ...grayStyle };
-    
+
     // Default
     default:
       if (!ext || filename.includes('/')) {
@@ -1404,4 +1412,3 @@ export const getFileIconAndColor = (filename: string) => {
       return { icon: File, ...grayStyle };
   }
 };
-

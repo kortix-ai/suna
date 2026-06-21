@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, ExternalLink, FileText } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useMemo } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -28,12 +29,12 @@ function fileNameFromPath(path: string | null | undefined, fallback = 'Shared fi
 
 function isTextResponse(filePath: string, contentType: string) {
   if (
-    contentType.startsWith('text/')
-    || contentType.includes('json')
-    || contentType.includes('javascript')
-    || contentType.includes('xml')
-    || contentType.includes('yaml')
-    || contentType.includes('toml')
+    contentType.startsWith('text/') ||
+    contentType.includes('json') ||
+    contentType.includes('javascript') ||
+    contentType.includes('xml') ||
+    contentType.includes('yaml') ||
+    contentType.includes('toml')
   ) {
     return true;
   }
@@ -124,12 +125,16 @@ function usePublicBinaryBlob(
     blobUrl,
     blob: query.data ?? null,
     isLoading: query.isLoading,
-    error: query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null,
+    error:
+      query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null,
   };
 }
 
 function PublicFileBreadcrumbs({ filePath }: { filePath: string }) {
-  const parts = filePath.replace(/^\/workspace\/?/, '').split('/').filter(Boolean);
+  const parts = filePath
+    .replace(/^\/workspace\/?/, '')
+    .split('/')
+    .filter(Boolean);
   return (
     <div className="flex min-w-0 items-center gap-1 text-xs">
       <span className="text-muted-foreground shrink-0">workspace</span>
@@ -159,35 +164,39 @@ export function PublicFileShareView({
   share: PublicFileShare;
   fileUrl: string;
 }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const filePath = share.file_path || share.label;
   const fileName = fileNameFromPath(filePath, share.label);
   const isHtmlFile = getFileCategory(fileName) === 'html';
 
-  const source = useMemo<FileSource>(() => ({
-    useFileContent: (path) => usePublicFileContent(token, path, fileUrl),
-    useBinaryBlob: (path) => usePublicBinaryBlob(token, path, fileUrl),
-    download: async (_filePath, name) => {
-      const res = await fetch(fileUrl, { cache: 'no-store' });
-      if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name || fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    },
-    upload: async () => {
-      throw new Error('Public file shares are read-only');
-    },
-    Breadcrumbs: PublicFileBreadcrumbs,
-  }), [fileName, fileUrl, token]);
+  const source = useMemo<FileSource>(
+    () => ({
+      useFileContent: (path) => usePublicFileContent(token, path, fileUrl),
+      useBinaryBlob: (path) => usePublicBinaryBlob(token, path, fileUrl),
+      download: async (_filePath, name) => {
+        const res = await fetch(fileUrl, { cache: 'no-store' });
+        if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name || fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      },
+      upload: async () => {
+        throw new Error('Public file shares are read-only');
+      },
+      Breadcrumbs: PublicFileBreadcrumbs,
+    }),
+    [fileName, fileUrl, token],
+  );
 
   if (isHtmlFile) {
     return (
-      <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="bg-background flex h-full min-h-0 flex-col">
         <div className="border-border/60 flex h-11 shrink-0 items-center gap-2 border-b px-3">
           <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
           <PublicFileBreadcrumbs filePath={filePath} />
@@ -214,7 +223,9 @@ export function PublicFileShareView({
           title={fileName}
           src={fileUrl}
           className="min-h-0 flex-1 border-0 bg-white"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
+          sandbox={tI18nHardcoded.raw(
+            'autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063',
+          )}
         />
       </div>
     );
@@ -222,7 +233,7 @@ export function PublicFileShareView({
 
   return (
     <FileSourceProvider value={source}>
-      <FileContentRenderer filePath={filePath} readOnly className="h-full bg-background" />
+      <FileContentRenderer filePath={filePath} readOnly className="bg-background h-full" />
     </FileSourceProvider>
   );
 }

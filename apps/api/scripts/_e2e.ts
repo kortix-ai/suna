@@ -1,0 +1,10 @@
+import { createAccountToken } from '../src/repositories/account-tokens';
+const ACC='fbea71d0-9655-4ab4-aca5-1b68e1ae7f71';
+const tok=(await createAccountToken({accountId:ACC,userId:ACC,name:'e2e-final'})).secretKey;
+const H={Authorization:`Bearer ${tok}`,'Content-Type':'application/json'};
+const prov=await (await fetch('http://localhost:8008/v1/projects/provision',{method:'POST',headers:H,body:JSON.stringify({name:'e2e-final',seed_starter:true})})).json() as any;
+console.log('provision:',prov.project_id,'seeded',prov.seeded);
+const ses=await (await fetch(`http://localhost:8008/v1/projects/${prov.project_id}/sessions`,{method:'POST',headers:H,body:JSON.stringify({branch_already_created:false})})).json() as any;
+console.log('session:',ses.session_id);
+console.log('PID='+prov.project_id,'SID='+ses.session_id);
+process.exit(0);

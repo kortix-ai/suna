@@ -1,15 +1,38 @@
 {
   "name": "@kortix/executor-sdk",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.9.66",
+  "description": "TypeScript SDK for the Kortix Executor — one typed client for every connector (Pipedream / MCP / OpenAPI / GraphQL / HTTP). Calls run server-side through the Kortix Executor gateway; no third-party secret ever touches your code.",
   "type": "module",
+  "license": "Elastic-2.0",
+  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/executor-sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/executor-sdk"
+  },
+  "keywords": ["kortix", "executor", "connectors", "mcp", "pipedream", "agent", "sdk"],
+  "sideEffects": false,
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": ["dist", "src", "README.md"],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "tsc -p tsconfig.build.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
   },
   "devDependencies": {
     "typescript": "^5.4.0"

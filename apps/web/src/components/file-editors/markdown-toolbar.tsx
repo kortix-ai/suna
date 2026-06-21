@@ -80,6 +80,25 @@ import { cn } from '@/lib/utils';
 import { useEditorState, type Editor } from '@tiptap/react';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 
+const SAFE_IMAGE_DATA_URL_PATTERN = /^data:image\/(?:png|jpe?g|gif|webp|bmp|avif);base64,[a-z0-9+/=\s]+$/i;
+
+function normalizeSafeImageUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (SAFE_IMAGE_DATA_URL_PATTERN.test(trimmed)) return trimmed;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.toString();
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
 interface MarkdownToolbarProps {
   editor: Editor;
   saveState?: 'idle' | 'saving' | 'saved' | 'error';
@@ -93,12 +112,12 @@ interface MarkdownToolbarProps {
   sandboxId?: string; // Sandbox ID for uploading images
 }
 
-export function MarkdownToolbar({ 
-  editor, 
-  saveState = 'idle', 
-  onSave, 
-  onDiscard, 
-  fileName = 'document', 
+export function MarkdownToolbar({
+  editor,
+  saveState = 'idle',
+  onSave,
+  onDiscard,
+  fileName = 'document',
   hideActions = false,
   isBubbleMenu = false,
   isFloatingMenu = false,
@@ -113,6 +132,7 @@ export function MarkdownToolbar({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const safeImageUrl = normalizeSafeImageUrl(imageUrl);
 
   // Use Tiptap's proper state hooks for reactive state management
   const canUndo = useEditorState({
@@ -248,7 +268,7 @@ export function MarkdownToolbar({
 
   const handleExport = useCallback(async (format: ExportFormat) => {
     if (!editor) return;
-    
+
     setIsExporting(true);
     try {
       const content = editor.getHTML();
@@ -329,7 +349,7 @@ export function MarkdownToolbar({
       // Store the file for upload
       setSelectedFile(file);
       setImageUrl(''); // Clear URL when file is selected
-      
+
       // Create preview
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -398,8 +418,11 @@ export function MarkdownToolbar({
         setIsUploading(false);
       }
     } else if (imageUrl) {
-      // URL mode - just insert the URL
-      editor.chain().focus().setImage({ src: imageUrl }).run();
+      if (!safeImageUrl) {
+        toast.error('Enter a valid HTTP(S) image URL');
+        return;
+      }
+      editor.chain().focus().setImage({ src: safeImageUrl }).run();
       setIsImageDialogOpen(false);
       setImageUrl('');
       setImagePreview(null);
@@ -412,7 +435,7 @@ export function MarkdownToolbar({
       setImagePreview(null);
       setSelectedFile(null);
     }
-  }, [editor, imageUrl, imagePreview, selectedFile, uploadImageToServer]);
+  }, [editor, imageUrl, imagePreview, safeImageUrl, selectedFile, uploadImageToServer]);
 
   const insertTable = useCallback(() => {
     editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
@@ -478,10 +501,10 @@ export function MarkdownToolbar({
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={onSave} 
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSave}
                 disabled={!hasChanges}
                 className="gap-1.5 h-8 px-2"
               >
@@ -527,7 +550,7 @@ export function MarkdownToolbar({
           <Separator orientation="vertical" className="h-6 mx-1 shrink-0" />
         </>
       )}
-      
+
       {/* Unsaved indicator - ALWAYS show in main toolbar when there are changes */}
       {!isBubbleMenu && !isFloatingMenu && hasChanges && (
         <>
@@ -768,7 +791,7 @@ export function MarkdownToolbar({
           <span className="hidden md:inline text-xs text-muted-foreground tabular-nums">
             {wordCount} words
           </span>
-          
+
           {!hideActions && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -874,11 +897,11 @@ export function MarkdownToolbar({
                 }}
               />
             </div>
-            {imageUrl && (
+            {safeImageUrl && (
               <div className="border rounded-2xl p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={imageUrl}
+                  src={safeImageUrl}
                   alt="Preview"
                   className="max-h-40 mx-auto rounded object-contain"
                   onError={(e) => {
@@ -893,7 +916,7 @@ export function MarkdownToolbar({
           <Button variant="outline" onClick={() => setIsImageDialogOpen(false)} disabled={isUploading}>
             Cancel
           </Button>
-          <Button onClick={insertImage} disabled={(!imageUrl && !imagePreview) || isUploading}>
+          <Button onClick={insertImage} disabled={(!safeImageUrl && !imagePreview) || isUploading}>
             {isUploading ? (
               <>
                 <KortixLoader size="small" className="mr-2" />
@@ -931,4 +954,3 @@ export function MarkdownToolbar({
     </TooltipProvider>
   );
 }
-

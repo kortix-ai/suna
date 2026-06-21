@@ -34,6 +34,22 @@ function jsonProxyError(body: Record<string, unknown>, status: number): Response
   });
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : String(error || fallback);
+}
+
+const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
+  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+
+function isRetryableEnvSyncFailure(message: string): boolean {
+  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
+  // Fetch rejections are bare network errors. HTTP failures include the daemon
+  // response body, so don't classify a non-retryable status as transient just
+  // because its JSON/body happens to mention a connection failure.
+  if (/^env sync failed:/i.test(message)) return false;
+  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
+}
+
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
 // Returns null if nothing meaningful remains (so the header can be dropped).
 function stripFrameAncestors(csp: string): string | null {
@@ -312,12 +328,25 @@ export async function forwardToSandbox(
 
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
-  const RETRY_DELAYS_MS = [2000, 5000, 8000]; // progressive delays to let sandbox boot
+  // Short early delays so a transient post-restore RX stall (CH virtio-net misses
+  // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
+  // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
+  // ~1s stall into the multi-second session-list lag observed in-browser
+  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
+  // genuinely cold-booting port.
+  const RETRY_DELAYS_MS = [250, 1000, 3000];
   let wakeTriggered = false;
+  // Only a CONFIRMED-dead provider signal (box stopped/archived) errors the row.
+  // A transient unreachable / RX stall must NEVER error a sandbox whose daemon
+  // health is green — that briefly flipped healthy boxes to 'error' (surfacing
+  // the chat as failed + lagging the session list, 2026-06-14). For microVM
+  // providers there is no such signal, so the preview proxy never errors the row;
+  // liveness is owned by the health-check loop + reconciler, not a port request.
+  let sawDeadSignal = false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, port);
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -330,9 +359,17 @@ export async function forwardToSandbox(
             previewToken,
           });
         } catch (err) {
-          throw new HTTPException(502, {
-            message: (err as Error).message || 'project env sync failed',
-          });
+          const message = errorMessage(err, 'project env sync failed');
+          if (isRetryableEnvSyncFailure(message)) {
+            // Treat daemon/preview-transient env-sync failures like any other
+            // sandbox-port reachability miss: retry/wake in the outer loop, then
+            // return the friendly port-unreachable response if the sandbox never
+            // recovers. Throwing HTTPException here bypassed that retry path and
+            // turned expected 502/timeouts from Daytona into Better Stack errors.
+            throw new Error(message);
+          }
+          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
+          return jsonProxyError({ error: message }, 502);
         }
       }
 
@@ -403,6 +440,12 @@ export async function forwardToSandbox(
         headers,
         body,
         redirect: 'manual',
+        // Bound a wedged first connection to a freshly-restored microVM (residual
+        // CH RX stall) so the attempt fails fast → retry on a fresh connection,
+        // instead of hanging the whole proxy. `body` is buffered (line ~576, not
+        // a stream) so aborting only kills the in-flight attempt, never truncates
+        // an upload mid-stream.
+        signal: AbortSignal.timeout(15_000),
         // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
         decompress: false,
         duplex: 'half',
@@ -478,6 +521,7 @@ export async function forwardToSandbox(
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
         if (isSandboxDown) {
+          sawDeadSignal = true; // confirmed-dead → erroring the row is justified
           if (!wakeTriggered) {
             console.warn(
               `[PREVIEW] Sandbox ${sandboxId} is stopped/archived (Daytona: ${bodyText.slice(0, 120)}), triggering wake`,
@@ -529,8 +573,14 @@ export async function forwardToSandbox(
     }
   }
 
-  // All retries exhausted — error the row so we stop hammering a dead instance.
-  await markSandboxErrored(sandboxId);
+  // All retries exhausted. Only error the row when the provider CONFIRMED the
+  // sandbox is dead — never on a transient unreachable / RX stall, which would
+  // flip a health-green box to 'error' (the chat-failed + session-list-lag bug,
+  // 2026-06-14). When not confirmed-dead, fail just this request gracefully; the
+  // health-check loop owns liveness and will retry the box.
+  if (sawDeadSignal) {
+    await markSandboxErrored(sandboxId);
+  }
   return portUnreachableResponse({
     port,
     status: 502,
@@ -581,7 +631,7 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, upstreamPort);
+  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')

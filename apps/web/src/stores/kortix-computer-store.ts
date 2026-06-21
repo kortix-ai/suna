@@ -9,17 +9,17 @@ export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 
 interface KortixComputerState {
   // === SANDBOX CONTEXT ===
   currentSandboxId: string | null;
-  
+
   // Main view state
   activeView: ViewType;
-  
+
   // Panel state — per-session so switching tabs preserves each session's panel state
   shouldOpenPanel: boolean;
   isSidePanelOpen: boolean;
   _panelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
   isExpanded: boolean;
-  
+
   // Tool navigation state (for external tool click triggers)
   pendingToolNavIndex: number | null;
 
@@ -29,16 +29,16 @@ interface KortixComputerState {
   focusedToolCallId: string | null;
 
   // === ACTIONS ===
-  
+
   setSandboxContext: (sandboxId: string | null) => void;
   setActiveView: (view: ViewType) => void;
-  
+
   // For external triggers (clicking file in chat) — delegates to useFilesStore + opens panel
   openFileInComputer: (filePath: string, filePathList?: string[], targetLine?: number) => void;
-  
+
   // Open files browser without selecting a file — delegates to useFilesStore + opens panel
   openFileBrowser: () => void;
-  
+
   // Navigate to a specific tool call (clicking tool in ThreadContent)
   navigateToToolCall: (toolIndex: number) => void;
 
@@ -49,7 +49,7 @@ interface KortixComputerState {
   focusToolCall: (callId: string) => void;
   // Clear the focus request after the panel has jumped to it.
   clearFocusedToolCall: () => void;
-  
+
   // Panel control
   clearShouldOpenPanel: () => void;
   setIsSidePanelOpen: (open: boolean) => void;
@@ -59,7 +59,7 @@ interface KortixComputerState {
   closeSidePanel: () => void;
   setIsExpanded: (expanded: boolean) => void;
   toggleExpanded: () => void;
-  
+
   // Reset all state (full reset)
   reset: () => void;
 }
@@ -80,10 +80,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
   devtools(
     (set, get) => ({
       ...initialState,
-      
+
       setSandboxContext: (sandboxId: string | null) => {
         const currentSandboxId = get().currentSandboxId;
-        
+
         if (currentSandboxId !== sandboxId) {
           console.log('[KortixComputerStore] Sandbox context changed:', currentSandboxId, '->', sandboxId);
           // Reset files store when sandbox changes
@@ -94,7 +94,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           });
         }
       },
-      
+
       setActiveView: (view: ViewType) => {
         // If browser tab is hidden and trying to set browser view, default to tools
         const effectiveView = HIDE_BROWSER_TAB && view === 'browser' ? 'tools' : view;
@@ -102,23 +102,23 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const finalView = (effectiveView === 'terminal' || effectiveView === 'desktop' || effectiveView === 'changes') ? 'tools' : effectiveView;
         set({ activeView: finalView });
       },
-      
+
       openFileInComputer: (filePath: string, _filePathList?: string[], targetLine?: number) => {
         // Open the file in the global preview dialog (same as clicking a file
         // in the explorer / a path in chat).
         useFilePreviewStore.getState().openPreview(filePath, targetLine);
       },
-      
+
       openFileBrowser: () => {
         // Delegate file state to the unified files store
         useFilesStore.getState().navigateToPath('.');
-        
+
         set({
           activeView: 'tools',
           shouldOpenPanel: true,
         });
       },
-      
+
       navigateToToolCall: (toolIndex: number) => {
         set({
           activeView: 'tools',
@@ -126,7 +126,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           shouldOpenPanel: true,
         });
       },
-      
+
       clearPendingToolNav: () => {
         set({ pendingToolNavIndex: null });
       },
@@ -150,11 +150,11 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       clearFocusedToolCall: () => {
         set({ focusedToolCallId: null });
       },
-      
+
       clearShouldOpenPanel: () => {
         set({ shouldOpenPanel: false });
       },
-      
+
       setIsSidePanelOpen: (open: boolean) => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: open };
@@ -182,7 +182,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           isExpanded: false,
         });
       },
-      
+
       openSidePanel: () => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
@@ -191,7 +191,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         }
         set(update);
       },
-      
+
       closeSidePanel: () => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: false, isExpanded: false };
@@ -208,7 +208,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       toggleExpanded: () => {
         set((state) => ({ isExpanded: !state.isExpanded }));
       },
-      
+
       reset: () => {
         console.log('[KortixComputerStore] Full reset');
         useFilesStore.getState().reset();
@@ -231,7 +231,7 @@ export const useSetSandboxContext = () =>
   useKortixComputerStore((state) => state.setSandboxContext);
 
 // Main view state
-export const useKortixComputerActiveView = () => 
+export const useKortixComputerActiveView = () =>
   useKortixComputerStore((state) => state.activeView);
 
 // Individual selectors for pending tool navigation (stable primitives)

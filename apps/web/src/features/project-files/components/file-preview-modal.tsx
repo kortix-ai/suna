@@ -1,8 +1,9 @@
 'use client';
 
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
-import { useFilesStore } from '../store/files-store';
+import { useTranslations } from 'next-intl';
 import { useProjectFileSource } from '../file-source';
+import { useFilesStore } from '../store/files-store';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
 
@@ -13,6 +14,7 @@ import { getFileIcon } from './file-icon';
  * (this is a read-only ref view).
  */
 export function FilePreviewModal() {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const panelMode = useFilesStore((s) => s.panelMode);
   const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
@@ -34,9 +36,14 @@ export function FilePreviewModal() {
       source={source}
       HistoryContent={FileHistoryPopoverContent}
       renderFileIcon={(name) =>
-        getFileIcon(name, { className: 'h-4 w-4 shrink-0 text-muted-foreground', variant: 'monochrome' })
+        getFileIcon(name, {
+          className: 'h-4 w-4 shrink-0 text-muted-foreground',
+          variant: 'monochrome',
+        })
       }
-      historyLabel="Checkpoint history"
+      historyLabel={tI18nHardcoded.raw(
+        'autoFeaturesProjectFilesComponentsFilePreviewModalJsxAttrHistoryLabel0736a6ed',
+      )}
     />
   );
 }
