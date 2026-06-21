@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { lintMigration } from './lint-migrations';
+import { lintMigration, lintMigrationSet } from './lint-migrations';
 
 const GOOD_NAME = '20260101000000000_add_widget.sql';
 
@@ -54,5 +54,25 @@ describe('lintMigration', () => {
   test('does not warn on DELETE that has a WHERE clause', () => {
     const { warnings } = lintMigration(GOOD_NAME, "DELETE FROM kortix.widgets WHERE id = '1';");
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('lintMigrationSet', () => {
+  test('unique timestamps produce no errors', () => {
+    const errors = lintMigrationSet([
+      '20260101000000000_a.sql',
+      '20260101000000001_b.sql',
+      '20260101000000002_c.sql',
+    ]);
+    expect(errors).toEqual([]);
+  });
+
+  test('rejects two migrations sharing a timestamp', () => {
+    const errors = lintMigrationSet(['20260101000000000_a.sql', '20260101000000000_b.sql']);
+    expect(errors.some((e) => e.includes('duplicate migration timestamp'))).toBe(true);
+  });
+
+  test('ignores files without a 17-digit prefix (the per-file lint flags those)', () => {
+    expect(lintMigrationSet(['not_a_migration.sql'])).toEqual([]);
   });
 });
