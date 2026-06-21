@@ -364,41 +364,41 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           disableTransitionOnChange
         >
           <TooltipProvider delayDuration={300}>
-            <BrowserNoiseGuard />
-            <DesktopChrome />
-            <DesktopUrlPrompt />
             <AuthProvider>
               <I18nProvider>
+                <BrowserNoiseGuard />
+                <DesktopChrome />
+                <DesktopUrlPrompt />
                 <ReactQueryProvider>
                   <Toaster />
                   {children}
                 </ReactQueryProvider>
+                {/* Analytics - lazy loaded to not block FCP */}
+                <Suspense fallback={null}>
+                  <Analytics />
+                </Suspense>
+                {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+                  <Suspense fallback={null}>
+                    <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+                  </Suspense>
+                )}
+                <Suspense fallback={null}>
+                  <SpeedInsights />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <PostHogIdentify />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <RouteChangeTracker />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <AuthEventTracker />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <LocalhostLinkInterceptor />
+                </Suspense>
               </I18nProvider>
             </AuthProvider>
-            {/* Analytics - lazy loaded to not block FCP */}
-            <Suspense fallback={null}>
-              <Analytics />
-            </Suspense>
-            {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
-              <Suspense fallback={null}>
-                <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
-              </Suspense>
-            )}
-            <Suspense fallback={null}>
-              <SpeedInsights />
-            </Suspense>
-            <Suspense fallback={null}>
-              <PostHogIdentify />
-            </Suspense>
-            <Suspense fallback={null}>
-              <RouteChangeTracker />
-            </Suspense>
-            <Suspense fallback={null}>
-              <AuthEventTracker />
-            </Suspense>
-            <Suspense fallback={null}>
-              <LocalhostLinkInterceptor />
-            </Suspense>
           </TooltipProvider>
         </ThemeProvider>
       </body>
