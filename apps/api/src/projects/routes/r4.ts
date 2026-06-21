@@ -1,5 +1,6 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
 import { reconcileChannelConnectors } from '../../executor/sync';
+import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
@@ -539,6 +540,73 @@ projectsApp.openapi(
       : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
   return c.json({ ok });
 },
+);
+
+// GET /v1/projects/:projectId/channels/slack/file?url=...
+// Server-side download proxy: fetch a Slack-hosted file with the bot token
+// (SSRF-guarded to *.slack.com) so the sandbox never holds the token. Backs
+// `slack download` once the token is out of the box (KORTIX-206 Phase C2).
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/slack/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ url: z.string() }),
+    },
+    responses: {
+      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
+    return c.body(result.body);
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/file/upload
+// Server-side upload proxy: the 3-step external upload, bot token server-side.
+// Backs `slack send --file` once the token is out of the box.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/slack/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/file/upload (upload proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), files: z.any() }).passthrough(), 'Uploaded'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await readBody(c);
+    const result = await uploadSlackFile(projectId, {
+      channel: String(body.channel ?? ''),
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      comment: typeof body.comment === 'string' ? body.comment : undefined,
+      threadTs: typeof body.thread_ts === 'string' ? body.thread_ts : (typeof body.threadTs === 'string' ? body.threadTs : undefined),
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, files: result.files });
+  },
 );
 
 // POST /v1/projects/:projectId/turn-question
