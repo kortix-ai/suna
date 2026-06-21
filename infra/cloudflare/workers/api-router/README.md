@@ -8,12 +8,17 @@ backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), two envs (`wrangler.t
 | `prod` | `api.kortix.com`     | `api-kortix-router`     | `api-eks.kortix.com`     | `api-ecs-fargate.kortix.com`     |
 | `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` |
 
-ECS Fargate is the active backend (`ACTIVE_BACKEND=ecs-fargate`); EKS is the
-always-warm standby. CI deploys **both** every release (EKS via Argo CD GitOps,
-ECS via a parallel `deploy-api-ecs` job that pins the exact released image), and
-both run the same image against the same DB — background-worker leadership is a
-single global DB lease (`apps/api/src/shared/leader-election.ts`), so only one
-side ever runs cron. That makes a flip safe and instantly reversible.
+EKS is the active backend for both public API hostnames (`X-Backend: eks` on
+`/v1/health`, verified 2026-06-21); ECS Fargate is the warm standby. CI deploys
+the EKS services via Argo CD GitOps (`deploy-dev.yml` / `deploy-prod.yml`). Keep
+the ECS origins available for failover, but do not treat them as the primary
+runtime. Background-worker leadership is guarded by a single global DB lease
+(`apps/api/src/shared/leader-election.ts`), so only one side ever runs cron.
+
+The checked-in Worker vars are deploy defaults; the live Worker plain-text var is
+the runtime source of truth. If a checked-in default disagrees with the live
+`X-Backend` header, fix the config drift before redeploying the Worker (tracking:
+https://github.com/kortix-ai/suna/issues/3629).
 
 ## Deploy (code or var changes)
 
@@ -26,7 +31,7 @@ wrangler deploy --env dev       # dev-api.kortix.com
 ## Fail over (no code change) — flip the active backend
 
 ```bash
-# prod → ECS Fargate, then back to EKS
+# prod → ECS Fargate standby, then back to EKS
 wrangler deploy --env prod --var ACTIVE_BACKEND:ecs-fargate
 wrangler deploy --env prod --var ACTIVE_BACKEND:eks
 ```

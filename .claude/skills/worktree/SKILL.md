@@ -53,15 +53,15 @@ git -C "$WT" add -A && git -C "$WT" commit -m "..."
 
 When the branch is merged/pushed and you're done: `pnpm worktree nuke <feat>`.
 
-## Prerequisite: the base branch must carry Drizzle migrations
+## Prerequisite: the base branch must carry database migrations
 
-`create` builds the schema with `pnpm db:migrate` and **fails loudly** if the
-base ref has no Drizzle migrations (`packages/db/drizzle/*.sql`). Fork from a
-base that has them. If you see *"schema not built — branch X has no Drizzle
-migrations"*, recreate with `--from <branch-with-migrations>` (e.g.
-`--from migrations/drizzle-rebuild`, or merge that into `main` first). The
-default base is `HEAD`, so if you're already on a branch that has the
-migrations, plain `create` inherits them.
+Current migrations live in `packages/db/migrations` and are applied with
+node-pg-migrate (`pnpm --filter @kortix/db migrate`; see
+`packages/db/MIGRATIONS.md`). The worktree runner still has an open bug from the
+cutover where it calls the old `db:migrate` script and emits Drizzle-era error
+text; if worktree schema setup fails there, track/fix
+https://github.com/kortix-ai/suna/issues/3630 rather than treating the old command
+as authoritative.
 
 ## All commands (non-interactive)
 
@@ -79,7 +79,7 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | --- | --- | --- |
 | `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + `kortix-wt-<n>` Supabase project. |
 | `--branch <b>` | `<n>` | Branch to use. If it already exists it's checked out; otherwise created from `--from`. |
-| `--from <ref>` | `HEAD` | Base ref for a newly created branch. Must carry Drizzle migrations (see above). |
+| `--from <ref>` | `HEAD` | Base ref for a newly created branch. Must carry current `packages/db/migrations` (see above). |
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |
 | `--yes` | off | Auto-install missing deps; non-interactive. |
 | `--no-tunnel` | off | Skip the Cloudflare tunnel (offline; cloud sandboxes won't be reachable). |
@@ -87,9 +87,9 @@ pnpm worktree create <n>        [flags]   # positional name also works
 What it does, in order: toolchain preflight → allocate the lowest free slot
 (probing ports, skipping any in use) → `git worktree add` (new branch from
 `--from`, or checkout existing `--branch`) → render an isolated Supabase project
-→ `pnpm install` into the worktree's own store → `supabase start` → `pnpm
-db:migrate` → verify the `kortix` schema exists → (unless `--no-start`) boot the
-stack. Re-running `create` for an existing name resumes it idempotently.
+→ `pnpm install` into the worktree's own store → `supabase start` → apply
+database migrations → verify the `kortix` schema exists → (unless `--no-start`)
+boot the stack. Re-running `create` for an existing name resumes it idempotently.
 
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
