@@ -11,8 +11,9 @@ name: Deploy Preview (PR)
 #                dev-eks nodes are x86 (m6i). Internal-branch PRs only (needs
 #                Docker Hub secrets, unavailable to forks).
 #   wire        → points the PR's Vercel preview frontend at its OWN backend
-#                (NEXT_PUBLIC_BACKEND_URL=https://pr-<n>.preview-api.kortix.com/v1)
-#                via a branch-scoped Vercel env + a fresh preview build.
+#                (KORTIX_PUBLIC_BACKEND_URL / NEXT_PUBLIC_BACKEND_URL =
+#                https://pr-<n>.preview-api.kortix.com/v1) via branch-scoped
+#                Vercel env + a fresh preview build.
 #   teardown    → on close/unlabel, deletes the Vercel branch env. The backend
 #                image + namespace are pruned automatically by the ApplicationSet.
 #
@@ -35,13 +36,13 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write   # the `announce` job posts/updates a sticky status comment
+  pull-requests: write # the `announce` job posts/updates a sticky status comment
 
 env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-  ENV_KEY: NEXT_PUBLIC_BACKEND_URL
+  ENV_KEYS: NEXT_PUBLIC_BACKEND_URL KORTIX_PUBLIC_BACKEND_URL
   BRANCH: ${{ github.event.pull_request.head.ref }}
 
 jobs:
@@ -176,7 +177,7 @@ jobs:
             exit 0
           fi
           echo "ok=true" >> "$GITHUB_ENV"
-      - name: Upsert branch-scoped NEXT_PUBLIC_BACKEND_URL + redeploy
+      - name: Upsert branch-scoped backend URL env + redeploy
         if: env.ok == 'true'
         env:
           NUM: ${{ github.event.pull_request.number }}
@@ -188,13 +189,19 @@ jobs:
           BACKEND="https://pr-${NUM}.preview-api.kortix.com/v1"
           echo "Wiring branch '${BRANCH}' → ${BACKEND}"
 
-          # 1) Upsert the branch-scoped Preview env var (overwrites if it exists).
-          code=$(curl -sS -o /tmp/env.json -w '%{http_code}' -X POST \
-            "${API}/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}&upsert=true" \
-            "${AUTH[@]}" -H "Content-Type: application/json" \
-            -d "$(jq -n --arg v "$BACKEND" --arg b "$BRANCH" --arg k "$ENV_KEY" \
-                  '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")
-          echo "env upsert HTTP $code"; [ "$code" = "200" ] || [ "$code" = "201" ] || { cat /tmp/env.json; exit 1; }
+          # 1) Upsert the branch-scoped Preview env vars (overwrites if they exist).
+          # apps/web reads KORTIX_PUBLIC_BACKEND_URL first, while a few older paths
+          # still read NEXT_PUBLIC_BACKEND_URL directly. Set both so the preview is
+          # consistently wired to its own backend.
+          for key in $ENV_KEYS; do
+            code=$(curl -sS -o "/tmp/env-${key}.json" -w '%{http_code}' -X POST \
+              "${API}/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}&upsert=true" \
+              "${AUTH[@]}" -H "Content-Type: application/json" \
+              -d "$(jq -n --arg v "$BACKEND" --arg b "$BRANCH" --arg k "$key" \
+                    '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")
+            echo "${key} env upsert HTTP $code"
+            [ "$code" = "200" ] || [ "$code" = "201" ] || { cat "/tmp/env-${key}.json"; exit 1; }
+          done
 
           # 2) On the LABEL event only, trigger a fresh preview build so the env is
           #    baked immediately. On `synchronize` the env is already set and
@@ -218,7 +225,7 @@ jobs:
           fi
           {
             echo "### Preview frontend wired"
-            echo "Branch \`${BRANCH}\` preview → \`${BACKEND}\`"
+            echo "Branch \`${BRANCH}\` preview backend envs → \`${BACKEND}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Remove the branch override when the PR closes or loses the label ────────
@@ -242,7 +249,7 @@ jobs:
           body="$(printf '%s\n' "$MARKER" "## 🔭 Preview environment — 🧹 torn down" "" \
                   "The preview API + namespace were pruned and the Vercel branch override removed.")"
           if [ -n "$id" ]; then gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null; fi
-      - name: Delete the branch-scoped env var
+      - name: Delete branch-scoped backend URL env vars
         run: |
           set -uo pipefail
           if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${PROJECT_ID:-}" ] || [ -z "${TEAM_ID:-}" ]; then
@@ -250,12 +257,14 @@ jobs:
           fi
           AUTH=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
           API="https://api.vercel.com"
-          ID="$(curl -sS "${API}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${AUTH[@]}" \
-                | jq -r --arg k "$ENV_KEY" --arg b "$BRANCH" \
-                  '.envs[] | select(.key==$k and .gitBranch==$b) | .id' | head -1)"
-          if [ -n "$ID" ]; then
-            curl -sS -X DELETE "${API}/v9/projects/${PROJECT_ID}/env/${ID}?teamId=${TEAM_ID}" "${AUTH[@]}" >/dev/null
-            echo "deleted branch env for ${BRANCH}"
-          else
-            echo "no branch env for ${BRANCH} — nothing to delete"
-          fi
+          envs="$(curl -sS "${API}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${AUTH[@]}")"
+          for key in $ENV_KEYS; do
+            ID="$(printf '%s' "$envs" | jq -r --arg k "$key" --arg b "$BRANCH" \
+              '.envs[] | select(.key==$k and .gitBranch==$b) | .id' | head -1)"
+            if [ -n "$ID" ]; then
+              curl -sS -X DELETE "${API}/v9/projects/${PROJECT_ID}/env/${ID}?teamId=${TEAM_ID}" "${AUTH[@]}" >/dev/null
+              echo "deleted ${key} branch env for ${BRANCH}"
+            else
+              echo "no ${key} branch env for ${BRANCH} — nothing to delete"
+            fi
+          done
