@@ -31,7 +31,6 @@ import {
   restartProjectSession,
   sessionStartKey,
   startProjectSession,
-  syncOpencodeSessionData,
 } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
@@ -167,7 +166,7 @@ export default function ProjectSessionPage() {
         switchingRef.current = false;
       }
     })();
-  }, [sandbox, projectId, activeInstanceId]);
+  }, [sandbox, projectId, activeInstanceId, start?.stage, start?.opencode_session_id]);
 
   // Belt-and-suspenders: clear the legacy cookie once on mount for this route.
   // setActiveInstanceCookie already force-clears on any /projects path and is the
@@ -565,33 +564,6 @@ function ActiveSessionChat({
     projectId,
     sessionId,
   ]);
-
-  // Mirror the sandbox-local OpenCode session tree into our cloud DB. The
-  // project session row stays the branch/sandbox root; this metadata lets the
-  // project sidebar and session list render sub-sessions without guessing.
-  // Must run BEFORE any conditional return — otherwise the runtimeError branch
-  // below would skip this hook and trigger "rendered fewer hooks than expected".
-  const activeSession = opencodeSessions.find((s) => s.id === chatSessionId);
-  const activeTitle = activeSession?.title || null;
-  useEffect(() => {
-    if (opencodeSessions.length === 0) return;
-    void syncOpencodeSessionData(
-      opencodeSessions.map((session) => ({
-        opencode_session_id: session.id,
-        title: session.title || null,
-        parent_id: session.parentID ?? null,
-        project_id: session.projectID ?? null,
-        created_at: session.time?.created ?? null,
-        updated_at: session.time?.updated ?? null,
-        archived_at: session.time?.archived ?? null,
-      })),
-    )
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        queryClient.invalidateQueries({ queryKey: ['project-session', projectId, sessionId] });
-      })
-      .catch(() => {});
-  }, [opencodeSessions, activeTitle, queryClient, projectId, sessionId]);
 
   // (The home-composer first-message handoff is migrated synchronously during
   // render above — see promptMigratedForRef — so SessionChat's consumer always

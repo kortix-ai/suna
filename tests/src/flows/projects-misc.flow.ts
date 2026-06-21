@@ -2,11 +2,9 @@
  * Projects — miscellaneous project-scoped surfaces that don't fit the core CRUD
  * flow: BYO-repo create, the CLI-token (project PAT)
  * lifecycle, onboarding state, version-diff preview, ChatGPT headless provider
- * auth, the lazy legacy-migration pipeline, OpenCode session sync, and the
- * Slack-relay turn endpoints.
+ * auth, the lazy legacy-migration pipeline, and the Slack-relay turn endpoints.
  *
- * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here) and
- * reuses SESS-10 for sync-opencode-sessions.
+ * Maps to spec §13 (PROJ-2 for BYO create; PROJ-9..PROJ-17 minted here).
  */
 import { flow } from "../core/flow";
 
@@ -279,29 +277,6 @@ flow(
         .as(ctx.P.OWNER)
         .post("/v1/projects/legacy-migration/start", { sandbox_id: "00000000-0000-4000-a000-000000000000" });
       r.status(404);
-    });
-  },
-);
-
-// SESS-10 — sync-opencode-sessions. Spec lists the path as
-// `sync-opencode-titles`; the implemented route is `sync-opencode-sessions`
-// with the same `{entries[]}` body. Empty array → 200 {updated:0}; a non-array
-// `entries` → 400.
-flow(
-  "SESS-10",
-  { domain: "projects", routes: ["POST /v1/projects/sync-opencode-sessions"] },
-  async (ctx) => {
-    await ctx.step("empty entries → 200 updated:0", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/sync-opencode-sessions", { entries: [] });
-      r.status(200).body().has("$.updated", 0);
-    });
-    await ctx.step("entries not an array → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/sync-opencode-sessions", { entries: "nope" });
-      r.status(400);
-    });
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/projects/sync-opencode-sessions", { entries: [] });
-      r.status(401);
     });
   },
 );
