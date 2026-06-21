@@ -99,6 +99,12 @@ variable "enable_access" {
   default     = true
 }
 
+variable "create_access_policy" {
+  description = "Create the inline allow policy. Set false when the account already attaches reusable org policies to the app (they'd collide on precedence)."
+  type        = bool
+  default     = true
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account ID that owns the Zero Trust org. Required when enable_access = true. Supply via TF_VAR_cloudflare_account_id."
   type        = string

@@ -33,14 +33,15 @@ variable "cloudflare_zone_id" {
 }
 
 variable "alb_hostname" {
-  description = "Dev ALB DNS name for the qa ingress. Filled in Stage C after the chart is deployed."
+  description = "Dev ALB DNS name the qa.kortix.com record CNAMEs to (from `kubectl -n kortix-qa get ingress qa-portal`). Update if the ALB is recreated."
   type        = string
-  default     = ""
+  default     = "k8s-kortixqaportal-8ff35a5ffe-699499126.us-west-2.elb.amazonaws.com"
 }
 
 variable "manage_dns_record" {
-  type    = bool
-  default = false
+  description = "Terraform owns the qa.kortix.com Cloudflare record. Keep true so applies don't drop it."
+  type        = bool
+  default     = true
 }
 
 module "qa_portal" {
@@ -62,6 +63,7 @@ module "qa_portal" {
   alb_hostname      = var.alb_hostname
 
   enable_access                = true
+  create_access_policy         = false # account attaches reusable "kortix internal" org policies
   cloudflare_account_id        = var.cloudflare_account_id
   access_allowed_email_domains = ["kortix.com"]
 
@@ -83,4 +85,66 @@ output "role_arn" {
 
 output "access_application_id" {
   value = module.qa_portal.access_application_id
+}
+
+# ── GitHub Actions OIDC role that publishes QA reports to the bucket ──────────
+# Trusts the kortix-ai/suna main/prod branches (qa-main) and pull_requests
+# (qa-pr/qa-release per-PR reports). Least privilege: S3 write under reports/*
+# of the QA bucket only. Used as QA_REPORTS_ROLE_ARN in the qa workflows.
+data "aws_iam_policy_document" "qa_publisher_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = ["arn:aws:iam::935064898258:oidc-provider/token.actions.githubusercontent.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:kortix-ai/suna:ref:refs/heads/main",
+        "repo:kortix-ai/suna:ref:refs/heads/prod",
+        "repo:kortix-ai/suna:pull_request",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "qa_publisher" {
+  name               = "kortix-qa-publisher"
+  assume_role_policy = data.aws_iam_policy_document.qa_publisher_assume.json
+  tags = {
+    Project   = "kortix"
+    Component = "qa-portal"
+    ManagedBy = "terraform"
+  }
+}
+
+data "aws_iam_policy_document" "qa_publisher_write" {
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = ["arn:aws:s3:::${module.qa_portal.bucket_name}"]
+  }
+  statement {
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["arn:aws:s3:::${module.qa_portal.bucket_name}/reports/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "qa_publisher_write" {
+  name   = "qa-publisher-write"
+  role   = aws_iam_role.qa_publisher.id
+  policy = data.aws_iam_policy_document.qa_publisher_write.json
+}
+
+output "qa_publisher_role_arn" {
+  value = aws_iam_role.qa_publisher.arn
 }
