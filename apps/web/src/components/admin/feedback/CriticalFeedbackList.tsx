@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAdminCriticalFeedback } from '@/hooks/admin/use-admin-feedback';
-import { Star, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Star, ExternalLink, DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 

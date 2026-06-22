@@ -5,17 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ChevronDown,
-  ExternalLink,
-  FlaskConical,
-  GitBranch,
-  Loader2,
-  Pause,
-  Settings,
-  Trash2,
-  UserPlus,
-} from 'lucide-react';
+import { ChevronDown, ExternalLink, FlaskConical, GitBranch, Spinner as Loader2, Pause, CogOneSolid as Settings, TrashSolid as Trash2, UserPlus } from '@mynaui/icons-react';
 import { FormEvent, useEffect, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';

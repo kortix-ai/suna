@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Cable, Plus, Monitor, Trash2, Search, X, Terminal, Copy, Check } from 'lucide-react';
+import { Share as Cable, Plus, Monitor, TrashSolid as Trash2, Search, X, Terminal, Copy, Check } from '@mynaui/icons-react';
 import { getEnv } from '@/lib/env-config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

@@ -30,27 +30,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
-import {
-  ArrowLeft,
-  BookOpen,
-  Bot,
-  Check,
-  ChevronRight,
-  CreditCard,
-  ExternalLink,
-  Flame,
-  Image as ImageIcon,
-  Key,
-  Loader2,
-  MessageSquare,
-  Mic,
-  Search,
-  Settings2,
-  Sparkles,
-  Wrench,
-  X,
-  Zap,
-} from 'lucide-react';
+import { ArrowLeft, BookOpen, Sparkles as Bot, Check, ChevronRight, CreditCard, ExternalLink, Flame, Image as ImageIcon, Key, Spinner as Loader2, Message as MessageSquare, Microphone as Mic, Search, CogOneSolid as Settings2, Sparkles, Wrench, X, Zap } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';

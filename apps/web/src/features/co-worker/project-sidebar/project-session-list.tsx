@@ -31,14 +31,13 @@ import {
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { Icon as IconMynauiType, Pencil, Share, TrashSolid, Calendar as CalendarClock, Dots as MoreHorizontal, Refresh as RotateCcw, Share as Webhook } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { CalendarClock, MoreHorizontal, RotateCcw, Webhook, type LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
-import { IconType } from 'react-icons/lib';
 
 interface ProjectSessionListProps {
   projectId: string;

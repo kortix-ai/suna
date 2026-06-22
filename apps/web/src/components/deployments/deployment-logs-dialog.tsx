@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { ScrollText, Loader2 } from 'lucide-react';
+import { FileText as ScrollText, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useDeploymentLogs } from '@/hooks/deployments/use-deployments';
 import type { Deployment } from '@/hooks/deployments/use-deployments';
 import { isDeploymentInProgress } from '@/hooks/deployments/deployment-status';

@@ -11,20 +11,7 @@ import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import {
-  AlertCircle,
-  Calendar,
-  Plus,
-  Search,
-  Clock,
-  CheckCircle2,
-  Timer,
-  Trash2,
-  Webhook,
-  MessageSquare,
-  Terminal,
-  Globe,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, Calendar, Plus, Search, ClockCircle as Clock, CheckCircle as CheckCircle2, ClockCircle as Timer, TrashSolid as Trash2, Share as Webhook, Message as MessageSquare, Terminal, Globe } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { PageHeader } from '@/components/ui/page-header';

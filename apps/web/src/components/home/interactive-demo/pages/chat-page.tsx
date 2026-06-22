@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare } from 'lucide-react';
+import { Message as MessageSquare } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { AssistantTurn, UserBubble } from '../chat/chat-turn';
 import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';

@@ -3,19 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Activity,
-  ExternalLink,
-  Loader2,
-  Play,
-  Plus,
-  RotateCcw,
-  Search,
-  Server,
-  Square,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { Activity, ExternalLink, Spinner as Loader2, Play, Plus, Refresh as RotateCcw, Search, Servers as Server, Square, TrashSolid as Trash2, X } from '@mynaui/icons-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';

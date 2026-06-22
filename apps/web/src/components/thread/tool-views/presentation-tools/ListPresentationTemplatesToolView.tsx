@@ -5,7 +5,7 @@ import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Palette, Sparkles, CheckCircle, AlertTriangle, ArrowLeft, X } from "lucide-react"
+import { Paint as Palette, Sparkles, CheckCircle, DangerTriangle as AlertTriangle, ArrowLeft, X } from '@mynaui/icons-react';
 import { KortixLoader } from "@/components/ui/kortix-loader"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ToolViewIconTitle } from "../shared/ToolViewIconTitle"

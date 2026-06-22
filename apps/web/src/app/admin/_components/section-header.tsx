@@ -1,6 +1,6 @@
 'use client';
 
-import type { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import type { ReactNode } from 'react';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { cn } from '@/lib/utils';

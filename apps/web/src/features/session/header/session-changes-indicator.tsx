@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { GitPullRequestArrow } from 'lucide-react';
+import { GitPullRequest as GitPullRequestArrow } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';

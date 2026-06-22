@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, Loader2, LogOut, ShieldCheck } from 'lucide-react';
+import { ClockCircle as Clock, Spinner as Loader2, Logout as LogOut, ShieldCheck } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';

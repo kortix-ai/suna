@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon } from '@mynaui/icons-react';
 import { cn } from "@/lib/utils";
 
 interface DateTimePickerProps {

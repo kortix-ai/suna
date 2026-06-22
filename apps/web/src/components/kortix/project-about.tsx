@@ -17,16 +17,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { useFileContent, useInvalidateFileContent } from '@/features/files/hooks/use-file-content';
 import { uploadFile } from '@/features/files/api/opencode-files';
 import { Button } from '@/components/ui/button';
-import {
-  FileText,
-  FolderGit2,
-  Loader2,
-  AlertCircle,
-  Pencil,
-  Check,
-  Copy,
-  Calendar,
-} from 'lucide-react';
+import { FileText, Folder as FolderGit2, Spinner as Loader2, DangerCircle as AlertCircle, Pencil, Check, Copy, Calendar } from '@mynaui/icons-react';
 import { relativeTime, fullDate } from '@/lib/kortix/task-meta';
 
 interface ProjectAboutProps {

@@ -3,16 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ExternalLink,
-  Globe,
-  MonitorPlay,
-  Copy,
-  Check,
-  RefreshCw,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
+import { ExternalLink, Globe, Monitor as MonitorPlay, Copy, Check, Refresh as RefreshCw, Maximize as Maximize2, Minimize as Minimize2 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { UnifiedMarkdown } from '@/components/markdown';

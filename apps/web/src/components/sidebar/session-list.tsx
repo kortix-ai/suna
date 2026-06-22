@@ -62,18 +62,7 @@ import {
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
-import {
-  Archive,
-  ArchiveRestore,
-  ChevronDown,
-  ChevronRight,
-  Frown,
-  Layers,
-  MessageCircle,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-} from 'lucide-react';
+import { Archive, Archive as ArchiveRestore, ChevronDown, ChevronRight, Sad as Frown, LayersOne as Layers, Chat as MessageCircle, Dots as MoreHorizontal, Pencil, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';

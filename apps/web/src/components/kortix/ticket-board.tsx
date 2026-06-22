@@ -14,26 +14,8 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMemo, useState } from 'react';
-import {
-  Circle,
-  CircleDot,
-  CheckCircle2,
-  Inbox,
-  Search,
-  Plus,
-  X,
-  Trash2,
-  MoreHorizontal,
-  AlertCircle,
-  Clock,
-  Hourglass,
-  Archive,
-  PauseCircle,
-  Zap,
-  ExternalLink,
-  Copy,
-  type LucideIcon,
-} from 'lucide-react';
+import { Circle, Record as CircleDot, CheckCircle as CheckCircle2, Inbox, Search, Plus, X, TrashSolid as Trash2, Dots as MoreHorizontal, DangerCircle as AlertCircle, ClockCircle as Clock, ClockCircle as Hourglass, Archive, PauseCircle, Zap, ExternalLink, Copy, ClockCircle as TimerIcon, Share as WebhookIcon, Check } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import {
   DndContext,
   DragOverlay,
@@ -69,7 +51,6 @@ import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components
 import { useTriggers, type Trigger } from '@/hooks/scheduled-tasks';
 import { useMilestones, type Milestone } from '@/hooks/kortix/use-milestones';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Timer as TimerIcon, Webhook as WebhookIcon, Check } from 'lucide-react';
 
 // Compact human form of a 6-field cron expression for tooltips.
 function describeCron(expr: string): string {

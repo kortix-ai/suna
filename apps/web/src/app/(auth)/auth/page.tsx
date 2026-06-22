@@ -12,7 +12,7 @@ import { useTranslations } from 'next-intl';
  * hardcoded surface.
  */
 
-import { AlertCircle, ChevronRight } from 'lucide-react';
+import { DangerCircle as AlertCircle, ChevronRight } from '@mynaui/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';

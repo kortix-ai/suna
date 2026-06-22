@@ -1,6 +1,6 @@
 import { useTranslations } from 'next-intl';
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Check, ExternalLink, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Check, ExternalLink, Dots as MoreHorizontal } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';

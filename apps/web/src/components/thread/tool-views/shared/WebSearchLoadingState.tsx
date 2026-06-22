@@ -2,27 +2,8 @@
 
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
-import {
-  Search,
-  FileText,
-  BookOpen,
-  Palette,
-  Code,
-  Terminal,
-  Image as ImageIcon,
-  Building2,
-  Sparkles,
-  Globe,
-  Newspaper,
-  Video,
-  ShoppingBag,
-  MapPin,
-  Briefcase,
-  GraduationCap,
-  Lightbulb,
-  Music,
-  type LucideIcon,
-} from 'lucide-react';
+import { Search, FileText, BookOpen, Paint as Palette, Code, Terminal, Image as ImageIcon, Building as Building2, Sparkles, Globe, FileText as Newspaper, Video, ShoppingBag, MapPin, Briefcase, GraduationCap, Sparkles as Lightbulb, Music } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 

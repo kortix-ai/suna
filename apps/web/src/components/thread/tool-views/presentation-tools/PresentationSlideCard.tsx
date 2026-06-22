@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Maximize2, Presentation } from 'lucide-react';
+import { Maximize as Maximize2, Presentation } from '@mynaui/icons-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { Project } from '@/types/project';

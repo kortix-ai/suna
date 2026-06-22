@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { AccountRole } from '@/lib/projects-client';
-import { HelpCircle } from 'lucide-react';
+import { QuestionCircle as HelpCircle } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import {
   ACCOUNT_ROLE_DESCRIPTORS,

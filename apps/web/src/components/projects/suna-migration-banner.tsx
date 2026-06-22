@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { useStartSunaMigration, useSunaMigration } from '@/hooks/legacy/use-suna-migration';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ArrowRight, Spinner as Loader2, Sparkles } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
 

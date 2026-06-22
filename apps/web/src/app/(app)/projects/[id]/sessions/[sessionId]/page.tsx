@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, RotateCcw } from 'lucide-react';
+import { Spinner as Loader2, Refresh as RotateCcw } from '@mynaui/icons-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import Cal, { getCalApi } from '@calcom/embed-react';
-import { Check, Mail } from 'lucide-react';
+import { Check, Mail } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 

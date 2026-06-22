@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 
 // ── Shell ────────────────────────────────────────────────────────────────────

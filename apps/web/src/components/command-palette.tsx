@@ -16,26 +16,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Bot,
-  Check,
-  ChevronRight,
-  CornerDownLeft,
-  Cpu,
-  FileText,
-  FolderGit2,
-  Globe,
-  Hash,
-  Loader2,
-  MessageCircle,
-  PanelLeftClose,
-  PanelLeftIcon,
-  Search,
-  Users,
-} from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Sparkles as Bot, Check, ChevronRight, CornerDownLeft, Microchip as Cpu, FileText, Folder as FolderGit2, Globe, Hash, Spinner as Loader2, Chat as MessageCircle, PanelLeftClose, PanelLeft as PanelLeftIcon, Search, UsersSolid as Users } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';

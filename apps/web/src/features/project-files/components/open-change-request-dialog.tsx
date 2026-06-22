@@ -23,7 +23,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@/lib/projects-client';
-import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
+import { GitBranch, GitPullRequest, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';

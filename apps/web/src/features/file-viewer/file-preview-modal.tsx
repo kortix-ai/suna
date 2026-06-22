@@ -5,17 +5,7 @@ import { Button } from '@/components/ui/button';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Code,
-  Download,
-  Eye,
-  History,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Code, Download, Eye, Undo as History, Maximize as Maximize2, Minimize as Minimize2, X } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import {
   useCallback,

@@ -1,6 +1,5 @@
 'use client';
 
-import { X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
@@ -23,7 +22,7 @@ import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isWorkEmail } from '@/lib/personal-email';
 import { cn } from '@/lib/utils';
-import { TelephoneSolid } from '@mynaui/icons-react';
+import { TelephoneSolid, X } from '@mynaui/icons-react';
 import Link from 'next/link';
 
 const MARKO_CAL_LINK = 'team/kortix/demo';

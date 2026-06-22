@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { CardHeader, CardTitle } from '@/components/ui/card';
-import { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 
 export interface ToolViewHeaderProps {

@@ -14,7 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
-import { Activity, AlertTriangle, Clock, Database, Gauge, RefreshCw } from 'lucide-react';
+import { Activity, DangerTriangle as AlertTriangle, ClockCircle as Clock, Database, Activity as Gauge, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
 
 // Cap how many audit rows we render — the list is unbounded and re-renders on a

@@ -42,21 +42,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import {
-  Blocks,
-  Bot,
-  Check,
-  ChevronDown,
-  Copy,
-  FileText,
-  Loader2,
-  Plug,
-  Plus,
-  Settings,
-  Sparkles,
-  Terminal,
-  Wrench,
-} from 'lucide-react';
+import { Component as Blocks, Sparkles as Bot, Check, ChevronDown, Copy, FileText, Spinner as Loader2, Power as Plug, Plus, CogOneSolid as Settings, Sparkles, Terminal, Wrench } from '@mynaui/icons-react';
 import { AnimatePresence } from 'motion/react';
 import { useCallback, useMemo, useState } from 'react';
 

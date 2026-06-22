@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react';
+import { DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 
 import { InfoBanner } from '@/components/ui/info-banner';
 

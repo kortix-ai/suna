@@ -1,9 +1,8 @@
 import { Slot } from '@radix-ui/react-slot';
-import { MoreHorizontal } from 'lucide-react';
+import { Dots as MoreHorizontal, ChevronRight as HiOutlineSlash } from '@mynaui/icons-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { HiOutlineSlash } from 'react-icons/hi2';
 
 function Breadcrumb({ ...props }: React.ComponentProps<'nav'>) {
   return <nav aria-label="breadcrumb" data-slot="breadcrumb" {...props} />;

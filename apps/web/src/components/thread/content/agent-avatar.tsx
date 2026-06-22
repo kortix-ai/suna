@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { Bot } from 'lucide-react';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
+import { Sparkles as Bot } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { normalizeIconName } from '@/lib/utils/icon-utils';
 

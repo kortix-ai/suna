@@ -10,7 +10,7 @@ import {
 } from '@/components/admin/feedback';
 import { LegacyBanner } from '@/components/admin/legacy-banner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
+import { ChartBar as BarChart3, Message as MessageSquare, Sparkles } from '@mynaui/icons-react';
 import dynamic from 'next/dynamic';
 
 // The three recharts charts are the only recharts consumers on this page; load

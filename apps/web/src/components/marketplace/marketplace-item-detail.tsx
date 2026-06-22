@@ -10,17 +10,7 @@ import { useTranslations } from 'next-intl';
  * It fills its container edge-to-edge so it matches the rest of the surface.
  */
 
-import {
-  ArrowLeft,
-  Check,
-  ExternalLink,
-  FileText,
-  KeyRound,
-  Plug,
-  Plus,
-  Trash2,
-  Wrench,
-} from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, FileText, Key as KeyRound, Power as Plug, Plus, TrashSolid as Trash2, Wrench } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';

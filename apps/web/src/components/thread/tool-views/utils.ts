@@ -1,18 +1,6 @@
 // Import at the top
 // import { formatDistanceToNow } from 'date-fns';
-import {
-  FileText,
-  FileCode,
-  FileImage,
-  FileJson,
-  File,
-  FolderOpen,
-  FileType,
-  FileVideo,
-  FileAudio,
-  FileArchive,
-  Table,
-} from 'lucide-react';
+import { FileText, File as FileCode, File as FileImage, File as FileJson, File, Folder as FolderOpen, FileText as FileType, File as FileVideo, File as FileAudio, File as FileArchive, Table } from '@mynaui/icons-react';
 import { parseToolResult, ParsedToolResult } from './tool-result-parser';
 
 // Helper function to format timestamp

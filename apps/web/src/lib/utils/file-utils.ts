@@ -3,10 +3,7 @@
  * Consolidated from file-attachment.tsx for reuse across components
  */
 
-import {
-    FileText, FileImage, FileCode, FileSpreadsheet, FileVideo,
-    FileAudio, FileType, Database, Archive, File
-} from 'lucide-react';
+import { FileText, File as FileImage, File as FileCode, File as FileSpreadsheet, File as FileVideo, File as FileAudio, FileText as FileType, Database, Archive, File } from '@mynaui/icons-react';
 import { getExtension } from './file-types';
 
 export type FileType =

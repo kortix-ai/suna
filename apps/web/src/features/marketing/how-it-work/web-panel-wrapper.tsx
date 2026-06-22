@@ -2,13 +2,9 @@
 
 import type { PageId } from '@/components/home/interactive-demo/types';
 import { cn } from '@/lib/utils';
-import { Blocks, Brain, GitPullRequest, MessageSquare } from 'lucide-react';
+import { Component as Blocks, Sparkles as Brain, GitPullRequest, Message as MessageSquare, Sparkles as HiMiniSparkles, Shield as MdShield, ChatDots as PiChatCircleDotsFill, Microchip as RiCpuLine, Folder as RiFolder3Fill, Sparkles as RiRobot3Fill } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 
 type MarketingPanelTab = PageId | 'review' | 'memory';
 

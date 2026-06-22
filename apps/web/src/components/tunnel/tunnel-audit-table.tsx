@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import React, { useState } from 'react';
-import { CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle as CheckCircle2, XCircle, ClockCircle as Clock, ChevronLeft, ChevronRight } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTunnelAuditLogs } from '@/hooks/tunnel/use-tunnel';

@@ -1,6 +1,6 @@
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
 import { cva } from 'class-variance-authority';
-import { ChevronDownIcon } from 'lucide-react';
+import { ChevronDown as ChevronDownIcon } from '@mynaui/icons-react';
 import { NavigationMenu as NavigationMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
 

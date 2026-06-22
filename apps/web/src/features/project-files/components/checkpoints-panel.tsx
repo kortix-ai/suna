@@ -3,13 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  GitBranch,
-  GitCommitHorizontal,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, GitBranch, GitCommit as GitCommitHorizontal, Refresh as RefreshCw, X } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';

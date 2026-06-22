@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, Spinner as Loader2, Plus, TrashSolid as Trash2, X } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';

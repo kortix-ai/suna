@@ -2,7 +2,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider';
-import { Github } from 'lucide-react';
+import { Github } from '@mynaui/icons-react';
 import type { ReactNode } from 'react';
 
 // Fumadocs wraps `nav.title` in a link to `nav.url` ("/docs"), so this must NOT

@@ -7,14 +7,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Trash2,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  Folder,
-  FolderX,
-} from 'lucide-react';
+import { TrashSolid as Trash2, ClockCircle as Clock, CheckCircle, DangerTriangle as AlertTriangle, Folder, FolderX } from '@mynaui/icons-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { LoadingState } from '../shared/LoadingState';

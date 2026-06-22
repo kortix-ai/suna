@@ -14,7 +14,6 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ChevronsUpDown, FolderGit2, Search } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -38,7 +37,7 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
 import { formatRelative } from '@kortix/shared';
-import { CheckCircleSolid, ChevronsUpDownSolid } from '@mynaui/icons-react';
+import { CheckCircleSolid, ChevronsUpDownSolid, ChevronsUpDown, Folder as FolderGit2, Search } from '@mynaui/icons-react';
 
 export type ProjectSwitcherVariant = 'header' | 'sidebar';
 

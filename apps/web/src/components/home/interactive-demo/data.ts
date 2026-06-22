@@ -1,15 +1,5 @@
-import {
-  Bot,
-  Brain,
-  Database,
-  FileText,
-  GitPullRequest,
-  MessageSquare,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
-import { FaUsers } from 'react-icons/fa';
-import type { IconType } from 'react-icons/lib';
+import { Sparkles as Bot, Sparkles as Brain, Database, FileText, GitPullRequest, Message as MessageSquare, Search, UsersSolid as FaUsers } from '@mynaui/icons-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 
 export const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 

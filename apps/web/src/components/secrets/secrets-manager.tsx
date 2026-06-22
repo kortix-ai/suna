@@ -7,18 +7,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useState, useMemo, useCallback } from 'react';
-import {
-  Eye,
-  EyeOff,
-  Pencil,
-  Trash2,
-  Plus,
-  Check,
-  X,
-  Loader2,
-  Search,
-  KeyRound,
-} from 'lucide-react';
+import { Eye, EyeOff, Pencil, TrashSolid as Trash2, Plus, Check, X, Spinner as Loader2, Search, Key as KeyRound } from '@mynaui/icons-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';

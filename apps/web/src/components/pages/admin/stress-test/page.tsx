@@ -12,22 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  Play,
-  Square,
-  RefreshCw,
-  Zap,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Activity,
-  TrendingUp,
-  AlertTriangle,
-  Loader2,
-  ExternalLink,
-  Timer,
-  Info,
-} from 'lucide-react';
+import { Play, Square, Refresh as RefreshCw, Zap, ClockCircle as Clock, CheckCircle as CheckCircle2, XCircle, Activity, TrendingUp, DangerTriangle as AlertTriangle, Spinner as Loader2, ExternalLink, ClockCircle as Timer, Info } from '@mynaui/icons-react';
 import { useStressTest, StressTestResult } from '@/hooks/admin/use-stress-test';
 import { cn } from '@/lib/utils';
 import { LegacyBanner } from '@/components/admin/legacy-banner';

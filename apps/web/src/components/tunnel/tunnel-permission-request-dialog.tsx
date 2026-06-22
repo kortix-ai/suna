@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Shield, AlertTriangle, X, Clock, ChevronDown } from 'lucide-react';
+import { Shield, DangerTriangle as AlertTriangle, X, ClockCircle as Clock, ChevronDown } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

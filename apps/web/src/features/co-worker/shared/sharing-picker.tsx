@@ -9,9 +9,8 @@ import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { listProjectAccess, type ConnectorSharing } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { CheckCircleSolid } from '@mynaui/icons-react';
+import { CheckCircleSolid, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 

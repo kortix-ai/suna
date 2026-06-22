@@ -3,18 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
-import {
-  ExternalLink,
-  RotateCcw,
-  Square,
-  Trash2,
-  ScrollText,
-  Globe,
-  Pencil,
-  ChevronRight,
-  AlertCircle,
-  Settings,
-} from 'lucide-react';
+import { ExternalLink, Refresh as RotateCcw, Square, TrashSolid as Trash2, FileText as ScrollText, Globe, Pencil, ChevronRight, DangerCircle as AlertCircle, CogOneSolid as Settings } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';

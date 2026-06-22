@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { BookOpen, Check } from 'lucide-react';
+import { BookOpen, Check } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import type { DemoPhase } from './use-demo-conversation';

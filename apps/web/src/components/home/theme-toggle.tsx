@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/marketing/button';
 import { getThemeById } from '@/lib/themes';
 import { cn } from '@/lib/utils';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { MoonStar, SunDim } from 'lucide-react';
+import { MoonStar, SunDim } from '@mynaui/icons-react';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 

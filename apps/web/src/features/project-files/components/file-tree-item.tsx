@@ -3,19 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import {
-  ChevronRight,
-  Download,
-  RefreshCw,
-  History,
-  Pencil,
-  Trash2,
-  Copy,
-  Scissors,
-  ClipboardCopy,
-  CircleAlert,
-  AlertTriangle,
-} from 'lucide-react';
+import { ChevronRight, Download, Refresh as RefreshCw, Undo as History, Pencil, TrashSolid as Trash2, Copy, Scissors, Clipboard as ClipboardCopy, DangerCircle as CircleAlert, DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import type { FileNode } from '../types';
 import { getFileIcon } from './file-icon';

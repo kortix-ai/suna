@@ -15,17 +15,7 @@ import {
   type LLMAnalysisResponse,
   type LLMAnalysisRequest
 } from '@/hooks/admin/use-admin-feedback';
-import {
-  Sparkles,
-  AlertTriangle,
-  CheckCircle2,
-  Lightbulb,
-  Target,
-  MessageSquareQuote,
-  Loader2,
-  Zap,
-  ArrowRight
-} from 'lucide-react';
+import { Sparkles, DangerTriangle as AlertTriangle, CheckCircle as CheckCircle2, Sparkles as Lightbulb, Target, Message as MessageSquareQuote, Spinner as Loader2, Zap, ArrowRight } from '@mynaui/icons-react';
 
 export function LLMAnalysisPanel() {
   const tHardcodedUi = useTranslations('hardcodedUi');

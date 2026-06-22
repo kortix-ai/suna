@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import { FolderGit2, GitBranch, Loader2, Plus } from 'lucide-react';
+import { Folder as FolderGit2, GitBranch, Spinner as Loader2, Plus } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { PageHead } from '../primitives';

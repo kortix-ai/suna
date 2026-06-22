@@ -24,26 +24,8 @@
 
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bot,
-  Container,
-  FolderOpen,
-  GitPullRequest,
-  KeyRound,
-  MessageSquare,
-  Monitor,
-  Plug,
-  Settings,
-  SlidersHorizontal,
-  Sparkles,
-  Store,
-  Terminal,
-  Timer,
-  Users,
-  Webhook,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { Sparkles as Bot, Package as Container, Folder as FolderOpen, GitPullRequest, Key as KeyRound, Message as MessageSquare, Monitor, Power as Plug, CogOneSolid as Settings, Filter as SlidersHorizontal, Sparkles, Store, Terminal, ClockCircle as Timer, UsersSolid as Users, Share as Webhook, X } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import { AgentsView } from '@/components/projects/customize/sections/agents-view';
 import { ChannelsView } from '@/components/projects/customize/sections/channels-view';

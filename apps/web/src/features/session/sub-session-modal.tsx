@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ExternalLink, SquareKanban, X } from "lucide-react";
+import { ExternalLink, SquareKanban, X } from '@mynaui/icons-react';
 import { useCallback } from "react";
 import { SessionChat } from "@/features/session/session-chat";
 import {

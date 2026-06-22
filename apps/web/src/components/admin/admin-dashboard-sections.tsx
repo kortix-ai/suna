@@ -4,23 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  CreditCard,
-  Loader2,
-  RefreshCw,
-  Search,
-  Server,
-  ShieldCheck,
-  Trash2,
-  UserPlus,
-  Users,
-  XCircle,
-} from 'lucide-react';
+import { ArrowLeft, CheckCircle, ChevronLeft, ChevronRight, ClockCircle as Clock, CreditCard, Spinner as Loader2, Refresh as RefreshCw, Search, Servers as Server, ShieldCheck, TrashSolid as Trash2, UserPlus, UsersSolid as Users, XCircle } from '@mynaui/icons-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

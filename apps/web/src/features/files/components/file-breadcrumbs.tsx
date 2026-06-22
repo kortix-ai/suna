@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, FolderRoot } from 'lucide-react';
+import { ChevronRight, Folder as FolderRoot } from '@mynaui/icons-react';
 import { useFilesStore, useFilesStoreApi } from '../store/files-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { cn } from '@/lib/utils';

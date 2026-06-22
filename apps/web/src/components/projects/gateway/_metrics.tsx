@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis } from 'recharts';
 
 import {

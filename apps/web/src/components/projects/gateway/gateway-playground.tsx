@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Clock, Coins, CornerDownLeft, Sparkles, Zap } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ClockCircle as Clock, Dollar as Coins, CornerDownLeft, Sparkles, Zap } from '@mynaui/icons-react';
 import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 
 import { Button } from '@/components/ui/button';

@@ -22,22 +22,7 @@ import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import {
-  AlertTriangle,
-  Braces,
-  Check,
-  CircleAlert,
-  Code,
-  Download,
-  Eye,
-  FileWarning,
-  FileX,
-  GitBranch,
-  Globe,
-  Loader2,
-  RotateCcw,
-  Save,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Code as Braces, Check, DangerCircle as CircleAlert, Code, Download, Eye, File as FileWarning, FileX, GitBranch, Globe, Spinner as Loader2, Refresh as RotateCcw, Save } from '@mynaui/icons-react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
 

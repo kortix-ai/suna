@@ -4,17 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
 import { useState, useCallback, useRef } from 'react';
-import {
-  Key,
-  Loader2,
-  Copy,
-  Check,
-  Download,
-  Terminal,
-  Code2,
-  Monitor,
-  KeyRound,
-} from 'lucide-react';
+import { Key, Spinner as Loader2, Copy, Check, Download, Terminal, Code as Code2, Monitor, Key as KeyRound } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {

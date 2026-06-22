@@ -8,7 +8,7 @@
  */
 
 import * as TabsPrimitive from '@radix-ui/react-tabs';
-import { Plus } from 'lucide-react';
+import { Plus } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 

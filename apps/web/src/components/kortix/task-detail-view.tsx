@@ -26,22 +26,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  CircleDashed,
-  Play,
-  CheckCircle2,
-  AlertOctagon,
-  Trash2,
-  ExternalLink,
-  X,
-  Activity,
-  FlaskConical,
-  XCircle,
-  Package,
-  Paperclip,
-  Copy,
-  Loader2,
-} from 'lucide-react';
+import { CircleDashed, Play, CheckCircle as CheckCircle2, DangerOctagon as AlertOctagon, TrashSolid as Trash2, ExternalLink, X, Activity, FlaskConical, XCircle, Package, Paperclip, Copy, Spinner as Loader2 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';

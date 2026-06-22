@@ -32,7 +32,7 @@ import { SessionActionsPanel } from '@/features/session/session-actions-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { X } from 'lucide-react';
+import { X } from '@mynaui/icons-react';
 import type { SessionStartStage } from '@/lib/projects-client';
 
 // ============================================================================

@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ArrowLeft, BookOpen } from 'lucide-react';
+import { ArrowLeft, BookOpen } from '@mynaui/icons-react';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 

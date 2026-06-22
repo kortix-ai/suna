@@ -12,7 +12,7 @@ import { createCheckoutSession } from '@/lib/api/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { ArrowRight, Check, Loader2, X } from 'lucide-react';
+import { ArrowRight, Check, Spinner as Loader2, X } from '@mynaui/icons-react';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

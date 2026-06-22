@@ -19,7 +19,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, Loader2, Pencil, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react';
+import { ExternalLink, Spinner as Loader2, Pencil, Plus, Search, Shield as ShieldAlert, Sparkles } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Mail, X, Check } from 'lucide-react';
+import { Mail, X, Check } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useSendReferralEmails } from '@/hooks/referrals/use-referrals';
 import { useTranslations } from 'next-intl';

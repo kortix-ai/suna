@@ -11,21 +11,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Plus,
-  Trash2,
-  ArrowUp,
-  ArrowDown,
-  Save,
-  Loader2,
-  Columns as ColumnsIcon,
-  SlidersHorizontal,
-  FileStack,
-  Check,
-  ChevronDown,
-  Pause,
-  Play,
-} from 'lucide-react';
+import { Plus, TrashSolid as Trash2, ArrowUp, ArrowDown, Save, Spinner as Loader2, Columns as ColumnsIcon, Filter as SlidersHorizontal, File as FileStack, Check, ChevronDown, Pause, Play } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,

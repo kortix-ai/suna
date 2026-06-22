@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { FileText, Folder, Search, X } from 'lucide-react';
+import { FileText, Folder, Search, X } from '@mynaui/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFileSearch } from '../hooks';
 import { useFilesStore } from '../store/files-store';

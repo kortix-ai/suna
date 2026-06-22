@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/marketing/button';
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
-import { Check, Copy, GitBranch } from 'lucide-react';
+import { Check, Copy, GitBranch } from '@mynaui/icons-react';
 import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { FOR_DEVELOPERS, type AuthorType, type Commit } from './section3-content';

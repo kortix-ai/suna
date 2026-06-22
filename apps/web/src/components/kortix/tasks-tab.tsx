@@ -9,13 +9,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useEffect, useState } from 'react';
-import {
-  Search,
-  Plus,
-  X,
-  LayoutList,
-  Columns3,
-} from 'lucide-react';
+import { Search, Plus, X, List as LayoutList, Columns as Columns3 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { IconInbox } from '@/components/ui/kortix-icons';

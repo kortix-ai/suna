@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { errorToast } from '@/components/ui/toast';
 import { desktopDownloadUrl, startDownload } from '@/lib/desktop';
 import { cn } from '@/lib/utils';
-import { Check, Copy, Monitor, Smartphone, Terminal } from 'lucide-react';
+import { Check, Copy, Monitor, Mobile as Smartphone, Terminal } from '@mynaui/icons-react';
 import { useEffect, useState } from 'react';
 
 const CLI_INSTALL_CMD = 'curl -fsSL https://kortix.com/install | bash';

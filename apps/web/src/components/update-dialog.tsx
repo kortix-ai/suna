@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Check, XCircle, ArrowDownToLine, RotateCw, Terminal, Copy } from 'lucide-react';
+import { Check, XCircle, ArrowDown as ArrowDownToLine, Refresh as RotateCw, Terminal, Copy } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertDialog,

@@ -5,23 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
-import {
-  ArrowUp,
-  ArrowUpLeft,
-  ChevronDown,
-  Check,
-  GitFork,
-  // Info,       // AutoContinue — commented out
-  // Infinity,   // AutoContinue — commented out
-  Loader2,
-  Paperclip,
-  X,
-  ListTodo,
-  MessageSquare,
-  Terminal,
-  Reply,
-  Folder,
-} from 'lucide-react';
+import { ArrowUp, ArrowUpLeft, ChevronDown, Check, GitBranch as GitFork, Spinner as Loader2, Paperclip, X, ListCheck as ListTodo, Message as MessageSquare, Terminal, MessageReply as Reply, Folder } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';

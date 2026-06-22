@@ -9,22 +9,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
-import {
-  Plus,
-  UserCircle2,
-  Bot,
-  Trash2,
-  Save,
-  Pencil,
-  X,
-  Loader2,
-  Check,
-  ShieldCheck,
-  Users,
-  ChevronDown,
-  Zap,
-  Cpu,
-} from 'lucide-react';
+import { Plus, UserCircle as UserCircle2, Sparkles as Bot, TrashSolid as Trash2, Save, Pencil, X, Spinner as Loader2, Check, ShieldCheck, UsersSolid as Users, ChevronDown, Zap, Microchip as Cpu } from '@mynaui/icons-react';
 import {
   Dialog,
   DialogContent,

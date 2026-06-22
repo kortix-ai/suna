@@ -20,15 +20,7 @@ import {
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
 import { useTabStore } from '@/stores/tab-store';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  ExternalLink,
-  Globe,
-  Loader2,
-  RefreshCw,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ArrowLeft, ArrowRight, ExternalLink, Globe, Spinner as Loader2, Refresh as RefreshCw } from '@mynaui/icons-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface PreviewTabContentProps {

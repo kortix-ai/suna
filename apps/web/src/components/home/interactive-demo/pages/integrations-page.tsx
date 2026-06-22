@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Blocks, Search } from 'lucide-react';
+import { ArrowRight, Component as Blocks, Search } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { CONNECTOR_TYPES, INTEGRATIONS } from '../data';

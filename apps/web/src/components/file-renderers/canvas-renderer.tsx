@@ -18,26 +18,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import {
-  AlertCircle,
-  ArrowLeftRight,
-  Copy,
-  Download,
-  Frame,
-  Hand,
-  ImagePlus,
-  Layers,
-  Maximize,
-  Minus,
-  MousePointer2,
-  Plus,
-  Save,
-  Scissors,
-  Trash2,
-  Type,
-  Wand2,
-  X,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ArrowLeftRight, Copy, Download, Frame, Hand, Image as ImagePlus, LayersOne as Layers, Maximize, Minus, MousePointer as MousePointer2, Plus, Save, Scissors, TrashSolid as Trash2, TypeText as Type, Sparkles as Wand2, X } from '@mynaui/icons-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // OCR detected text region with polygon bounding box

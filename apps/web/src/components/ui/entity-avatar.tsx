@@ -3,7 +3,7 @@
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 import { chalkColors } from '@kortix/shared';
-import { IconType } from 'react-icons/lib';
+import type { Icon as IconType } from '@mynaui/icons-react';
 
 const SIZE_MAP = {
   xs: { box: 'size-5 rounded-sm text-xs', icon: 'size-3' },

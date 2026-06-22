@@ -6,17 +6,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import {
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Maximize,
-  Minimize,
-  RotateCcw,
-  Info,
-  Download,
-} from 'lucide-react';
+import { Play, Pause, VolumeHigh as Volume2, VolumeX, Maximize, Minimize, Refresh as RotateCcw, Info, Download } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface VideoRendererProps {

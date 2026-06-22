@@ -29,13 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  AlertCircle,
-  Rocket,
-  Plus,
-  Search,
-  Loader2,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, Rocket, Plus, Search, Spinner as Loader2 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/ui/page-header';
 import { DeploymentGroup } from './deployment-group';

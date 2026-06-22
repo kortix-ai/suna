@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import React from 'react';
-import { Monitor, Wifi, WifiOff, Shield, ScrollText, Info, Copy, Check } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, Shield, FileText as ScrollText, Info, Copy, Check } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import {

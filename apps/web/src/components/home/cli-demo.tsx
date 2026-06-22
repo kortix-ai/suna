@@ -2,7 +2,7 @@
 
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import {
   type CSSProperties,

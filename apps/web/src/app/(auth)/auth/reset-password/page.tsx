@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { DangerCircle as AlertCircle, CheckCircle as CheckCircle2 } from '@mynaui/icons-react';
 
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';

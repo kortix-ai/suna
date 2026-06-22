@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { KeyRound, Plug } from 'lucide-react';
+import { Key as KeyRound, Power as Plug } from '@mynaui/icons-react';
 import {
   Dialog,
   DialogContent,

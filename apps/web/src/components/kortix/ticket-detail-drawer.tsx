@@ -17,23 +17,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMilestones as useMilestonesHook, useSetTicketMilestone as useSetTicketMilestoneHook } from '@/hooks/kortix/use-milestones';
-import {
-  X,
-  Send,
-  UserPlus,
-  Pencil,
-  Check,
-  Loader2,
-  UserCircle2,
-  Bot,
-  CircleDot,
-  Circle,
-  CheckCircle2,
-  Activity,
-  History,
-  FileText,
-  ChevronDown,
-} from 'lucide-react';
+import { X, Send, UserPlus, Pencil, Check, Spinner as Loader2, UserCircle as UserCircle2, Sparkles as Bot, Record as CircleDot, Circle, CheckCircle as CheckCircle2, Activity, Undo as History, FileText, ChevronDown } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {

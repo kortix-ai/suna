@@ -5,28 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  X,
-  MessageCircle,
-  FolderOpen,
-  Home,
-  Settings,
-  Pin,
-  PinOff,
-  ArrowRightToLine,
-  XCircle,
-  ChevronsUpDown,
-  PanelTop,
-  Plus,
-  Globe,
-  Monitor,
-  TerminalSquare,
-  Activity,
-  ChevronLeft,
-  ChevronRight,
-  Menu,
-  PanelRight,
-} from 'lucide-react';
+import { X, Chat as MessageCircle, Folder as FolderOpen, Home, CogOneSolid as Settings, Pin, Pin as PinOff, ArrowRight as ArrowRightToLine, XCircle, ChevronsUpDown, PanelTop, Plus, Globe, Monitor, Terminal as TerminalSquare, Activity, ChevronLeft, ChevronRight, Menu, PanelRight } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';

@@ -12,8 +12,7 @@ import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
 import { KortixProject } from '@/lib/projects-client';
-import { ArrowUpRight, Pencil, TrashSolid } from '@mynaui/icons-react';
-import { MoreHorizontal } from 'lucide-react';
+import { ArrowUpRight, Pencil, TrashSolid, Dots as MoreHorizontal } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 
 const ProjectCard = ({

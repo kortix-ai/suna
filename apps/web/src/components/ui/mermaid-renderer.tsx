@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { Maximize as Maximize2, X, SearchPlus as ZoomIn, SearchMinus as ZoomOut, Refresh as RotateCcw } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Global cache for rendered Mermaid diagrams

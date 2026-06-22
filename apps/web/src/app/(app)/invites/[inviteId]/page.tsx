@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clock, Loader2 } from 'lucide-react';
+import { ClockCircle as Clock, Spinner as Loader2 } from '@mynaui/icons-react';
 import { motion } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';

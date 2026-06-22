@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { Link2, Loader2 } from 'lucide-react';
+import { Link as Link2, Spinner as Loader2 } from '@mynaui/icons-react';
 
 import { Button } from '@/components/ui/button';
 import {

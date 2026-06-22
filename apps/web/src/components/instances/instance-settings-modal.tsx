@@ -4,26 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  Archive,
-  ArrowDownToLine,
-  Copy,
-  HardDrive,
-  KeyRound,
-  Loader2,
-  Cpu,
-  MemoryStick,
-  RotateCw,
-  RefreshCw,
-  Server,
-  Settings2,
-  Shield,
-  TriangleAlert,
-  Users,
-  WifiOff,
-  X,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, Archive, ArrowDown as ArrowDownToLine, Copy, HardDrive, Key as KeyRound, Spinner as Loader2, Microchip as Cpu, Microchip as MemoryStick, Refresh as RotateCw, Refresh as RefreshCw, Servers as Server, CogOneSolid as Settings2, Shield, DangerTriangle as TriangleAlert, UsersSolid as Users, WifiOff, X } from '@mynaui/icons-react';
 
 import {
   getSandboxUrl,

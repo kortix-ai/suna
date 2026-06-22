@@ -12,16 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Search,
-  User,
-  CreditCard,
-  Calendar,
-  Filter,
-  TrendingUp,
-  Users,
-  Activity
-} from 'lucide-react';
+import { Search, User, CreditCard, Calendar, Filter, TrendingUp, UsersSolid as Users, Activity } from '@mynaui/icons-react';
 import { useAdminUserList, useAdminUserStats } from '@/hooks/admin/use-admin-users';
 import type { UserSummary } from '@/hooks/admin/use-admin-users';
 import { formatCredits, dollarsToCredits } from '@kortix/shared';

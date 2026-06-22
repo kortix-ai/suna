@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
+import { GitPullRequest as GitPullRequestArrow, Spinner as Loader2, Sparkles } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';

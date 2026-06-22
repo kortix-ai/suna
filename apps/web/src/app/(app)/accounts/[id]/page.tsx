@@ -4,24 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ChevronDown,
-  Clock,
-  ExternalLink,
-  Github,
-  KeyRound,
-  Link as LinkIcon,
-  Loader2,
-  Mail,
-  MoreHorizontal,
-  RefreshCw,
-  Search,
-  Shield,
-  Trash2,
-  Unplug,
-  UserPlus,
-  X,
-} from 'lucide-react';
+import { ChevronDown, ClockCircle as Clock, ExternalLink, Github, Key as KeyRound, Link as LinkIcon, Spinner as Loader2, Mail, Dots as MoreHorizontal, Refresh as RefreshCw, Search, Shield, TrashSolid as Trash2, Power as Unplug, UserPlus, X } from '@mynaui/icons-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 

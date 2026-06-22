@@ -1,5 +1,5 @@
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
-import { Wrench } from 'lucide-react';
+import { Wrench } from '@mynaui/icons-react';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { LocalTime } from '@/components/ui/local-time';
 

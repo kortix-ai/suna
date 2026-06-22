@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Fragment } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Spinner as Loader2 } from '@mynaui/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { isBillingEnabled } from '@/lib/config';

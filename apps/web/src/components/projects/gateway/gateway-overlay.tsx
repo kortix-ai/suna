@@ -2,19 +2,8 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Activity,
-  BarChart3,
-  Boxes,
-  DollarSign,
-  FlaskConical,
-  KeyRound,
-  type LucideIcon,
-  Plug,
-  RefreshCw,
-  ScrollText,
-  Wallet,
-} from 'lucide-react';
+import { Activity, ChartBar as BarChart3, Package as Boxes, Dollar as DollarSign, FlaskConical, Key as KeyRound, Power as Plug, Refresh as RefreshCw, FileText as ScrollText, CreditCard as Wallet } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { IconClose } from '@/components/ui/kortix-icons';

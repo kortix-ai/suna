@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownToLine, GitCommit, Loader2, Tag } from 'lucide-react';
+import { ArrowDown as ArrowDownToLine, GitCommit, Spinner as Loader2, Tag } from '@mynaui/icons-react';
 
 import { getAllVersions, type VersionEntry, type VersionChannel } from '@/lib/platform-client';
 import { cn } from '@/lib/utils';

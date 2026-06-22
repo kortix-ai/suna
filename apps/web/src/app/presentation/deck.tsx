@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { ChevronLeft, ChevronRight, Grid2x2, Maximize, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Grid as Grid2x2, Maximize, X } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';

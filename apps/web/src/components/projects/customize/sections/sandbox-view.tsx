@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Container } from 'lucide-react';
+import { Package as Container } from '@mynaui/icons-react';
 
 import { getProject } from '@/lib/projects-client';
 import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';

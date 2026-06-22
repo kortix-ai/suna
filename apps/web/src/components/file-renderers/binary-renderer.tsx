@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import React from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Download, File } from 'lucide-react';
+import { Download, File } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDownloadRestriction } from '@/hooks/billing';
 

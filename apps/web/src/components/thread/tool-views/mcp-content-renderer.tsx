@@ -7,10 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Search, Database, FileText, Link2, Key, AlertTriangle,
-  Copy, Globe, FileCode, Table, BookOpen, ExternalLink
-} from 'lucide-react';
+import { Search, Database, FileText, Link as Link2, Key, DangerTriangle as AlertTriangle, Copy, Globe, File as FileCode, Table, BookOpen, ExternalLink } from '@mynaui/icons-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 

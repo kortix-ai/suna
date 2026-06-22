@@ -13,7 +13,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Check } from 'lucide-react';
+import { Check } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { STATUS_META, ALL_STATUSES } from '@/lib/kortix/task-meta';
 import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';

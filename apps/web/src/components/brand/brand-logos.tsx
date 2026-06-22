@@ -11,7 +11,7 @@
  */
 
 import { SiApple, SiLinux } from '@icons-pack/react-simple-icons';
-import { FaWindows } from 'react-icons/fa6';
+import { Monitor as FaWindows } from '@mynaui/icons-react';
 
 type MarkProps = { className?: string };
 

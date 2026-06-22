@@ -3,14 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  Bug,
-  RefreshCw,
-  Shield,
-  Sparkles,
-  Zap,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Danger as Bug, Refresh as RefreshCw, Shield, Sparkles, Zap } from '@mynaui/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

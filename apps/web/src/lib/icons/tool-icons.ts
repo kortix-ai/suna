@@ -7,35 +7,7 @@ import type React from 'react';
 import type { ElementType } from 'react';
 import { getToolIconKey } from '@kortix/shared';
 import type { ToolIconKey } from '@kortix/shared';
-import {
-  Globe,
-  FileEdit,
-  FileSearch,
-  FilePlus,
-  FileText,
-  FileX,
-  List,
-  ListTodo,
-  Terminal,
-  Computer,
-  Search,
-  ExternalLink,
-  Network,
-  Table2,
-  Code,
-  Phone,
-  PhoneOff,
-  MessageCircleQuestion,
-  CheckCircle2,
-  Wrench,
-  BookOpen,
-  Plug,
-  Clock,
-  Presentation,
-  ImageIcon,
-  Pencil,
-  Hammer,
-} from 'lucide-react';
+import { Globe, File as FileEdit, File as FileSearch, FilePlus, FileText, FileX, List, ListCheck as ListTodo, Terminal, Monitor as Computer, Search, ExternalLink, Share as Network, Table as Table2, Code, Telephone as Phone, TelephoneOff as PhoneOff, Chat as MessageCircleQuestion, CheckCircle as CheckCircle2, Wrench, BookOpen, Power as Plug, ClockCircle as Clock, Presentation, Image as ImageIcon, Pencil, Tool as Hammer } from '@mynaui/icons-react';
 
 /**
  * Map icon keys to lucide-react components

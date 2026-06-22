@@ -3,15 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
-import {
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
-  Plus,
-  RefreshCw,
-  X,
-} from 'lucide-react';
+import { GitBranch, GitMerge, GitPullRequest, GitPullRequest as GitPullRequestClosed, Plus, Refresh as RefreshCw, X } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';

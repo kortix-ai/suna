@@ -3,7 +3,7 @@
 import { DraggableCliPanel } from '@/components/home/interactive-demo/cli/draggable-cli-panel';
 import { Panel } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
-import { GitBranch, MessageSquare } from 'lucide-react';
+import { GitBranch, Message as MessageSquare } from '@mynaui/icons-react';
 import { motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';

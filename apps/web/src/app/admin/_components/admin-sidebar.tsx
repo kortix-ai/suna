@@ -4,15 +4,8 @@ import { useTranslations } from 'next-intl';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  Activity,
-  Boxes,
-  ShieldCheck,
-  Users,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowLeft, Activity, Package as Boxes, ShieldCheck, UsersSolid as Users, Wrench } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import {
   Sidebar,

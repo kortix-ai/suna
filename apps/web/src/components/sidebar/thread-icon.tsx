@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { MessageSquareMore } from 'lucide-react';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
+import { MessageDots as MessageSquareMore } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { normalizeIconName } from '@/lib/utils/icon-utils';
 

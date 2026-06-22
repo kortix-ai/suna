@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
 import { useCallback, useState } from 'react';
-import { PanelRight } from 'lucide-react';
+import { PanelRight } from '@mynaui/icons-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {

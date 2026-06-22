@@ -4,14 +4,8 @@
  * Mirrors the canonical task statuses exposed by the live /kortix/tasks API.
  */
 
-import {
-  Circle,
-  CircleDot,
-  CircleDotDashed,
-  CheckCircle2,
-  XCircle,
-  type LucideIcon,
-} from 'lucide-react';
+import { Circle, Record as CircleDot, CircleDashed as CircleDotDashed, CheckCircle as CheckCircle2, XCircle } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';
 
 export interface StatusMeta {

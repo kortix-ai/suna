@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, Boxes, Loader2, MoreHorizontal, RefreshCw } from 'lucide-react';
+import { ArrowLeftRight as ArrowRightLeft, Package as Boxes, Spinner as Loader2, Dots as MoreHorizontal, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 // import { ChevronRight, Circle } from "@mynaui/icons-react";
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronRight, Circle } from 'lucide-react';
+import { Check, ChevronRight, Circle } from '@mynaui/icons-react';
 import * as React from 'react';
 
 const DropdownMenu = DropdownMenuPrimitive.Root;

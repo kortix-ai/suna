@@ -1,6 +1,6 @@
 'use client';
 
-import { Zap, Clock, Sparkles, Info, RotateCcw, Infinity, DollarSign } from 'lucide-react';
+import { Zap, ClockCircle as Clock, Sparkles, Info, Refresh as RotateCcw, Infinity, Dollar as DollarSign } from '@mynaui/icons-react';
 import {
   Card,
   CardContent,

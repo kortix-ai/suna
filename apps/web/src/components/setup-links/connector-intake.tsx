@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Check, ExternalLink, Loader2, Plug } from 'lucide-react';
+import { Check, ExternalLink, Spinner as Loader2, Power as Plug } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';

@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
+import { Spinner as Loader2, Dots as MoreHorizontal, Plus, Search, TrashSolid as Trash2, UsersSolid as Users } from '@mynaui/icons-react';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 

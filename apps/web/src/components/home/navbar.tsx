@@ -32,7 +32,7 @@ import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { ChevronRight, Layers, Menu, Type, X } from 'lucide-react';
+import { ChevronRight, LayersOne as Layers, Menu, TypeText as Type, X } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';

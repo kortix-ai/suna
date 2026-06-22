@@ -5,19 +5,7 @@ import { useTranslations } from 'next-intl';
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Coins, 
-  Clock, 
-  Infinity, 
-  Zap, 
-  Gift, 
-  RefreshCw, 
-  DollarSign,
-  Mail,
-  MessageCircle,
-  Info,
-  ArrowLeft
-} from 'lucide-react';
+import { Dollar as Coins, ClockCircle as Clock, Infinity, Zap, Gift, Refresh as RefreshCw, Dollar as DollarSign, Mail, Chat as MessageCircle, Info, ArrowLeft } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 

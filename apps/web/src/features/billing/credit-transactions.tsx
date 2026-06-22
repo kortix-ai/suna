@@ -29,18 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Clock,
-  Infinity,
-  Plus,
-  Minus,
-  RefreshCw,
-  Info,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, TrendingUp, TrendingDown, Dollar as DollarSign, ClockCircle as Clock, Infinity, Plus, Minus, Refresh as RefreshCw, Info } from '@mynaui/icons-react';
 import { useTransactions, useTransactionsSummary } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';

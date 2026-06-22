@@ -33,23 +33,7 @@ import {
 import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  Loader2,
-  Play,
-  Power,
-  PowerOff,
-  Save,
-  SkipForward,
-  Timer,
-  Trash2,
-  Webhook,
-  X,
-  XCircle,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, CheckCircle as CheckCircle2, ClockCircle as Clock, ExternalLink, Spinner as Loader2, Play, Power, Power as PowerOff, Save, SkipForward, ClockCircle as Timer, TrashSolid as Trash2, Share as Webhook, X, XCircle } from '@mynaui/icons-react';
 import { useRouter } from 'next/navigation';
 import React, { useMemo, useState } from 'react';
 import { ScheduleBuilder } from './schedule-builder';

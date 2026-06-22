@@ -13,7 +13,7 @@ import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, KeyRound, Loader2 } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Key as KeyRound, Spinner as Loader2 } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';

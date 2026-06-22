@@ -8,24 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import {
-  AtSign,
-  BarChart3,
-  BellRing,
-  BookOpenText,
-  Brain,
-  Building2,
-  ChartNoAxesCombined,
-  CheckCircle2,
-  ClipboardList,
-  GitPullRequest,
-  KeyRound,
-  MoreHorizontal,
-  Plus,
-  Server,
-  ShieldCheck,
-  Smile,
-} from 'lucide-react';
+import { At as AtSign, ChartBar as BarChart3, BellOn as BellRing, BookOpen as BookOpenText, Sparkles as Brain, Building as Building2, ChartNoAxesCombined, CheckCircle as CheckCircle2, Clipboard as ClipboardList, GitPullRequest, Key as KeyRound, Dots as MoreHorizontal, Plus, Servers as Server, ShieldCheck, Smile } from '@mynaui/icons-react';
 import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';

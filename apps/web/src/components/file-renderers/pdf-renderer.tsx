@@ -11,13 +11,7 @@ import React, {
 } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  ChevronLeft,
-  ChevronRight,
-  AlertTriangle,
-  ZoomIn,
-  ZoomOut,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, DangerTriangle as AlertTriangle, SearchPlus as ZoomIn, SearchMinus as ZoomOut } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import type {
   PDFDocumentProxy,

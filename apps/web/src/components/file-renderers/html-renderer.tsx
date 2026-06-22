@@ -6,7 +6,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { CodeEditor } from '@/components/file-editors';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Monitor, Code, ExternalLink } from 'lucide-react';
+import { Monitor, Code, ExternalLink } from '@mynaui/icons-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { IframePreview } from '@/components/thread/iframe-preview';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';

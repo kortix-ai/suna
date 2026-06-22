@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { ForDevelopersPanel } from './for-developers-panel';
 import { ForYouPanel } from './for-you-panel';

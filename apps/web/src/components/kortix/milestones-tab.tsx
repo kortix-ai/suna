@@ -18,7 +18,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMemo, useState } from 'react';
-import { Flag, Plus, Pencil, Circle, CheckCircle2, XCircle } from 'lucide-react';
+import { Flag, Plus, Pencil, Circle, CheckCircle as CheckCircle2, XCircle } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {

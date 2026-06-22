@@ -10,7 +10,7 @@
 
 "use client";
 
-import { MessageCircle, X } from "lucide-react";
+import { Chat as MessageCircle, X } from '@mynaui/icons-react';
 import { useCallback, useEffect, useImperativeHandle, useState } from "react";
 import React from "react";
 import ReactMarkdown from "react-markdown";

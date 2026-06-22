@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useEffect } from "react";
-import { Settings, Clock } from "lucide-react";
+import { CogOneSolid as Settings, ClockCircle as Clock } from '@mynaui/icons-react';
 import { Badge } from "@/components/ui/badge";
 import { KortixLoader } from "@/components/ui/kortix-loader";
 import { toast } from "@/lib/toast";

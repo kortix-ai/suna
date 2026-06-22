@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Textarea } from './textarea';
 import { Input } from './input';
 import { cn, truncateString } from '@/lib/utils';
-import { Edit2 } from 'lucide-react';
+import { Edit as Edit2 } from '@mynaui/icons-react';
 
 interface EditableTextProps {
   value: string;

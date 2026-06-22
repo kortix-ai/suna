@@ -1,13 +1,4 @@
-import {
-  Blocks,
-  Database,
-  Download,
-  FileText,
-  GitPullRequest,
-  Mail,
-  MessageSquare,
-  Users,
-} from 'lucide-react';
+import { Component as Blocks, Database, Download, FileText, GitPullRequest, Mail, Message as MessageSquare, UsersSolid as Users } from '@mynaui/icons-react';
 import type { DemoScenario, DemoStep } from '../types';
 import { matchSkillsFromPrompt } from './match-skills';
 import { FileResult, ListResult, SentResult } from './result-card';

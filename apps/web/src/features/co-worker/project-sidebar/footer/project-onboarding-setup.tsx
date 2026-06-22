@@ -1,7 +1,6 @@
 'use client';
 
-import { CheckCircleSolid } from '@mynaui/icons-react';
-import { BookOpen } from 'lucide-react';
+import { CheckCircleSolid, BookOpen } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback } from 'react';

@@ -32,19 +32,7 @@ import { featureFlags } from '@/lib/feature-flags';
 import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Calendar,
-  Clock,
-  Globe,
-  Loader2,
-  MessageSquare,
-  Terminal,
-  Ticket as TicketIcon,
-  Timer,
-  Webhook,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calendar, ClockCircle as Clock, Globe, Spinner as Loader2, Message as MessageSquare, Terminal, Ticket as TicketIcon, ClockCircle as Timer, Share as Webhook } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 import { ScheduleBuilder } from './schedule-builder';
 

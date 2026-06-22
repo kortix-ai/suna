@@ -3,17 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
-import {
-  Layout,
-  ImagePlus,
-  AlertTriangle,
-  Layers,
-  Sparkles,
-  Save,
-  Trash2,
-  Edit3,
-  ExternalLink,
-} from 'lucide-react';
+import { Layout, Image as ImagePlus, DangerTriangle as AlertTriangle, LayersOne as Layers, Sparkles, Save, TrashSolid as Trash2, Edit as Edit3, ExternalLink } from '@mynaui/icons-react';
 import { ToolViewProps } from '../types';
 import { extractCanvasData } from './_utils';
 import { cn } from '@/lib/utils';

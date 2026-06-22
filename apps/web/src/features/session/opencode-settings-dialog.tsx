@@ -36,23 +36,7 @@ import { useOpenCodeProviders, useOpenCodeToolIds } from '@/hooks/opencode/use-o
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import {
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  Plug,
-  Plus,
-  Power,
-  RotateCcw,
-  Save,
-  Server,
-  Settings,
-  Shield,
-  Wrench,
-  X,
-  Zap,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ChevronDown, ChevronRight, Spinner as Loader2, Power as Plug, Plus, Power, Refresh as RotateCcw, Save, Servers as Server, CogOneSolid as Settings, Shield, Wrench, X, Zap } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ============================================================================

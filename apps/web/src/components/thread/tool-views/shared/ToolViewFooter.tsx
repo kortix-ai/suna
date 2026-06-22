@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Clock } from 'lucide-react';
+import { ClockCircle as Clock } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { formatTimestamp } from '../utils';
 

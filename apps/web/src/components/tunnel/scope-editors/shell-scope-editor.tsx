@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';

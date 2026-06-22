@@ -1,28 +1,5 @@
 import { cn } from '@/lib/utils';
-import {
-  Database,
-  FileArchive,
-  FileAudio,
-  FileBadge,
-  FileBox,
-  FileChartLine,
-  FileCode,
-  FileCode2,
-  FileCog,
-  File as FileIcon,
-  FileImage,
-  FileJson,
-  FileKey,
-  FileLock,
-  FileMusic,
-  FileSpreadsheet,
-  FileTerminal,
-  FileText,
-  FileType,
-  FileVideo,
-  Folder,
-  FolderOpen,
-} from 'lucide-react';
+import { Database, File as FileArchive, File as FileAudio, File as FileBadge, File as FileBox, File as FileChartLine, File as FileCode, File as FileCode2, File as FileCog, File as FileIcon, File as FileImage, File as FileJson, File as FileKey, File as FileLock, File as FileMusic, File as FileSpreadsheet, File as FileTerminal, FileText, FileText as FileType, File as FileVideo, Folder, Folder as FolderOpen } from '@mynaui/icons-react';
 
 export type FileIconVariant = 'monochrome' | 'colored';
 

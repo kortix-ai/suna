@@ -16,19 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { cn } from '@/lib/utils';
-import {
-  Boxes,
-  Briefcase,
-  Cpu,
-  Database,
-  Plug,
-  Rocket,
-  SlidersHorizontal,
-  Star,
-  UserRound,
-  Users,
-  Wallet,
-} from 'lucide-react';
+import { Package as Boxes, Briefcase, Microchip as Cpu, Database, Power as Plug, Rocket, Filter as SlidersHorizontal, Star, User as UserRound, UsersSolid as Users, CreditCard as Wallet } from '@mynaui/icons-react';
 import type { ReactNode } from 'react';
 import {
   Bullets,

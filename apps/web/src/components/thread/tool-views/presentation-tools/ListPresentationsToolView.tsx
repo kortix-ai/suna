@@ -9,16 +9,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Presentation,
-  Folder,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  FileText,
-  Calendar,
-  FolderOpen,
-} from 'lucide-react';
+import { Presentation, Folder, ClockCircle as Clock, CheckCircle, DangerTriangle as AlertTriangle, FileText, Calendar, Folder as FolderOpen } from '@mynaui/icons-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { LoadingState } from '../shared/LoadingState';

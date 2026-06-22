@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { FormEvent, Suspense, useState } from 'react';
-import { AlertCircle, MailCheck } from 'lucide-react';
+import { DangerCircle as AlertCircle, Mail as MailCheck } from '@mynaui/icons-react';
 
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';

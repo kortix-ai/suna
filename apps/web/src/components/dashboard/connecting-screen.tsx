@@ -8,14 +8,7 @@ import {
   useState,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  AlertCircle,
-  ArrowLeft,
-  ArrowLeftRight,
-  Power,
-  RefreshCw,
-  WifiOff,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ArrowLeft, ArrowLeftRight, Power, Refresh as RefreshCw, WifiOff } from '@mynaui/icons-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';

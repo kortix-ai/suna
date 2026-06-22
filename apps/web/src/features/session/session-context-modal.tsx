@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
-import { Copy, Check, ChevronDown, ChevronRight, Network } from 'lucide-react';
+import { Copy, Check, ChevronDown, ChevronRight, Share as Network } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';

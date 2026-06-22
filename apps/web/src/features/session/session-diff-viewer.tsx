@@ -3,19 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState, useMemo } from 'react';
-import {
-  FileCode2,
-  FilePlus2,
-  FileX2,
-  FileEdit,
-  ChevronRight,
-  ChevronDown,
-  GitCompareArrows,
-  Columns2,
-  Rows2,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
+import { File as FileCode2, FilePlus as FilePlus2, FileX as FileX2, File as FileEdit, ChevronRight, ChevronDown, GitDiff as GitCompareArrows, Columns as Columns2, Rows as Rows2, Maximize as Maximize2, Minimize as Minimize2 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
 import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';

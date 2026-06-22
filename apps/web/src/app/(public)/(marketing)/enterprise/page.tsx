@@ -8,12 +8,10 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { cn } from '@/lib/utils';
-import { Box, Building2, GitBranch, KeyRound, Server } from 'lucide-react';
+import { Box, Building as Building2, GitBranch, Key as KeyRound, Servers as Server, UsersSolid as FaUsers, Shield as MdShield } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { MdShield } from 'react-icons/md';
 
 const DIFFERENTIATORS = [
   {

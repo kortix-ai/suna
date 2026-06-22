@@ -5,14 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  ZoomIn,
-  ZoomOut,
-  RotateCw,
-  Maximize2,
-  Minimize2,
-  Info,
-} from 'lucide-react';
+import { SearchPlus as ZoomIn, SearchMinus as ZoomOut, Refresh as RotateCw, Maximize as Maximize2, Minimize as Minimize2, Info } from '@mynaui/icons-react';
 
 interface ImageRendererProps {
   url: string;

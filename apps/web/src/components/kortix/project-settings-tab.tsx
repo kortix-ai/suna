@@ -15,7 +15,7 @@
  */
 
 import { type ComponentType } from 'react';
-import { Users, KeyRound, Zap, LayoutGrid } from 'lucide-react';
+import { UsersSolid as Users, Key as KeyRound, Zap, Grid as LayoutGrid } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { TeamTab } from './team-tab';
 import { CredentialsTab } from './credentials-tab';

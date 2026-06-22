@@ -22,9 +22,8 @@ import {
   type SharingSelection,
 } from '@/features/co-worker/shared/sharing-picker';
 import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
-import { LockSolid, UsersSolid } from '@mynaui/icons-react';
+import { LockSolid, UsersSolid, Globe } from '@mynaui/icons-react';
 import { useMutation } from '@tanstack/react-query';
-import { Globe } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 

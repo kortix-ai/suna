@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Check, AlertCircle, Save, RotateCcw } from 'lucide-react';
+import { Check, DangerCircle as AlertCircle, Save, Refresh as RotateCcw } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Tooltip,

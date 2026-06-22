@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
  * re-hash, compare). Each row: one-button Update when outdated, Remove always.
  */
 
-import { KeyRound, PackageOpen, Plug, RefreshCw, Trash2, Wrench } from 'lucide-react';
+import { Key as KeyRound, Package as PackageOpen, Power as Plug, Refresh as RefreshCw, TrashSolid as Trash2, Wrench } from '@mynaui/icons-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

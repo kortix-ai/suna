@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { ChevronDown, MessageSquare } from 'lucide-react';
+import { ChevronDown, Message as MessageSquare } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { PageHead } from '../primitives';

@@ -16,7 +16,7 @@ import {
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
+import { Check, ChevronDown, Copy, ExternalLink, Spinner as Loader2, Slack, X } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 

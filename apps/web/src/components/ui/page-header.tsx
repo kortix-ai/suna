@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 
 interface PageHeaderProps {

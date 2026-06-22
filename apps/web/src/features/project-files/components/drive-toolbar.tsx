@@ -3,21 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import {
-  LayoutGrid,
-  List,
-  Upload,
-  FolderPlus,
-  FilePlus,
-  Plus,
-  ArrowUpDown,
-  RefreshCw,
-  ChevronRight,
-  Home,
-  Download,
-  GitCommitHorizontal,
-  GitPullRequest,
-} from 'lucide-react';
+import { Grid as LayoutGrid, List, Upload, FolderPlus, FilePlus, Plus, ArrowUpDown, Refresh as RefreshCw, ChevronRight, Home, Download, GitCommit as GitCommitHorizontal, GitPullRequest } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {

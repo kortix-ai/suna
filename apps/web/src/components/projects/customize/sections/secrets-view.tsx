@@ -4,22 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  Check,
-  FileWarning,
-  KeyRound,
-  Loader2,
-  Lock,
-  MoreHorizontal,
-  Pencil,
-  Plug,
-  Plus,
-  Search,
-  Trash2,
-  User,
-  Users,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Check, File as FileWarning, Key as KeyRound, Spinner as Loader2, Lock, Dots as MoreHorizontal, Pencil, Power as Plug, Plus, Search, TrashSolid as Trash2, User, UsersSolid as Users } from '@mynaui/icons-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';

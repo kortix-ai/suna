@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import React, { useState } from 'react';
-import { X, Plus, ChevronDown } from 'lucide-react';
+import { X, Plus, ChevronDown } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';

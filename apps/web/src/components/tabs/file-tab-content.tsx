@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleAlert, AlertTriangle } from 'lucide-react';
+import { DangerCircle as CircleAlert, DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';

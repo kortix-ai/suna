@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { Project } from '@/types/project';
-import { RefreshCw, Presentation } from 'lucide-react';
+import { Refresh as RefreshCw, Presentation } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { Button } from '@/components/ui/button';

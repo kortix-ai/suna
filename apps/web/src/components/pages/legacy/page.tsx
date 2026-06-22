@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { use, useMemo, useState, useCallback } from 'react';
-import { Loader2, AlertCircle, ChevronRight, History, GitFork, ArrowRightLeft } from 'lucide-react';
+import { Spinner as Loader2, DangerCircle as AlertCircle, ChevronRight, Undo as History, GitBranch as GitFork, ArrowLeftRight as ArrowRightLeft } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useLegacyMessages, useMigrateLegacyThread } from '@/hooks/legacy/use-legacy-threads';

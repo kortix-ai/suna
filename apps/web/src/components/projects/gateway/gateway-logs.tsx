@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  Activity,
-  ArrowLeft,
-  ChevronRight,
-  Clock,
-  Coins,
-  DollarSign,
-  ScrollText,
-} from 'lucide-react';
+import { Activity, ArrowLeft, ChevronRight, ClockCircle as Clock, Dollar as Coins, Dollar as DollarSign, FileText as ScrollText } from '@mynaui/icons-react';
 import { type ReactNode, useState } from 'react';
 
 import { EmptyState } from '@/components/ui/empty-state';

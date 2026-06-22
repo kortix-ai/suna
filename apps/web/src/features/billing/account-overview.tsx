@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
-import { Activity, Bot, Cpu, Layers, Play, Plug, Sparkles, Wallet } from 'lucide-react';
+import { Activity, Sparkles as Bot, Microchip as Cpu, LayersOne as Layers, Play, Power as Plug, Sparkles, CreditCard as Wallet } from '@mynaui/icons-react';
 
 type LimitRow = {
   id: string;

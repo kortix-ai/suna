@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
 import { Heatmap } from '@paper-design/shaders-react';
-import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
+import { Eye, Key, LayersTwo as Layers2, Servers as Server, Shield } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';

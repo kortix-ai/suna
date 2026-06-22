@@ -9,7 +9,7 @@
  * product instead of eleven slightly-different pages.
  */
 
-import type { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';

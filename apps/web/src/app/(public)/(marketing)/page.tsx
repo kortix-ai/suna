@@ -15,7 +15,7 @@ import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
+import { ArrowRight as HiArrowRight } from '@mynaui/icons-react';
 
 export default function Home() {
   const { user } = useAuth();

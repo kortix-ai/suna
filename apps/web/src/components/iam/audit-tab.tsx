@@ -18,7 +18,7 @@ import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';

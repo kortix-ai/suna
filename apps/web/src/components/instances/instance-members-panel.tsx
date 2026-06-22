@@ -48,7 +48,7 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
-import { User, AlertCircle } from 'lucide-react';
+import { User, DangerCircle as AlertCircle } from '@mynaui/icons-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

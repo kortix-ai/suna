@@ -1,6 +1,6 @@
 'use client';
 
-import { History } from 'lucide-react';
+import { Undo as History } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { useFilesStore } from '../store/files-store';
 import { FileContentRenderer } from './file-content-renderer';

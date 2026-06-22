@@ -21,13 +21,12 @@ import { CompareSwitcher } from '@/features/marketing/compare-switcher';
 import { COMPETITORS, type RowLean } from '@/features/marketing/marketing-pages';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
-import { Check, Minus } from 'lucide-react';
+import { Check, Minus, ArrowRight as HiArrowRight } from '@mynaui/icons-react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Fragment } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 
 interface PageProps {
   params: Promise<{ slug: string }>;

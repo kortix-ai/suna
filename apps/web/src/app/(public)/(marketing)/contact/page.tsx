@@ -1,15 +1,6 @@
 'use client';
 
-import {
-  ArrowRight,
-  Boxes,
-  Clock,
-  Lock,
-  Mail,
-  PlayCircle,
-  Server,
-  ShieldCheck,
-} from 'lucide-react';
+import { ArrowRight, Package as Boxes, ClockCircle as Clock, Lock, Mail, PlayCircle, Servers as Server, ShieldCheck } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 

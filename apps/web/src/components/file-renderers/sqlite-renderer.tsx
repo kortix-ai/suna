@@ -32,31 +32,7 @@ import React, {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Database,
-  Table2,
-  Eye,
-  Search,
-  Play,
-  X,
-  Loader2,
-  RefreshCw,
-  Download,
-  Copy,
-  Check,
-  Code2,
-  List,
-  Hash,
-  Type,
-  ToggleLeft,
-  Calendar,
-  FileQuestion,
-  Key,
-  Plus,
-  Trash2,
-  Save,
-  Undo2,
-} from 'lucide-react';
+import { Database, Table as Table2, Eye, Search, Play, X, Spinner as Loader2, Refresh as RefreshCw, Download, Copy, Check, Code as Code2, List, Hash, TypeText as Type, ToggleLeft, Calendar, File as FileQuestion, Key, Plus, TrashSolid as Trash2, Save, Undo as Undo2 } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 import { AgGridReact } from 'ag-grid-react';
 import {

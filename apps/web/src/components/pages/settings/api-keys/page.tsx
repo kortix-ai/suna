@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import React, { useState, useMemo, useCallback } from 'react';
-import { Key, Plus, Trash2, Copy, Check, Shield, RefreshCw, Bot, AlertCircle, ExternalLink, Loader2, CheckCircle2 } from 'lucide-react';
+import { Key, Plus, TrashSolid as Trash2, Copy, Check, Shield, Refresh as RefreshCw, Sparkles as Bot, DangerCircle as AlertCircle, ExternalLink, Spinner as Loader2, CheckCircle as CheckCircle2 } from '@mynaui/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 
