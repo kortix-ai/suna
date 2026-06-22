@@ -428,6 +428,8 @@ export const DEPS: Dep[] = [
     installMac: 'corepack enable && corepack install', installLinux: 'corepack enable && corepack install' },
   { name: 'supabase', bin: 'supabase', check: () => !!which('supabase'), needed: 'always',
     installMac: 'brew install supabase/tap/supabase', installLinux: 'see https://supabase.com/docs/guides/cli (brew or release tarball)' },
+  { name: 'psql', bin: 'psql', check: () => !!which('psql'), needed: 'always',
+    installMac: 'brew install libpq && brew link --force libpq', installLinux: 'sudo apt-get install -y postgresql-client' },
   { name: 'dotenvx', bin: 'dotenvx', needed: 'always',
     check: () => existsSync(join(repoRootSafe(), 'node_modules/.bin/dotenvx')) || !!which('dotenvx'),
     installMac: '(installed by root `pnpm install`)', installLinux: '(installed by root `pnpm install`)' },
