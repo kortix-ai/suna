@@ -1,8 +1,17 @@
 import { spawn } from 'bun';
-import { openSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, openSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run, which } from './exec';
+
+// A log file inside a freshly-created private temp dir — mkdtempSync makes the
+// dir atomically with an unpredictable name at mode 0700, so no other local user
+// can pre-create or read it. Matters because these logs capture a child's
+// stdout/stderr and the stripe one holds the `whsec_` signing secret; a fixed
+// name in the shared tmpdir would be a symlink/disclosure risk.
+function privateLogFile(prefix: string): string {
+  return join(mkdtempSync(join(tmpdir(), `kortix-wt-${prefix}-`)), `${prefix}.log`);
+}
 
 export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
   const builds: Array<[string, string]> = [
@@ -21,9 +30,8 @@ export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
-  const logPath = join(tmpdir(), `kortix-wt-tunnel-${apiPort}.log`);
-  writeFileSync(logPath, '');
-  const fd = openSync(logPath, 'w');
+  const logPath = privateLogFile('tunnel');
+  const fd = openSync(logPath, 'w', 0o600);
   const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
     stdout: fd, stderr: fd, stdin: 'ignore',
   });
@@ -49,9 +57,8 @@ export interface StripeListen { secret: string; proc: ReturnType<typeof Bun.spaw
 export async function startStripeListen(apiPort: number): Promise<StripeListen | null> {
   if (!which('stripe')) return null;
   const forwardTo = `http://localhost:${apiPort}/v1/billing/webhooks/stripe`;
-  const logPath = join(tmpdir(), `kortix-wt-stripe-${apiPort}.log`);
-  writeFileSync(logPath, '');
-  const fd = openSync(logPath, 'w');
+  const logPath = privateLogFile('stripe');
+  const fd = openSync(logPath, 'w', 0o600);
   const proc = spawn(['stripe', 'listen', '--forward-to', forwardTo], {
     stdout: fd, stderr: fd, stdin: 'ignore',
   });
