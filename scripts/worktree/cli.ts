@@ -338,6 +338,20 @@ async function cmdStart(a: Args) {
   if (!sh(['docker', 'info']).ok) die('Docker daemon not running — start Docker and retry');
   const e = entry!;
 
+  // Heal a stale ports cache. The registry stores a denormalized copy of
+  // computePorts(slot), so a worktree created before a port was added to BASE
+  // (e.g. the standalone gateway) has that field missing — String(undefined)
+  // then makes the gateway fall back to its default 8090 and the API lose its
+  // proxy (LLM_GATEWAY_PROXY_PORT="undefined"). The slot is the source of truth:
+  // recompute every port from it, and persist so the entry is fixed for good.
+  const freshPorts = computePorts(e.slot);
+  if (JSON.stringify(freshPorts) !== JSON.stringify(e.ports)) {
+    const added = (Object.keys(freshPorts) as (keyof typeof freshPorts)[]).filter((k) => e.ports[k] !== freshPorts[k]);
+    e.ports = freshPorts;
+    await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].ports = freshPorts; saveRegistry(r); } });
+    sub(`refreshed slot ${e.slot} ports from BASE (${added.join(', ')}) → gateway :${freshPorts.gateway}`);
+  }
+
   renderSupabaseProject(name, e.path, e.projectId, e.ports);
   step(`Starting Postgres for "${name}"`);
   if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
