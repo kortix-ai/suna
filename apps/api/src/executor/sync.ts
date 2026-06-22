@@ -47,7 +47,8 @@ export interface SyncResult {
  * Best-effort re-materialization after a channel platform install changes
  * (connect / disconnect). Resolves the project's account, then runs the normal
  * sweep so the auto-materialized channel connector (dis)appears immediately —
- * "connect Slack → the `slack` connector shows up" with no manifest edit.
+ * "connect Slack → the platform-owned Slack connector shows up" with no
+ * manifest edit.
  * Never throws: a sync hiccup must not fail the install/uninstall request.
  */
 export async function reconcileChannelConnectors(projectId: string): Promise<void> {
@@ -114,8 +115,8 @@ export async function syncProjectConnectors(projectId: string, accountId: string
 
   // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
   // connecting the platform IS the registration. So they materialize even when
-  // the project has no readable kortix.toml — "connect Slack → the `slack`
-  // connector just appears" must hold for any project. Synthetic specs are
+  // the project has no readable kortix.toml — "connect Slack → the built-in
+  // Slack connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs];

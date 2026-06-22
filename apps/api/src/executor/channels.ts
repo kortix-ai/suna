@@ -11,6 +11,27 @@
  */
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
+/**
+ * Reserved, platform-owned connector slug for the built-in Slack channel.
+ *
+ * Do NOT use the public `slack` slug here: projects are allowed to add their
+ * own `[[connectors]] slug = "slack"` (for example a Pipedream Slack connector).
+ * The in-sandbox `slack` CLI needs a deterministic namespace that cannot be
+ * shadowed by those user-defined connectors, otherwise read commands such as
+ * `slack thread` resolve against the wrong catalog and fail with
+ * `action_not_found`.
+ */
+export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
+
+export function channelDefaultSlug(platform: string): string {
+  switch (platform) {
+    case 'slack':
+      return SLACK_CHANNEL_CONNECTOR_SLUG;
+    default:
+      return platform;
+  }
+}
+
 // `ChannelPlatform` + the platform allow-list are owned by projects/connectors.ts
 // (the parser layer the executor builds on). This module just maps a platform
 // string → its catalog / API base, so it takes plain strings and returns []/''

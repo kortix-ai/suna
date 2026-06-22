@@ -69,7 +69,12 @@ function readSourcesFlag(flags: Record<string, string>): Array<{ url: string; te
 
 // Slack Web API methods → their Kortix `channel` connector action paths. The
 // shim speaks Slack method names; the Executor speaks connector actions.
-const SLACK_CONNECTOR = 'slack';
+//
+// Use the reserved platform-owned channel slug first. Projects may define their
+// own `[[connectors]] slug="slack"` (often Pipedream Slack), which must not
+// shadow the built-in Slack CLI. Keep the legacy `slack` fallback so old API
+// deployments / old materialized rows continue to work during rollout.
+const SLACK_CONNECTORS = ['kortix_slack', 'slack'] as const;
 const METHOD_TO_ACTION: Record<string, string> = {
   'chat.postMessage': 'send_message',
   'chat.update': 'update_message',
@@ -109,13 +114,41 @@ function executorClient() {
 async function executorCall(method: string, args: Record<string, unknown>): Promise<any> {
   const action = METHOD_TO_ACTION[method];
   if (!action) throw new CliError(`No Executor action mapped for Slack method "${method}"`);
+  let lastErr: ExecutorError | null = null;
+  for (const connector of SLACK_CONNECTORS) {
+    try {
+      const res = await executorClient().call(connector, action, args);
+      return res.data ?? res;
+    } catch (err) {
+      if (!(err instanceof ExecutorError)) throw err;
+      lastErr = err;
+      const reason = executorErrorReason(err);
+      // Try the legacy `slack` namespace only when the reserved channel connector
+      // is absent/not yet materialized. Do not fall back on `needs_auth` or
+      // upstream Slack errors — those are real results from the right connector.
+      if (connector === SLACK_CONNECTORS[0] && (reason === 'connector_not_found' || reason === 'action_not_found')) {
+        continue;
+      }
+      throw new CliError(err.message);
+    }
+  }
   try {
-    const res = await executorClient().call(SLACK_CONNECTOR, action, args);
-    return res.data ?? res;
+    throw lastErr ?? new CliError(`Slack connector action "${action}" was not found`);
   } catch (err) {
     if (err instanceof ExecutorError) throw new CliError(err.message);
     throw err;
   }
+}
+
+function executorErrorReason(err: ExecutorError): string | null {
+  const body = err.body;
+  if (body && typeof body === 'object') {
+    const reason = (body as { reason?: unknown }).reason;
+    if (typeof reason === 'string') return reason;
+    const error = (body as { error?: unknown }).error;
+    if (typeof error === 'string') return error;
+  }
+  return err.message || null;
 }
 
 async function apiPost(method: string, body: Record<string, unknown>): Promise<any> {

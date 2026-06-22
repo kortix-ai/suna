@@ -1,3 +1,4 @@
+import { loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -11,9 +12,8 @@
  * executor_credentials row, no migration. See KORTIX-206.
  */
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
-import { channelLabel } from './channels';
-import { loadSlackInstall } from '../channels/install-store';
 import { MANIFEST_FILENAME } from '../projects/triggers';
+import { channelDefaultSlug, channelLabel } from './channels';
 
 function channelSpec(platform: ChannelPlatform, slug: string): ConnectorSpec {
   return {
@@ -36,9 +36,9 @@ function channelSpec(platform: ChannelPlatform, slug: string): ConnectorSpec {
   };
 }
 
-/** True if a channel for `platform` (or anything on its default slug) is already declared. */
-function alreadyDeclared(declared: ConnectorSpec[], platform: ChannelPlatform, slug: string): boolean {
-  return declared.some((s) => s.slug === slug || (s.provider === 'channel' && s.platform === platform));
+/** True if any declared connector already owns this exact reserved channel slug. */
+function slugAlreadyDeclared(declared: ConnectorSpec[], slug: string): boolean {
+  return declared.some((s) => s.slug === slug);
 }
 
 /**
@@ -52,9 +52,13 @@ export async function synthesizeChannelConnectors(
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
   // Slack (Telegram/Teams slot in here the same way — see KORTIX-206 Phase D).
-  if (!alreadyDeclared(declared, 'slack', 'slack')) {
+  // Use the reserved platform-owned slug so user-defined connectors like
+  // `[[connectors]] slug="slack" provider="pipedream" app="slack"` cannot
+  // shadow the built-in Slack CLI's channel catalog.
+  const slackSlug = channelDefaultSlug('slack');
+  if (!slugAlreadyDeclared(declared, slackSlug)) {
     const install = await loadSlackInstall(projectId).catch(() => null);
-    if (install) return [channelSpec('slack', 'slack')];
+    if (install) return [channelSpec('slack', slackSlug)];
   }
   return [];
 }

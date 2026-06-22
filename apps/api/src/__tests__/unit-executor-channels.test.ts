@@ -9,7 +9,7 @@
  *     surfaced as a real error (parity with the in-sandbox CLI's throw).
  */
 import { describe, expect, test } from 'bun:test';
-import { channelApiBase, channelCatalog } from '../executor/channels';
+import { channelApiBase, channelCatalog, channelDefaultSlug, SLACK_CHANNEL_CONNECTOR_SLUG } from '../executor/channels';
 import {
   extractConnectors,
   connectorSpecToTomlEntry,
@@ -66,6 +66,11 @@ describe('channelCatalog(slack)', () => {
   test('api base', () => {
     expect(channelApiBase('slack')).toBe('https://slack.com/api');
   });
+
+  test('default slack channel slug is platform-owned, not the user connector namespace', () => {
+    expect(channelDefaultSlug('slack')).toBe(SLACK_CHANNEL_CONNECTOR_SLUG);
+    expect(SLACK_CHANNEL_CONNECTOR_SLUG).toBe('kortix_slack');
+  });
 });
 
 /* ─── parse ───────────────────────────────────────────────────────────────── */
@@ -120,7 +125,7 @@ platform = "slack"
 
 const SLACK: GatewayConnector = {
   connectorId: 'conn-slack',
-  slug: 'slack',
+  slug: SLACK_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
   baseUrl: 'https://slack.com/api',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
@@ -183,5 +188,58 @@ describe('handleCall — channel (slack)', () => {
     const res = await handleCall(deps, input);
     expect(res.status).toBe('error');
     if (res.status === 'error') expect(res.reason).toMatch(/channel_not_found/);
+  });
+
+  test('legacy connector="slack" calls use the reserved channel connector before a user-defined slack connector', async () => {
+    const pipedreamSlack: GatewayConnector = {
+      connectorId: 'conn-user-pipedream-slack',
+      slug: 'slack',
+      provider: 'pipedream',
+      baseUrl: null,
+      auth: { type: 'none', in: 'header', name: null, prefix: null },
+      hasAuth: true,
+      shareScope: 'project',
+      grants: [],
+      credentialMode: 'shared',
+      enabled: true,
+    };
+    const getThread: GatewayAction = {
+      path: `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
+      relPath: 'get_thread',
+      inputSchema: { type: 'object', properties: { channel: {}, ts: {} }, required: ['channel', 'ts'] },
+      risk: 'read',
+      binding: { kind: 'http', method: 'GET', path: '/conversations.replies' },
+    };
+    const fetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async (_projectId, slug) => {
+        if (slug === SLACK_CHANNEL_CONNECTOR_SLUG) return SLACK;
+        if (slug === 'slack') return pipedreamSlack;
+        return null;
+      },
+      loadAction: async (connectorId, relPath) => connectorId === SLACK.connectorId && relPath === 'get_thread' ? getThread : null,
+      resolveCredential: async (connector) => connector.provider === 'channel' ? 'xoxb-install-token' : 'pipedream-account-id',
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => {},
+      fetchImpl: async (url, init) => {
+        fetchCalls.push({ url, ...init });
+        return { status: 200, ok: true, text: async () => '{"ok":true,"messages":[]}' };
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'slack',
+      actionPath: 'get_thread',
+      args: { channel: 'C123', ts: '111.222' },
+    });
+
+    expect(res.status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+    const [call] = fetchCalls;
+    expect(call?.url).toBe('https://slack.com/api/conversations.replies?channel=C123&ts=111.222');
+    expect(call?.headers.Authorization).toBe('Bearer xoxb-install-token');
   });
 });

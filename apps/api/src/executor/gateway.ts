@@ -1,3 +1,12 @@
+import { logger } from '../lib/logger';
+import { SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
+import {
+  type ExecResult,
+  type ExecutorAuth,
+  type FetchImpl,
+  executeCall,
+  paramHintsFromSchema,
+} from './execute';
 /**
  * Executor gateway — the chokepoint every tool call goes through. Resolves the
  * connector + action, checks the acting user can use it (project-secret
@@ -14,14 +23,8 @@
  * (router.ts) wires real DB/secret deps. `enforcePolicies` exists for back-compat
  * with the original allow-all engine; production sets it true.
  */
-import {
-  resolveEffectiveAction,
-  type DefaultMode,
-  type Policy,
-} from './policy';
-import { isSecretUsableBy, type SecretGrant, type ShareScope, type ShareSubject } from './share';
-import { executeCall, paramHintsFromSchema, type ExecResult, type ExecutorAuth, type FetchImpl } from './execute';
-import { logger } from '../lib/logger';
+import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
+import { type SecretGrant, type ShareScope, type ShareSubject, isSecretUsableBy } from './share';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -123,6 +126,33 @@ export type CallResult =
   | { status: 'pending_approval'; reason: string }
   | { status: 'error'; reason: string };
 
+const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
+
+async function resolveConnectorForCall(
+  deps: GatewayDeps,
+  input: CallInput,
+): Promise<{ slug: string; connector: GatewayConnector | null }> {
+  // Back-compat for sandboxes baked before the reserved channel slug existed:
+  // old `slack` CLI shims call connector="slack" with the fixed channel action
+  // names. A project may also have a user-defined Pipedream connector named
+  // `slack`; prefer the platform-owned channel connector for those native Slack
+  // CLI actions so the user connector cannot shadow thread/history/search reads.
+  if (input.connectorSlug === 'slack' && SLACK_CHANNEL_ACTIONS.has(input.actionPath)) {
+    const channelConnector = await deps.loadConnectorBySlug(
+      input.projectId,
+      SLACK_CHANNEL_CONNECTOR_SLUG,
+    );
+    if (channelConnector?.enabled && channelConnector.provider === 'channel') {
+      return { slug: SLACK_CHANNEL_CONNECTOR_SLUG, connector: channelConnector };
+    }
+  }
+
+  return {
+    slug: input.connectorSlug,
+    connector: await deps.loadConnectorBySlug(input.projectId, input.connectorSlug),
+  };
+}
+
 /** Is this connector usable by the subject? Access (connector sharing) + credential (by mode). */
 async function connectorUsable(
   deps: GatewayDeps,
@@ -143,9 +173,10 @@ async function connectorUsable(
 
 /** Run one executor call through the full gateway path. */
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
-  const fullPath = `${input.connectorSlug}.${input.actionPath}`;
+  const resolved = await resolveConnectorForCall(deps, input);
+  const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  const connector = await deps.loadConnectorBySlug(input.projectId, input.connectorSlug);
+  const connector = resolved.connector;
   if (!connector || !connector.enabled) {
     await audit(deps, input, null, 'denied', null, { reason: 'connector_not_found' });
     return { status: 'denied', reason: 'connector_not_found' };
@@ -159,7 +190,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const usable = await connectorUsable(deps, connector, input.subject);
   if (!usable.ok) {
-    await audit(deps, input, connector.connectorId, 'denied', action.risk, { reason: usable.reason });
+    await audit(deps, input, connector.connectorId, 'denied', action.risk, {
+      reason: usable.reason,
+    });
     return { status: 'denied', reason: usable.reason };
   }
 
@@ -199,7 +232,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     if (connector.provider === 'pipedream') {
       const b = action.binding;
       if (!usable.secret) {
-        throw new Error('pipedream connector has no connected account (run `kortix connectors connect`)');
+        throw new Error(
+          'pipedream connector has no connected account (run `kortix connectors connect`)',
+        );
       }
       const userId = connector.credentialMode === 'per_user' ? input.subject.userId : null;
       if (b.kind === 'pipedream') {
@@ -242,7 +277,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
     }
     if (result.ok) {
-      await audit(deps, input, connector.connectorId, 'ok', action.risk, { http_status: result.status });
+      await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+        http_status: result.status,
+      });
       return { status: 'ok', data: result.data, risk: action.risk };
     }
     const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
@@ -250,11 +287,15 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
-    logger.warn(`[executor] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`);
+    logger.warn(
+      `[executor] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
+    );
     return { status: 'error', reason };
   } catch (e) {
     const reason = (e as Error).message + fallbackHint(connector, action.binding);
-    await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: reason.slice(0, 500) });
+    await audit(deps, input, connector.connectorId, 'error', action.risk, {
+      reason: reason.slice(0, 500),
+    });
     logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
     return { status: 'error', reason };
   }
@@ -286,7 +327,9 @@ function upstreamReason(result: ExecResult): string {
       if (body && body !== '{}' && body !== 'null' && body !== '[]') {
         return `upstream_${result.status}: ${body.slice(0, 2000)}`;
       }
-    } catch { /* unserializable body — fall through to the bare status */ }
+    } catch {
+      /* unserializable body — fall through to the bare status */
+    }
   }
   return `upstream_${result.status}`;
 }
