@@ -152,7 +152,7 @@ async function executorCall(
       ) {
         continue;
       }
-      throw new CliError(err.message);
+      throw new CliError(reason ?? err.message);
     }
   }
   try {
@@ -170,6 +170,8 @@ function executorErrorReason(err: ExecutorError): string | null {
     if (typeof reason === 'string') return reason;
     const error = (body as { error?: unknown }).error;
     if (typeof error === 'string') return error;
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
   }
   return err.message || null;
 }

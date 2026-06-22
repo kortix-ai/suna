@@ -24,7 +24,12 @@ interface World {
   uploads: Array<Record<string, unknown>>;
   downloads: string[];
   manifests: string[];
-  reservedFailure: null | 'connector_not_found' | 'action_not_found' | 'needs_auth';
+  reservedFailure:
+    | null
+    | 'connector_not_found'
+    | 'action_not_found'
+    | 'needs_auth'
+    | 'missing_auth_token';
 }
 
 let world: World;
@@ -157,6 +162,9 @@ beforeEach(() => {
         const call = { connector: body.connector, action: body.action, args: body.args ?? {} };
         world.executor.push(call);
         if (body.connector === SLACK_CHANNEL_CONNECTOR_SLUG && world.reservedFailure) {
+          if (world.reservedFailure === 'missing_auth_token') {
+            return json({ error: true, message: 'Missing authentication token' }, 401);
+          }
           return json(
             { ok: false, status: 'denied', reason: world.reservedFailure },
             world.reservedFailure === 'needs_auth' ? 403 : 404,
@@ -380,6 +388,17 @@ describe('slack CLI', () => {
       await runSlack(['thread', '--channel', 'C1', '--ts', '111.222'], { ok: false }),
     );
     expect(out).toMatchObject({ ok: false, error: 'needs_auth' });
+    expect(world.executor.map((c) => `${c.connector}.${c.action}`)).toEqual([
+      `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
+    ]);
+  });
+
+  test('surfaces structured Executor auth errors instead of the boolean error field', async () => {
+    world.reservedFailure = 'missing_auth_token';
+    const out = asObject(
+      await runSlack(['thread', '--channel', 'C1', '--ts', '111.222'], { ok: false }),
+    );
+    expect(out).toMatchObject({ ok: false, error: 'Missing authentication token' });
     expect(world.executor.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
     ]);
