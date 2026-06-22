@@ -150,7 +150,7 @@ export function DiffStat({
         <span className={STATUS_TEXT.success}>+{additions}</span>
       ) : null}
       {deletions ? (
-        <span className={STATUS_TEXT.destructive}>&minus;{deletions}</span>
+        <span className={STATUS_TEXT.destructive}>{`−${deletions}`}</span>
       ) : null}
     </span>
   );
