@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 import { DEPS } from '../lib';
 
 const REPO = join(import.meta.dir, '..', '..', '..');
@@ -43,7 +43,15 @@ describe('dependency contract — every external binary the worktree spawns is d
   });
 
   test('every bin spawned in lib.ts is either declared in DEPS or a shell builtin', () => {
-    const allowed = new Set([...depBins, 'bash', 'git', 'node', 'stripe', 'cloudflared', 'dotenvx']);
+    const allowed = new Set([
+      ...depBins,
+      'bash',
+      'git',
+      'node',
+      'stripe',
+      'cloudflared',
+      'dotenvx',
+    ]);
     const spawned = new Set(
       [...libSrc.matchAll(/(?:run|sh|spawn)\(\s*\[\s*'([a-z][a-z0-9-]*)'/g)].map((m) => m[1]),
     );

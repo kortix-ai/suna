@@ -9,10 +9,16 @@ export interface ApiLaunchOpts {
   stripeWebhookSecret?: string;
 }
 
-export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
-  const billing = !!opts.stripeWebhookSecret;
+export function apiLaunchEnv(
+  ports: Ports,
+  c: SlotCreds,
+  opts: ApiLaunchOpts = {},
+): Record<string, string> {
+  const stripeWebhookSecret = opts.stripeWebhookSecret;
+  const billing = !!stripeWebhookSecret;
   return {
-    ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
+    ENV_MODE: 'local',
+    KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
     KORTIX_URL: opts.kortixUrl || `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
@@ -27,7 +33,7 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // Billing off by default; --stripe flips it on and injects the webhook
     // secret. STRIPE_SECRET_KEY (test mode) is inherited from the local .env.
     KORTIX_BILLING_INTERNAL_ENABLED: billing ? 'true' : 'false',
-    ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
+    ...(stripeWebhookSecret ? { STRIPE_WEBHOOK_SECRET: stripeWebhookSecret } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
     // Route sandbox model calls through the local standalone gateway. Proxy mode
     // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway,
@@ -42,7 +48,9 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     // always set; the API key passes through from the parent shell when present
     // (else it comes from the dotenvx-decrypted apps/api/.env).
     AWS_BEDROCK_REGION: process.env.AWS_BEDROCK_REGION || 'us-west-2',
-    ...(process.env.AWS_BEDROCK_API_KEY ? { AWS_BEDROCK_API_KEY: process.env.AWS_BEDROCK_API_KEY } : {}),
+    ...(process.env.AWS_BEDROCK_API_KEY
+      ? { AWS_BEDROCK_API_KEY: process.env.AWS_BEDROCK_API_KEY }
+      : {}),
   };
 }
 
@@ -59,7 +67,11 @@ export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
   };
 }
 
-export function webLaunchEnv(ports: Ports, c: SlotCreds, opts: { billing?: boolean } = {}): Record<string, string> {
+export function webLaunchEnv(
+  ports: Ports,
+  c: SlotCreds,
+  opts: { billing?: boolean } = {},
+): Record<string, string> {
   return {
     WEB_PORT: String(ports.web),
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,

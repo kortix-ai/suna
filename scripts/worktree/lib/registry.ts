@@ -1,6 +1,13 @@
 import {
-  existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
-  openSync, closeSync, statSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -53,11 +60,22 @@ export async function withLock<T>(fn: () => Promise<T> | T): Promise<T> {
       const fd = openSync(LOCK_PATH, 'wx');
       writeFileSync(fd, String(process.pid));
       closeSync(fd);
-      try { return await fn(); } finally { try { rmSync(LOCK_PATH); } catch {} }
-    } catch (e: any) {
-      if (e?.code !== 'EEXIST') throw e;
       try {
-        if (Date.now() - statSync(LOCK_PATH).mtimeMs > 60_000) { rmSync(LOCK_PATH); continue; }
+        return await fn();
+      } finally {
+        try {
+          rmSync(LOCK_PATH);
+        } catch {}
+      }
+    } catch (e: unknown) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? (e as { code?: string }).code : undefined;
+      if (code !== 'EEXIST') throw e;
+      try {
+        if (Date.now() - statSync(LOCK_PATH).mtimeMs > 60_000) {
+          rmSync(LOCK_PATH);
+          continue;
+        }
       } catch {}
       await Bun.sleep(250);
     }
@@ -66,20 +84,32 @@ export async function withLock<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 
 export function sanitizeName(name: string): string {
-  const s = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  const s = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
   if (!s) throw new Error(`invalid worktree name: "${name}"`);
   return s.slice(0, 40);
 }
 
 export function lowestFreeSlot(reg: Registry): number {
   const used = new Set(Object.values(reg.slots).map((s) => s.slot));
-  let n = 0; while (used.has(n)) n++;
+  let n = 0;
+  while (used.has(n)) n++;
   return n;
 }
 
-export function slotDir(name: string): string { return join(WT_HOME, name); }
-export function supaWorkdir(name: string): string { return join(slotDir(name), 'sb'); }
-export function pnpmStore(name: string): string { return join(slotDir(name), 'pnpm-store'); }
+export function slotDir(name: string): string {
+  return join(WT_HOME, name);
+}
+export function supaWorkdir(name: string): string {
+  return join(slotDir(name), 'sb');
+}
+export function pnpmStore(name: string): string {
+  return join(slotDir(name), 'pnpm-store');
+}
 
 export function writeMarker(worktreePath: string, entry: SlotEntry) {
   writeFileSync(join(worktreePath, '.kortix-worktree.json'), JSON.stringify(entry, null, 2));

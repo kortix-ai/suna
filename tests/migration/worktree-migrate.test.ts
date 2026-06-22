@@ -34,14 +34,28 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
   beforeAll(async () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
     const up = sh([
-      'docker', 'run', '-d', '--name', CONTAINER,
-      '-e', 'POSTGRES_PASSWORD=postgres',
-      '-e', 'POSTGRES_USER=postgres',
-      '-e', 'POSTGRES_DB=postgres',
-      '--tmpfs', '/var/lib/postgresql/data',
-      '-p', `127.0.0.1:${PORT}:5432`,
+      'docker',
+      'run',
+      '-d',
+      '--name',
+      CONTAINER,
+      '-e',
+      'POSTGRES_PASSWORD=postgres',
+      '-e',
+      'POSTGRES_USER=postgres',
+      '-e',
+      'POSTGRES_DB=postgres',
+      '--tmpfs',
+      '/var/lib/postgresql/data',
+      '-p',
+      `127.0.0.1:${PORT}:5432`,
       'postgres:16-alpine',
-      '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
+      '-c',
+      'fsync=off',
+      '-c',
+      'synchronous_commit=off',
+      '-c',
+      'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
     for (let i = 0; i < 60; i++) {
@@ -55,24 +69,23 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
     sh(['docker', 'rm', '-f', CONTAINER]);
   });
 
-  test(
-    'builds the kortix schema from scratch (prereqs + node-pg-migrate)',
-    async () => {
-      const code = await runMigrate(ROOT, ports);
-      expect(code).toBe(0);
+  test('builds the kortix schema from scratch (prereqs + node-pg-migrate)', async () => {
+    const code = await runMigrate(ROOT, ports);
+    expect(code).toBe(0);
 
-      expect(hasKortixSchema(ports)).toBe(true);
+    expect(hasKortixSchema(ports)).toBe(true);
 
-      const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
-      const count = Number(
-        sh(['psql', url, '-tAc',
-          "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
-        ]).stdout.trim(),
-      );
-      expect(count).toBeGreaterThanOrEqual(80);
-    },
-    180_000,
-  );
+    const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+    const count = Number(
+      sh([
+        'psql',
+        url,
+        '-tAc',
+        "select count(*) from information_schema.tables where table_schema='kortix' and table_type='BASE TABLE'",
+      ]).stdout.trim(),
+    );
+    expect(count).toBeGreaterThanOrEqual(80);
+  }, 180_000);
 
   test('is idempotent — a second run applies nothing and still exits 0', async () => {
     const code = await runMigrate(ROOT, ports);
@@ -80,7 +93,3 @@ suite('worktree runMigrate (end-to-end against throwaway Postgres)', () => {
     expect(hasKortixSchema(ports)).toBe(true);
   }, 120_000);
 });
-
-if (!dockerOk) {
-  test.skip('worktree runMigrate integration (docker unavailable — skipped)', () => {});
-}

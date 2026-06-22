@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   BASE,
   DEV_GATEWAY_INTERNAL_TOKEN,
+  type Ports,
+  type Registry,
   STRIDE,
   apiLaunchEnv,
   computePorts,
@@ -11,8 +13,6 @@ import {
   sanitizeName,
   slotCredsFromStatus,
   webLaunchEnv,
-  type Ports,
-  type Registry,
 } from '../lib';
 
 describe('computePorts', () => {
@@ -60,7 +60,9 @@ describe('sanitizeName', () => {
 describe('lowestFreeSlot', () => {
   const reg = (slots: number[]): Registry => ({
     version: 1,
-    slots: Object.fromEntries(slots.map((s) => [`w${s}`, { slot: s } as Registry['slots'][string]])),
+    slots: Object.fromEntries(
+      slots.map((s) => [`w${s}`, { slot: s } as Registry['slots'][string]]),
+    ),
   });
 
   test('returns 0 for an empty registry', () => {

@@ -32,7 +32,9 @@ async function waitForOutputMatch(
       for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
         buf += dec.decode(chunk, { stream: true });
       }
-    } catch { /* stream closed when the process is killed */ }
+    } catch {
+      /* stream closed when the process is killed */
+    }
   };
   void pump(proc.stdout as ReadableStream<Uint8Array>);
   void pump(proc.stderr as ReadableStream<Uint8Array>);
@@ -45,20 +47,33 @@ async function waitForOutputMatch(
   return null;
 }
 
-export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
+export interface Tunnel {
+  url: string;
+  proc: ReturnType<typeof Bun.spawn>;
+}
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
-  const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
-    stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
-  });
+  const proc = spawn(
+    ['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`],
+    {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      stdin: 'ignore',
+    },
+  );
   const url = await waitForOutputMatch(proc, /https:\/\/[a-z0-9.-]+\.trycloudflare\.com/, 30);
   if (url) return { url, proc };
-  try { proc.kill(); } catch {}
+  try {
+    proc.kill();
+  } catch {}
   return null;
 }
 
-export interface StripeListen { secret: string; proc: ReturnType<typeof Bun.spawn>; }
+export interface StripeListen {
+  secret: string;
+  proc: ReturnType<typeof Bun.spawn>;
+}
 
 // Forward Stripe (test-mode) webhooks to THIS worktree's API — the shared
 // `pnpm stripe:listen` is hardcoded to :8008, so without this a worktree's
@@ -70,10 +85,14 @@ export async function startStripeListen(apiPort: number): Promise<StripeListen |
   if (!which('stripe')) return null;
   const forwardTo = `http://localhost:${apiPort}/v1/billing/webhooks/stripe`;
   const proc = spawn(['stripe', 'listen', '--forward-to', forwardTo], {
-    stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
   });
   const secret = await waitForOutputMatch(proc, /whsec_[A-Za-z0-9]+/, 20);
   if (secret) return { secret, proc };
-  try { proc.kill(); } catch {}
+  try {
+    proc.kill();
+  } catch {}
   return null;
 }

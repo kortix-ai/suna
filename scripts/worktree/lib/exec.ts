@@ -1,12 +1,21 @@
-import { spawnSync, spawn } from 'bun';
+import { spawn, spawnSync } from 'bun';
 
-export interface ShResult { code: number; stdout: string; stderr: string; ok: boolean; }
+export interface ShResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  ok: boolean;
+}
 
-export function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, string> } = {}): ShResult {
+export function sh(
+  cmd: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): ShResult {
   const r = spawnSync(cmd, {
     cwd: opts.cwd,
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
-    stdout: 'pipe', stderr: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
   });
   return {
     code: r.exitCode,
@@ -16,11 +25,16 @@ export function sh(cmd: string[], opts: { cwd?: string; env?: Record<string, str
   };
 }
 
-export async function run(cmd: string[], opts: { cwd?: string; env?: Record<string, string> } = {}): Promise<number> {
+export async function run(
+  cmd: string[],
+  opts: { cwd?: string; env?: Record<string, string> } = {},
+): Promise<number> {
   const p = spawn(cmd, {
     cwd: opts.cwd,
     env: opts.env ? { ...process.env, ...opts.env } : process.env,
-    stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
+    stdin: 'inherit',
   });
   return await p.exited;
 }

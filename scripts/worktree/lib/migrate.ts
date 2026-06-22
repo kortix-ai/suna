@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Ports } from './ports';
 import { run } from './exec';
+import type { Ports } from './ports';
 
 export async function runMigrate(worktreePath: string, ports: Ports): Promise<number> {
   const url = `postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres`;
