@@ -795,7 +795,7 @@ export const chatTurnStreams = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     teamId: varchar('team_id', { length: 128 }).notNull(),
-    channel: varchar('channel', { length: 128 }).notNull(),
+    channel: text('channel').notNull(),
     triggerTs: varchar('trigger_ts', { length: 64 }).notNull(),
     messageTs: varchar('message_ts', { length: 64 }),
     streaming: boolean('streaming').notNull().default(false),

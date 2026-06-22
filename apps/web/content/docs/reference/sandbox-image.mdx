@@ -42,7 +42,7 @@ On top of your Dockerfile's final stage, the snapshot builder appends:
 2. `apt-get install -y ca-certificates curl git gzip nodejs npm unzip tmux`.
 3. `npm install -g opencode-ai@<pinned-version>`, plus the `bun` runtime and `agent-browser` (for the headless-browser tool).
 4. A baked OpenCode tool-dependency cache under `/opt/kortix/` (so the boot-time `bun install` in your config dir is a no-op, not a network round-trip).
-5. `COPY` the `kortix-agent` daemon, the `kortix` CLI, and the `kortix-entrypoint` script to `/usr/local/bin/`, plus the `slack-cli` and `executor-sdk` package trees under `/opt/kortix/`.
+5. `COPY` the `kortix-agent` daemon, the `kortix` CLI, and the `kortix-entrypoint` script to `/usr/local/bin/`, plus the `agent-cli` and `executor-sdk` package trees under `/opt/kortix/`.
 6. `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`.
 7. `ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]`.
 

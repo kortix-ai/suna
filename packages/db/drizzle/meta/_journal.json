@@ -113,6 +113,13 @@
       "when": 1782117297842,
       "tag": "20260622083457_teams_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782124942541,
+      "tag": "20260622104222_widen_chat_turn_channel",
+      "breakpoints": true
     }
   ]
 }

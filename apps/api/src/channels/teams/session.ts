@@ -39,6 +39,18 @@ export async function deliverTeamsFollowUpToSession(input: {
   });
 }
 
+async function openFollowUpTurn(
+  projectId: string,
+  tenantId: string,
+  sessionId: string,
+  activity: TeamsActivity,
+): Promise<void> {
+  const handle = await startTurn(projectId, tenantId, activity);
+  if (!handle) return;
+  handle.sessionId = sessionId;
+  await saveTurn(handle);
+}
+
 export async function createOrJoinTeamsConversationSession(input: {
   projectId: string;
   tenantId: string;
@@ -66,6 +78,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForConversationSession(tenantId, conversationId);
     if (sessionId) {
+      await openFollowUpTurn(projectId, tenantId, sessionId, activity);
       await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity) });
     } else {
       console.warn('[teams-webhook] lost thread-create claim but winner never published a session', {
@@ -89,6 +102,7 @@ export async function createOrJoinTeamsConversationSession(input: {
       )
       .limit(1);
     if (existing) {
+      await openFollowUpTurn(projectId, tenantId, existing.sessionId, activity);
       await deliverTeamsFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(activity) });
       return;
     }

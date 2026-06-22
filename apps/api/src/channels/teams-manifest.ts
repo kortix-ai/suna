@@ -70,7 +70,7 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
       {
         botId: cfg.appId,
         scopes: ['personal', 'team', 'groupchat'],
-        supportsFiles: false,
+        supportsFiles: true,
         isNotificationOnly: false,
       },
     ],
