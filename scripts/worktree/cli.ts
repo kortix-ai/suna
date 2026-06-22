@@ -10,7 +10,7 @@
  *   pnpm worktree list · doctor
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
- * ports, isolated Supabase, install, Drizzle migrate) and boots the stack. Many
+ * ports, isolated Supabase, install, prereqs + node-pg-migrate) and boots the stack. Many
  * worktrees run at once with zero collisions; the primary `pnpm dev` is untouched.
  */
 import {
@@ -265,9 +265,9 @@ async function cmdCreate(a: Args) {
   step(`Starting isolated Postgres on db ${entry.ports.sbDb}`);
   if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
 
-  step('Building schema (pnpm db:migrate)');
-  if (await runMigrate(wtPath, entry.ports) !== 0) die(`db:migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
-  if (!hasKortixSchema(entry.ports)) die(`schema not built — branch "${branch}" has no Drizzle migrations.\n  Recreate from a branch that has them: --from migrations/drizzle-rebuild (or merge it into main).`);
+  step('Building schema (prereqs + pnpm migrate)');
+  if (await runMigrate(wtPath, entry.ports) !== 0) die(`migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
+  if (!hasKortixSchema(entry.ports)) die(`schema not built — \`pnpm migrate\` produced no kortix schema on branch "${branch}".\n  Check packages/db/migrations/*.sql exist on this branch and the Supabase prereqs applied (psql + Basejump).`);
 
   step(`Starting isolated Supabase on api ${entry.ports.sbApi}`);
   if (await startSupabaseFullStack(name, entry.ports) !== 0) die('supabase start failed');
@@ -301,8 +301,8 @@ async function cmdStart(a: Args) {
   renderSupabaseProject(name, e.path, e.projectId, e.ports);
   step(`Starting Postgres for "${name}"`);
   if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
-  step('Applying pending migrations (pnpm db:migrate)');
-  if (await runMigrate(e.path, e.ports) !== 0) die('db:migrate failed');
+  step('Applying pending migrations (pnpm migrate)');
+  if (await runMigrate(e.path, e.ports) !== 0) die('migrate failed');
   if (!hasKortixSchema(e.ports)) die(`schema not built for "${name}"`);
   if (!sh(['supabase', '--workdir', supaWorkdir(name), 'status']).ok) {
     step(`Starting Supabase for "${name}"`);

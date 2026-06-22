@@ -1,7 +1,11 @@
--- External prerequisites the baseline assumes, for EPHEMERAL TEST/CI databases
--- on vanilla Postgres. In real environments these are provided by the platform
--- (Supabase Auth + Storage + Basejump). This is NOT a migration — it only
--- creates the minimal stubs needed for the baseline's FKs/policies to apply.
+-- External prerequisites the baseline assumes. In deployed environments these
+-- come from the platform (Supabase Auth + Storage + Basejump). This is NOT a
+-- migration — it only creates the minimal objects the baseline's FKs/policies
+-- need, and is fully idempotent + NON-CLOBBERING, so it is safe on both:
+--   • vanilla Postgres (ephemeral test/CI DBs) — creates everything, and
+--   • a fresh Supabase-local (dev worktrees) — keeps the platform's real
+--     roles/auth/storage untouched and only adds Basejump, which Supabase does
+--     not ship (it used to be created by the retired supabase/migrations).
 --
 --   psql "$DATABASE_URL" -f scripts/test-prereqs.sql
 --
@@ -13,11 +17,20 @@ DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated')
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN;  END IF; END $$;
 
 -- Supabase Auth stubs (signatures only — these don't need to be functional to
--- create the schema; FKs/policies just need them to resolve).
+-- create the schema; FKs/policies just need them to resolve). Created ONLY when
+-- absent, so a real Supabase's own auth.uid()/auth.role() are never overwritten.
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
-CREATE OR REPLACE FUNCTION auth.uid()  RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                 WHERE n.nspname='auth' AND p.proname='uid') THEN
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                 WHERE n.nspname='auth' AND p.proname='role') THEN
+    CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $f$ SELECT NULL::text $f$;
+  END IF;
+END $$;
 
 -- Basejump accounts stub
 CREATE SCHEMA IF NOT EXISTS basejump;
