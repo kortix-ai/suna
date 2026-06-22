@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { DEPS } from '../lib';
@@ -7,7 +7,11 @@ const REPO = join(import.meta.dir, '..', '..', '..');
 const dbPkg = JSON.parse(readFileSync(join(REPO, 'packages', 'db', 'package.json'), 'utf8')) as {
   scripts?: Record<string, string>;
 };
-const libSrc = readFileSync(join(import.meta.dir, '..', 'lib.ts'), 'utf8');
+const LIB_DIR = join(import.meta.dir, '..', 'lib');
+const libSrc = readdirSync(LIB_DIR)
+  .filter((f) => f.endsWith('.ts'))
+  .map((f) => readFileSync(join(LIB_DIR, f), 'utf8'))
+  .join('\n');
 const depBins = new Set(DEPS.map((d) => d.bin));
 
 describe('migrate contract — the worktree migrate must reference real things', () => {
