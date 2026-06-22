@@ -68,7 +68,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
+import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';

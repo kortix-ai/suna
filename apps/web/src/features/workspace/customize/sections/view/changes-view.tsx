@@ -22,7 +22,7 @@ import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectFilesProvider } from '@/features/project-files';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
@@ -33,7 +33,7 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { getProject, listProjectBranches, type ChangeRequestStatus } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 import { CustomizeSectionHeader } from '../../customize-section-header';
@@ -150,22 +150,22 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
   const onMerge = (crId: string) =>
     merge.mutate(crId, {
       onSuccess: (res) =>
-        toast.success(
+        successToast(
           res.merge.fast_forward
             ? 'Merged (fast-forward)'
             : `Merged ${res.merge.merge_commit_sha.slice(0, 7)}`,
         ),
-      onError: (err) => toast.error(err.message),
+      onError: (err) => errorToast(err.message),
     });
   const onClose = (crId: string) =>
     close.mutate(crId, {
-      onSuccess: () => toast.success('Change request rejected'),
-      onError: (err) => toast.error(err.message),
+      onSuccess: () => successToast('Change request rejected'),
+      onError: (err) => errorToast(err.message),
     });
   const onReopen = (crId: string) =>
     reopen.mutate(crId, {
-      onSuccess: () => toast.success('Change request reopened'),
-      onError: (err) => toast.error(err.message),
+      onSuccess: () => successToast('Change request reopened'),
+      onError: (err) => errorToast(err.message),
     });
 
   return (

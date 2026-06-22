@@ -15,6 +15,14 @@
  *   />
  */
 
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType } from '@mynaui/icons-react';
 import { LucideIcon } from 'lucide-react';
@@ -44,29 +52,31 @@ export function EmptyState({
   const maxW = size === 'sm' ? 'max-w-[240px]' : 'max-w-[320px]';
 
   return (
-    <div className={cn('flex flex-1 items-center justify-center px-6 py-12', className)}>
-      <div className={cn('text-center', maxW)}>
+    <Empty className={cn('', className)}>
+      <EmptyHeader className={maxW}>
         {IconComponent && (
-          <div className="mb-4 flex justify-center">
+          <EmptyMedia className="mb-4">
             <IconComponent
               className={cn(iconSize, 'text-muted-foreground/20')}
               strokeWidth={1.25}
             />
-          </div>
+          </EmptyMedia>
         )}
-        <h3 className="text-foreground text-sm font-semibold tracking-tight">{title}</h3>
+        <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">
+          {title}
+        </EmptyTitle>
         {description && (
-          <p className="text-muted-foreground/80 mt-1.5 text-sm leading-relaxed text-balance">
+          <EmptyDescription className="text-muted-foreground/80 mt-1.5">
             {description}
-          </p>
+          </EmptyDescription>
         )}
-        {(action || secondaryAction) && (
-          <div className="mt-5 flex items-center justify-center gap-2">
-            {action}
-            {secondaryAction}
-          </div>
-        )}
-      </div>
-    </div>
+      </EmptyHeader>
+      {(action || secondaryAction) && (
+        <EmptyContent className="flex-row justify-center gap-2">
+          {action}
+          {secondaryAction}
+        </EmptyContent>
+      )}
+    </Empty>
   );
 }

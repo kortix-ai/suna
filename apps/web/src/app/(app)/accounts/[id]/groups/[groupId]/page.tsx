@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';

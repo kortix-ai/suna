@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -63,11 +63,11 @@ export function SettingsView({ projectId }: { projectId: string }) {
   const archiveMutation = useMutation({
     mutationFn: () => archiveProject(projectId),
     onSuccess: () => {
-      toast.success('Project archived');
+      successToast('Project archived');
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to archive project'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
   });
 
   return (
@@ -181,11 +181,11 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
         manifest_path: manifestPath.trim(),
       }),
     onSuccess: (updated) => {
-      toast.success('Repository updated');
+      successToast('Repository updated');
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update repository'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
 
   const dirty =
@@ -371,7 +371,7 @@ function ExperimentalFeatureRow({
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) => toast.error(error.message || `Failed to update ${feature.name}`),
+    onError: (error: Error) => errorToast(error.message || `Failed to update ${feature.name}`),
   });
 
   return (
@@ -423,9 +423,9 @@ function TriggersActivationCard({
     mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
     onSuccess: (data, next) => {
       queryClient.setQueryData(queryKey, data);
-      toast.success(next ? 'All triggers paused for this project' : 'Triggers resumed');
+      successToast(next ? 'All triggers paused for this project' : 'Triggers resumed');
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update trigger activation'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to update trigger activation'),
   });
 
   return (
@@ -469,13 +469,13 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
     mutationFn: () => inviteRepoCollaborator(projectId, username.trim(), permission),
     onSuccess: (res) => {
       if (res.alreadyCollaborator) {
-        toast.success(`@${res.username} already has access to this repo`);
+        successToast(`@${res.username} already has access to this repo`);
       } else {
-        toast.success(`Invite sent to @${res.username} — they accept it on GitHub to get access`);
+        successToast(`Invite sent to @${res.username} — they accept it on GitHub to get access`);
       }
       setUsername('');
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to add collaborator'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to add collaborator'),
   });
 
   const submit = (e: FormEvent) => {
@@ -598,11 +598,11 @@ function GeneralProjectCard({
         name: name.trim(),
       }),
     onSuccess: (updated) => {
-      toast.success('Project updated');
+      successToast('Project updated');
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update project'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
   });
 
   const dirty = name.trim() !== project.name;

@@ -2,8 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -71,8 +70,8 @@ import {
   type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
-import { sortByRoleThenLabel } from '../member-sort';
 import CustomizeSectionWrapper from '../component/section-wrapper';
+import { sortByRoleThenLabel } from '../member-sort';
 
 // Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
 // that only need the bare label (badges, "X gets Manager via account role"
@@ -91,8 +90,8 @@ function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
 function copyInviteLink(url: string) {
   navigator.clipboard
     .writeText(url)
-    .then(() => toast.success('Invite link copied'))
-    .catch(() => toast.error('Could not copy link'));
+    .then(() => successToast('Invite link copied'))
+    .catch(() => errorToast('Could not copy link'));
 }
 
 function formatDate(input: string | null | undefined) {
@@ -121,39 +120,37 @@ export function MembersView({ projectId }: { projectId: string }) {
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
 
   return (
-      <CustomizeSectionWrapper
-        title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
-        description={tHardcodedUi.raw(
-          'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
-        )}
-        action={
-          <PermissionsHelpPopover
-            triggerLabel={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
-            )}
-            align="end"
-          />
-        }
-      >
-          
-
-        {canManage && <InviteMemberCard projectId={projectId} />}
-
-        {canManage && <PendingAccessRequestsCard projectId={projectId} />}
-
-        {canManage && <PendingInvitesCard projectId={projectId} />}
-
-        <ProjectAccessCard
-          projectId={projectId}
-          accountId={project?.account_id ?? null}
-          canManage={!!canManage}
-          members={accessQuery.data?.members ?? []}
-          isLoading={accessQuery.isLoading}
-          isError={accessQuery.isError}
-          error={accessQuery.error as Error | null}
-          onRetry={() => accessQuery.refetch()}
+    <CustomizeSectionWrapper
+      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
+      )}
+      action={
+        <PermissionsHelpPopover
+          triggerLabel={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
+          )}
+          align="end"
         />
-</CustomizeSectionWrapper>
+      }
+    >
+      {canManage && <InviteMemberCard projectId={projectId} />}
+
+      {canManage && <PendingAccessRequestsCard projectId={projectId} />}
+
+      {canManage && <PendingInvitesCard projectId={projectId} />}
+
+      <ProjectAccessCard
+        projectId={projectId}
+        accountId={project?.account_id ?? null}
+        canManage={!!canManage}
+        members={accessQuery.data?.members ?? []}
+        isLoading={accessQuery.isLoading}
+        isError={accessQuery.isError}
+        error={accessQuery.error as Error | null}
+        onRetry={() => accessQuery.refetch()}
+      />
+    </CustomizeSectionWrapper>
   );
 }
 
@@ -202,35 +199,39 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         const r = succeeded[0];
         if (isInviteSent(r.res)) {
           if (r.res.email_sent) {
-            toast.success(
+            successToast(
               `Invitation sent to ${r.res.email}. They'll land on this project as ${r.res.project_role} when they sign up.`,
             );
           } else {
             // Email delivery was skipped (e.g. Mailtrap not configured) or
             // failed. Surface the link so the inviter can share it manually.
             const inviteUrl = r.res.invite_url;
-            toast.warning(
+            warningToast(
               `Invitation created for ${r.res.email} — email skipped. Share the invite link manually.`,
               {
-                action: { label: 'Copy link', onClick: () => copyInviteLink(inviteUrl) },
                 duration: 10_000,
+                button: (
+                  <Button size="sm" onClick={() => copyInviteLink(inviteUrl)}>
+                    Copy link
+                  </Button>
+                ),
               },
             );
           }
         } else {
-          toast.success('Member added');
+          successToast('Member added');
         }
       } else if (succeeded.length > 1) {
-        toast.success(`Invited ${succeeded.length} people`);
+        successToast(`Invited ${succeeded.length} people`);
         if (skipped.length > 0) {
-          toast.warning(
+          warningToast(
             `${skipped.length} ${skipped.length === 1 ? 'email was' : 'emails were'} skipped — share their links manually.`,
           );
         }
       }
 
       if (failed.length > 0) {
-        toast.error(
+        errorToast(
           failed.length === 1
             ? failed[0].message || 'Failed to invite member'
             : `Failed to invite ${failed.length}: ${failed.map((f) => f.email).join(', ')}`,
@@ -253,7 +254,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       setEmails(failed.map((f) => f.email));
       setInputValue('');
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to invite member'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to invite member'),
   });
 
   /**
@@ -558,10 +559,10 @@ function ProjectAccessCard({
     onMutate: ({ userId }) => markPending(userId),
     onSettled: (_data, _error, vars) => clearPending(vars.userId),
     onSuccess: () => {
-      toast.success('Access updated');
+      successToast('Access updated');
       invalidate();
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to update access'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to update access'),
   });
 
   const revokeMutation = useMutation({
@@ -569,10 +570,10 @@ function ProjectAccessCard({
     onMutate: (userId) => markPending(userId),
     onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
-      toast.success('Access revoked');
+      successToast('Access revoked');
       invalidate();
     },
-    onError: (error: Error) => toast.error(error.message || 'Failed to revoke access'),
+    onError: (error: Error) => errorToast(error.message || 'Failed to revoke access'),
   });
 
   // Project-scoped: removes the group's grant here. Everyone who had access via
@@ -580,10 +581,10 @@ function ProjectAccessCard({
   const detachMutation = useMutation({
     mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
     onSuccess: () => {
-      toast.success('Group detached from project');
+      successToast('Group detached from project');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to detach group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
   });
 
   // Account-scoped: removes the user from the group entirely, so it affects
@@ -592,10 +593,10 @@ function ProjectAccessCard({
     mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
       removeGroupMember(accountId ?? '', groupId, userId),
     onSuccess: () => {
-      toast.success('Removed from group');
+      successToast('Removed from group');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove from group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove from group'),
   });
 
   function setRole(member: ProjectAccessMember, value: string) {
@@ -966,11 +967,11 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
-      toast.success(`${result.member.email ?? 'Requester'} can now view this project`);
+      successToast(`${result.member.email ?? 'Requester'} can now view this project`);
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to approve request'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to approve request'),
   });
 
   const rejectMutation = useMutation({
@@ -978,10 +979,10 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: () => {
-      toast.success('Access request declined');
+      successToast('Access request declined');
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to decline request'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to decline request'),
   });
 
   const requests = requestsQuery.data?.requests ?? [];
@@ -1108,14 +1109,14 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
     onMutate: (inviteId) => markPending(inviteId),
     onSettled: (_data, _error, inviteId) => clearPending(inviteId),
     onSuccess: (result) => {
-      toast.success(
+      successToast(
         result.invitation_cancelled
           ? 'Invitation cancelled.'
           : 'Project access removed from invitation.',
       );
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to revoke invitation'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to revoke invitation'),
   });
 
   const resendMutation = useMutation({
@@ -1124,18 +1125,22 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
     onSettled: (_data, _error, inviteId) => clearPending(inviteId),
     onSuccess: (result) => {
       if (result.email_sent) {
-        toast.success('Invite email sent');
+        successToast('Invite email sent');
       } else {
         // Mailtrap not configured (or delivery failed) — hand the admin the
         // link so they can share it manually.
-        toast.warning('Email skipped — copy the invite link to share manually', {
-          action: { label: 'Copy link', onClick: () => copyInviteLink(result.invite_url) },
+        warningToast('Email skipped — copy the invite link to share manually', {
           duration: 8_000,
+          button: (
+            <Button size="sm" onClick={() => copyInviteLink(result.invite_url)}>
+              Copy link
+            </Button>
+          ),
         });
       }
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to resend invitation'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to resend invitation'),
   });
 
   const pending = invitesQuery.data?.pending ?? [];
@@ -1367,12 +1372,12 @@ function ProjectGroupGrantsCard({
     },
     onSettled: (_data, _error, _vars, ctx) => clearPending(ctx!.groupId),
     onSuccess: () => {
-      toast.success('Group attached');
+      successToast('Group attached');
       setPickerGroupId('');
       setPickerRole('editor');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to attach group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to attach group'),
   });
 
   const updateMutation = useMutation({
@@ -1381,10 +1386,10 @@ function ProjectGroupGrantsCard({
     onMutate: (input) => markPending(input.groupId),
     onSettled: (_data, _error, input) => clearPending(input.groupId),
     onSuccess: () => {
-      toast.success('Role updated');
+      successToast('Role updated');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
   });
 
   const detachMutation = useMutation({
@@ -1392,10 +1397,10 @@ function ProjectGroupGrantsCard({
     onMutate: (groupId) => markPending(groupId),
     onSettled: (_data, _error, groupId) => clearPending(groupId),
     onSuccess: () => {
-      toast.success('Group detached');
+      successToast('Group detached');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to detach group'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
   });
 
   return (

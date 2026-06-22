@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';

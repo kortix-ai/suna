@@ -14,7 +14,7 @@ import {
 } from '@/hooks/deployments/use-deployments';
 import { useSecrets } from '@/hooks/secrets/use-secrets';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';

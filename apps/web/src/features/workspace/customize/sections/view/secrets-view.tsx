@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -65,7 +65,7 @@ import {
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
@@ -665,11 +665,11 @@ function SecretDialog({
       });
     },
     onSuccess: () => {
-      toast.success(`Saved ${(fixedName ?? name).trim().toUpperCase()}`);
+      successToast(`Saved ${(fixedName ?? name).trim().toUpperCase()}`);
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to save secret'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to save secret'),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -842,11 +842,11 @@ function PersonalSecretDialog({
       return setPersonalProjectSecret(projectId, finalName, { value, active: true });
     },
     onSuccess: () => {
-      toast.success(`Saved your ${(fixedName ?? name).trim().toUpperCase()}`);
+      successToast(`Saved your ${(fixedName ?? name).trim().toUpperCase()}`);
       onSaved();
       onClose();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to save'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to save'),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

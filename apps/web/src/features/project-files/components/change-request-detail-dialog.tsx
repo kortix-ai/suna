@@ -283,7 +283,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()}>
       <ModalContent
-        className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full max-w-4xl flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[88vh] lg:max-h-[88vh] lg:min-h-[88vh] lg:max-w-6xl"
+        className="flex h-[94dvh] max-h-[94dvh] min-h-0 w-full flex-col gap-0 space-y-0 overflow-hidden p-0 lg:h-[88vh] lg:max-h-[88vh] lg:min-h-[88vh] lg:max-w-6xl"
         showCloseButton={false}
       >
         <ModalHeader className="flex shrink-0 flex-row items-start space-y-0 border-b px-4 py-3 sm:px-5 sm:py-4">

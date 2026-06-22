@@ -32,7 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';

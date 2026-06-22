@@ -16,8 +16,8 @@ const buttonVariants = cva(
         blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
         'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
         'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
-        danger: 'bg-destructive text-background hover:bg-destructive/90',
-        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85',
+        danger: 'bg-destructive text-background hover:bg-destructive/90 focus-visible:ring-destructive/35 focus-visible:ring-offset-4 focus-visible:ring-2',
+        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85 focus-visible:ring-destructive/35 focus-visible:ring-offset-1 focus-visible:ring-2',
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
@@ -39,7 +39,7 @@ const buttonVariants = cva(
           'border border-background/10 bg-foreground/90 hover:bg-foreground text-background hover:text-background',
         transparent: 'bg-transparent hover:bg-transparent text-foreground',
         text: 'text-muted-foreground hover:text-primary',
-
+        'ghost-input': 'bg-transparent hover:bg-input ',
         'ghost-sidebar': 'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
         'outline-sidebar':
           'border border-border bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',

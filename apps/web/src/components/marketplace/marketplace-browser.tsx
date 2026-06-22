@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';

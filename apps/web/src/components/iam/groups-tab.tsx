@@ -27,7 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

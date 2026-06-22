@@ -10,6 +10,7 @@ import {
   type AutosizeTextAreaProps,
   type AutosizeTextAreaRef,
 } from '@/components/ui/textarea';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
@@ -154,11 +155,70 @@ const InputGroupTextarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAre
 );
 InputGroupTextarea.displayName = 'InputGroupTextarea';
 
+function InputGroupSearch({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div data-slot="input-group-search" className={cn('relative w-full', className)} {...props} />
+  );
+}
+
+function InputGroupSearchIcon({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="input-group-search-icon"
+      aria-hidden="true"
+      className={cn(
+        'text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 [&_svg:not([class*="size-"])]:size-4',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function InputGroupSearchInput({ className, ...props }: InputProps) {
+  return (
+    <Input
+      data-slot="input-group-search-control"
+      variant="transparent"
+      className={cn('peer placeholder:text-muted-foreground/60 pl-9', className)}
+      {...props}
+    />
+  );
+}
+
+function InputGroupSearchClear({
+  className,
+  variant = 'ghost',
+  size = 'icon',
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'children'>) {
+  return (
+    <Button
+      type="button"
+      variant={variant}
+      size={size}
+      aria-label="Clear"
+      data-slot="input-group-search-clear"
+      className={cn(
+        'absolute top-1/2 right-2 size-6 -translate-y-1/2 rounded-sm opacity-0 peer-focus:opacity-100',
+        className,
+      )}
+      {...props}
+    >
+      <Icon.Close className="text-muted-foreground size-4" />
+    </Button>
+  );
+}
+
 export {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
   InputGroupText,
   InputGroupTextarea,
 };

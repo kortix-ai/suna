@@ -27,7 +27,7 @@ import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree'
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMarketplaceItem, useMarketplaceItemFile } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';

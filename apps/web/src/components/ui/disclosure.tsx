@@ -100,7 +100,7 @@ export function Disclosure({
       <DisclosureProvider open={openProp} onOpenChange={onOpenChange} variants={variants}>
         <DisclosureRoot
           className={cn(
-            variant === 'outline' && 'group border-border w-full rounded-lg border shadow-none',
+            variant === 'outline' && 'group border-border w-full rounded-md border shadow-none',
             className,
           )}
         >

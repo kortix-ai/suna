@@ -57,7 +57,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -101,7 +101,7 @@ import {
   type ConnectorPolicyRule,
   type ConnectorSharing,
 } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -207,10 +207,10 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
     },
     onSuccess: (res) => {
       if (!res.connected) return;
-      toast.success('Connected');
+      successToast('Connected');
       onConnected();
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => errorToast(err.message),
   });
 }
 
@@ -268,10 +268,10 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     onSuccess: (res) => {
       invalidate();
       if (res.errors.length)
-        toast.warning(`Synced ${res.synced}, ${res.errors.length} with issues`);
-      else toast.success(`Synced ${res.synced} connector(s)`);
+        warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
+      else successToast(`Synced ${res.synced} connector(s)`);
     },
-    onError: (err: Error) => toast.error(err.message || 'Sync failed'),
+    onError: (err: Error) => errorToast(err.message || 'Sync failed'),
   });
 
   if (query.isLoading) return <MasterDetailSkeleton />;
@@ -768,20 +768,20 @@ function ConnectorDetail({
   const rename = useMutation({
     mutationFn: () => setConnectorName(projectId, connector.slug, nameDraft.trim()),
     onSuccess: () => {
-      toast.success('Renamed');
+      successToast('Renamed');
       setEditingName(false);
       onChanged();
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to rename'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to rename'),
   });
 
   const remove = useMutation({
     mutationFn: () => deleteConnector(projectId, connector.slug),
     onSuccess: () => {
-      toast.success(`Removed ${displayName}`);
+      successToast(`Removed ${displayName}`);
       onRemoved();
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to remove'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to remove'),
   });
 
   const toolCount = connector.actions.length;
@@ -1116,10 +1116,10 @@ function ProfileSection({
         await setConnectorSharing(projectId, connector.slug, intent);
     },
     onSuccess: () => {
-      toast.success('Profile saved');
+      successToast('Profile saved');
       onChanged();
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to save profile'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to save profile'),
   });
 
   return (
@@ -1294,11 +1294,11 @@ function ConnectionSection({
         credential: connector.credentialMode,
       }),
     onSuccess: () => {
-      toast.success('Connection saved');
+      successToast('Connection saved');
       queryClient.invalidateQueries({ queryKey: ['connector-config', projectId, connector.slug] });
       onChanged();
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to save connection'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to save connection'),
   });
 
   return (
@@ -1519,12 +1519,12 @@ function PermissionsSection({
       return setConnectorPolicies(projectId, connector.slug, policies);
     },
     onSuccess: () => {
-      toast.success('Permissions saved');
+      successToast('Permissions saved');
       queryClient.invalidateQueries({
         queryKey: ['connector-policies', projectId, connector.slug],
       });
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to save permissions'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to save permissions'),
   });
 
   const setChoice = (path: string, choice: PolicyChoice) =>
@@ -2286,10 +2286,10 @@ function ConfigureAppDialog({
         sharing: setupToSharing(setup),
       }),
     onSuccess: () => {
-      toast.success(`Added ${app!.name} — click Connect to authorize`);
+      successToast(`Added ${app!.name} — click Connect to authorize`);
       onAdded(app!.slug);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to add'),
   });
   return (
     <Dialog
@@ -2549,10 +2549,10 @@ function CustomConnectorForm({
         sharing: setupToSharing(setup),
       }),
     onSuccess: () => {
-      toast.success(`Added ${draft.slug}`);
+      successToast(`Added ${draft.slug}`);
       onAdded(draft.slug);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add connector'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to add connector'),
   });
   const authActive = !!draft.auth?.type && draft.auth.type !== 'none';
 
@@ -2634,12 +2634,12 @@ function SetCredentialDialog({
   const save = useMutation({
     mutationFn: () => setConnectorCredential(projectId, connector!.slug, value),
     onSuccess: () => {
-      toast.success('Credential saved');
+      successToast('Credential saved');
       setValue('');
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to save'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to save'),
   });
   return (
     <Dialog

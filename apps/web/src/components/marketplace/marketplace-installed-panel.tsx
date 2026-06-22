@@ -12,7 +12,7 @@ import { KeyRound, PackageOpen, Plug, RefreshCw, Trash2, Wrench } from 'lucide-r
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {

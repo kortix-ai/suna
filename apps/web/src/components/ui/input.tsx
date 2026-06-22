@@ -20,7 +20,7 @@ function Input({ className, type, variant = 'default', size = 'sm', ...props }: 
         type === 'file' &&
           'text-muted-foreground/70 file:border-input file:text-foreground p-0 pr-3 italic file:me-3 file:h-full file:border-0 file:border-r file:border-solid file:bg-transparent file:px-3 file:text-sm file:font-medium file:not-italic',
         variant === 'secondary' && 'bg-input text-secondary-foreground border-none',
-        variant === 'transparent' && 'text-foreground border-none bg-transparent',
+        variant === 'transparent' && 'text-foreground bg-transparent border-border focus:border-kortix-blue focus:border focus:outline-none',
         size === 'xs' && 'h-8 text-xs',
         size === 'sm' && 'h-9 text-sm',
         size === 'md' && 'h-10 text-sm',

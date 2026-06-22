@@ -3,7 +3,8 @@
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { ScheduleView } from '@/components/projects/schedule-view';
 import { Button } from '@/components/ui/button';
-import { Modal, ModalContent, ModalTitle } from '@/components/ui/modal';
+import { Label } from '@/components/ui/label';
+import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
@@ -19,6 +20,7 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { ArrowLeft } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -37,26 +39,12 @@ import {
   Timer,
   Users,
   Webhook,
-  type LucideIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
-
-import { Label } from '@/components/ui/label';
-import { ArrowLeft } from '@mynaui/icons-react';
 import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
-
-interface RailItem {
-  section: CustomizeSection;
-  label: string;
-  icon?: LucideIcon;
-}
-
-interface RailGroup {
-  label?: string;
-  items: readonly RailItem[];
-}
+import { RailGroup, RailItem } from './type';
 
 const GROUPS: readonly RailGroup[] = [
   {
@@ -180,7 +168,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
             </nav>
           ) : (
             <section className="bg-sidebar flex min-h-0 flex-col space-y-10 border-r py-4">
-              <div className="w-full px-2.5">
+              <ModalClose className="w-full px-2.5">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -189,7 +177,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
                   <ArrowLeft />
                   Back to workspace
                 </Button>
-              </div>
+              </ModalClose>
 
               <nav aria-label="Customize">
                 <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -250,7 +238,7 @@ function RailButton({
       aria-current={active ? 'page' : undefined}
       className={cn('w-full justify-start gap-2.5 text-left')}
     >
-      {Icon && <Icon className={cn('size-3.5 shrink-0')} />}
+      {Icon && <Icon className={cn('size-4 shrink-0')} />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
     </Button>
   );

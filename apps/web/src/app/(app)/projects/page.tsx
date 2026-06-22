@@ -7,7 +7,7 @@ import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
