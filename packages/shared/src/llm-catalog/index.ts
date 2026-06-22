@@ -29,42 +29,83 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  bedrockModelId: string;
+  // The Bedrock inference-profile id, when the model is reachable on Bedrock.
+  // Only Anthropic models are — our Bedrock transport speaks the Anthropic-on-
+  // Bedrock payload format — so non-Anthropic (Chinese) models omit this and are
+  // served via OpenRouter instead. Absent here ⇒ no Bedrock candidate is built.
+  bedrockModelId?: string;
   openRouterModelId: string;
   tier: 'flagship' | 'balanced' | 'fast';
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
-// `kortix/<id>` (e.g. `kortix/kortix-power`) and sends `<id>` as the wire model.
-// A bare, slash-free id is what lets the gateway tell a managed request
-// (`kortix-power` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
-// the user's own key) without the two ever colliding.
+// `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
+// model. A bare, slash-free id is what lets the gateway tell a managed request
+// (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
+// (`anthropic/claude-...` → the user's own key) without the two ever colliding.
+//
+// Every managed model routes through our own provider keys and is billed as
+// Kortix credits with markup, so the gateway enforces budgets/logging/spend on
+// all of them. Anthropic frontier goes via Bedrock; the rest via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: 'kortix-power',
-    name: 'Kortix Power',
-    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
-    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    id: 'claude-opus-4.8',
+    name: 'Claude Opus 4.8',
+    bedrockModelId: 'us.anthropic.claude-opus-4-8',
+    openRouterModelId: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
   },
   {
-    id: 'kortix-basic',
-    name: 'Kortix Basic',
-    bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    openRouterModelId: 'anthropic/claude-haiku-4.5',
-    tier: 'fast',
+    id: 'claude-sonnet-4.6',
+    name: 'Claude Sonnet 4.6',
+    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
+    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'deepseek-v3.2',
+    name: 'DeepSeek V3.2',
+    openRouterModelId: 'deepseek/deepseek-v3.2',
+    tier: 'balanced',
+  },
+  {
+    id: 'qwen3-max',
+    name: 'Qwen3 Max',
+    openRouterModelId: 'qwen/qwen3-max',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.6',
+    name: 'GLM-4.6',
+    openRouterModelId: 'z-ai/glm-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'kimi-k2',
+    name: 'Kimi K2',
+    openRouterModelId: 'moonshotai/kimi-k2',
+    tier: 'balanced',
   },
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
 
+// Back-compat: the gateway previously offered two branded ids. Stored agent
+// configs / in-flight requests may still send them, so they keep resolving (to
+// the nearest current model) even though they are no longer in the served
+// catalog. Not advertised — absent from DEFAULT_MANAGED_MODEL_IDS.
+const MANAGED_ALIASES: Record<string, string> = {
+  'kortix-power': 'claude-sonnet-4.6',
+  'kortix-basic': 'claude-sonnet-4.6',
+};
+
 export function getManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id);
+  return MANAGED_BY_ID.get(id) ?? MANAGED_BY_ID.get(MANAGED_ALIASES[id]);
 }
 
 export function isManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id);
+  return MANAGED_BY_ID.has(id) || id in MANAGED_ALIASES;
 }
 
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);

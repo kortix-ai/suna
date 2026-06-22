@@ -14,8 +14,8 @@ describe('withModelLimits', () => {
   })
 
   test('gives the flagship default model its real window, not the fallback default', () => {
-    const out = withModelLimits({ 'kortix-power': { name: 'Kortix Power' } })
-    expect(out['kortix-power']!.limit?.context).toBe(1_000_000)
+    const out = withModelLimits({ 'claude-sonnet-4.6': { name: 'Claude Sonnet 4.6' } })
+    expect(out['claude-sonnet-4.6']!.limit?.context).toBe(1_000_000)
   })
 
   test('applies a conservative default for a model with no known limit', () => {
