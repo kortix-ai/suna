@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Checkov scan → SARIF
-        uses: bridgecrewio/checkov-action@0f121ac57605f6e7f8cb145ad2ea49722232ff73
+        uses: bridgecrewio/checkov-action@fa9edf8f0a491c59a924ea6accd5bdcf07752cff
         with:
           directory: infra/
           framework: terraform,kubernetes,helm,dockerfile
