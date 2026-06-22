@@ -5,7 +5,7 @@ import { Container } from 'lucide-react';
 
 import { getProject } from '@/lib/projects-client';
 import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 
 /**
  * Customize → Sandbox. The project's runtime image: per-commit snapshots that

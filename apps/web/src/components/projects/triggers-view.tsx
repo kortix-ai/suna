@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import {
   AlertDialog,

@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { List } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { useSandboxRecovery } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
+import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import {
   buildSandboxTemplate,
   deleteSandboxTemplate,

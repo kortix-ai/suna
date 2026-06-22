@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -55,7 +55,7 @@ import {
   isSharingComplete,
   selectionToIntent,
   type SharingSelection,
-} from '@/features/co-worker/shared/sharing-picker';
+} from '@/features/workspace/shared/sharing-picker';
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,

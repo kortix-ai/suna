@@ -31,23 +31,23 @@ import {
 import {
   ProjectAppsNavItem,
   ProjectAppsRailItem,
-} from '@/features/co-worker/project-sidebar/footer/project-apps-nav';
+} from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectGatewayNavItem, ProjectGatewayRailItem } from '@/components/projects/gateway/gateway-nav';
-import { ProjectChangeRequestsNavItem } from '@/features/co-worker/project-sidebar/footer/project-change-requests-nav';
+import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import {
   ProjectCustomizeNavItem,
   ProjectCustomizeRailItem,
-} from '@/features/co-worker/project-sidebar/footer/project-customize-nav';
+} from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import {
   OnboardingSetupNavItem,
   ProjectSetupRailItem,
-} from '@/features/co-worker/project-sidebar/footer/project-onboarding-setup';
+} from '@/features/workspace/project-sidebar/footer/project-onboarding-setup';
 import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
-} from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
-import { ProjectSessionList } from '@/features/co-worker/project-sidebar/project-session-list';
-import { ProjectSwitcher } from '@/features/co-worker/project-sidebar/project-switcher';
+  } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
+import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
 import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';

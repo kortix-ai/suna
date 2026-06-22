@@ -9,7 +9,7 @@ import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { useSidebar } from '@/components/ui/sidebar';
-import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
+import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { Icon } from '@/features/icon/icon';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';

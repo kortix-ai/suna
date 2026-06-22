@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';

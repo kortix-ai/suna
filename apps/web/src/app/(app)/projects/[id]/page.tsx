@@ -3,8 +3,8 @@
 import {
   ProjectHome,
   type ProjectHomeSendOptions,
-} from '@/features/co-worker/project-layout/project-home';
-import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
+} from '@/features/workspace/project-layout/project-home';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { isBillingEnabled } from '@/lib/config';

@@ -56,7 +56,7 @@ import {
   isSharingComplete,
   selectionToIntent,
   type SharingSelection,
-} from '@/features/co-worker/shared/sharing-picker';
+} from '@/features/workspace/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';

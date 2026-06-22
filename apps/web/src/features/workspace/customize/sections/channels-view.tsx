@@ -1,6 +1,6 @@
 'use client';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';

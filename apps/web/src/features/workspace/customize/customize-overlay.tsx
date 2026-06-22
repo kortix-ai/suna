@@ -1,28 +1,23 @@
 'use client';
 
-/**
- * Customize overlay — the single, full-screen surface for every per-project
- * config (Agents, Skills, Commands, Files, Connectors, Secrets, Channels,
- * Schedules, Webhooks, Members, Settings).
- *
- * Mounted once inside `ProjectShell`, it floats over the active project page as
- * a large modal (driven by `useCustomizeStore`) so opening it never swaps your
- * content area or spawns a tab — ESC / backdrop closes it and you land back
- * exactly where you were.
- *
- *   ┌───────────────────────────────────────────────┐
- *   │ Customize · Project                         ✕  │
- *   ├──────────┬────────────────────────────────────┤
- *   │ Build    │                                     │
- *   │  Agents  │   active section content            │
- *   │  Skills  │   (each section owns its own        │
- *   │ Connect  │    list + detail layout)            │
- *   │  …       │                                     │
- *   │ Settings │                                     │
- *   └──────────┴────────────────────────────────────┘
- */
-
-import { useMemo } from 'react';
+import { MarketplaceView } from '@/components/marketplace/marketplace-view';
+import { TriggersView } from '@/components/projects/triggers-view';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { AgentsView } from '@/features/workspace/customize/sections/agents-view';
+import { ChannelsView } from '@/features/workspace/customize/sections/channels-view';
+import { CommandsView } from '@/features/workspace/customize/sections/commands-view';
+import { ComputersView } from '@/features/workspace/customize/sections/computers-view';
+import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
+import { MembersView } from '@/features/workspace/customize/sections/members-view';
+import { SandboxView } from '@/features/workspace/customize/sections/sandbox-view';
+import { SecretsView } from '@/features/workspace/customize/sections/secrets-view';
+import { SettingsView } from '@/features/workspace/customize/sections/settings-view';
+import { SkillsView } from '@/features/workspace/customize/sections/skills-view';
+import { useIsMobile } from '@/hooks/utils';
+import type { CustomizeSection } from '@/lib/customize-sections';
+import { getProjectDetail } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -44,25 +39,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-
-import { AgentsView } from '@/components/projects/customize/sections/agents-view';
-import { ChannelsView } from '@/components/projects/customize/sections/channels-view';
-import { CommandsView } from '@/components/projects/customize/sections/commands-view';
-import { ComputersView } from '@/components/projects/customize/sections/computers-view';
-import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
-import { MembersView } from '@/components/projects/customize/sections/members-view';
-import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
-import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
-import { SettingsView } from '@/components/projects/customize/sections/settings-view';
-import { SkillsView } from '@/components/projects/customize/sections/skills-view';
-import { MarketplaceView } from '@/components/marketplace/marketplace-view';
-import { TriggersView } from '@/components/projects/triggers-view';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
-import type { CustomizeSection } from '@/lib/customize-sections';
-import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useMemo } from 'react';
 
 import { ChangesView } from './sections/changes-view';
 import { DevView } from './sections/dev-view';
@@ -72,7 +49,6 @@ interface RailItem {
   section: CustomizeSection;
   label: string;
   icon?: LucideIcon;
-  /** Render a text glyph instead of an icon (used for "/" → Commands). */
   glyph?: string;
 }
 
@@ -81,9 +57,6 @@ interface RailGroup {
   items: readonly RailItem[];
 }
 
-// One scannable, top-to-bottom rail: the build/connect/automate blocks first,
-// then the workspace + manage surfaces as their own labeled groups — all in the
-// same scrolling list, nothing pinned to the bottom.
 const GROUPS: readonly RailGroup[] = [
   {
     label: 'Build',
@@ -163,8 +136,6 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   });
   const projectName = detail.data?.project?.name ?? '';
 
-  // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
-  // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const groups = useMemo(
@@ -179,13 +150,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
         hideCloseButton
         aria-describedby={undefined}
         onInteractOutside={(event) => {
-          // The file preview (and any nested overlay) portals to <body>, outside
-          // this dialog's DOM, so Radix treats a click/focus on it as "outside"
-          // and would close Customize. Keep Customize open when the interaction
-          // targets such an overlay — it closes itself (X / backdrop / Esc).
           const target = event.detail.originalEvent.target as Element | null;
-          // The Pipedream Connect SDK appends its overlay <iframe> to <body>,
-          // outside this dialog. Interacting with it must not close Customize.
           if (
             target?.closest('[data-file-preview-overlay]') ||
             target?.closest('iframe[id^="pipedream-connect-iframe-"]')
@@ -195,28 +160,19 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          // Full page, not a boxed modal: edge-to-edge over the whole viewport
-          // with no border, no rounded corners and no shadow — it reads as a
-          // real page you navigated to (X / Esc closes). `sm:rounded-none` is
-          // required to beat the base DialogContent's `sm:rounded-xl` on desktop.
-          'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none',
+          'h-dvh w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none',
         )}
       >
-        <DialogTitle className="sr-only">
-          Customize {projectName || 'project'}
-        </DialogTitle>
+        <DialogTitle className="sr-only">Customize {projectName || 'project'}</DialogTitle>
 
-        {/* Header. `kx-customize-header` indents the title past the OS window
-            controls on desktop (macOS traffic lights left; Win/Linux controls
-            right) without adding vertical space. No-op on the web. */}
-        <div className="kx-customize-header flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
+        <div className="kx-customize-header border-border/60 flex h-12 shrink-0 items-center justify-between border-b pr-2 pl-4">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
-            <span className="font-medium text-foreground">Customize</span>
+            <SlidersHorizontal className="text-muted-foreground size-4 shrink-0" />
+            <span className="text-foreground font-medium">Customize</span>
             {projectName && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="truncate text-muted-foreground">{projectName}</span>
+                <span className="text-muted-foreground truncate">{projectName}</span>
               </>
             )}
           </div>
@@ -224,20 +180,19 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
             type="button"
             onClick={close}
             aria-label="Close"
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {isMobile ? (
             <nav
               aria-label="Customize"
-              className="w-full shrink-0 border-b border-border/60 bg-background"
+              className="border-border/60 bg-background w-full shrink-0 border-b"
             >
-              <ul className="flex items-center gap-1 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <ul className="flex [scrollbar-width:none] items-center gap-1 overflow-x-auto px-2 py-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {allItems.map((item) => (
                   <li key={item.section} className="shrink-0">
                     <RailButton
@@ -253,13 +208,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           ) : (
             <nav
               aria-label="Customize"
-              className="flex w-[196px] shrink-0 flex-col border-r border-border/60 bg-muted/20"
+              className="border-border/60 bg-muted/20 flex w-[196px] shrink-0 flex-col border-r"
             >
-              <div className="flex-1 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {groups.map((group, idx) => (
                   <div key={group.label ?? idx} className={idx > 0 ? 'mt-4' : undefined}>
                     {group.label && (
-                      <div className="px-2 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/50">
+                      <div className="text-muted-foreground/50 px-2 pb-1.5 text-xs font-medium tracking-wider uppercase">
                         {group.label}
                       </div>
                     )}
@@ -280,7 +235,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
             </nav>
           )}
 
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+          <main className="bg-background min-h-0 min-w-0 flex-1 overflow-hidden">
             {open && <SectionContent section={section} projectId={projectId} />}
           </main>
         </div>
@@ -309,9 +264,7 @@ function RailButton({
       aria-current={active ? 'page' : undefined}
       className={cn(
         'group relative flex cursor-pointer items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
-        horizontal ? 'whitespace-nowrap px-3 py-2' : 'w-full px-2.5 py-1.5 text-left',
-        // On-brand selected state: tinted primary (themed), never a flat grey
-        // or floating card chip. Hover stays a soft neutral wash.
+        horizontal ? 'px-3 py-2 whitespace-nowrap' : 'w-full px-2.5 py-1.5 text-left',
         active
           ? 'bg-primary/10 text-foreground'
           : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
@@ -340,16 +293,7 @@ function RailButton({
   );
 }
 
-function SectionContent({
-  section,
-  projectId,
-}: {
-  section: CustomizeSection;
-  projectId: string;
-}) {
-  // Each branch is a separate component instance, so switching sections tears
-  // down the previous tree (matches the per-route behavior the legacy pages
-  // had).
+function SectionContent({ section, projectId }: { section: CustomizeSection; projectId: string }) {
   switch (section) {
     case 'changes':
       return <ChangesView projectId={projectId} />;

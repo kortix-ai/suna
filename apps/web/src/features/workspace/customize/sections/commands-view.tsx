@@ -3,21 +3,15 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * Agents section — project agents browser (Customize overlay).
+ * Commands section — project slash commands browser (Customize overlay).
  *
- * Mirrors the Skills page two-pane shape:
- *   • Left  — agent list with search + selectable rows
- *   • Right — selected agent file rendered as markdown
- *
- * The repo at `<opencode_config_dir>/agents/<name>.md` is the source of
- * truth — `opencode_config_dir` comes from `[opencode] config_dir` in
- * kortix.toml and defaults to `.kortix/opencode`. The Edit button is the
- * future hook for inline editing.
+ * Same two-pane shape as Skills and Agents. Commands live at
+ * `.opencode/command/<slug>.md` (or `commands/`); the body is the prompt
+ * the agent runs when the user invokes `/<slug>`.
  */
 
 import { useQuery } from '@tanstack/react-query';
 import {
-  Bot,
   Copy,
   ExternalLink,
   Loader2,
@@ -25,19 +19,18 @@ import {
   Plus,
   Search,
   ShieldAlert,
-  Star,
+  TerminalSquare,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { UnifiedMarkdown } from '@/components/markdown';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
-import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
+import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import {
   editConfigPrompt,
   newConfigPrompt,
   useConfigureThread,
-} from '@/components/projects/customize/use-configure-thread';
-import { Badge } from '@/components/ui/badge';
+} from '@/features/workspace/customize/use-configure-thread';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -52,11 +45,9 @@ import {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
-type Agent = ProjectConfigSummary['agents'][number];
+type Command = ProjectConfigSummary['commands'][number];
 
-/* ─── Page entry ────────────────────────────────────────────────────────── */
-
-export function AgentsView({ projectId }: { projectId: string }) {
+export function CommandsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
@@ -64,42 +55,38 @@ export function AgentsView({ projectId }: { projectId: string }) {
     staleTime: 10_000,
   });
 
-  const agents = detailQuery.data?.config?.agents ?? [];
-  const defaultAgent = detailQuery.data?.config?.open_code_default_agent ?? null;
+  const commands = detailQuery.data?.config?.commands ?? [];
   const isForbidden =
     detailQuery.isError && /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
-  // Auto-select first agent on first load — prefer the default agent if
-  // we can identify it, otherwise the first in the list.
   useEffect(() => {
-    if (agents.length === 0) return;
-    if (selectedPath && agents.some((a) => a.path === selectedPath)) return;
-    const preferred = agents.find((a) => a.name === defaultAgent) ?? agents[0];
-    setSelectedPath(preferred.path);
-  }, [agents, defaultAgent, selectedPath]);
+    if (commands.length === 0) return;
+    if (selectedPath && commands.some((c) => c.path === selectedPath)) return;
+    setSelectedPath(commands[0].path);
+  }, [commands, selectedPath]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return agents;
-    return agents.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) || (a.description?.toLowerCase().includes(q) ?? false),
+    if (!q) return commands;
+    return commands.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) || (c.description?.toLowerCase().includes(q) ?? false),
     );
-  }, [agents, query]);
+  }, [commands, query]);
 
-  const selected = agents.find((a) => a.path === selectedPath) ?? null;
+  const selected = commands.find((c) => c.path === selectedPath) ?? null;
   const configure = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <aside className="border-border/60 bg-background flex max-h-[42vh] w-full shrink-0 flex-col border-b md:max-h-none md:w-[240px] md:border-r md:border-b-0">
         <CustomizeSectionHeader
-          icon={Bot}
-          title="Agents"
-          count={agents.length}
+          icon={TerminalSquare}
+          title="Commands"
+          count={commands.length}
           actions={
             <div className="flex items-center gap-1.5">
               <MarketplaceSectionButton projectId={projectId} />
@@ -107,7 +94,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
                 size="sm"
                 variant="outline"
                 className="h-7 gap-1 px-2 text-xs"
-                onClick={() => configure.start(newConfigPrompt('agent'))}
+                onClick={() => configure.start(newConfigPrompt('command'))}
                 disabled={configure.pending}
               >
                 {configure.pending ? (
@@ -126,7 +113,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
             <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
             <Input
               placeholder={tHardcodedUi.raw(
-                'appProjectsIdCustomizeAgentsPage.line118JsxAttrPlaceholderSearchAgents',
+                'appProjectsIdCustomizeCommandsPage.line107JsxAttrPlaceholderSearchCommands',
               )}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -142,25 +129,24 @@ export function AgentsView({ projectId }: { projectId: string }) {
             <ForbiddenNotice />
           ) : detailQuery.isError ? (
             <ErrorNotice
-              message={(detailQuery.error as Error)?.message ?? 'Failed to load agents'}
+              message={(detailQuery.error as Error)?.message ?? 'Failed to load'}
               onRetry={() => detailQuery.refetch()}
             />
-          ) : agents.length === 0 ? (
+          ) : commands.length === 0 ? (
             <EmptyList
-              onCreate={() => configure.start(newConfigPrompt('agent'))}
+              onCreate={() => configure.start(newConfigPrompt('command'))}
               creating={configure.pending}
             />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
             <ul className="space-y-0.5">
-              {filtered.map((agent) => (
-                <li key={agent.path}>
-                  <AgentRow
-                    agent={agent}
-                    isDefault={defaultAgent === agent.name}
-                    active={selectedPath === agent.path}
-                    onSelect={() => setSelectedPath(agent.path)}
+              {filtered.map((cmd) => (
+                <li key={cmd.path}>
+                  <CommandRow
+                    command={cmd}
+                    active={selectedPath === cmd.path}
+                    onSelect={() => setSelectedPath(cmd.path)}
                   />
                 </li>
               ))}
@@ -171,11 +157,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
 
       <section className="bg-background flex min-w-0 flex-1 flex-col">
         {selected ? (
-          <AgentDetail
-            projectId={projectId}
-            agent={selected}
-            isDefault={defaultAgent === selected.name}
-          />
+          <CommandDetail projectId={projectId} command={selected} />
         ) : detailQuery.isLoading ? (
           <DetailSkeleton />
         ) : (
@@ -188,14 +170,12 @@ export function AgentsView({ projectId }: { projectId: string }) {
 
 /* ─── List bits ─────────────────────────────────────────────────────────── */
 
-function AgentRow({
-  agent,
-  isDefault,
+function CommandRow({
+  command,
   active,
   onSelect,
 }: {
-  agent: Agent;
-  isDefault: boolean;
+  command: Command;
   active: boolean;
   onSelect: () => void;
 }) {
@@ -210,40 +190,32 @@ function AgentRow({
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
       )}
     >
-      <span className="truncate text-sm font-medium">{agent.name}</span>
-      {isDefault && (
-        <Star
-          className={cn(
-            'ml-auto h-3 w-3 shrink-0 fill-current',
-            active ? 'text-foreground' : 'text-muted-foreground/60',
-          )}
-        />
-      )}
+      <span
+        className={cn(
+          'inline-flex h-4 min-w-[1rem] items-center justify-center rounded font-mono text-xs font-medium',
+          active ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground/80',
+        )}
+        aria-hidden
+      >
+        /
+      </span>
+      <span className="truncate text-sm font-medium">{command.name}</span>
     </button>
   );
 }
 
 /* ─── Detail ────────────────────────────────────────────────────────────── */
 
-function AgentDetail({
-  projectId,
-  agent,
-  isDefault,
-}: {
-  projectId: string;
-  agent: Agent;
-  isDefault: boolean;
-}) {
+function CommandDetail({ projectId, command }: { projectId: string; command: Command }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const configure = useConfigureThread(projectId);
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, agent.path],
-    queryFn: () => readProjectFile(projectId, agent.path),
+    queryKey: ['project-file-source', projectId, command.path],
+    queryFn: () => readProjectFile(projectId, command.path),
     staleTime: 30_000,
   });
 
-  const fileName = agent.path.split('/').pop() ?? agent.path;
-  const modeLabel = agent.mode ? formatMode(agent.mode) : null;
+  const fileName = command.path.split('/').pop() ?? command.path;
 
   const onCopy = async () => {
     if (!fileQuery.data?.content) return;
@@ -266,11 +238,11 @@ function AgentDetail({
         <span className="text-foreground truncate font-mono text-sm">{fileName}</span>
         <span className="text-muted-foreground/40">·</span>
         <span className="text-muted-foreground/70 min-w-0 flex-1 truncate font-mono text-xs">
-          {agent.path}
+          {command.path}
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          onEdit={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
+          onEdit={() => configure.start(editConfigPrompt('command', command.name, command.path))}
           editing={configure.pending}
           copyDisabled={!fileQuery.data?.content}
         />
@@ -279,32 +251,16 @@ function AgentDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-6 py-8">
           <div className="space-y-2">
-            <div className="text-muted-foreground/60 flex items-center gap-2 text-xs font-medium tracking-wide uppercase">
-              Agent
-              {modeLabel && (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className="text-muted-foreground font-medium tracking-normal normal-case"
-                >
-                  {modeLabel}
-                </Badge>
-              )}
-              {isDefault && (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className="text-muted-foreground font-medium tracking-normal normal-case"
-                >
-                  <Star className="fill-current" />
-                  Default
-                </Badge>
-              )}
+            <div className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
+              Command
             </div>
-            <h1 className="text-foreground text-2xl font-semibold tracking-tight">{agent.name}</h1>
-            {agent.description && (
+            <h1 className="text-foreground flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <span className="text-muted-foreground/40">/</span>
+              <span>{command.name}</span>
+            </h1>
+            {command.description && (
               <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                {agent.description}
+                {command.description}
               </p>
             )}
           </div>
@@ -314,7 +270,7 @@ function AgentDetail({
               <DetailBodySkeleton />
             ) : fileQuery.isError ? (
               <DetailError
-                message={(fileQuery.error as Error)?.message ?? 'Failed to read agent source'}
+                message={(fileQuery.error as Error)?.message ?? 'Failed to read command source'}
                 onRetry={() => fileQuery.refetch()}
               />
             ) : body.trim() ? (
@@ -322,7 +278,7 @@ function AgentDetail({
             ) : (
               <p className="text-muted-foreground/60 text-sm italic">
                 {tHardcodedUi.raw(
-                  'appProjectsIdCustomizeAgentsPage.line314JsxTextAgentBodyIsEmptyAddPromptContentBelow',
+                  'appProjectsIdCustomizeCommandsPage.line276JsxTextCommandBodyIsEmptyAddThePromptContent',
                 )}
               </p>
             )}
@@ -361,7 +317,7 @@ function DetailToolbarActions({
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          {tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line363JsxTextCopySource')}
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line326JsxTextCopySource')}
         </TooltipContent>
       </Tooltip>
       <Button
@@ -377,7 +333,7 @@ function DetailToolbarActions({
           <Pencil className="h-3.5 w-3.5" />
         )}
         {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextEditWith8e645034',
+          'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextEditWithec0f2ca8',
         )}
       </Button>
     </div>
@@ -427,10 +383,12 @@ function DetailEmpty() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
-      icon={Bot}
-      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line430JsxAttrTitleSelectAnAgent')}
+      icon={TerminalSquare}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line393JsxAttrTitleSelectACommand',
+      )}
       description={tHardcodedUi.raw(
-        'appProjectsIdCustomizeAgentsPage.line431JsxAttrDescriptionPickAnAgentFromTheListToPreview',
+        'appProjectsIdCustomizeCommandsPage.line394JsxAttrDescriptionPickACommandFromTheListToPreview',
       )}
     />
   );
@@ -441,7 +399,7 @@ function NoMatches({ query }: { query: string }) {
   return (
     <div className="px-3 py-6 text-center">
       <p className="text-muted-foreground text-xs">
-        {tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line440JsxTextNoMatchesFor')}{' '}
+        {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line403JsxTextNoMatchesFor')}{' '}
         <span className="text-foreground font-mono">{query}</span>.
       </p>
     </div>
@@ -453,18 +411,20 @@ function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boo
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
-      icon={Bot}
+      icon={TerminalSquare}
       size="sm"
-      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line452JsxAttrTitleNoAgentsYet')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet',
+      )}
       description={
         <>
-          {tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line455JsxTextCommitA')}{' '}
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line418JsxTextCommitA')}{' '}
           <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
             {tHardcodedUi.raw(
-              'appProjectsIdCustomizeAgentsPage.line457JsxTextKortixOpencodeAgentsLtNameGtMd',
+              'appProjectsIdCustomizeCommandsPage.line420JsxTextOpencodeCommandLtSlugGtMd',
             )}
           </code>{' '}
-          {tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line459JsxTextAndItAposLlShowUpHere')}
+          {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line422JsxTextToAddASlashCommand')}
         </>
       }
       action={
@@ -482,11 +442,11 @@ function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boo
               <Plus className="h-3.5 w-3.5" />
             )}
             {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextCreateAn48a275ca',
+              'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f',
             )}
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">
-            <a href="https://opencode.ai/docs/agents/" target="_blank" rel="noopener noreferrer">
+            <a href="https://opencode.ai/docs/commands/" target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-3 w-3" />
               Docs
             </a>
@@ -503,7 +463,7 @@ function DetailError({ message, onRetry }: { message: string; onRetry: () => voi
     <InfoBanner
       tone="destructive"
       title={tHardcodedUi.raw(
-        'appProjectsIdCustomizeAgentsPage.line488JsxAttrTitleCouldnTLoadSource',
+        'appProjectsIdCustomizeCommandsPage.line451JsxAttrTitleCouldnTLoadSource',
       )}
       action={
         <Button variant="outline" size="sm" onClick={onRetry}>
@@ -521,10 +481,12 @@ function ForbiddenNotice() {
   return (
     <InfoBanner
       icon={ShieldAlert}
-      title={tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line502JsxAttrTitleAccessRequired')}
+      title={tHardcodedUi.raw(
+        'appProjectsIdCustomizeCommandsPage.line465JsxAttrTitleAccessRequired',
+      )}
     >
       {tHardcodedUi.raw(
-        'appProjectsIdCustomizeAgentsPage.line503JsxTextNoPermissionToReadThisRepo',
+        'appProjectsIdCustomizeCommandsPage.line466JsxTextNoPermissionToReadThisRepo',
       )}
     </InfoBanner>
   );
@@ -535,7 +497,7 @@ function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => voi
   return (
     <div className="px-3 py-4">
       <p className="text-destructive text-sm font-medium">
-        {tHardcodedUi.raw('appProjectsIdCustomizeAgentsPage.line517JsxTextFailedToLoad')}
+        {tHardcodedUi.raw('appProjectsIdCustomizeCommandsPage.line480JsxTextFailedToLoad')}
       </p>
       <p className="text-destructive/80 mt-1 text-xs">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
@@ -556,11 +518,4 @@ function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
     frontmatter: raw.slice(3, end).replace(/^\n/, ''),
     body: afterTerminator.replace(/^\r?\n/, ''),
   };
-}
-
-function formatMode(mode: string): string {
-  const m = mode.toLowerCase();
-  if (m === 'primary') return 'Primary';
-  if (m === 'subagent') return 'Subagent';
-  return mode;
 }

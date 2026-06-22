@@ -8,7 +8,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
+import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SessionChat } from '@/features/session/session-chat';

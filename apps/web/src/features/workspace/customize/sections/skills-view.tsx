@@ -23,13 +23,13 @@ import { ExternalLink, Loader2, Pencil, Plus, Search, ShieldAlert, Sparkles } fr
 import { useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
-import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
+import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import {
   editConfigPrompt,
   newConfigPrompt,
   useConfigureThread,
-} from '@/components/projects/customize/use-configure-thread';
+} from '@/features/workspace/customize/use-configure-thread';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';

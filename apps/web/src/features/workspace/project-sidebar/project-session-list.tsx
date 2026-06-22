@@ -20,9 +20,9 @@ import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
-import { SessionDeleteModal } from '@/features/co-worker/project-sidebar/modal/session-delete-modal';
-import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
+import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { Icon } from '@/features/icon/icon';
 import {
   listProjectSessions,

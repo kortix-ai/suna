@@ -6,13 +6,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
-import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
+import { CustomizeOverlay } from '@/features/workspace/customize/customize-overlay';
 import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
-import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
-import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
+import { ProjectTopBar } from '@/features/workspace/project-header/project-top-bar';
+import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';

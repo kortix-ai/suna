@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Store } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
