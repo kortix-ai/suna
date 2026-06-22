@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { Activity, CalendarClock, MessageSquare, Receipt, Search, Webhook } from 'lucide-react';
@@ -214,6 +214,7 @@ function RunRow({
   run: ProjectSession;
   cost?: GatewaySessionStat;
 }) {
+  const router = useRouter();
   const kind = sessionSource(run).kind;
   const tone = runStatusTone(run.status);
   const live = isLiveRun(run.status);
@@ -227,19 +228,14 @@ function RunRow({
 
   return (
     <ListRow
+      className="cursor-pointer"
+      onClick={() => router.push(`/projects/${projectId}/sessions/${run.session_id}`)}
       leading={
         <span className="bg-muted/60 text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
           <SourceIcon kind={kind} className="size-4" />
         </span>
       }
-      title={
-        <Link
-          href={`/projects/${projectId}/sessions/${run.session_id}`}
-          className="hover:text-primary truncate font-medium"
-        >
-          {sessionDisplayLabel(run)}
-        </Link>
-      }
+      title={<span className="truncate font-medium">{sessionDisplayLabel(run)}</span>}
       subtitle={
         <InlineMeta>
           {SOURCE_LABEL[kind]}
