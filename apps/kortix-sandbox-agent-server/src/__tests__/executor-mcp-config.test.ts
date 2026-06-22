@@ -148,6 +148,45 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
   })
 })
 
+describe('buildOpencodeConfigContent — gateway is the sole LLM path (enabled_providers)', () => {
+  const GATEWAY_ENV = {
+    KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
+    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+  }
+
+  test('locks opencode to ONLY the kortix provider when the gateway is active', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    expect(config.enabled_providers).toEqual(['kortix'])
+  })
+
+  test('a leaked native key (e.g. GITHUB_TOKEN) cannot open a native provider — only kortix is enabled', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const config = JSON.parse(
+      (await buildOpencodeConfigContent({ ...GATEWAY_ENV, GITHUB_TOKEN: 'ghp_x', OPENAI_API_KEY: 'sk-x' }))!,
+    )
+    expect(config.enabled_providers).toEqual(['kortix'])
+  })
+
+  test('keeps providers a connected Codex/OpenCode subscription declares in auth.json', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const authJson = JSON.stringify({ openai: { type: 'oauth', access: 'x' }, opencode: { key: 'y' } })
+    const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, CODEX_AUTH_JSON: authJson }))!)
+    expect(new Set(config.enabled_providers)).toEqual(new Set(['kortix', 'openai', 'opencode']))
+  })
+
+  test('ignores malformed auth.json and still locks to kortix', async () => {
+    stubGatewayModels(GATEWAY_CATALOG)
+    const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_AUTH_JSON: 'not json{' }))!)
+    expect(config.enabled_providers).toEqual(['kortix'])
+  })
+
+  test('does NOT set an allowlist when there is no gateway (subscription-only session stays native)', async () => {
+    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, SLACK_CHANNEL_ID: 'C1' }))!)
+    expect(config.enabled_providers).toBeUndefined()
+  })
+})
+
 describe('buildOpencodeConfigContent — Slack sessions deny the question tool', () => {
   test('denies `question` when the session carries Slack thread/channel env', async () => {
     const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, SLACK_THREAD_TS: '1700000000.0001' }))!)
