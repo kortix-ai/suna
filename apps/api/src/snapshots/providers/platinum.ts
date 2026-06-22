@@ -88,11 +88,15 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Template ext4 size = just enough to hold the BUILT image (not the
-          // sandbox disk — that's default_disk_gb below, grown at boot). Capped
-          // at 8 GiB to stay within the per-org template cap; the runtime image
-          // fits comfortably.
-          size_mb: Math.min((input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024, 8192),
+          // Build-time ext4 size = the template's declared disk. ext4 grows-to-
+          // fit on Platinum, so this is only the CEILING — the artifact consumes
+          // just image+headroom (CAS-deduped). It MUST be >= built image + fs
+          // headroom or the build hard-fails ("needs N MB > cap"). This was
+          // hard-capped at 8 GiB, which broke any custom image >~6.5 GiB even
+          // when the template declared a bigger disk (e.g. suna-dev: 40 GiB disk
+          // but the build still failed at the 8 GiB cap). disk_gb is bounded
+          // <=100 by create, so cap at 100 GiB purely as a runaway backstop.
+          size_mb: Math.min((input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024, 102400),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: input.spec.diskGb ?? DEFAULT_DISK_GB,
