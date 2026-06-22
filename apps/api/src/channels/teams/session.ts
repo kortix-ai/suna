@@ -8,7 +8,7 @@ import {
 } from '../../projects/session-lifecycle';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { buildTeamsTurnEnv, finalizeTurn, persistServiceUrl, saveTurn, startTurn } from './turn';
-import type { TeamsActivity } from './types';
+import { extractTeamsAttachments, type TeamsActivity } from './types';
 
 const defaultTeamsSessionLifecycle = {
   continueSession: continueLifecycleSession,
@@ -209,10 +209,25 @@ const TURN_INSTRUCTIONS = [
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
 ].join('\n');
 
+function renderAttachments(activity: TeamsActivity): string[] {
+  const attachments = extractTeamsAttachments(activity);
+  if (attachments.length === 0) return [];
+  const lines = ['', 'Attached files (download with `teams download --url <url> --out <path>`):'];
+  for (const a of attachments) lines.push(`- ${a.name} — ${a.downloadUrl}`);
+  return lines;
+}
+
 export function renderFollowUpPrompt(activity: TeamsActivity): string {
   const user = activity.from?.name ?? activity.from?.id ?? 'unknown';
   const text = activity.text ?? '';
-  return [`New message from ${user} in the same Teams conversation:`, '', text, '', TURN_INSTRUCTIONS].join('\n');
+  return [
+    `New message from ${user} in the same Teams conversation:`,
+    '',
+    text,
+    ...renderAttachments(activity),
+    '',
+    TURN_INSTRUCTIONS,
+  ].join('\n');
 }
 
 function renderAgentPrompt(activity: TeamsActivity): string {
@@ -229,6 +244,7 @@ function renderAgentPrompt(activity: TeamsActivity): string {
     '',
     'Message:',
     text,
+    ...renderAttachments(activity),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');

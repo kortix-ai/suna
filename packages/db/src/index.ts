@@ -49,6 +49,7 @@ export {
   chatInstalls,
   chatThreads,
   chatTurnStreams,
+  teamsPendingUploads,
   chatEventDedup,
   projectSessions,
   projectSessionGrants,

@@ -6,7 +6,7 @@ const ADAPTIVE_CARD_CONTENT_TYPE = 'application/vnd.microsoft.card.adaptive';
 export interface OutboundActivity {
   type: 'message' | 'typing';
   text?: string;
-  attachments?: Array<{ contentType: string; content: unknown }>;
+  attachments?: Array<{ contentType: string; content?: unknown; name?: string; contentUrl?: string }>;
 }
 
 function joinUrl(base: string, path: string): string {

@@ -16,6 +16,30 @@ export interface TeamsActivity {
   };
   replyToId?: string;
   entities?: Array<Record<string, unknown>>;
+  name?: string;
+  value?: unknown;
+  attachments?: Array<{
+    contentType?: string;
+    contentUrl?: string;
+    name?: string;
+    content?: { downloadUrl?: string; uniqueId?: string; fileType?: string };
+  }>;
+}
+
+export interface TeamsAttachmentRef {
+  name: string;
+  downloadUrl: string;
+  fileType?: string;
+}
+
+export function extractTeamsAttachments(activity: TeamsActivity): TeamsAttachmentRef[] {
+  const out: TeamsAttachmentRef[] = [];
+  for (const a of activity.attachments ?? []) {
+    if (a.contentType === 'application/vnd.microsoft.teams.file.download.info' && a.content?.downloadUrl) {
+      out.push({ name: a.name ?? 'file', downloadUrl: a.content.downloadUrl, fileType: a.content.fileType });
+    }
+  }
+  return out;
 }
 
 export interface TeamsConversationRef {

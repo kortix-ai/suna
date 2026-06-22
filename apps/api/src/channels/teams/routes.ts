@@ -2,6 +2,7 @@ import { teamsWebhookApp } from './app';
 import { teamsConfigured } from '../teams-auth';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
+import { handleFileConsentInvoke } from './file-proxy';
 import type { TeamsActivity } from './types';
 
 teamsWebhookApp.post('/messages', async (c) => {
@@ -17,6 +18,17 @@ teamsWebhookApp.post('/messages', async (c) => {
   const authHeader = c.req.header('Authorization');
   const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
+
+  if (activity.type === 'invoke') {
+    if (activity.name === 'fileConsent/invoke') {
+      try {
+        await handleFileConsentInvoke(activity);
+      } catch (err) {
+        console.error('[teams-webhook] file consent invoke failed', err);
+      }
+    }
+    return c.json({ status: 200 }, 200);
+  }
 
   try {
     await handleTeamsActivity(activity);

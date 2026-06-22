@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   parseArgs,
   out,
@@ -13,6 +13,54 @@ import {
 import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
 
 const TEAMS_CONNECTOR = 'teams';
+
+async function downloadFile(url: string, outPath: string) {
+  const apiUrl = getEnv('KORTIX_API_URL');
+  const tok = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
+  const projectId = kortixProjectId();
+  if (!apiUrl || !tok || !projectId) {
+    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.');
+  }
+  const proxyUrl = new URL(
+    `/v1/projects/${projectId}/channels/teams/file?url=${encodeURIComponent(url)}`,
+    apiUrl,
+  ).href;
+  const res = await fetch(proxyUrl, { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) {
+    let msg = `Download failed: HTTP ${res.status}`;
+    try { const j = (await res.json()) as { error?: string }; if (j?.error) msg = j.error; } catch { /* keep */ }
+    throw new CliError(msg);
+  }
+  const buf = await res.arrayBuffer();
+  const dir = outPath.split('/').slice(0, -1).join('/');
+  if (dir) mkdirSync(dir, { recursive: true });
+  writeFileSync(outPath, Buffer.from(buf));
+  return { ok: true, path: outPath, size: buf.byteLength };
+}
+
+async function sendFile(filePath: string, description?: string) {
+  if (!existsSync(filePath)) throw new CliError(`File not found: ${filePath}`);
+  const projectId = kortixProjectId();
+  const serviceUrl = getEnv('MS_TEAMS_SERVICE_URL');
+  const conversationId = getEnv('MS_TEAMS_CONVERSATION_ID');
+  if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot upload.');
+  if (!serviceUrl || !conversationId) {
+    throw new CliError('MS_TEAMS_SERVICE_URL / MS_TEAMS_CONVERSATION_ID not set — no active Teams conversation.');
+  }
+  const data = readFileSync(filePath);
+  const filename = filePath.split('/').pop() || 'file';
+  const r = await kortixPost<{ ok?: boolean; uploadId?: string }>(
+    `/projects/${projectId}/channels/teams/file/upload`,
+    {
+      service_url: serviceUrl,
+      conversation_id: conversationId,
+      filename,
+      content_base64: data.toString('base64'),
+      ...(description ? { description } : {}),
+    },
+  );
+  return { ok: true, delivered: 'consent_card', uploadId: r?.uploadId };
+}
 
 function executorClient() {
   const apiUrl = getEnv('KORTIX_API_URL');
@@ -96,6 +144,10 @@ async function main(): Promise<void> {
       break;
     }
     case 'send': {
+      if (flags.file) {
+        out(await sendFile(flags.file, readTextFlag(flags) ?? args[0]));
+        break;
+      }
       const text = readTextFlag(flags) ?? args[0];
       if (!text) throw new CliError('message text required, e.g. teams send "Done — here is the summary"');
       const relayed = await relayTurnStream('answer', text.slice(0, 11000));
@@ -105,6 +157,10 @@ async function main(): Promise<void> {
       }
       throw new CliError('No active Teams turn to answer.');
     }
+    case 'download':
+      if (!flags.url || !flags.out) throw new CliError('--url and --out required');
+      out(await downloadFile(flags.url, flags.out));
+      break;
     case 'team':
       if (!flags.team) throw new CliError('--team <team-id> required');
       out(await executorCall('get_team', { 'team-id': flags.team }));
@@ -136,6 +192,10 @@ reads run through the Kortix Executor (Graph token resolved server-side).
 Turn commands (use these when answering a Teams message):
   step  "<checkpoint>"   [--detail "<subtitle>"] [--output "<prev result>"] [--source URL|TITLE]
   send  "<answer>"       # deliver your reply — finalizes the live Adaptive Card
+
+Files:
+  send     --file <path> [--text "<description>"]   # offer a file (consent card; user accepts to receive)
+  download --url <url> --out <path>                 # download a file shared in the conversation
 
 Read commands (Microsoft Graph, via the Executor):
   team      --team <team-id>

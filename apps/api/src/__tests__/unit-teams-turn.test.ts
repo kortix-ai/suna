@@ -22,11 +22,20 @@ mock.module('../channels/teams-api', () => ({
     record('sendText')(...a);
     return 'act-x';
   },
+  sendActivity: async (...a: unknown[]) => {
+    record('sendActivity')(...a);
+    return 'act-x';
+  },
+  updateActivity: async () => true,
+  cardActivity: (c: unknown) => ({ type: 'message', attachments: [{ contentType: 'x', content: c }] }),
 }));
 
 mock.module('../config', () => ({ config: { FRONTEND_URL: 'https://app', MICROSOFT_APP_ID: 'x' } }));
 mock.module('../channels/slack/util', () => ({ sessionWebUrl: () => 'https://app/session' }));
-mock.module('../channels/install-store', () => ({ saveTeamsServiceUrl: async () => {} }));
+mock.module('../channels/install-store', () => ({
+  saveTeamsServiceUrl: async () => {},
+  loadTeamsTenantForProject: async () => 'tenant-1',
+}));
 
 let dbResults: unknown[][] = [];
 let dbWrites: Array<{ op: string; payload?: unknown }> = [];
@@ -43,6 +52,8 @@ function makeChain(op: string): any {
     return chain;
   };
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
+  chain.catch = () => chain;
+  chain.finally = () => chain;
   return chain;
 }
 

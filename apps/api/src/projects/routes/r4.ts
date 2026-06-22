@@ -2,6 +2,7 @@ import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../ch
 import { deleteTeamsInstall, loadTeamsInstall, saveTeamsInstall } from '../../channels/install-store';
 import { teamsMode } from '../../channels/teams-mode';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
+import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
@@ -598,6 +599,67 @@ projectsApp.openapi(
     await deleteTeamsInstall(projectId);
     void reconcileChannelConnectors(projectId);
     return c.json({ status: 'disconnected' });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ url: z.string() }),
+    },
+    responses: {
+      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
+    return c.body(result.body);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(), 'Consent card sent'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await readBody(c);
+    const result = await initiateTeamsUpload(projectId, {
+      serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      description: typeof body.description === 'string' ? body.description : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, uploadId: result.uploadId });
   },
 );
 
