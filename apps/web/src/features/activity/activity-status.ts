@@ -1,5 +1,5 @@
 import type { StatusTone } from '@/components/ui/status';
-import type { ProjectSessionStatus } from '@/lib/projects-client';
+import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects-client';
 
 const LIVE_STATUSES: readonly ProjectSessionStatus[] = [
   'queued',
@@ -105,4 +105,41 @@ export function formatUsd(n: number): string {
   if (n < 0.01) return `$${n.toFixed(4)}`;
   if (n < 1) return `$${n.toFixed(3)}`;
   return `$${n.toFixed(2)}`;
+}
+
+export type RunSort = 'recent' | 'cost' | 'duration';
+
+export const RUN_SORTS: ReadonlyArray<{ value: RunSort; label: string }> = [
+  { value: 'recent', label: 'Most recent' },
+  { value: 'cost', label: 'Highest cost' },
+  { value: 'duration', label: 'Longest' },
+];
+
+function recencyMs(s: ProjectSession): number {
+  const t = Date.parse(s.created_at);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function durationMs(s: ProjectSession): number {
+  const d = Date.parse(s.updated_at) - Date.parse(s.created_at);
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
+
+/** Sort runs by recency (default), gateway cost, or duration — newest breaks ties. */
+export function sortRuns(
+  runs: ProjectSession[],
+  sort: RunSort,
+  costOf: (sessionId: string) => number,
+): ProjectSession[] {
+  const arr = [...runs];
+  if (sort === 'cost') {
+    arr.sort(
+      (a, b) => costOf(b.session_id) - costOf(a.session_id) || recencyMs(b) - recencyMs(a),
+    );
+  } else if (sort === 'duration') {
+    arr.sort((a, b) => durationMs(b) - durationMs(a) || recencyMs(b) - recencyMs(a));
+  } else {
+    arr.sort((a, b) => recencyMs(b) - recencyMs(a));
+  }
+  return arr;
 }

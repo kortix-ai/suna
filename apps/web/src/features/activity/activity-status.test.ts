@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { ProjectSession } from '@/lib/projects-client';
+
 import {
   formatRunDuration,
   formatUsd,
@@ -7,6 +9,7 @@ import {
   matchesRunStatus,
   runStatusLabel,
   runStatusTone,
+  sortRuns,
 } from './activity-status';
 
 describe('activity-status', () => {
@@ -57,5 +60,19 @@ describe('activity-status', () => {
     expect(formatUsd(0.0012)).toBe('$0.0012');
     expect(formatUsd(0.123)).toBe('$0.123');
     expect(formatUsd(12.5)).toBe('$12.50');
+  });
+
+  test('sortRuns orders by recency, cost, or duration', () => {
+    const mk = (id: string, created: string, updated: string) =>
+      ({ session_id: id, created_at: created, updated_at: updated }) as unknown as ProjectSession;
+    const a = mk('a', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z'); // 30s
+    const b = mk('b', '2026-01-02T00:00:00Z', '2026-01-02T00:10:00Z'); // 10m, newest
+    const c = mk('c', '2026-01-01T12:00:00Z', '2026-01-01T12:01:00Z'); // 1m
+    const runs = [a, b, c];
+    const cost = (id: string) => ({ a: 5, b: 1, c: 2 })[id] ?? 0;
+
+    expect(sortRuns(runs, 'recent', cost).map((r) => r.session_id)).toEqual(['b', 'c', 'a']);
+    expect(sortRuns(runs, 'cost', cost).map((r) => r.session_id)).toEqual(['a', 'c', 'b']);
+    expect(sortRuns(runs, 'duration', cost).map((r) => r.session_id)).toEqual(['b', 'c', 'a']);
   });
 });

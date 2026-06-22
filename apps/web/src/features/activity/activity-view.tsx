@@ -29,6 +29,13 @@ import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { List, ListRow } from '@/components/ui/list';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, StatusDot } from '@/components/ui/status';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
@@ -46,7 +53,10 @@ import {
   matchesRunStatus,
   runStatusLabel,
   runStatusTone,
+  sortRuns,
+  RUN_SORTS,
   RUN_STATUS_FILTERS,
+  type RunSort,
   type RunStatusFilter,
 } from './activity-status';
 
@@ -79,6 +89,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
   const [source, setSource] = useState<SessionFilterValue>('all');
   const [status, setStatus] = useState<RunStatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<RunSort>('recent');
 
   const sessionsQuery = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -96,16 +107,15 @@ export function ActivityView({ projectId }: { projectId: string }) {
   }, [gateway.data]);
   const openGateway = useGatewayOverlayStore((s) => s.openGateway);
 
-  const runs = useMemo(
-    () =>
-      (sessionsQuery.data ?? []).filter(
-        (s) =>
-          matchesSessionFilter(s, source) &&
-          matchesRunStatus(s.status, status) &&
-          matchesSearch(s, search),
-      ),
-    [sessionsQuery.data, source, status, search],
-  );
+  const runs = useMemo(() => {
+    const filtered = (sessionsQuery.data ?? []).filter(
+      (s) =>
+        matchesSessionFilter(s, source) &&
+        matchesRunStatus(s.status, status) &&
+        matchesSearch(s, search),
+    );
+    return sortRuns(filtered, sort, (id) => costBySession.get(id)?.total_cost ?? 0);
+  }, [sessionsQuery.data, source, status, search, sort, costBySession]);
 
   const stats = useMemo(() => {
     const all = sessionsQuery.data ?? [];
@@ -177,6 +187,18 @@ export function ActivityView({ projectId }: { projectId: string }) {
             {opt.label}
           </Button>
         ))}
+        <Select value={sort} onValueChange={(v) => setSort(v as RunSort)}>
+          <SelectTrigger className="ml-auto h-8 w-[150px] shrink-0 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {RUN_SORTS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
