@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
  * app — the model is App → Profile → Tools → Permissions.
  */
 
+import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,6 +21,7 @@ import {
   Globe,
   KeyRound,
   Loader2,
+  type LucideIcon,
   MessageSquare,
   Pencil,
   Plug,
@@ -30,17 +32,16 @@ import {
   ShieldCheck,
   Trash2,
   Zap,
-  type LucideIcon,
 } from 'lucide-react';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -58,7 +59,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -77,6 +77,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ShareOption, SharingPicker } from '@/features/co-worker/shared/sharing-picker';
 import {
+  type AdminConnector,
+  type ConnectorAction,
+  type ConnectorConfig,
+  type ConnectorDraftInput,
+  type ConnectorPolicyAction,
+  type ConnectorPolicyRule,
+  type ConnectorSharing,
   createConnector,
   deleteConnector,
   getConnectorConfig,
@@ -91,13 +98,6 @@ import {
   setConnectorPolicies,
   setConnectorSharing,
   syncConnectors,
-  type AdminConnector,
-  type ConnectorAction,
-  type ConnectorConfig,
-  type ConnectorDraftInput,
-  type ConnectorPolicyAction,
-  type ConnectorPolicyRule,
-  type ConnectorSharing,
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -913,8 +913,8 @@ function ConnectorDetail({
               </Button>
             }
           >
-            Connecting or disconnecting the workspace, and the bot token, live in the Channels
-            tab. Here you control who can use it and review its tools.
+            Connecting or disconnecting the workspace, and the bot token, live in the Channels tab.
+            Here you control who can use it and review its tools.
           </InfoBanner>
         )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
@@ -945,7 +945,7 @@ function ConnectorDetail({
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
           </TabsList>
-          <TabsContent value="profile" className="space-y-5">
+          <TabsContent value="profile" forceMount className="space-y-5">
             {!isPipedream && !isChannel && (
               <ConnectionSection
                 projectId={projectId}
@@ -955,7 +955,7 @@ function ConnectorDetail({
             )}
             <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
           </TabsContent>
-          <TabsContent value="permissions">
+          <TabsContent value="permissions" forceMount>
             <PermissionsSection projectId={projectId} connector={connector} />
           </TabsContent>
         </Tabs>
@@ -1713,10 +1713,7 @@ function PermissionsSection({
                             <span className="text-muted-foreground text-xs">{t.description}</span>
                           )}
                         </div>
-                        <CodeSnippet
-                          code={tsSignature(connector.slug, t)}
-                          language="typescript"
-                        />
+                        <CodeSnippet code={tsSignature(connector.slug, t)} language="typescript" />
                         <CodeSnippet
                           code={JSON.stringify(
                             t.inputSchema ?? { type: 'object', properties: {} },
