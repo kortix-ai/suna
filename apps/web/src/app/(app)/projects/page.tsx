@@ -38,7 +38,7 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useProjectsViewStore, type ProjectsViewMode } from '@/stores/projects-view-store';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderPlus } from 'lucide-react';
+import { AlertCircle, FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -319,7 +319,7 @@ export default function ProjectsPage() {
   return (
     <div className="bg-foreground/5 flex min-h-screen flex-col">
       <AppHeader user={user} breadcrumb="Projects" />
-      <main className="ring-input bg-background px-mobile flex-1 rounded-t-3xl py-10 ring sm:py-12">
+      <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <SunaMigrationBanner accountId={activeAccountId} />
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -390,16 +390,19 @@ export default function ProjectsPage() {
               )}
 
               {projectsQuery.isError && (
-                <SectionCard
-                  tone="destructive"
-                  title={tHardcodedUi.raw(
-                    'appProjectsPage.line252JsxAttrTitleFailedToLoadProjects',
-                  )}
-                  description={(projectsQuery.error as Error).message}
-                >
-                  <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
-                    Retry
-                  </Button>
+                <SectionCard flush>
+                  <EmptyState
+                    icon={AlertCircle}
+                    title={tHardcodedUi.raw(
+                      'appProjectsPage.line252JsxAttrTitleFailedToLoadProjects',
+                    )}
+                    description={(projectsQuery.error as Error).message}
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
+                        Retry
+                      </Button>
+                    }
+                  />
                 </SectionCard>
               )}
 
