@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { Activity, CalendarClock, MessageSquare, Webhook } from 'lucide-react';
+import { Activity, CalendarClock, MessageSquare, Search, Webhook } from 'lucide-react';
 
 import {
   matchesSessionFilter,
@@ -18,15 +18,25 @@ import { CustomizeSectionHeader } from '@/components/projects/customize/customiz
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import Hint from '@/components/ui/hint';
+import { Input } from '@/components/ui/input';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { List, ListRow } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, StatusDot } from '@/components/ui/status';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
-import { isLiveRun, runStatusLabel, runStatusTone } from './activity-status';
+import {
+  formatRunDuration,
+  isLiveRun,
+  matchesRunStatus,
+  runStatusLabel,
+  runStatusTone,
+  RUN_STATUS_FILTERS,
+  type RunStatusFilter,
+} from './activity-status';
 
 const SOURCE_LABEL: Record<SessionSourceKind, string> = {
   chat: 'Chat',
@@ -44,8 +54,19 @@ function SourceIcon({ kind, className }: { kind: SessionSourceKind; className?: 
   return <MessageSquare className={className} />;
 }
 
+function matchesSearch(run: ProjectSession, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    sessionDisplayLabel(run).toLowerCase().includes(q) ||
+    (run.agent_name?.toLowerCase().includes(q) ?? false)
+  );
+}
+
 export function ActivityView({ projectId }: { projectId: string }) {
-  const [filter, setFilter] = useState<SessionFilterValue>('all');
+  const [source, setSource] = useState<SessionFilterValue>('all');
+  const [status, setStatus] = useState<RunStatusFilter>('all');
+  const [search, setSearch] = useState('');
 
   const sessionsQuery = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -56,8 +77,14 @@ export function ActivityView({ projectId }: { projectId: string }) {
   });
 
   const runs = useMemo(
-    () => (sessionsQuery.data ?? []).filter((s) => matchesSessionFilter(s, filter)),
-    [sessionsQuery.data, filter],
+    () =>
+      (sessionsQuery.data ?? []).filter(
+        (s) =>
+          matchesSessionFilter(s, source) &&
+          matchesRunStatus(s.status, status) &&
+          matchesSearch(s, search),
+      ),
+    [sessionsQuery.data, source, status, search],
   );
 
   return (
@@ -66,20 +93,43 @@ export function ActivityView({ projectId }: { projectId: string }) {
         icon={Activity}
         title="Activity"
         count={sessionsQuery.data ? runs.length : undefined}
+        actions={
+          <div className="relative">
+            <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search runs…"
+              className="h-8 w-44 pl-7 text-sm"
+            />
+          </div>
+        }
       />
 
-      <div className="border-border/60 flex shrink-0 items-center gap-1 overflow-x-auto border-b px-3 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="border-border/60 flex shrink-0 flex-wrap items-center gap-2 overflow-x-auto border-b px-3 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <FilterBar className="h-8">
+          {RUN_STATUS_FILTERS.map((opt) => (
+            <FilterBarItem
+              key={opt.value}
+              data-state={status === opt.value ? 'active' : 'inactive'}
+              onClick={() => setStatus(opt.value)}
+            >
+              {opt.label}
+            </FilterBarItem>
+          ))}
+        </FilterBar>
+        <span className="bg-border/60 mx-1 h-4 w-px shrink-0" aria-hidden />
         {SESSION_FILTER_OPTIONS.map((opt) => (
           <Button
             key={opt.value}
             type="button"
             size="sm"
             variant="ghost"
-            onClick={() => setFilter(opt.value)}
-            aria-pressed={filter === opt.value}
+            onClick={() => setSource(opt.value)}
+            aria-pressed={source === opt.value}
             className={cn(
               'h-7 shrink-0 rounded-full',
-              filter === opt.value && 'bg-primary/10 text-primary',
+              source === opt.value && 'bg-primary/10 text-primary',
             )}
           >
             {opt.label}
@@ -103,11 +153,13 @@ export function ActivityView({ projectId }: { projectId: string }) {
           ) : runs.length === 0 ? (
             <EmptyState
               icon={Activity}
-              title={filter === 'all' ? 'No runs yet' : 'No runs match this filter'}
+              title={
+                sessionsQuery.data?.length ? 'No runs match these filters' : 'No runs yet'
+              }
               description={
-                filter === 'all'
-                  ? 'Sessions you start, and ones fired by schedules, webhooks or channels, will show up here.'
-                  : 'Try a different filter to see other runs.'
+                sessionsQuery.data?.length
+                  ? 'Try a different status, source, or search.'
+                  : 'Sessions you start, and ones fired by schedules, webhooks or channels, will show up here.'
               }
             />
           ) : (
@@ -127,6 +179,7 @@ function RunRow({ projectId, run }: { projectId: string; run: ProjectSession }) 
   const kind = sessionSource(run).kind;
   const tone = runStatusTone(run.status);
   const live = isLiveRun(run.status);
+  const duration = live ? null : formatRunDuration(run.created_at, run.updated_at);
   const statusBadge = (
     <StatusBadge tone={tone}>
       <StatusDot tone={tone} pulse={live} />
@@ -154,10 +207,15 @@ function RunRow({ projectId, run }: { projectId: string; run: ProjectSession }) 
           {SOURCE_LABEL[kind]}
           {run.agent_name || null}
           {formatDistanceToNowStrict(new Date(run.created_at), { addSuffix: true })}
+          {duration}
         </InlineMeta>
       }
       trailing={
-        run.status === 'failed' && run.error ? <Hint label={run.error}>{statusBadge}</Hint> : statusBadge
+        run.status === 'failed' && run.error ? (
+          <Hint label={run.error}>{statusBadge}</Hint>
+        ) : (
+          statusBadge
+        )
       }
     />
   );

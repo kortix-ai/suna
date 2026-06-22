@@ -53,3 +53,48 @@ export function runStatusLabel(status: ProjectSessionStatus): string {
       return status;
   }
 }
+
+export type RunStatusFilter = 'all' | 'running' | 'failed' | 'completed';
+
+export const RUN_STATUS_FILTERS: ReadonlyArray<{ value: RunStatusFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'running', label: 'Running' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'completed', label: 'Completed' },
+];
+
+/** Outcome filter for the Activity list. `running` = any still-live run. */
+export function matchesRunStatus(status: ProjectSessionStatus, filter: RunStatusFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'running':
+      return isLiveRun(status);
+    case 'failed':
+      return status === 'failed';
+    case 'completed':
+      return status === 'completed';
+    default:
+      return true;
+  }
+}
+
+/**
+ * Human duration between two ISO timestamps — "45s", "1m 23s", "2h 5m".
+ * Pure + deterministic (no wall-clock); returns null for an invalid or
+ * non-positive span, so it's only meaningful for a finished run.
+ */
+export function formatRunDuration(startIso: string, endIso: string): string | null {
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const ms = end - start;
+  if (ms <= 0) return null;
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
