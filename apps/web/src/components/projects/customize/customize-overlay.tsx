@@ -22,7 +22,6 @@
  *   └──────────┴────────────────────────────────────┘
  */
 
-import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -45,7 +44,9 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { useMemo } from 'react';
 
+import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { AgentsView } from '@/components/projects/customize/sections/agents-view';
 import { ChannelsView } from '@/components/projects/customize/sections/channels-view';
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
@@ -56,12 +57,11 @@ import { SandboxView } from '@/components/projects/customize/sections/sandbox-vi
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
 import { SettingsView } from '@/components/projects/customize/sections/settings-view';
 import { SkillsView } from '@/components/projects/customize/sections/skills-view';
-import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
 import type { CustomizeSection } from '@/lib/customize-sections';
+import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -205,21 +205,19 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none',
         )}
       >
-        <DialogTitle className="sr-only">
-          Customize {projectName || 'project'}
-        </DialogTitle>
+        <DialogTitle className="sr-only">Customize {projectName || 'project'}</DialogTitle>
 
         {/* Header. `kx-customize-header` indents the title past the OS window
             controls on desktop (macOS traffic lights left; Win/Linux controls
             right) without adding vertical space. No-op on the web. */}
-        <div className="kx-customize-header flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
+        <div className="kx-customize-header border-border/60 flex h-12 shrink-0 items-center justify-between border-b pr-2 pl-4">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
-            <span className="font-medium text-foreground">Customize</span>
+            <SlidersHorizontal className="text-muted-foreground size-4 shrink-0" />
+            <span className="text-foreground font-medium">Customize</span>
             {projectName && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="truncate text-muted-foreground">{projectName}</span>
+                <span className="text-muted-foreground truncate">{projectName}</span>
               </>
             )}
           </div>
@@ -227,7 +225,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
             type="button"
             onClick={close}
             aria-label="Close"
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -238,9 +236,9 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           {isMobile ? (
             <nav
               aria-label="Customize"
-              className="w-full shrink-0 border-b border-border/60 bg-background"
+              className="border-border/60 bg-background w-full shrink-0 border-b"
             >
-              <ul className="flex items-center gap-1 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <ul className="flex [scrollbar-width:none] items-center gap-1 overflow-x-auto px-2 py-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {allItems.map((item) => (
                   <li key={item.section} className="shrink-0">
                     <RailButton
@@ -256,13 +254,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           ) : (
             <nav
               aria-label="Customize"
-              className="flex w-[196px] shrink-0 flex-col border-r border-border/60 bg-muted/20"
+              className="border-border/60 bg-muted/20 flex w-[196px] shrink-0 flex-col border-r"
             >
-              <div className="flex-1 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <div className="flex-1 [scrollbar-width:none] overflow-y-auto px-2.5 py-3 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {groups.map((group, idx) => (
                   <div key={group.label ?? idx} className={idx > 0 ? 'mt-4' : undefined}>
                     {group.label && (
-                      <div className="px-2 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/50">
+                      <div className="text-muted-foreground/50 px-2 pb-1.5 text-xs font-medium tracking-wider uppercase">
                         {group.label}
                       </div>
                     )}
@@ -283,7 +281,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
             </nav>
           )}
 
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+          <main className="bg-background min-h-0 min-w-0 flex-1 overflow-hidden">
             {open && <SectionContent section={section} projectId={projectId} />}
           </main>
         </div>
@@ -312,7 +310,7 @@ function RailButton({
       aria-current={active ? 'page' : undefined}
       className={cn(
         'group relative flex cursor-pointer items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
-        horizontal ? 'whitespace-nowrap px-3 py-2' : 'w-full px-2.5 py-1.5 text-left',
+        horizontal ? 'px-3 py-2 whitespace-nowrap' : 'w-full px-2.5 py-1.5 text-left',
         // On-brand selected state: tinted primary (themed), never a flat grey
         // or floating card chip. Hover stays a soft neutral wash.
         active
@@ -343,13 +341,7 @@ function RailButton({
   );
 }
 
-function SectionContent({
-  section,
-  projectId,
-}: {
-  section: CustomizeSection;
-  projectId: string;
-}) {
+function SectionContent({ section, projectId }: { section: CustomizeSection; projectId: string }) {
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).

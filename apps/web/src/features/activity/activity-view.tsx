@@ -1,7 +1,5 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
@@ -13,21 +11,23 @@ import {
   Search,
   Webhook,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   matchesSessionFilter,
+  SESSION_FILTER_OPTIONS,
   sessionDisplayLabel,
   sessionSource,
-  SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
 import {
   Select,
@@ -41,10 +41,10 @@ import { StatusBadge, StatusDot } from '@/components/ui/status';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { useGatewaySessions } from '@/hooks/projects/use-project-gateway';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import type { GatewaySessionStat } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import {
   formatRunDuration,
@@ -52,13 +52,13 @@ import {
   isLiveRun,
   matchesRunStatus,
   rangeDays,
+  RUN_RANGES,
+  RUN_SORTS,
+  RUN_STATUS_FILTERS,
   runStatusLabel,
   runStatusTone,
   sortRuns,
   withinRange,
-  RUN_RANGES,
-  RUN_SORTS,
-  RUN_STATUS_FILTERS,
   type RunRange,
   type RunSort,
   type RunStatusFilter,
@@ -166,7 +166,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
         }
       />
 
-      <div className="border-border/60 flex shrink-0 flex-wrap items-center gap-2 overflow-x-auto border-b px-3 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="border-border/60 flex shrink-0 [scrollbar-width:none] flex-wrap items-center gap-2 overflow-x-auto border-b px-3 py-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <FilterBar className="h-8">
           {RUN_STATUS_FILTERS.map((opt) => (
             <FilterBarItem
@@ -242,7 +242,13 @@ export function ActivityView({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
-          {sessionsQuery.isLoading ? (
+          {sessionsQuery.isError ? (
+            <EmptyState
+              icon={Activity}
+              title="Couldn’t load activity"
+              description="Refresh this section or try again in a moment."
+            />
+          ) : sessionsQuery.isLoading ? (
             <List>
               {Array.from({ length: 6 }).map((_, i) => (
                 <ListRow
@@ -256,9 +262,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
           ) : runs.length === 0 ? (
             <EmptyState
               icon={Activity}
-              title={
-                sessionsQuery.data?.length ? 'No runs match these filters' : 'No runs yet'
-              }
+              title={sessionsQuery.data?.length ? 'No runs match these filters' : 'No runs yet'}
               description={
                 sessionsQuery.data?.length
                   ? 'Try a different status, source, or search.'
@@ -331,6 +335,7 @@ function RunRow({
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
                 aria-label="Open run workspace"
                 className="text-muted-foreground hover:text-foreground hover:bg-muted/60 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
               >

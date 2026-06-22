@@ -133,9 +133,7 @@ export function sortRuns(
 ): ProjectSession[] {
   const arr = [...runs];
   if (sort === 'cost') {
-    arr.sort(
-      (a, b) => costOf(b.session_id) - costOf(a.session_id) || recencyMs(b) - recencyMs(a),
-    );
+    arr.sort((a, b) => costOf(b.session_id) - costOf(a.session_id) || recencyMs(b) - recencyMs(a));
   } else if (sort === 'duration') {
     arr.sort((a, b) => durationMs(b) - durationMs(a) || recencyMs(b) - recencyMs(a));
   } else {
