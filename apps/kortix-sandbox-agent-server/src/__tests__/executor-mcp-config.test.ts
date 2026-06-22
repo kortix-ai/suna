@@ -26,15 +26,19 @@ function stubGatewayModels(catalog: Record<string, unknown>) {
   }) as typeof fetch
 }
 
+async function buildConfig(env: NodeJS.ProcessEnv) {
+  const raw = await buildOpencodeConfigContent(env)
+  if (!raw) throw new Error('expected opencode config content')
+  return JSON.parse(raw)
+}
+
 afterEach(() => {
   globalThis.fetch = realFetch
 })
 
 describe('buildOpencodeConfigContent — executor MCP server', () => {
   test('registers the executor MCP server with resolved credentials', async () => {
-    const raw = await buildOpencodeConfigContent(ENV)
-    expect(raw).toBeDefined()
-    const config = JSON.parse(raw!)
+    const config = await buildConfig(ENV)
     const server = config.mcp['kortix-executor']
     expect(server).toMatchObject({
       type: 'local',
@@ -55,14 +59,14 @@ describe('buildOpencodeConfigContent — executor MCP server', () => {
       theme: 'dark',
       mcp: { other: { type: 'local', command: ['echo'], enabled: true } },
     })
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, OPENCODE_CONFIG_CONTENT: existing }))!)
+    const config = await buildConfig({ ...ENV, OPENCODE_CONFIG_CONTENT: existing })
     expect(config.theme).toBe('dark')
     expect(config.mcp.other).toBeDefined()
     expect(config.mcp['kortix-executor']).toBeDefined()
   })
 
   test('survives malformed pre-existing inline config', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, OPENCODE_CONFIG_CONTENT: 'not json{' }))!)
+    const config = await buildConfig({ ...ENV, OPENCODE_CONFIG_CONTENT: 'not json{' })
     expect(config.mcp['kortix-executor']).toBeDefined()
   })
 })
@@ -75,7 +79,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 
   test('registers the kortix provider when gateway env present', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     expect(config.provider.kortix).toMatchObject({
       npm: '@ai-sdk/openai-compatible',
       name: 'Kortix',
@@ -89,7 +93,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 
   test('populates the provider models from the gateway /models fetch', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     const models = config.provider.kortix.models
     expect(models['anthropic/claude-opus-4.8'].reasoning).toBe(true)
     expect(models['anthropic/claude-sonnet-4.6'].reasoning).toBe(true)
@@ -100,7 +104,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 
   test('falls back to a minimal catalog when the gateway /models fetch fails', async () => {
     globalThis.fetch = (async () => new Response('boom', { status: 503 })) as unknown as typeof fetch
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     const models = config.provider.kortix.models
     expect(Object.keys(models).length).toBeGreaterThan(0)
     expect(models['kortix-power']).toBeDefined()
@@ -108,29 +112,27 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 
   test('sets default model to kortix/* when none in pre-existing config', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     expect(config.model).toMatch(/^kortix\//)
   })
 
   test('preserves user-set default model from pre-existing config', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const existing = JSON.stringify({ model: 'anthropic/claude-sonnet-4.6' })
-    const config = JSON.parse(
-      (await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing }))!,
-    )
+    const config = await buildConfig({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing })
     expect(config.model).toBe('anthropic/claude-sonnet-4.6')
   })
 
   test('coexists with the executor MCP server in one config', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, ...GATEWAY_ENV }))!)
+    const config = await buildConfig({ ...ENV, ...GATEWAY_ENV })
     expect(config.mcp['kortix-executor']).toBeDefined()
     expect(config.provider.kortix).toBeDefined()
   })
 
   test('returns config with provider only (no mcp) when executor env missing', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     expect(config.provider.kortix).toBeDefined()
     expect(config.mcp).toBeUndefined()
   })
@@ -140,9 +142,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     const existing = JSON.stringify({
       provider: { anthropic: { options: { timeout: 600000 } } },
     })
-    const config = JSON.parse(
-      (await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing }))!,
-    )
+    const config = await buildConfig({ ...GATEWAY_ENV, OPENCODE_CONFIG_CONTENT: existing })
     expect(config.provider.anthropic).toBeDefined()
     expect(config.provider.kortix).toBeDefined()
   })
@@ -156,61 +156,62 @@ describe('buildOpencodeConfigContent — gateway is the sole LLM path (enabled_p
 
   test('locks opencode to ONLY the kortix provider when the gateway is active', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    const config = await buildConfig(GATEWAY_ENV)
     expect(config.enabled_providers).toEqual(['kortix'])
   })
 
   test('a leaked native key (e.g. GITHUB_TOKEN) cannot open a native provider — only kortix is enabled', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse(
-      (await buildOpencodeConfigContent({ ...GATEWAY_ENV, GITHUB_TOKEN: 'ghp_x', OPENAI_API_KEY: 'sk-x' }))!,
-    )
+    const config = await buildConfig({ ...GATEWAY_ENV, GITHUB_TOKEN: 'ghp_x', OPENAI_API_KEY: 'sk-x' })
     expect(config.enabled_providers).toEqual(['kortix'])
   })
 
   test('keeps providers a connected Codex/OpenCode subscription declares in auth.json', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const authJson = JSON.stringify({ openai: { type: 'oauth', access: 'x' }, opencode: { key: 'y' } })
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, CODEX_AUTH_JSON: authJson }))!)
+    const config = await buildConfig({ ...GATEWAY_ENV, CODEX_AUTH_JSON: authJson })
     expect(new Set(config.enabled_providers)).toEqual(new Set(['kortix', 'openai', 'opencode']))
   })
 
   test('ignores malformed auth.json and still locks to kortix', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_AUTH_JSON: 'not json{' }))!)
+    const config = await buildConfig({ ...GATEWAY_ENV, OPENCODE_AUTH_JSON: 'not json{' })
     expect(config.enabled_providers).toEqual(['kortix'])
   })
 
   test('does NOT set an allowlist when there is no gateway (subscription-only session stays native)', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, SLACK_CHANNEL_ID: 'C1' }))!)
+    const config = await buildConfig({ ...ENV, SLACK_CHANNEL_ID: 'C1' })
     expect(config.enabled_providers).toBeUndefined()
   })
 })
 
 describe('buildOpencodeConfigContent — Slack sessions deny the question tool', () => {
   test('denies `question` when the session carries Slack thread/channel env', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, SLACK_THREAD_TS: '1700000000.0001' }))!)
+    const config = await buildConfig({ ...ENV, SLACK_THREAD_TS: '1700000000.0001' })
     expect(config.permission.question).toBe('deny')
-    const byChannel = JSON.parse((await buildOpencodeConfigContent({ ...ENV, SLACK_CHANNEL_ID: 'C123' }))!)
+    const byChannel = await buildConfig({ ...ENV, SLACK_CHANNEL_ID: 'C123' })
     expect(byChannel.permission.question).toBe('deny')
   })
 
   test('builds the config for a Slack session even with no executor/gateway env', async () => {
     const raw = await buildOpencodeConfigContent({ SLACK_CHANNEL_ID: 'C123' })
     expect(raw).toBeDefined()
-    expect(JSON.parse(raw!).permission.question).toBe('deny')
+    if (!raw) throw new Error('expected opencode config content')
+    expect(JSON.parse(raw).permission.question).toBe('deny')
   })
 
   test('does NOT touch permissions for a non-Slack (web) session — tool stays native', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent(ENV))!)
+    const config = await buildConfig(ENV)
     expect(config.permission).toBeUndefined()
   })
 
   test('merges the deny onto a pre-existing permission block', async () => {
     const existing = JSON.stringify({ permission: { bash: 'ask' } })
-    const config = JSON.parse(
-      (await buildOpencodeConfigContent({ ...ENV, SLACK_THREAD_TS: '1700000000.0001', OPENCODE_CONFIG_CONTENT: existing }))!,
-    )
+    const config = await buildConfig({
+      ...ENV,
+      SLACK_THREAD_TS: '1700000000.0001',
+      OPENCODE_CONFIG_CONTENT: existing,
+    })
     expect(config.permission.bash).toBe('ask')
     expect(config.permission.question).toBe('deny')
   })
