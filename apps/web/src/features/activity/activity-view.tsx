@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   Activity,
+  AlertTriangle,
   CalendarClock,
   ExternalLink,
   MessageSquare,
@@ -26,6 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
@@ -44,6 +46,7 @@ import { useGatewaySessions } from '@/hooks/projects/use-project-gateway';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import type { GatewaySessionStat } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import {
@@ -87,6 +90,16 @@ function matchesSearch(run: ProjectSession, query: string): boolean {
     sessionDisplayLabel(run).toLowerCase().includes(q) ||
     (run.agent_name?.toLowerCase().includes(q) ?? false)
   );
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function formatRunRelativeTime(createdAt: string): string | null {
+  const date = new Date(createdAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  return formatDistanceToNowStrict(date, { addSuffix: true });
 }
 
 export function ActivityView({ projectId }: { projectId: string }) {
@@ -223,6 +236,28 @@ export function ActivityView({ projectId }: { projectId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 py-5">
+          {sessionsQuery.isError ? (
+            <InfoBanner
+              tone="destructive"
+              icon={AlertTriangle}
+              title="Activity failed to load"
+              className="mb-3"
+            >
+              {errorMessage(sessionsQuery.error, 'Refresh and try again.')}
+            </InfoBanner>
+          ) : gateway.isError ? (
+            <InfoBanner
+              tone="warning"
+              icon={AlertTriangle}
+              title="Spend data unavailable"
+              className="mb-3"
+            >
+              {errorMessage(
+                gateway.error,
+                'Run history loaded, but cost totals could not be fetched.',
+              )}
+            </InfoBanner>
+          ) : null}
           {!sessionsQuery.isLoading && stats.total > 0 && (
             <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               <span className="text-foreground font-medium">
@@ -242,13 +277,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
-          {sessionsQuery.isError ? (
-            <EmptyState
-              icon={Activity}
-              title="Couldn’t load activity"
-              description="Refresh this section or try again in a moment."
-            />
-          ) : sessionsQuery.isLoading ? (
+          {sessionsQuery.isError ? null : sessionsQuery.isLoading ? (
             <List>
               {Array.from({ length: 6 }).map((_, i) => (
                 <ListRow
@@ -297,10 +326,12 @@ function RunRow({
   cost?: GatewaySessionStat;
 }) {
   const router = useRouter();
+  const closeCustomize = useCustomizeStore((s) => s.close);
   const kind = sessionSource(run).kind;
   const tone = runStatusTone(run.status);
   const live = isLiveRun(run.status);
   const duration = live ? null : formatRunDuration(run.created_at, run.updated_at);
+  const relative = formatRunRelativeTime(run.created_at);
   const statusBadge = (
     <StatusBadge tone={tone}>
       <StatusDot tone={tone} pulse={live} />
@@ -311,7 +342,10 @@ function RunRow({
   return (
     <ListRow
       className="cursor-pointer"
-      onClick={() => router.push(`/projects/${projectId}/sessions/${run.session_id}`)}
+      onClick={() => {
+        closeCustomize();
+        router.push(`/projects/${projectId}/sessions/${run.session_id}`);
+      }}
       leading={
         <span className="bg-muted/60 text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg">
           <SourceIcon kind={kind} className="size-4" />
@@ -322,7 +356,7 @@ function RunRow({
         <InlineMeta>
           {SOURCE_LABEL[kind]}
           {run.agent_name || null}
-          {formatDistanceToNowStrict(new Date(run.created_at), { addSuffix: true })}
+          {relative}
           {duration}
         </InlineMeta>
       }
