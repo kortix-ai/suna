@@ -32,6 +32,8 @@ import {
 } from './normalize';
 import { channelApiBase, channelCatalog } from './channels';
 import { synthesizeChannelConnectors } from './channel-materialize';
+import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
+import { loadSlackInstall } from '../channels/install-store';
 import { parseSpecDocument } from './spec-doc';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
@@ -45,10 +47,12 @@ export interface SyncResult {
 
 /**
  * Best-effort re-materialization after a channel platform install changes
- * (connect / disconnect). Resolves the project's account, then runs the normal
- * sweep so the auto-materialized channel connector (dis)appears immediately —
- * "connect Slack → the `slack` connector shows up" with no manifest edit.
- * Never throws: a sync hiccup must not fail the install/uninstall request.
+ * (connect / disconnect). Persists the channel connector as a first-class
+ * kortix.toml profile (or removes it on disconnect), then runs the normal sweep
+ * so it (dis)appears immediately — "connect Slack → the Slack connector shows
+ * up". The kortix.toml write is best-effort: synthesizeChannelConnectors still
+ * materializes the connector from the install, so a read-only / unreachable repo
+ * keeps working. Never throws: a hiccup must not fail the install/uninstall.
  */
 export async function reconcileChannelConnectors(projectId: string): Promise<void> {
   try {
@@ -58,6 +62,11 @@ export async function reconcileChannelConnectors(projectId: string): Promise<voi
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!row) return;
+    // Connect vs disconnect is derived from install presence, so the same path
+    // serves the OAuth callback, the BYO connect, and the delete route.
+    const installed = (await loadSlackInstall(projectId).catch(() => null)) != null;
+    if (installed) await ensureChannelConnectorDeclared(projectId, 'slack');
+    else await removeChannelConnectorDeclared(projectId, 'slack');
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
     console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });

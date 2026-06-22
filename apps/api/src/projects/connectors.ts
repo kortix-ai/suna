@@ -43,6 +43,20 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'];
 
+/**
+ * Platform-owned connector slugs no user connector may claim. Slack is a
+ * first-class CHANNEL connector (connect it in the Channels tab) — it owns the
+ * "Slack" identity, so a Pipedream/OpenAPI app can't shadow it:
+ *  - `kortix_slack` is the reserved slug the built-in Slack channel materializes
+ *    under (see executor/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG); only a
+ *    provider="channel" connector may use it.
+ *  - `slack` is reserved as a NAME — blocked at the CRUD/"Add app" layer so new
+ *    connectors can't take it (the picker already hides the Pipedream Slack app).
+ * See KORTIX-206.
+ */
+export const RESERVED_CONNECTOR_SLUGS = new Set<string>(['slack', 'kortix_slack']);
+export const SLACK_RESERVED_SLUG = 'kortix_slack';
+
 /** Chat platforms a `channel` connector can target. */
 export type ChannelPlatform = 'slack';
 const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack'];
@@ -261,6 +275,16 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   const provider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
   if (!PROVIDERS.includes(provider as ConnectorProvider)) {
     return err(slug, `provider must be one of ${PROVIDERS.join(', ')} (got "${provider || 'unset'}")`);
+  }
+
+  // `kortix_slack` is platform-owned: the built-in Slack channel materializes
+  // under it. Only a provider="channel" connector may declare it, so a user app
+  // can never shadow the native Slack catalog (the bug that made `slack thread`
+  // resolve to a Pipedream Slack and 404 with action_not_found). `slack` itself
+  // stays parseable here (so existing manifests don't break) but is blocked at
+  // the CRUD layer and hidden from the list once the channel exists.
+  if (slug === SLACK_RESERVED_SLUG && provider !== 'channel') {
+    return err(slug, `"${slug}" is reserved for the built-in Slack channel (provider="channel")`);
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
