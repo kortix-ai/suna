@@ -21,6 +21,7 @@ import {
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
 } from '../build-context';
+import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -30,6 +31,7 @@ import type {
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
+const MB_PER_GB = 1024;
 
 interface PlatinumTemplate {
   id: string;
@@ -82,20 +84,21 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(tarPath)) });
       if (!put.ok) throw new Error(`build-context S3 upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
 
+      const diskGb = Math.min(input.spec.diskGb ?? DEFAULT_DISK_GB, SANDBOX_SPEC_LIMITS.disk.max);
+
       await platinumJson<PlatinumTemplate>('/v1/templates/from-build', {
         method: 'POST',
         body: JSON.stringify({
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Template ext4 size = just enough to hold the BUILT image (not the
-          // sandbox disk — that's default_disk_gb below, grown at boot). Capped
-          // at 8 GiB to stay within the per-org template cap; the runtime image
-          // fits comfortably.
-          size_mb: Math.min((input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024, 8192),
+          // Build-time ext4 ceiling must track the same disk spec we send as
+          // the runtime default. Platinum grows ext4 to fit, so the artifact
+          // still consumes only image+headroom rather than the whole ceiling.
+          size_mb: diskGb * MB_PER_GB,
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
-          default_disk_gb: input.spec.diskGb ?? DEFAULT_DISK_GB,
+          default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
           // Stateful warm template (shared default): Platinum boots it, waits for
           // the readiness probe, snapshots the RUNNING VM, and serves sessions as
