@@ -98,3 +98,11 @@ export function formatRunDuration(startIso: string, endIso: string): string | nu
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
+
+/** Compact USD for a per-run cost — more precision for cheap runs. */
+export function formatUsd(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '$0.00';
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  if (n < 1) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(2)}`;
+}

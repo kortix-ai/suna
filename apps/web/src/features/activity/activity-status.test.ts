@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   formatRunDuration,
+  formatUsd,
   isLiveRun,
   matchesRunStatus,
   runStatusLabel,
@@ -49,5 +50,12 @@ describe('activity-status', () => {
     expect(formatRunDuration(t0, '2026-01-01T02:05:00.000Z')).toBe('2h 5m');
     expect(formatRunDuration(t0, t0)).toBeNull();
     expect(formatRunDuration('2026-01-01T00:01:00.000Z', t0)).toBeNull();
+  });
+
+  test('formats USD with extra precision for cheap runs', () => {
+    expect(formatUsd(0)).toBe('$0.00');
+    expect(formatUsd(0.0012)).toBe('$0.0012');
+    expect(formatUsd(0.123)).toBe('$0.123');
+    expect(formatUsd(12.5)).toBe('$12.50');
   });
 });

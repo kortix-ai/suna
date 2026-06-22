@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { Activity, CalendarClock, MessageSquare, Search, Webhook } from 'lucide-react';
+import { Activity, CalendarClock, MessageSquare, Receipt, Search, Webhook } from 'lucide-react';
 
 import {
   matchesSessionFilter,
@@ -25,11 +25,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge, StatusDot } from '@/components/ui/status';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
+import { useGatewaySessions } from '@/hooks/projects/use-project-gateway';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import type { GatewaySessionStat } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 
 import {
   formatRunDuration,
+  formatUsd,
   isLiveRun,
   matchesRunStatus,
   runStatusLabel,
@@ -76,6 +80,14 @@ export function ActivityView({ projectId }: { projectId: string }) {
       (query.state.data ?? []).some((s) => isLiveRun(s.status)) ? 5000 : false,
   });
 
+  const gateway = useGatewaySessions(projectId);
+  const costBySession = useMemo(() => {
+    const m = new Map<string, GatewaySessionStat>();
+    for (const s of gateway.data?.sessions ?? []) m.set(s.session_id, s);
+    return m;
+  }, [gateway.data]);
+  const openGateway = useGatewayOverlayStore((s) => s.openGateway);
+
   const runs = useMemo(
     () =>
       (sessionsQuery.data ?? []).filter(
@@ -94,14 +106,27 @@ export function ActivityView({ projectId }: { projectId: string }) {
         title="Activity"
         count={sessionsQuery.data ? runs.length : undefined}
         actions={
-          <div className="relative">
-            <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search runs…"
-              className="h-8 w-44 pl-7 text-sm"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search runs…"
+                className="h-8 w-44 pl-7 text-sm"
+              />
+            </div>
+            <Hint label="Open the gateway spend view">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 gap-1.5"
+                onClick={() => openGateway({ section: 'cost' })}
+              >
+                <Receipt className="size-3.5" />
+                Spend
+              </Button>
+            </Hint>
           </div>
         }
       />
@@ -165,7 +190,12 @@ export function ActivityView({ projectId }: { projectId: string }) {
           ) : (
             <List>
               {runs.map((run) => (
-                <RunRow key={run.session_id} projectId={projectId} run={run} />
+                <RunRow
+                  key={run.session_id}
+                  projectId={projectId}
+                  run={run}
+                  cost={costBySession.get(run.session_id)}
+                />
               ))}
             </List>
           )}
@@ -175,7 +205,15 @@ export function ActivityView({ projectId }: { projectId: string }) {
   );
 }
 
-function RunRow({ projectId, run }: { projectId: string; run: ProjectSession }) {
+function RunRow({
+  projectId,
+  run,
+  cost,
+}: {
+  projectId: string;
+  run: ProjectSession;
+  cost?: GatewaySessionStat;
+}) {
   const kind = sessionSource(run).kind;
   const tone = runStatusTone(run.status);
   const live = isLiveRun(run.status);
@@ -211,11 +249,22 @@ function RunRow({ projectId, run }: { projectId: string; run: ProjectSession }) 
         </InlineMeta>
       }
       trailing={
-        run.status === 'failed' && run.error ? (
-          <Hint label={run.error}>{statusBadge}</Hint>
-        ) : (
-          statusBadge
-        )
+        <div className="flex flex-col items-end gap-1">
+          {run.status === 'failed' && run.error ? (
+            <Hint label={run.error}>{statusBadge}</Hint>
+          ) : (
+            statusBadge
+          )}
+          {cost && cost.total_cost > 0 && (
+            <Hint
+              label={`LLM ${formatUsd(cost.llm_cost)} · compute ${formatUsd(cost.compute_cost)}`}
+            >
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {formatUsd(cost.total_cost)}
+              </span>
+            </Hint>
+          )}
+        </div>
       }
     />
   );
