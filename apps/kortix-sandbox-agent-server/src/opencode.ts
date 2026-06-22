@@ -302,7 +302,17 @@ export function withModelLimits(
       continue
     }
     const known = MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id]
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } }
+    const fallback = known ?? DEFAULT_MODEL_LIMIT
+    out[id] = {
+      ...model,
+      limit: {
+        context: fallback.context ?? DEFAULT_MODEL_LIMIT.context,
+        output:
+          typeof model.limit?.output === 'number' && model.limit.output > 0
+            ? model.limit.output
+            : (fallback.output ?? DEFAULT_MODEL_LIMIT.output),
+      },
+    }
   }
   return out
 }
