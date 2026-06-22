@@ -143,3 +143,35 @@ export function sortRuns(
   }
   return arr;
 }
+
+export type RunRange = '1d' | '7d' | '30d' | 'all';
+
+export const RUN_RANGES: ReadonlyArray<{ value: RunRange; label: string }> = [
+  { value: '1d', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: 'all', label: 'All time' },
+];
+
+/** Days for a range, or null for "all time" (used to scope the gateway cost query). */
+export function rangeDays(range: RunRange): number | null {
+  switch (range) {
+    case '1d':
+      return 1;
+    case '7d':
+      return 7;
+    case '30d':
+      return 30;
+    default:
+      return null;
+  }
+}
+
+/** Whether a run's createdAt falls within the range. Pure — pass `nowMs` in. */
+export function withinRange(createdAtIso: string, range: RunRange, nowMs: number): boolean {
+  const days = rangeDays(range);
+  if (days === null) return true;
+  const t = Date.parse(createdAtIso);
+  if (!Number.isFinite(t)) return true;
+  return nowMs - t <= days * 86_400_000;
+}

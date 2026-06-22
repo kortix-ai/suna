@@ -7,9 +7,11 @@ import {
   formatUsd,
   isLiveRun,
   matchesRunStatus,
+  rangeDays,
   runStatusLabel,
   runStatusTone,
   sortRuns,
+  withinRange,
 } from './activity-status';
 
 describe('activity-status', () => {
@@ -74,5 +76,18 @@ describe('activity-status', () => {
     expect(sortRuns(runs, 'recent', cost).map((r) => r.session_id)).toEqual(['b', 'c', 'a']);
     expect(sortRuns(runs, 'cost', cost).map((r) => r.session_id)).toEqual(['a', 'c', 'b']);
     expect(sortRuns(runs, 'duration', cost).map((r) => r.session_id)).toEqual(['b', 'c', 'a']);
+  });
+
+  test('withinRange respects the window with a fixed now', () => {
+    const now = Date.parse('2026-01-31T00:00:00Z');
+    const recent = '2026-01-29T12:00:00Z'; // 1.5d ago
+    const old = '2026-01-01T00:00:00Z'; // 30d ago
+    expect(withinRange(recent, '1d', now)).toBe(false);
+    expect(withinRange(recent, '7d', now)).toBe(true);
+    expect(withinRange(old, '30d', now)).toBe(true);
+    expect(withinRange(old, '7d', now)).toBe(false);
+    expect(withinRange(old, 'all', now)).toBe(true);
+    expect(rangeDays('all')).toBeNull();
+    expect(rangeDays('7d')).toBe(7);
   });
 });

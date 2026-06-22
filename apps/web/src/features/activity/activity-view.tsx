@@ -51,11 +51,15 @@ import {
   formatUsd,
   isLiveRun,
   matchesRunStatus,
+  rangeDays,
   runStatusLabel,
   runStatusTone,
   sortRuns,
+  withinRange,
+  RUN_RANGES,
   RUN_SORTS,
   RUN_STATUS_FILTERS,
+  type RunRange,
   type RunSort,
   type RunStatusFilter,
 } from './activity-status';
@@ -90,6 +94,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
   const [status, setStatus] = useState<RunStatusFilter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<RunSort>('recent');
+  const [range, setRange] = useState<RunRange>('30d');
 
   const sessionsQuery = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -99,7 +104,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
       (query.state.data ?? []).some((s) => isLiveRun(s.status)) ? 5000 : false,
   });
 
-  const gateway = useGatewaySessions(projectId);
+  const gateway = useGatewaySessions(projectId, rangeDays(range) ?? 365);
   const costBySession = useMemo(() => {
     const m = new Map<string, GatewaySessionStat>();
     for (const s of gateway.data?.sessions ?? []) m.set(s.session_id, s);
@@ -108,23 +113,26 @@ export function ActivityView({ projectId }: { projectId: string }) {
   const openGateway = useGatewayOverlayStore((s) => s.openGateway);
 
   const runs = useMemo(() => {
+    const nowMs = Date.now();
     const filtered = (sessionsQuery.data ?? []).filter(
       (s) =>
+        withinRange(s.created_at, range, nowMs) &&
         matchesSessionFilter(s, source) &&
         matchesRunStatus(s.status, status) &&
         matchesSearch(s, search),
     );
     return sortRuns(filtered, sort, (id) => costBySession.get(id)?.total_cost ?? 0);
-  }, [sessionsQuery.data, source, status, search, sort, costBySession]);
+  }, [sessionsQuery.data, source, status, search, sort, range, costBySession]);
 
   const stats = useMemo(() => {
-    const all = sessionsQuery.data ?? [];
+    const nowMs = Date.now();
+    const all = (sessionsQuery.data ?? []).filter((s) => withinRange(s.created_at, range, nowMs));
     return {
       total: all.length,
       running: all.filter((s) => isLiveRun(s.status)).length,
       failed: all.filter((s) => s.status === 'failed').length,
     };
-  }, [sessionsQuery.data]);
+  }, [sessionsQuery.data, range]);
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
@@ -187,8 +195,20 @@ export function ActivityView({ projectId }: { projectId: string }) {
             {opt.label}
           </Button>
         ))}
+        <Select value={range} onValueChange={(v) => setRange(v as RunRange)}>
+          <SelectTrigger className="ml-auto h-8 w-[92px] shrink-0 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {RUN_RANGES.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Select value={sort} onValueChange={(v) => setSort(v as RunSort)}>
-          <SelectTrigger className="ml-auto h-8 w-[150px] shrink-0 text-sm">
+          <SelectTrigger className="h-8 w-[150px] shrink-0 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
