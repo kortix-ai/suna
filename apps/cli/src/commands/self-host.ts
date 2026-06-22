@@ -30,18 +30,20 @@ published Docker images from Docker Hub.
 Subcommands:
   init                 Create self-host config with production defaults.
   start                Pull images and start your self-hosted Kortix.
+  update [--tag <v>]   Pull a newer version, apply migrations, recreate (default: latest).
+  version              Show the running version and image tags.
   stop                 Stop the stack.
   restart              Restart the stack.
   status               Show Docker Compose service status.
   logs [service]       Tail logs.
   open                 Open the local dashboard.
-  configure            Guided integration config (Freestyle, GitHub, Pipedream).
+  configure            Guided config (sandbox provider, Freestyle, GitHub, Pipedream).
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
-  --tag <tag>          Docker image tag (default: ${DEFAULT_TAG}).
+  --tag <tag>          Docker image tag / version (default: ${DEFAULT_TAG}).
   --local              Use current-source local images instead of registry images.
   --registry           Force registry images even when running from a source checkout.
   --yes                Accept defaults in non-interactive flows.
@@ -50,6 +52,9 @@ Options:
 Examples:
   kortix self-host init
   kortix self-host start
+  kortix self-host update                 # update to the latest published version
+  kortix self-host update --tag 0.9.72    # pin to a specific version
+  kortix self-host version
   kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
   kortix hosts ls
 `;
@@ -87,6 +92,10 @@ interface SelfHostEnv {
   TUNNEL_SIGNING_SECRET: string;
   SANDBOX_CONTAINER_NAME: string;
   SANDBOX_PORT_BASE: string;
+  ALLOWED_SANDBOX_PROVIDERS: string;
+  DAYTONA_API_KEY: string;
+  DAYTONA_SERVER_URL: string;
+  DAYTONA_TARGET: string;
   KORTIX_GITHUB_APP_ID: string;
   KORTIX_GITHUB_APP_PRIVATE_KEY: string;
   KORTIX_GITHUB_APP_SLUG: string;
@@ -131,6 +140,11 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'start':
     case 'up':
       return selfHostStart(flags);
+    case 'update':
+    case 'upgrade':
+      return selfHostUpdate(flags);
+    case 'version':
+      return selfHostVersion(flags);
     case 'stop':
     case 'down':
       return composeCommand(flags, ['down']);
@@ -249,6 +263,15 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
     process.stdout.write(`${C.dim}  ports    ${C.reset}${portChanges.join(', ')}\n\n`);
   }
 
+  if (!sandboxProviderConfigured(env)) {
+    process.stdout.write(
+      `${C.yellow}  warning${C.reset}  ${C.dim}sandbox runtime not configured — agent sessions will fail to start.${C.reset}\n`,
+    );
+    process.stdout.write(
+      `${C.dim}           set ${C.reset}DAYTONA_API_KEY${C.dim} via ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim}, or ${C.reset}ALLOWED_SANDBOX_PROVIDERS=local_docker${C.dim} for a fully-local runtime.${C.reset}\n\n`,
+    );
+  }
+
   if (env.KORTIX_LOCAL_IMAGES === 'true') {
     process.stdout.write(`${C.dim}  pull     skipped (KORTIX_LOCAL_IMAGES=true)${C.reset}\n`);
   } else {
@@ -272,6 +295,66 @@ async function selfHostRestart(flags: GlobalFlags): Promise<number> {
   const down = composeCommand(flags, ['down']);
   if (down !== 0) return down;
   return selfHostStart(flags);
+}
+
+/**
+ * Update an existing instance to a newer version: point the image tags at the
+ * requested version (default `latest`), then down→start. `start` re-pulls the
+ * tags and the kortix-migrate one-shot applies any new migrations before the
+ * API serves traffic. The Postgres volume is preserved across the restart, so
+ * this is a true in-place upgrade. Source-image instances rebuild instead.
+ */
+async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
+  if (!existsSync(envPath(flags.instance)) || !existsSync(composePath(flags.instance))) {
+    // Nothing to update yet — behave like a first start.
+    return selfHostStart(flags);
+  }
+
+  const env = loadEnvWithDefaults(flags)!;
+  const oldVersion = env.KORTIX_VERSION || 'unknown';
+  const localImageMode = env.KORTIX_LOCAL_IMAGES === 'true' || shouldUseLocalSourceImages(flags);
+
+  process.stdout.write(`\n  ${C.bold}kortix self-host update${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
+
+  if (localImageMode) {
+    process.stdout.write(`  ${C.yellow}This instance runs current-source images (${LOCAL_SOURCE_TAG}).${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}Rebuilding from the local checkout and applying migrations…${C.reset}\n\n`);
+    return selfHostRestart(flags);
+  }
+
+  const targetTag = flags.tag;
+  env.KORTIX_VERSION = targetTag;
+  env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${targetTag}`;
+  env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${targetTag}`;
+  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${targetTag}`;
+  env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${targetTag}`;
+  writeEnv(flags.instance, env);
+  writeCompose(flags.instance);
+
+  process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${targetTag}${C.reset}\n\n`);
+  // down keeps the named Postgres volume; start re-pulls + migrates + recreates.
+  return selfHostRestart(flags);
+}
+
+function selfHostVersion(flags: GlobalFlags): number {
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
+  process.stdout.write(`  ${C.dim}version  ${C.reset}${C.cyan}${env.KORTIX_VERSION || 'unknown'}${C.reset}\n`);
+  if (env.KORTIX_LOCAL_IMAGES === 'true') {
+    process.stdout.write(`  ${C.dim}mode     ${C.reset}current-source images (${LOCAL_SOURCE_TAG})\n`);
+  }
+  process.stdout.write(`  ${C.dim}api      ${C.reset}${env.API_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
+  process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (latest) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
+  return 0;
 }
 
 function composeCommand(flags: GlobalFlags, args: string[]): number {
@@ -349,8 +432,25 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}These power app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}These power the agent runtime, app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
+
+  // Sandbox runtime — where agents actually execute. Like Kortix Cloud, self-host
+  // runs sandboxes on a real provider. Daytona is the default; local_docker needs
+  // no external account and is handy for fully-local or CI use.
+  const providerChoice = await selectFrom(
+    'Agent sandbox runtime: daytona/local_docker',
+    ['daytona', 'local_docker'] as const,
+    env.ALLOWED_SANDBOX_PROVIDERS === 'local_docker' ? 'local_docker' : 'daytona',
+  );
+  if (providerChoice === 'daytona') {
+    env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
+    env.DAYTONA_API_KEY = await promptSecret('Daytona API key (https://app.daytona.io)', env.DAYTONA_API_KEY);
+    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
+  } else {
+    env.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
+  }
 
   const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
   if (freestyleMode === 'configure') {
@@ -408,6 +508,18 @@ function freestyleConfigured(env: SelfHostEnv): boolean {
   return !!env.FREESTYLE_API_KEY;
 }
 
+function sandboxProviders(env: SelfHostEnv): string[] {
+  return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+/** A provider is "ready" if local_docker (no creds) or daytona with an API key. */
+function sandboxProviderConfigured(env: SelfHostEnv): boolean {
+  const providers = sandboxProviders(env);
+  if (providers.includes('local_docker')) return true;
+  if (providers.includes('daytona')) return !!env.DAYTONA_API_KEY;
+  return false;
+}
+
 function integrationReviewNeeded(env: SelfHostEnv): boolean {
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
   return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
@@ -419,6 +531,11 @@ function shouldPrompt(flags: GlobalFlags): boolean {
 
 function renderIntegrationSummary(env: SelfHostEnv): void {
   const rows = [
+    {
+      name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
+      configured: sandboxProviderConfigured(env),
+      hint: 'DAYTONA_API_KEY (or set ALLOWED_SANDBOX_PROVIDERS=local_docker)',
+    },
     {
       name: 'App deployments',
       configured: freestyleConfigured(env),
@@ -638,6 +755,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     TUNNEL_SIGNING_SECRET: token(32),
     SANDBOX_CONTAINER_NAME: `kortix-${flags.instance}-sandbox`,
     SANDBOX_PORT_BASE: '15000',
+    // Sandboxes run on a real provider, just like Kortix Cloud. Daytona is the
+    // default; `kortix self-host configure` collects the API key. local_docker
+    // remains available (no external account) for fully-local / CI use.
+    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    DAYTONA_API_KEY: '',
+    DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
+    DAYTONA_TARGET: 'us',
     KORTIX_GITHUB_APP_ID: '',
     KORTIX_GITHUB_APP_PRIVATE_KEY: '',
     KORTIX_GITHUB_APP_SLUG: '',
@@ -778,6 +902,23 @@ function writeCompose(instance: string): void {
         condition: service_started
     restart: unless-stopped
 
+  # One-shot: provision the database schema before the API serves traffic.
+  # On a FRESH db this installs the non-kortix prerequisites (basejump etc.)
+  # then applies all migrations; on an already-provisioned db it is a no-op.
+  # Runs the migrator from the API image, which bundles migrations + runner.
+  kortix-migrate:
+    image: \${API_IMAGE}
+    user: "0:0"
+    command: ["bun", "/app/packages/db/scripts/migrate.ts", "bootstrap"]
+    environment:
+      DATABASE_URL: postgresql://postgres:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_started
+    restart: "no"
+
   kortix-api:
     image: \${API_IMAGE}
     user: "0:0"
@@ -792,7 +933,10 @@ function writeCompose(instance: string): void {
       SUPABASE_URL: http://supabase-kong:8000
       DATABASE_URL: postgresql://postgres:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       SUPABASE_SERVICE_ROLE_KEY: \${SUPABASE_SERVICE_ROLE_KEY}
-      ALLOWED_SANDBOX_PROVIDERS: local_docker
+      ALLOWED_SANDBOX_PROVIDERS: \${ALLOWED_SANDBOX_PROVIDERS}
+      DAYTONA_API_KEY: \${DAYTONA_API_KEY}
+      DAYTONA_SERVER_URL: \${DAYTONA_SERVER_URL}
+      DAYTONA_TARGET: \${DAYTONA_TARGET}
       DOCKER_HOST: unix:///var/run/docker.sock
       KORTIX_URL: http://kortix-api:8008
       FRONTEND_URL: \${PUBLIC_URL}
@@ -814,6 +958,8 @@ function writeCompose(instance: string): void {
         condition: service_healthy
       supabase-kong:
         condition: service_started
+      kortix-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   llm-gateway:

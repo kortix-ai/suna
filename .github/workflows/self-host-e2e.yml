@@ -1,0 +1,55 @@
+name: Self-host E2E (full, nightly)
+
+# Heavyweight, comprehensive self-host regression test — builds ALL self-host
+# images and drives the full Docker Compose stack end to end: schema bootstrap,
+# auth, a real local_docker agent session + sandbox health, and the in-place
+# update mechanism.
+#
+# This is the nightly counterpart to the always-on `self-host-schema` job in
+# ci.yml (which runs the fast schema-bootstrap gate on every PR that touches
+# api/db/cli). Building the frontend + gateway + sandbox images is too slow for
+# every-PR CI, so the full session + update coverage runs here on a schedule.
+# Trigger manually any time via the Actions tab.
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # nightly 04:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: self-host-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  full-e2e:
+    name: full self-host e2e (schema + session + update)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h /
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build all self-host images
+        run: bash scripts/build-local-images.sh --tag selfhost-local
+      - name: Full self-host e2e (schema + session + update)
+        run: bash tests/e2e/self-hosted-e2e.sh
+        env:
+          KORTIX_LOCAL_IMAGES: 'true'
+          FRONTEND_IMAGE: kortix/kortix-frontend:selfhost-local
+          API_IMAGE: kortix/kortix-api:selfhost-local
+          GATEWAY_IMAGE: kortix/kortix-gateway:selfhost-local
+          SANDBOX_IMAGE: kortix/kortix-sandbox:selfhost-local
