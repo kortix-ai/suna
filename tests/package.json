@@ -46,6 +46,7 @@
     "test:security": "bash security/run.sh --static",
     "test:security:dast": "bash security/run.sh --dast",
     "test:migration": "bash migration/run.sh",
+    "test:migration:worktree": "bun test migration/worktree-migrate.test.ts",
     "test:infra": "bash infra/run.sh",
     "test:chaos": "bash chaos/resilience-toxiproxy.sh",
     "test:mutation": "stryker run mutation/stryker.conf.json",
