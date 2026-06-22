@@ -40,8 +40,10 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
+import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { loadSlackInstall, loadSlackTokenForProject, loadTeamsInstall, loadTeamsTenantForProject } from '../channels/install-store';
 import { graphToken } from '../channels/teams-auth';
+import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
@@ -96,6 +98,8 @@ function baseUrlOf(row: ConnectorRow): string | null {
     case 'graphql': return cfg.endpoint ?? null;
     case 'mcp': return cfg.url ?? null;
     case 'channel': return cfg.baseUrl ?? null;
+    // computer: no base URL — the gateway relays via the tunnel core, not HTTP.
+    case 'computer': return null;
     default: return null;
   }
 }
@@ -219,6 +223,11 @@ function makeDbGatewayDeps(): GatewayDeps {
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
+    // Computer connectors relay through the shared tunnel RPC core (permission
+    // check → relay → audit). The machine is resolved from the `computer`
+    // selector, scoped to this account.
+    executeComputerCall: ({ accountId, selector, method, args }) =>
+      executeComputerCall({ accountId, selector, method, args }),
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
@@ -322,10 +331,12 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
 
 /** The catalog a principal can actually use (access + credential present + not blocked). */
 async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
-  const conns = await db
-    .select()
-    .from(executorConnectors)
-    .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true)));
+  const conns = hideSupersededSlack(
+    await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true))),
+  );
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
 
   // Project-scoped layer is the same for every connector in this list — load once.
@@ -380,7 +391,9 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
 
 /** Admin list — sharing + credential mode + whether the viewer's credential is set. */
 async function listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]> {
-  const conns = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+  const conns = hideSupersededSlack(
+    await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId)),
+  );
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
   const out: AdminConnectorView[] = [];
   for (const row of conns) {

@@ -120,6 +120,13 @@
       "when": 1782124942541,
       "tag": "20260622104222_widen_chat_turn_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782142254765,
+      "tag": "20260622153054_executor_computer_provider",
+      "breakpoints": true
     }
   ]
 }

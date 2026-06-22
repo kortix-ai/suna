@@ -580,6 +580,20 @@
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply border-border outline-ring/50;
   }
+
+  /* Tailwind v4 makes <button> default to `cursor: default`; restore the
+     pointer on genuinely interactive elements (buttons, tabs, ARIA buttons,
+     menu items, options, summaries). Disabled elements keep the default. */
+  button:not(:disabled),
+  summary,
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
   html {
     scroll-behavior: smooth;
     font-size: 100%;

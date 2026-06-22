@@ -16,6 +16,7 @@ INSTANCE=${INSTANCE:-selfhost-e2e-$(date +%s)}
 TAG=${TAG:-latest}
 FRONTEND_IMAGE=${FRONTEND_IMAGE:-}
 API_IMAGE=${API_IMAGE:-}
+GATEWAY_IMAGE=${GATEWAY_IMAGE:-}
 SANDBOX_IMAGE=${SANDBOX_IMAGE:-}
 KORTIX_LOCAL_IMAGES=${KORTIX_LOCAL_IMAGES:-false}
 KEEP_ON_FAIL=${KEEP_ON_FAIL:-false}
@@ -210,12 +211,19 @@ $CLI self-host env set --instance "$INSTANCE" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
   "SANDBOX_PORT_BASE=$SANDBOX_PORT_BASE" \
   "SANDBOX_CONTAINER_NAME=kortix-$INSTANCE-sandbox" \
+  "ALLOWED_SANDBOX_PROVIDERS=local_docker" \
   "KORTIX_LOCAL_IMAGES=$KORTIX_LOCAL_IMAGES" >/dev/null
+# The e2e runs the full agent-session path hermetically (no external provider
+# account), so it pins the sandbox runtime to local_docker. Real deployments use
+# Daytona/Platinum — that's the `configure` default.
 if [ -n "$FRONTEND_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "FRONTEND_IMAGE=$FRONTEND_IMAGE" >/dev/null
 fi
 if [ -n "$API_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "API_IMAGE=$API_IMAGE" >/dev/null
+fi
+if [ -n "$GATEWAY_IMAGE" ]; then
+  $CLI self-host env set --instance "$INSTANCE" "GATEWAY_IMAGE=$GATEWAY_IMAGE" >/dev/null
 fi
 if [ -n "$SANDBOX_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "SANDBOX_IMAGE=$SANDBOX_IMAGE" >/dev/null
@@ -226,10 +234,21 @@ section "Start Stack"
 $CLI self-host start --instance "$INSTANCE" --tag "$TAG"
 ok "Docker Compose started"
 
+section "Schema Bootstrap (migrate one-shot)"
+# The kortix-migrate one-shot must complete (exit 0) before the API starts. On a
+# fresh DB it installs the non-kortix prerequisites (basejump etc.) then applies
+# all migrations. Assert it ran and provisioned the managed schema.
+MIGRATE_EXIT=$(docker inspect -f '{{.State.ExitCode}}' "kortix-$INSTANCE-kortix-migrate-1" 2>/dev/null || echo "missing")
+[ "$MIGRATE_EXIT" = "0" ] || die "kortix-migrate one-shot did not succeed (exit=$MIGRATE_EXIT)"
+ok "kortix-migrate one-shot completed (exit 0)"
+
 section "HTTP Health"
 wait_for_json "API" "$API_PUBLIC_URL/v1/health" 180
 wait_for_json "frontend runtime config" "$PUBLIC_URL/api/runtime-config" 180
 wait_for_db_table "Kortix schema" "kortix.project_snapshot_builds" 180
+# basejump must exist too — it's the account framework the schema is built on,
+# and the regression we guard against was a DB with empty kortix + no basejump.
+wait_for_db_table "basejump accounts" "basejump.account_user" 60
 
 source "$CONFIG_DIR/.env"
 curl -fsS -H "apikey: $SUPABASE_ANON_KEY" "$SUPABASE_PUBLIC_URL/auth/v1/health" >/dev/null
@@ -346,6 +365,29 @@ status = body.get("status")
 if status not in ("ok", "degraded"):
     raise SystemExit(f"unexpected sandbox health: {body}")'
 ok "Sandbox /kortix/health returned healthy JSON"
+
+section "Update Mechanism"
+note "version before update:"
+$CLI self-host version --instance "$INSTANCE" || true
+# `update` re-points image tags at the target version and does down→start. The
+# Postgres volume is preserved, so this is a true in-place upgrade: the
+# kortix-migrate one-shot re-runs (idempotent) and applies any new migrations
+# before the API serves again.
+$CLI self-host update --instance "$INSTANCE" --tag "$TAG"
+ok "self-host update completed"
+
+MIGRATE_EXIT2=$(docker inspect -f '{{.State.ExitCode}}' "kortix-$INSTANCE-kortix-migrate-1" 2>/dev/null || echo "missing")
+[ "$MIGRATE_EXIT2" = "0" ] || die "post-update kortix-migrate did not succeed (exit=$MIGRATE_EXIT2)"
+wait_for_json "API (post-update)" "$API_PUBLIC_URL/v1/health" 180
+wait_for_db_table "Kortix schema (post-update)" "kortix.project_snapshot_builds" 60
+ok "stack healthy after update; migrations idempotent"
+
+# The data must survive the upgrade: re-bootstrapping the owner is now a no-op
+# conflict (409), proving the Postgres volume persisted across down→up.
+REBOOTSTRAP=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API_PUBLIC_URL/v1/setup/bootstrap-owner" \
+  -H 'content-type: application/json' -d "$BOOTSTRAP_BODY")
+[ "$REBOOTSTRAP" = "409" ] || die "expected owner-exists 409 after update, got $REBOOTSTRAP"
+ok "data persisted across update (owner still present → 409)"
 
 section "CLI Host Registration"
 $CLI hosts info selfhost >/dev/null

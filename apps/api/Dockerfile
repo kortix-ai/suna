@@ -126,6 +126,10 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+# Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
+# self-host databases. `migrate.ts bootstrap` applies this before `up` when
+# basejump is absent (no-op on provisioned cloud/dev DBs).
+COPY --from=deps /app/packages/db/drizzle/0000_bootstrap.sql ./packages/db/drizzle/0000_bootstrap.sql
 COPY --from=deps /app/packages/agent-tunnel/src ./packages/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel/package.json
 COPY --from=deps /app/packages/starter/src ./packages/starter/src

@@ -785,6 +785,7 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 {
   const { executorApp } = await import('./executor');
   app.use('/v1/executor/projects/*', combinedAuth);
+  app.use('/v1/executor/connect-status', combinedAuth); // deployment capability flag (authed)
   app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 

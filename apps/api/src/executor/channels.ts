@@ -11,6 +11,27 @@
  */
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
+/**
+ * Reserved, platform-owned connector slug for the built-in Slack channel.
+ *
+ * Do NOT use the public `slack` slug here: projects are allowed to add their
+ * own `[[connectors]] slug = "slack"` (for example a Pipedream Slack connector).
+ * The in-sandbox `slack` CLI needs a deterministic namespace that cannot be
+ * shadowed by those user-defined connectors, otherwise read commands such as
+ * `slack thread` resolve against the wrong catalog and fail with
+ * `action_not_found`.
+ */
+export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
+
+export function channelDefaultSlug(platform: string): string {
+  switch (platform) {
+    case 'slack':
+      return SLACK_CHANNEL_CONNECTOR_SLUG;
+    default:
+      return platform;
+  }
+}
+
 // `ChannelPlatform` + the platform allow-list are owned by projects/connectors.ts
 // (the parser layer the executor builds on). This module just maps a platform
 // string → its catalog / API base, so it takes plain strings and returns []/''
@@ -74,11 +95,16 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'chat.postMessage',
     verb: 'POST',
     name: 'Send message',
-    description: 'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread.',
+    description:
+      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread.',
     risk: 'write',
     properties: {
       channel: { type: 'string', description: 'Channel ID (e.g. C0123) or user ID for a DM.' },
-      text: { type: 'string', description: 'Message text (mrkdwn). Also used as the notification fallback when sending blocks.' },
+      text: {
+        type: 'string',
+        description:
+          'Message text (mrkdwn). Also used as the notification fallback when sending blocks.',
+      },
       blocks: { type: 'array', description: 'Optional Block Kit blocks for a rich message.' },
       thread_ts: { type: 'string', description: 'Optional parent message ts to reply in-thread.' },
     },
@@ -117,7 +143,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'reactions.add',
     verb: 'POST',
     name: 'Add reaction',
-    description: 'Add an emoji reaction to a message. Requires `channel`, the message `timestamp`, and the emoji `name` (without colons).',
+    description:
+      'Add an emoji reaction to a message. Requires `channel`, the message `timestamp`, and the emoji `name` (without colons).',
     risk: 'write',
     properties: {
       channel: { type: 'string', description: 'Channel ID the message is in.' },
@@ -131,7 +158,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'conversations.history',
     verb: 'GET',
     name: 'Get channel history',
-    description: 'Fetch recent messages from a channel. Provide `channel`; optional `limit` (default 20).',
+    description:
+      'Fetch recent messages from a channel. Provide `channel`; optional `limit` (default 20).',
     risk: 'read',
     properties: {
       channel: { type: 'string', description: 'Channel ID to read.' },
@@ -144,7 +172,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'conversations.replies',
     verb: 'GET',
     name: 'Get thread replies',
-    description: 'Fetch the replies in a thread. Requires `channel` and the thread root `ts`; optional `limit`.',
+    description:
+      'Fetch the replies in a thread. Requires `channel` and the thread root `ts`; optional `limit`.',
     risk: 'read',
     properties: {
       channel: { type: 'string', description: 'Channel ID the thread is in.' },
@@ -158,12 +187,19 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'conversations.list',
     verb: 'GET',
     name: 'List channels',
-    description: 'List public + private channels the bot can see (excludes archived). Optional `limit`.',
+    description:
+      'List public + private channels the bot can see (excludes archived). Optional `limit`.',
     risk: 'read',
     properties: {
       limit: { type: 'number', description: 'Max channels to return (default 100).' },
-      types: { type: 'string', description: 'Comma-separated channel types (default "public_channel,private_channel").' },
-      exclude_archived: { type: 'boolean', description: 'Exclude archived channels (default true).' },
+      types: {
+        type: 'string',
+        description: 'Comma-separated channel types (default "public_channel,private_channel").',
+      },
+      exclude_archived: {
+        type: 'boolean',
+        description: 'Exclude archived channels (default true).',
+      },
     },
     required: [],
   },
@@ -220,7 +256,8 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     method: 'auth.test',
     verb: 'POST',
     name: 'Identify bot (auth.test)',
-    description: 'Return the authenticated bot identity (user_id, team, bot_id) — the "who am I" call.',
+    description:
+      'Return the authenticated bot identity (user_id, team, bot_id) — the "who am I" call.',
     risk: 'read',
     properties: {},
     required: [],
@@ -254,7 +291,11 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
 function toAction(def: ChannelActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'http', method: def.verb, path: `/${def.method}` };
   const inputSchema = Object.keys(def.properties).length
-    ? { type: 'object', properties: def.properties, ...(def.required.length ? { required: def.required } : {}) }
+    ? {
+        type: 'object',
+        properties: def.properties,
+        ...(def.required.length ? { required: def.required } : {}),
+      }
     : null;
   return {
     path: def.path,
