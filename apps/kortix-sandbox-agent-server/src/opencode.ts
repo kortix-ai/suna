@@ -101,6 +101,16 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
     }
+    // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
+    // allowlist — opencode loads ONLY these and ignores every provider it would
+    // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,
+    // OPENAI_API_KEY → openai), so a leaked key can't open a native path that
+    // bypasses budgets/logging/spend. This is the robust complement to the env
+    // deny-strip in spawnChild (which can be defeated if a key reaches opencode
+    // by some path the deny-list didn't enumerate). We keep `kortix` plus any
+    // providers the Codex/OpenCode subscription auth.json enables — those are the
+    // user's own subscription (consumed into auth.json, intentionally not gated).
+    out.enabled_providers = gatewayEnabledProviders(env)
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
@@ -119,6 +129,26 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   }
 
   return JSON.stringify(out)
+}
+
+// The opencode provider allowlist when the gateway is active: always `kortix`,
+// plus any providers the Codex/OpenCode subscription auth.json declares (its
+// top-level keys are provider ids) so a connected subscription keeps working.
+// The auth secret is still present on the env passed here — materializeOpencodeAuth
+// strips it from the spawned process env later, not from this copy.
+function gatewayEnabledProviders(env: NodeJS.ProcessEnv): string[] {
+  const allow = new Set<string>(['kortix'])
+  const authJson = env[CODEX_AUTH_JSON_SECRET] ?? env[OPENCODE_AUTH_JSON_SECRET]
+  if (authJson?.trim()) {
+    try {
+      const parsed = JSON.parse(authJson)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        for (const provider of Object.keys(parsed)) allow.add(provider)
+      }
+    } catch {
+    }
+  }
+  return [...allow]
 }
 
 async function buildKortixProvider(llmBaseUrl: string, llmApiKey: string): Promise<Record<string, unknown>> {
