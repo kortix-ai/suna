@@ -13,10 +13,10 @@ export const MACHINE_CREDIT_BONUS = 5;
 export const COMPUTE_PRICE_MARKUP = 1.2;
 
 /**
- * Margin multiplier applied to OpenRouter's upstream cost on every LLM
- * gateway call. 1.2 = 20% margin (default). Override per-environment with
+ * Margin multiplier applied to the live models.dev cost on every LLM gateway
+ * call. 1.2 = 20% profit (default). Override per-environment with
  * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
- * periods. Clamped to >= 1 so we never undercut OpenRouter.
+ * periods. Clamped to >= 1 so we never undercut the provider.
  */
 export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
 

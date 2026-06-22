@@ -1,18 +1,25 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import type { ManagedModel } from '@kortix/shared/llm-catalog';
-import { config } from '../../config';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { CHATGPT_CODEX_BASE_URL, CODEX_USER_AGENT, type CodexCredential } from '../credentials/codex';
+import { config } from '../../config';
+import { getModelPricing } from '../../router/config/model-pricing';
+import {
+  CHATGPT_CODEX_BASE_URL,
+  CODEX_USER_AGENT,
+  type CodexCredential,
+} from '../credentials/codex';
 
 export function bedrockBaseUrl(): string {
   return `https://bedrock-runtime.${config.AWS_BEDROCK_REGION || 'us-west-2'}.amazonaws.com`;
 }
 
-function managedPricing(managed: ManagedModel) {
+export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | undefined {
+  const p = getModelPricing(modelId);
+  if (!p) return undefined;
   return {
-    inputPerMillion: managed.inputPerMillion,
-    outputPerMillion: managed.outputPerMillion,
-    cachedInputPerMillion: managed.cachedInputPerMillion,
+    inputPerMillion: p.inputPer1M,
+    outputPerMillion: p.outputPer1M,
+    cachedInputPerMillion: p.cacheReadPer1M,
   };
 }
 
@@ -26,7 +33,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.bedrockModelId,
-    pricing: managedPricing(managed),
+    pricing: livePricing(managed.bedrockModelId),
   };
 }
 
@@ -42,7 +49,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appName: 'Kortix',
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.openRouterModelId,
-    pricing: managedPricing(managed),
+    pricing: livePricing(managed.openRouterModelId),
   };
 }
 
