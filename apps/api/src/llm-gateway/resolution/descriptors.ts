@@ -24,7 +24,7 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
 }
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.AWS_BEDROCK_API_KEY) return null;
+  if (!config.AWS_BEDROCK_API_KEY || !managed.bedrockModelId) return null;
   return {
     provider: 'bedrock',
     kind: 'bedrock',
