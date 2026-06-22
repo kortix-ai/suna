@@ -1,9 +1,9 @@
 # kortix-api Helm chart
 
-The Kortix API workload on EKS. Deployed by `.github/workflows/deploy-prod-eks.yml`
-(and for first bring-up, by hand — see `infra/EKS.md`). Terraform owns the
-cluster + controllers; this chart owns the app, mirroring how CI rolls the ECS
-service while Terraform owns the ECS infra.
+The Kortix API workload on EKS. Dev is deployed by `.github/workflows/deploy-dev.yml`
+through a GitOps values bump on `main`; prod is deployed by `.github/workflows/deploy-prod.yml`
+after a reviewed promote PR lands on `prod`. Terraform owns the clusters and
+controllers; this chart owns the application objects that Argo CD reconciles.
 
 ## What it renders
 
@@ -15,11 +15,12 @@ service while Terraform owns the ECS infra.
 | `HorizontalPodAutoscaler` | CPU+memory target tracking, 3→12 replicas. |
 | `PodDisruptionBudget` | `minAvailable: 50%` — disruptions never drop below half. |
 | `ServiceAccount` | Annotated with the IRSA role (Secrets Manager read). |
-| `SecretStore` + `ExternalSecret` | Sync the shared `kortix-prod-env-omifd2` bundle → `kortix-api-env`, consumed via `envFrom`. |
+| `SecretStore` + `ExternalSecret` | Sync the per-env AWS Secrets Manager bundle → `kortix-api-env`, consumed via `envFrom`. |
 
 ## Required deploy-time values
 
-These come from `terraform -chdir=environments/prod-eks/cluster output`:
+These come from the corresponding EKS Terraform environment outputs and the
+GitOps value files under `infra/k8s/envs/<env>/`:
 
 | Value | From TF output |
 | ----- | -------------- |
@@ -30,3 +31,9 @@ These come from `terraform -chdir=environments/prod-eks/cluster output`:
 
 The chart `fail`s fast if `serviceAccount.roleArn` or `ingress.certificateArn`
 are unset, so a misconfigured deploy never reaches the cluster.
+
+Database migrations are **not** applied by this chart in the current live deploy
+path. The GitHub Actions `migrate-db` jobs run `pnpm --filter @kortix/db migrate`
+(node-pg-migrate) before the GitOps rollout. The chart still contains a disabled
+legacy PreSync hook; do not enable it until it is ported or removed
+(https://github.com/kortix-ai/suna/issues/3628).
