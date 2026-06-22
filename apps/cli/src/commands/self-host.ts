@@ -268,7 +268,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
       `${C.yellow}  warning${C.reset}  ${C.dim}sandbox runtime not configured — agent sessions will fail to start.${C.reset}\n`,
     );
     process.stdout.write(
-      `${C.dim}           set ${C.reset}DAYTONA_API_KEY${C.dim} via ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim}, or ${C.reset}ALLOWED_SANDBOX_PROVIDERS=local_docker${C.dim} for a fully-local runtime.${C.reset}\n\n`,
+      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set ${C.reset}DAYTONA_API_KEY${C.dim}.${C.reset}\n\n`,
     );
   }
 
@@ -435,21 +435,19 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`  ${C.dim}These power the agent runtime, app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
-  // Sandbox runtime — where agents actually execute. Like Kortix Cloud, self-host
-  // runs sandboxes on a real provider. Daytona is the default; local_docker needs
-  // no external account and is handy for fully-local or CI use.
-  const providerChoice = await selectFrom(
-    'Agent sandbox runtime: daytona/local_docker',
-    ['daytona', 'local_docker'] as const,
-    env.ALLOWED_SANDBOX_PROVIDERS === 'local_docker' ? 'local_docker' : 'daytona',
-  );
-  if (providerChoice === 'daytona') {
+  // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
+  // sandboxes on Daytona; the wizard just collects the API key. (local_docker is
+  // still a valid ALLOWED_SANDBOX_PROVIDERS value for fully-local / CI use, but it
+  // is intentionally not offered here — Daytona is the supported user runtime. An
+  // instance already pinned to local_docker is left as-is, not flipped.)
+  if (sandboxProviders(env).includes('local_docker')) {
+    process.stdout.write(`  ${C.dim}Sandbox runtime: local_docker (advanced) — leaving as configured.${C.reset}\n`);
+  } else {
     env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key (https://app.daytona.io)', env.DAYTONA_API_KEY);
+    process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
+    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
     env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
     env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-  } else {
-    env.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
   }
 
   const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
@@ -534,7 +532,7 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
     {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
-      hint: 'DAYTONA_API_KEY (or set ALLOWED_SANDBOX_PROVIDERS=local_docker)',
+      hint: 'DAYTONA_API_KEY (via kortix self-host configure)',
     },
     {
       name: 'App deployments',
