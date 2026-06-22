@@ -146,6 +146,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
       failed: all.filter((s) => s.status === 'failed').length,
     };
   }, [sessionsQuery.data, range]);
+  const sessionLoadFailed = sessionsQuery.isError && !sessionsQuery.data;
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
@@ -240,7 +241,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
             <InfoBanner
               tone="destructive"
               icon={AlertTriangle}
-              title="Activity failed to load"
+              title={sessionLoadFailed ? 'Activity failed to load' : 'Activity refresh failed'}
               className="mb-3"
             >
               {errorMessage(sessionsQuery.error, 'Refresh and try again.')}
@@ -277,7 +278,7 @@ export function ActivityView({ projectId }: { projectId: string }) {
               )}
             </div>
           )}
-          {sessionsQuery.isError ? null : sessionsQuery.isLoading ? (
+          {sessionLoadFailed ? null : sessionsQuery.isLoading ? (
             <List>
               {Array.from({ length: 6 }).map((_, i) => (
                 <ListRow
