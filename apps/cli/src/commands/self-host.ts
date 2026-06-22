@@ -204,7 +204,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
     env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
   }
 
-  if (!existing && shouldPrompt(flags) && integrationReviewNeeded(env)) {
+  if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env);
   }
 
@@ -337,22 +337,88 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   return selfHostRestart(flags);
 }
 
-function selfHostVersion(flags: GlobalFlags): number {
+function isSemverTag(s: string): boolean {
+  return /^\d+\.\d+\.\d+$/.test(s);
+}
+
+function compareSemver(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  }
+  return 0;
+}
+
+/**
+ * Resolve published version info from Docker Hub: the newest released version
+ * and, when running `:latest`, the concrete version it currently points to (by
+ * matching the `latest` tag's digest). Best-effort — returns nulls offline.
+ */
+async function fetchPublishedVersions(repo: string): Promise<{ latest: string | null; latestResolved: string | null }> {
+  try {
+    const res = await fetch(`https://hub.docker.com/v2/repositories/${repo}/tags?page_size=100&ordering=last_updated`);
+    if (!res.ok) return { latest: null, latestResolved: null };
+    const data = (await res.json()) as { results?: Array<{ name: string; digest?: string; images?: Array<{ digest?: string }> }> };
+    const rows = data.results ?? [];
+    const digestOf = (name: string): string => {
+      const r = rows.find((x) => x.name === name);
+      return r?.digest || r?.images?.[0]?.digest || '';
+    };
+    const semvers = rows.map((r) => r.name).filter(isSemverTag).sort((a, b) => compareSemver(b, a));
+    const latest = semvers[0] ?? null;
+    const latestDigest = digestOf('latest');
+    const latestResolved = latestDigest
+      ? semvers.find((v) => digestOf(v) && digestOf(v) === latestDigest) ?? null
+      : null;
+    return { latest, latestResolved };
+  } catch {
+    return { latest: null, latestResolved: null };
+  }
+}
+
+async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   const env = loadEnvWithDefaults(flags);
   if (!env) {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
   }
+  const localMode = env.KORTIX_LOCAL_IMAGES === 'true';
+  const configured = env.KORTIX_VERSION || 'unknown';
+  const { latest, latestResolved } = await fetchPublishedVersions(DEFAULT_API_IMAGE_REPO);
+
+  // What you're actually running: a pinned semver is itself; `:latest` resolves
+  // to whatever version that tag currently points to on Docker Hub.
+  const running = isSemverTag(configured)
+    ? configured
+    : configured === 'latest'
+      ? latestResolved ?? latest ?? 'latest'
+      : configured;
+
   process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
-  process.stdout.write(`  ${C.dim}version  ${C.reset}${C.cyan}${env.KORTIX_VERSION || 'unknown'}${C.reset}\n`);
-  if (env.KORTIX_LOCAL_IMAGES === 'true') {
-    process.stdout.write(`  ${C.dim}mode     ${C.reset}current-source images (${LOCAL_SOURCE_TAG})\n`);
+  if (localMode) {
+    process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}current source${C.reset}${C.dim} (${LOCAL_SOURCE_TAG} images, not a released version)${C.reset}\n`);
+  } else {
+    const tagNote = configured === 'latest' ? `${C.dim} (tracking :latest)${C.reset}` : '';
+    process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}${running}${C.reset}${tagNote}\n`);
   }
-  process.stdout.write(`  ${C.dim}api      ${C.reset}${env.API_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
+  process.stdout.write(`  ${C.dim}latest   ${C.reset}${latest ?? C.dim + 'unknown (offline?)' + C.reset}\n`);
+
+  // Update hint: only meaningful for registry installs with a known latest.
+  if (!localMode && latest) {
+    if (isSemverTag(running) && compareSemver(running, latest) < 0) {
+      process.stdout.write(`  ${C.yellow}update   ${C.reset}${running} ${C.dim}→${C.reset} ${C.green}${latest}${C.reset}${C.dim} available — run ${C.reset}${C.cyan}kortix self-host update${C.reset}\n`);
+    } else if (isSemverTag(running)) {
+      process.stdout.write(`  ${C.green}up to date${C.reset}\n`);
+    }
+  }
+
+  process.stdout.write(`\n  ${C.dim}images${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}  api      ${C.reset}${env.API_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
+  process.stdout.write(`  ${C.dim}  sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
   process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (latest) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
 }
@@ -519,6 +585,9 @@ function sandboxProviderConfigured(env: SelfHostEnv): boolean {
 }
 
 function integrationReviewNeeded(env: SelfHostEnv): boolean {
+  // The sandbox runtime is required — the API won't even boot without it — so a
+  // missing provider always warrants the wizard, even after a prior review.
+  if (!sandboxProviderConfigured(env)) return true;
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
   return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
 }
