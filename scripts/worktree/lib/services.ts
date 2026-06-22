@@ -1,17 +1,5 @@
 import { spawn } from 'bun';
-import { mkdtempSync, openSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { run, which } from './exec';
-
-// A log file inside a freshly-created private temp dir — mkdtempSync makes the
-// dir atomically with an unpredictable name at mode 0700, so no other local user
-// can pre-create or read it. Matters because these logs capture a child's
-// stdout/stderr and the stripe one holds the `whsec_` signing secret; a fixed
-// name in the shared tmpdir would be a symlink/disclosure risk.
-function privateLogFile(prefix: string): string {
-  return join(mkdtempSync(join(tmpdir(), `kortix-wt-${prefix}-`)), `${prefix}.log`);
-}
 
 export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
   const builds: Array<[string, string]> = [
@@ -26,22 +14,46 @@ export async function ensureRuntimeArtifacts(worktreePath: string): Promise<numb
   return 0;
 }
 
+// Drain a spawned process's stdout+stderr and resolve the first regex match (the
+// tunnel URL and the stripe signing secret both print to the child's output).
+// Piping in-memory avoids a temp file entirely — no predictable /tmp path to leak
+// the `whsec_` secret through and no create-then-read race. The process is left
+// running on a match; the caller owns its lifecycle (and kills it on miss).
+async function waitForOutputMatch(
+  proc: ReturnType<typeof Bun.spawn>,
+  re: RegExp,
+  attempts: number,
+): Promise<string | null> {
+  let buf = '';
+  const pump = async (stream: ReadableStream<Uint8Array> | null | undefined) => {
+    if (!stream) return;
+    const dec = new TextDecoder();
+    try {
+      for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+        buf += dec.decode(chunk, { stream: true });
+      }
+    } catch { /* stream closed when the process is killed */ }
+  };
+  void pump(proc.stdout as ReadableStream<Uint8Array>);
+  void pump(proc.stderr as ReadableStream<Uint8Array>);
+  for (let i = 0; i < attempts; i++) {
+    const m = buf.match(re);
+    if (m) return m[0];
+    if (proc.exitCode !== null) break;
+    await Bun.sleep(1000);
+  }
+  return null;
+}
+
 export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   if (!which('cloudflared')) return null;
-  const logPath = privateLogFile('tunnel');
-  const fd = openSync(logPath, 'w', 0o600);
   const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
-    stdout: fd, stderr: fd, stdin: 'ignore',
+    stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
   });
-  const re = /https:\/\/[a-z0-9.-]+\.trycloudflare\.com/;
-  for (let i = 0; i < 30; i++) {
-    const m = readFileSync(logPath, 'utf8').match(re);
-    if (m) return { url: m[0], proc };
-    if (proc.exitCode !== null) break;
-    await Bun.sleep(1000);
-  }
+  const url = await waitForOutputMatch(proc, /https:\/\/[a-z0-9.-]+\.trycloudflare\.com/, 30);
+  if (url) return { url, proc };
   try { proc.kill(); } catch {}
   return null;
 }
@@ -57,18 +69,11 @@ export interface StripeListen { secret: string; proc: ReturnType<typeof Bun.spaw
 export async function startStripeListen(apiPort: number): Promise<StripeListen | null> {
   if (!which('stripe')) return null;
   const forwardTo = `http://localhost:${apiPort}/v1/billing/webhooks/stripe`;
-  const logPath = privateLogFile('stripe');
-  const fd = openSync(logPath, 'w', 0o600);
   const proc = spawn(['stripe', 'listen', '--forward-to', forwardTo], {
-    stdout: fd, stderr: fd, stdin: 'ignore',
+    stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
   });
-  const re = /whsec_[A-Za-z0-9]+/;
-  for (let i = 0; i < 20; i++) {
-    const m = readFileSync(logPath, 'utf8').match(re);
-    if (m) return { secret: m[0], proc };
-    if (proc.exitCode !== null) break;   // not logged in / errored out
-    await Bun.sleep(1000);
-  }
+  const secret = await waitForOutputMatch(proc, /whsec_[A-Za-z0-9]+/, 20);
+  if (secret) return { secret, proc };
   try { proc.kill(); } catch {}
   return null;
 }
