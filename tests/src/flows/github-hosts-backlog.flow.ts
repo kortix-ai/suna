@@ -122,7 +122,6 @@ flow(
   "GH-8",
   {
     domain: "git",
-    serial: true,
     routes: [
       "GET /v1/projects/:projectId/cli-token",
       "POST /v1/projects/:projectId/cli-token",

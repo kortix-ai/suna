@@ -27,7 +27,6 @@ flow(
   "ACC-4",
   {
     domain: "system",
-    serial: true,
     routes: [
       "GET /v1/setup/install-status",
       "GET /v1/setup/sandbox-providers",
@@ -146,6 +145,81 @@ flow(
       // target. A configured target returns a hosted URL (200); an unconfigured or
       // input-rejecting one returns 4xx/5xx. Permissive envelope covers both.
       r.status([200, 400, 404, 500]);
+    });
+  },
+);
+
+/**
+ * BILL-9 — authorization on billing write ops.
+ *
+ * SPEC DRIFT: the spec claims write ops require a `billing.write` capability and that
+ * `MEMBER`/`AUDITOR` → 403. The code has NO such role/capability gate: billing write
+ * routes resolve the account purely by MEMBERSHIP via `resolveScopedAccountId`
+ * (apps/api/src/shared/resolve-account.ts) — any member of the account passes, only a
+ * NON-member (403) or ANON (401) is rejected. There is no `requirePermission('billing.write')`
+ * anywhere under apps/api/src/billing/routes.
+ *
+ * We therefore assert the authz boundary that ACTUALLY exists and is verifiable
+ * locally: ANON → 401, NONMEMBER → 403 across a representative set of write ops. The
+ * MEMBER/AUDITOR step probes the spec's claim non-fatally — since they ARE members of
+ * the team, the membership check passes and the request proceeds to the no-subscription
+ * negative (4xx) rather than a 403; the permissive SET documents the real behavior.
+ */
+flow(
+  "BILL-9b",
+  {
+    domain: "billing",
+    serial: true,
+    routes: [
+      "POST /v1/billing/cancel-subscription",
+      "POST /v1/billing/reactivate-subscription",
+      "POST /v1/billing/schedule-downgrade",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+
+    // --- ANON is rejected before any account logic. ---
+    await ctx.step("ANON cancel-subscription → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/cancel-subscription", { account_id: team.id });
+      r.status(401);
+    });
+    await ctx.step("ANON reactivate-subscription → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/reactivate-subscription", { account_id: team.id });
+      r.status(401);
+    });
+    await ctx.step("ANON schedule-downgrade → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/schedule-downgrade", {
+        account_id: team.id,
+        target_tier_key: "pro",
+      });
+      r.status(401);
+    });
+
+    // --- NONMEMBER is rejected by the membership resolver (the REAL authz gate). ---
+    await ctx.step("NONMEMBER cancel-subscription → 403", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/cancel-subscription", { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step("NONMEMBER reactivate-subscription → 403", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/reactivate-subscription", { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step("NONMEMBER schedule-downgrade → 403", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/billing/schedule-downgrade", {
+        account_id: team.id,
+        target_tier_key: "pro",
+      });
+      r.status(403);
+    });
+
+    // --- Spec claim probe: a plain MEMBER of the account. Code has no billing.write
+    //     gate, so membership passes → falls through to the genuine "no subscription"
+    //     rejection (4xx) rather than the spec's 403. Permissive SET documents both. ---
+    await ctx.step("MEMBER write op: membership passes, no-sub negative (spec claims 403)", async () => {
+      const member = await team.addMember("member");
+      const r = await ctx.client.as(member).post("/v1/billing/cancel-subscription", { account_id: team.id });
+      r.status([400, 403, 404, 409]);
     });
   },
 );

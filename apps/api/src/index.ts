@@ -48,7 +48,7 @@ import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunn
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
+import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -57,6 +57,7 @@ import {
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   getTriggerSchedulerHealth,
+  schedulerSweepIsStale,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
@@ -403,7 +404,9 @@ const healthHandler = (c: any) =>
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
     // took, and what it did. On a non-leader pod the fields are null (the sweep
     // only runs on the leader) — so "all pods null" = no leader = no triggers.
-    trigger_scheduler: getTriggerSchedulerHealth(),
+    // `stale` is true when we're the leader but the sweep has frozen (started
+    // and not completed within the stale window) — the signal to alert on.
+    trigger_scheduler: { ...getTriggerSchedulerHealth(), stale: schedulerSweepIsStale(isLeader()) },
   });
 
 app.openapi(
@@ -724,6 +727,40 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
       },
     ),
   );
+
+  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
+  app.route('/internal/gateway', createInternalGatewayRoutes());
+
+  if (
+    config.LLM_GATEWAY_ENABLED &&
+    !config.LLM_GATEWAY_BASE_URL &&
+    !config.LLM_GATEWAY_PROXY_PORT &&
+    !config.LLM_GATEWAY_PROXY_TARGET
+  ) {
+    appLogger.error(
+      '[gateway] LLM_GATEWAY_BASE_URL is unset and no proxy is configured — sandboxes will fall back to the in-API /v1/llm passthrough (OpenRouter-only, wrong catalog shape → single-model picker). Set LLM_GATEWAY_BASE_URL to the standalone gateway URL (e.g. https://gateway.kortix.com/v1/llm).',
+    );
+  }
+
+  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+    const proxyBase = (
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+    ).replace(/\/+$/, '');
+    app.all('/v1/llm-gateway/*', async (c) => {
+      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+      const target = `${proxyBase}${tail}`;
+      const init: RequestInit & { duplex?: 'half' } = {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+      };
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        init.body = c.req.raw.body;
+        init.duplex = 'half';
+      }
+      const upstream = await fetch(target, init);
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    });
+  }
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -997,10 +1034,20 @@ async function stopSingletonWorkers() {
 // (self-host single node → sole leader, no coordination).
 async function bootServices() {
   await startReplicaServices();
-  startLeaderElection({
-    onAcquire: () => startSingletonWorkers(),
-    onRelease: () => stopSingletonWorkers(),
-  });
+  // Only pods that actually run singleton workers join the election. An API-only
+  // pod (workers disabled) that won the lease would become a dead-weight leader,
+  // holding it while running nothing and starving the scheduler fleet-wide.
+  const eligible = runsSingletonWorkers();
+  if (!eligible) {
+    appLogger.info('[workers] API-only pod — singleton workers disabled; not joining leader election');
+  }
+  startLeaderElection(
+    {
+      onAcquire: () => startSingletonWorkers(),
+      onRelease: () => stopSingletonWorkers(),
+    },
+    { eligible },
+  );
 }
 
 // Graceful shutdown

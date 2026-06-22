@@ -1,0 +1,20 @@
+[
+  {
+    "name": "postgres",
+    "listen": "0.0.0.0:15432",
+    "upstream": "host.docker.internal:5432",
+    "enabled": true
+  },
+  {
+    "name": "redis",
+    "listen": "0.0.0.0:16379",
+    "upstream": "host.docker.internal:6379",
+    "enabled": true
+  },
+  {
+    "name": "api_upstream",
+    "listen": "0.0.0.0:18008",
+    "upstream": "host.docker.internal:8008",
+    "enabled": true
+  }
+]

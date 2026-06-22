@@ -14,13 +14,17 @@
     "migration:legacy-fleet": "dotenvx run -- bun run src/scripts/migrate-legacy-fleet.ts",
     "e2e:flow": "bun run scripts/e2e-managed-flow.ts",
     "typecheck": "tsc --noEmit",
-    "test": "dotenvx run -- bash -c 'for f in src/__tests__/billing/*.test.ts src/__tests__/e2e-*.test.ts src/__tests__/unit-*.test.ts; do bun test \"$f\" || exit 1; done'",
-    "test:all": "bun run test"
+    "test": "bash scripts/test.sh",
+    "test:coverage": "COVERAGE=1 bash scripts/test.sh",
+    "test:integration": "bash scripts/test.sh integration",
+    "test:live": "bash scripts/test.sh live",
+    "test:all": "bash scripts/test.sh && bash scripts/test.sh integration"
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/db": "workspace:*",
+    "@kortix/llm-gateway": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/shared": "workspace:*",

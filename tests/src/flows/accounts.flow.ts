@@ -24,7 +24,7 @@ flow("ACCT-1", { domain: "accounts", routes: ["GET /v1/accounts"] }, async (ctx)
 
 flow(
   "ACCT-2",
-  { domain: "accounts", routes: ["POST /v1/accounts", "GET /v1/accounts/:accountId"], serial: true },
+  { domain: "accounts", routes: ["POST /v1/accounts", "GET /v1/accounts/:accountId"], },
   async (ctx) => {
     let accountId = "";
     await ctx.step("create team account → caller is owner", async () => {
@@ -72,7 +72,7 @@ flow("TOK-2", { domain: "accounts", routes: ["POST /v1/accounts/tokens"] }, asyn
   });
 });
 
-flow("ACCT-4", { domain: "accounts", serial: true, routes: ["PATCH /v1/accounts/:accountId"] }, async (ctx) => {
+flow("ACCT-4", { domain: "accounts", routes: ["PATCH /v1/accounts/:accountId"] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   await ctx.step("OWNER renames account", async () => {
     const r = await ctx.client
@@ -91,7 +91,7 @@ flow("ACCT-4", { domain: "accounts", serial: true, routes: ["PATCH /v1/accounts/
 
 flow(
   "MEM-1",
-  { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId/members", "POST /v1/accounts/:accountId/members"] },
+  { domain: "accounts", routes: ["GET /v1/accounts/:accountId/members", "POST /v1/accounts/:accountId/members"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("add an admin member → 201 status added", async () => {
@@ -112,7 +112,7 @@ flow(
 
 flow(
   "MEM-2",
-  { domain: "accounts", serial: true, routes: ["POST /v1/accounts/:accountId/members"] },
+  { domain: "accounts", routes: ["POST /v1/accounts/:accountId/members"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -133,7 +133,7 @@ flow(
 
 flow(
   "MEM-3",
-  { domain: "accounts", serial: true, routes: ["PATCH /v1/accounts/:accountId/members/:userId"] },
+  { domain: "accounts", routes: ["PATCH /v1/accounts/:accountId/members/:userId"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -154,7 +154,7 @@ flow(
 
 flow(
   "MEM-4",
-  { domain: "accounts", serial: true, routes: ["DELETE /v1/accounts/:accountId/members/:userId"] },
+  { domain: "accounts", routes: ["DELETE /v1/accounts/:accountId/members/:userId"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -169,7 +169,7 @@ flow(
 
 flow(
   "MEM-5",
-  { domain: "accounts", serial: true, routes: ["POST /v1/accounts/:accountId/leave"] },
+  { domain: "accounts", routes: ["POST /v1/accounts/:accountId/leave"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -186,7 +186,7 @@ flow(
   },
 );
 
-flow("INV-1", { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId/invites"] }, async (ctx) => {
+flow("INV-1", { domain: "accounts", routes: ["GET /v1/accounts/:accountId/invites"] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   await ctx.step("list pending invites", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/invites", { params: { accountId: team.id } });
@@ -205,7 +205,7 @@ flow("DEL-1", { domain: "accounts", routes: ["GET /v1/billing/account/deletion-s
 // a NONMEMBER is forbidden (403).
 flow(
   "ACCT-3",
-  { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId"] },
+  { domain: "accounts", routes: ["GET /v1/accounts/:accountId"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("OWNER (member) reads the account → 200", async () => {
@@ -272,7 +272,6 @@ flow(
   "TOK-4",
   {
     domain: "accounts",
-    serial: true,
     routes: [
       "POST /v1/projects/:projectId/cli-token",
       "DELETE /v1/projects/:projectId/cli-token/:tokenId",

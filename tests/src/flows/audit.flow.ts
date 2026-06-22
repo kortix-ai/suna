@@ -8,7 +8,7 @@ import { flow } from "../core/flow";
 // ── AUD-1: list audit events ─────────────────────────────────────────────────
 flow(
   "AUD-1",
-  { domain: "audit", serial: true, routes: ["GET /v1/accounts/:accountId/audit"] },
+  { domain: "audit", routes: ["GET /v1/accounts/:accountId/audit"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("OWNER lists audit events → 200 with events array", async () => {
@@ -36,7 +36,7 @@ flow(
 // ── AUD-2: export ────────────────────────────────────────────────────────────
 flow(
   "AUD-2",
-  { domain: "audit", serial: true, routes: ["GET /v1/accounts/:accountId/audit/export"] },
+  { domain: "audit", routes: ["GET /v1/accounts/:accountId/audit/export"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("export defaults to CSV → 200 text/csv", async () => {
@@ -71,7 +71,7 @@ flow(
 // ── AUD-3: list webhooks + authz boundary ────────────────────────────────────
 flow(
   "AUD-3",
-  { domain: "audit", serial: true, routes: ["GET /v1/accounts/:accountId/audit/webhooks"] },
+  { domain: "audit", routes: ["GET /v1/accounts/:accountId/audit/webhooks"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     await ctx.step("OWNER lists webhooks → 200 with webhooks array", async () => {
@@ -94,7 +94,6 @@ flow(
   "AUD-4",
   {
     domain: "audit",
-    serial: true,
     routes: [
       "POST /v1/accounts/:accountId/audit/webhooks",
       "PATCH /v1/accounts/:accountId/audit/webhooks/:webhookId",

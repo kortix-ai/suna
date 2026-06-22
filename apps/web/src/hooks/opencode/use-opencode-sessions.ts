@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
 import { getClient } from '@/lib/opencode-sdk';
 import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
 import { markSessionFresh } from '@/lib/fresh-sessions';
@@ -1022,14 +1023,39 @@ function providerListHasModels(providers: ProviderListResponse | undefined): boo
   );
 }
 
+// Every LLM call must go through the Kortix gateway, which opencode exposes as
+// the single `kortix` provider (Codex included, as `codex/<id>` models). Any
+// OTHER provider opencode reports is a NATIVE one (a leaked `anthropic`/`openai`
+// key) that talks to the provider directly and bypasses the gateway. Drop them
+// HERE, at the source, so they never reach the cache or any consumer. `opencode`
+// (Zen) is the deliberate exception: its free models route natively too, but
+// that's the point — they're free and never touch gateway billing.
+export const GATEWAY_PROVIDER_IDS = new Set(['kortix', 'opencode']);
+
+function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
+  const all = Array.isArray(providers.all) ? providers.all : [];
+  const connected = Array.isArray(providers.connected) ? providers.connected : [];
+  return {
+    ...providers,
+    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
+    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
+  };
+}
+
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const params = useParams();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  // BYOK makes the connected model set project-specific (a provider connected
+  // in one project must NOT leak into another, nor linger after removal), so
+  // the persisted placeholder is scoped per project — not the old global scope.
+  const cacheScope = projectId ? `proj:${projectId}` : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
     queryKey: opencodeKeys.providers(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
-      const providers = unwrap(result);
+      const providers = filterToGatewayProviders(unwrap(result));
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
@@ -1046,19 +1072,21 @@ export function useOpenCodeProviders() {
         );
       }
 
-      // Models are identical across every sandbox of every project (they come
-      // from the platform's opencode provider config), so cache them under the
-      // stable global scope — never the ephemeral per-sandbox server id. Only
+      // Persist under the per-project scope (never the ephemeral per-sandbox
+      // server id) so a fresh session paints the right models instantly. Only
       // genuine, model-bearing responses reach here, so the placeholder cache
       // is never poisoned with an empty list.
-      setLSCache(LS_PROVIDERS, providers, CACHE_SCOPE_GLOBAL);
+      setLSCache(LS_PROVIDERS, providers, cacheScope);
       return providers;
     },
     // Only ever serve a model-bearing placeholder. A previously-poisoned cache
     // (written before this guard existed) is ignored so it can't paint empty.
     placeholderData: () => {
-      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, CACHE_SCOPE_GLOBAL);
-      return providerListHasModels(cached) ? cached : undefined;
+      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, cacheScope);
+      if (!providerListHasModels(cached)) return undefined;
+      // Old caches may have been persisted before the source filter — clean them
+      // on read so a poisoned cache never paints a native provider.
+      return filterToGatewayProviders(cached as ProviderListResponse);
     },
     enabled: runtimeReady,
     staleTime: Infinity,

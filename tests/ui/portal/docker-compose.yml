@@ -1,0 +1,27 @@
+services:
+  allure:
+    image: frankescobar/allure-docker-service:latest
+    environment:
+      CHECK_RESULTS_EVERY_SECONDS: 3
+      KEEP_HISTORY: "TRUE"
+      KEEP_HISTORY_LATEST: 25
+      OPTIMIZE_STORAGE: "TRUE"
+    ports:
+      - "5050:5050"
+    volumes:
+      - ../../test-results/allure-results:/app/allure-results
+      - allure-projects:/app/projects
+      - allure-default:/app/default-reports
+
+  allure-ui:
+    image: frankescobar/allure-docker-service-ui:latest
+    environment:
+      ALLURE_DOCKER_PUBLIC_API_URL: "http://localhost:5050"
+    ports:
+      - "5051:5051"
+    depends_on:
+      - allure
+
+volumes:
+  allure-projects:
+  allure-default:

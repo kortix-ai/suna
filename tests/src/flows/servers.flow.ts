@@ -34,7 +34,6 @@ flow(
   "SRV-2",
   {
     domain: "servers",
-    serial: true,
     routes: [
       "POST /v1/servers",
       "DELETE /v1/servers/:id",
@@ -87,7 +86,7 @@ flow(
 
 // ─── SRV-4: bulk sync ─────────────────────────────────────────────────────────
 
-flow("SRV-4", { domain: "servers", serial: true, routes: ["PUT /v1/servers/sync", "DELETE /v1/servers/:id"] }, async (ctx) => {
+flow("SRV-4", { domain: "servers", routes: ["PUT /v1/servers/sync", "DELETE /v1/servers/:id"] }, async (ctx) => {
   const id = `ke2e-${uuid()}`;
   await ctx.step("sync upserts entries → 200 rows", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).put("/v1/servers/sync", {

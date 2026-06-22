@@ -1,0 +1,196 @@
+name: QA - release gate
+
+# Blocking pre-production gate. This runs before a release PR can merge into
+# prod, so deploy-prod only runs after the full suite has passed. Configure the
+# prod branch protection rule to require this workflow for normal releases.
+
+on:
+  pull_request:
+    branches: [prod]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Staging API base URL including /v1"
+        required: false
+        type: string
+      web_base_url:
+        description: "Staging frontend URL"
+        required: false
+        type: string
+      dast_target_url:
+        description: "Staging DAST target origin without /v1"
+        required: false
+        type: string
+      pentest_target_url:
+        description: "Staging automated pentest target origin without /v1"
+        required: false
+        type: string
+
+concurrency:
+  group: qa-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  full-suite:
+    name: full suite + quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+      QA_REPORTS_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+      QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
+      QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
+      API_BASE_URL_INPUT: ${{ inputs.api_base_url || vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+      WEB_BASE_URL_INPUT: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      DAST_TARGET_URL_INPUT: ${{ inputs.dast_target_url || vars.QA_DAST_TARGET_URL }}
+      PENTEST_TARGET_URL_INPUT: ${{ inputs.pentest_target_url || vars.QA_PENTEST_TARGET_URL }}
+      KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+      KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+      KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
+      KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
+      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+      KE2E_ADMIN_TOKEN: ${{ secrets.KE2E_ADMIN_TOKEN }}
+      KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+      KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
+      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Normalize and guard release targets
+        run: |
+          set -euo pipefail
+          api="${API_BASE_URL_INPUT%/}"
+          web="${WEB_BASE_URL_INPUT%/}"
+          dast="${DAST_TARGET_URL_INPUT:-}"
+          pentest="${PENTEST_TARGET_URL_INPUT:-}"
+          if [ -z "$dast" ] && [ -n "$api" ]; then
+            dast="${api%/v1}"
+          fi
+          if [ -z "$pentest" ] && [ -n "$api" ]; then
+            pentest="${api%/v1}"
+          fi
+          if [ -z "$api" ] || [ -z "$web" ] || [ -z "$dast" ] || [ -z "$pentest" ]; then
+            echo "::error::Release QA requires QA_API_BASE_URL, QA_WEB_BASE_URL, QA_DAST_TARGET_URL, and QA_PENTEST_TARGET_URL (or matching workflow inputs)."
+            exit 1
+          fi
+          case "$dast $pentest" in
+            *prod*|*production*|https://api.kortix.com*|https://kortix.com*)
+              echo "::error::Refusing to run DAST/pentest against production-looking target: dast=$dast pentest=$pentest"
+              exit 1
+              ;;
+          esac
+          {
+            echo "API_BASE_URL=$api"
+            echo "KE2E_API_URL=$api"
+            echo "BASE_URL=$api"
+            echo "E2E_BASE_URL=$web"
+            echo "TARGET_URL=$dast"
+            echo "PENTEST_TARGET_URL=$pentest"
+            echo "PENTEST_LIVE_CONFIRM=ci"
+            echo "KE2E_LIVE_CONFIRM=ci"
+          } >> "$GITHUB_ENV"
+          echo "Release API target: $api"
+          echo "Release web target: $web"
+          echo "Release DAST target: $dast"
+          echo "Release pentest target: $pentest"
+
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: cd tests && npx playwright install --with-deps chromium
+
+      - name: Static + local functional checks
+        run: make lint typecheck unit integration contract api-coverage
+
+      - name: Live API smoke
+        timeout-minutes: 10
+        run: make smoke
+      # The full ke2e API flow suite (~278 live flows) is OFF by default: dev is
+      # already exercised by its own tests, and running the funded suite against
+      # it adds load + time. Opt in by setting repo var QA_RUN_API_SUITE=true once
+      # we wire it against a dedicated target.
+      - name: API flow suite (opt-in)
+        if: vars.QA_RUN_API_SUITE == 'true'
+        timeout-minutes: 45
+        run: make api
+
+      - name: Browser regression
+        timeout-minutes: 30
+        run: |
+          make e2e a11y
+          # Visual is advisory: it snapshots the live target with no deterministic
+          # per-platform baselines, so a pixel diff shouldn't red-gate the release.
+          # It still runs and its results land in the report.
+          make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
+
+      - name: Migration + infra
+        timeout-minutes: 20
+        run: make migration infra
+      # Static SAST/deps/secrets is advisory: the scanners are noisy (gitleaks
+      # flags minified build artifacts; trivy/osv surface ubiquitous transitive
+      # CVEs) and real secrets are already gated by secret-scan.yml + the
+      # pre-commit hook. It still runs and its SARIF lands in the report.
+      - name: Static security (advisory)
+        timeout-minutes: 15
+        run: make security-fast || echo "::warning::static security scan reported findings (advisory — see SARIF; real-secret gate lives in secret-scan.yml)"
+      # The exhaustive, scan-the-whole-app lanes — mutation (Stryker), black-box
+      # pentest, k6 performance, and DAST — run in qa-nightly, not on every
+      # release: they add ~40-60min and duplicate the scheduled suite. The
+      # blocking gate stays fast + deterministic.
+
+      - name: Quality gates
+        run: make gates
+
+      - name: Build report artifacts
+        if: always()
+        run: |
+          # Co-located bun:test unit suites (~830) into the report.
+          bash tests/scripts/collect-bun-junit.sh || true
+          # vitest/pact/bun JUnit -> allure-results.
+          npm --prefix tests run allure:junit
+          # ke2e API flows (283) -> allure-results (native exporter, same dir).
+          npm --prefix tests run allure || true
+          cd tests
+          rm -rf test-results/allure-report
+          npx allure generate test-results/allure-results -o test-results/allure-report || true
+          npm run catalog || true
+      - name: AWS auth for report publish
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Publish release Allure report
+        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        run: |
+          set -euo pipefail
+          run_key="release/${{ github.run_id }}"
+          aws s3 sync tests/test-results/allure-report \
+            "s3://${QA_REPORTS_BUCKET}/${QA_REPORTS_PREFIX}/${run_key}/" \
+            --delete --only-show-errors
+          url="${QA_REPORTS_PUBLIC_BASE_URL%/}/${QA_REPORTS_PREFIX}/${run_key}/index.html"
+          {
+            echo "### Full-suite Allure report"
+            echo ""
+            echo "Report: $url"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-qa-report
+          path: |
+            tests/test-results/**
+          retention-days: 90

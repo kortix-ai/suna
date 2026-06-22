@@ -1,3 +1,0 @@
--- DEPRECATED: channel_platform_credentials is no longer used.
--- Credentials are now pushed directly to sandbox env vars.
--- This migration is intentionally empty (kept for ordering consistency).

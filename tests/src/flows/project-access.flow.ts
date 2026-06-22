@@ -25,7 +25,6 @@ flow(
   "PACC-1",
   {
     domain: "projects",
-    serial: true,
     routes: [
       "GET /v1/projects/:projectId/access",
       "PUT /v1/projects/:projectId/access/:userId",
@@ -73,7 +72,6 @@ flow(
   "PACC-3",
   {
     domain: "projects",
-    serial: true,
     routes: ["PUT /v1/projects/:projectId/access/:userId"],
   },
   async (ctx) => {
@@ -122,7 +120,6 @@ flow(
   "PACC-4",
   {
     domain: "projects",
-    serial: true,
     routes: ["DELETE /v1/projects/:projectId/access/:userId"],
   },
   async (ctx) => {
@@ -166,7 +163,6 @@ flow(
   "PACC-5",
   {
     domain: "projects",
-    serial: true,
     routes: [
       "POST /v1/projects/:projectId/access/invite",
       "GET /v1/projects/:projectId/access/pending-invites",
@@ -261,7 +257,6 @@ flow(
   "PACC-6",
   {
     domain: "projects",
-    serial: true,
     routes: [
       "GET /v1/projects/:projectId/group-grants",
       "POST /v1/projects/:projectId/group-grants",
@@ -363,7 +358,6 @@ flow(
   "INV-3",
   {
     domain: "projects",
-    serial: true,
     routes: ["GET /v1/account-invites/:inviteId"],
   },
   async (ctx) => {
@@ -409,7 +403,6 @@ flow(
   "INV-4",
   {
     domain: "projects",
-    serial: true,
     routes: ["POST /v1/account-invites/:inviteId/accept"],
   },
   async (ctx) => {
@@ -457,7 +450,6 @@ flow(
   "INV-5",
   {
     domain: "projects",
-    serial: true,
     routes: ["POST /v1/account-invites/:inviteId/decline"],
   },
   async (ctx) => {
@@ -506,7 +498,7 @@ flow(
 // manage gate (non-member → 404, project not loadable) are enforced.
 flow(
   "PACC-2",
-  { domain: "projects", serial: true, routes: ["POST /v1/projects/:projectId/access/invite"] },
+  { domain: "projects", routes: ["POST /v1/projects/:projectId/access/invite"] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project();

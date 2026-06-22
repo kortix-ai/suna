@@ -12,7 +12,9 @@
  */
 import { Client } from "../core/client";
 import type { Env } from "../core/env";
+import { log } from "../core/log";
 import type { Principal, Principals } from "../core/types";
+import { subscribe } from "./billing";
 import { adminCreateUser, passwordGrant, type AdminUser } from "./supabase";
 
 export interface Provisioned {
@@ -53,6 +55,22 @@ export async function provisionMatrix(env: Env, runId: string): Promise<Provisio
   const ownerClient = new Client(env.apiUrl).as(owner.principal);
   const tok = await ownerClient.post("/v1/accounts/tokens", { name: `e2e-${runId}-owner-bootstrap` });
   const patAcctSecret = tok.json<any>()?.secret_key as string | undefined;
+
+  // Fund the OWNER's personal account so flows aren't blocked by the free-tier
+  // 1-project / 402 limits — real Stripe test-mode subscribe → paid tier + credits.
+  // Non-fatal: a funding failure degrades to the unfunded behaviour with a clear
+  // warning rather than sinking the whole run.
+  if (env.capabilities.stripe) {
+    try {
+      await subscribe(env, ownerClient, owner.principal.accountId!);
+      env.capabilities.funded = true;
+      log.step(`provision: OWNER ${owner.principal.accountId} funded (pro tier + credits)`);
+    } catch (err) {
+      log.warn(
+        `provision: OWNER funding failed — paid-tier flows will hit project_limit/402: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
 
   const nonmember = await synthUser(env, "NONMEMBER", runId);
   supabaseUserIds.push(nonmember.user.id);

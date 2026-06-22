@@ -332,7 +332,7 @@ function SlackSurfaceCard({
               <span className="text-foreground text-lg font-semibold">Kortix</span>
             </div>
             <div>
-              <Button variant="ghost" size="icon-sm">
+              <Button variant="ghost" size="icon-sm" aria-label="More options">
                 <MoreHorizontal />
               </Button>
             </div>
@@ -486,7 +486,7 @@ function TeamsSurfaceCard({
               <span className="text-foreground text-lg font-semibold">Kortix</span>
             </div>
             <div>
-              <Button variant="ghost" size="icon-sm">
+              <Button variant="ghost" size="icon-sm" aria-label="More options">
                 <MoreHorizontal />
               </Button>
             </div>

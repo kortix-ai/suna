@@ -56,7 +56,7 @@ const R_PROJECT_GRANTS_POST = `POST ${PROJECT_GRANTS}`;
 
 flow(
   "IAM-4",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE] },
+  { domain: "iam", routes: [R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -97,7 +97,7 @@ flow(
 
 flow(
   "IAM-5",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE] },
+  { domain: "iam", routes: [R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -135,7 +135,7 @@ flow(
 
 flow(
   "IAM-6",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE] },
+  { domain: "iam", routes: [R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const admin = await team.addMember("admin");
@@ -172,7 +172,7 @@ flow(
 
 flow(
   "IAM-9",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE_BATCH, R_SUPER_ADMIN, R_EFFECTIVE] },
+  { domain: "iam", routes: [R_EFFECTIVE_BATCH, R_SUPER_ADMIN, R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const ownerId = ctx.P.OWNER.userId!;
@@ -235,7 +235,6 @@ flow(
   "IAM-10",
   {
     domain: "iam",
-    serial: true,
     routes: [R_EFFECTIVE, R_GROUPS_POST, R_GROUP_MEMBERS_POST, R_PROJECT_GRANTS_POST],
   },
   async (ctx) => {
@@ -295,7 +294,7 @@ flow(
 
 flow(
   "IAM-11",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE, R_EFFECTIVE_BATCH] },
+  { domain: "iam", routes: [R_EFFECTIVE, R_EFFECTIVE_BATCH] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const ownerId = ctx.P.OWNER.userId!;
@@ -333,7 +332,7 @@ flow(
 
 flow(
   "IAM-12",
-  { domain: "iam", serial: true, routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] },
+  { domain: "iam", routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember("member");
@@ -390,7 +389,6 @@ flow(
   "IAM-13",
   {
     domain: "iam",
-    serial: true,
     routes: [R_EFFECTIVE, R_GROUPS_POST, R_GROUP_MEMBERS_POST, R_PROJECT_GRANTS_POST],
   },
   async (ctx) => {

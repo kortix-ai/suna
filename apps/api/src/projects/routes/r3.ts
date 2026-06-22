@@ -9,6 +9,7 @@ import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -511,7 +512,7 @@ projectsApp.openapi(
 
   if (sharing) await setSecretSharing(secretId, sharing);
 
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
@@ -613,7 +614,7 @@ async function writeCodexAuthSecret(input: {
     if (sharing && row) await setSecretSharing(row.secretId, sharing);
   }
 
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: true });
 
   const subject = await resolveShareSubject(userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
@@ -859,7 +860,7 @@ projectsApp.openapi(
   await db
     .delete(projectSecrets)
     .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, cfg.secretName)));
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(cfg.secretName) });
 
   return c.json({ ok: true });
 },
@@ -904,7 +905,7 @@ projectsApp.openapi(
       isNull(projectSecrets.ownerUserId),
     ));
 
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   return c.json({ ok: true });
 },
@@ -989,7 +990,7 @@ projectsApp.openapi(
       .where(eq(projectSecrets.secretId, existingMine.secretId));
   }
 
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
@@ -1032,7 +1033,7 @@ projectsApp.openapi(
       eq(projectSecrets.ownerUserId, loaded.userId),
     ));
 
-  void propagateProjectSecretsToActiveSandboxes(projectId);
+  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
 
   return c.json({ ok: true });
 },

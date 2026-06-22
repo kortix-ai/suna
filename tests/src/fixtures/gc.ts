@@ -6,9 +6,12 @@
  * Uses the Supabase admin API (service-role). A DB/Daytona fallback for orphaned
  * sandboxes can be layered on later via KE2E_DATABASE_URL.
  */
+import { Client } from "../core/client";
 import { loadEnv, type Env } from "../core/env";
 import { log } from "../core/log";
-import { adminDeleteUser } from "./supabase";
+import { adminDeleteUser, passwordGrant } from "./supabase";
+
+const SYNTH_PASSWORD = "Ke2e-passw0rd-Aa1!";
 
 export interface GcOptions {
   olderThan: string; // e.g. "2h", "30m", "1d"
@@ -28,9 +31,9 @@ interface SupaUser {
   created_at?: string;
 }
 
-async function listTestUsers(env: Env): Promise<SupaUser[]> {
+async function listTestUsersViaApi(env: Env): Promise<SupaUser[]> {
   const out: SupaUser[] = [];
-  for (let page = 1; page <= 50; page++) {
+  for (let page = 1; page <= 100; page++) {
     const res = await fetch(`${env.supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, {
       headers: { apikey: env.supabaseAnonKey!, authorization: `Bearer ${env.supabaseServiceRoleKey!}` },
     });
@@ -41,7 +44,40 @@ async function listTestUsers(env: Env): Promise<SupaUser[]> {
     out.push(...users);
     if (users.length < 200) break;
   }
-  return out.filter((u) => (u.email ?? "").endsWith(`@${env.testEmailDomain}`));
+  return out;
+}
+
+async function listTestUsersViaDb(env: Env): Promise<SupaUser[]> {
+  const conn = env.databaseUrl!;
+  const local = conn.includes("localhost") || conn.includes("127.0.0.1");
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: conn, ssl: local ? false : { rejectUnauthorized: false } });
+  await client.connect();
+  try {
+    const r = await client.query(
+      "SELECT id::text AS id, email, created_at FROM auth.users WHERE email LIKE $1",
+      [`%@${env.testEmailDomain}`],
+    );
+    return r.rows.map((row: { id: string; email: string | null; created_at: Date | string | null }) => ({
+      id: row.id,
+      email: row.email ?? undefined,
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at ?? undefined),
+    }));
+  } finally {
+    await client.end();
+  }
+}
+
+async function listTestUsers(env: Env): Promise<SupaUser[]> {
+  let users: SupaUser[];
+  try {
+    users = await listTestUsersViaApi(env);
+  } catch (err) {
+    if (!env.databaseUrl) throw err;
+    log.warn(`admin list failed (${String((err as Error).message).slice(0, 90)}) — falling back to read-only DB query`);
+    users = await listTestUsersViaDb(env);
+  }
+  return users.filter((u) => (u.email ?? "").endsWith(`@${env.testEmailDomain}`));
 }
 
 export async function runGc(opts: GcOptions): Promise<void> {
@@ -60,13 +96,49 @@ export async function runGc(opts: GcOptions): Promise<void> {
 
   log.info(`gc: ${users.length} test user(s) found, ${stale.length} older than ${opts.olderThan}`);
   let removed = 0;
+  let failed = 0;
   for (const u of stale) {
     if (opts.dryRun) {
       log.info(`  would delete ${u.email} (${u.id})`);
       continue;
     }
-    await adminDeleteUser(env, u.id);
-    removed++;
+    try {
+      await reclaimUser(env, u);
+      removed++;
+    } catch (err) {
+      failed++;
+      log.warn(`  could not reclaim ${u.email}: ${String((err as Error).message).slice(0, 120)}`);
+    }
   }
-  if (!opts.dryRun) log.pass(`gc: reclaimed ${removed} stale test user(s)`);
+  if (!opts.dryRun) {
+    log.pass(`gc: reclaimed ${removed} stale test user(s)`);
+    if (failed) log.fail(`gc: ${failed} could not be reclaimed (see warnings)`);
+  }
+}
+
+async function reclaimUser(env: Env, u: SupaUser): Promise<void> {
+  if (u.email) {
+    const jwt = await passwordGrant(env, u.email, SYNTH_PASSWORD);
+    const client = new Client(env.apiUrl).as({ label: "gc", auth: { mode: "bearer", token: jwt } });
+    for (const accountId of await ownedAccountIds(client, u.id)) {
+      await client.del("/v1/account/delete-immediately", { body: { account_id: accountId } });
+    }
+  }
+  await adminDeleteUser(env, u.id);
+}
+
+async function ownedAccountIds(client: Client, userId: string): Promise<string[]> {
+  const ids = new Set<string>([userId]);
+  try {
+    const res = await client.get("/v1/accounts");
+    const body = res.json<{ accounts?: any[] } | any[]>();
+    const list = Array.isArray(body) ? body : (body?.accounts ?? []);
+    for (const a of list) {
+      const id = a?.account_id ?? a?.id;
+      if (id) ids.add(String(id));
+    }
+  } catch {
+    // fall back to the personal account only
+  }
+  return [...ids];
 }

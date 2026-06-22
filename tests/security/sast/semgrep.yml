@@ -1,0 +1,62 @@
+rules:
+  - id: kortix-no-child-process-shell-true
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      spawn/exec called with shell:true allows command injection if any argument
+      is attacker-controlled. Pass args as an array with shell:false.
+    patterns:
+      - pattern-either:
+          - pattern: '$CP.spawn(..., { ..., shell: true, ... })'
+          - pattern: '$CP.spawnSync(..., { ..., shell: true, ... })'
+          - patterns:
+              - pattern-either:
+                  - pattern: $CP.exec($CMD, ...)
+                  - pattern: $CP.execSync($CMD, ...)
+              - metavariable-regex:
+                  metavariable: $CP
+                  regex: ^(child_process|childProcess|childproc|cp|proc)$
+
+  - id: kortix-no-eval-dynamic-code
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Dynamic code execution (eval / new Function) on non-constant input is a
+      code-injection sink. Remove it or constrain to a static allowlist.
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: new Function(...)
+
+  - id: kortix-no-disabled-tls-verification
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Disabling TLS certificate verification (rejectUnauthorized:false /
+      NODE_TLS_REJECT_UNAUTHORIZED=0) enables man-in-the-middle attacks.
+    patterns:
+      - pattern-either:
+          - pattern: rejectUnauthorized = false
+          - pattern: 'rejectUnauthorized: false'
+          - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+
+  - id: kortix-no-weak-hash-for-secrets
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      MD5/SHA1 are not collision-resistant and must not be used for passwords,
+      tokens, or signatures. Use SHA-256+ or a password KDF (scrypt/argon2).
+    patterns:
+      - pattern: crypto.createHash($ALGO)
+      - metavariable-regex:
+          metavariable: $ALGO
+          regex: (?i)^["'](md5|sha1)["']$
+
+  - id: kortix-no-math-random-for-secrets
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Math.random() is not cryptographically secure. Use crypto.randomBytes /
+      crypto.randomUUID for tokens, ids, and secrets.
+    patterns:
+      - pattern: Math.random()

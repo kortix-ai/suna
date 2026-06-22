@@ -41,6 +41,7 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           revision?: unknown
           env?: unknown
           names?: unknown
+          refreshModels?: unknown
         } | null
 
         if (!body || typeof body.revision !== 'string') {

@@ -2,7 +2,9 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
+import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import {
   Disclosure,
   DisclosureBody,
@@ -27,6 +29,7 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  Columns2,
   FileEdit,
   FilePlus2,
   FileX2,
@@ -36,9 +39,10 @@ import {
   GitPullRequestClosed,
   RefreshCcw,
   RotateCcw,
+  Rows3,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChangeRequestStatus } from '../api/change-requests';
 import {
   useChangeRequest,
@@ -92,9 +96,9 @@ function splitUnifiedPatch(patch: string): Array<{ path: string; body: string }>
 }
 
 function fileChangeIcon(status: string) {
-  if (status === 'added') return <FilePlus2 className="size-3.5 text-emerald-500" />;
-  if (status === 'deleted') return <FileX2 className="size-3.5 text-red-500" />;
-  return <FileEdit className="size-3.5 text-blue-500" />;
+  if (status === 'added') return <FilePlus2 className={cn('size-3.5', STATUS_TEXT.success)} />;
+  if (status === 'deleted') return <FileX2 className={cn('size-3.5', STATUS_TEXT.destructive)} />;
+  return <FileEdit className={cn('size-3.5', STATUS_TEXT.info)} />;
 }
 
 function fileChangeLabel(status: string) {
@@ -154,6 +158,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();
   const reopenMutation = useReopenChangeRequest();
+  const [diffLayout, setDiffLayout] = useState<'unified' | 'split'>('unified');
 
   const cr = detailQuery.data?.change_request;
   const diff = diffQuery.data;
@@ -317,20 +322,16 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   ) : (
                     <span className="font-mono">{cr.base_ref}</span>
                   )}
-                  <span className="text-muted-foreground/40">
-                    {tI18nHardcoded.raw(
-                      'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText420d0ec9',
-                    )}
+                  <span className="text-muted-foreground/40" aria-hidden>
+                    {'·'}
                   </span>
                   <span>
                     opened {formatDistanceToNowStrict(new Date(cr.created_at), { addSuffix: true })}
                   </span>
                   {cr.head_commit_sha && (
                     <>
-                      <span className="text-muted-foreground/40">
-                        {tI18nHardcoded.raw(
-                          'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText420d0ec9',
-                        )}
+                      <span className="text-muted-foreground/40" aria-hidden>
+                        {'·'}
                       </span>
                       <span className="font-mono">{cr.head_commit_sha.slice(0, 7)}</span>
                     </>
@@ -379,16 +380,47 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                         'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText561449ba',
                       )}
                     </span>
-                    <span className="font-mono tabular-nums">
-                      <span className="text-emerald-600">+{diff.additions}</span>{' '}
-                      <span className="text-red-600">
-                        {tI18nHardcoded.raw(
-                          'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886',
-                        )}
-                        {diff.deletions}
-                      </span>
-                    </span>
+                    <DiffStat
+                      additions={diff.additions}
+                      deletions={diff.deletions}
+                      className="text-xs"
+                    />
                   </div>
+                </div>
+
+                <div className="bg-card flex items-center gap-1 rounded-full border p-0.5">
+                  <Hint label="Inline (unified) diff">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDiffLayout('unified')}
+                      aria-pressed={diffLayout === 'unified'}
+                      className={cn(
+                        'h-7 flex-1 gap-1.5 rounded-full',
+                        diffLayout === 'unified' && 'bg-primary/10 text-primary',
+                      )}
+                    >
+                      <Rows3 className="size-3.5" />
+                      Unified
+                    </Button>
+                  </Hint>
+                  <Hint label="Side-by-side (split) diff">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDiffLayout('split')}
+                      aria-pressed={diffLayout === 'split'}
+                      className={cn(
+                        'h-7 flex-1 gap-1.5 rounded-full',
+                        diffLayout === 'split' && 'bg-primary/10 text-primary',
+                      )}
+                    >
+                      <Columns2 className="size-3.5" />
+                      Split
+                    </Button>
+                  </Hint>
                 </div>
 
                 <div className="lg:hidden">
@@ -411,16 +443,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                 <span className="block truncate font-mono text-xs">
                                   {file.path}
                                 </span>
-                                <span className="text-muted-foreground mt-0.5 block text-[11px]">
-                                  {fileChangeLabel(file.status)}{' '}
-                                  {tI18nHardcoded.raw(
-                                    'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexta17e79af',
-                                  )}
-                                  {file.additions}{' '}
-                                  {tI18nHardcoded.raw(
-                                    'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886',
-                                  )}
-                                  {file.deletions}
+                                <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-[11px]">
+                                  {fileChangeLabel(file.status)}
+                                  <DiffStat additions={file.additions} deletions={file.deletions} />
                                 </span>
                               </span>
                             </span>
@@ -446,15 +471,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                         </span>
                         <span className="text-muted-foreground mt-0.5 flex items-center justify-between gap-2 text-[11px]">
                           <span>{fileChangeLabel(file.status)}</span>
-                          <span className="shrink-0 font-mono tabular-nums">
-                            <span className="text-emerald-600">+{file.additions}</span>{' '}
-                            <span className="text-red-600">
-                              {tI18nHardcoded.raw(
-                                'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886',
-                              )}
-                              {file.deletions}
-                            </span>
-                          </span>
+                          <DiffStat
+                            additions={file.additions}
+                            deletions={file.deletions}
+                            className="shrink-0"
+                          />
                         </span>
                       </span>
                     </button>
@@ -532,10 +553,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                           )}
                           {cr.merged_at && (
                             <>
-                              {' '}
-                              {tI18nHardcoded.raw(
-                                'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxText420d0ec9',
-                              )}{' '}
+                              {' · '}
                               {formatDistanceToNowStrict(new Date(cr.merged_at), {
                                 addSuffix: true,
                               })}
@@ -584,15 +602,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                 <span className="text-muted-foreground hidden text-xs sm:inline">
                                   {fileChangeLabel(file.status)}
                                 </span>
-                                <span className="font-mono text-xs tabular-nums">
-                                  <span className="text-emerald-600">+{file.additions}</span>{' '}
-                                  <span className="text-red-600">
-                                    {tI18nHardcoded.raw(
-                                      'autoFeaturesProjectFilesComponentsChangeRequestDetailDialogJsxTexte4dd9886',
-                                    )}
-                                    {file.deletions}
-                                  </span>
-                                </span>
+                                <DiffStat
+                                  additions={file.additions}
+                                  deletions={file.deletions}
+                                  className="text-xs"
+                                />
                                 <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/file:rotate-180" />
                               </div>
                             </Button>
@@ -603,7 +617,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                 <div className="max-w-full overflow-x-auto">
                                   <DiffRenderer
                                     patch={patch}
-                                    className="min-w-[680px] sm:min-w-0"
+                                    layout={diffLayout}
+                                    className={cn(
+                                      'min-w-[680px] sm:min-w-0',
+                                      diffLayout === 'split' && 'min-w-[860px] lg:min-w-0',
+                                    )}
                                   />
                                 </div>
                               ) : (

@@ -72,6 +72,7 @@ async function postEnvToDaemon(args: {
   previewToken: string | null;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
+  refreshModels?: boolean;
 }): Promise<void> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -87,7 +88,7 @@ async function postEnvToDaemon(args: {
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(args.snapshot),
+    body: JSON.stringify({ ...args.snapshot, refreshModels: args.refreshModels ?? false }),
     signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
   });
 
@@ -115,7 +116,10 @@ export async function syncSandboxEnvForPrompt(args: {
   });
 }
 
-export async function propagateProjectSecretsToActiveSandboxes(projectId: string): Promise<void> {
+export async function propagateProjectSecretsToActiveSandboxes(
+  projectId: string,
+  opts?: { refreshModels?: boolean },
+): Promise<void> {
   try {
     const rows = await db
       .select({
@@ -137,7 +141,7 @@ export async function propagateProjectSecretsToActiveSandboxes(projectId: string
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
         const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
-        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot });
+        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot, refreshModels: opts?.refreshModels });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,

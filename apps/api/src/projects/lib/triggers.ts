@@ -1,6 +1,7 @@
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
+import { isLeader } from '../../shared/leader-election';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
@@ -147,6 +148,10 @@ export const globalForProjectTriggers = globalThis as typeof globalThis & {
 export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 
 export let triggerSweepRunning = false;
+// When the in-flight sweep started (epoch ms). Used to reclaim a stuck guard if
+// a sweep hangs past its hard cap, so a single frozen pass can't wedge the
+// scheduler forever (root cause of the 2026-06-21 fleet-wide cron outage).
+export let triggerSweepStartedMs = 0;
 
 // In-memory heartbeat for the trigger scheduler, surfaced at /health so an
 // operator can tell at a glance whether the leader's sweep is alive and what
@@ -168,6 +173,102 @@ const schedulerHealth: TriggerSchedulerHealth = {
 };
 export function getTriggerSchedulerHealth(): TriggerSchedulerHealth {
   return schedulerHealth;
+}
+
+// ─── Reliability: timeouts + stall detection ─────────────────────────────────
+// The 2026-06-21 fleet-wide cron outage: one trigger fire (continueSession
+// resuming a dead sandbox) hung forever inside a SEQUENTIAL sweep that awaited
+// it with no timeout, so the in-flight guard never cleared and EVERY cron
+// stopped firing for ~18h with no error. These bounds make a hung/slow fire
+// survivable: one trigger can fail, the rest of the fleet still fires, and the
+// scheduler can never wedge — no matter what.
+
+/** Hard cap on a single trigger fire (createSession/continueSession). */
+export function triggerFireTimeoutMs(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_FIRE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 45_000;
+}
+/** Hard cap on loading one project's manifest from its git mirror. */
+export function triggerLoadTimeoutMs(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_LOAD_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 30_000;
+}
+/** Hard cap on a whole sweep pass — backstop so nothing can wedge the guard. */
+export function triggerSweepTimeoutMs(): number {
+  // GENEROUS backstop, not a routine cap. A full sweep loads every active
+  // project's manifest sequentially (~1.7k projects → ~11min/pass observed), and
+  // the per-fire/per-load timeouts already guarantee no single op hangs forever.
+  // A short cap here would GUILLOTINE a legit long sweep and drop cron coverage
+  // for projects late in the pass (a 4min cap reached only ~10 of ~39 due
+  // triggers). Keep this well above a real sweep so it only fires on a true hang
+  // not bounded by the per-op timeouts (e.g. a wedged DB call); tune via env.
+  const raw = Number(process.env.KORTIX_TRIGGER_SWEEP_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20 * 60_000;
+}
+
+/**
+ * Resolve `p`, or reject once `ms` elapses. The underlying work is NOT
+ * cancellable (JS has no promise cancellation), but rejecting lets the caller
+ * move on / clear its guard instead of blocking forever on a hung await.
+ */
+export async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Pure stall check: is the leader's scheduler failing to make progress? Surfaced
+ * at /health and used by the in-loop watchdog so a frozen scheduler is loud, not
+ * silent. NOT stale when: not leader, the scheduler hasn't ticked yet (grace
+ * right after promotion), a sweep completed recently, OR a sweep is in-flight and
+ * still within the stale window. Stale only when the latest sweep has been
+ * IN-FLIGHT longer than `staleMs`, or the last COMPLETED sweep is older than
+ * `staleMs` (the interval died). The in-flight case is why we key off the start
+ * time, not a `lastDone=0` sentinel — otherwise a fresh leader's very first
+ * (legitimately long) sweep would read as stale the instant it began.
+ */
+export function isSweepStale(opts: {
+  isLeader: boolean;
+  lastSweepStartedAt: string | null;
+  lastSweepCompletedAt: string | null;
+  nowMs: number;
+  staleMs: number;
+}): boolean {
+  if (!opts.isLeader) return false;
+  if (!opts.lastSweepStartedAt) return false;
+  const startedMs = Date.parse(opts.lastSweepStartedAt);
+  const completedMs = opts.lastSweepCompletedAt ? Date.parse(opts.lastSweepCompletedAt) : 0;
+  // The latest sweep already completed → healthy unless the NEXT one is overdue.
+  if (completedMs >= startedMs) return opts.nowMs - completedMs > opts.staleMs;
+  // A sweep is in-flight (started, not yet completed) → stale only if it has been
+  // running longer than the stale window.
+  return opts.nowMs - startedMs > opts.staleMs;
+}
+
+function schedulerStaleMs(): number {
+  // Generous: several intervals OR one full sweep-timeout window, whichever is
+  // larger, so we never false-alarm on a legitimately long (but completing) pass.
+  return Math.max(5 * triggerSchedulerIntervalMs(), triggerSweepTimeoutMs() + triggerSchedulerIntervalMs());
+}
+
+/** Is the leader's trigger sweep stalled right now? (Wraps the pure check.) */
+export function schedulerSweepIsStale(isLeaderNow: boolean, nowMs: number = Date.now()): boolean {
+  return isSweepStale({
+    isLeader: isLeaderNow,
+    lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
+    lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
+    nowMs,
+    staleMs: schedulerStaleMs(),
+  });
 }
 
 // Connector reconcile sweep — runs on a slower cadence than the trigger sweep.
@@ -228,13 +329,27 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   failed: number;
   skipped: number;
 }> {
-  if (triggerSweepRunning) return { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
+  // In-flight guard with SELF-HEAL: a sweep that hangs past the hard cap must
+  // not freeze the scheduler forever. If the guard is held but the running sweep
+  // is older than its timeout, reclaim it so this tick starts a fresh pass.
+  if (triggerSweepRunning) {
+    if (Date.now() - triggerSweepStartedMs < triggerSweepTimeoutMs()) {
+      return { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
+    }
+    console.error(
+      `[project-triggers] reclaiming stuck sweep guard — previous sweep exceeded ${triggerSweepTimeoutMs()}ms without completing (self-heal)`,
+    );
+  }
   triggerSweepRunning = true;
   const startedMs = Date.now();
+  triggerSweepStartedMs = startedMs;
   schedulerHealth.lastSweepStartedAt = now.toISOString();
   const result = { scanned: 0, fired: 0, queued: 0, failed: 0, skipped: 0 };
   try {
-    await runGitTriggerSweep(now, result);
+    // Overall hard cap so a hang anywhere (project scan, mirror load, fire) can
+    // never block the guard indefinitely. The per-item timeouts inside the sweep
+    // keep one bad project/trigger from starving the rest within a single pass.
+    await withTimeout(runGitTriggerSweep(now, result), triggerSweepTimeoutMs(), 'project trigger sweep');
     schedulerHealth.lastError = null;
     return result;
   } catch (err) {
@@ -619,7 +734,13 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
     if (triggersPausedForProject(project.metadata)) continue;
     let specs: GitTriggerSpec[];
     try {
-      const loaded = await loadProjectTriggers(await withProjectGitAuth(project));
+      // Time-bound the mirror load: a hung clone/fetch for one project must not
+      // stall the sweep for everyone else.
+      const loaded = await withTimeout(
+        loadProjectTriggers(await withProjectGitAuth(project)),
+        triggerLoadTimeoutMs(),
+        `load triggers ${project.projectId}`,
+      );
       specs = loaded.specs;
       // Surface parse errors instead of dropping them: record each bad entry
       // against its slug so it shows up in the triggers API/UI, and log it.
@@ -656,15 +777,37 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
       };
       const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
       const scheduledAt = now.toISOString();
+      // Stable idempotency key per DUE SLOT (the cron boundary that made this
+      // trigger due), not per sweep tick — so a fire we timed out on but that
+      // actually lands late isn't duplicated when the next tick retries.
+      const dueSlotKey =
+        (spec.cron ? nextCronRun(spec.cron, lastFired ?? new Date(0), spec.timezone)?.toISOString() : spec.runAt) ??
+        scheduledAt;
 
-      const result = await fireGitTrigger({
-        spec,
-        project,
-        payload,
-        renderedPrompt,
-        source: 'cron',
-        idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${scheduledAt}`,
-      });
+      let result: Awaited<ReturnType<typeof fireGitTrigger>>;
+      try {
+        // Time-bound the fire (createSession/continueSession). A hung or throwing
+        // fire must NOT abort the sweep or wedge the scheduler: record it
+        // (diagnosable, retries next tick) and move on to the next trigger.
+        result = await withTimeout(
+          fireGitTrigger({
+            spec,
+            project,
+            payload,
+            renderedPrompt,
+            source: 'cron',
+            idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${dueSlotKey}`,
+          }),
+          triggerFireTimeoutMs(),
+          `fire ${spec.slug} ${project.projectId}`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[project-triggers/git] fire errored', project.projectId, spec.slug, msg);
+        await markGitTriggerAttemptFailed(project.projectId, spec.slug, now, msg).catch(() => {});
+        accumulator.failed += 1;
+        continue;
+      }
       if (result.status === 'fired') {
         await markGitTriggerFired(project.projectId, spec.slug, now, 'fired');
         accumulator.fired += 1;
@@ -693,6 +836,18 @@ export function startProjectTriggerScheduler(): void {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
   triggerSchedulerTimer = setInterval(() => {
+    // Watchdog: if we're the leader but the sweep has stalled (started and never
+    // completed within the stale window), make it LOUD. A silent dead scheduler
+    // is what turned a single hung fire into an ~18h fleet-wide outage. The
+    // self-heal guard in runProjectTriggerSweep reclaims the stuck sweep on this
+    // same tick; this console.error is the alert signal for log-based monitoring.
+    if (schedulerSweepIsStale(isLeader())) {
+      console.error('[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed', {
+        lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
+        lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
+      });
+    }
+
     drainSessionLifecycleQueue({ limit: 10 }).then((result) => {
       if (result.claimed || result.failed) {
         console.log('[session-lifecycle] queue drain completed', result);

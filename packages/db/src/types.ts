@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -14,6 +14,12 @@ export type NewAccountInvitation = typeof accountInvitations.$inferInsert;
 export type NewAccountGithubInstallation = typeof accountGithubInstallations.$inferInsert;
 export type NewAuditEvent = typeof auditEvents.$inferInsert;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+export type GatewayRequestLog = typeof gatewayRequestLogs.$inferSelect;
+export type NewGatewayRequestLog = typeof gatewayRequestLogs.$inferInsert;
+export type GatewayApiKey = typeof gatewayApiKeys.$inferSelect;
+export type NewGatewayApiKey = typeof gatewayApiKeys.$inferInsert;
+export type GatewayBudget = typeof gatewayBudgets.$inferSelect;
+export type NewGatewayBudget = typeof gatewayBudgets.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type ProjectGitConnection = typeof projectGitConnections.$inferSelect;

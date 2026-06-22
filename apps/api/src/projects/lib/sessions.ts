@@ -8,6 +8,7 @@ import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
+import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
@@ -223,6 +224,12 @@ export async function buildSessionSandboxEnvVars(input: {
     ...channelEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
+    // Provider API keys reach the sandbox (the agent's own code may use them),
+    // but opencode must NOT — a provider key in opencode's env makes it connect
+    // a NATIVE provider and bypass the gateway. The daemon withholds exactly
+    // these names from the opencode process (Codex/OpenCode auth is excluded —
+    // that one is an intentional native provider).
+    KORTIX_OPENCODE_DENY_ENV: nativeProviderEnvNames().join(','),
     KORTIX_PROJECT_AUTO_CLONE: '1',
     // Force a FULL clone (no blobless partial clone). The blobless default
     // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout

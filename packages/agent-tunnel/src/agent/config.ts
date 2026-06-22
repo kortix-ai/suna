@@ -72,6 +72,27 @@ export function trustedHttpUrl(value: string): string {
   return url.toString().replace(/\/$/, '');
 }
 
+export function normalizeApiUrl(value: string): string {
+  const raw = trustedCredential(value, 'apiUrl');
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Invalid tunnel API URL protocol');
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Invalid tunnel API URL protocol');
+  }
+  return `${url.origin}${url.pathname}`.replace(/\/$/, '');
+}
+
+export function absoluteWsPath(value: string): string {
+  if (!value.startsWith('/')) {
+    throw new Error('Tunnel WebSocket path must be an absolute path');
+  }
+  return value;
+}
+
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {
@@ -95,6 +116,9 @@ export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig 
     ...envConfig,
     ...compactConfig(overrides),
   } as TunnelConfig;
+
+  merged.apiUrl = normalizeApiUrl(merged.apiUrl);
+  merged.wsPath = absoluteWsPath(merged.wsPath);
 
   return merged;
 }

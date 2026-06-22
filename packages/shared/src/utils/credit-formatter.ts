@@ -5,7 +5,7 @@
  * Robust version with null handling from mobile implementation
  */
 
-const CREDITS_PER_DOLLAR = 100;
+export const CREDITS_PER_DOLLAR = 100;
 
 /**
  * Convert dollars to credits
@@ -14,6 +14,14 @@ const CREDITS_PER_DOLLAR = 100;
  */
 export function dollarsToCredits(dollars: number): number {
   return Math.round(dollars * CREDITS_PER_DOLLAR);
+}
+
+export function creditsToDollars(credits: number): number {
+  return credits / CREDITS_PER_DOLLAR;
+}
+
+export function formatDollarsAsCredits(dollars: number, options?: { showDecimals?: boolean }): string {
+  return formatCredits(dollarsToCredits(dollars), options);
 }
 
 /**

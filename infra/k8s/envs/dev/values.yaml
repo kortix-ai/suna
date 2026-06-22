@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-642c7149"
+  tag: "dev-56f28af0"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -17,6 +17,11 @@ env:
 # wins over envFrom). Flip back to "true" only once Daytona stabilizes the
 # experimental region.
 extraEnv:
+  # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
+  # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
+  # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
+  # catalog shape) and the model picker collapses to a single model.
+  LLM_GATEWAY_BASE_URL: "https://gateway-dev.kortix.com/v1/llm"
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
   # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
   # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's

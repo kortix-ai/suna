@@ -71,6 +71,7 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -353,6 +354,17 @@ function ProjectTriggersBody({
     [queryClient, queryKey],
   );
 
+  // Project-level kill-switch (server-side `triggers_paused`). When on, the
+  // platform auto-runs NONE of this project's triggers regardless of each
+  // trigger's repo `enabled` — used to stop a repo deployed to two control
+  // planes from double-firing. Shared across the Schedules + Webhooks views;
+  // toggling here writes back to the same `['project-triggers', projectId]`
+  // cache both pages read.
+  // The kill-switch toggle lives in Customize → Settings now (a small, tucked-
+  // away dev control). Here we only read the paused state to show a compact
+  // notice so an operator viewing triggers knows why scheduled runs are silent.
+  const triggersPaused = triggersQuery.data?.triggers_paused ?? false;
+
   // Filter to just this view's type — the API returns every trigger
   // because they share one `kortix.toml`, but each page is scoped.
   const allTriggers = triggersQuery.data?.triggers ?? [];
@@ -368,6 +380,13 @@ function ProjectTriggersBody({
           <h2 className="text-foreground text-base font-semibold">{meta.pageTitle}</h2>
           <p className="text-muted-foreground text-xs">{meta.description}</p>
         </header>
+
+        {triggersPaused && !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (
+          <InfoBanner tone="warning" icon={AlertTriangle}>
+            Triggers are paused for this project — scheduled runs and incoming webhooks are
+            ignored (manual test-fires still work). Resume in Customize → Settings.
+          </InfoBanner>
+        )}
 
         {triggersQuery.isLoading ? (
           <TriggersSkeleton />

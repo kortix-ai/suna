@@ -1,0 +1,40 @@
+name: Worktree CI
+
+# Lightweight guard for the `pnpm worktree` dev tooling. Pure-function tests +
+# contract checks that catch the exact breakages teammates have hit: a dead
+# `pnpm --filter @kortix/db <script>` reference, a binary the worktree spawns
+# (e.g. psql) missing from DEPS, or test-prereqs.sql going missing. No Docker,
+# no DB, no install — just bun + the repo, so it runs in seconds.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/worktree/**'
+      - 'packages/db/package.json'
+      - 'packages/db/scripts/test-prereqs.sql'
+      - '.github/workflows/worktree-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/worktree/**'
+      - 'packages/db/package.json'
+      - 'packages/db/scripts/test-prereqs.sql'
+      - '.github/workflows/worktree-ci.yml'
+
+concurrency:
+  group: worktree-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: worktree unit + contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Run worktree tests
+        run: bun test scripts/worktree/__tests__/

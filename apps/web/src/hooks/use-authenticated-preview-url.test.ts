@@ -7,11 +7,18 @@ describe('buildPreviewAuthEndpoint', () => {
       .toBe('http://localhost:8008/v1/p/auth');
   });
 
-  test('uses the active server URL for already-proxied preview URLs', () => {
+  test('derives the auth endpoint from a trusted server origin', () => {
+    expect(buildPreviewAuthEndpoint(
+      'http://localhost:8008/proxy/4502/v1/p/kortix-sandbox/4502/index.html',
+      'http://localhost:8008/v1/p/kortix-sandbox/8000',
+    )).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  test('rejects a proxied preview whose origin is not the trusted server', () => {
     expect(buildPreviewAuthEndpoint(
       'http://localhost:8000/proxy/4502/v1/p/kortix-sandbox/4502/index.html',
       'http://localhost:8008/v1/p/kortix-sandbox/8000',
-    )).toBe('http://localhost:8008/v1/p/auth');
+    )).toBeNull();
   });
 
   test('never nests auth requests under a proxied app path', () => {
