@@ -92,10 +92,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Build-time ext4 ceiling must track the same disk spec we send as
-          // the runtime default. Platinum grows ext4 to fit, so the artifact
-          // still consumes only image+headroom rather than the whole ceiling.
-          size_mb: diskGb * MB_PER_GB,
+          // Build-time ext4 ceiling tracks the disk spec, but clamp to Platinum's
+          // from-build hard max (20480 MB, api/templates.ts size_mb schema): a
+          // template with disk_gb>20 (e.g. 40) would otherwise 400 with
+          // "size_mb max 20480". Platinum grows ext4 to fit, so the artifact still
+          // consumes only image+headroom; the runtime disk (default_disk_gb) is
+          // grown to the full disk_gb at boot regardless of this build ceiling.
+          size_mb: Math.min(diskGb * MB_PER_GB, 20480),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
