@@ -4,7 +4,15 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { Activity, CalendarClock, MessageSquare, Receipt, Search, Webhook } from 'lucide-react';
+import {
+  Activity,
+  CalendarClock,
+  ExternalLink,
+  MessageSquare,
+  Receipt,
+  Search,
+  Webhook,
+} from 'lucide-react';
 
 import {
   matchesSessionFilter,
@@ -273,21 +281,37 @@ function RunRow({
         </InlineMeta>
       }
       trailing={
-        <div className="flex flex-col items-end gap-1">
-          {run.status === 'failed' && run.error ? (
-            <Hint label={run.error}>{statusBadge}</Hint>
-          ) : (
-            statusBadge
-          )}
-          {cost && cost.total_cost > 0 && (
-            <Hint
-              label={`LLM ${formatUsd(cost.llm_cost)} · compute ${formatUsd(cost.compute_cost)}`}
-            >
-              <span className="text-muted-foreground text-xs tabular-nums">
-                {formatUsd(cost.total_cost)}
-              </span>
+        <div className="flex items-center gap-1.5">
+          {live && run.sandbox_url && (
+            <Hint label="Open this run's live workspace">
+              <a
+                href={run.sandbox_url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Open run workspace"
+                className="text-muted-foreground hover:text-foreground hover:bg-muted/60 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+              >
+                <ExternalLink className="size-3.5" />
+              </a>
             </Hint>
           )}
+          <div className="flex flex-col items-end gap-1">
+            {run.status === 'failed' && run.error ? (
+              <Hint label={run.error}>{statusBadge}</Hint>
+            ) : (
+              statusBadge
+            )}
+            {cost && cost.total_cost > 0 && (
+              <Hint
+                label={`LLM ${formatUsd(cost.llm_cost)} · compute ${formatUsd(cost.compute_cost)}`}
+              >
+                <span className="text-muted-foreground text-xs tabular-nums">
+                  {formatUsd(cost.total_cost)}
+                </span>
+              </Hint>
+            )}
+          </div>
         </div>
       }
     />
