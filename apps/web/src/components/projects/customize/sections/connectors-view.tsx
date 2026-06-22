@@ -83,6 +83,7 @@ import {
   getConnectorPolicies,
   listConnectors,
   listPipedreamApps,
+  getConnectStatus,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -2015,6 +2016,20 @@ function AddAppPanel({
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Easy Connect only works when the deployment has the Pipedream connect
+  // provider configured. Ask the API up front so we can disable the tab (with a
+  // why-tooltip) instead of letting the user open it and hit a 501 — common on
+  // self-host without Pipedream credentials. Treat "unknown" (loading/offline)
+  // as enabled to avoid a disable→enable flicker.
+  const connectStatus = useQuery({
+    queryKey: ['connect-status'],
+    queryFn: getConnectStatus,
+    staleTime: 5 * 60_000,
+  });
+  const easyConnectDisabled = connectStatus.data?.configured === false;
+  const easyConnectLabel = tI18nHardcoded.raw(
+    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
+  );
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-7">
       <div className="mb-5">
@@ -2029,18 +2044,34 @@ function AddAppPanel({
           )}
         </p>
       </div>
-      <Tabs defaultValue="apps">
+      <Tabs defaultValue={easyConnectDisabled ? 'custom' : 'apps'}>
         <TabsList>
-          <TabsTrigger value="apps">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
-            )}
-          </TabsTrigger>
+          {easyConnectDisabled ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span wrapper: a disabled trigger doesn't emit hover events */}
+                <span tabIndex={0}>
+                  <TabsTrigger value="apps" disabled>
+                    {easyConnectLabel}
+                  </TabsTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
+          )}
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
-        <TabsContent value="apps" className="mt-4">
-          <AppCatalogue projectId={projectId} onAdded={onAdded} />
-        </TabsContent>
+        {!easyConnectDisabled && (
+          <TabsContent value="apps" className="mt-4">
+            <AppCatalogue projectId={projectId} onAdded={onAdded} />
+          </TabsContent>
+        )}
         <TabsContent value="custom" className="mt-4">
           <CustomConnectorForm projectId={projectId} onAdded={onAdded} />
         </TabsContent>

@@ -15,6 +15,7 @@ import { join } from 'node:path';
  *   bun scripts/migrate.ts status             list pending (dry-run, no writes)
  *   bun scripts/migrate.ts down [--count=N]   roll back N (default 1)
  *   bun scripts/migrate.ts fake               mark pending as applied without running (baseline)
+ *   bun scripts/migrate.ts bootstrap          fresh-DB: install non-kortix prereqs, then `up`
  *
  * DB URL: $DATABASE_URL, or --target=<env> (reads <ENV>_DB_URL / DATABASE_URL
  * from apps/api/.env so secrets never go through the shell).
@@ -23,6 +24,7 @@ import { runner } from 'node-pg-migrate';
 import pg from 'pg';
 
 const MIGRATIONS_DIR = join(import.meta.dir, '..', 'migrations');
+const BOOTSTRAP_SQL = join(import.meta.dir, '..', 'drizzle', '0000_bootstrap.sql');
 const DOTENV = join(import.meta.dir, '..', '..', '..', 'apps', 'api', '.env');
 
 function readEnvKey(path: string, key: string): string | null {
@@ -105,6 +107,84 @@ async function autoBaselineIfNeeded(base: Record<string, unknown>, databaseUrl: 
   }
 }
 
+/**
+ * Self-host only: install the NON-kortix prerequisites (the basejump account
+ * framework + public credit RPCs + the auth.users signup triggers) on a FRESH
+ * database, BEFORE the kortix baseline migration runs. The baseline's RLS
+ * policies and functions reference `basejump.account_user`, so without this the
+ * very first `up` fails with `relation "basejump.account_user" does not exist`.
+ *
+ * Deployed cloud/dev databases already have these objects (provided by the
+ * platform / historical migrations now archived), so this is gated on basejump
+ * being ABSENT — it is a no-op on every provisioned DB and idempotent on re-run.
+ *
+ * Sequencing: the basejump bootstrap installs triggers ON auth.users, so it must
+ * run AFTER Supabase Auth (GoTrue) has created the auth schema. We poll for
+ * auth.users rather than rely on compose ordering, which can't express "GoTrue
+ * has finished its own migrations".
+ */
+async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      const { rows: [r] } = await client.query<{ ok: boolean }>(
+        "select to_regclass('auth.users') is not null as ok",
+      );
+      if (r?.ok) break;
+      if (Date.now() > deadline) {
+        throw new Error('timed out waiting for auth.users — is Supabase Auth (GoTrue) running?');
+      }
+      await new Promise((res) => setTimeout(res, 2000));
+    }
+
+    const { rows: [bj] } = await client.query<{ ok: boolean }>(
+      "select to_regclass('basejump.account_user') is not null as ok",
+    );
+    if (bj?.ok) {
+      console.log('[migrate] basejump prerequisites already present — skipping bootstrap.');
+      return;
+    }
+
+    if (!existsSync(BOOTSTRAP_SQL)) {
+      throw new Error(`bootstrap SQL missing at ${BOOTSTRAP_SQL} (is packages/db/drizzle bundled in the image?)`);
+    }
+    console.log('[migrate] fresh database — installing non-kortix prerequisites (basejump + credit RPCs + signup triggers)…');
+    const text = readFileSync(BOOTSTRAP_SQL, 'utf-8');
+    let applied = 0;
+    let skippedStorage = 0;
+    // drizzle separates statements with this sentinel; we can't split on ';'
+    // because function bodies contain semicolons. Run every statement on the
+    // SAME session so the leading `SET check_function_bodies = false` persists.
+    for (const chunk of text.split('--> statement-breakpoint')) {
+      const stmt = chunk.trim();
+      if (!stmt) continue;
+      const code = stmt.split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').trim();
+      if (!code) continue; // comment-only chunk
+      try {
+        await client.query(stmt);
+        applied++;
+      } catch (err) {
+        // The bundled bootstrap also seeds Supabase Storage buckets. A self-host
+        // stack runs no Storage service, so the base image's `storage.buckets`
+        // lacks the columns these INSERTs use. Those failures are expected and
+        // harmless — skip storage-only statements, surface everything else.
+        const msg = (err as Error)?.message ?? '';
+        if (/\bstorage\./i.test(stmt) || /"buckets"/i.test(msg)) {
+          skippedStorage++;
+          continue;
+        }
+        console.error(`[migrate] bootstrap statement failed:\n${stmt.slice(0, 300)}`);
+        throw err;
+      }
+    }
+    console.log(`[migrate] bootstrap complete (${applied} statements applied, ${skippedStorage} storage statements skipped).`);
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   const [cmd = 'up', ...rest] = process.argv.slice(2);
   const databaseUrl = resolveUrl(rest);
@@ -126,6 +206,12 @@ async function main() {
 
   switch (cmd) {
     case 'up':
+      await autoBaselineIfNeeded(base, databaseUrl);
+      await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
+      return;
+    case 'bootstrap':
+      // Fresh-DB convenience for self-host: prereqs (basejump etc.) → then `up`.
+      await selfHostBootstrapIfFresh(databaseUrl);
       await autoBaselineIfNeeded(base, databaseUrl);
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
       return;
@@ -155,7 +241,7 @@ async function main() {
       return;
     }
     default:
-      console.error(`Unknown command: ${cmd}. Use: up | status | down | fake`);
+      console.error(`Unknown command: ${cmd}. Use: up | status | down | fake | bootstrap`);
       process.exit(1);
   }
 }

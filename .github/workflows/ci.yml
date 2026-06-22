@@ -39,6 +39,7 @@ jobs:
       cli: ${{ steps.filter.outputs.cli }}
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      self_host: ${{ steps.filter.outputs.self_host }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v4
@@ -78,6 +79,16 @@ jobs:
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop/**'
+            # self-host stack: anything that can break `kortix self-host start`'s
+            # from-scratch DB bootstrap or the CLI's compose generation.
+            self_host:
+              - *pnpm
+              - 'apps/api/Dockerfile'
+              - 'apps/api/src/snapshots/builder.ts'
+              - 'apps/api/src/config.ts'
+              - 'packages/db/**'
+              - 'apps/cli/src/commands/self-host.ts'
+              - 'apps/cli/scripts/self-host-e2e/**'
 
   api-typecheck:
     name: API typecheck
@@ -220,6 +231,50 @@ jobs:
 
       - name: Smoke test binary
         run: /tmp/kortix-cli-smoke version
+
+  # Always-on gate against the self-host schema-bootstrap regression class: a
+  # fresh `kortix self-host` database must come up fully provisioned. Boots the
+  # data plane (Postgres + Supabase + the kortix-migrate one-shot + the API) and
+  # asserts the migrate one-shot installs basejump + all migrations and the
+  # owner/account flow works. The frontend/gateway + a live agent session +
+  # the update mechanism are covered by the nightly full e2e (self-host-e2e.yml).
+  self-host-schema:
+    name: Self-host schema bootstrap
+    needs: changes
+    if: needs.changes.outputs.self_host == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install pnpm
+        run: |
+          corepack enable pnpm
+          echo "pnpm: $(pnpm -v)  node: $(node -v)  bun: $(bun -v)"
+
+      - name: Install dependencies (CLI + workspace deps)
+        run: pnpm install --frozen-lockfile --filter "@kortix/cli..."
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build API image
+        run: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
+
+      - name: Self-host schema-bootstrap check (fresh DB)
+        run: bash apps/cli/scripts/self-host-e2e/schema-check.sh
+        env:
+          API_IMAGE: kortix/kortix-api:selfhost-local
 
   desktop-installer-smoke:
     name: Desktop installer smoke
