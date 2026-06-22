@@ -66,6 +66,33 @@ app = "slack"
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({ slug: 'slack', provider: 'pipedream' });
   });
+
+  test('the `computer` slug is reserved the same way (the Agent Computer Tunnel)', () => {
+    expect(RESERVED_CONNECTOR_SLUGS.has('computer')).toBe(true);
+
+    // A user app cannot claim `computer` — without the reserve this would parse
+    // as a normal Pipedream/MCP connector named "computer" and SHADOW the tunnel
+    // connector (the exact bug class that hit Slack before #3670).
+    const shadow = parse(`
+[[connectors]]
+slug = "computer"
+provider = "mcp"
+url = "https://example.com/mcp"
+`);
+    expect(shadow.specs.find((s) => s.slug === 'computer')).toBeUndefined();
+    expect(shadow.errors[0]?.error).toMatch(/reserved/i);
+
+    // The computer connector is synth-only (auto-materialized from a connected
+    // machine), so even a declared provider="computer" is rejected — `computer`
+    // is never a hand-declared kortix.toml connector.
+    const declared = parse(`
+[[connectors]]
+slug = "computer"
+provider = "computer"
+`);
+    expect(declared.specs.find((s) => s.slug === 'computer')).toBeUndefined();
+    expect(declared.errors[0]?.error).toMatch(/automatically|cannot be declared/i);
+  });
 });
 
 /* ─── listings: hide the superseded duplicate ───────────────────────────────── */
