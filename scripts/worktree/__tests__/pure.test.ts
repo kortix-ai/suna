@@ -132,4 +132,24 @@ describe('launch envs', () => {
     expect(env.WEB_PORT).toBe(String(ports.web));
     expect(env.KORTIX_API_PROXY_TARGET).toBe(`http://localhost:${ports.api}`);
   });
+
+  test('no launch-env value is ever the string "undefined" (a missing port stringifies to "undefined")', () => {
+    for (let slot = 0; slot < 6; slot++) {
+      const p = computePorts(slot);
+      const c = slotCredsFromStatus(p, {});
+      const envs = [apiLaunchEnv(p, c), gatewayLaunchEnv(p), webLaunchEnv(p, c)];
+      for (const env of envs) {
+        for (const [k, v] of Object.entries(env)) {
+          expect(v, `slot ${slot} ${k}="${v}"`).not.toContain('undefined');
+        }
+      }
+    }
+  });
+
+  test('computePorts(slot) always carries the gateway port (the field whose absence caused the 8090 fallback)', () => {
+    for (let slot = 0; slot < 6; slot++) {
+      expect(typeof computePorts(slot).gateway).toBe('number');
+      expect(gatewayLaunchEnv(computePorts(slot)).PORT).toMatch(/^\d+$/);
+    }
+  });
 });
