@@ -32,6 +32,11 @@ export type ActionBinding =
   | { kind: 'graphql'; operation: 'query' | 'mutation'; field: string }
   | { kind: 'mcp'; tool: string }
   | { kind: 'http'; method: string; path: string }
+  // Agent Computer Tunnel: relay an RPC (`fs.read`, `desktop.cua.click`, the
+  // meta `list_computers`, …) to a connected machine. The gateway routes these
+  // through the shared tunnel RPC core instead of executeCall. See
+  // docs/specs/computer-connector.md.
+  | { kind: 'tunnel'; method: string }
   | { kind: 'pipedream'; app: string; actionKey: string }
   // Generic Connect-Proxy request: hit ANY endpoint of a Pipedream-connected
   // app's API. Pipedream injects the user's credential server-side, so this

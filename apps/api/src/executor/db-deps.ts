@@ -40,6 +40,7 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
+import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { loadSlackInstall, loadSlackTokenForProject } from '../channels/install-store';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
@@ -95,6 +96,8 @@ function baseUrlOf(row: ConnectorRow): string | null {
     case 'graphql': return cfg.endpoint ?? null;
     case 'mcp': return cfg.url ?? null;
     case 'channel': return cfg.baseUrl ?? null;
+    // computer: no base URL — the gateway relays via the tunnel core, not HTTP.
+    case 'computer': return null;
     default: return null;
   }
 }
@@ -210,6 +213,11 @@ function makeDbGatewayDeps(): GatewayDeps {
       runPipedreamAction(projectId, connectorSlug, app, actionKey, args, accountId, userId),
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
+    // Computer connectors relay through the shared tunnel RPC core (permission
+    // check → relay → audit). The machine is resolved from the `computer`
+    // selector, scoped to this account.
+    executeComputerCall: ({ accountId, selector, method, args }) =>
+      executeComputerCall({ accountId, selector, method, args }),
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
