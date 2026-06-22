@@ -206,6 +206,7 @@ jobs:
       id-token: write
       contents: read
       attestations: write
+      artifact-metadata: write
     env:
       IMAGE: ${{ needs.tag-api.outputs.image }}
     steps:
