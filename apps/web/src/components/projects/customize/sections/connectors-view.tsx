@@ -940,11 +940,25 @@ function ConnectorDetail({
               : `Add the credential so the agent and your triggers can use ${displayName}.`}
           </InfoBanner>
         )}
-        {!isPipedream && !isChannel && (
-          <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
-        )}
-        <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
-        <PermissionsSection projectId={projectId} connector={connector} />
+        <Tabs defaultValue="profile" className="gap-3">
+          <TabsList>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          </TabsList>
+          <TabsContent value="profile" className="space-y-5">
+            {!isPipedream && !isChannel && (
+              <ConnectionSection
+                projectId={projectId}
+                connector={connector}
+                onChanged={onChanged}
+              />
+            )}
+            <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
+          </TabsContent>
+          <TabsContent value="permissions">
+            <PermissionsSection projectId={projectId} connector={connector} />
+          </TabsContent>
+        </Tabs>
 
         {!isChannel && (
           <SectionCard
