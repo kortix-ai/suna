@@ -21,6 +21,7 @@ import {
   KeyRound,
   Loader2,
   MessageSquare,
+  Monitor,
   Pencil,
   Plug,
   Plus,
@@ -34,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
@@ -58,6 +59,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { CodeBlockCode } from '@/components/ui/code-block';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -82,6 +84,7 @@ import {
   getConnectorPolicies,
   listConnectors,
   listPipedreamApps,
+  getConnectStatus,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -108,6 +111,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   graphql: Globe,
   http: Globe,
   channel: MessageSquare,
+  computer: Monitor,
 };
 
 const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
@@ -120,6 +124,7 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
+  if (p === 'computer') return 'Computer';
   return p.toUpperCase();
 }
 
@@ -315,6 +320,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   return (
     <div className="flex min-h-0 flex-1">
       <ConnectorRail
+        projectId={projectId}
         connectors={connectors}
         selection={selection}
         onSelect={select}
@@ -446,12 +452,14 @@ function SaveBar({
 }
 
 function ConnectorRail({
+  projectId,
   connectors,
   selection,
   onSelect,
   onSync,
   syncing,
 }: {
+  projectId: string;
   connectors: AdminConnector[];
   selection: Selection;
   onSelect: (s: Selection) => void;
@@ -522,7 +530,7 @@ function ConnectorRail({
             {ready.map((c) => (
               <RailItem
                 key={c.slug}
-                appIcon={PROVIDER_ICON[c.provider] ?? Plug}
+                leading={<ConnectorAppIcon projectId={projectId} connector={c} size="sm" />}
                 title={c.name || c.slug}
                 subtitle={`${c.actions.length} ${c.actions.length === 1 ? 'tool' : 'tools'}`}
                 dot={statusDot(c)}
@@ -540,7 +548,7 @@ function ConnectorRail({
             {needsSetup.map((c) => (
               <RailItem
                 key={c.slug}
-                appIcon={PROVIDER_ICON[c.provider] ?? Plug}
+                leading={<ConnectorAppIcon projectId={projectId} connector={c} size="sm" />}
                 title={c.name || c.slug}
                 subtitle={tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrSubtitleNot1feeff2e',
@@ -592,9 +600,90 @@ function RailGroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function appIconTileClass(size: 'sm' | 'lg'): string {
+  return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
+}
+
+/**
+ * The connected app's real logo. For Pipedream connectors we resolve it from
+ * the same catalogue the "Add app" grid uses (connector slug === app slug),
+ * falling back to the provider glyph for custom (http/mcp/…) connectors or
+ * while the logo loads.
+ */
+function ConnectorAppIcon({
+  projectId,
+  connector,
+  size = 'lg',
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  size?: 'sm' | 'lg';
+}) {
+  const enabled = connector.provider === 'pipedream' && !!projectId && !!connector.slug;
+  const appQuery = useQuery({
+    queryKey: ['pipedream-app-icon', projectId, connector.slug],
+    queryFn: () => listPipedreamApps(projectId, connector.slug),
+    enabled,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+  const imgSrc = appQuery.data?.apps.find((a) => a.slug === connector.slug)?.imgSrc ?? null;
+
+  if (enabled && imgSrc) {
+    return (
+      <span
+        className={cn(
+          'border-border/60 bg-card flex shrink-0 items-center justify-center overflow-hidden border',
+          appIconTileClass(size),
+        )}
+      >
+        <img
+          src={imgSrc}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="size-full object-contain p-1"
+        />
+      </span>
+    );
+  }
+  return (
+    <EntityAvatar
+      icon={PROVIDER_ICON[connector.provider] ?? Plug}
+      size={size}
+      label={connector.name}
+    />
+  );
+}
+
+/** A syntax-highlighted (Shiki) code block — replaces the old plain `<pre>`. */
+function CodeSnippet({
+  code,
+  language,
+  className,
+}: {
+  code: string;
+  language: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'border-border/60 bg-card flex w-full overflow-x-auto rounded-2xl border',
+        className,
+      )}
+    >
+      <CodeBlockCode
+        code={code}
+        language={language}
+        className="text-xs [&_pre]:!rounded-none [&_pre]:!bg-transparent [&_pre]:!p-3"
+      />
+    </div>
+  );
+}
+
 function RailItem({
   icon: Icon,
   appIcon,
+  leading,
   title,
   subtitle,
   dot,
@@ -603,6 +692,7 @@ function RailItem({
 }: {
   icon?: LucideIcon;
   appIcon?: LucideIcon;
+  leading?: ReactNode;
   title: string;
   subtitle?: string;
   dot?: string;
@@ -619,7 +709,9 @@ function RailItem({
         active ? 'bg-primary/10' : 'hover:bg-muted/60',
       )}
     >
-      {appIcon ? (
+      {leading ? (
+        leading
+      ) : appIcon ? (
         <EntityAvatar icon={appIcon} size="sm" />
       ) : Icon ? (
         <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-lg">
@@ -651,11 +743,14 @@ function ConnectorDetail({
   onRemoved: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const Icon = PROVIDER_ICON[connector.provider] ?? Plug;
   const isPipedream = connector.provider === 'pipedream';
   // Channel connectors (Slack) are credentialed + connected/removed via their
   // platform install in the Channels tab — not the generic credential UI here.
   const isChannel = connector.provider === 'channel';
+  // Computer (Agent Computer Tunnel) connectors, like channels, are managed from
+  // a dedicated tab (Computers): no generic credential / connect / remove UI.
+  const isComputer = connector.provider === 'computer';
+  const isManaged = isChannel || isComputer;
   const setSection = useCustomizeStore((s) => s.setSection);
   const connected = connector.secretSet;
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
@@ -695,7 +790,7 @@ function ConnectorDetail({
     <div className="mx-auto w-full max-w-3xl px-6 py-7">
       {/* Header */}
       <div className="flex items-start gap-3.5">
-        <EntityAvatar icon={Icon} size="lg" />
+        <ConnectorAppIcon projectId={projectId} connector={connector} size="lg" />
         <div className="min-w-0 flex-1">
           {editingName ? (
             <form
@@ -830,6 +925,30 @@ function ConnectorDetail({
             tab. Here you control who can use it and review its tools.
           </InfoBanner>
         )}
+        {/* Computer connectors are connected + permissioned in the Computers tab
+            (device pairing, per-capability grants, audit) — point management
+            there instead of the generic credential / connection / remove UI. */}
+        {isComputer && (
+          <InfoBanner
+            tone="info"
+            icon={Monitor}
+            title={`${displayName} is managed in Computers`}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => setSection('computers')}
+              >
+                <Monitor className="h-4 w-4" />
+                Open Computers
+              </Button>
+            }
+          >
+            Connect a machine, and grant or revoke per-capability access, in the Computers
+            tab. Here you control who can use it and review its tools.
+          </InfoBanner>
+        )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
         {connector.authSecret && !connected && !isChannel && (
           <InfoBanner
@@ -853,13 +972,27 @@ function ConnectorDetail({
               : `Add the credential so the agent and your triggers can use ${displayName}.`}
           </InfoBanner>
         )}
-        {!isPipedream && !isChannel && (
-          <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />
-        )}
-        <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
-        <PermissionsSection projectId={projectId} connector={connector} />
+        <Tabs defaultValue="profile" className="gap-3">
+          <TabsList>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          </TabsList>
+          <TabsContent value="profile" className="space-y-5">
+            {!isPipedream && !isManaged && (
+              <ConnectionSection
+                projectId={projectId}
+                connector={connector}
+                onChanged={onChanged}
+              />
+            )}
+            <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
+          </TabsContent>
+          <TabsContent value="permissions">
+            <PermissionsSection projectId={projectId} connector={connector} />
+          </TabsContent>
+        </Tabs>
 
-        {!isChannel && (
+        {!isManaged && (
           <SectionCard
             tone="destructive"
             title={tI18nHardcoded.raw(
@@ -938,10 +1071,10 @@ function ProfileSection({
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Channel connectors (Slack) are always one shared install token — the
-  // per-user credential mode doesn't apply, so we hide that choice and keep
-  // only "who can use it".
-  const isChannel = connector.provider === 'channel';
+  // Channel connectors (Slack) are always one shared install token, and computer
+  // connectors have no credential at all — the per-user credential mode doesn't
+  // apply to either, so we hide that choice and keep only "who can use it".
+  const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
@@ -1612,16 +1745,19 @@ function PermissionsSection({
                             <span className="text-muted-foreground text-xs">{t.description}</span>
                           )}
                         </div>
-                        <pre className="border-border/60 bg-card text-foreground overflow-x-auto rounded-2xl border p-3 font-mono text-xs">
-                          {tsSignature(connector.slug, t)}
-                        </pre>
-                        <pre className="border-border/60 bg-card text-foreground max-h-56 overflow-auto rounded-2xl border p-3 font-mono text-xs">
-                          {JSON.stringify(
+                        <CodeSnippet
+                          code={tsSignature(connector.slug, t)}
+                          language="typescript"
+                        />
+                        <CodeSnippet
+                          code={JSON.stringify(
                             t.inputSchema ?? { type: 'object', properties: {} },
                             null,
                             2,
                           )}
-                        </pre>
+                          language="json"
+                          className="max-h-56 overflow-auto"
+                        />
                       </div>
                     )}
                   </div>
@@ -1911,6 +2047,20 @@ function AddAppPanel({
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // Easy Connect only works when the deployment has the Pipedream connect
+  // provider configured. Ask the API up front so we can disable the tab (with a
+  // why-tooltip) instead of letting the user open it and hit a 501 — common on
+  // self-host without Pipedream credentials. Treat "unknown" (loading/offline)
+  // as enabled to avoid a disable→enable flicker.
+  const connectStatus = useQuery({
+    queryKey: ['connect-status'],
+    queryFn: getConnectStatus,
+    staleTime: 5 * 60_000,
+  });
+  const easyConnectDisabled = connectStatus.data?.configured === false;
+  const easyConnectLabel = tI18nHardcoded.raw(
+    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
+  );
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-7">
       <div className="mb-5">
@@ -1925,18 +2075,34 @@ function AddAppPanel({
           )}
         </p>
       </div>
-      <Tabs defaultValue="apps">
+      <Tabs defaultValue={easyConnectDisabled ? 'custom' : 'apps'}>
         <TabsList>
-          <TabsTrigger value="apps">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
-            )}
-          </TabsTrigger>
+          {easyConnectDisabled ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span wrapper: a disabled trigger doesn't emit hover events */}
+                <span tabIndex={0}>
+                  <TabsTrigger value="apps" disabled>
+                    {easyConnectLabel}
+                  </TabsTrigger>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
+          )}
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
-        <TabsContent value="apps" className="mt-4">
-          <AppCatalogue projectId={projectId} onAdded={onAdded} />
-        </TabsContent>
+        {!easyConnectDisabled && (
+          <TabsContent value="apps" className="mt-4">
+            <AppCatalogue projectId={projectId} onAdded={onAdded} />
+          </TabsContent>
+        )}
         <TabsContent value="custom" className="mt-4">
           <CustomConnectorForm projectId={projectId} onAdded={onAdded} />
         </TabsContent>

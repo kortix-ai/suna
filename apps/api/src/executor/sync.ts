@@ -32,6 +32,10 @@ import {
 } from './normalize';
 import { channelApiBase, channelCatalog } from './channels';
 import { synthesizeChannelConnectors } from './channel-materialize';
+import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
+import { loadSlackInstall } from '../channels/install-store';
+import { computerCatalog } from './computers';
+import { synthesizeComputerConnectors } from './computer-materialize';
 import { parseSpecDocument } from './spec-doc';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
@@ -45,10 +49,12 @@ export interface SyncResult {
 
 /**
  * Best-effort re-materialization after a channel platform install changes
- * (connect / disconnect). Resolves the project's account, then runs the normal
- * sweep so the auto-materialized channel connector (dis)appears immediately —
- * "connect Slack → the `slack` connector shows up" with no manifest edit.
- * Never throws: a sync hiccup must not fail the install/uninstall request.
+ * (connect / disconnect). Persists the channel connector as a first-class
+ * kortix.toml profile (or removes it on disconnect), then runs the normal sweep
+ * so it (dis)appears immediately — "connect Slack → the Slack connector shows
+ * up". The kortix.toml write is best-effort: synthesizeChannelConnectors still
+ * materializes the connector from the install, so a read-only / unreachable repo
+ * keeps working. Never throws: a hiccup must not fail the install/uninstall.
  */
 export async function reconcileChannelConnectors(projectId: string): Promise<void> {
   try {
@@ -58,9 +64,38 @@ export async function reconcileChannelConnectors(projectId: string): Promise<voi
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!row) return;
+    // Connect vs disconnect is derived from install presence, so the same path
+    // serves the OAuth callback, the BYO connect, and the delete route.
+    const installed = (await loadSlackInstall(projectId).catch(() => null)) != null;
+    if (installed) await ensureChannelConnectorDeclared(projectId, 'slack');
+    else await removeChannelConnectorDeclared(projectId, 'slack');
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
     console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });
+  }
+}
+
+/**
+ * Best-effort re-materialization after a tunnel (computer) changes for an
+ * ACCOUNT (machine connected / removed). Tunnels are account-scoped but
+ * connectors are project-scoped, so the single `computer` connector must be
+ * (un)materialized across every project of the account — fan out a sync to each.
+ * The connector exists iff the account has ≥1 machine, so this is idempotent.
+ * Never throws: a sync hiccup must not fail the connect/remove request.
+ * (Machines coming/going *within* an existing connector need no resync —
+ * `list_computers` is always live.)
+ */
+export async function reconcileComputerConnectors(accountId: string): Promise<void> {
+  try {
+    const rows = await db
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(eq(projects.accountId, accountId));
+    for (const r of rows) {
+      await syncProjectConnectors(r.projectId, accountId);
+    }
+  } catch (e) {
+    console.warn('[executor] computer connector reconcile failed', { accountId, err: (e as Error).message });
   }
 }
 
@@ -118,11 +153,15 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  const specs = [...declaredSpecs, ...channelSpecs];
+  // Computer connector (the Agent Computer Tunnel) is install-driven the same
+  // way: a single synthetic connector when the account has a machine + the
+  // project opted into agent_tunnel. Also manifest-independent.
+  const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
+  const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
-  if (!manifest && channelSpecs.length === 0) {
+  if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
     return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.toml not found or unreadable' }] };
   }
 
@@ -160,7 +199,7 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
   for (const e of existing) {
     if (desiredSlugs.has(e.slug)) continue;
-    if (manifest || e.providerType === 'channel') {
+    if (manifest || e.providerType === 'channel' || e.providerType === 'computer') {
       await db.delete(executorConnectors).where(eq(executorConnectors.connectorId, e.connectorId));
     }
   }
@@ -290,6 +329,11 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.
         return { actions: channelCatalog(spec.platform ?? ''), server: channelApiBase(spec.platform ?? '') };
+      }
+      case 'computer': {
+        // Fixed, local catalog (the tunnel RPC method set) — no network, no
+        // server. Machines are resolved at call time, not from a base URL.
+        return { actions: computerCatalog(), server: null };
       }
       default:
         return { actions: [], server: null };

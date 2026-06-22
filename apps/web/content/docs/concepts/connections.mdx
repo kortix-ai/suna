@@ -10,13 +10,15 @@ service — Slack, Gmail, a database, any HTTP/GraphQL API. Connections are
 per-project, and the agent can only use what you connect.
 
 - **Declared as `[[connectors]]` in `kortix.toml`** — provider is one of
-  **Pipedream, MCP, OpenAPI, GraphQL, HTTP, or Channel** (chat platforms like
-  Slack). The definition lives in git; the **credentials live in the platform,
-  never in the repo**.
-- **Channel connectors auto-materialize.** Connecting Slack
-  ([Channels](/docs/concepts/channels)) creates a `slack` connector for you — no
-  `kortix.toml` entry needed; its credential is the install token, resolved
-  server-side.
+  **Pipedream, MCP, OpenAPI, GraphQL, HTTP, Channel** (chat platforms like
+  Slack), or **Computer** (a connected machine). The definition lives in git; the
+  **credentials live in the platform, never in the repo**.
+- **Channel + Computer connectors auto-materialize.** Connecting Slack
+  ([Channels](/docs/concepts/channels)) creates a `slack` connector; connecting a
+  machine ([Computers](/docs/concepts/computers)) creates the `computer`
+  connector — no `kortix.toml` entry needed. The Slack credential is the install
+  token; the `computer` connector has no credential at all (the live tunnel is
+  the credential), and per-machine access is granted in Computers.
 - **Credentials are shared or per-user.** A connection can use one shared
   credential, or each member connects their own account.
 - **Per-call policies** — each tool can be set to run, require approval, or be

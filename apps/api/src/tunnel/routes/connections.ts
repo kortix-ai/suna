@@ -18,6 +18,7 @@ import { generateTunnelToken, hashSecretKey } from '../../shared/crypto';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
+import { reconcileComputerConnectors } from '../../executor/sync';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -110,6 +111,9 @@ export function createConnectionsRouter() {
           setupTokenHash,
         })
         .returning();
+
+      // Materialize the account's `computer` Executor connector (first machine).
+      void reconcileComputerConnectors(accountId);
 
       return c.json({ ...connection, setupToken }, 201);
     },
@@ -276,7 +280,7 @@ export function createConnectionsRouter() {
       },
     }),
     async (c: any) => {
-      const { ownerClause } = await getTunnelOwnerContext(c);
+      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
 
       const [deleted] = await db
@@ -292,6 +296,9 @@ export function createConnectionsRouter() {
       if (!deleted) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
+
+      // Tear down the account's `computer` connector if that was the last machine.
+      void reconcileComputerConnectors(accountId);
 
       return c.json({ success: true });
     },

@@ -949,7 +949,7 @@ export type ConnectorSharing =
 export interface AdminConnector {
   slug: string;
   name: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
@@ -1126,6 +1126,19 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   return unwrap(
     await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
       `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+/**
+ * Deployment-wide flag: is the easy-connect (Pipedream) provider configured?
+ * Lets the UI hide/disable the Easy Connect surface instead of surfacing it and
+ * failing with a 501 once opened (e.g. self-host without Pipedream credentials).
+ */
+export async function getConnectStatus() {
+  return unwrap(
+    await backendApi.get<{ configured: boolean; provider: string | null }>(
+      `/executor/connect-status`,
     ),
   );
 }

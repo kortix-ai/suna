@@ -156,12 +156,31 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     expect(finalizeCalls.at(-1)?.error).toContain('waking');
   });
 
-  test('failed (genuine error) → surface it, keep mapping, NEVER recreate', async () => {
+  test('failed (genuine error) → surface it ONCE with a session link, keep mapping, NEVER recreate', async () => {
     deliverOutcome = 'failed';
-    dbResults = [[{ sessionId: 'sess-1' }]];
+    dbResults = [
+      [{ sessionId: 'sess-1' }], // chat_threads lookup (known thread)
+      [{ eventId: 'notice' }], // claimThreadErrorNotice → WON (first failure for this thread)
+    ];
     await spawnAgentTurn('proj-1', envelope, event);
     expect(createSessionCalls).toBe(0);
     expect(finalizeCalls.at(-1)?.error).toContain('error');
+    // The notice links straight to the session so the thread isn't a dead end.
+    expect(finalizeCalls.at(-1)?.error).toContain('proj-1/sessions/sess-1');
+    expect(finalizeCalls.at(-1)?.error).toContain('Open it in Kortix');
+  });
+
+  test('failed AGAIN → notice already claimed → stay silent (no repeat, the thread isn’t spammed)', async () => {
+    deliverOutcome = 'failed';
+    dbResults = [
+      [{ sessionId: 'sess-1' }], // chat_threads lookup (known thread)
+      [], // claimThreadErrorNotice → LOST (we already told this thread once)
+    ];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    // We still finalize (to clear the ⏳ ack) but with NO error — silence, not a repeat.
+    expect(finalizeCalls.length).toBe(1);
+    expect(finalizeCalls.at(-1)?.error).toBeUndefined();
   });
 
   test('no-session (session deleted) → replace it (the ONLY create path for a known thread)', async () => {
@@ -169,6 +188,7 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     dbResults = [
       [{ sessionId: 'sess-1' }], // chat_threads lookup (known thread)
       [], // delete the stale chat_threads mapping
+      [], // clearThreadErrorNotice → re-arm the failure notice for the new session
       [{ projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.toml' }], // projects lookup
       [{ eventId: 'claim' }], // claimThreadCreate → WON
       [], // re-check chat_threads → none
