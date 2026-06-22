@@ -80,6 +80,22 @@ These match `tests/docker-compose.test.yml`.
 - **Seed data**: add an idempotent `fixtures/NNN_*.sql` (use
   `ON CONFLICT DO NOTHING`); `db-seed.sh` runs them in filename order.
 
+## Worktree wrapper (end-to-end)
+
+`run.sh` validates the migrate flow directly (`psql` prereqs + `pnpm migrate`).
+`worktree-migrate.test.ts` validates the worktree's own wrapper — it drives the
+real `runMigrate()` + `hasKortixSchema()` from `scripts/worktree/lib` against a
+throwaway Postgres and asserts the `kortix` schema builds (≥80 tables) and a
+second run is a no-op. It manages its OWN container because the worktree always
+uses `postgres:postgres@/postgres` (a fresh Supabase-local), not the
+`kortix_test` creds above. Needs Node 22 (the worktree's engine floor) and
+docker; skips cleanly when docker is absent.
+
+```bash
+pnpm test:migration:worktree          # or: bun test migration/worktree-migrate.test.ts
+WT_MIGRATE_TEST_PORT=55440 ...         # override the host port if 55440 is taken
+```
+
 ## Prerequisites
 
 - Docker with the Compose v2 plugin (`docker compose`).
