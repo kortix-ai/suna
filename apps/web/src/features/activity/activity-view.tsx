@@ -99,6 +99,15 @@ export function ActivityView({ projectId }: { projectId: string }) {
     [sessionsQuery.data, source, status, search],
   );
 
+  const stats = useMemo(() => {
+    const all = sessionsQuery.data ?? [];
+    return {
+      total: all.length,
+      running: all.filter((s) => isLiveRun(s.status)).length,
+      failed: all.filter((s) => s.status === 'failed').length,
+    };
+  }, [sessionsQuery.data]);
+
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader
@@ -164,6 +173,25 @@ export function ActivityView({ projectId }: { projectId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 py-5">
+          {!sessionsQuery.isLoading && stats.total > 0 && (
+            <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="text-foreground font-medium">
+                {stats.total} {stats.total === 1 ? 'run' : 'runs'}
+              </span>
+              {stats.running > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <StatusDot tone="info" pulse />
+                  {stats.running} running
+                </span>
+              )}
+              {stats.failed > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <StatusDot tone="destructive" />
+                  {stats.failed} failed
+                </span>
+              )}
+            </div>
+          )}
           {sessionsQuery.isLoading ? (
             <List>
               {Array.from({ length: 6 }).map((_, i) => (
