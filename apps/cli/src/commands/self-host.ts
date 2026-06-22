@@ -81,6 +81,7 @@ interface SelfHostEnv {
   GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
   KORTIX_LOCAL_IMAGES: string;
+  KORTIX_PUBLIC_AUTH_METHODS: string;
   GATEWAY_INTERNAL_TOKEN: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
@@ -811,6 +812,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`,
     SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`,
     KORTIX_LOCAL_IMAGES: 'false',
+    KORTIX_PUBLIC_AUTH_METHODS: 'password',
     GATEWAY_INTERNAL_TOKEN: token(32),
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),
@@ -960,10 +962,18 @@ function writeCompose(instance: string): void {
       KORTIX_PUBLIC_BACKEND_URL: \${API_PUBLIC_URL}/v1
       KORTIX_PUBLIC_BILLING_ENABLED: "false"
       KORTIX_PUBLIC_APP_URL: \${PUBLIC_URL}
+      # Self-host has no real email transport, so magic-link sign-in can't work —
+      # password is the only functional method. (Override to "magic,password" if
+      # you wire up SMTP via GoTrue.)
+      KORTIX_PUBLIC_AUTH_METHODS: \${KORTIX_PUBLIC_AUTH_METHODS}
       SUPABASE_URL: \${SUPABASE_PUBLIC_URL}
       SUPABASE_SERVER_URL: http://supabase-kong:8000
       SUPABASE_ANON_KEY: \${SUPABASE_ANON_KEY}
       BACKEND_URL: \${API_PUBLIC_URL}/v1
+      # Localhost shares one cookie jar across every port, so running several
+      # self-host/dev stacks piles up Supabase auth cookies until the request
+      # header blows Node's 16KB default → HTTP 431 on first navigation. Raise it.
+      NODE_OPTIONS: "--max-http-header-size=131072"
     depends_on:
       kortix-api:
         condition: service_started
