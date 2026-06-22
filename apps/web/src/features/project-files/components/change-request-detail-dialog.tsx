@@ -2,15 +2,14 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
-import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import {
   Disclosure,
   DisclosureBody,
   DisclosureContent,
   DisclosureTrigger,
 } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -22,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';

@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { cn } from '@/lib/utils';
+import type * as React from 'react';
 
 /**
  * Kortix status palette — the SINGLE source of truth for "this means
@@ -18,12 +18,7 @@ import { cn } from '@/lib/utils';
  * and dots all read as the same green/amber/red/blue.
  */
 
-export type StatusTone =
-  | 'success'
-  | 'warning'
-  | 'destructive'
-  | 'info'
-  | 'neutral';
+export type StatusTone = 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
 
 /** Foreground (text / icon) color per tone. */
 export const STATUS_TEXT: Record<StatusTone, string> = {
@@ -141,17 +136,10 @@ export function DiffStat({
   return (
     <span
       data-slot="diff-stat"
-      className={cn(
-        'inline-flex items-center gap-1.5 font-mono tabular-nums',
-        className,
-      )}
+      className={cn('inline-flex items-center gap-1.5 font-mono tabular-nums', className)}
     >
-      {additions ? (
-        <span className={STATUS_TEXT.success}>+{additions}</span>
-      ) : null}
-      {deletions ? (
-        <span className={STATUS_TEXT.destructive}>{`−${deletions}`}</span>
-      ) : null}
+      {additions ? <span className={STATUS_TEXT.success}>+{additions}</span> : null}
+      {deletions ? <span className={STATUS_TEXT.destructive}>{`−${deletions}`}</span> : null}
     </span>
   );
 }
