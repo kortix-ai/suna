@@ -1130,6 +1130,19 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
   );
 }
 
+/**
+ * Deployment-wide flag: is the easy-connect (Pipedream) provider configured?
+ * Lets the UI hide/disable the Easy Connect surface instead of surfacing it and
+ * failing with a 501 once opened (e.g. self-host without Pipedream credentials).
+ */
+export async function getConnectStatus() {
+  return unwrap(
+    await backendApi.get<{ configured: boolean; provider: string | null }>(
+      `/executor/connect-status`,
+    ),
+  );
+}
+
 export async function setConnectorCredential(projectId: string, slug: string, value: string) {
   return unwrap(
     await backendApi.put<{ ok: boolean }>(

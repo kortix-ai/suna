@@ -571,6 +571,32 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── Whether easy-connect (Pipedream) is configured on this deployment ─────
+  // Deployment-global capability flag (no project context) so the UI can hide or
+  // disable the "Easy Connect" surface up front instead of letting the user open
+  // it and hit a 501. `listPipedreamApps` is only wired when pipedreamConfigured(),
+  // so its presence is an exact proxy.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/connect-status',
+      tags: ['executor'],
+      summary: 'Whether the easy-connect (Pipedream) provider is configured on this deployment',
+      ...auth,
+      responses: {
+        200: json(
+          z.object({ configured: z.boolean(), provider: z.string().nullable() }),
+          'Connect provider status',
+        ),
+        ...errors(401),
+      },
+    }),
+    async (c: any) => {
+      const configured = !!deps.listPipedreamApps;
+      return c.json({ configured, provider: configured ? 'pipedream' : null });
+    },
+  );
+
   // ── Admin: re-materialize from kortix.toml ───────────────────────────────
   app.openapi(
     createRoute({
