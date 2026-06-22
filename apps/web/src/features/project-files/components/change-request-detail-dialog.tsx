@@ -618,10 +618,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                   <DiffRenderer
                                     patch={patch}
                                     layout={diffLayout}
-                                    className={cn(
-                                      'min-w-[680px] sm:min-w-0',
-                                      diffLayout === 'split' && 'min-w-[860px] lg:min-w-0',
-                                    )}
+                                    className={
+                                      diffLayout === 'split'
+                                        ? 'min-w-[860px] lg:min-w-0'
+                                        : 'min-w-[680px] sm:min-w-0'
+                                    }
                                   />
                                 </div>
                               ) : (
