@@ -81,7 +81,7 @@ export function StatusBadge({
     <span
       data-slot="status-badge"
       className={cn(
-        'inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-2xl px-2 py-0.5 text-xs font-medium',
+        'inline-flex w-fit items-center gap-1 rounded-2xl px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         STATUS_BG[tone],
         STATUS_TEXT[tone],
         className,

@@ -114,6 +114,10 @@ function diffSectionId(index: number) {
   return `cr-diff-file-${index}`;
 }
 
+export function diffRendererViewportClass(layout: 'unified' | 'split') {
+  return layout === 'split' ? 'min-w-[860px] lg:min-w-0' : 'min-w-[680px] sm:min-w-0';
+}
+
 function scrollToDiffSection(sectionId: string) {
   requestAnimationFrame(() => {
     const target = document.getElementById(sectionId);
@@ -618,11 +622,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                   <DiffRenderer
                                     patch={patch}
                                     layout={diffLayout}
-                                    className={
-                                      diffLayout === 'split'
-                                        ? 'min-w-[860px] lg:min-w-0'
-                                        : 'min-w-[680px] sm:min-w-0'
-                                    }
+                                    className={diffRendererViewportClass(diffLayout)}
                                   />
                                 </div>
                               ) : (
