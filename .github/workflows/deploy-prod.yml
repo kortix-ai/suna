@@ -580,6 +580,60 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
+  # ── Verify prod actually matches the migrations (live-schema presence gate) ──
+  # migrate-db proves the migrations RAN; this proves they TOOK. A faked baseline
+  # (migrate.ts autoBaselineIfNeeded marks-applied-without-running on a pre-existing
+  # schema) can leave holes the migration step never notices — exactly how
+  # project_session_public_shares went missing on prod until a user hit a 500.
+  # Builds the canonical schema fresh from the committed migrations in a sidecar
+  # Postgres, then asserts prod contains every table+column it defines. Presence-
+  # only (canonical ⊆ live): tolerant of prod's legacy/cosmetic differences,
+  # strict about missing objects. deploy-api gates on this — drift blocks the roll.
+  verify-schema:
+    name: Verify prod schema matches migrations
+    needs: migrate-db
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CANONICAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+      LIVE_DB_URL: ${{ secrets.PROD_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Build canonical schema from migrations (sidecar)
+        run: |
+          psql "$CANONICAL_DB_URL" -v ON_ERROR_STOP=1 -f packages/db/scripts/test-prereqs.sql
+          pnpm --filter @kortix/db migrate
+      - name: Assert prod contains every table+column the migrations define
+        run: |
+          set -euo pipefail
+          if [ -z "${LIVE_DB_URL:-}" ]; then
+            echo "::error::PROD_DATABASE_URL secret is not set — cannot verify prod schema."
+            exit 1
+          fi
+          bun packages/db/scripts/verify-live-schema.ts
+
   # ── Deploy API to prod (EKS / Argo CD GitOps) ───────────────────────────────
   # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
   # + kortixVersion), so Argo CD on the prod-eks cluster rolls the Deployment.
@@ -588,7 +642,7 @@ jobs:
   # X.Y.Z — no task-def version stamping like the old ECS roll needed.
   deploy-api:
     name: Deploy API to prod (EKS / GitOps)
-    needs: [version, retag-images, migrate-db]
+    needs: [version, retag-images, migrate-db, verify-schema]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → read the cluster

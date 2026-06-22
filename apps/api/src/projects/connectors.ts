@@ -40,8 +40,8 @@ import { isValidSecretName } from './secrets';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
-const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'];
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
 
 /**
  * Platform-owned connector slugs no user connector may claim. Slack is a
@@ -371,6 +371,12 @@ function parseProviderFields(
       return err(slug, `provider="channel" requires platform one of ${CHANNEL_PLATFORMS.join(', ')} (got "${platform || 'unset'}")`);
     }
     return { ok: true, value: { ...base, platform: platform as ChannelPlatform } };
+  }
+
+  if (provider === 'computer') {
+    // Synth-only: connecting a machine over the Agent Computer Tunnel auto-
+    // materializes a single `computer` connector. It can't be declared by hand.
+    return err(slug, 'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.toml');
   }
 
   if (provider === 'graphql') {

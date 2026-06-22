@@ -1,6 +1,6 @@
 ---
 name: kortix-executor
-description: How to reach third-party systems from a Kortix session via the Executor — one interface to every configured integration (Pipedream, MCP, OpenAPI, GraphQL, HTTP, and chat `channel`s like Slack), exposed as the `kortix-executor` MCP server's tools (connectors, discover, describe, call). Load whenever the user asks the agent to DO something in an external app/API (send an email, create a Stripe charge, post to Slack, query an internal API, call any SaaS), asks "what integrations/connectors/tools do I have", asks to add/configure a connector, or asks about `[[connectors]]` in kortix.toml. The agent must use the Executor's MCP tools rather than hand-rolling API calls with raw tokens.
+description: How to reach third-party systems from a Kortix session via the Executor — one interface to every configured integration (Pipedream, MCP, OpenAPI, GraphQL, HTTP, chat `channel`s like Slack, and connected machines via `computer`), exposed as the `kortix-executor` MCP server's tools (connectors, discover, describe, call). Load whenever the user asks the agent to DO something in an external app/API (send an email, create a Stripe charge, post to Slack, query an internal API, call any SaaS), asks "what integrations/connectors/tools do I have", asks to add/configure a connector, or asks about `[[connectors]]` in kortix.toml. The agent must use the Executor's MCP tools rather than hand-rolling API calls with raw tokens.
 ---
 
 <skill name="kortix-executor">
@@ -31,7 +31,7 @@ the project's secrets and attaches it. The sandbox only carries
 the session** — so you can only use connectors that user has been granted.
 
 A **connector** is one named integration. They're declared in `kortix.toml` as
-`[[connectors]]` (provider = pipedream | mcp | openapi | graphql | http | channel). The
+`[[connectors]]` (provider = pipedream | mcp | openapi | graphql | http | channel | computer). The
 Executor can add/remove declarations and mint setup links for credentials; the
 secret value / Pipedream 1-click connection is entered by the human in Kortix and
 never exposed to the sandbox. Each connector exposes **tools** (actions) with a
@@ -131,11 +131,15 @@ spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec
 
 Providers: `pipedream` (`app` + 1-click OAuth — gives the whole app API via the
 `request` proxy tool), `openapi`/`graphql`/`http` (a `spec`/`endpoint`/`base_url`
-+ `[connectors.auth]`), `mcp` (`url` + `transport`), and `channel` (`platform`,
++ `[connectors.auth]`), `mcp` (`url` + `transport`), `channel` (`platform`,
 e.g. `slack` — chat platforms; auto-materializes when you connect Slack, credential
-resolved server-side). The Executor materializes the catalog after the declaration
-lands. (For Slack specifically you'll usually use the dedicated `slack` CLI — see
-the `kortix-slack` skill — but it's the same connector under the hood.)
+resolved server-side), and `computer` (connected machines over the Agent Computer
+Tunnel; auto-materializes when you connect a machine, no credential — see the
+`kortix-computer` skill). The Executor materializes the catalog after the
+declaration lands. (`channel` and `computer` are SYNTH-ONLY — they appear when you
+connect Slack / a machine, you don't declare them in kortix.toml. For Slack you'll
+usually use the dedicated `slack` CLI — see the `kortix-slack` skill — but it's the
+same connector under the hood.)
 
 **One-click setup (no dashboard hunting).** In a session, prefer the MCP tools:
 

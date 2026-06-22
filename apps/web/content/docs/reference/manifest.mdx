@@ -248,6 +248,11 @@ Provider-specific fields:
   **auto-materializes** the `slack` connector (credential = the install token,
   resolved server-side), so the agent can call it through the Executor and you
   manage it in Connectors.
+- **computer** — connected machines over the Agent Computer Tunnel.
+  **Synth-only: you cannot declare it in `kortix.toml`.** Connecting a machine
+  ([Computers](/docs/concepts/computers)) auto-materializes a single `computer`
+  connector that fronts all your machines (it has no credential — the live tunnel
+  is the credential; per-machine access is granted in Computers).
 
 ### `[connectors.auth]`
 

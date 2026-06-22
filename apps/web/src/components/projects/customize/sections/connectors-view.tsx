@@ -21,6 +21,7 @@ import {
   KeyRound,
   Loader2,
   MessageSquare,
+  Monitor,
   Pencil,
   Plug,
   Plus,
@@ -110,6 +111,7 @@ const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   graphql: Globe,
   http: Globe,
   channel: MessageSquare,
+  computer: Monitor,
 };
 
 const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'destructive'> = {
@@ -122,6 +124,7 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
+  if (p === 'computer') return 'Computer';
   return p.toUpperCase();
 }
 
@@ -744,6 +747,10 @@ function ConnectorDetail({
   // Channel connectors (Slack) are credentialed + connected/removed via their
   // platform install in the Channels tab — not the generic credential UI here.
   const isChannel = connector.provider === 'channel';
+  // Computer (Agent Computer Tunnel) connectors, like channels, are managed from
+  // a dedicated tab (Computers): no generic credential / connect / remove UI.
+  const isComputer = connector.provider === 'computer';
+  const isManaged = isChannel || isComputer;
   const setSection = useCustomizeStore((s) => s.setSection);
   const connected = connector.secretSet;
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
@@ -918,6 +925,30 @@ function ConnectorDetail({
             tab. Here you control who can use it and review its tools.
           </InfoBanner>
         )}
+        {/* Computer connectors are connected + permissioned in the Computers tab
+            (device pairing, per-capability grants, audit) — point management
+            there instead of the generic credential / connection / remove UI. */}
+        {isComputer && (
+          <InfoBanner
+            tone="info"
+            icon={Monitor}
+            title={`${displayName} is managed in Computers`}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => setSection('computers')}
+              >
+                <Monitor className="h-4 w-4" />
+                Open Computers
+              </Button>
+            }
+          >
+            Connect a machine, and grant or revoke per-capability access, in the Computers
+            tab. Here you control who can use it and review its tools.
+          </InfoBanner>
+        )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
         {connector.authSecret && !connected && !isChannel && (
           <InfoBanner
@@ -947,7 +978,7 @@ function ConnectorDetail({
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
           </TabsList>
           <TabsContent value="profile" className="space-y-5">
-            {!isPipedream && !isChannel && (
+            {!isPipedream && !isManaged && (
               <ConnectionSection
                 projectId={projectId}
                 connector={connector}
@@ -961,7 +992,7 @@ function ConnectorDetail({
           </TabsContent>
         </Tabs>
 
-        {!isChannel && (
+        {!isManaged && (
           <SectionCard
             tone="destructive"
             title={tI18nHardcoded.raw(
@@ -1040,10 +1071,10 @@ function ProfileSection({
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Channel connectors (Slack) are always one shared install token — the
-  // per-user credential mode doesn't apply, so we hide that choice and keep
-  // only "who can use it".
-  const isChannel = connector.provider === 'channel';
+  // Channel connectors (Slack) are always one shared install token, and computer
+  // connectors have no credential at all — the per-user credential mode doesn't
+  // apply to either, so we hide that choice and keep only "who can use it".
+  const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   const initialAccess = sharingToAccess(connector.sharing);
   const [access, setAccess] = useState(initialAccess.mode);
