@@ -67,7 +67,10 @@ export async function readSchemaObjects(databaseUrl: string): Promise<SchemaObje
 }
 
 /** Pure: objects in `canonical` that are absent from `live`. */
-export function diffMissing(canonical: SchemaObjects, live: SchemaObjects): {
+export function diffMissing(
+  canonical: SchemaObjects,
+  live: SchemaObjects,
+): {
   missingTables: string[];
   missingColumns: string[];
   missingEnumValues: string[];
@@ -101,7 +104,9 @@ function resolveUrls(argv: string[]): { canonical: string; live: string } {
 async function main() {
   const { canonical, live } = resolveUrls(process.argv.slice(2));
   // The live read is strictly read-only.
-  const liveRo = live.includes('?') ? `${live}&options=-c%20default_transaction_read_only%3Don` : live;
+  const liveRo = live.includes('?')
+    ? `${live}&options=-c%20default_transaction_read_only%3Don`
+    : live;
   const [canon, target] = await Promise.all([
     readSchemaObjects(canonical),
     readSchemaObjects(liveRo).catch(() => readSchemaObjects(live)),
@@ -116,11 +121,15 @@ async function main() {
   );
 
   if (missingTables.length === 0 && missingColumns.length === 0 && missingEnumValues.length === 0) {
-    console.log('OK — live database contains every table, column, and enum value the migrations define.');
+    console.log(
+      'OK — live database contains every table, column, and enum value the migrations define.',
+    );
     return;
   }
 
-  console.error('::error::Live-schema drift — the database is MISSING objects the migrations define.');
+  console.error(
+    '::error::Live-schema drift — the database is MISSING objects the migrations define.',
+  );
   if (missingTables.length) {
     console.error(`\nMissing TABLES (${missingTables.length}):`);
     for (const t of missingTables) console.error(`  - ${SCHEMA}.${t}`);
@@ -133,7 +142,9 @@ async function main() {
     console.error(`\nMissing ENUM VALUES (${missingEnumValues.length}):`);
     for (const v of missingEnumValues) console.error(`  - ${SCHEMA}.${v}`);
   }
-  console.error('\nReconcile by adding an idempotent migration (CREATE TABLE / ADD COLUMN / ALTER TYPE ADD VALUE IF NOT EXISTS).');
+  console.error(
+    '\nReconcile by adding an idempotent migration (CREATE TABLE / ADD COLUMN / ALTER TYPE ADD VALUE IF NOT EXISTS).',
+  );
   process.exit(1);
 }
 
