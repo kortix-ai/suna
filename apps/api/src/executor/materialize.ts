@@ -40,6 +40,11 @@ export function connectorConfig(spec: ConnectorSpec, openapiServer?: string | nu
         baseUrl: channelApiBase(spec.platform ?? ''),
         auth: { type: 'bearer', in: 'header', name: null, prefix: null },
       };
+    case 'computer':
+      // No credential and no base URL — the gateway routes `tunnel` bindings
+      // through the shared tunnel RPC core, not executeCall. Carry explicit
+      // `none` auth so authOf() resolves hasAuth=false.
+      return { auth: { type: 'none', in: 'header', name: null, prefix: null } };
     default:
       return {};
   }

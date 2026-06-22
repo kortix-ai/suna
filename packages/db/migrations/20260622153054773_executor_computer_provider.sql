@@ -1,0 +1,1 @@
+ALTER TYPE "kortix"."executor_connector_provider" ADD VALUE 'computer';

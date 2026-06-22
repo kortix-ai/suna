@@ -2763,6 +2763,12 @@ export const executorConnectorProviderEnum = kortixSchema.enum('executor_connect
   // catalog is a fixed per-platform action set; the credential is the platform's
   // existing install token (resolved server-side, no executor_credential row).
   'channel',
+  // Connected machines reached over the Agent Computer Tunnel. ONE auto-
+  // materialized connector fronts all the account's machines (machine = a call
+  // arg); its catalog is the tunnel RPC method set, and it has no credential —
+  // the live WS relay IS the credential, with per-machine auth/scope enforced by
+  // the tunnel permission layer. See docs/specs/computer-connector.md.
+  'computer',
 ]);
 
 export const executorConnectorStatusEnum = kortixSchema.enum('executor_connector_status', [

@@ -46,13 +46,12 @@ interface ExperimentalFeatureDef {
  * The registry. Order here is the order shown in Customize → Settings →
  * Experimental.
  *
- * TODO(agent_tunnel → connector): the Agent Computer Tunnel is wired as its
- * own account-scoped surface today. The intended end state is to expose it
- * THROUGH the executor connectors system as an MCP-style connector, so it flows
- * through the single `connectors`/`discover`/`describe`/`call` execution path
- * like every other integration (one auth model, one audit trail, one policy
- * engine). See docs/specs/experimental-features.md. Until then this flag gates
- * the dedicated tunnel surface.
+ * agent_tunnel → connector: connected machines now ALSO flow through the
+ * Executor as a `computer` connector (one connector fronts all the account's
+ * machines; `connectors`/`discover`/`describe`/`call`, one audit + policy path).
+ * This flag still gates the dedicated tunnel surface (Customize → Computers, the
+ * device-auth / permissions UI) AND the auto-materialization of that connector.
+ * See docs/specs/computer-connector.md.
  */
 const FEATURES: readonly ExperimentalFeatureDef[] = [
   {

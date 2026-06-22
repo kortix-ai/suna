@@ -27,7 +27,7 @@ import type { ActionBinding, Risk } from './types';
 export interface GatewayConnector {
   connectorId: string;
   slug: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ExecutorAuth;
@@ -102,9 +102,28 @@ export interface GatewayDeps {
     accountId: string;
     userId: string | null;
   }): Promise<ExecResult>;
+  /**
+   * Computer (Agent Computer Tunnel) execution — required for `computer`
+   * connectors. Resolves the `selector` (machine name/id, or null = sole online)
+   * to a machine scoped to `accountId`, then relays `method` through the tunnel
+   * permission/relay/audit core. `list_computers` is handled inside (no relay).
+   */
+  executeComputerCall?(input: {
+    accountId: string;
+    selector: string | null;
+    method: string;
+    args: Record<string, unknown>;
+  }): Promise<ComputerCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
 }
+
+/** Result of a `computer` connector call (gateway maps it onto a CallResult). */
+export type ComputerCallOutcome =
+  | { ok: true; data: unknown }
+  | { ok: false; kind: 'permission_required'; requestId: string; message: string }
+  | { ok: false; kind: 'no_machine'; message: string }
+  | { ok: false; kind: 'error'; message: string };
 
 export interface CallInput {
   projectId: string;
@@ -195,6 +214,40 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   try {
+    // Computer (Agent Computer Tunnel): relay through the shared tunnel RPC core
+    // instead of an HTTP call. The machine selector rides in `args.computer`.
+    if (connector.provider === 'computer') {
+      if (action.binding.kind !== 'tunnel') {
+        throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
+      }
+      if (!deps.executeComputerCall) throw new Error('computer runner not wired');
+      const { computer: selectorRaw, ...rest } = input.args ?? {};
+      const selector = typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
+      const outcome = await deps.executeComputerCall({
+        accountId: input.accountId,
+        selector,
+        method: action.binding.method,
+        args: rest,
+      });
+      if (outcome.ok) {
+        await audit(deps, input, connector.connectorId, 'ok', action.risk, { method: action.binding.method });
+        return { status: 'ok', data: outcome.data, risk: action.risk };
+      }
+      if (outcome.kind === 'permission_required') {
+        await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+          reason: 'tunnel_permission_required',
+          request_id: outcome.requestId,
+        });
+        return {
+          status: 'pending_approval',
+          reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
+        };
+      }
+      await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: outcome.message.slice(0, 500) });
+      logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
+      return { status: 'error', reason: outcome.message };
+    }
+
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
       const b = action.binding;

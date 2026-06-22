@@ -1,14 +1,9 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and } from 'drizzle-orm';
-import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
+import { tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
-import { TunnelRelayError, TunnelMethods, TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
-import { tunnelRelay } from '../core/relay';
-import { checkPermission } from '../core/permission-checker';
-import { writeAuditLog, buildRequestSummary } from '../core/audit-logger';
-import { notifyPermissionRequest } from './permission-requests';
-import { tunnelRateLimiter } from '../core/rate-limiter';
-import { isValidCapability, validateScope as validateScopeInput } from '../core/scope-validator';
+import { TunnelErrorCode } from 'agent-tunnel';
+import { executeTunnelRpc } from '../core/rpc-core';
 import { getTunnelReadContext } from './auth';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
@@ -47,158 +42,49 @@ export function createRpcRouter() {
       const { accountId, ownerClause } = await getTunnelReadContext(c);
       const tunnelId = c.req.param('tunnelId');
 
-      const rpcRateCheck = tunnelRateLimiter.check('rpc', tunnelId);
-      if (!rpcRateCheck.allowed) {
-        return c.json({
-          error: 'Rate limit exceeded',
-          code: TunnelErrorCode.RATE_LIMITED,
-          retryAfterMs: rpcRateCheck.retryAfterMs,
-        }, 429);
-      }
-
       const body = await c.req.json();
       const { method, params = {} } = body;
 
-      if (!method || typeof method !== 'string') {
-        return c.json({ error: 'method is required' }, 400);
-      }
-
+      // Ownership / existence: scoped to the caller's account (personal or team).
+      // The shared core then handles rate-limit / capability / permission /
+      // relay / audit — the same path the Executor's `computer` connector uses.
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
 
       if (!tunnel) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      const capability = resolveCapability(method);
-      if (!capability) {
-        return c.json({ error: `Unknown method: ${method}` }, 400);
+      const outcome = await executeTunnelRpc({ tunnelId, accountId, method, params });
+
+      if (outcome.ok) {
+        return c.json({ result: outcome.result });
       }
-
-      if (!isValidCapability(capability)) {
-        return c.json({ error: `Invalid capability: ${capability}` }, 400);
-      }
-
-      const capPrefix = method.indexOf('.');
-      const operation = capPrefix !== -1 ? method.slice(capPrefix + 1) : method;
-      const permCheck = await checkPermission(tunnelId, capability, operation, params);
-
-      if (!permCheck.allowed) {
-        const permReqRateCheck = tunnelRateLimiter.check('permRequest', accountId);
-        if (!permReqRateCheck.allowed) {
-          return c.json({
-            error: 'Too many permission requests',
-            code: TunnelErrorCode.RATE_LIMITED,
-            retryAfterMs: permReqRateCheck.retryAfterMs,
-          }, 429);
-        }
-
-        const scopeValidation = validateScopeInput(capability, params);
-        const requestedScope = scopeValidation.valid ? (scopeValidation.sanitized || params) : params;
-
-        const [request] = await db
-          .insert(tunnelPermissionRequests)
-          .values({
-            tunnelId,
-            accountId,
-            capability,
-            requestedScope,
-            reason: `Agent requested ${method} — ${permCheck.reason}`,
-          })
-          .returning();
-
-        notifyPermissionRequest(accountId, request);
-
-        return c.json(
-          {
-            error: 'Permission required',
-            code: TunnelErrorCode.PERMISSION_DENIED,
-            requestId: request.requestId,
-            message: permCheck.reason,
-          },
-          403,
-        );
-      }
-
-      const startTime = Date.now();
-
-      try {
-        const result = await tunnelRelay.relayRPC(tunnelId, method, {
-          ...params,
-          permissionId: permCheck.permissionId,
-        });
-
-        const durationMs = Date.now() - startTime;
-
-        writeAuditLog({
-          tunnelId,
-          accountId,
-          capability,
-          operation: method,
-          requestSummary: buildRequestSummary(method, params),
-          success: true,
-          durationMs,
-          bytesTransferred: estimateBytes(result),
-        });
-
-        return c.json({ result });
-      } catch (err) {
-        const durationMs = Date.now() - startTime;
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        const errorCode = err instanceof TunnelRelayError ? err.code : TunnelErrorCode.LOCAL_ERROR;
-
-        writeAuditLog({
-          tunnelId,
-          accountId,
-          capability,
-          operation: method,
-          requestSummary: buildRequestSummary(method, params),
-          success: false,
-          durationMs,
-          errorMessage,
-        });
-
-        const httpStatus = errorCode === TunnelErrorCode.NOT_CONNECTED ? 502
-          : errorCode === TunnelErrorCode.TIMEOUT ? 504
-          : 500;
-
-        return c.json({ error: errorMessage, code: errorCode }, httpStatus);
+      switch (outcome.kind) {
+        case 'permission_required':
+          return c.json(
+            {
+              error: 'Permission required',
+              code: TunnelErrorCode.PERMISSION_DENIED,
+              requestId: outcome.requestId,
+              message: outcome.message,
+            },
+            403,
+          );
+        case 'rate_limited':
+          return c.json(
+            { error: outcome.message, code: TunnelErrorCode.RATE_LIMITED, retryAfterMs: outcome.retryAfterMs },
+            429,
+          );
+        case 'bad_request':
+          return c.json({ error: outcome.message }, 400);
+        case 'error':
+          return c.json({ error: outcome.message, code: outcome.code }, outcome.httpStatus);
       }
     },
   );
 
   return router;
-}
-
-function resolveCapability(method: string): TunnelCapability | null {
-  const mapped = (TunnelMethods as Record<string, string | null>)[method];
-  if (mapped !== undefined) {
-    return mapped as TunnelCapability | null;
-  }
-
-  const prefix = method.split('.')[0];
-  const prefixMap: Record<string, TunnelCapability> = {
-    fs: 'filesystem',
-    shell: 'shell',
-    desktop: 'desktop',
-  };
-
-  return prefixMap[prefix] || null;
-}
-
-function estimateBytes(result: unknown): number {
-  if (result === null || result === undefined) return 0;
-  if (typeof result === 'string') return result.length;
-  try {
-    return JSON.stringify(result).length;
-  } catch {
-    return 0;
-  }
 }
