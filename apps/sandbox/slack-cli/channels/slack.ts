@@ -1,21 +1,21 @@
 #!/usr/bin/env bun
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import {
-  parseArgs,
-  out,
-  CliError,
-  handleError,
-  validateRequired,
-  getEnv,
-  kortixProjectId,
-  kortixSessionId,
-  kortixGet,
-  kortixPost,
-} from '../lib';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 // The published Kortix Executor SDK — baked into the sandbox at the mirrored
 // path (/opt/kortix/packages/executor-sdk). Using it here both keeps the shim's
 // gateway calls clean AND dogfoods the SDK in a real in-sandbox consumer.
-import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
+import { ExecutorError, createExecutorClient } from '../../../../packages/executor-sdk/src/index';
+import {
+  CliError,
+  getEnv,
+  handleError,
+  kortixGet,
+  kortixPost,
+  kortixProjectId,
+  kortixSessionId,
+  out,
+  parseArgs,
+  validateRequired,
+} from '../lib';
 
 // Relay a checkpoint or the final answer into this turn's live Slack stream.
 // apps/api owns the streamed message; here we just hand it the content.
@@ -92,6 +92,23 @@ const METHOD_TO_ACTION: Record<string, string> = {
   'files.info': 'file_info',
 };
 
+type SlackWebApiResponse = Record<string, unknown> & {
+  ok?: boolean;
+  error?: string;
+};
+
+function requiredFlags<const K extends string>(
+  flags: Record<string, string>,
+  ...keys: K[]
+): Record<K, string> {
+  validateRequired(flags, ...keys);
+  return Object.fromEntries(keys.map((key) => [key, flags[key] ?? ''])) as Record<K, string>;
+}
+
+function optionalInt(value: string | undefined): number | undefined {
+  return value ? Number.parseInt(value, 10) : undefined;
+}
+
 // The Executor SDK client, built from this sandbox's env. Setting projectId
 // makes the SDK use the project-explicit gateway route
 // (/executor/projects/:id/call), which accepts the in-sandbox session token.
@@ -111,14 +128,17 @@ function executorClient() {
 // (surfacing the Slack error); on success it returns `{ ok:true, data:<slack> }`.
 // Args keep Slack's native names, so the existing callers + `data.ok` reads are
 // unchanged.
-async function executorCall(method: string, args: Record<string, unknown>): Promise<any> {
+async function executorCall(
+  method: string,
+  args: Record<string, unknown>,
+): Promise<SlackWebApiResponse> {
   const action = METHOD_TO_ACTION[method];
   if (!action) throw new CliError(`No Executor action mapped for Slack method "${method}"`);
   let lastErr: ExecutorError | null = null;
   for (const connector of SLACK_CONNECTORS) {
     try {
       const res = await executorClient().call(connector, action, args);
-      return res.data ?? res;
+      return (res.data ?? res) as SlackWebApiResponse;
     } catch (err) {
       if (!(err instanceof ExecutorError)) throw err;
       lastErr = err;
@@ -126,7 +146,10 @@ async function executorCall(method: string, args: Record<string, unknown>): Prom
       // Try the legacy `slack` namespace only when the reserved channel connector
       // is absent/not yet materialized. Do not fall back on `needs_auth` or
       // upstream Slack errors — those are real results from the right connector.
-      if (connector === SLACK_CONNECTORS[0] && (reason === 'connector_not_found' || reason === 'action_not_found')) {
+      if (
+        connector === SLACK_CONNECTORS[0] &&
+        (reason === 'connector_not_found' || reason === 'action_not_found')
+      ) {
         continue;
       }
       throw new CliError(err.message);
@@ -151,11 +174,17 @@ function executorErrorReason(err: ExecutorError): string | null {
   return err.message || null;
 }
 
-async function apiPost(method: string, body: Record<string, unknown>): Promise<any> {
+async function apiPost(
+  method: string,
+  body: Record<string, unknown>,
+): Promise<SlackWebApiResponse> {
   return executorCall(method, body);
 }
 
-async function apiGet(method: string, params: Record<string, string>): Promise<any> {
+async function apiGet(
+  method: string,
+  params: Record<string, string>,
+): Promise<SlackWebApiResponse> {
   return executorCall(method, params);
 }
 
@@ -234,20 +263,29 @@ async function del(opts: { channel: string; ts: string }) {
 }
 
 async function react(opts: { channel: string; ts: string; emoji: string }) {
-  const data = await apiPost('reactions.add', { channel: opts.channel, timestamp: opts.ts, name: opts.emoji });
+  const data = await apiPost('reactions.add', {
+    channel: opts.channel,
+    timestamp: opts.ts,
+    name: opts.emoji,
+  });
   if (!data.ok) throw new CliError(data.error ?? 'react failed');
   return { ok: true };
 }
 
 async function history(opts: { channel: string; limit?: number }) {
-  const data = await apiGet('conversations.history', { channel: opts.channel, limit: String(opts.limit ?? 20) });
+  const data = await apiGet('conversations.history', {
+    channel: opts.channel,
+    limit: String(opts.limit ?? 20),
+  });
   if (!data.ok) throw new CliError(data.error ?? 'history failed');
   return { ok: true, messages: data.messages };
 }
 
 async function thread(opts: { channel: string; ts: string; limit?: number }) {
   const data = await apiGet('conversations.replies', {
-    channel: opts.channel, ts: opts.ts, limit: String(opts.limit ?? 20),
+    channel: opts.channel,
+    ts: opts.ts,
+    limit: String(opts.limit ?? 20),
   });
   if (!data.ok) throw new CliError(data.error ?? 'thread failed');
   return { ok: true, messages: data.messages };
@@ -319,7 +357,9 @@ async function download(opts: { url: string; out: string }) {
   const tok = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
   const projectId = kortixProjectId();
   if (!apiUrl || !tok || !projectId) {
-    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.');
+    throw new CliError(
+      'KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
+    );
   }
   const proxyUrl = new URL(
     `/v1/projects/${projectId}/channels/slack/file?url=${encodeURIComponent(opts.url)}`,
@@ -331,7 +371,12 @@ async function download(opts: { url: string; out: string }) {
   });
   if (!res.ok) {
     let msg = `Download failed: HTTP ${res.status}`;
-    try { const j = (await res.json()) as { error?: string }; if (j?.error) msg = j.error; } catch { /* keep */ }
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep */
+    }
     throw new CliError(msg);
   }
   const buf = await res.arrayBuffer();
@@ -359,8 +404,11 @@ async function manifest(opts: { url?: string; projectId?: string; name?: string 
 
 function readTextFlag(flags: Record<string, string>): string | undefined {
   if (flags['text-file']) {
-    try { return readFileSync(flags['text-file'], 'utf-8'); }
-    catch { throw new CliError(`Cannot read --text-file: ${flags['text-file']}`); }
+    try {
+      return readFileSync(flags['text-file'], 'utf-8');
+    } catch {
+      throw new CliError(`Cannot read --text-file: ${flags['text-file']}`);
+    }
   }
   return flags.text;
 }
@@ -368,20 +416,26 @@ function readTextFlag(flags: Record<string, string>): string | undefined {
 function readBlocksFlag(flags: Record<string, string>): unknown[] | undefined {
   let raw: string | undefined;
   if (flags['blocks-file']) {
-    try { raw = readFileSync(flags['blocks-file'], 'utf-8'); }
-    catch { throw new CliError(`Cannot read --blocks-file: ${flags['blocks-file']}`); }
+    try {
+      raw = readFileSync(flags['blocks-file'], 'utf-8');
+    } catch {
+      throw new CliError(`Cannot read --blocks-file: ${flags['blocks-file']}`);
+    }
   } else if (flags.blocks) {
     raw = flags.blocks === '-' ? readFileSync(0, 'utf-8') : flags.blocks;
   }
   if (!raw) return undefined;
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch (err) { throw new CliError(`--blocks is not valid JSON: ${(err as Error).message}`); }
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new CliError(`--blocks is not valid JSON: ${(err as Error).message}`);
+  }
   const arr = Array.isArray(parsed)
     ? parsed
-    : (parsed && typeof parsed === 'object' && Array.isArray((parsed as { blocks?: unknown }).blocks)
-        ? (parsed as { blocks: unknown[] }).blocks
-        : null);
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as { blocks?: unknown }).blocks)
+      ? (parsed as { blocks: unknown[] }).blocks
+      : null;
   if (!arr) throw new CliError('--blocks must be a JSON array (or `{ "blocks": [...] }`)');
   if (arr.length === 0) throw new CliError('--blocks cannot be empty');
   return arr;
@@ -431,75 +485,70 @@ async function main(): Promise<void> {
       if (!text && !flags.file && !blocks) {
         throw new CliError('--text, --text-file, --blocks, --blocks-file, and/or --file required');
       }
-      out(await send({
-        channel: flags.channel!,
-        text,
-        blocks,
-        threadTs: flags.thread,
-        file: flags.file,
-      }));
+      const { channel } = requiredFlags(flags, 'channel');
+      out(
+        await send({
+          channel,
+          text,
+          blocks,
+          threadTs: flags.thread,
+          file: flags.file,
+        }),
+      );
       break;
     }
     case 'edit': {
-      validateRequired(flags, 'channel', 'ts');
+      const { channel, ts } = requiredFlags(flags, 'channel', 'ts');
       const text = readTextFlag(flags);
       const blocks = readBlocksFlag(flags);
       if (!text && !blocks) throw new CliError('--text, --text-file, or --blocks required');
-      out(await edit({ channel: flags.channel!, ts: flags.ts!, text, blocks }));
+      out(await edit({ channel, ts, text, blocks }));
       break;
     }
     case 'delete':
-      validateRequired(flags, 'channel', 'ts');
-      out(await del({ channel: flags.channel!, ts: flags.ts! }));
+      out(await del(requiredFlags(flags, 'channel', 'ts')));
       break;
     case 'react':
-      validateRequired(flags, 'channel', 'ts', 'emoji');
-      out(await react({ channel: flags.channel!, ts: flags.ts!, emoji: flags.emoji! }));
+      out(await react(requiredFlags(flags, 'channel', 'ts', 'emoji')));
       break;
     case 'typing':
       validateRequired(flags, 'channel');
       out({ ok: true, note: 'Slack Web API does not support typing indicators for bots' });
       break;
     case 'history':
-      validateRequired(flags, 'channel');
-      out(await history({ channel: flags.channel!, limit: flags.limit ? parseInt(flags.limit, 10) : undefined }));
+      out(await history({ ...requiredFlags(flags, 'channel'), limit: optionalInt(flags.limit) }));
       break;
     case 'thread':
-      validateRequired(flags, 'channel', 'ts');
-      out(await thread({ channel: flags.channel!, ts: flags.ts!, limit: flags.limit ? parseInt(flags.limit, 10) : undefined }));
+      out(
+        await thread({ ...requiredFlags(flags, 'channel', 'ts'), limit: optionalInt(flags.limit) }),
+      );
       break;
     case 'channels':
-      out(await listChannels({ limit: flags.limit ? parseInt(flags.limit, 10) : undefined }));
+      out(await listChannels({ limit: optionalInt(flags.limit) }));
       break;
     case 'channel-info':
-      validateRequired(flags, 'channel');
-      out(await channelInfo({ channel: flags.channel! }));
+      out(await channelInfo(requiredFlags(flags, 'channel')));
       break;
     case 'join':
-      validateRequired(flags, 'channel');
-      out(await join({ channel: flags.channel! }));
+      out(await join(requiredFlags(flags, 'channel')));
       break;
     case 'users':
-      out(await listUsers({ limit: flags.limit ? parseInt(flags.limit, 10) : undefined }));
+      out(await listUsers({ limit: optionalInt(flags.limit) }));
       break;
     case 'user':
-      validateRequired(flags, 'id');
-      out(await user({ id: flags.id! }));
+      out(await user(requiredFlags(flags, 'id')));
       break;
     case 'me':
       out(await me());
       break;
     case 'search':
-      validateRequired(flags, 'query');
-      out(await search({ query: flags.query! }));
+      out(await search(requiredFlags(flags, 'query')));
       break;
     case 'file-info':
-      validateRequired(flags, 'file');
-      out(await fileInfo({ fileId: flags.file! }));
+      out(await fileInfo({ fileId: requiredFlags(flags, 'file').file }));
       break;
     case 'download':
-      validateRequired(flags, 'url', 'out');
-      out(await download({ url: flags.url!, out: flags.out! }));
+      out(await download(requiredFlags(flags, 'url', 'out')));
       break;
     case 'manifest':
       out(await manifest({ url: flags.url, projectId: flags['project-id'], name: flags.name }));
@@ -511,10 +560,9 @@ async function main(): Promise<void> {
       // sandbox-side event subscriber. The CLI keeps this case so older
       // workflows fail loud instead of pretending to work.
       throw new CliError(
-        '`slack ask` was removed — use opencode\'s built-in `question` tool. ' +
-        'The Slack form is rendered automatically by the sandbox\'s opencode-events subscriber.',
+        "`slack ask` was removed — use opencode's built-in `question` tool. " +
+          "The Slack form is rendered automatically by the sandbox's opencode-events subscriber.",
       );
-    case 'help':
     default:
       console.log(`
 slack — Slack Web API adapter

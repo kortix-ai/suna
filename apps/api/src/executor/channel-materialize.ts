@@ -36,9 +36,15 @@ function channelSpec(platform: ChannelPlatform, slug: string): ConnectorSpec {
   };
 }
 
-/** True if any declared connector already owns this exact reserved channel slug. */
-function slugAlreadyDeclared(declared: ConnectorSpec[], slug: string): boolean {
-  return declared.some((s) => s.slug === slug);
+/** True if this platform is explicitly declared, or if anything owns the reserved slug. */
+function channelAlreadyDeclared(
+  declared: ConnectorSpec[],
+  platform: ChannelPlatform,
+  slug: string,
+): boolean {
+  return declared.some(
+    (s) => s.slug === slug || (s.provider === 'channel' && s.platform === platform),
+  );
 }
 
 /**
@@ -56,7 +62,7 @@ export async function synthesizeChannelConnectors(
   // `[[connectors]] slug="slack" provider="pipedream" app="slack"` cannot
   // shadow the built-in Slack CLI's channel catalog.
   const slackSlug = channelDefaultSlug('slack');
-  if (!slugAlreadyDeclared(declared, slackSlug)) {
+  if (!channelAlreadyDeclared(declared, 'slack', slackSlug)) {
     const install = await loadSlackInstall(projectId).catch(() => null);
     if (install) return [channelSpec('slack', slackSlug)];
   }
