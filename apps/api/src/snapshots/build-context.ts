@@ -2,7 +2,7 @@
  * Shared build-context staging for sandbox snapshots.
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
- * runtime layer (agent binary + CLI + entrypoint + slack-cli + executor-sdk +
+ * runtime layer (agent binary + CLI + entrypoint + agent-cli + executor-sdk +
  * opencode/agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
@@ -33,8 +33,8 @@ const CLI_BIN_PATH = process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
+const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
@@ -81,7 +81,7 @@ export async function stageBuildContext(
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
+  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
   // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
@@ -107,7 +107,7 @@ export async function stageBuildContext(
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-  await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
+  await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
   await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
   // Stage the starter opencode config for the build-time instance warm-up.
   // Best effort: if it's missing, skip the warm-up (the build still succeeds and
@@ -138,7 +138,7 @@ export async function stageBuildContext(
     agentBinaryPath: 'kortix-agent.gz',
     cliBinaryPath: 'kortix.gz',
     entrypointScriptPath: 'kortix-entrypoint',
-    slackCliPath: 'kortix-slack-cli',
+    agentCliPath: 'kortix-agent-cli',
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
   });
@@ -196,7 +196,7 @@ async function assertExistsDir(path: string, envVarHint: string): Promise<void> 
   } catch (err) {
     if (err instanceof Error && err.message.includes(envVarHint)) throw err;
     throw new Error(
-      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/slack-cli.`,
+      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/agent-cli.`,
     );
   }
 }

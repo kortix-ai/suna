@@ -1,17 +1,17 @@
-# slack-cli
+# agent-cli
 
 In-sandbox command-line tools the agent (opencode) invokes from inside a
 session. They ship as PATH shims baked into the Daytona sandbox image, auth via
 env vars injected at sandbox spawn, and emit **JSON only** so the agent can parse
 results.
 
-> **Scope today: just `slack`.** The Executor — once the `executor` /
-> `executor-mcp` shims here — has been absorbed into the one `kortix` CLI as
-> `kortix executor` (CLI) + `kortix executor mcp` (the stdio MCP server opencode
-> auto-loads), both built on the `@kortix/executor-sdk` framework. The old
-> `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
-> channel state is in the sandbox env already, and secrets are `kortix secrets …`.
-> Slack stays here as a standalone vendor adapter.
+> **Channel adapters today: `slack` and `teams`.** The Executor — once the
+> `executor` / `executor-mcp` shims here — has been absorbed into the one `kortix`
+> CLI as `kortix executor` (CLI) + `kortix executor mcp` (the stdio MCP server
+> opencode auto-loads), both built on the `@kortix/executor-sdk` framework. The
+> old `kchannel` (channel discovery) and `secrets` (link minting) shims were
+> removed: channel state is in the sandbox env already, and secrets are `kortix
+> secrets …`. Each chat platform stays here as a standalone per-turn adapter.
 
 Not the same thing as the user-facing `kortix` CLI in [`apps/cli`](../../cli),
 which is a compiled binary for people's laptops (and is *also* baked into the
@@ -20,7 +20,7 @@ sandbox image — that's what `kortix executor` runs from).
 ## Layout
 
 ```
-apps/sandbox/slack-cli/
+apps/sandbox/agent-cli/
 ├── lib/                 ← shared kernel imported by every CLI here
 │   ├── cli.ts           ←   parseArgs, out, CliError, handleError, validators
 │   ├── env.ts           ←   getEnv, requireEnv, kortixProjectId, kortixSessionId
@@ -28,7 +28,8 @@ apps/sandbox/slack-cli/
 │   └── index.ts         ←   barrel
 │
 ├── channels/
-│   └── slack.ts         ← the Slack Web API adapter (`slack send`, `slack step`, …)
+│   ├── slack.ts         ← the Slack Web API adapter (`slack send`, `slack step`, …)
+│   └── teams.ts         ← the Microsoft Teams turn adapter (`teams send`, `teams step`)
 ├── install-shims.sh     ← generates /usr/local/bin/<name> shims at image build
 └── README.md
 ```

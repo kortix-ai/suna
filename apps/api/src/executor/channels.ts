@@ -21,6 +21,8 @@ export function channelApiBase(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'https://slack.com/api';
+    case 'teams':
+      return 'https://graph.microsoft.com/v1.0';
     default:
       return '';
   }
@@ -31,6 +33,8 @@ export function channelLabel(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'Slack';
+    case 'teams':
+      return 'Microsoft Teams';
     default:
       return platform;
   }
@@ -263,11 +267,77 @@ function toAction(def: ChannelActionDef): NormalizedAction {
   };
 }
 
+const TEAMS_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'get_team',
+    method: 'teams/{team-id}',
+    verb: 'GET',
+    name: 'Get team',
+    description: 'Fetch a team (Microsoft 365 group) by its id.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'list_channels',
+    method: 'teams/{team-id}/channels',
+    verb: 'GET',
+    name: 'List channels',
+    description: 'List the channels in a team. Requires `team-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'get_channel',
+    method: 'teams/{team-id}/channels/{channel-id}',
+    verb: 'GET',
+    name: 'Get channel',
+    description: 'Fetch a single channel in a team. Requires `team-id` and `channel-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+    },
+    required: ['team-id', 'channel-id'],
+  },
+  {
+    path: 'list_members',
+    method: 'teams/{team-id}/members',
+    verb: 'GET',
+    name: 'List team members',
+    description: 'List the members of a team. Requires `team-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'get_user',
+    method: 'users/{user-id}',
+    verb: 'GET',
+    name: 'Get user',
+    description: 'Fetch a user profile by id or userPrincipalName.',
+    risk: 'read',
+    properties: {
+      'user-id': { type: 'string', description: 'The user id or userPrincipalName.' },
+    },
+    required: ['user-id'],
+  },
+];
+
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
 export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
     case 'slack':
       return SLACK_ACTIONS.map(toAction);
+    case 'teams':
+      return TEAMS_ACTIONS.map(toAction);
     default:
       return [];
   }

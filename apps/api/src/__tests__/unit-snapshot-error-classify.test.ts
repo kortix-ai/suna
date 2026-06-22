@@ -24,7 +24,7 @@ describe('classifySnapshotError', () => {
 
   test('missing Kortix runtime artifacts', () => {
     expect(classifySnapshotError('Required artifact missing: /path/kortix-agent. Set KORTIX_SNAPSHOT_AGENT_BIN_PATH')).toBe('runtime');
-    expect(classifySnapshotError('Required directory missing: slack-cli')).toBe('runtime');
+    expect(classifySnapshotError('Required directory missing: agent-cli')).toBe('runtime');
   });
 
   test('dead tunnel / unreachable callback', () => {

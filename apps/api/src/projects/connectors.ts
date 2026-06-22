@@ -44,8 +44,8 @@ export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'h
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'];
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack';
-const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack'];
+export type ChannelPlatform = 'slack' | 'teams';
+const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack', 'teams'];
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];

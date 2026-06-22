@@ -40,7 +40,8 @@ import {
   type Policy,
 } from './policy';
 import { syncProjectConnectors } from './sync';
-import { loadSlackInstall, loadSlackTokenForProject } from '../channels/install-store';
+import { loadSlackInstall, loadSlackTokenForProject, loadTeamsInstall, loadTeamsTenantForProject } from '../channels/install-store';
+import { graphToken } from '../channels/teams-auth';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
@@ -109,12 +110,20 @@ function channelPlatform(config: ConnectorRow['config'] | null): string | null {
 }
 
 async function channelToken(projectId: string, platform: string | null): Promise<string | null> {
-  return platform === 'slack' ? loadSlackTokenForProject(projectId) : null;
+  if (platform === 'slack') return loadSlackTokenForProject(projectId);
+  if (platform === 'teams') {
+    const tenant = await loadTeamsTenantForProject(projectId);
+    if (!tenant) return null;
+    return graphToken(tenant).catch(() => null);
+  }
+  return null;
 }
 
 /** Cheap "is it connected?" — the install exists (no decrypt). */
 async function channelInstalled(projectId: string, platform: string | null): Promise<boolean> {
-  return platform === 'slack' ? (await loadSlackInstall(projectId).catch(() => null)) != null : false;
+  if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
+  if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
+  return false;
 }
 
 /**

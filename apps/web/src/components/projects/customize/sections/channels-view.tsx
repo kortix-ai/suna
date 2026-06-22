@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import { TeamsChannelPanel } from './teams-channel-panel';
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -47,15 +48,27 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                 'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
               )}
             </InfoBanner>
-          ) : loading ? (
-            <Skeleton className="h-32 w-full rounded-2xl" />
-          ) : install ? (
-            <ConnectedPanel projectId={projectId} installation={install} />
           ) : (
-            <DisconnectedPanel
-              projectId={projectId}
-              oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
-            />
+            <div className="space-y-8">
+              <section className="space-y-3">
+                <header className="flex items-center gap-2">
+                  <Slack className="h-4 w-4" />
+                  <h3 className="text-foreground text-sm font-semibold">Slack</h3>
+                </header>
+                {loading ? (
+                  <Skeleton className="h-32 w-full rounded-2xl" />
+                ) : install ? (
+                  <ConnectedPanel projectId={projectId} installation={install} />
+                ) : (
+                  <DisconnectedPanel
+                    projectId={projectId}
+                    oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
+                  />
+                )}
+              </section>
+
+              <TeamsChannelPanel projectId={projectId} />
+            </div>
           )}
         </div>
       </div>

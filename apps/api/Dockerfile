@@ -151,7 +151,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
-COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
+COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
 COPY packages/executor-sdk ./packages/executor-sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the

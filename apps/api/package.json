@@ -39,6 +39,7 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.4.0",
+    "jose": "^5.9.6",
     "postgres": "^3.4.8",
     "smol-toml": "^1.6.1",
     "stripe": "^14.0.0",

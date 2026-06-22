@@ -12,7 +12,7 @@
  */
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { channelLabel } from './channels';
-import { loadSlackInstall } from '../channels/install-store';
+import { loadSlackInstall, loadTeamsInstall } from '../channels/install-store';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 
 function channelSpec(platform: ChannelPlatform, slug: string): ConnectorSpec {
@@ -51,10 +51,14 @@ export async function synthesizeChannelConnectors(
   projectId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
-  // Slack (Telegram/Teams slot in here the same way — see KORTIX-206 Phase D).
+  const out: ConnectorSpec[] = [];
   if (!alreadyDeclared(declared, 'slack', 'slack')) {
     const install = await loadSlackInstall(projectId).catch(() => null);
-    if (install) return [channelSpec('slack', 'slack')];
+    if (install) out.push(channelSpec('slack', 'slack'));
   }
-  return [];
+  if (!alreadyDeclared(declared, 'teams', 'teams')) {
+    const install = await loadTeamsInstall(projectId).catch(() => null);
+    if (install) out.push(channelSpec('teams', 'teams'));
+  }
+  return out;
 }

@@ -26,6 +26,17 @@ export {
   type BuildManifestConfig,
 } from './slack-manifest';
 export { slackWebhookApp, relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack-webhook';
+export { teamsWebhookApp } from './teams-webhook';
+export {
+  saveTeamsInstall,
+  deleteTeamsInstall,
+  loadTeamsInstall,
+  loadTeamsTenantForProject,
+  loadTeamsServiceUrlForProject,
+  MS_TEAMS_TENANT_ID,
+  type TeamsInstallSummary,
+  type TeamsInstallInput,
+} from './install-store';
 export { telegramWebhookApp } from './telegram-webhook';
 export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
 export { slackOauthMode } from './slack-oauth-mode';

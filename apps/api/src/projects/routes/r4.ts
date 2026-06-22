@@ -1,9 +1,14 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
+import { deleteTeamsInstall, loadTeamsInstall, saveTeamsInstall } from '../../channels/install-store';
+import { teamsMode } from '../../channels/teams-mode';
+import { buildTeamsManifest } from '../../channels/teams-manifest';
+import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { reconcileChannelConnectors } from '../../executor/sync';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
+import { postQuestion, type QuestionInfo } from '../../channels/slack-webhook';
+import { relayTurnAnswer, relayTurnEnd, relayTurnStep } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -472,6 +477,128 @@ projectsApp.openapi(
   void reconcileChannelConnectors(projectId);
   return c.json({ status: 'disconnected' });
 },
+);
+
+// ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const install = await loadTeamsInstall(projectId);
+    return c.json(install ?? null);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/mode',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    return c.json(teamsMode(resolveBaseUrl(new URL(c.req.url))));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/manifest',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/manifest',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const mode = teamsMode(resolveBaseUrl(new URL(c.req.url)));
+    if (!mode.available || !mode.appId) {
+      return c.json({ error: 'Teams is not configured on this server' }, 409);
+    }
+    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl: resolveBaseUrl(new URL(c.req.url)) }));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/connect',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    let body: { tenant_id?: string; team_name?: string };
+    try {
+      body = (await c.req.json()) as { tenant_id?: string; team_name?: string };
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const tenantId = body.tenant_id?.trim();
+    const isGuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
+    if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
+      return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
+    }
+
+    const summary = await saveTeamsInstall({
+      projectId,
+      tenantId,
+      teamName: body.team_name?.trim() || null,
+    });
+    void reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await deleteTeamsInstall(projectId);
+    void reconcileChannelConnectors(projectId);
+    return c.json({ status: 'disconnected' });
+  },
 );
 
 // POST /v1/projects/:projectId/turn-stream
