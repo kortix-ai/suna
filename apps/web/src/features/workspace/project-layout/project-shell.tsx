@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
-import { CustomizeOverlay } from '@/features/workspace/customize/customize-overlay';
+import { CustomizPanel } from '@/features/workspace/customize/customize-panel';
 import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
@@ -142,7 +142,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           <ProjectSheelLayout showProjectHeader={showProjectHeader}>{children}</ProjectSheelLayout>
         </div>
 
-        <CustomizeOverlay projectId={projectId} />
+        <CustomizPanel projectId={projectId} />
 
         <AppsOverlay projectId={projectId} />
 

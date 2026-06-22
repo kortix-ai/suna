@@ -71,7 +71,8 @@ import {
   type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
-import { sortByRoleThenLabel } from './member-sort';
+import { sortByRoleThenLabel } from '../member-sort';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 // Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
 // that only need the bare label (badges, "X gets Manager via account role"
@@ -102,15 +103,6 @@ function formatDate(input: string | null | undefined) {
 }
 
 export function MembersView({ projectId }: { projectId: string }) {
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Users} title="Members" />
-      <ProjectMembersBody projectId={projectId} />
-    </div>
-  );
-}
-
-function ProjectMembersBody({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
@@ -129,29 +121,21 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-foreground text-base font-semibold">
-              {tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
-            </h2>
-            <p className="text-muted-foreground text-xs">
-              {tHardcodedUi.raw(
-                'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
-              )}
-            </p>
-          </div>
-          {/* Answers Marko's "what does a Viewer/Editor/Manager actually
-              do?" right at the point of decision — same popover the
-              account settings page uses, driven by the shared descriptor. */}
+      <CustomizeSectionWrapper
+        title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
+        description={tHardcodedUi.raw(
+          'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
+        )}
+        action={
           <PermissionsHelpPopover
             triggerLabel={tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
             )}
             align="end"
           />
-        </header>
+        }
+      >
+          
 
         {canManage && <InviteMemberCard projectId={projectId} />}
 
@@ -169,16 +153,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
           error={accessQuery.error as Error | null}
           onRetry={() => accessQuery.refetch()}
         />
-
-        {project?.account_id && (
-          <ProjectGroupGrantsCard
-            projectId={projectId}
-            accountId={project.account_id}
-            canManage={!!canManage}
-          />
-        )}
-      </div>
-    </div>
+</CustomizeSectionWrapper>
   );
 }
 

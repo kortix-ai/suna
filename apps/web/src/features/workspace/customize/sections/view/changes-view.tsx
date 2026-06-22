@@ -36,7 +36,7 @@ import { getProject, listProjectBranches, type ChangeRequestStatus } from '@/lib
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
-import { CustomizeSectionHeader } from '../customize-section-header';
+import { CustomizeSectionHeader } from '../../customize-section-header';
 
 function rel(iso: string | null): string {
   if (!iso) return '';

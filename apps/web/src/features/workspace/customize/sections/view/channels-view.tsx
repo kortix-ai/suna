@@ -1,6 +1,5 @@
 'use client';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -19,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -27,39 +27,29 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const loading = loadingInstall || loadingMode;
 
   return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Slack} title="Channels" />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-          <header className="space-y-1">
-            <h2 className="text-foreground text-base font-semibold">Channels</h2>
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
-              )}
-            </p>
-          </header>
-
-          {!projectId ? (
-            <InfoBanner tone="neutral">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
-              )}
-            </InfoBanner>
-          ) : loading ? (
-            <Skeleton className="h-32 w-full rounded-2xl" />
-          ) : install ? (
-            <ConnectedPanel projectId={projectId} installation={install} />
-          ) : (
-            <DisconnectedPanel
-              projectId={projectId}
-              oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
-            />
+    <CustomizeSectionWrapper
+      title="Channels"
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
+      )}
+    >
+      {!projectId ? (
+        <InfoBanner tone="neutral">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
           )}
-        </div>
-      </div>
-    </div>
+        </InfoBanner>
+      ) : loading ? (
+        <Skeleton className="h-32 w-full rounded-2xl" />
+      ) : install ? (
+        <ConnectedPanel projectId={projectId} installation={install} />
+      ) : (
+        <DisconnectedPanel
+          projectId={projectId}
+          oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
+        />
+      )}
+    </CustomizeSectionWrapper>
   );
 }
 

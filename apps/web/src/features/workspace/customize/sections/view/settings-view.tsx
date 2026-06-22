@@ -12,13 +12,11 @@ import {
   GitBranch,
   Loader2,
   Pause,
-  Settings,
   Trash2,
   UserPlus,
 } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -46,17 +44,9 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
 } from '@/lib/projects-client';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function SettingsView({ projectId }: { projectId: string }) {
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Settings} title="Settings" />
-      <ProjectSettingsBody projectId={projectId} />
-    </div>
-  );
-}
-
-function ProjectSettingsBody({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -81,8 +71,12 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
   });
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
+    <CustomizeSectionWrapper
+      title="Settings"
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
+      )}
+    >
         {projectQuery.isLoading && (
           <>
             <Skeleton className="h-56 rounded-2xl" />
@@ -146,20 +140,21 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
             )}
           </>
         )}
-      </div>
 
-      <ConfirmDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title={tHardcodedUi.raw(
-          'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
-        )}
-        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
-        confirmLabel="Archive"
-        onConfirm={() => archiveMutation.mutate()}
-        isPending={archiveMutation.isPending}
-      />
-    </div>
+        <ConfirmDialog
+          open={archiveOpen}
+          onOpenChange={setArchiveOpen}
+          title={tHardcodedUi.raw(
+            'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
+          )}
+          description={
+            project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''
+          }
+          confirmLabel="Archive"
+          onConfirm={() => archiveMutation.mutate()}
+          isPending={archiveMutation.isPending}
+        />
+      </CustomizeSectionWrapper>
   );
 }
 
@@ -430,8 +425,7 @@ function TriggersActivationCard({
       queryClient.setQueryData(queryKey, data);
       toast.success(next ? 'All triggers paused for this project' : 'Triggers resumed');
     },
-    onError: (error: Error) =>
-      toast.error(error.message || 'Failed to update trigger activation'),
+    onError: (error: Error) => toast.error(error.message || 'Failed to update trigger activation'),
   });
 
   return (

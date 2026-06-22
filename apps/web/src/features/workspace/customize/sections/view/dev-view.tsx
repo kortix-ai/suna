@@ -12,10 +12,9 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Terminal, UserPlus } from 'lucide-react';
+import { Check, Copy, Loader2, UserPlus } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SectionCard } from '@/components/ui/section-card';
@@ -23,17 +22,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Terminal} title="Dev" />
-      <DevBody projectId={projectId} />
-    </div>
-  );
-}
-
-function DevBody({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
@@ -44,41 +35,33 @@ function DevBody({ projectId }: { projectId: string }) {
   const project = projectQuery.data;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
-        <header className="space-y-1.5">
-          <h2 className="text-foreground text-lg font-semibold">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d',
-            )}
-          </h2>
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProject56f17947',
-            )}
-          </p>
-        </header>
+    <CustomizeSectionWrapper
+      title={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d',
+      )}
+      description={tI18nHardcoded.raw(
+        'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProject56f17947',
+      )}
+    >
+      {projectQuery.isLoading && (
+        <>
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl" />
+        </>
+      )}
 
-        {projectQuery.isLoading && (
-          <>
-            <Skeleton className="h-40 rounded-2xl" />
-            <Skeleton className="h-40 rounded-2xl" />
-          </>
-        )}
+      {projectQuery.isError && (
+        <SectionCard
+          tone="destructive"
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb',
+          )}
+          description={(projectQuery.error as Error).message}
+        />
+      )}
 
-        {projectQuery.isError && (
-          <SectionCard
-            tone="destructive"
-            title={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb',
-            )}
-            description={(projectQuery.error as Error).message}
-          />
-        )}
-
-        {project && <DevSteps project={project} />}
-      </div>
-    </div>
+      {project && <DevSteps project={project} />}
+    </CustomizeSectionWrapper>
   );
 }
 

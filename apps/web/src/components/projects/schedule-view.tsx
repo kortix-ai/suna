@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * <TriggersView /> — Shared body for the Customize "Schedules" and
+ * <ScheduleView /> — Shared body for the Customize "Schedules" and
  * "Webhooks" pages. One component, type-scoped: pass `type: "cron"` for
  * schedules, `type: "webhook"` for webhooks. The list is filtered, the
  * Create dialog is forced to the matching type (no source picker), and
@@ -48,7 +48,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import {
   AlertDialog,
@@ -94,6 +93,7 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { getEnv } from '@/lib/env-config';
 import {
   createProjectTrigger,
@@ -241,57 +241,22 @@ async function copyToClipboard(value: string, label = 'Copied'): Promise<boolean
   }
 }
 
-/* ─── View entry ────────────────────────────────────────────────────────── */
-
 type TriggerKind = 'cron' | 'webhook';
 
 interface TypeMeta {
-  /** Top-bar + h1 title for this kind of trigger. */
   pageTitle: string;
-  /** Icon for the top bar. */
   icon: typeof Zap;
-  /** One-line description under the h1. */
-  description: React.ReactNode;
-  /** New-button label, e.g. "New schedule". */
   createButtonLabel: string;
-  /** Empty-state copy. */
   empty: {
     title: string;
     body: string;
   };
 }
 
-function CronTriggerDescription() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  return (
-    <>
-      {tHardcodedUi.raw(
-        'componentsProjectsTriggersView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
-      )}{' '}
-      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">KORTIX_INITIAL_PROMPT</code>.
-    </>
-  );
-}
-
-function WebhookTriggerDescription() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  return (
-    <>
-      {tHardcodedUi.raw(
-        'componentsProjectsTriggersView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
-      )}{' '}
-      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">KORTIX_INITIAL_PROMPT</code>.
-    </>
-  );
-}
-
 const TYPE_META: Record<TriggerKind, TypeMeta> = {
   cron: {
     pageTitle: 'Schedules',
     icon: Timer,
-    description: <CronTriggerDescription />,
     createButtonLabel: 'New schedule',
     empty: {
       title: 'No schedules yet',
@@ -301,7 +266,6 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
   webhook: {
     pageTitle: 'Webhooks',
     icon: Webhook,
-    description: <WebhookTriggerDescription />,
     createButtonLabel: 'New webhook',
     empty: {
       title: 'No webhooks yet',
@@ -310,27 +274,10 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
   },
 };
 
-export function TriggersView({ projectId, type }: { projectId: string; type: TriggerKind }) {
+export function ScheduleView({ projectId, type }: { projectId: string; type: TriggerKind }) {
   const meta = TYPE_META[type];
   const Icon = meta.icon;
 
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Icon} title={meta.pageTitle} />
-      <ProjectTriggersBody projectId={projectId} type={type} meta={meta} />
-    </div>
-  );
-}
-
-function ProjectTriggersBody({
-  projectId,
-  type,
-  meta,
-}: {
-  projectId: string;
-  type: TriggerKind;
-  meta: TypeMeta;
-}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['project-triggers', projectId], [projectId]);
@@ -374,96 +321,100 @@ function ProjectTriggersBody({
   const activeCount = triggers.filter((t) => t.enabled).length;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-        <header className="space-y-1">
-          <h2 className="text-foreground text-base font-semibold">{meta.pageTitle}</h2>
-          <p className="text-muted-foreground text-xs">{meta.description}</p>
-        </header>
+    <CustomizeSectionWrapper
+      title={tHardcodedUi.raw('componentsProjectsScheduleView.pageTitle')}
+      description={
+        type === 'cron'
+          ? tHardcodedUi.raw(
+              'componentsProjectsScheduleView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
+            )
+          : tHardcodedUi.raw(
+              'componentsProjectsScheduleView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
+            )
+      }
+    >
+      {triggersPaused && !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (
+        <InfoBanner tone="warning" icon={AlertTriangle}>
+          Triggers are paused for this project — scheduled runs and incoming webhooks are ignored
+          (manual test-fires still work). Resume in Customize → Settings.
+        </InfoBanner>
+      )}
 
-        {triggersPaused && !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (
-          <InfoBanner tone="warning" icon={AlertTriangle}>
-            Triggers are paused for this project — scheduled runs and incoming webhooks are
-            ignored (manual test-fires still work). Resume in Customize → Settings.
-          </InfoBanner>
-        )}
-
-        {triggersQuery.isLoading ? (
-          <TriggersSkeleton />
-        ) : isForbidden ? (
-          <ForbiddenNotice />
-        ) : triggersQuery.isError ? (
-          <ErrorNotice
-            message={(triggersQuery.error as Error)?.message ?? 'Failed to load triggers'}
-            onRetry={() => triggersQuery.refetch()}
+      {triggersQuery.isLoading ? (
+        <TriggersSkeleton />
+      ) : isForbidden ? (
+        <ForbiddenNotice />
+      ) : triggersQuery.isError ? (
+        <ErrorNotice
+          message={(triggersQuery.error as Error)?.message ?? 'Failed to load triggers'}
+          onRetry={() => triggersQuery.refetch()}
+        />
+      ) : triggers.length === 0 ? (
+        <SectionCard
+          title={meta.pageTitle}
+          action={
+            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              {meta.createButtonLabel}
+            </Button>
+          }
+          flush
+        >
+          <EmptyStateBox
+            icon={type === 'cron' ? Timer : Webhook}
+            size="sm"
+            title={meta.empty.title}
+            description={meta.empty.body}
+            action={
+              <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                {meta.createButtonLabel}
+              </Button>
+            }
           />
-        ) : triggers.length === 0 ? (
-          <SectionCard
-            title={meta.pageTitle}
-            action={
-              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                {meta.createButtonLabel}
-              </Button>
-            }
-            flush
-          >
-            <EmptyStateBox
-              icon={type === 'cron' ? Timer : Webhook}
-              size="sm"
-              title={meta.empty.title}
-              description={meta.empty.body}
-              action={
-                <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-                  <Plus className="h-3.5 w-3.5" />
-                  {meta.createButtonLabel}
-                </Button>
-              }
-            />
-          </SectionCard>
-        ) : (
-          <SectionCard
-            title={meta.pageTitle}
-            count={triggers.length}
-            description={`${activeCount} of ${triggers.length} active`}
-            action={
-              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-                <Plus className="h-3.5 w-3.5" />
-                {meta.createButtonLabel}
-              </Button>
-            }
-            flush
-          >
-            <List>
-              {triggers.map((trigger) => (
-                <TriggerRow
-                  key={trigger.slug}
-                  trigger={trigger}
-                  onSelect={() => setSelectedId(trigger.slug)}
-                />
-              ))}
-            </List>
-          </SectionCard>
-        )}
+        </SectionCard>
+      ) : (
+        <SectionCard
+          title={meta.pageTitle}
+          count={triggers.length}
+          description={`${activeCount} of ${triggers.length} active`}
+          action={
+            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              {meta.createButtonLabel}
+            </Button>
+          }
+          flush
+        >
+          <List>
+            {triggers.map((trigger) => (
+              <TriggerRow
+                key={trigger.slug}
+                trigger={trigger}
+                onSelect={() => setSelectedId(trigger.slug)}
+              />
+            ))}
+          </List>
+        </SectionCard>
+      )}
 
-        {parseErrors.length > 0 && (
-          <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
-            <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-              {parseErrors.length}
-              {tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextTriggerFile')}{' '}
-              {parseErrors.length === 1 ? '' : 's'}
-              {tHardcodedUi.raw('componentsProjectsTriggersView.line421JsxTextFailedToParse')}
-            </p>
-            <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
-              {parseErrors.map((err) => (
-                <li key={err.slug}>
-                  <code className="font-mono">{err.path}</code> — {err.error}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </div>
+      {parseErrors.length > 0 && (
+        <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+            {parseErrors.length}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line421JsxTextTriggerFile')}{' '}
+            {parseErrors.length === 1 ? '' : 's'}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line421JsxTextFailedToParse')}
+          </p>
+          <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
+            {parseErrors.map((err) => (
+              <li key={err.slug}>
+                <code className="font-mono">{err.path}</code> — {err.error}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <CreateTriggerDialog
         projectId={projectId}
@@ -500,7 +451,7 @@ function ProjectTriggersBody({
           invalidate();
         }}
       />
-    </div>
+    </CustomizeSectionWrapper>
   );
 }
 
@@ -645,7 +596,7 @@ function DetailBody({
           ) : (
             <Play className="h-3.5 w-3.5" />
           )}
-          {tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}
+          {tHardcodedUi.raw('componentsProjectsScheduleView.line623JsxTextFireNow')}
         </Button>
         <Button
           variant="outline"
@@ -718,9 +669,9 @@ function OwnerSection({
         disabled={save.isPending}
       />
       <p className="text-muted-foreground text-xs">
-        Automated runs act as this member. Connectors set to “each member brings
-        their own profile” use this person’s connected accounts; shared connectors
-        are unaffected. Defaults to whoever created the trigger.
+        Automated runs act as this member. Connectors set to “each member brings their own profile”
+        use this person’s connected accounts; shared connectors are unaffected. Defaults to whoever
+        created the trigger.
       </p>
     </section>
   );
@@ -764,7 +715,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
           </div>
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <span>
-              {tI18nHardcoded.raw('autoComponentsProjectsTriggersViewJsxTextOneOffFiresAacd67796')}
+              {tI18nHardcoded.raw('autoComponentsProjectsScheduleViewJsxTextOneOffFiresAacd67796')}
             </span>
           </div>
         </div>
@@ -820,7 +771,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
               <>
                 <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                 {tHardcodedUi.raw(
-                  'componentsProjectsTriggersView.line744JsxTextSignedViaProjectSecret',
+                  'componentsProjectsScheduleView.line744JsxTextSignedViaProjectSecret',
                 )}
                 <code className="ml-1 font-mono">{trigger.secret_env}</code>
               </>
@@ -828,7 +779,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
               <>
                 <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
                 {tHardcodedUi.raw(
-                  'componentsProjectsTriggersView.line749JsxTextNoSigningSecretConfigured',
+                  'componentsProjectsScheduleView.line749JsxTextNoSigningSecretConfigured',
                 )}
               </>
             )}
@@ -839,7 +790,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
       <div className="space-y-2">
         <SectionHeader
           title={tHardcodedUi.raw(
-            'componentsProjectsTriggersView.line758JsxAttrTitleSampleRequest',
+            'componentsProjectsScheduleView.line758JsxAttrTitleSampleRequest',
           )}
           icon={Terminal}
           action={
@@ -860,14 +811,14 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
         <p className="text-muted-foreground/70 text-xs">
           Replace{' '}
           <code className="font-mono">
-            {tHardcodedUi.raw('componentsProjectsTriggersView.line776JsxTextBody')}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line776JsxTextBody')}
           </code>{' '}
           and{' '}
           <code className="font-mono">
-            {tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextSecret')}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line777JsxTextSecret')}
           </code>
           {tHardcodedUi.raw(
-            'componentsProjectsTriggersView.line777JsxTextTheSignatureMustCoverTheRawRequestBody',
+            'componentsProjectsScheduleView.line777JsxTextTheSignatureMustCoverTheRawRequestBody',
           )}
         </p>
       </div>
@@ -907,7 +858,7 @@ function PromptTemplateSection({
   return (
     <section className="space-y-2">
       <SectionHeader
-        title={tHardcodedUi.raw('componentsProjectsTriggersView.line817JsxAttrTitlePromptTemplate')}
+        title={tHardcodedUi.raw('componentsProjectsScheduleView.line817JsxAttrTitlePromptTemplate')}
         icon={Sparkles}
         action={
           editing ? (
@@ -1264,7 +1215,7 @@ function CreateTriggerDialog({
                 <div className="space-y-1.5">
                   <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
                     {tHardcodedUi.raw(
-                      'componentsProjectsTriggersView.line1079JsxTextTriggerSource',
+                      'componentsProjectsScheduleView.line1079JsxTextTriggerSource',
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1272,7 +1223,7 @@ function CreateTriggerDialog({
                       icon={Timer}
                       title="Cron"
                       description={tHardcodedUi.raw(
-                        'componentsProjectsTriggersView.line1085JsxAttrDescriptionTimeBasedSchedule',
+                        'componentsProjectsScheduleView.line1085JsxAttrDescriptionTimeBasedSchedule',
                       )}
                       selected={sourceType === 'cron'}
                       onClick={() => setSourceType('cron')}
@@ -1281,7 +1232,7 @@ function CreateTriggerDialog({
                       icon={Webhook}
                       title="Webhook"
                       description={tHardcodedUi.raw(
-                        'componentsProjectsTriggersView.line1092JsxAttrDescriptionFiresOnHttpRequest',
+                        'componentsProjectsScheduleView.line1092JsxAttrDescriptionFiresOnHttpRequest',
                       )}
                       selected={sourceType === 'webhook'}
                       onClick={() => setSourceType('webhook')}
@@ -1315,14 +1266,14 @@ function CreateTriggerDialog({
           {step === 'action' && (
             <div className="space-y-1.5">
               <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
-                {tHardcodedUi.raw('componentsProjectsTriggersView.line1122JsxTextActionType')}
+                {tHardcodedUi.raw('componentsProjectsScheduleView.line1122JsxTextActionType')}
               </div>
               <div className="grid grid-cols-1 gap-2">
                 <SourceCard
                   icon={MessageSquare}
                   title="Prompt"
                   description={tHardcodedUi.raw(
-                    'componentsProjectsTriggersView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo',
+                    'componentsProjectsScheduleView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo',
                   )}
                   selected
                   onClick={() => {
@@ -1332,7 +1283,7 @@ function CreateTriggerDialog({
               </div>
               <p className="text-muted-foreground/70 px-1 pt-2 text-xs">
                 {tHardcodedUi.raw(
-                  'componentsProjectsTriggersView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn',
+                  'componentsProjectsScheduleView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn',
                 )}
               </p>
             </div>
@@ -1349,7 +1300,7 @@ function CreateTriggerDialog({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={tHardcodedUi.raw(
-                    'componentsProjectsTriggersView.line1151JsxAttrPlaceholderDailyStandupDigest',
+                    'componentsProjectsScheduleView.line1151JsxAttrPlaceholderDailyStandupDigest',
                   )}
                   maxLength={64}
                 />
@@ -1362,13 +1313,13 @@ function CreateTriggerDialog({
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={tHardcodedUi.raw(
-                    'componentsProjectsTriggersView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
+                    'componentsProjectsScheduleView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
                   )}
                   rows={4}
                 />
                 <p className="text-muted-foreground text-xs">
                   {tHardcodedUi.raw(
-                    'componentsProjectsTriggersView.line1166JsxTextMustachePlaceholdersSupported',
+                    'componentsProjectsScheduleView.line1166JsxTextMustachePlaceholdersSupported',
                   )}{' '}
                   <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
                   <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
@@ -1393,10 +1344,9 @@ function CreateTriggerDialog({
                 <Label>Runs as</Label>
                 <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
                 <p className="text-muted-foreground text-xs">
-                  Every run acts as this member. Connectors set to “each member brings
-                  their own profile” use this person’s connected accounts — so a
-                  personal cron (e.g. email triage) uses your own Gmail. Shared
-                  connectors are unaffected.
+                  Every run acts as this member. Connectors set to “each member brings their own
+                  profile” use this person’s connected accounts — so a personal cron (e.g. email
+                  triage) uses your own Gmail. Shared connectors are unaffected.
                 </p>
               </div>
 
@@ -1537,7 +1487,7 @@ function WebhookSourceConfig({
     <div className="space-y-3 pt-2">
       <div className="space-y-2">
         <Label>
-          {tHardcodedUi.raw('componentsProjectsTriggersView.line1325JsxTextSigningSecret')}
+          {tHardcodedUi.raw('componentsProjectsScheduleView.line1325JsxTextSigningSecret')}
         </Label>
         <div className="flex gap-2">
           <Input
@@ -1562,22 +1512,22 @@ function WebhookSourceConfig({
 
       <div className="bg-muted/50 space-y-1.5 rounded-2xl border p-3">
         <div className="text-muted-foreground text-xs font-medium">
-          {tHardcodedUi.raw('componentsProjectsTriggersView.line1349JsxTextExternalUrl')}
+          {tHardcodedUi.raw('componentsProjectsScheduleView.line1349JsxTextExternalUrl')}
         </div>
         <code className="text-foreground block font-mono text-xs break-all">
           {buildWebhookUrl('<trigger-id>')}
         </code>
         <p className="text-muted-foreground text-xs">
           {tHardcodedUi.raw(
-            'componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
+            'componentsProjectsScheduleView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
           )}{' '}
           <code className="font-mono text-xs">X-Kortix-Signature</code>
-          {tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
+          {tHardcodedUi.raw('componentsProjectsScheduleView.line1357JsxTextHeaderSetTo')}{' '}
           <code className="font-mono text-xs">
-            {tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line1359JsxTextSha256LtHmacGt')}
           </code>{' '}
           {tHardcodedUi.raw(
-            'componentsProjectsTriggersView.line1360JsxTextComputedOverTheRawBodyWithTheSecret',
+            'componentsProjectsScheduleView.line1360JsxTextComputedOverTheRawBodyWithTheSecret',
           )}
         </p>
       </div>
@@ -1613,14 +1563,14 @@ function DeleteDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {tHardcodedUi.raw('componentsProjectsTriggersView.line1394JsxTextDeleteTrigger')}
+            {tHardcodedUi.raw('componentsProjectsScheduleView.line1394JsxTextDeleteTrigger')}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {target && (
               <>
                 Remove <span className="text-foreground font-medium">{getTriggerName(target)}</span>{' '}
                 {tHardcodedUi.raw(
-                  'componentsProjectsTriggersView.line1402JsxTextAndStopAnyFutureRunsFromItPast',
+                  'componentsProjectsScheduleView.line1402JsxTextAndStopAnyFutureRunsFromItPast',
                 )}
               </>
             )}
@@ -1659,11 +1609,11 @@ function ForbiddenNotice() {
       <ShieldAlert className="text-muted-foreground mt-0.5 h-4 w-4 flex-shrink-0" />
       <div className="space-y-0.5 text-sm">
         <p className="font-medium">
-          {tHardcodedUi.raw('componentsProjectsTriggersView.line1438JsxTextAccessRequired')}
+          {tHardcodedUi.raw('componentsProjectsScheduleView.line1438JsxTextAccessRequired')}
         </p>
         <p className="text-muted-foreground text-xs">
           {tHardcodedUi.raw(
-            'componentsProjectsTriggersView.line1440JsxTextYouDonAposTHavePermissionToView',
+            'componentsProjectsScheduleView.line1440JsxTextYouDonAposTHavePermissionToView',
           )}
         </p>
       </div>
@@ -1676,7 +1626,7 @@ function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => voi
   return (
     <div className="border-destructive/30 bg-destructive/5 rounded-2xl border px-4 py-3">
       <p className="text-destructive text-sm font-medium">
-        {tHardcodedUi.raw('componentsProjectsTriggersView.line1450JsxTextFailedToLoadTriggers')}
+        {tHardcodedUi.raw('componentsProjectsScheduleView.line1450JsxTextFailedToLoadTriggers')}
       </p>
       <p className="text-destructive/80 mt-1 text-xs">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>

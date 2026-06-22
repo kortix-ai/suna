@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -68,6 +67,7 @@ import {
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
@@ -98,15 +98,6 @@ interface SecretRow {
 }
 
 export function SecretsView({ projectId }: { projectId: string }) {
-  return (
-    <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={KeyRound} title="Secrets" />
-      <ProjectSecretsBody projectId={projectId} />
-    </div>
-  );
-}
-
-function ProjectSecretsBody({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
@@ -115,35 +106,23 @@ function ProjectSecretsBody({ projectId }: { projectId: string }) {
   });
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-        <header className="space-y-1">
-          <h2 className="text-foreground text-base font-semibold">
-            {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
-          </h2>
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw(
-              'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
-            )}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">kortix.toml</code>{' '}
-            {tHardcodedUi.raw(
-              'appProjectsIdCustomizeSecretsPage.line109JsxTextManifestValuesAreEncryptedAtRest',
-            )}
-          </p>
-        </header>
-
-        {secretsQuery.isLoading ? (
-          <SecretsSkeleton />
-        ) : secretsQuery.isError ? (
-          <ErrorNotice
-            message={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
-            onRetry={() => secretsQuery.refetch()}
-          />
-        ) : (
-          <SecretsCard projectId={projectId} data={secretsQuery.data} />
-        )}
-      </div>
-    </div>
+    <CustomizeSectionWrapper
+      title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
+      )}
+    >
+      {secretsQuery.isLoading ? (
+        <SecretsSkeleton />
+      ) : secretsQuery.isError ? (
+        <ErrorNotice
+          message={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
+          onRetry={() => secretsQuery.refetch()}
+        />
+      ) : (
+        <SecretsCard projectId={projectId} data={secretsQuery.data} />
+      )}
+    </CustomizeSectionWrapper>
   );
 }
 
