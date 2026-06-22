@@ -133,7 +133,10 @@ jobs:
           set -euo pipefail
           COUNT=$(psql "$DATABASE_URL" -tA -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='kortix' AND table_type='BASE TABLE'")
           echo "kortix base tables: $COUNT"
-          test "$COUNT" -ge 90
+          # Floor sanity-check: a fresh build is ~85 tables (kortix.ts is the source
+          # of truth). This only catches a grossly broken baseline (the original bug
+          # built 71/93), not normal add/drop drift.
+          test "$COUNT" -ge 80
 
   schema-sync:
     name: Schema matches migrations

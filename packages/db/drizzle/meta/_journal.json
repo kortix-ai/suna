@@ -99,6 +99,13 @@
       "when": 1781955950086,
       "tag": "20260620114550_gateway_session_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782114202649,
+      "tag": "20260622074322_ci_diagnostic",
+      "breakpoints": true
     }
   ]
 }
