@@ -25,6 +25,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Activity,
   Bot,
   Container,
   FolderOpen,
@@ -64,6 +65,7 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
+import { ActivityView } from '@/features/activity/activity-view';
 import { ChangesView } from './sections/changes-view';
 import { DevView } from './sections/dev-view';
 import { FilesSection } from './sections/files-section';
@@ -111,6 +113,7 @@ const GROUPS: readonly RailGroup[] = [
   {
     label: 'Workspace',
     items: [
+      { section: 'activity', label: 'Activity', icon: Activity },
       { section: 'changes', label: 'Changes', icon: GitPullRequest },
       { section: 'files', label: 'Files', icon: FolderOpen },
       { section: 'sandbox', label: 'Sandbox', icon: Container },
@@ -351,6 +354,8 @@ function SectionContent({
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).
   switch (section) {
+    case 'activity':
+      return <ActivityView projectId={projectId} />;
     case 'changes':
       return <ChangesView projectId={projectId} />;
     case 'files':

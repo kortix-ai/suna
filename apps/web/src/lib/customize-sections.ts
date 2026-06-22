@@ -9,6 +9,7 @@
  */
 
 export type CustomizeSection =
+  | 'activity'
   | 'changes'
   | 'files'
   | 'skills'
@@ -29,6 +30,7 @@ export type CustomizeSection =
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
+  'activity',
   'changes',
   'files',
   'skills',
