@@ -17,12 +17,12 @@ import { useMemo, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
-  matchesSessionFilter,
   SESSION_FILTER_OPTIONS,
-  sessionDisplayLabel,
-  sessionSource,
   type SessionFilterValue,
   type SessionSourceKind,
+  matchesSessionFilter,
+  sessionDisplayLabel,
+  sessionSource,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -43,28 +43,28 @@ import { StatusBadge, StatusDot } from '@/components/ui/status';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { useGatewaySessions } from '@/hooks/projects/use-project-gateway';
-import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { type ProjectSession, listProjectSessions } from '@/lib/projects-client';
 import type { GatewaySessionStat } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import {
+  RUN_RANGES,
+  RUN_SORTS,
+  RUN_STATUS_FILTERS,
+  type RunRange,
+  type RunSort,
+  type RunStatusFilter,
   formatRunDuration,
   formatUsd,
   isLiveRun,
   matchesRunStatus,
   rangeDays,
-  RUN_RANGES,
-  RUN_SORTS,
-  RUN_STATUS_FILTERS,
   runStatusLabel,
   runStatusTone,
   sortRuns,
   withinRange,
-  type RunRange,
-  type RunSort,
-  type RunStatusFilter,
 } from './activity-status';
 
 const SOURCE_LABEL: Record<SessionSourceKind, string> = {
@@ -74,6 +74,15 @@ const SOURCE_LABEL: Record<SessionSourceKind, string> = {
   schedule: 'Scheduled',
   webhook: 'Webhook',
 };
+
+const ACTIVITY_SKELETON_ROWS = [
+  'activity-skeleton-1',
+  'activity-skeleton-2',
+  'activity-skeleton-3',
+  'activity-skeleton-4',
+  'activity-skeleton-5',
+  'activity-skeleton-6',
+] as const;
 
 function SourceIcon({ kind, className }: { kind: SessionSourceKind; className?: string }) {
   if (kind === 'slack') return <Icon.Slack className={className} />;
@@ -280,9 +289,9 @@ export function ActivityView({ projectId }: { projectId: string }) {
           )}
           {sessionLoadFailed ? null : sessionsQuery.isLoading ? (
             <List>
-              {Array.from({ length: 6 }).map((_, i) => (
+              {ACTIVITY_SKELETON_ROWS.map((key) => (
                 <ListRow
-                  key={i}
+                  key={key}
                   leading={<Skeleton className="size-8 rounded-lg" />}
                   title={<Skeleton className="h-4 w-48" />}
                   subtitle={<Skeleton className="mt-1 h-3 w-32" />}

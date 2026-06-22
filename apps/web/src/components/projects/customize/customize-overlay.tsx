@@ -30,6 +30,7 @@ import {
   FolderOpen,
   GitPullRequest,
   KeyRound,
+  type LucideIcon,
   MessageSquare,
   Monitor,
   Plug,
@@ -42,7 +43,6 @@ import {
   Users,
   Webhook,
   X,
-  type LucideIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
 
