@@ -13,16 +13,17 @@ PR opened ─┬─ ci.yml ............. build/typecheck per app + Trivy fs + de
            ├─ codeql.yml ......... SAST (security-and-quality)
            └─ secret-scan.yml .... gitleaks on the PR range
                  │  (all must pass)
-merge to main ─── qa-main.yml ..... e2e·visual·a11y (vs deployed target) + migration + publish Allure
+merge to main ─── deploy-dev.yml ... build image + node-pg-migrate dev DB + GitOps dev roll
+                  qa-main.yml ..... e2e·visual·a11y (vs deployed target) + migration checks + publish Allure
                  │
 nightly cron ──── qa-nightly.yml .. performance(k6)·DAST(ZAP)·pentest·mutation·chaos·static-security
                  │
 PR → prod ─────── qa-release.yml .. full suite in sequence + gates (blocking pre-prod)
                  │  promote.yml gates on all-green check-runs
-merge to prod ─── deploy-prod.yml . retag dev→version images, publish, deploy
+merge to prod ─── deploy-prod.yml . retag dev→version images, node-pg-migrate prod DB, publish, GitOps prod roll
 ```
 
-Deploy lanes: `deploy-dev.yml` (push→dev, Trivy CRITICAL gate + SBOM + cosign), `deploy-preview.yml` (PR→Vercel preview), `deploy-prod.yml`, `hotfix-prod.yml` (break-glass — see below). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
+Deploy lanes: `deploy-dev.yml` (push→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `deploy-preview.yml` (PR→Vercel preview), `deploy-prod.yml` (prod DB migrations + EKS GitOps), `hotfix-prod.yml` (break-glass — see below). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
 
 ## Emergency hotfix (break-glass)
 

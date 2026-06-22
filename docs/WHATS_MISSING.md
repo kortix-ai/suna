@@ -41,10 +41,11 @@ feature works.
   cutover**, simultaneously with disabling the corresponding ECS service (one
   Postgres leader lease is shared across ECS+EKS). Premature flip = double
   singleton workers.
-- **`migrate.enabled: false`** on prod — the Drizzle migrate PreSync hook is off
-  until the prod Drizzle ledger is baselined (prod schema was built out-of-band;
-  `drizzle.__drizzle_migrations` records 1 of 11). Needs a one-time gated baseline
-  (`migration` skill) before enabling.
+- **Disabled Helm migration hook drift** — live dev/prod migrations are applied
+  by GitHub Actions `migrate-db` jobs with node-pg-migrate before EKS rolls. The
+  chart-level `migrate.enabled` hook remains disabled and still points at the old
+  Drizzle-era command; port or remove it before anyone enables it
+  (https://github.com/kortix-ai/suna/issues/3628).
 - **Grafana admin / OIDC + `devops.<domain>` ingress** — Grafana has no real
   admin secret in git and no SSO root-url yet; it serves behind a tunnel today.
   Headlamp's `devops.<domain>` OIDC ingress is "Phase 3" in

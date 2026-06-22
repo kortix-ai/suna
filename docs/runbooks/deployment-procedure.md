@@ -34,8 +34,9 @@ Steps:
 1. Open a PR into `main`. `ci.yml`, `codeql.yml`, `secret-scan.yml` run.
 2. Merge. The `deploy-dev.yml` workflow (`.github/workflows/deploy-dev.yml`)
    triggers on the push to `main`. Only surfaces whose paths changed rebuild
-   (path-filtered: `apps/api`, `packages`, `supabase/migrations`, lockfiles,
-   `VERSION`, etc.).
+   (path-filtered: `apps/api`, `packages`, `packages/db/migrations`, lockfiles,
+   `VERSION`, etc.). If the API surface changed, the `migrate-db` job applies
+   pending node-pg-migrate migrations against dev before the GitOps rollout.
 3. The `deploy-api` job (name: **Deploy API to dev (EKS / GitOps)**) builds and
    pushes `kortix/kortix-api:dev-<sha8>`, then bumps
    `infra/k8s/envs/dev/values.yaml` `image.tag` to that immutable tag and commits
@@ -99,6 +100,9 @@ Steps:
      `:latest` (no rebuild — what was tested on dev is what ships).
    - `version` / CLI / desktop jobs: cut the GitHub Release `vX.Y.Z` (desktop is
      best-effort, never blocks).
+   - `migrate-db` job: applies pending `packages/db/migrations` with
+     node-pg-migrate (`pnpm --filter @kortix/db migrate`) against prod before any
+     new API pods serve.
    - `deploy-api` job (name: **Deploy API to prod (EKS / GitOps)**): assumes
      `arn:aws:iam::935064898258:role/kortix-gha-eks-deploy`, runs `aws eks
      update-kubeconfig --name kortix-prod-eks --region eu-west-2`, and **watches**
@@ -137,11 +141,11 @@ curl -fsS https://api-eks.kortix.com/v1/health | jq .version       # → "X.Y.Z"
 
 ## Notes & gotchas
 
-- **Migrations**: the Drizzle migrate PreSync hook
-  (`templates/migrate-job.yaml`) is **`migrate.enabled: false` on prod** until
-  the prod Drizzle ledger is baselined (prod schema was built out-of-band). Do
-  not flip it without the gated baseline — see `infra/k8s/envs/prod/values.yaml`
-  and the `migration` skill.
+- **Migrations**: live dev/prod deploys use the GitHub Actions `migrate-db` jobs
+  and node-pg-migrate (`packages/db/MIGRATIONS.md`), before the EKS GitOps roll.
+  The chart-level PreSync hook is disabled and still reflects the old Drizzle
+  path; do **not** enable `migrate.enabled` until the hook is ported or removed
+  (https://github.com/kortix-ai/suna/issues/3628).
 - **Preview envs**: per-PR ephemeral APIs deploy via the Argo CD ApplicationSet
   (`infra/k8s/argocd/applicationsets/preview.yaml`) into `kortix-pr-<n>`
   namespaces on dev-eks when a PR is labelled `preview`. See `docs/ONBOARDING.md`.
