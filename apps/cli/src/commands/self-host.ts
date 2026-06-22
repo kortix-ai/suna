@@ -102,6 +102,13 @@ interface SelfHostEnv {
   KORTIX_GITHUB_APP_SLUG: string;
   KORTIX_GITHUB_TOKEN: string;
   KORTIX_GITHUB_OWNER: string;
+  // Managed git: the backend that provisions project repos. The API reads these
+  // MANAGED_GIT_* vars (KORTIX_GITHUB_* alone don't reach it), so the wizard sets
+  // both. Without it, project create/CRUD fails "provider github not configured".
+  MANAGED_GIT_PROVIDER: string;
+  MANAGED_GIT_GITHUB_TOKEN: string;
+  MANAGED_GIT_GITHUB_OWNER: string;
+  MANAGED_GIT_GITHUB_INSTALL_ID: string;
   FREESTYLE_API_KEY: string;
   FREESTYLE_API_URL: string;
   INTEGRATION_AUTH_PROVIDER: string;
@@ -270,6 +277,15 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
     );
     process.stdout.write(
       `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set ${C.reset}DAYTONA_API_KEY${C.dim}.${C.reset}\n\n`,
+    );
+  }
+
+  if (!gitProviderConfigured(env)) {
+    process.stdout.write(
+      `${C.yellow}  warning${C.reset}  ${C.dim}managed git not configured — creating projects will fail.${C.reset}\n`,
+    );
+    process.stdout.write(
+      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to connect GitHub (PAT or App).${C.reset}\n\n`,
     );
   }
 
@@ -523,23 +539,42 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
     env.FREESTYLE_API_URL = await prompt('Freestyle API URL', env.FREESTYLE_API_URL || 'https://api.freestyle.sh');
   }
 
-  const githubMode = await selectFrom('GitHub integration: none/app/pat', ['none', 'app', 'pat'] as const, inferGithubMode(env));
+  // Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
+  // git repo the server provisions. A PAT is the quickest path; a GitHub App is
+  // the richer one. The API reads MANAGED_GIT_* (not KORTIX_GITHUB_* alone), so
+  // we set both. "none" leaves projects unavailable.
+  process.stdout.write(`  ${C.dim}GitHub (managed git) is required to create projects.${C.reset}\n`);
+  const githubMode = await selectFrom('GitHub for projects: pat/app/none', ['pat', 'app', 'none'] as const, inferGithubMode(env) === 'none' ? 'pat' : inferGithubMode(env));
   if (githubMode === 'app') {
     env.KORTIX_GITHUB_APP_ID = await prompt('GitHub App ID', env.KORTIX_GITHUB_APP_ID);
     env.KORTIX_GITHUB_APP_SLUG = await prompt('GitHub App slug', env.KORTIX_GITHUB_APP_SLUG);
     env.KORTIX_GITHUB_APP_PRIVATE_KEY = await promptSecret('GitHub App private key (paste with \\n escapes)', env.KORTIX_GITHUB_APP_PRIVATE_KEY);
+    env.MANAGED_GIT_GITHUB_OWNER = await prompt('GitHub owner/org for project repos', env.MANAGED_GIT_GITHUB_OWNER || env.KORTIX_GITHUB_OWNER);
+    env.MANAGED_GIT_GITHUB_INSTALL_ID = await prompt('GitHub App installation ID (on that org)', env.MANAGED_GIT_GITHUB_INSTALL_ID);
+    env.KORTIX_GITHUB_OWNER = env.MANAGED_GIT_GITHUB_OWNER;
+    env.MANAGED_GIT_PROVIDER = 'github';
     env.KORTIX_GITHUB_TOKEN = '';
+    env.MANAGED_GIT_GITHUB_TOKEN = '';
   } else if (githubMode === 'pat') {
     env.KORTIX_GITHUB_TOKEN = await promptSecret('GitHub PAT (repo scope)', env.KORTIX_GITHUB_TOKEN);
-    env.KORTIX_GITHUB_OWNER = await prompt('Default GitHub owner/org', env.KORTIX_GITHUB_OWNER);
+    env.MANAGED_GIT_GITHUB_OWNER = await prompt('GitHub owner/org for project repos', env.MANAGED_GIT_GITHUB_OWNER || env.KORTIX_GITHUB_OWNER);
+    // The managed-git backend reads MANAGED_GIT_GITHUB_*; mirror the PAT + owner.
+    env.MANAGED_GIT_GITHUB_TOKEN = env.KORTIX_GITHUB_TOKEN;
+    env.KORTIX_GITHUB_OWNER = env.MANAGED_GIT_GITHUB_OWNER;
+    env.MANAGED_GIT_PROVIDER = 'github';
     env.KORTIX_GITHUB_APP_ID = '';
     env.KORTIX_GITHUB_APP_SLUG = '';
     env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
+    env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
   } else {
     env.KORTIX_GITHUB_APP_ID = '';
     env.KORTIX_GITHUB_APP_SLUG = '';
     env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
     env.KORTIX_GITHUB_TOKEN = '';
+    env.MANAGED_GIT_PROVIDER = '';
+    env.MANAGED_GIT_GITHUB_TOKEN = '';
+    env.MANAGED_GIT_GITHUB_OWNER = '';
+    env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
   }
 
   const pdMode = await selectFrom('Pipedream connectors: skip/configure', ['skip', 'configure'] as const, pipedreamConfigured(env) ? 'configure' : 'skip');
@@ -585,10 +620,25 @@ function sandboxProviderConfigured(env: SelfHostEnv): boolean {
   return false;
 }
 
+/** Managed git provider configured? Required to create/CRUD projects. */
+function gitProviderConfigured(env: SelfHostEnv): boolean {
+  if (env.MANAGED_GIT_PROVIDER !== 'github') return false;
+  const pat = !!(env.MANAGED_GIT_GITHUB_TOKEN && env.MANAGED_GIT_GITHUB_OWNER);
+  const app = !!(
+    env.KORTIX_GITHUB_APP_ID &&
+    env.KORTIX_GITHUB_APP_PRIVATE_KEY &&
+    env.MANAGED_GIT_GITHUB_OWNER &&
+    env.MANAGED_GIT_GITHUB_INSTALL_ID
+  );
+  return pat || app;
+}
+
 function integrationReviewNeeded(env: SelfHostEnv): boolean {
-  // The sandbox runtime is required — the API won't even boot without it — so a
-  // missing provider always warrants the wizard, even after a prior review.
+  // Both the sandbox runtime (the API won't boot without it) and managed git
+  // (you can't create projects without it) are required, so a missing one always
+  // warrants the wizard — even after a prior review.
   if (!sandboxProviderConfigured(env)) return true;
+  if (!gitProviderConfigured(env)) return true;
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
   return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
 }
@@ -610,14 +660,9 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
       hint: 'FREESTYLE_API_KEY',
     },
     {
-      name: 'GitHub App',
-      configured: inferGithubMode(env) === 'app',
-      hint: 'KORTIX_GITHUB_APP_ID + KORTIX_GITHUB_APP_PRIVATE_KEY + KORTIX_GITHUB_APP_SLUG',
-    },
-    {
-      name: 'GitHub PAT fallback',
-      configured: inferGithubMode(env) === 'pat',
-      hint: 'KORTIX_GITHUB_TOKEN + KORTIX_GITHUB_OWNER',
+      name: 'Managed git for projects (required)',
+      configured: gitProviderConfigured(env),
+      hint: 'connect GitHub (PAT or App) via kortix self-host configure',
     },
     {
       name: 'Pipedream connectors',
@@ -836,6 +881,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     KORTIX_GITHUB_APP_SLUG: '',
     KORTIX_GITHUB_TOKEN: '',
     KORTIX_GITHUB_OWNER: '',
+    MANAGED_GIT_PROVIDER: 'github',
+    MANAGED_GIT_GITHUB_TOKEN: '',
+    MANAGED_GIT_GITHUB_OWNER: '',
+    MANAGED_GIT_GITHUB_INSTALL_ID: '',
     FREESTYLE_API_KEY: '',
     FREESTYLE_API_URL: 'https://api.freestyle.sh',
     INTEGRATION_AUTH_PROVIDER: 'pipedream',
