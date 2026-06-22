@@ -35,6 +35,46 @@ const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
 const warn = (s: string) => console.log(`${pc.yellow('!')} ${s}`);
 const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); process.exit(1); };
 const url = (u: string) => pc.cyan(pc.underline(u));
+
+// Free any stale process still holding this slot's ports — a previous `up` that
+// didn't shut down cleanly, or a gateway that crashed but left the port bound.
+// Without this the fresh gateway hits EADDRINUSE on its slot port; and because
+// `bun --hot` stays alive after a startup throw (it keeps the reload watcher
+// running), it would never actually listen, yet `Promise.race([...exited])`
+// can't see it — so the API would silently fall back to the single-model
+// passthrough. We only ever touch this worktree's own slot ports.
+async function freeSlotPorts(ports: Ports): Promise<void> {
+  let freed = 0;
+  for (const [label, port] of [['web', ports.web], ['api', ports.api], ['gateway', ports.gateway]] as const) {
+    const u = portInUse(port);
+    if (u.inUse && u.pid) {
+      sub(`freeing stale ${label} process on :${port} (pid ${u.pid})`);
+      sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]);
+      freed++;
+    }
+  }
+  if (freed) await Bun.sleep(400);
+}
+
+// Gate on the gateway actually listening. The API proxies sandbox LLM traffic to
+// it, so a dead gateway silently degrades sandboxes to the single-model
+// passthrough (wrong catalog). `bun --hot` swallows a startup crash, so the
+// exit-race never fires — poll the readiness endpoint and say so plainly.
+async function waitForGateway(port: number, proc: ReturnType<typeof Bun.spawn>): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) {
+      warn(`llm gateway exited (code ${proc.exitCode}) before it came up — the API will fall back to the single-model passthrough. See the gateway logs above.`);
+      return;
+    }
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/health/live`, { signal: AbortSignal.timeout(1000) });
+      if (r.ok) { ok(`llm gateway ready on :${port}`); return; }
+    } catch {}
+    await Bun.sleep(500);
+  }
+  warn(`llm gateway never became healthy on :${port} (30s) — the API will fall back to the single-model passthrough (wrong catalog). Is :${port} already in use? Check the gateway logs above.`);
+}
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
 async function spin(label: string, cmd: string[]): Promise<void> {
@@ -334,8 +374,10 @@ async function cmdStart(a: Args) {
     else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
   }
 
+  await freeSlotPorts(e.ports);
+
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
-  console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(internal · API proxies /v1/llm-gateway/*)')}`);
+  console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
@@ -343,6 +385,7 @@ async function cmdStart(a: Args) {
   const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
+  void waitForGateway(e.ports.gateway, gateway);
   const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api, e.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
   let stopping = false;
   const shutdown = async () => {
