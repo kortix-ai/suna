@@ -43,6 +43,31 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel', 'computer'];
 
+/**
+ * Platform-owned slugs and the ONLY provider allowed to use each. These are
+ * install-driven, first-class connectors — the Slack channel and the Agent
+ * Computer Tunnel — so a user app must never take the slug and shadow the
+ * built-in catalog (the bug that made `slack thread` 404 with action_not_found,
+ * fixed for Slack in #3670). Enforced in the parser (reject the wrong provider)
+ * AND at CRUD via RESERVED_CONNECTOR_SLUGS, which also blocks the public `slack`
+ * NAME so a Pipedream Slack can't be added (the picker already hides it).
+ *
+ *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
+ *    executor/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
+ *  - `computer`     → computer only (the Agent Computer Tunnel connector).
+ * See KORTIX-206 + docs/specs/computer-connector.md.
+ */
+export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, ConnectorProvider>> = {
+  kortix_slack: 'channel',
+  computer: 'computer',
+};
+/** The reserved slug the built-in Slack channel materializes under. */
+export const SLACK_RESERVED_SLUG = 'kortix_slack';
+export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
+  'slack',
+  ...Object.keys(RESERVED_SLUG_PROVIDERS),
+]);
+
 /** Chat platforms a `channel` connector can target. */
 export type ChannelPlatform = 'slack';
 const CHANNEL_PLATFORMS: readonly ChannelPlatform[] = ['slack'];
@@ -261,6 +286,20 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   const provider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
   if (!PROVIDERS.includes(provider as ConnectorProvider)) {
     return err(slug, `provider must be one of ${PROVIDERS.join(', ')} (got "${provider || 'unset'}")`);
+  }
+
+  // Reserved platform-owned slugs: only the matching built-in provider may use
+  // them, so a user app can never shadow the built-in catalog (the bug that made
+  // `slack thread` resolve to a Pipedream Slack and 404 with action_not_found).
+  // The public `slack` NAME stays parseable here (so existing manifests don't
+  // break) but is blocked at the CRUD layer and hidden from the list once the
+  // channel exists.
+  const reservedProvider = RESERVED_SLUG_PROVIDERS[slug];
+  if (reservedProvider && provider !== reservedProvider) {
+    return err(
+      slug,
+      `"${slug}" is reserved for the built-in ${reservedProvider} connector (provider="${reservedProvider}")`,
+    );
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;

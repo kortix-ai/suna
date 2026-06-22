@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import { extractConnectors, RESERVED_CONNECTOR_SLUGS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -94,6 +94,18 @@ export async function upsertConnectorInManifest(
   draft: ConnectorDraft,
   sharing?: SharingIntent,
 ): Promise<CrudResult> {
+  // Slack is a first-class channel connector — reserve its namespace so a new
+  // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
+  // Slack CLI). Connect Slack in the Channels tab; it appears as a connector
+  // automatically. Only block NEW slugs — editing an existing entry is fine.
+  if (RESERVED_CONNECTOR_SLUGS.has(draft.slug) && (await connectorIdFor(projectId, draft.slug)) === null) {
+    return {
+      ok: false,
+      error: `"${draft.slug}" is reserved for the built-in Slack channel — connect Slack in Channels (it appears as a connector automatically). Pick a different slug.`,
+      status: 400,
+    };
+  }
+
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
 

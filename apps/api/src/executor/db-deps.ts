@@ -42,6 +42,7 @@ import {
 import { syncProjectConnectors } from './sync';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { loadSlackInstall, loadSlackTokenForProject } from '../channels/install-store';
+import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
   finalizePipedreamConnection,
@@ -321,10 +322,12 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
 
 /** The catalog a principal can actually use (access + credential present + not blocked). */
 async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
-  const conns = await db
-    .select()
-    .from(executorConnectors)
-    .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true)));
+  const conns = hideSupersededSlack(
+    await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true))),
+  );
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
 
   // Project-scoped layer is the same for every connector in this list — load once.
@@ -379,7 +382,9 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
 
 /** Admin list — sharing + credential mode + whether the viewer's credential is set. */
 async function listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]> {
-  const conns = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+  const conns = hideSupersededSlack(
+    await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId)),
+  );
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
   const out: AdminConnectorView[] = [];
   for (const row of conns) {
