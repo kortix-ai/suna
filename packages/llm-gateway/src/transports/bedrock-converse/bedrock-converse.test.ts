@@ -52,21 +52,45 @@ describe('buildBedrockConverseRequest', () => {
   });
 });
 
-// Build a single AWS event-stream frame: 4B total · 4B headersLen · 4B preludeCRC
-// · headers · payload · 4B msgCRC. CRCs are unchecked by the parser, so zero them.
-function frame(eventType: string, payload: unknown): Uint8Array {
-  const enc = new TextEncoder();
-  const name = enc.encode(':event-type');
-  const et = enc.encode(eventType);
-  const headers = new Uint8Array(1 + name.length + 1 + 2 + et.length);
+const enc = new TextEncoder();
+
+// One AWS event-stream string header: 1B name-len · name · 1B type(7) · 2B val-len · val.
+function header(name: string, value: string): Uint8Array {
+  const n = enc.encode(name);
+  const v = enc.encode(value);
+  const out = new Uint8Array(1 + n.length + 1 + 2 + v.length);
   let p = 0;
-  headers[p++] = name.length;
-  headers.set(name, p);
-  p += name.length;
-  headers[p++] = 7; // string
-  headers[p++] = (et.length >> 8) & 0xff;
-  headers[p++] = et.length & 0xff;
-  headers.set(et, p);
+  out[p++] = n.length;
+  out.set(n, p);
+  p += n.length;
+  out[p++] = 7; // string type
+  out[p++] = (v.length >> 8) & 0xff;
+  out[p++] = v.length & 0xff;
+  out.set(v, p);
+  return out;
+}
+
+function concatAll(parts: Uint8Array[]): Uint8Array {
+  const len = parts.reduce((a, b) => a + b.length, 0);
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
+  return out;
+}
+
+// A realistic AWS event-stream frame: 4B total · 4B headersLen · 4B preludeCRC ·
+// headers · payload · 4B msgCRC. CRCs are unchecked by the parser → zero them.
+// Emits THREE headers in the real Bedrock order (`:event-type` is NOT first) so
+// the header-skipping logic actually runs.
+function frame(eventType: string, payload: unknown, messageType = 'event'): Uint8Array {
+  const headers = concatAll([
+    header(':message-type', messageType),
+    header(':event-type', eventType),
+    header(':content-type', 'application/json'),
+  ]);
   const body = enc.encode(JSON.stringify(payload));
   const total = 16 + headers.length + body.length;
   const out = new Uint8Array(total);
@@ -88,6 +112,19 @@ function eventStreamResponse(frames: Uint8Array[]): Response {
   return new Response(body, { status: 200 });
 }
 
+// Deliver the whole byte stream re-chunked at a fixed size, so frames are split
+// across reads and several can land in one read — exercises the buffering logic.
+function rechunkedResponse(frames: Uint8Array[], chunkSize: number): Response {
+  const all = concatAll(frames);
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (let i = 0; i < all.length; i += chunkSize) c.enqueue(all.subarray(i, i + chunkSize));
+      c.close();
+    },
+  });
+  return new Response(body, { status: 200 });
+}
+
 async function drain(rs: ReadableStream<Uint8Array>): Promise<string> {
   const reader = rs.getReader();
   const dec = new TextDecoder();
@@ -100,39 +137,109 @@ async function drain(rs: ReadableStream<Uint8Array>): Promise<string> {
   return out;
 }
 
+function parseChunks(text: string): any[] {
+  return text
+    .split('\n\n')
+    .filter((l) => l.startsWith('data: ') && !l.includes('[DONE]'))
+    .map((l) => JSON.parse(l.slice(6)));
+}
+
+// text "Hello world" + one tool call wx({"city":"Paris"}), tool_use stop, usage.
+const SAMPLE_FRAMES = [
+  frame('messageStart', { role: 'assistant' }),
+  frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'Hello' } }),
+  frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: ' world' } }),
+  frame('contentBlockStart', { contentBlockIndex: 1, start: { toolUse: { toolUseId: 't1', name: 'wx' } } }),
+  frame('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '{"city":' } } }),
+  frame('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '"Paris"}' } } }),
+  frame('messageStop', { stopReason: 'tool_use' }),
+  frame('metadata', { usage: { inputTokens: 10, outputTokens: 5 } }),
+];
+
+function assertSample(text: string) {
+  const chunks = parseChunks(text);
+  expect(chunks.map((c) => c.choices[0].delta.content).filter(Boolean).join('')).toBe('Hello world');
+  const calls = chunks.flatMap((c) => c.choices[0].delta.tool_calls ?? []);
+  expect(calls.map((t: any) => t.function?.name).filter(Boolean)[0]).toBe('wx');
+  expect(calls.map((t: any) => t.function?.arguments ?? '').join('')).toBe('{"city":"Paris"}');
+  const final = chunks.find((c) => c.choices[0].finish_reason);
+  expect(final.choices[0].finish_reason).toBe('tool_calls');
+  expect(final.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+  expect(text.trimEnd().endsWith('data: [DONE]')).toBe(true);
+}
+
 describe('translateBedrockConverseResponse (streaming)', () => {
-  test('converts a text + tool-call Converse stream to OpenAI SSE', async () => {
-    const resp = eventStreamResponse([
-      frame('messageStart', { role: 'assistant' }),
-      frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'Hello' } }),
-      frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: ' world' } }),
-      frame('contentBlockStart', { contentBlockIndex: 1, start: { toolUse: { toolUseId: 't1', name: 'wx' } } }),
-      frame('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '{"city":' } } }),
-      frame('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '"Paris"}' } } }),
-      frame('messageStop', { stopReason: 'tool_use' }),
-      frame('metadata', { usage: { inputTokens: 10, outputTokens: 5 } }),
+  test('converts a text + tool-call Converse stream to OpenAI SSE (multi-header frames)', async () => {
+    const out = await translateBedrockConverseResponse(eventStreamResponse(SAMPLE_FRAMES), { streaming: true });
+    assertSample(await drain(out.body!));
+  });
+
+  // The riskiest path: the network splits frames across reads and packs several
+  // into one read. Re-chunk the exact same bytes at hostile sizes and the parser
+  // must produce identical output.
+  test.each([1, 2, 3, 7, 13, 64, 4096])('reassembles frames re-chunked at %i bytes', async (size) => {
+    const out = await translateBedrockConverseResponse(rechunkedResponse(SAMPLE_FRAMES, size), { streaming: true });
+    assertSample(await drain(out.body!));
+  });
+
+  test('emits distinct indices for two tool calls', async () => {
+    const out = await translateBedrockConverseResponse(
+      eventStreamResponse([
+        frame('messageStart', { role: 'assistant' }),
+        frame('contentBlockStart', { contentBlockIndex: 0, start: { toolUse: { toolUseId: 'a', name: 'one' } } }),
+        frame('contentBlockDelta', { contentBlockIndex: 0, delta: { toolUse: { input: '{}' } } }),
+        frame('contentBlockStart', { contentBlockIndex: 1, start: { toolUse: { toolUseId: 'b', name: 'two' } } }),
+        frame('contentBlockDelta', { contentBlockIndex: 1, delta: { toolUse: { input: '{}' } } }),
+        frame('messageStop', { stopReason: 'tool_use' }),
+        frame('metadata', { usage: { inputTokens: 1, outputTokens: 1 } }),
+      ]),
+      { streaming: true },
+    );
+    const calls = parseChunks(await drain(out.body!)).flatMap((c) => c.choices[0].delta.tool_calls ?? []);
+    const starts = calls.filter((t: any) => t.id);
+    expect(starts.map((t: any) => [t.index, t.id, t.function.name])).toEqual([
+      [0, 'a', 'one'],
+      [1, 'b', 'two'],
     ]);
+  });
 
-    const out = await translateBedrockConverseResponse(resp, { streaming: true });
+  test('does not crash on an exception frame; still finalizes', async () => {
+    const out = await translateBedrockConverseResponse(
+      eventStreamResponse([
+        frame('messageStart', { role: 'assistant' }),
+        frame('contentBlockDelta', { contentBlockIndex: 0, delta: { text: 'hi' } }),
+        frame('modelStreamErrorException', { message: 'boom' }, 'exception'),
+      ]),
+      { streaming: true },
+    );
     const text = await drain(out.body!);
-
-    const chunks = text
-      .split('\n\n')
-      .filter((l) => l.startsWith('data: ') && !l.includes('[DONE]'))
-      .map((l) => JSON.parse(l.slice(6)));
-
-    // text deltas concatenate
-    const content = chunks.map((c) => c.choices[0].delta.content).filter(Boolean).join('');
-    expect(content).toBe('Hello world');
-    // tool call: name + concatenated arguments
-    const toolName = chunks.flatMap((c) => c.choices[0].delta.tool_calls ?? []).map((t: any) => t.function?.name).filter(Boolean)[0];
-    expect(toolName).toBe('wx');
-    const args = chunks.flatMap((c) => c.choices[0].delta.tool_calls ?? []).map((t: any) => t.function?.arguments ?? '').join('');
-    expect(args).toBe('{"city":"Paris"}');
-    // final chunk: finish_reason + usage
-    const final = chunks.find((c) => c.choices[0].finish_reason);
-    expect(final.choices[0].finish_reason).toBe('tool_calls');
-    expect(final.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+    expect(parseChunks(text).map((c) => c.choices[0].delta.content).filter(Boolean).join('')).toBe('hi');
     expect(text.trimEnd().endsWith('data: [DONE]')).toBe(true);
+  });
+});
+
+describe('translateBedrockConverseResponse (non-streaming)', () => {
+  test('translates a ConverseResponse to an OpenAI completion', async () => {
+    const resp = new Response(
+      JSON.stringify({
+        output: { message: { role: 'assistant', content: [{ text: 'hi' }, { toolUse: { toolUseId: 't1', name: 'wx', input: { city: 'Paris' } } }] } },
+        stopReason: 'tool_use',
+        usage: { inputTokens: 7, outputTokens: 3 },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+    const out = await translateBedrockConverseResponse(resp, { streaming: false });
+    const body: any = await out.json();
+    expect(body.choices[0].message.content).toBe('hi');
+    expect(body.choices[0].message.tool_calls[0]).toMatchObject({ id: 't1', function: { name: 'wx', arguments: '{"city":"Paris"}' } });
+    expect(body.choices[0].finish_reason).toBe('tool_calls');
+    expect(body.usage).toMatchObject({ prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 });
+  });
+
+  test('surfaces an upstream error as an OpenAI error object', async () => {
+    const resp = new Response(JSON.stringify({ message: 'throttled' }), { status: 429 });
+    const out = await translateBedrockConverseResponse(resp, { streaming: false });
+    expect(out.status).toBe(429);
+    expect((await out.json()).error.message).toBe('throttled');
   });
 });
