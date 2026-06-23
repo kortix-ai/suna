@@ -839,6 +839,21 @@ jobs:
         if: steps.guard.outputs.exists == 'true'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
 
+      # Code is the first-class copy: re-apply the committed Argo CD Application so
+      # the live app always tracks what the repo says (path / targetRevision /
+      # values). Without this, a hand-applied app that drifted (e.g. left tracking
+      # an old branch) silently freezes the gateway on a stale image while Argo
+      # reports Synced/Healthy — exactly the "not yet tracking the prod values"
+      # case the watch warns about below. Best-effort on RBAC; never blocks.
+      - name: Reconcile Argo CD Application from repo (code is source of truth)
+        if: steps.guard.outputs.exists == 'true'
+        continue-on-error: true
+        run: |
+          kubectl apply -f infra/k8s/argocd/applications/gateway-prod.yaml \
+            || echo "::warning::could not apply gateway-prod Application (argocd RBAC for the deploy role?) — live app may be drifted from the repo"
+          kubectl -n argocd annotate application kortix-gateway-prod \
+            argocd.argoproj.io/refresh=hard --overwrite 2>/dev/null || true
+
       - name: Wait for gateway Deployment rolled out @ v${{ needs.version.outputs.version }}
         if: steps.guard.outputs.exists == 'true'
         env:
