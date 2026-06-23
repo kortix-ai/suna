@@ -39,7 +39,13 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
   };
 }
 
-function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+type BedrockManagedModel = ManagedModel & { transport: 'bedrock' | 'bedrock-converse' };
+
+function isBedrockManagedModel(managed: ManagedModel): managed is BedrockManagedModel {
+  return managed.transport === 'bedrock' || managed.transport === 'bedrock-converse';
+}
+
+function bedrockManagedDescriptor(managed: BedrockManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
   // 'bedrock' = Anthropic InvokeModel/anthropic-payload; 'bedrock-converse' =
   // the model-agnostic Converse API (Kimi, MiniMax). Same bearer key, different
@@ -57,10 +63,11 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  const d =
-    managed.transport === 'openrouter'
-      ? openRouterManagedDescriptor(managed)
-      : bedrockManagedDescriptor(managed);
+  const d = managed.transport === 'openrouter'
+    ? openRouterManagedDescriptor(managed)
+    : isBedrockManagedModel(managed)
+      ? bedrockManagedDescriptor(managed)
+      : null;
   return d ? [d] : [];
 }
 
