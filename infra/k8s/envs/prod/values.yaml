@@ -4,9 +4,13 @@
 # `git revert` is the rollback. Verified by `argocd app get kortix-prod`.
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
+# ROLLBACK 2026-06-23: pinned to the existing :0.9.68 release image (Argo pulls it,
+# zero rebuild). The root VERSION file is left at 0.9.77 on purpose so deploy-prod's
+# retag job targets :0.9.77 and can NEVER overwrite this :0.9.68 rollback image.
+# The next promote of latest `main` supersedes this (merge -s ours) and moves forward.
 image:
-  tag: "0.9.77"
-kortixVersion: "0.9.77"
+  tag: "0.9.68"
+kortixVersion: "0.9.68"
 env:
   internalKortixEnv: prod
 # Explicit container env (overrides the kortix-prod-env secret bundle — k8s env
