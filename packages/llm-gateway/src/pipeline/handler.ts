@@ -65,17 +65,43 @@ export async function handleChatCompletions(
 
   const emit = createTraceEmitter(hooks, logger, requestId, startedAt, startMs);
 
+  let lastMark = startMs;
+  const lap = (): number => {
+    const now = Date.now();
+    const delta = now - lastMark;
+    lastMark = now;
+    return delta;
+  };
+  const step = (event: string, fields?: Record<string, unknown>): void =>
+    logger.debug?.(`[gateway] · ${requestId} ${event}`, {
+      requestId,
+      event,
+      sinceStartMs: Date.now() - startMs,
+      ...fields,
+    });
+
+  step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
+
   const token = bearer(req.authorization);
   if (!token) {
+    step('reject_no_token');
     emit({ status: 401, ok: false, errorCode: 'missing_token' });
     return json({ error: 'Missing bearer token' }, 401);
   }
 
   const principal = await hooks.authenticate(token);
   if (!principal) {
+    step('auth_failed', { ms: lap() });
     emit({ status: 401, ok: false, errorCode: 'invalid_token' });
     return json({ error: 'Invalid token' }, 401);
   }
+  step('authenticated', {
+    ms: lap(),
+    accountId: principal.accountId,
+    projectId: principal.projectId,
+    userId: principal.userId,
+    keyId: principal.keyId,
+  });
 
   const id = {
     accountId: principal.accountId,
@@ -87,7 +113,9 @@ export async function handleChatCompletions(
 
   try {
     await hooks.assertBillingActive(principal.accountId);
+    step('billing_ok', { ms: lap() });
   } catch (err) {
+    step('billing_inactive', { ms: lap(), reason: errorMessage(err) });
     emit({
       ...id,
       status: 402,
@@ -102,7 +130,9 @@ export async function handleChatCompletions(
   if (hooks.assertBudget) {
     try {
       await hooks.assertBudget(principal);
+      step('budget_ok', { ms: lap() });
     } catch (err) {
+      step('budget_exceeded', { ms: lap(), reason: errorMessage(err) });
       // 402, not 429: a budget cap is a terminal condition (it won't clear by
       // waiting), so it must NOT be retried like a transient rate limit. Mirrors
       // the billing-inactive gate above.
@@ -122,11 +152,18 @@ export async function handleChatCompletions(
   try {
     body = JSON.parse(req.rawBody) as Record<string, unknown>;
   } catch {
+    step('invalid_json');
     emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
     return json({ error: 'Invalid JSON body' }, 400);
   }
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
+  step('body_parsed', {
+    model: requestedModel,
+    stream: body.stream === true,
+    messages: Array.isArray(body.messages) ? body.messages.length : 0,
+    tools: Array.isArray(body.tools) ? body.tools.length : 0,
+  });
   const metadata =
     body.metadata && typeof body.metadata === 'object'
       ? (body.metadata as Record<string, unknown>)
@@ -137,7 +174,18 @@ export async function handleChatCompletions(
   );
 
   const candidates = await hooks.resolveUpstream(principal, requestedModel);
+  step('resolved_candidates', {
+    ms: lap(),
+    count: candidates.length,
+    candidates: candidates.map((c) => ({
+      provider: c.provider,
+      kind: c.kind,
+      resolvedModel: c.resolvedModel,
+      billingMode: c.billingMode,
+    })),
+  });
   if (!candidates.length) {
+    step('model_unavailable', { model: requestedModel });
     emit({
       ...id,
       requestedModel,
@@ -165,6 +213,7 @@ export async function handleChatCompletions(
     ? { ...body, stream: true, stream_options: { include_usage: true } }
     : body;
 
+  step('dispatch_upstream', { streaming, candidateCount: candidates.length });
   const result = await runFailover({
     candidates,
     payload,
@@ -172,13 +221,26 @@ export async function handleChatCompletions(
     fetchImpl,
     breakerFor,
     emit,
+    logger,
+    requestId,
     trace: { ...id, requestedModel, streaming, metadata },
     capturedRequest: capture(payload),
   });
 
-  if (result.kind === 'response') return result.response;
+  if (result.kind === 'response') {
+    step('upstream_failed', { ms: lap(), status: result.response.status });
+    return result.response;
+  }
 
   const { upstream, chosen: descriptor, tried, attempts } = result.value;
+  step('upstream_ok', {
+    ms: lap(),
+    provider: descriptor.provider,
+    resolvedModel: descriptor.resolvedModel,
+    upstreamStatus: upstream.status,
+    attempts,
+    tried,
+  });
 
   const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
     const usedModel = (
@@ -221,6 +283,17 @@ export async function handleChatCompletions(
       }
     }
 
+    step('settled', {
+      resolvedModel: usedModel,
+      provider: descriptor.provider,
+      promptTokens: counts.promptTokens,
+      completionTokens: counts.completionTokens,
+      cachedTokens: counts.cachedTokens,
+      upstreamCost,
+      finalCost,
+      streaming,
+    });
+
     emit({
       ...id,
       requestedModel,
@@ -243,14 +316,18 @@ export async function handleChatCompletions(
 
   if (!streaming) {
     const data = await upstream.json();
+    step('non_stream_body', { ms: lap() });
     void settle(extractUsageFromJson(data), data);
     return json(data);
   }
 
   if (!upstream.body) {
+    step('empty_stream');
     void settle(null, null);
     return json({ error: 'Upstream returned an empty stream' }, 502);
   }
+
+  step('stream_begin');
 
   const readable = relayStream({
     upstreamBody: upstream.body,
