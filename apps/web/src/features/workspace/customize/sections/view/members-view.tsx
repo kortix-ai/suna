@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import * as SelectPrimitive from '@radix-ui/react-select';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -12,18 +13,20 @@ import {
   MessageSquare,
   RefreshCw,
   Shield,
-  UserPlus,
   Users,
   X,
 } from 'lucide-react';
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 
 import {
   inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
+import {
+  PROJECT_ROLE_DESCRIPTORS,
+  PROJECT_ROLES_ASCENDING,
+} from '@/components/iam/project-role-descriptors';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,8 +37,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { Label } from '@/components/ui/label';
+import {
+  InputGroupSearch,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import {
@@ -47,6 +55,8 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
 import {
   approveProjectAccessRequest,
@@ -70,18 +80,9 @@ import {
   type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
-
-// Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
-// that only need the bare label (badges, "X gets Manager via account role"
-// strings). Sourced from the same descriptor as the dropdown subtitles so
-// renaming a role is a one-file change.
-const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
-  editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
-  viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
-};
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
@@ -150,7 +151,42 @@ export function MembersView({ projectId }: { projectId: string }) {
         error={accessQuery.error as Error | null}
         onRetry={() => accessQuery.refetch()}
       />
+
+      {project?.account_id && (
+        <ProjectGroupGrantsCard
+          projectId={projectId}
+          accountId={project.account_id}
+          canManage={!!canManage}
+        />
+      )}
     </CustomizeSectionWrapper>
+  );
+}
+
+function RoleSelectOption({ role }: { role: ProjectRole }) {
+  const descriptor = PROJECT_ROLE_DESCRIPTORS[role];
+  return (
+    <SelectPrimitive.Item
+      data-slot="select-item"
+      value={role}
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+      )}
+    >
+      <span className="absolute top-2 right-2 flex size-3.5 items-center justify-center">
+        <SelectPrimitive.ItemIndicator>
+          <Check className="size-4" />
+        </SelectPrimitive.ItemIndicator>
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <SelectPrimitive.ItemText>
+          <span className="font-medium">{descriptor.label}</span>
+        </SelectPrimitive.ItemText>
+        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
+          {descriptor.blurb}
+        </span>
+      </div>
+    </SelectPrimitive.Item>
   );
 }
 
@@ -162,7 +198,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<ProjectRole>('editor');
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -187,10 +222,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       type Failed = { email: string; ok: false; message: string };
       const succeeded = results.filter((r): r is Ok => r.ok);
       const failed = results.filter((r): r is Failed => !r.ok);
-      // Split by which of the two backend shapes came back: an existing
-      // Kortix user is granted the role immediately (ProjectAccessMember),
-      // a new email gets an org-level invitation carrying the project grant
-      // and won't appear in the access list until they accept.
       const invited = succeeded.filter((r) => isInviteSent(r.res));
       const added = succeeded.filter((r) => !isInviteSent(r.res));
       const skipped = succeeded.filter((r) => isInviteSent(r.res) && !r.res.email_sent);
@@ -203,8 +234,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               `Invitation sent to ${r.res.email}. They'll land on this project as ${r.res.project_role} when they sign up.`,
             );
           } else {
-            // Email delivery was skipped (e.g. Mailtrap not configured) or
-            // failed. Surface the link so the inviter can share it manually.
             const inviteUrl = r.res.invite_url;
             warningToast(
               `Invitation created for ${r.res.email} — email skipped. Share the invite link manually.`,
@@ -238,9 +267,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         );
       }
 
-      // Make new pending rows visible immediately — without this the page
-      // looked unchanged after invite, which was the exact confusion that
-      // prompted this card to exist.
       if (invited.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['project-pending-invites', projectId] });
       }
@@ -250,18 +276,12 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       }
 
-      // Keep only the genuinely-failed emails so the admin can retry them.
       setEmails(failed.map((f) => f.email));
       setInputValue('');
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to invite member'),
   });
 
-  /**
-   * Parse free text (typed or pasted) into email chips. Splits on commas,
-   * semicolons, and whitespace. Returns true if everything parsed cleanly;
-   * leaves any invalid tokens in the input and surfaces an error otherwise.
-   */
   function commitInput(raw: string): boolean {
     const tokens = raw
       .split(/[\s,;]+/)
@@ -312,8 +332,6 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
   function handlePaste(event: React.ClipboardEvent<HTMLInputElement>) {
     const text = event.clipboardData.getData('text');
-    // Only intercept multi-email pastes; let a single address paste normally
-    // so the admin can still edit it before committing.
     if (/[\s,;]/.test(text.trim())) {
       event.preventDefault();
       commitInput(`${inputValue} ${text}`);
@@ -350,135 +368,111 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   return (
     <SectionCard
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAdd408ff6ec',
-      )}
     >
-      {/* Layout: labels on top row, controls on the row below. Stacking
-          the labels separately (rather than putting Label+control in
-          each column) means we don't have to chase column-height parity
-          with sm:items-end — every control just sits on the same
-          baseline because they're in a single grid row. */}
-      <form
-        onSubmit={handleSubmit}
-        className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-[1fr_10rem_auto]"
-      >
-        <Label htmlFor="invite-email" className="sm:col-start-1">
-          Emails
-        </Label>
-        <Label htmlFor="invite-role" className="hidden sm:col-start-2 sm:block">
-          Role
-        </Label>
-        {/* No label above the button — invisible placeholder keeps the
-            grid row's intrinsic height stable without rendering text. */}
-        <span aria-hidden className="hidden sm:col-start-3 sm:block">
-          {' '}
-        </span>
-
-        {/* Multi-email chip field — mirrors the Input treatment (rounded-2xl
-            border, bg-card, accent focus ring) so it reads as one of the
-            shared form controls, just one that holds many addresses. */}
-        <div
-          className="bg-card focus-within:ring-primary/50 flex w-full flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-sm transition-[color] focus-within:ring-2 focus-within:outline-none sm:col-start-1"
-          style={{ minHeight: 44 }}
-          onClick={() => inputRef.current?.focus()}
-        >
-          <Mail className="text-muted-foreground pointer-events-none h-4 w-4 shrink-0" />
-          {emails.map((addr) => (
-            <Badge key={addr} variant="secondary" className="gap-1 pr-1">
-              {addr}
-              <button
-                type="button"
+      <form onSubmit={handleSubmit}>
+        <FieldGroup className="gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end sm:gap-x-3">
+            <Field className="gap-1.5 p-0">
+              <FieldLabel htmlFor="invite-email">Emails</FieldLabel>
+              <InputGroupSearch
+                className="border-border bg-popover focus-within:border-kortix-blue flex flex-wrap items-center gap-1.5 rounded-md border py-0 pr-2 pl-3 transition-[color] focus-within:outline-none"
                 onClick={(e) => {
-                  e.stopPropagation();
-                  removeEmail(addr);
+                  if ((e.target as HTMLElement).closest('button')) return;
+                  e.currentTarget
+                    .querySelector<HTMLInputElement>('[data-slot=input-group-search-control]')
+                    ?.focus();
                 }}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={`Remove ${addr}`}
+              >
+                <InputGroupSearchIcon className="static top-auto left-auto shrink-0 translate-none">
+                  <Mail />
+                </InputGroupSearchIcon>
+                {emails.map((addr) => (
+                  <Badge key={addr} variant="secondary" size="sm" className="gap-1 pr-1">
+                    {addr}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeEmail(addr);
+                      }}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={`Remove ${addr}`}
+                      disabled={inviteMutation.isPending}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <InputGroupSearchInput
+                  id="invite-email"
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => {
+                    setInputValue(e.target.value);
+                    if (inlineError) setInlineError(null);
+                  }}
+                  onKeyDown={handleInputKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={
+                    emails.length === 0
+                      ? tHardcodedUi.raw(
+                          'appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom',
+                        )
+                      : 'Add another…'
+                  }
+                  autoComplete="off"
+                  disabled={inviteMutation.isPending}
+                  aria-invalid={inlineError ? true : undefined}
+                  className="min-w-32 flex-1 border-0 bg-transparent px-0 pl-1 shadow-none focus:border-0 focus:ring-0 focus:outline-none"
+                />
+              </InputGroupSearch>
+            </Field>
+
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="invite-role">Role</FieldLabel>
+              <Select
+                value={role}
+                onValueChange={(next) => setRole(next as ProjectRole)}
                 disabled={inviteMutation.isPending}
               >
-                <X className="size-3" />
-              </button>
-            </Badge>
-          ))}
-          <input
-            ref={inputRef}
-            id="invite-email"
-            type="text"
-            value={inputValue}
-            onChange={(e) => {
-              setInputValue(e.target.value);
-              if (inlineError) setInlineError(null);
-            }}
-            onKeyDown={handleInputKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              emails.length === 0
-                ? tHardcodedUi.raw(
-                    'appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom',
-                  )
-                : 'Add another…'
-            }
-            autoComplete="off"
-            className="placeholder:text-muted-foreground min-w-[8rem] flex-1 bg-transparent font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={inviteMutation.isPending}
-          />
-        </div>
+                <SelectTrigger
+                  id="invite-role"
+                  size="lg"
+                  className="bg-popover hover:bg-popover/90 w-full"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_ROLES_ASCENDING.map((r) => (
+                    <RoleSelectOption key={r} role={r} />
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-        <Label htmlFor="invite-role-mobile" className="sm:hidden">
-          Role
-        </Label>
-        <Select
-          value={role}
-          onValueChange={(next) => setRole(next as ProjectRole)}
-          disabled={inviteMutation.isPending}
-        >
-          {/* Inline height guarantees parity with Input regardless of
-              whether the size="lg" variant has been picked up by --hot
-              reload yet (Bun was hitting that issue earlier). */}
-          <SelectTrigger
-            id="invite-role"
-            size="lg"
-            className="w-full sm:col-start-2"
-            style={{ height: 44 }}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          {/* Two-line options (role + capability blurb) so the picker
-              explains what each role does. Trigger stays one line —
-              see role-select-item.tsx for how the ItemText split works. */}
-          <SelectContent>
-            <ProjectRoleSelectItem role="viewer" />
-            <ProjectRoleSelectItem role="editor" />
-            <ProjectRoleSelectItem role="manager" />
-          </SelectContent>
-        </Select>
+            <Field className="gap-1.5">
+              <Button
+                type="submit"
+                disabled={pendingCount === 0 || inviteMutation.isPending}
+                className="h-10 w-full sm:w-auto"
+              >
+                {inviteMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
+              </Button>
+            </Field>
+          </div>
 
-        <Button
-          type="submit"
-          size="lg"
-          disabled={pendingCount === 0 || inviteMutation.isPending}
-          className="shrink-0 gap-1.5 sm:col-start-3"
-          style={{ height: 44 }}
-        >
-          {inviteMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+          {inlineError ? (
+            <FieldError className="text-xs">{inlineError}</FieldError>
           ) : (
-            <UserPlus className="h-4 w-4" />
+            <FieldDescription className="text-xs">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAddSeveralb131056b',
+              )}
+            </FieldDescription>
           )}
-          {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
-        </Button>
+        </FieldGroup>
       </form>
-
-      {inlineError ? (
-        <p className="text-destructive mt-2 text-xs">{inlineError}</p>
-      ) : (
-        <p className="text-muted-foreground mt-2 text-xs">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAddSeveralb131056b',
-          )}
-        </p>
-      )}
     </SectionCard>
   );
 }
@@ -505,8 +499,6 @@ function ProjectAccessCard({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  // Set rather than scalar so cycling roles on row A while a revoke
-  // on row B is still in flight doesn't make the spinner jump.
   const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
   const markPending = (userId: string) => setPendingUserIds((prev) => new Set(prev).add(userId));
   const clearPending = (userId: string) =>
@@ -515,16 +507,8 @@ function ProjectAccessCard({
       next.delete(userId);
       return next;
     });
-  // Confirmation modal target. Holds the member chosen for revocation
-  // until the user confirms — picking "No access" from the dropdown is
-  // a destructive action and previously fired without warning, which
-  // made it easy to lock someone out by misclicking.
   const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
-  // Group-derived access can't be revoked per-person from a project row (the
-  // grant lives on a group). This holds the scoped action chosen from the
-  // "Manage access" menu until the user confirms — each action spells out its
-  // blast radius (detach = project-scoped; remove-from-group = account-wide).
   type GroupSource = NonNullable<ProjectAccessMember['group_sources']>[number];
   type GroupAction = {
     type: 'detach' | 'removeFromGroup';
@@ -533,11 +517,6 @@ function ProjectAccessCard({
   };
   const [groupAction, setGroupAction] = useState<GroupAction | null>(null);
 
-  // Only list people who actually have access — implicit owners/admins, a
-  // direct grant, or a group-inherited role. Account members with no access at
-  // all aren't shown here (granting them happens via the invite box, which
-  // grants existing members instantly). This is what makes Revoke feel right:
-  // removing a grant drops the row instead of leaving a lingering "No access".
   const accessMembers = useMemo(
     () => members.filter((m) => m.has_implicit_access || m.effective_project_role != null),
     [members],
@@ -576,8 +555,6 @@ function ProjectAccessCard({
     onError: (error: Error) => errorToast(error.message || 'Failed to revoke access'),
   });
 
-  // Project-scoped: removes the group's grant here. Everyone who had access via
-  // this group on this project loses it; their other access paths are untouched.
   const detachMutation = useMutation({
     mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
     onSuccess: () => {
@@ -587,8 +564,6 @@ function ProjectAccessCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to detach group'),
   });
 
-  // Account-scoped: removes the user from the group entirely, so it affects
-  // every project that group can access — not just this one.
   const removeFromGroupMutation = useMutation({
     mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
       removeGroupMember(accountId ?? '', groupId, userId),
@@ -602,10 +577,6 @@ function ProjectAccessCard({
   function setRole(member: ProjectAccessMember, value: string) {
     if (member.has_implicit_access || !canManage) return;
     if (value === 'none') {
-      // Stash the target; ConfirmDialog below picks it up. We DON'T
-      // fire the mutation here — the dropdown will visually snap back
-      // to the prior role on next render since the underlying data
-      // hasn't changed, so cancel = no-op without manual state reset.
       setRevokeTarget(member);
       return;
     }
@@ -615,7 +586,6 @@ function ProjectAccessCard({
   return (
     <>
       <SectionCard
-        flush
         title={tHardcodedUi.raw(
           'appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess',
         )}
@@ -623,12 +593,13 @@ function ProjectAccessCard({
           'appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess',
         )}
         count={accessMembers.length}
+        flush
       >
         {isLoading && (
           <div className="divide-border/60 divide-y">
             {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="flex items-center gap-3 px-6 py-3">
-                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="size-8 rounded-full" />
                 <div className="flex-1 space-y-1.5">
                   <Skeleton className="h-3.5 w-48" />
                   <Skeleton className="h-3 w-28" />
@@ -640,12 +611,15 @@ function ProjectAccessCard({
         )}
 
         {isError && (
-          <div className="px-6 py-5">
-            <p className="text-destructive text-sm">{error?.message || 'Failed to load access'}</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-              Retry
-            </Button>
-          </div>
+          <ErrorState
+            title="Failed to load members"
+            description={error?.message}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          />
         )}
 
         {!isLoading && !isError && (
@@ -654,13 +628,6 @@ function ProjectAccessCard({
               const busy = pendingUserIds.has(member.user_id);
               const value =
                 member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
-              // Group-derived access — at least one project_group_grants
-              // row attaches a group this user belongs to. When this is the
-              // ONLY access path (no direct grant), the dropdown will say
-              // "No access" but the user actually has the group role; the
-              // subtitle below makes that explicit and the badge in the
-              // trailing slot mirrors the effective role.
-              // Pure helpers in iam-display-helpers, unit-tested.
               const inheritedFromGroup = isInheritedFromGroupOnly(member);
               const inheritedSummary = inheritedFromGroupSummary(member);
 
@@ -670,12 +637,8 @@ function ProjectAccessCard({
                   leading={<UserAvatar email={member.email ?? ''} size="md" />}
                   title={userLabel(member)}
                   badges={
-                    <div className="flex flex-wrap items-center gap-1.5">
+                    <>
                       <AccountRoleBadge role={member.account_role} />
-                      {/* Group indicator: which of THIS project's attached groups
-                        the member belongs to. Makes group-derived access (and
-                        why it isn't directly revocable here) obvious — the
-                        access is managed in the Group access section below. */}
                       {(member.group_sources ?? []).map((g) => (
                         <Badge
                           key={g.group_id}
@@ -684,41 +647,39 @@ function ProjectAccessCard({
                           className="gap-1 font-normal"
                           title={`In the "${g.group_name}" group — manage in Group access`}
                         >
-                          <Users className="h-3 w-3" />
+                          <Users className="size-3" />
                           {g.group_name}
                         </Badge>
                       ))}
-                    </div>
+                    </>
                   }
                   subtitle={
-                    <InlineMeta>
-                      <span>
-                        {member.has_implicit_access
-                          ? 'Implicit account access'
-                          : inheritedSummary
-                            ? inheritedSummary
-                            : member.project_role
-                              ? `Granted ${formatDate(member.granted_at)}`
-                              : 'No project access'}
-                      </span>
-                    </InlineMeta>
+                    <span className="text-muted-foreground text-xs">
+                      <InlineMeta>
+                        <span>
+                          {member.has_implicit_access
+                            ? 'Implicit account access'
+                            : inheritedSummary
+                              ? inheritedSummary
+                              : member.project_role
+                                ? `Granted ${formatDate(member.granted_at)}`
+                                : 'No project access'}
+                        </span>
+                      </InlineMeta>
+                    </span>
                   }
                   trailing={
                     busy ? (
-                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
                     ) : member.has_implicit_access ? (
                       <Badge variant="outline" size="sm">
-                        <Shield className="mr-1 h-3.5 w-3.5" />
+                        <Shield className="mr-1 size-3.5" />
                         Manager
                       </Badge>
                     ) : inheritedFromGroup ? (
-                      // Access comes from a group, so there's no per-person grant
-                      // to revoke on this row. The chip shows the effective role;
-                      // the "Manage access" menu exposes the real levers, each
-                      // labelled with its blast radius.
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" size="sm" className="capitalize">
-                          <Shield className="mr-1 h-3.5 w-3.5" />
+                          <Shield className="mr-1 size-3.5" />
                           {member.effective_project_role}
                         </Badge>
                         {canManage && (member.group_sources ?? []).length > 0 && (
@@ -819,7 +780,7 @@ function ProjectAccessCard({
                             )}
                             className="gap-1.5"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="size-3.5" />
                             Revoke
                           </Button>
                         )}
@@ -859,9 +820,6 @@ function ProjectAccessCard({
         onConfirm={() => {
           if (!revokeTarget) return;
           const target = revokeTarget;
-          // Close the dialog optimistically — the mutation's onSuccess
-          // toast is enough feedback, and leaving the modal open while
-          // it fires looks janky.
           setRevokeTarget(null);
           revokeMutation.mutate(target.user_id);
         }}
@@ -991,7 +949,6 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
 
   return (
     <SectionCard
-      flush
       title={tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccess7a756f48',
       )}
@@ -999,9 +956,10 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
         'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeopleea85927a',
       )}
       count={requests.length}
+      flush
     >
       {requestsQuery.isLoading && (
-        <div className="px-6 py-5">
+        <div className="px-6 py-3">
           <Skeleton className="h-8 w-full" />
         </div>
       )}
@@ -1014,22 +972,24 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
               <ListRow
                 key={request.request_id}
                 leading={
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400">
-                    <MessageSquare className="h-4 w-4" />
+                  <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                    <MessageSquare className="size-4" />
                   </span>
                 }
                 title={request.requester_email}
                 subtitle={
-                  <InlineMeta>
-                    <span>Requested {formatDate(request.created_at)}</span>
-                    {request.message ? <span>“{request.message}”</span> : null}
-                  </InlineMeta>
+                  <span className="text-muted-foreground text-xs">
+                    <InlineMeta>
+                      <span>Requested {formatDate(request.created_at)}</span>
+                      {request.message ? <span>"{request.message}"</span> : null}
+                    </InlineMeta>
+                  </span>
                 }
                 trailing={
                   busy ? (
-                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                    <Loader2 className="text-muted-foreground size-4 animate-spin" />
                   ) : (
-                    <div className="flex items-center gap-1">
+                    <>
                       <Button
                         type="button"
                         size="sm"
@@ -1037,7 +997,7 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
                         onClick={() => approveMutation.mutate(request.request_id)}
                         className="gap-1.5"
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="size-3.5" />
                         Approve
                       </Button>
                       <Button
@@ -1047,10 +1007,10 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
                         onClick={() => rejectMutation.mutate(request.request_id)}
                         className="gap-1.5"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="size-3.5" />
                         Decline
                       </Button>
-                    </div>
+                    </>
                   )
                 }
               />
@@ -1062,21 +1022,10 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   );
 }
 
-// ─── Pending invitations (non-Kortix users who haven't signed up yet) ─────
-//
-// Bridges the gap between "I invited foo@example.com" and "foo joined the
-// project". Without this card, the page looks identical before and after
-// a successful invite to a non-Kortix email — the inviter has no way to
-// recall who they queued up, resend the link, or take it back. Mirrors
-// the "Pending invitations" pattern in GitHub / Slack / Linear member
-// settings.
-
 function PendingInvitesCard({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-pending-invites', projectId];
-  // Set rather than scalar — multiple rapid revokes shouldn't make the
-  // spinner jump between rows. Each row tracks its own pending state.
   const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingInviteIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1085,9 +1034,6 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
       next.delete(id);
       return next;
     });
-  // Revoking an invitation is destructive (and may cancel the whole
-  // org-level invite when this was the only bootstrap_grant) — gate
-  // behind a confirmation.
   const [revokeTarget, setRevokeTarget] = useState<{ inviteId: string; email: string } | null>(
     null,
   );
@@ -1095,12 +1041,6 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   const invitesQuery = useQuery({
     queryKey,
     queryFn: () => listPendingProjectInvites(projectId),
-    // Shorter staleTime than the other cards (5s vs 20s) because the
-    // invite_expired flag flips with wall-clock time, not user action —
-    // a row sitting in this list will silently transition from "Link
-    // expires Tue" to "Invite link expired" without any mutation we
-    // could invalidate on. Refetching every 5s keeps that hint honest
-    // for an admin actively watching the page.
     staleTime: 5_000,
   });
 
@@ -1127,8 +1067,6 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
       if (result.email_sent) {
         successToast('Invite email sent');
       } else {
-        // Mailtrap not configured (or delivery failed) — hand the admin the
-        // link so they can share it manually.
         warningToast('Email skipped — copy the invite link to share manually', {
           duration: 8_000,
           button: (
@@ -1145,15 +1083,11 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
 
   const pending = invitesQuery.data?.pending ?? [];
 
-  // Hide the entire card when empty — no point adding visual noise.
-  // (Different from group grants card which always shows an empty state
-  // because it has a primary action affordance in the header.)
   if (!invitesQuery.isLoading && pending.length === 0) return null;
 
   return (
     <>
       <SectionCard
-        flush
         title={tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitlePendingbfbe9f8b',
         )}
@@ -1161,9 +1095,10 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeople552a0c43',
         )}
         count={pending.length}
+        flush
       >
         {invitesQuery.isLoading && (
-          <div className="px-6 py-5">
+          <div className="px-6 py-3">
             <Skeleton className="h-8 w-full" />
           </div>
         )}
@@ -1176,8 +1111,8 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                 <ListRow
                   key={invite.invite_id}
                   leading={
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                      <Mail className="h-4 w-4" />
+                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                      <Mail className="size-4" />
                     </span>
                   }
                   title={invite.email}
@@ -1187,31 +1122,33 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                     </Badge>
                   }
                   subtitle={
-                    <InlineMeta>
-                      <span>Invited {formatDate(invite.created_at)}</span>
-                      {invite.invited_by_email && <span>by {invite.invited_by_email}</span>}
-                      {invite.invite_expired ? (
-                        <span className="text-amber-700 dark:text-amber-400">
-                          {tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextInviteLinkef92ef7c',
-                          )}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLinkExpires4566b25e',
-                          )}
-                          {formatDate(invite.invite_expires_at)}
-                        </span>
-                      )}
-                    </InlineMeta>
+                    <span className="text-muted-foreground text-xs">
+                      <InlineMeta>
+                        <span>Invited {formatDate(invite.created_at)}</span>
+                        {invite.invited_by_email && <span>by {invite.invited_by_email}</span>}
+                        {invite.invite_expired ? (
+                          <span className="text-kortix-orange">
+                            {tI18nHardcoded.raw(
+                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextInviteLinkef92ef7c',
+                            )}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="size-3" />
+                            {tI18nHardcoded.raw(
+                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLinkExpires4566b25e',
+                            )}
+                            {formatDate(invite.invite_expires_at)}
+                          </span>
+                        )}
+                      </InlineMeta>
+                    </span>
                   }
                   trailing={
                     busy ? (
-                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
                     ) : (
-                      <div className="flex items-center gap-1">
+                      <>
                         <Button
                           type="button"
                           size="sm"
@@ -1222,7 +1159,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                           )}
                           className="gap-1.5"
                         >
-                          <RefreshCw className="h-3.5 w-3.5" />
+                          <RefreshCw className="size-3.5" />
                           Resend
                         </Button>
                         <Button
@@ -1237,10 +1174,10 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                           )}
                           className="gap-1.5"
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <X className="size-3.5" />
                           Revoke
                         </Button>
-                      </div>
+                      </>
                     )
                   }
                 />
@@ -1287,8 +1224,6 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
   );
 }
 
-// ─── IAM V2: Group attachments ─────────────────────────────────────────────
-
 function ProjectGroupGrantsCard({
   projectId,
   accountId,
@@ -1314,11 +1249,6 @@ function ProjectGroupGrantsCard({
     staleTime: 60_000,
   });
 
-  // Defensive client-side sort. The API already sets ORDER BY, but
-  // belt-and-braces here so a future API tweak (e.g. switching to a
-  // join that loses the ORDER BY) can't cause rows to visibly swap
-  // places after a role update. Oldest attachment first matches what
-  // the "Attached <date>" subtitle implies.
   const grants = useMemo(() => {
     const raw = grantsQuery.data?.grants ?? [];
     return [...raw].sort((a, b) => {
@@ -1335,9 +1265,6 @@ function ProjectGroupGrantsCard({
 
   const [pickerGroupId, setPickerGroupId] = useState<string>('');
   const [pickerRole, setPickerRole] = useState<ProjectRole>('editor');
-  // Set rather than scalar — attach, update, and detach can each be
-  // in-flight on different rows at the same time without the spinner
-  // jumping to whatever was last written.
   const [pendingGroupIds, setPendingGroupIds] = useState<Set<string>>(() => new Set());
   const markPending = (id: string) => setPendingGroupIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
@@ -1346,26 +1273,16 @@ function ProjectGroupGrantsCard({
       next.delete(id);
       return next;
     });
-  // Detaching a group revokes inherited access for every group member
-  // in one shot — easily a dozen users at once. Always confirm.
   const [detachTarget, setDetachTarget] = useState<ProjectGroupGrant | null>(null);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: grantsKey });
-    // Attaching, detaching, or re-roling a group changes the EFFECTIVE
-    // access of every member of that group on this project. Without
-    // these the Members card above shows stale data — a user might
-    // appear as "No project access" right after their group was just
-    // attached at Editor, until the user manually refetches. Same for
-    // the project header (effective_project_role for the current user).
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
   }
 
   const attachMutation = useMutation({
     mutationFn: () => attachGroupToProject(projectId, pickerGroupId, pickerRole),
-    // Snapshot pickerGroupId at call-time so onSettled can clear the
-    // correct row even if the picker changes before the request lands.
     onMutate: () => {
       markPending(pickerGroupId);
       return { groupId: pickerGroupId };
@@ -1406,7 +1323,6 @@ function ProjectGroupGrantsCard({
   return (
     <>
       <SectionCard
-        flush
         title={tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleGroupfbf9c01c',
         )}
@@ -1452,9 +1368,6 @@ function ProjectGroupGrantsCard({
                 <SelectTrigger className="h-8 w-28 text-xs">
                   <SelectValue />
                 </SelectTrigger>
-                {/* Full blurbs here — choosing the role for a whole group
-                  attachment is a higher-impact decision than a single
-                  per-user grant, so users benefit from the extra context. */}
                 <SelectContent>
                   <ProjectRoleSelectItem role="viewer" />
                   <ProjectRoleSelectItem role="editor" />
@@ -1472,41 +1385,42 @@ function ProjectGroupGrantsCard({
             </form>
           ) : null
         }
+        flush
       >
         {grantsQuery.isLoading && (
-          <div className="px-6 py-5">
+          <div className="px-6 py-3">
             <Skeleton className="h-8 w-full" />
           </div>
         )}
 
         {!grantsQuery.isLoading && grants.length === 0 && (
-          <div className="text-muted-foreground px-6 py-5 text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextNoGroups09e82ebd',
-            )}
-            {canManage && available.length === 0 && groups.length > 0 && (
-              <>
-                {' '}
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAllYour31c4dcb5',
-                )}
-              </>
-            )}
-            {canManage && groups.length === 0 && (
-              <>
-                {' '}
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextCreateOne549d8748',
-                )}{' '}
-                <a href={`/accounts/${accountId}`} className="hover:text-foreground underline">
+          <EmptyState
+            icon={Users}
+            title="No groups attached"
+            description={
+              canManage && groups.length === 0 ? (
+                <>
                   {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccountPage432b8a72',
-                  )}
-                </a>
-                .
-              </>
-            )}
-          </div>
+                    'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextCreateOne549d8748',
+                  )}{' '}
+                  <a href={`/accounts/${accountId}`} className="hover:text-foreground underline">
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccountPage432b8a72',
+                    )}
+                  </a>
+                  .
+                </>
+              ) : canManage && available.length === 0 && groups.length > 0 ? (
+                tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAllYour31c4dcb5',
+                )
+              ) : (
+                tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextNoGroups09e82ebd',
+                )
+              )
+            }
+          />
         )}
 
         {!grantsQuery.isLoading && grants.length > 0 && (
@@ -1517,37 +1431,39 @@ function ProjectGroupGrantsCard({
                 <ListRow
                   key={g.group_id}
                   leading={
-                    <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
-                      <Users className="text-muted-foreground h-4 w-4" />
+                    <span className="text-muted-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                      <Users className="size-4" />
                     </span>
                   }
                   title={g.group_name}
                   subtitle={
-                    <InlineMeta>
-                      <span>Attached {formatDate(g.created_at)}</span>
-                      {typeof g.member_count === 'number' && (
-                        <span>
-                          {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
-                        </span>
-                      )}
-                      {typeof g.override_count === 'number' && g.override_count > 0 && (
-                        <span
-                          className="text-amber-700 dark:text-amber-400"
-                          title={tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
-                          )}
-                        >
-                          {g.override_count} of {g.member_count}{' '}
-                          {tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
-                          )}
-                        </span>
-                      )}
-                    </InlineMeta>
+                    <span className="text-muted-foreground text-xs">
+                      <InlineMeta>
+                        <span>Attached {formatDate(g.created_at)}</span>
+                        {typeof g.member_count === 'number' && (
+                          <span>
+                            {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
+                          </span>
+                        )}
+                        {typeof g.override_count === 'number' && g.override_count > 0 && (
+                          <span
+                            className="text-kortix-orange"
+                            title={tI18nHardcoded.raw(
+                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
+                            )}
+                          >
+                            {g.override_count} of {g.member_count}{' '}
+                            {tI18nHardcoded.raw(
+                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
+                            )}
+                          </span>
+                        )}
+                      </InlineMeta>
+                    </span>
                   }
                   trailing={
                     busy ? (
-                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
                     ) : canManage ? (
                       <div className="flex items-center gap-1.5">
                         <Select

@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
 import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
@@ -336,7 +337,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
               className="gap-1.5"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus className="size-4 shrink-0" />
+              <Icon.Plus className="size-4 shrink-0" />
               {meta.createButtonLabel}
             </Button>
           ) : null

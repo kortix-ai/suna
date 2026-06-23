@@ -99,7 +99,7 @@ export function ProjectProviderModal({
           )}
         >
           {showTabBar && (
-            <TabsList variant="accent" className="shrink-0">
+            <TabsList className="shrink-0">
               {showTab('connected') && (
                 <TabsTrigger value="connected" className="gap-2 text-xs">
                   Connected

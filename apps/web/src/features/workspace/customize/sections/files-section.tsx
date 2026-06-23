@@ -1,17 +1,5 @@
 'use client';
 
-/**
- * Files section inside the Customize full-screen modal.
- *
- * Wraps the same `<FileExplorerPage />` used by the (now-deprecated)
- * `/projects/[id]/files` route. The page wires up the project's default
- * branch, the selected Version (Git branch override), and the per-project
- * files store so the explorer behaves exactly the same inside the modal as
- * it did on its own route.
- */
-
-import { useQuery } from '@tanstack/react-query';
-
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   FileExplorerPage,
@@ -20,6 +8,7 @@ import {
   useSelectedVersion,
 } from '@/features/project-files';
 import { getProject } from '@/lib/projects-client';
+import { useQuery } from '@tanstack/react-query';
 
 export function FilesSection({ projectId }: { projectId: string }) {
   const projectQuery = useQuery({
@@ -33,7 +22,7 @@ export function FilesSection({ projectId }: { projectId: string }) {
   if (projectQuery.isLoading || !projectQuery.data) {
     return (
       <div className="flex h-full flex-col">
-        <div className="h-12 border-b border-border/40" />
+        <div className="border-border/40 h-12 border-b" />
         <div className="space-y-2 p-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full rounded" />

@@ -96,7 +96,7 @@ const DropdownMenuContent = React.forwardRef<
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'bg-sidebar text-sidebar-foreground ease-out hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 min-w-[14rem] overflow-hidden rounded-lg border p-1 shadow-sm',
+          'bg-sidebar text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 min-w-[14rem] overflow-hidden rounded-lg border p-1 shadow-xs ease-out',
           className,
         )}
         style={{ zIndex: floatingZ(depth), ...style }}
@@ -117,7 +117,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'focus:bg-foreground/10 ease-out focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      'focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       variant === 'default' &&
         'text-foreground/80 hover:bg-primary/10 hover:text-foreground w-full items-center justify-start gap-2 text-sm font-normal transition-all duration-500',
       variant === 'destructive' &&
@@ -165,26 +165,46 @@ const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem> & {
     size?: 'default' | 'sm' | 'lg';
+    side?: 'left' | 'right';
   }
->(({ className, children, size = 'default', ...props }, ref) => (
-  <DropdownMenuPrimitive.RadioItem
-    ref={ref}
-    className={cn(
-      'focus:bg-accent focus:text-foreground relative flex cursor-default items-center rounded-sm py-1.5 pr-2 pl-8 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      size === 'sm' && 'py-1.5 pr-1.5 pl-6',
-      size === 'lg' && 'py-2 pr-2.5 pl-8 text-base',
-      className,
-    )}
-    {...props}
-  >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+>(({ className, children, size = 'default', side = 'right', ...props }, ref) => {
+  const indicator = (
+    <span className="flex size-3.5 shrink-0 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
         <Circle className="h-2 w-2 fill-current" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
-    {children}
-  </DropdownMenuPrimitive.RadioItem>
-));
+  );
+
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      ref={ref}
+      className={cn(
+        'focus:bg-accent focus:text-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+        size === 'sm' && 'gap-1.5 py-1',
+        size === 'sm' && side === 'left' && 'pl-1.5',
+        size === 'sm' && side === 'right' && 'pr-1.5',
+        size === 'lg' && 'py-2 text-base',
+        size === 'lg' && side === 'left' && 'pl-2.5',
+        size === 'lg' && side === 'right' && 'pr-2.5',
+        className,
+      )}
+      {...props}
+    >
+      {side === 'left' ? (
+        <>
+          {indicator}
+          <span className="min-w-0 flex-1">{children}</span>
+        </>
+      ) : (
+        <>
+          <span className="min-w-0 flex-1">{children}</span>
+          {indicator}
+        </>
+      )}
+    </DropdownMenuPrimitive.RadioItem>
+  );
+});
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
 
 const DropdownMenuLabel = React.forwardRef<

@@ -3814,7 +3814,7 @@
     "componentsBillingPricingNewInstanceModal": {
       "line143JsxTextOneMachineAllYourToolsAgentsThatRun": "Eine Maschine. Alle deine Tools. Agenten, die selbstständig laufen.",
       "line149JsxTextChooseYourMachine": "Wählen Sie Ihre Maschine",
-      "line185JsxTextVcpu": "vCPU ·",
+      "line185JsxTextVcpu": "vCPU",
       "line207JsxTextEveryPlanIncludes": "Jeder Tarif enthält",
       "line241JsxTextCancelAnytime": "Jederzeit kündbar",
       "line244JsxTextGetYourKortix": "Holen Sie sich Ihr Kortix"
@@ -7003,7 +7003,7 @@
     "autoComponentsProjectsPoliciesPanelJsxTextSaveChanges3a1ef407": "Änderungen speichern",
     "autoComponentsProjectsProjectAccessBoundaryJsxTextBackToProjects9ad9ccd3": "Zurück zu Projekten",
     "autoComponentsProjectsProjectOnboardingWizardJsxTextYouReAll9d4a5be9": "Alles ist eingerichtet",
-    "autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27": "vCPU ·",
+    "autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27": "vCPU",
     "autoComponentsProjectsSandboxSnapshotCardJsxTextRecentBuildscde18d4a": "Letzte Builds",
     "autoComponentsSetupLinksConnectorIntakeJsxTextLoading4e5fd209": "Wird geladen…",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextLoading93bbc067": "Wird geladen…",
@@ -7884,7 +7884,7 @@
     "autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDecreased514ed20": "Reduzieren Sie fertige Sandkästen",
     "autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelIncrease82989967": "Erhöhen Sie die Anzahl der fertigen Sandkästen",
     "autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelKeepb2a43916": "Halten Sie diese Vorlage warm",
-    "autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f": "GiB ·",
+    "autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f": "GiB",
     "autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d": "GiB-Festplatte",
     "autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelEditdc9d24c2": "Vorlage bearbeiten",
     "autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDeleteda0507cf": "Vorlage löschen",

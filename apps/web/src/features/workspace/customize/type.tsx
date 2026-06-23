@@ -1,10 +1,12 @@
 import { CustomizeSection } from '@/lib/customize-sections';
-import { type LucideIcon } from 'lucide-react';
+import { Icon as IconMynauiType } from '@mynaui/icons-react';
+import { LucideIcon } from 'lucide-react';
+import { IconType } from 'react-icons/lib';
 
 export interface RailItem {
   section: CustomizeSection;
   label: string;
-  icon?: LucideIcon;
+  icon?: LucideIcon | IconMynauiType | IconType;
 }
 
 export interface RailGroup {

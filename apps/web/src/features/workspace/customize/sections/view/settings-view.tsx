@@ -77,84 +77,82 @@ export function SettingsView({ projectId }: { projectId: string }) {
         'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
       )}
     >
-        {projectQuery.isLoading && (
-          <>
-            <Skeleton className="h-56 rounded-2xl" />
-            <Skeleton className="h-72 rounded-2xl" />
-          </>
-        )}
+      {projectQuery.isLoading && (
+        <div className="space-y-5">
+          <Skeleton className="h-56 rounded-md" />
+          <Skeleton className="h-72 rounded-md" />
+        </div>
+      )}
 
-        {projectQuery.isError && (
-          <SectionCard
-            tone="destructive"
-            title={tHardcodedUi.raw(
-              'appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject',
-            )}
-            description={(projectQuery.error as Error).message}
-          >
-            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
-              Retry
-            </Button>
-          </SectionCard>
-        )}
-
-        {project && (
-          <>
-            <GeneralProjectCard project={project} canManage={!!canManage} />
-            <RepositoryCard project={project} canManage={!!canManage} />
-            <ExperimentalCard project={project} canManage={!!canManage} />
-            {canManage && <TriggersActivationCard projectId={projectId} canManage={!!canManage} />}
-            {canManage && (
-              <SectionCard
-                tone="destructive"
-                title={tHardcodedUi.raw(
-                  'appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone',
-                )}
-                description={tHardcodedUi.raw(
-                  'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
-                )}
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-foreground text-sm font-medium">
-                      {tHardcodedUi.raw(
-                        'appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject',
-                      )}
-                    </p>
-                    <p className="text-muted-foreground mt-0.5 text-xs">
-                      {tHardcodedUi.raw(
-                        'appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList',
-                      )}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="shrink-0 gap-1.5"
-                    onClick={() => setArchiveOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Archive
-                  </Button>
-                </div>
-              </SectionCard>
-            )}
-          </>
-        )}
-
-        <ConfirmDialog
-          open={archiveOpen}
-          onOpenChange={setArchiveOpen}
+      {projectQuery.isError && (
+        <SectionCard
+          tone="destructive"
           title={tHardcodedUi.raw(
-            'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
+            'appProjectsIdCustomizeSettingsPage.line86JsxAttrTitleFailedToLoadProject',
           )}
-          description={
-            project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''
-          }
-          confirmLabel="Archive"
-          onConfirm={() => archiveMutation.mutate()}
-          isPending={archiveMutation.isPending}
-        />
-      </CustomizeSectionWrapper>
+          description={(projectQuery.error as Error).message}
+        >
+          <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+            Retry
+          </Button>
+        </SectionCard>
+      )}
+
+      {project && (
+        <>
+          <GeneralProjectCard project={project} canManage={!!canManage} />
+          <RepositoryCard project={project} canManage={!!canManage} />
+          <ExperimentalCard project={project} canManage={!!canManage} />
+          {canManage && <TriggersActivationCard projectId={projectId} canManage={!!canManage} />}
+          {canManage && (
+            <SectionCard
+              tone="destructive"
+              title={tHardcodedUi.raw(
+                'appProjectsIdCustomizeSettingsPage.line110JsxAttrTitleDangerZone',
+              )}
+              description={tHardcodedUi.raw(
+                'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
+              )}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-foreground text-sm font-medium">
+                    {tHardcodedUi.raw(
+                      'appProjectsIdCustomizeSettingsPage.line116JsxTextArchiveProject',
+                    )}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    {tHardcodedUi.raw(
+                      'appProjectsIdCustomizeSettingsPage.line119JsxTextHideThisProjectFromTheActiveProjectList',
+                    )}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="shrink-0 gap-1.5"
+                  onClick={() => setArchiveOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Archive
+                </Button>
+              </div>
+            </SectionCard>
+          )}
+        </>
+      )}
+
+      <ConfirmDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSettingsPage.line140JsxAttrTitleArchiveProject',
+        )}
+        description={project ? `Archive ${project.name}? Current sessions remain recoverable.` : ''}
+        confirmLabel="Archive"
+        onConfirm={() => archiveMutation.mutate()}
+        isPending={archiveMutation.isPending}
+      />
+    </CustomizeSectionWrapper>
   );
 }
 
@@ -268,26 +266,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   );
 }
 
-/**
- * Customize → Settings → Experimental / WIP Features. Per-project switches for
- * soft-released features. The list is driven entirely by the API catalog
- * (project.experimental_features) — add a feature to the registry in
- * apps/api/src/experimental/features.ts and it shows up here automatically.
- *
- * These are real, usable surfaces that are still moving: turning one on opts
- * THIS project in. They may change shape or break between versions, so they
- * stay off until explicitly enabled. DB-only — never in kortix.toml.
- *
- * Deliberately tucked away: the card collapses to a single muted row and you
- * have to expand it to reveal the toggles, so WIP surfaces don't read as
- * first-class settings.
- */
 function ExperimentalCard({ project, canManage }: { project: KortixProject; canManage: boolean }) {
-  // Only features the platform actually supports are shown.
-
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const features = (project.experimental_features ?? []).filter((f) => f.available);
-  // Collapsed by default — extra expand to reveal.
   const [expanded, setExpanded] = useState(false);
 
   if (features.length === 0) return null;
@@ -366,8 +347,6 @@ function ExperimentalFeatureRow({
     mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', projectId], updated);
-      // Sidebar shortcuts gate off these same values via a separate
-      // 'project-detail' query — refresh so surfaces appear/disappear.
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
@@ -394,15 +373,6 @@ function ExperimentalFeatureRow({
   );
 }
 
-/**
- * Customize → Settings → Pause all triggers. The project-wide trigger
- * kill-switch (`projects.metadata.triggers_paused`), deliberately tucked away
- * here as a small dev/debug control rather than advertised on the Triggers tab:
- * it's only needed when another environment should own this repo's schedules &
- * webhooks (so they don't double-fire). When on, the platform auto-runs none of
- * this project's triggers; manual test-fires still work. The Triggers tab shows
- * a compact "paused" notice that points back here.
- */
 function TriggersActivationCard({
   projectId,
   canManage,
@@ -456,10 +426,6 @@ function TriggersActivationCard({
   );
 }
 
-/**
- * For a Kortix-managed GitHub repo: add GitHub users (including yourself) as
- * collaborators so they can clone/browse/work on the repo on github.com.
- */
 function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [username, setUsername] = useState('');
@@ -484,75 +450,80 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="mt-6">
-      <p className="text-foreground text-sm font-medium">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextAddPeople18915e9b',
-        )}
-      </p>
-      <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextKortixOwns7b6690bc',
-        )}
-      </p>
-      <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={submit}>
-        <div className="relative min-w-0 flex-1 basis-48">
-          <GithubMark className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-          <Input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsSettingsViewJsxAttrPlaceholderGitHub84efb7a1',
-            )}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            className="pl-9"
-          />
-        </div>
-        <Select value={permission} onValueChange={(v) => setPermission(v as 'read' | 'write')}>
-          <SelectTrigger size="lg" className="w-[8.5rem] shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="write">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanEdit2eb88c1b',
-              )}
-            </SelectItem>
-            <SelectItem value="read">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanView39f4dd36',
-              )}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          type="submit"
-          size="lg"
-          className="shrink-0 gap-1.5"
-          disabled={!username.trim() || inviteMutation.isPending}
-        >
-          {inviteMutation.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <UserPlus className="h-3.5 w-3.5" />
+    <div className="mt-6 space-y-3">
+      <div className="space-y-1">
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextAddPeople18915e9b',
           )}
-          Add
-        </Button>
+        </p>
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextKortixOwns7b6690bc',
+          )}
+        </p>
+      </div>
+      <form className="space-y-2" onSubmit={submit}>
+        <Label htmlFor="repo-collaborator-username">GitHub username</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-48">
+            <GithubMark className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+            <Input
+              id="repo-collaborator-username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsSettingsViewJsxAttrPlaceholderGitHub84efb7a1',
+              )}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="pl-9"
+            />
+          </div>
+          <Select value={permission} onValueChange={(v) => setPermission(v as 'read' | 'write')}>
+            <SelectTrigger size="lg" className="w-[8.5rem] shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="write">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanEdit2eb88c1b',
+                )}
+              </SelectItem>
+              <SelectItem value="read">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextCanView39f4dd36',
+                )}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="submit"
+            size="lg"
+            className="shrink-0 gap-1.5"
+            disabled={!username.trim() || inviteMutation.isPending}
+          >
+            {inviteMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <UserPlus className="h-3.5 w-3.5" />
+            )}
+            Add
+          </Button>
+        </div>
       </form>
     </div>
   );
 }
 
-/** GitHub mark rendered from Google's favicon service (per request). */
 function GithubMark({ className }: { className?: string }) {
   return (
     <img
       src="https://www.google.com/s2/favicons?domain=github.com&sz=64"
       alt=""
       aria-hidden
-      className={`rounded-[4px] ${className ?? ''}`}
+      className={cn('rounded-sm', className)}
     />
   );
 }

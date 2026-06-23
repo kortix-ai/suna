@@ -3,8 +3,10 @@
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { ScheduleView } from '@/components/projects/schedule-view';
 import { Button } from '@/components/ui/button';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
+import { Icon } from '@/features/icon/icon';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
@@ -21,7 +23,7 @@ import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { ArrowLeft } from '@mynaui/icons-react';
+import { AlarmClock, ArrowLeft, ChatMessages, CogOne, Sparkles, Users } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -29,19 +31,14 @@ import {
   FolderOpen,
   GitPullRequest,
   KeyRound,
-  MessageSquare,
   Monitor,
   Plug,
-  Settings,
-  Slash,
-  Sparkles,
   Store,
   Terminal,
-  Timer,
-  Users,
   Webhook,
 } from 'lucide-react';
 import { useMemo } from 'react';
+import { HiMiniSlash } from 'react-icons/hi2';
 import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
@@ -53,7 +50,7 @@ const GROUPS: readonly RailGroup[] = [
     items: [
       { section: 'agents', label: 'Agents', icon: Bot },
       { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: Slash },
+      { section: 'commands', label: 'Commands', icon: HiMiniSlash },
     ],
   },
   {
@@ -61,13 +58,13 @@ const GROUPS: readonly RailGroup[] = [
     items: [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Secrets', icon: KeyRound },
-      { section: 'channels', label: 'Channels', icon: MessageSquare },
+      { section: 'channels', label: 'Channels', icon: ChatMessages },
     ],
   },
   {
     label: 'Automate',
     items: [
-      { section: 'schedules', label: 'Schedules', icon: Timer },
+      { section: 'schedules', label: 'Schedules', icon: AlarmClock },
       { section: 'webhooks', label: 'Webhooks', icon: Webhook },
     ],
   },
@@ -84,7 +81,7 @@ const GROUPS: readonly RailGroup[] = [
     label: 'Manage',
     items: [
       { section: 'members', label: 'Members', icon: Users },
-      { section: 'settings', label: 'Settings', icon: Settings },
+      { section: 'settings', label: 'Settings', icon: CogOne },
     ],
   },
 ];
@@ -148,21 +145,45 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
       >
         <ModalTitle className="sr-only">Customize {projectName || 'project'}</ModalTitle>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[250px_1fr]">
+        <div
+          className={cn(
+            'min-h-0 flex-1',
+            isMobile ? 'flex flex-col' : 'grid grid-cols-[250px_1fr]',
+          )}
+        >
           {isMobile ? (
-            <nav aria-label="Customize" className="border-border/60 bg-background border-b">
-              <ul className="flex [scrollbar-width:none] items-center gap-1 overflow-x-auto px-2 py-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {allItems.map((item) => (
-                  <li key={item.section} className="shrink-0">
-                    <RailButton
-                      item={item}
-                      active={section === item.section}
-                      onClick={() => setSection(item.section)}
-                      orientation="horizontal"
-                    />
-                  </li>
-                ))}
-              </ul>
+            <nav
+              aria-label="Customize"
+              className="border-border/60 bg-background flex h-auto shrink-0 items-center border-b"
+            >
+              <FadedScrollArea
+                orientation="horizontal"
+                fadeColor="from-background"
+                className="min-w-0 flex-1 py-2"
+              >
+                <ul className="flex items-center gap-1 px-2">
+                  {allItems.map((item) => (
+                    <li key={item.section} className="shrink-0">
+                      <RailButton
+                        item={item}
+                        active={section === item.section}
+                        onClick={() => setSection(item.section)}
+                        orientation="horizontal"
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </FadedScrollArea>
+              <ModalClose className="flex shrink-0 items-center px-4">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground shrink-0"
+                  aria-label="Close"
+                >
+                  <Icon.Close className="text-foreground size-4 stroke-1" />
+                </Button>
+              </ModalClose>
             </nav>
           ) : (
             <section className="bg-sidebar flex min-h-0 flex-col space-y-10 border-r py-4">
@@ -205,7 +226,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
             </section>
           )}
 
-          <main className="bg-background flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {open && <SectionContent section={section} projectId={projectId} />}
           </main>
         </div>
@@ -234,9 +255,12 @@ function RailButton({
       size="sm"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      className={cn('w-full justify-start gap-2.5 text-left')}
+      className={cn(
+        'gap-2.5 text-left',
+        horizontal ? 'w-auto shrink-0 px-3 whitespace-nowrap' : 'w-full justify-start',
+      )}
     >
-      {Icon && <Icon className={cn('size-4 shrink-0')} />}
+      {Icon && <Icon className="size-4 shrink-0" />}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
     </Button>
   );

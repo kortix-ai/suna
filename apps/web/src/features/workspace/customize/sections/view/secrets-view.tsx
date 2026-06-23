@@ -578,7 +578,7 @@ function SourceChooser({
         if (value === 'shared' || value === 'mine') onChoose(value);
       }}
     >
-      <TabsListCompact variant="accent">
+      <TabsListCompact>
         <TabsTriggerCompact
           value="shared"
           disabled={busy || !sharedAvailable}

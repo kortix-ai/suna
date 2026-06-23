@@ -27,7 +27,7 @@ const badgeColors = {
 type BadgeColor = keyof typeof badgeColors;
 
 const badgeVariants = cva(
-  'border-transparent   disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap  px-2.5 py-1 text-xs font-medium ring-blue-600 transition-all focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
+  'border-transparent disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-xs font-medium leading-none ring-blue-600 transition-all focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
   {
     variants: {
       variant: {
@@ -39,7 +39,7 @@ const badgeVariants = cva(
           'border-transparent bg-red-100   text-red-800   dark:bg-red-900/30 dark:text-red-400',
         success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
         badgeSuccess:
-          'border-transparent bg-emerald-200   text-emerald-800   dark:bg-emerald-900/50 dark:text-emerald-500 disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full   ring-blue-600 transition-all focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none   bg-teal-100 text-teal-700 hover:bg-teal-100  focus:bg-teal-100   focus-visible:bg-teal-100 has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 px-1.5 text-[11px] font-medium',
+          'border-transparent bg-emerald-200 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-500 bg-teal-100 text-teal-700 hover:bg-teal-100 focus:bg-teal-100 focus-visible:bg-teal-100 px-1.5 text-[11px]',
         update: 'border-transparent text-kortix-orange bg-chart-2/25 border',
         kortix: 'border-transparent text-foreground bg-kortix-base/25 border',
         warning:
@@ -53,9 +53,9 @@ const badgeVariants = cva(
         transparent: 'border-transparent bg-transparent text-foreground',
       },
       size: {
-        default: 'px-3 py-1.5 text-xs gap-1 [&>svg]:size-3',
-        sm: 'px-2 py-0.5 text-xs gap-0.5 [&>svg]:size-2.5',
-        xs: 'px-1.5 py-0.5 h-5 text-[11px] gap-0.5 [&>svg]:size-2',
+        default: 'px-3 gap-1 [&>svg]:size-3',
+        sm: 'h-5 px-2 gap-0.5 [&>svg]:size-2.5',
+        xs: 'h-5 px-1.5 text-[11px] gap-0.5 [&>svg]:size-2',
       },
     },
     defaultVariants: {

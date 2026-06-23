@@ -4,7 +4,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsListCompact,
+  TabsTrigger,
+  TabsTriggerCompact,
+} from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProjectFilesProvider } from '@/features/project-files';
@@ -156,24 +163,18 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
     });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-1">
+    <Tabs
+      value={status}
+      onValueChange={(value) => setStatus(value as ChangeRequestStatus)}
+      className="space-y-4"
+    >
+      <TabsListCompact>
         {STATUS_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setStatus(f.value)}
-            className={cn(
-              'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-              status === f.value
-                ? 'bg-foreground text-background'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
+          <TabsTriggerCompact key={f.value} value={f.value}>
             {f.label}
-          </button>
+          </TabsTriggerCompact>
         ))}
-      </div>
+      </TabsListCompact>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -228,15 +229,16 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                   className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground font-mono text-xs">#{cr.number}</span>
+                    <span className="text-muted-foreground text-sm">#{cr.number}</span>
                     <span className="text-foreground truncate text-sm font-medium">{cr.title}</span>
                   </div>
                   <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-                    <GitBranch className="size-3 shrink-0" />
                     <span className="max-w-[140px] truncate font-mono">{cr.head_ref}</span>
-                    <span className="text-muted-foreground/40">→</span>
-                    <span className="max-w-[100px] truncate font-mono">{cr.base_ref}</span>
-                    <span className="text-muted-foreground/40">·</span>
+                    <span className="text-muted-foreground/40">&rarr;</span>
+                    <Badge variant="kortix" size="xs">
+                      {cr.base_ref}
+                    </Badge>
+                    <span className="text-muted-foreground/40">&bull;</span>
                     <span className="shrink-0">
                       {cr.status === 'merged' && cr.merged_at
                         ? `merged ${rel(cr.merged_at)}`
@@ -248,7 +250,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                 </button>
 
                 {cr.status === 'open' && (
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 items-center gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -269,7 +271,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                 )}
                 {cr.status === 'closed' && (
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => onReopen(cr.cr_id)}
                     disabled={busy}
@@ -282,7 +284,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
           })}
         </ul>
       )}
-    </div>
+    </Tabs>
   );
 }
 
@@ -299,7 +301,7 @@ function VersionsTab({ projectId }: { projectId: string }) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-14 w-full rounded-xl" />
+          <Skeleton key={i} className="h-16 w-full rounded-xl" />
         ))}
       </div>
     );
@@ -325,24 +327,36 @@ function VersionsTab({ projectId }: { projectId: string }) {
       {branches.map((b) => (
         <li
           key={b.name}
-          className="border-border/60 bg-card flex items-center gap-3 rounded-2xl border px-3.5 py-3"
+          className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2 transition-colors"
         >
-          <GitBranch className="text-muted-foreground h-4 w-4 shrink-0" />
+          <span
+            className={cn(
+              'flex size-9 items-center justify-center rounded-sm',
+              b.is_default ? 'bg-kortix-green/15' : 'bg-kortix-base/15',
+            )}
+          >
+            <GitBranch
+              className={cn('size-5', b.is_default ? 'text-kortix-green' : 'text-kortix-base')}
+            />
+          </span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-foreground truncate font-mono text-sm font-medium">
-                {b.name}
+            <div className="flex items-center gap-1.5">
+              <span className="text-foreground truncate text-sm font-medium">
+                {b.subject || '(no commits)'}
               </span>
               {b.is_default && (
-                <Badge variant="secondary" size="sm">
+                <Badge variant="kortix" size="xs">
                   default
                 </Badge>
               )}
             </div>
-            <div className="text-muted-foreground mt-0.5 truncate text-xs">
-              {b.subject || '(no commits)'}
+            <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+              <span className="truncate">{b.name}</span>
               {b.committed_at && (
-                <span className="text-muted-foreground/60"> · {rel(b.committed_at)}</span>
+                <>
+                  <span className="text-muted-foreground/40">&bull;</span>
+                  <span className="shrink-0">{rel(b.committed_at)}</span>
+                </>
               )}
             </div>
           </div>
