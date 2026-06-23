@@ -32,6 +32,24 @@ import type {
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
 const MB_PER_GB = 1024;
+const BUILD_ATTEMPTS = 3;
+
+/**
+ * Retry only stale-context (staging disturbed before the S3 upload — API restart
+ * mid-build / tmp sweep) and transient transport (S3 PUT / gateway). A real build
+ * failure ('template … build failed') or activate timeout is NOT retried — that's
+ * a genuine error, not something a fresh stage would fix.
+ */
+function isRetryablePlatinumBuildError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes('does not exist') || m.includes('staging incomplete') || m.includes('scaffold') ||
+    m.includes('no such file') || m.includes('s3 upload') || m.includes('tar build context') ||
+    m.includes('timeout') || m.includes('timed out') || m.includes('econnreset') ||
+    m.includes('econnrefused') || m.includes('network') || m.includes('gateway') ||
+    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+  );
+}
 
 interface PlatinumTemplate {
   id: string;
@@ -66,6 +84,28 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       throw new Error('PlatinumAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      try {
+        await this.buildOnce(input, userDockerfile, tap);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryablePlatinumBuildError(err) || attempt === BUILD_ATTEMPTS) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[snapshots] platinum build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
+        );
+        await new Promise((r) => setTimeout(r, 2_000 * attempt));
+      }
+    }
+    throw lastErr;
+  }
+
+  /** One build attempt: stage a FRESH context, ship it, register, wait active.
+   *  Re-staged per attempt by buildSnapshot so a context disturbed between
+   *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
+  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
