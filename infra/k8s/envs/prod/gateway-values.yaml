@@ -4,8 +4,9 @@
 # deploy; git revert is the rollback.
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
+# ROLLBACK 2026-06-23: pinned to the existing :0.9.68 release image (zero rebuild).
 image:
-  tag: "0.9.77"
+  tag: "0.9.68"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
