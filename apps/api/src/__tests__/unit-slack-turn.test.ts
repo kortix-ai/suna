@@ -35,7 +35,10 @@ mock.module('../channels/slack-api', () => ({
     return '11.11';
   },
   stopStream: async (...a: unknown[]) => record('stopStream')(...a),
-  updateBlocks: async (...a: unknown[]) => record('updateBlocks')(...a),
+  updateBlocks: async (...a: unknown[]) => {
+    record('updateBlocks')(...a);
+    return true; // chat.update succeeded (real updateBlocks returns a boolean)
+  },
   updateMessage: async (...a: unknown[]) => record('updateMessage')(...a),
 }));
 

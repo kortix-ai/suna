@@ -7,21 +7,75 @@ interface SlackApiResult {
   [key: string]: unknown;
 }
 
+// Slack errors (ok:false) that are transient and worth retrying. A permanent
+// error (channel_not_found, not_in_channel, invalid_blocks, …) is returned
+// immediately so the caller can fall back instead of hammering a doomed call.
+const TRANSIENT_SLACK_ERRORS = new Set([
+  'ratelimited',
+  'service_unavailable',
+  'internal_error',
+  'fatal_error',
+  'request_timeout',
+]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function slackApiCall(
   token: string,
   method: string,
   body: Record<string, unknown>,
+  opts: { retries?: number } = {},
 ): Promise<SlackApiResult> {
-  const res = await fetch(`${SLACK_API_BASE}/${method}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return (await res.json()) as SlackApiResult;
+  // Up to `retries` extra attempts on transient failures (HTTP 429 with
+  // Retry-After, 5xx, network/timeout, or a transient ok:false error). Rate-limit
+  // 429s mean the request was NOT processed, so retrying is safe; the small
+  // double-post risk on a 5xx is acceptable versus silently losing the message.
+  const maxAttempts = Math.max(1, (opts.retries ?? 2) + 1);
+  let last: SlackApiResult = { ok: false, error: 'unknown' };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${SLACK_API_BASE}/${method}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get('retry-after')) || attempt;
+        last = { ok: false, error: 'ratelimited' };
+        if (attempt < maxAttempts) {
+          await sleep(Math.min(retryAfter, 5) * 1000);
+          continue;
+        }
+        return last;
+      }
+      if (res.status >= 500) {
+        last = { ok: false, error: `http_${res.status}` };
+        if (attempt < maxAttempts) {
+          await sleep(attempt * 400);
+          continue;
+        }
+        return last;
+      }
+      const data = (await res.json()) as SlackApiResult;
+      if (!data.ok && TRANSIENT_SLACK_ERRORS.has(data.error ?? '') && attempt < maxAttempts) {
+        await sleep(attempt * 400);
+        continue;
+      }
+      return data;
+    } catch (err) {
+      last = { ok: false, error: (err as Error)?.name === 'TimeoutError' ? 'timeout' : 'network_error' };
+      if (attempt < maxAttempts) {
+        await sleep(attempt * 400);
+        continue;
+      }
+      return last;
+    }
+  }
+  return last;
 }
 
 // Posts a plain message. Returns the message ts (needed to delete it later).
@@ -88,18 +142,23 @@ export async function updateMessage(
   }
 }
 
+// Returns whether the update landed, so the finalizer can fall back to a plain
+// post when a block render is rejected (e.g. invalid_blocks) instead of silently
+// losing the answer.
 export async function updateBlocks(
   token: string,
   channel: string,
   ts: string,
   text: string,
   blocks: unknown[],
-): Promise<void> {
+): Promise<boolean> {
   try {
     const r = await slackApiCall(token, 'chat.update', { channel, ts, text, blocks });
     if (!r.ok) console.warn('[slack-api] chat.update (blocks) failed', { error: r.error });
+    return r.ok;
   } catch (err) {
     console.warn('[slack-api] chat.update (blocks) error', err);
+    return false;
   }
 }
 

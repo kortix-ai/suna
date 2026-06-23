@@ -234,9 +234,17 @@ export async function finalizeTurn(
   if (handle.finalized) return;
   handle.finalized = true;
   const hasContent = Boolean(opts.answer || opts.error || (opts.blocks && opts.blocks.length > 0));
-  const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
+  const rawBody = opts.answer ?? opts.error ?? '';
+  const truncated = rawBody.length > MAX_BODY;
+  const body = rawBody.slice(0, MAX_BODY);
   const ev = handle.originatingEvent;
   const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
+
+  // Did the content actually reach the thread? We gate the ✅ on this so we never
+  // imply a reply that was rejected, and we fall back to a plain post when a
+  // block render fails — a long answer dropped into one Block Kit section can be
+  // rejected (sections cap at 3000 chars), and that must not silently vanish.
+  let rendered = false;
 
   // Render the result — BEST-EFFORT. The row is already claimed-finalized by the
   // time we get here, so a Slack API hiccup while rendering must not throw: that
@@ -249,40 +257,60 @@ export async function finalizeTurn(
       // final plan (+ answer/error) into it via chat.update.
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
-      await updateBlocks(
+      rendered = await updateBlocks(
         handle.token,
         handle.channel,
         handle.ts,
         planTitleFor(opts),
-        buildFinalPlanBlocks(handle, body, opts),
+        buildFinalPlanBlocks(handle, body, opts, truncated),
       );
+      // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
+      // content; post it fresh as plain text so it still lands in the thread.
+      if (!rendered && hasContent) {
+        const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+        rendered = ts != null;
+      }
     } else if (hasContent) {
       // The agent posted no `slack step` (no plan message) but we have a reply or
       // an error to surface — post it fresh in-thread.
       if (opts.blocks && opts.blocks.length > 0) {
-        await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+        const ts = await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+        rendered = ts != null;
+        if (!rendered) {
+          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+          rendered = f != null;
+        }
       } else if (opts.error && handle.projectId && handle.sessionId) {
         // An error with no plan stream: post the failure copy WITH an "Open
         // session" footer so the thread always has a way to see what went wrong
         // (the plan path already appends this footer; mirror it here).
         const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
-        await postBlocks(
+        const ts = await postBlocks(
           handle.token,
           handle.channel,
           body,
           [
-            { type: 'section', text: { type: 'mrkdwn', text: body } },
+            ...toSectionBlocks(body, truncated),
             { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] },
           ],
           threadRoot,
         );
+        rendered = ts != null;
+        if (!rendered) {
+          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+          rendered = f != null;
+        }
       } else {
-        await postMessage(handle.token, handle.channel, body, threadRoot);
+        // Plain post already — slackApiCall retries transient failures, so there's
+        // no block-vs-text fallback to add here.
+        const ts = await postMessage(handle.token, handle.channel, body, threadRoot);
+        rendered = ts != null;
       }
     }
     // A silent finalize with no plan message and no content leaves the thread
-    // untouched — we just clear the ⏳ below.
-    if (opts.answer && !opts.error) {
+    // untouched — we just clear the ⏳ below. The ✅ is reserved for a real answer
+    // that ACTUALLY posted (never imply a reply that was rejected).
+    if (opts.answer && !opts.error && rendered) {
       await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
     }
   } catch (err) {
@@ -290,6 +318,45 @@ export async function finalizeTurn(
   }
   // ALWAYS clear the ⏳ — even if the render above failed.
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI).catch(() => {});
+}
+
+// Slack Block Kit caps a section's text at 3000 chars and the outer message has
+// its own limits, so we never drop the whole answer into one section. Cap the
+// body, split it across a few sections on newline boundaries, and flag overflow.
+const MAX_BODY = 11000;
+const SECTION_LIMIT = 2900;
+const MAX_SECTIONS = 5;
+
+function toSectionBlocks(body: string, truncated = false): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+  let rest = body;
+  while (rest.length > 0 && blocks.length < MAX_SECTIONS) {
+    let take = Math.min(rest.length, SECTION_LIMIT);
+    if (rest.length > SECTION_LIMIT) {
+      const nl = rest.lastIndexOf('\n', SECTION_LIMIT);
+      if (nl > SECTION_LIMIT * 0.6) take = nl;
+    }
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: rest.slice(0, take) } });
+    rest = rest.slice(take);
+  }
+  if (truncated || rest.length > 0) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: '_… truncated — open the session for the full output._' }],
+    });
+  }
+  return blocks;
+}
+
+// Plain-text rendering of the body for the chat.postMessage fallback when a block
+// render is rejected. postMessage's text field allows far more than a section, so
+// the full (already ≤MAX_BODY) body fits; append the session link inline.
+function plainFallback(handle: LiveTurn, body: string): string {
+  if (handle.projectId && handle.sessionId) {
+    const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+    return `${body}\n\n<${url}|Open session in Kortix ↗>`;
+  }
+  return body;
 }
 
 function planTitleFor(opts: { answer?: string; error?: string; title?: string }): string {
@@ -328,6 +395,7 @@ function buildFinalPlanBlocks(
   handle: LiveTurn,
   body: string,
   opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
+  truncated = false,
 ): unknown[] {
   const blocks: Array<Record<string, unknown>> = [
     {
@@ -339,7 +407,8 @@ function buildFinalPlanBlocks(
   if (opts.blocks && opts.blocks.length > 0) {
     for (const b of opts.blocks) blocks.push(b as Record<string, unknown>);
   } else if (body) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+    // Chunk into ≤3000-char sections so a long answer isn't rejected wholesale.
+    for (const b of toSectionBlocks(body, truncated)) blocks.push(b);
   }
   // Footer: a link to open this session on the web. Lets anyone in the thread
   // jump straight to the full session (logs, files, diff) in Kortix.
