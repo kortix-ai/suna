@@ -137,6 +137,11 @@ export {
   projectGroupGrants,
   accountGroupsRelations,
   accountGroupMembersRelations,
+  iamRoles,
+  iamRoleActions,
+  iamPolicies,
+  iamRolesRelations,
+  iamRoleActionsRelations,
   // SCIM
   scimTokens,
   // Audit webhooks

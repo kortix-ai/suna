@@ -2483,6 +2483,106 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
 }));
 
 
+// ─── IAM v1 — DB-driven custom roles + policies ────────────────────────────
+// The 6 built-in roles (owner/admin/member, manager/editor/viewer) stay as
+// frozen Sets in apps/api/src/iam/role-perms.ts and keep their in-memory fast
+// path. These tables add ACCOUNT-scoped CUSTOM roles and the policies that bind
+// a principal (member/group/token) to a custom role at a scope. The engine
+// consults them ADDITIVELY (union, allow-only highest-wins) on top of the
+// built-in role — so nothing existing changes until an admin creates a custom
+// role and assigns it. A department = an account_group bound here to a scoped
+// custom role; deactivating a capability = a role whose action set OMITS it.
+
+export const iamRoles = kortixSchema.table(
+  'iam_roles',
+  {
+    roleId: uuid('role_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Machine key, unique per account (e.g. 'marketing_operator'). */
+    key: varchar('key', { length: 64 }).notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    /** Where the role's actions apply: 'account' | 'project'. Plain text +
+     *  app-level validation (mirrors resourceTypeForAction's vocabulary). */
+    scopeType: varchar('scope_type', { length: 16 }).default('project').notNull(),
+    /** Reserved: v1 only creates custom roles; built-ins remain code-defined. */
+    isBuiltin: boolean('is_builtin').default(false).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_roles_account').on(table.accountId),
+    uniqueIndex('idx_iam_roles_account_key').on(table.accountId, table.key),
+  ],
+);
+
+export const iamRoleActions = kortixSchema.table(
+  'iam_role_actions',
+  {
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** A permission string from actions.ts VALID_ACTIONS (validated at write). */
+    action: varchar('action', { length: 96 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roleId, table.action] })],
+);
+
+export const iamPolicies = kortixSchema.table(
+  'iam_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** 'member' (user id) | 'group' (account_groups.group_id) | 'token' (SA). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — same choice as project_secret_grants.principal_id. */
+    principalId: uuid('principal_id').notNull(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** 'account' (every project) | 'project' (scope_id = project_id). */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** project_id when scope_type='project'; NULL = account-wide. No FK (the
+     *  column is polymorphic across account-wide vs a specific project). */
+    scopeId: uuid('scope_id'),
+    /** Optional auto-revoke; same semantics as project_members.expires_at. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_policies_account_principal').on(
+      table.accountId,
+      table.principalType,
+      table.principalId,
+    ),
+    index('idx_iam_policies_scope').on(table.scopeType, table.scopeId),
+    index('idx_iam_policies_role').on(table.roleId),
+  ],
+);
+
+export const iamRolesRelations = relations(iamRoles, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [iamRoles.accountId],
+    references: [accounts.accountId],
+  }),
+  actions: many(iamRoleActions),
+}));
+
+export const iamRoleActionsRelations = relations(iamRoleActions, ({ one }) => ({
+  role: one(iamRoles, {
+    fields: [iamRoleActions.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
+
+
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
 // drive the /scim/v2/accounts/:accountId/* endpoints. Separate from PATs
