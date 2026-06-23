@@ -11,6 +11,8 @@ export {
 export {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,
+  ACTION_CATALOG,
+  VALID_ACTIONS,
   resourceTypeForAction,
   type ResourceType,
 } from './actions';

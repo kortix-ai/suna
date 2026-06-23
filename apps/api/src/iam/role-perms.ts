@@ -41,6 +41,16 @@ const ADMIN_EXTRAS: readonly string[] = [
 
   ACCOUNT_ACTIONS.AUDIT_READ,
 
+  // Custom roles + policies (IAM v1) — managing department roles and their
+  // assignments is an admin/owner capability.
+  ACCOUNT_ACTIONS.ROLE_READ,
+  ACCOUNT_ACTIONS.ROLE_CREATE,
+  ACCOUNT_ACTIONS.ROLE_UPDATE,
+  ACCOUNT_ACTIONS.ROLE_DELETE,
+  ACCOUNT_ACTIONS.POLICY_READ,
+  ACCOUNT_ACTIONS.POLICY_CREATE,
+  ACCOUNT_ACTIONS.POLICY_DELETE,
+
   ACCOUNT_ACTIONS.PROJECT_CREATE,
 ];
 

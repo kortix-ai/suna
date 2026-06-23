@@ -19,7 +19,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { accountGroupMembers } from '@kortix/db';
+import { accountGroupMembers, iamPolicies } from '@kortix/db';
 import { db } from '../shared/db';
 
 interface PrincipalScopedMemo {
@@ -61,5 +61,42 @@ export async function invalidateIamCacheForGroup(groupId: string | null | undefi
     invalidateIamCacheForUsers(rows.map((r) => r.userId));
   } catch (err) {
     console.warn('[iam-cache] group invalidation lookup failed', { groupId, err: (err as Error)?.message });
+  }
+}
+
+/**
+ * A custom role's action set changed — bust every principal that holds it via an
+ * iam_policy. Member principals bust directly; group principals fan out to their
+ * members. Best-effort. Call after editing iam_role_actions or deleting a role.
+ */
+export async function invalidateIamCacheForRole(roleId: string | null | undefined): Promise<void> {
+  if (!roleId) return;
+  try {
+    const policies = await db
+      .select({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId })
+      .from(iamPolicies)
+      .where(eq(iamPolicies.roleId, roleId));
+    for (const p of policies) {
+      if (p.principalType === 'group') {
+        await invalidateIamCacheForGroup(p.principalId);
+      } else {
+        // 'member' (user) or 'token' (service account = its own principal id).
+        invalidateIamCacheForUser(p.principalId);
+      }
+    }
+  } catch (err) {
+    console.warn('[iam-cache] role invalidation lookup failed', { roleId, err: (err as Error)?.message });
+  }
+}
+
+/** Bust a single policy's principal (member→user, group→members). */
+export async function invalidateIamCacheForPolicyPrincipal(
+  principalType: string,
+  principalId: string,
+): Promise<void> {
+  if (principalType === 'group') {
+    await invalidateIamCacheForGroup(principalId);
+  } else {
+    invalidateIamCacheForUser(principalId);
   }
 }
