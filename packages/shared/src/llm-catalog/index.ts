@@ -29,15 +29,17 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  // Bedrock invocation id (a cross-region inference-profile id like
-  // `us.anthropic.claude-opus-4-8`, or a base model id like `deepseek.v3.2`).
-  // Every managed model runs on Bedrock through our own credentials.
-  bedrockModelId: string;
-  // Which Bedrock transport carries it:
+  // The upstream's own model id, interpreted per `transport`:
+  //   'bedrock' / 'bedrock-converse' → a Bedrock id (`us.anthropic.claude-opus-4-8`,
+  //                                    `moonshotai.kimi-k2.5`)
+  //   'openrouter'                   → an OpenRouter slug (`z-ai/glm-4.6`)
+  upstreamModelId: string;
+  // Which upstream + wire format carries it:
   //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
-  //   'bedrock-converse' → the model-agnostic Converse API (DeepSeek, Kimi, …)
-  transport: 'bedrock' | 'bedrock-converse';
-  // models.dev id for live pricing — Bedrock ids don't always match the catalog.
+  //   'bedrock-converse' → model-agnostic Bedrock Converse API (Kimi, MiniMax, …)
+  //   'openrouter'       → OpenRouter (openai-compat) for models not on Bedrock
+  transport: 'bedrock' | 'bedrock-converse' | 'openrouter';
+  // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
 }
@@ -49,17 +51,17 @@ export interface ManagedModel {
 // (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
-// Bedrock-only: every managed model runs on AWS Bedrock through our own bearer
-// key and is billed as Kortix credits with markup, so the gateway enforces
-// budgets/logging/spend on all of them. Anthropic frontier uses the proven
-// Anthropic-payload transport; DeepSeek/Kimi use the Converse transport.
-// (OpenRouter was dropped — its per-provider availability, e.g. Kimi only on
-// `novita`, made non-Anthropic models flaky; Qwen/GLM aren't on Bedrock at all.)
+// Every managed model runs through OUR keys and is billed as Kortix credits with
+// markup, so the gateway enforces budgets/logging/spend on all of them. Bedrock
+// is preferred (consistent, no per-provider routing surprises): Anthropic via the
+// proven Anthropic-payload transport, Kimi/MiniMax via Converse. Models Bedrock
+// doesn't host (GLM, Qwen) go via OpenRouter. (Kimi is on Bedrock specifically
+// because its only OpenRouter provider, `novita`, is excluded by our data policy.)
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
     name: 'Claude Opus 4.8',
-    bedrockModelId: 'us.anthropic.claude-opus-4-8',
+    upstreamModelId: 'us.anthropic.claude-opus-4-8',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
@@ -67,25 +69,57 @@ export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-sonnet-4.6',
     name: 'Claude Sonnet 4.6',
-    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
+    upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
   },
   {
-    id: 'deepseek-v3.2',
-    name: 'DeepSeek V3.2',
-    bedrockModelId: 'deepseek.v3.2',
+    id: 'kimi-k2',
+    name: 'Kimi K2',
+    upstreamModelId: 'moonshotai.kimi-k2.5',
     transport: 'bedrock-converse',
-    pricingRef: 'deepseek/deepseek-v3.2',
+    pricingRef: 'moonshotai/kimi-k2',
     tier: 'balanced',
   },
   {
-    id: 'kimi-k2',
-    name: 'Kimi K2',
-    bedrockModelId: 'moonshotai.kimi-k2.5',
+    id: 'kimi-k2-thinking',
+    name: 'Kimi K2 Thinking',
+    upstreamModelId: 'moonshot.kimi-k2-thinking',
     transport: 'bedrock-converse',
-    pricingRef: 'moonshotai/kimi-k2',
+    pricingRef: 'moonshotai/kimi-k2-thinking',
+    tier: 'balanced',
+  },
+  {
+    id: 'minimax-m2.5',
+    name: 'MiniMax M2.5',
+    upstreamModelId: 'minimax.minimax-m2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'minimax/minimax-m2',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.6',
+    name: 'GLM-4.6',
+    upstreamModelId: 'z-ai/glm-4.6',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.7',
+    name: 'GLM-4.7',
+    upstreamModelId: 'z-ai/glm-4.7',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.7',
+    tier: 'balanced',
+  },
+  {
+    id: 'qwen3-max',
+    name: 'Qwen3 Max',
+    upstreamModelId: 'qwen/qwen3-max',
+    transport: 'openrouter',
+    pricingRef: 'qwen/qwen3-max',
     tier: 'balanced',
   },
 ];

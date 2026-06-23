@@ -29,7 +29,8 @@ export type ModelProvider =
 export function isKortixMode(modelId: string): boolean {
   const id = modelId.startsWith('kortix/') ? modelId.slice('kortix/'.length) : modelId;
   if (id === 'claude-opus-4.8' || id === 'claude-sonnet-4.6' ||
-      id === 'deepseek-v3.2' || id === 'kimi-k2') {
+      id === 'kimi-k2' || id === 'kimi-k2-thinking' || id === 'minimax-m2.5' ||
+      id === 'glm-4.6' || id === 'glm-4.7' || id === 'qwen3-max') {
     return true;
   }
   // Back-compat: previously branded Kortix modes.

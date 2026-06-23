@@ -23,11 +23,27 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
   };
 }
 
+function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.OPENROUTER_API_KEY) return null;
+  return {
+    provider: 'openrouter',
+    kind: 'openai-compat',
+    baseUrl: config.OPENROUTER_API_URL,
+    apiKey: config.OPENROUTER_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    appName: 'Kortix',
+    appReferer: config.KORTIX_URL,
+    resolvedModel: managed.upstreamModelId,
+    pricing: livePricing(managed.pricingRef),
+  };
+}
+
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
-  // Anthropic models use the InvokeModel/anthropic-payload transport; everything
-  // else (DeepSeek, Kimi) uses the model-agnostic Converse transport. Both hit
-  // Bedrock with the same bearer key — only the request/response shape differs.
+  // 'bedrock' = Anthropic InvokeModel/anthropic-payload; 'bedrock-converse' =
+  // the model-agnostic Converse API (Kimi, MiniMax). Same bearer key, different
+  // request/response shape — the kind selects the transport.
   return {
     provider: 'bedrock',
     kind: managed.transport,
@@ -35,13 +51,17 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     apiKey: config.AWS_BEDROCK_API_KEY,
     billingMode: 'credits',
     markup: llmPriceMarkup(),
-    resolvedModel: managed.bedrockModelId,
+    resolvedModel: managed.upstreamModelId,
     pricing: livePricing(managed.pricingRef),
   };
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  return [bedrockManagedDescriptor(managed)].filter((d): d is UpstreamDescriptor => d !== null);
+  const d =
+    managed.transport === 'openrouter'
+      ? openRouterManagedDescriptor(managed)
+      : bedrockManagedDescriptor(managed);
+  return d ? [d] : [];
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
