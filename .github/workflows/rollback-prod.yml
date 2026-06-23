@@ -1,0 +1,198 @@
+name: Rollback Production
+
+# Roll prod BACK to an already-released version vX.Y.Z, reusing that release's
+# prebuilt images — zero rebuild. This is the inverse of promote.yml: promote
+# moves prod FORWARD onto new code; rollback re-points prod at an OLDER release's
+# artifacts when something shipped broken and the fix is "go back, then fix
+# forward later".
+#
+# WHAT IT DOES (and why each part is safe)
+#   * BACKEND (EKS / Argo CD): opens a review-gated PR into `prod` that sets
+#     image.tag (+ kortixVersion) for kortix-api and image.tag for kortix-gateway
+#     to the target version. Argo CD (automated sync + selfHeal, targetRevision
+#     `prod`) reconciles both Deployments to the existing :X.Y.Z images on merge.
+#     No rebuild, no retag — Argo just pulls the immutable release images.
+#   * VERSION PROTECTION: the root VERSION file is deliberately LEFT at the
+#     current prod version. deploy-prod.yml fires on the prod merge and its
+#     retag-images job retags dev images → :<VERSION>. By keeping VERSION at the
+#     current (not the target) version, that retag can NEVER overwrite the
+#     :X.Y.Z image we are rolling onto. (The workflow refuses if target == current.)
+#   * DATABASE: untouched. Migrations in this repo are forward-only and additive
+#     (ADD COLUMN/VALUE, CREATE ... IF NOT EXISTS); the live schema is a strict
+#     superset of any older release, so older code runs fine against it. Reversing
+#     migrations is unsafe and this workflow never does it.
+#   * FRONTEND (Vercel): rolled back via Vercel **Instant Rollback** to the
+#     target's production deployment — a prebuilt artifact, instant, no rebuild.
+#     The PR body spells out the exact clicks. Do it AFTER merging the PR so the
+#     Vercel rebuild the merge triggers can't clobber the rollback.
+#
+# Like promote, this only PROPOSES — it opens a PR; it never pushes prod. A human
+# merges it (prod requires a review; that's intentional even for rollbacks). The
+# merge is the single thing that rolls prod, and it triggers deploy-prod.yml.
+#
+# EXPECTED, COSMETIC NOISE: the deploy-prod run on the merge goes PARTLY RED — its
+# version-watch waits for the current VERSION while pods report the target, and
+# release-create re-hits the existing release. Argo does the real roll
+# independently; judge success by Argo health + api.kortix.com/health, not by that
+# run. The next promote of `main` supersedes this state cleanly (merge -s ours).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Target released version to roll back to (X.Y.Z or vX.Y.Z)"
+        required: true
+        type: string
+      reason:
+        description: "Why are we rolling back? (incident summary — shows in the PR)"
+        required: true
+        type: string
+      confirm:
+        description: "Type ROLLBACK PROD to confirm this opens a prod rollback PR"
+        required: true
+        type: string
+
+concurrency:
+  group: rollback-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rollback:
+    name: Open review-gated rollback PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout prod (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+          fetch-depth: 0
+
+      - name: Validate target + verify release images
+        id: v
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_CONFIRM: ${{ inputs.confirm }}
+          IN_REASON: ${{ inputs.reason }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "$IN_CONFIRM" != "ROLLBACK PROD" ]; then
+            echo "::error::confirm must be exactly: ROLLBACK PROD"; exit 1
+          fi
+          if [ -z "${IN_REASON// }" ]; then
+            echo "::error::A rollback reason is required."; exit 1
+          fi
+
+          TARGET="${IN_VERSION#v}"
+          echo "$TARGET" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::version '$IN_VERSION' is not X.Y.Z"; exit 1; }
+
+          CUR="$(tr -d '[:space:]' < VERSION)"
+          if [ "$TARGET" = "$CUR" ]; then
+            echo "::error::Target $TARGET is already live on prod — nothing to roll back."; exit 1
+          fi
+
+          # The target must be a real, released tag (so its images were published).
+          if ! git rev-parse -q --verify "refs/tags/v$TARGET^{commit}" >/dev/null; then
+            echo "::error::tag v$TARGET does not exist — can only roll back to a released version."; exit 1
+          fi
+
+          # Best-effort: confirm the prebuilt release images exist. If we can't
+          # authenticate to the registry we DON'T block — Argo's pod-health gate
+          # is the real safety net (a missing image → pods never go Ready → the
+          # current pods keep serving, so a bad rollback can't cause an outage).
+          AUTHED=""
+          if [ -n "${DOCKERHUB_TOKEN:-}" ] && [ -n "${DOCKERHUB_USERNAME:-}" ]; then
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin >/dev/null 2>&1 && AUTHED="yes" || true
+          fi
+          for IMG in kortix/kortix-api kortix/kortix-gateway; do
+            if docker buildx imagetools inspect "$IMG:$TARGET" >/dev/null 2>&1; then
+              echo "✓ $IMG:$TARGET present"
+            elif [ -n "$AUTHED" ]; then
+              echo "::error::$IMG:$TARGET not found in registry — refusing to roll back to a missing image."; exit 1
+            else
+              echo "::warning::Could not verify $IMG:$TARGET (no registry auth). Relying on the pod-health canary."
+            fi
+          done
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "current=$CUR" >> "$GITHUB_OUTPUT"
+          echo "Rolling prod back: $CUR → $TARGET"
+
+      - name: Open rollback PR into prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.v.outputs.target }}
+          CURRENT: ${{ steps.v.outputs.current }}
+          IN_REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          BR="rollback/prod-to-v$TARGET"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BR" origin/prod
+
+          # BACKEND: point Argo CD's GitOps source at the existing :TARGET images.
+          # kortixVersion is set so health/pods honestly report the rolled version.
+          # VERSION (root) is intentionally NOT changed — see the header comment.
+          yq -i '.image.tag = strenv(TARGET) | .kortixVersion = strenv(TARGET)' infra/k8s/envs/prod/values.yaml
+          yq -i '.image.tag = strenv(TARGET)' infra/k8s/envs/prod/gateway-values.yaml
+
+          git add infra/k8s/envs/prod/values.yaml infra/k8s/envs/prod/gateway-values.yaml
+          git commit -m "revert(prod): roll EKS api + gateway back to v$TARGET" -m "$IN_REASON"
+          git push -f origin "HEAD:refs/heads/$BR"
+
+          existing="$(gh pr list --base prod --head "$BR" --state open --json number --jq '.[0].number' || true)"
+          if [ -n "$existing" ]; then
+            echo "Rollback PR #$existing already open for $BR."
+            exit 0
+          fi
+
+          # Build the PR body with printf (heredocs at column 0 would break the
+          # surrounding YAML block scalar; indenting markdown would turn into code
+          # blocks — so assemble it line-by-line into a file and use --body-file).
+          BODY_FILE="$RUNNER_TEMP/rollback-body.md"
+          {
+            printf '## 🔴 Production rollback → v%s\n\n' "$TARGET"
+            printf 'Rolls **backend** (EKS) from `%s` to the existing **`:%s`** release image. Frontend is rolled back in parallel on Vercel (steps below).\n\n' "$CURRENT" "$TARGET"
+            printf '**Reason:** %s\n\n' "$IN_REASON"
+            printf '### What this does\n'
+            printf -- '- `infra/k8s/envs/prod/values.yaml` — `image.tag` + `kortixVersion` → **%s** (kortix-api)\n' "$TARGET"
+            printf -- '- `infra/k8s/envs/prod/gateway-values.yaml` — `image.tag` → **%s** (kortix-gateway)\n' "$TARGET"
+            printf -- '- On merge, **Argo CD** (auto-sync + selfHeal) reconciles both Deployments to the prebuilt `:%s` images — **zero rebuild**.\n\n' "$TARGET"
+            printf "### Why it's safe\n"
+            printf -- '- **DB untouched:** forward-only migrations are additive, so the live schema is a strict superset of %s. No down-migration.\n' "$TARGET"
+            printf -- '- **Canary:** a missing image → new pods never go Ready → current pods keep serving. The rollback **cannot cause an outage**.\n'
+            printf -- '- **VERSION left at `%s`** so deploy-prod'\''s retag job targets `:%s` and can **never overwrite** the `:%s` image.\n\n' "$CURRENT" "$CURRENT" "$TARGET"
+            printf '### Expected noise on merge (cosmetic)\n'
+            printf '`deploy-prod` goes **partly red** (version-watch waits for `%s`; release-create re-hits the existing release). **Argo does the real roll independently** — judge success by Argo health + `api.kortix.com/health`.\n\n' "$CURRENT"
+            printf '### Frontend (do AFTER merging this)\n'
+            printf 'Vercel → **kortix.com** project → Deployments → the **v%s** production deployment (`prod` branch) → **⋯ → Instant Rollback / Promote to Production**. Do it *after* the merge so the Vercel rebuild can'\''t clobber it.\n\n' "$TARGET"
+            printf '### Recovery\n'
+            printf 'The next `promote` of latest `main` supersedes this cleanly (`merge -s ours`) and moves prod forward — no manual cleanup.\n'
+          } > "$BODY_FILE"
+
+          gh pr create --base prod --head "$BR" \
+            --title "revert(prod): roll back to v$TARGET [ROLLBACK]" \
+            --body-file "$BODY_FILE"
+
+      - name: Summary
+        env:
+          TARGET: ${{ steps.v.outputs.target }}
+          CURRENT: ${{ steps.v.outputs.current }}
+        run: |
+          {
+            echo "### Rollback PR opened — prod \`$CURRENT\` → \`v$TARGET\`"
+            echo ""
+            echo "- Backend: merge the PR → Argo CD rolls kortix-api + kortix-gateway to \`:$TARGET\` (zero rebuild)."
+            echo "- Frontend: after merge, Vercel **Instant Rollback** to the \`v$TARGET\` prod deployment."
+            echo "- DB: untouched (forward-only migrations are additive)."
+            echo ""
+            echo "_Nothing is rolled until a reviewer merges the PR. The next promote of \`main\` supersedes this._"
+          } >> "$GITHUB_STEP_SUMMARY"
