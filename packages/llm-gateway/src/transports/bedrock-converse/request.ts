@@ -109,6 +109,23 @@ function toolConfig(body: Record<string, any>): Record<string, unknown> | undefi
   return cfg;
 }
 
+const CACHEABLE_CONVERSE_MODEL = /claude|nova/i;
+
+function applyConverseCaching(payload: Record<string, any>, modelId: string): void {
+  if (!CACHEABLE_CONVERSE_MODEL.test(modelId)) return;
+  if (Array.isArray(payload.system) && payload.system.length) {
+    payload.system.push({ cachePoint: { type: 'default' } });
+  }
+  const tools = payload.toolConfig?.tools;
+  if (Array.isArray(tools) && tools.length) {
+    tools.push({ cachePoint: { type: 'default' } });
+  }
+  if (Array.isArray(payload.messages) && payload.messages.length) {
+    const last = payload.messages[payload.messages.length - 1];
+    if (Array.isArray(last?.content)) last.content.push({ cachePoint: { type: 'default' } });
+  }
+}
+
 export function buildBedrockConverseRequest(
   body: Record<string, any>,
   descriptor: UpstreamDescriptor,
@@ -128,6 +145,7 @@ export function buildBedrockConverseRequest(
   if (tc) payload.toolConfig = tc;
 
   const modelId = descriptor.resolvedModel || String(body.model ?? '');
+  applyConverseCaching(payload, modelId);
   const action = body.stream === true ? 'converse-stream' : 'converse';
 
   const headers: Record<string, string> = {

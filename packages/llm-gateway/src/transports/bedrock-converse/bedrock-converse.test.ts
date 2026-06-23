@@ -52,6 +52,29 @@ describe('buildBedrockConverseRequest', () => {
   });
 });
 
+describe('buildBedrockConverseRequest — prompt caching (gated)', () => {
+  const body = {
+    messages: [
+      { role: 'system', content: 'stable preamble' },
+      { role: 'user', content: 'question' },
+    ],
+    tools: [{ function: { name: 'wx', parameters: { type: 'object' } } }],
+  };
+
+  test('inserts cachePoint blocks for a cache-supporting family', () => {
+    const p = buildBedrockConverseRequest(body, { ...descriptor, resolvedModel: 'anthropic.claude-sonnet-4' }).payload as any;
+    expect(p.system.at(-1)).toEqual({ cachePoint: { type: 'default' } });
+    expect(p.toolConfig.tools.at(-1)).toEqual({ cachePoint: { type: 'default' } });
+    expect(p.messages.at(-1).content.at(-1)).toEqual({ cachePoint: { type: 'default' } });
+  });
+
+  test('does NOT insert cachePoint for a model that rejects it', () => {
+    const p = buildBedrockConverseRequest(body, { ...descriptor, resolvedModel: 'deepseek.v3.2' }).payload as any;
+    expect(p.system).toEqual([{ text: 'stable preamble' }]);
+    expect(JSON.stringify(p)).not.toContain('cachePoint');
+  });
+});
+
 const enc = new TextEncoder();
 
 // One AWS event-stream string header: 1B name-len · name · 1B type(7) · 2B val-len · val.
