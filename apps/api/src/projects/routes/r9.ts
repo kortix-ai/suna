@@ -13,6 +13,7 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 
 projectsApp.openapi(
   createRoute({
@@ -36,6 +37,11 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Human-side capability gate: merging lands code on the base branch. Editors/
+  // managers hold project.gitops.merge today; a custom role can OMIT it to take
+  // Git-Ops merge away from a department without touching the rest of write.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, { type: 'project', id: projectId });
 
   // Per-agent gate: merging a CR lands code on the base branch — the canonical
   // destructive action. An agent-session token must be granted project.cr.merge

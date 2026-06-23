@@ -1,4 +1,5 @@
 import { getProvider as getDeploymentProvider } from '../../deployments/providers';
+import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { getWarmPoolCounts, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
@@ -39,6 +40,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DEPLOY, { type: 'project', id: projectId });
 
   const { specs } = await loadProjectApps(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
@@ -89,6 +91,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DEPLOY, { type: 'project', id: projectId });
 
   const latest = await getLatestDeployment(projectId, slug);
   if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
@@ -819,6 +822,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
 
   const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
   const nextMeta: Record<string, unknown> = { ...meta };
