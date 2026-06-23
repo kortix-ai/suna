@@ -16,6 +16,7 @@ import {
   type StreamTaskChunk,
 } from '../slack-api';
 import { STREAM_TTL_MS, WORKING_EMOJI } from './app';
+import { classifyTurnError, type TurnErrorInfo } from './errors';
 import type { SlackEvent, LiveTurn } from './types';
 
 export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: string): LiveTurn {
@@ -121,7 +122,14 @@ setInterval(() => {
         if (!(await claimFinalize(row.sessionId))) continue;
         const token = await loadSlackTokenForProject(row.projectId);
         if (token) {
-          await finalizeTurn(rowToHandle(row, token), { error: '_This run ended without a reply._' });
+          // Last-resort close for a turn that went silent for 30 min — the
+          // sandbox never relayed an end (it died, hung, or stalled retrying).
+          // Be honest about why rather than a bare "ended without a reply".
+          await finalizeTurn(rowToHandle(row, token), {
+            error:
+              ':warning: *This run was closed after 30 minutes of silence* — it may have stalled or run out of credits.',
+            title: 'Run timed out',
+          });
         }
         await deleteTurn(row.sessionId);
       }
@@ -221,7 +229,7 @@ export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<str
 //     thread untouched. This is what stops an orphaned "On it…" from lingering.
 export async function finalizeTurn(
   handle: LiveTurn,
-  opts: { answer?: string; error?: string; blocks?: unknown[] },
+  opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
 ): Promise<void> {
   if (handle.finalized) return;
   handle.finalized = true;
@@ -249,10 +257,25 @@ export async function finalizeTurn(
         buildFinalPlanBlocks(handle, body, opts),
       );
     } else if (hasContent) {
-      // The agent posted no `slack step` (no plan message) but has a reply — post
-      // it fresh in-thread.
+      // The agent posted no `slack step` (no plan message) but we have a reply or
+      // an error to surface — post it fresh in-thread.
       if (opts.blocks && opts.blocks.length > 0) {
         await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+      } else if (opts.error && handle.projectId && handle.sessionId) {
+        // An error with no plan stream: post the failure copy WITH an "Open
+        // session" footer so the thread always has a way to see what went wrong
+        // (the plan path already appends this footer; mirror it here).
+        const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+        await postBlocks(
+          handle.token,
+          handle.channel,
+          body,
+          [
+            { type: 'section', text: { type: 'mrkdwn', text: body } },
+            { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] },
+          ],
+          threadRoot,
+        );
       } else {
         await postMessage(handle.token, handle.channel, body, threadRoot);
       }
@@ -269,7 +292,8 @@ export async function finalizeTurn(
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI).catch(() => {});
 }
 
-function planTitleFor(opts: { answer?: string; error?: string }): string {
+function planTitleFor(opts: { answer?: string; error?: string; title?: string }): string {
+  if (opts.title) return opts.title;
   if (opts.error) return 'Run failed';
   return 'Task complete';
 }
@@ -303,7 +327,7 @@ function buildPlanTasks(steps: StreamTaskChunk[]): Array<Record<string, unknown>
 function buildFinalPlanBlocks(
   handle: LiveTurn,
   body: string,
-  opts: { answer?: string; error?: string; blocks?: unknown[] },
+  opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
 ): unknown[] {
   const blocks: Array<Record<string, unknown>> = [
     {
@@ -430,16 +454,26 @@ export async function relayTurnAnswer(
 export async function relayTurnEnd(
   sessionId: string,
   status: 'idle' | 'error' = 'idle',
+  errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(
-    handle,
-    status === 'error'
-      ? { error: '_The run hit an error — open the session for details._' }
-      : {},
-  );
+  if (status === 'error') {
+    // Turn the opencode error into honest, specific copy (out of credits /
+    // usage limit / provider auth / the real error), not a blank failure line.
+    const classified = classifyTurnError(errorInfo);
+    await finalizeTurn(
+      handle,
+      // A user-initiated stop is not a failure — close quietly (retitle the plan,
+      // no alarming body) instead of posting red failure copy.
+      classified.aborted
+        ? { title: classified.title }
+        : { error: classified.text, title: classified.title },
+    );
+  } else {
+    await finalizeTurn(handle, {});
+  }
   await deleteTurn(sessionId);
   return true;
 }

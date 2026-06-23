@@ -322,7 +322,7 @@ describe('relayTurnEnd', () => {
     expect(calls('removeReaction').length).toBe(1);
   });
 
-  test('error close on a turn with no plan message posts failure copy fresh', async () => {
+  test('error close on a turn with no plan message posts failure copy + session footer', async () => {
     dbResults = [
       [streamRow({ messageTs: null, steps: [] })], // loadTurn
       [{ sessionId: 'sess-1' }], // claimFinalize
@@ -331,8 +331,64 @@ describe('relayTurnEnd', () => {
 
     const ok = await relayTurnEnd('sess-1', 'error');
     expect(ok).toBe(true);
-    const posted = calls('postMessage')[0]!;
+    // No plan stream → fresh post, now as blocks so it carries an "Open session" footer.
+    expect(calls('postMessage').length).toBe(0);
+    const posted = calls('postBlocks')[0]!;
     expect(String(posted.args[2])).toContain('error');
+    const blocks = posted.args[3] as Array<{ type: string }>;
+    expect(blocks.map((b) => b.type)).toEqual(['section', 'context']);
+    expect(calls('addReaction').length).toBe(0);
+  });
+
+  test('out-of-credits error renders the credits copy + "Out of credits" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn (has a plan message)
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', {
+      name: 'APIError',
+      statusCode: 402,
+      message: 'Payment Required: Insufficient credits. Balance: $-0.06',
+    });
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe('Out of credits');
+    const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
+    const section = blocks.find((b) => b.type === 'section');
+    expect(section?.text?.text.toLowerCase()).toContain('out of credits');
+    expect(section?.text?.text).toContain('$-0.06');
+    expect(calls('addReaction').length).toBe(0); // ✅ is reserved for real answers
+  });
+
+  test('usage-limit error renders the rate-limit copy + "Usage limit reached" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', { statusCode: 429, message: 'Too Many Requests' });
+    expect(ok).toBe(true);
+    expect(calls('updateBlocks')[0]!.args[3]).toBe('Usage limit reached');
+  });
+
+  test('aborted run closes quietly — retitled, no failure body, no ✅', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', { name: 'MessageAbortedError', message: 'aborted' });
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe('Run stopped');
+    const blocks = update.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
+    // No failure section — just the (re-titled) plan + the footer.
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'context']);
+    expect(blocks[0]!.tasks![0]!.status).toBe('complete'); // not 'error'
     expect(calls('addReaction').length).toBe(0);
   });
 });

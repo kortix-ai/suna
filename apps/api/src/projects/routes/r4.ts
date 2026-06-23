@@ -535,6 +535,11 @@ projectsApp.openapi(
     blocks?: unknown[];
     status?: string;
     opencode_session_id?: string;
+    // Turn-end error detail (opencode AssistantMessage.error / session.error),
+    // so Slack can render "out of credits" / rate-limit / the real error.
+    error_name?: string;
+    error_message?: string;
+    error_status?: number;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -553,7 +558,15 @@ projectsApp.openapi(
   // session id for the server-side root-session guard.)
   if (body.kind === 'end' || body.kind === 'turn_end') {
     const status = body.status === 'error' ? 'error' : 'idle';
-    const ok = await relayTurnEnd(sessionId, status);
+    const errorInfo =
+      body.error_name || body.error_message || typeof body.error_status === 'number'
+        ? {
+            name: typeof body.error_name === 'string' ? body.error_name : undefined,
+            message: typeof body.error_message === 'string' ? body.error_message : undefined,
+            statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
+          }
+        : undefined;
+    const ok = await relayTurnEnd(sessionId, status, errorInfo);
     return c.json({ ok });
   }
 
