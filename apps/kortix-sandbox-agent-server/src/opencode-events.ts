@@ -18,6 +18,18 @@ export interface QuestionRequest {
   questions: QuestionInfo[]
 }
 
+// Flattened opencode error (from session.error / AssistantMessage.error), passed
+// to onSessionError so the turn-end relay can tell apps/api *why* a run failed
+// (out of credits, rate limit, provider auth, …) instead of a blank "no reply".
+export interface OpencodeTurnError {
+  /** opencode error name, e.g. `APIError` / `ProviderAuthError` / `MessageAbortedError`. */
+  name?: string
+  /** Human message from `error.data.message`. */
+  message?: string
+  /** Upstream HTTP status for an `APIError` (402 = credits, 429 = rate limit). */
+  statusCode?: number
+}
+
 type OpencodeEventHandlers = {
   onQuestionAsked?: (req: QuestionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
@@ -25,7 +37,7 @@ type OpencodeEventHandlers = {
   // subagent (Task tool) child sessions — so the handler is responsible for
   // filtering down to the root turn.
   onSessionIdle?: (sessionID: string) => void
-  onSessionError?: (sessionID: string) => void
+  onSessionError?: (sessionID: string, error?: OpencodeTurnError) => void
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -109,7 +121,9 @@ export function startOpencodeEventLoop(
   }
 }
 
-function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
+// Exported for unit testing — maps a raw opencode SSE event to a handler call,
+// including flattening session.error's nested error into OpencodeTurnError.
+export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
@@ -123,7 +137,15 @@ function dispatch(event: { type?: string; properties?: unknown }, handlers: Open
     return
   }
   if (event.type === 'session.error' && handlers.onSessionError) {
-    const props = event.properties as { sessionID?: string } | undefined
-    if (props?.sessionID) handlers.onSessionError(props.sessionID)
+    const props = event.properties as
+      | { sessionID?: string; error?: { name?: string; data?: { message?: string; statusCode?: number } } }
+      | undefined
+    if (props?.sessionID) {
+      const e = props.error
+      handlers.onSessionError(
+        props.sessionID,
+        e ? { name: e.name, message: e.data?.message, statusCode: e.data?.statusCode } : undefined,
+      )
+    }
   }
 }
