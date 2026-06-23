@@ -8,13 +8,11 @@ import {
 } from './index';
 
 describe('managed catalog', () => {
-  test('exposes the expected passthrough lineup', () => {
+  test('exposes the Bedrock-only lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'claude-opus-4.8',
       'claude-sonnet-4.6',
       'deepseek-v3.2',
-      'qwen3-max',
-      'glm-4.6',
       'kimi-k2',
     ]);
   });
@@ -29,20 +27,20 @@ describe('managed catalog', () => {
     expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
   });
 
-  test('only Anthropic models carry a Bedrock id; Chinese models route via OpenRouter', () => {
+  test('every model runs on Bedrock with a pricing ref', () => {
     for (const m of MANAGED_MODELS) {
-      expect(m.openRouterModelId.length).toBeGreaterThan(0);
-      if (m.openRouterModelId.startsWith('anthropic/')) {
-        expect(m.bedrockModelId, `${m.id} should be Bedrock-routable`).toBeDefined();
-      } else {
-        expect(m.bedrockModelId, `${m.id} (non-Anthropic) must not claim a Bedrock id`).toBeUndefined();
-      }
+      expect(m.bedrockModelId.length, `${m.id} needs a Bedrock id`).toBeGreaterThan(0);
+      expect(m.pricingRef.length, `${m.id} needs a pricing ref`).toBeGreaterThan(0);
     }
   });
 
-  test('every Bedrock id is an Anthropic inference profile (our Bedrock transport is Anthropic-only)', () => {
+  test('Anthropic models use the invoke transport, others use Converse', () => {
     for (const m of MANAGED_MODELS) {
-      if (m.bedrockModelId) expect(m.bedrockModelId).toContain('anthropic.claude');
+      if (m.bedrockModelId.includes('anthropic.claude')) {
+        expect(m.transport, `${m.id} (Anthropic) → invoke`).toBe('bedrock');
+      } else {
+        expect(m.transport, `${m.id} (non-Anthropic) → Converse`).toBe('bedrock-converse');
+      }
     }
   });
 });
@@ -50,7 +48,8 @@ describe('managed catalog', () => {
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
     expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('kimi-k2')?.openRouterModelId).toBe('moonshotai/kimi-k2');
+    expect(getManagedModel('kimi-k2')?.bedrockModelId).toBe('moonshotai.kimi-k2.5');
+    expect(getManagedModel('kimi-k2')?.transport).toBe('bedrock-converse');
   });
 
   test('retired branded ids still resolve (to the nearest current model) so stored configs do not break', () => {

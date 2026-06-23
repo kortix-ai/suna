@@ -24,39 +24,24 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
 }
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.AWS_BEDROCK_API_KEY || !managed.bedrockModelId) return null;
+  if (!config.AWS_BEDROCK_API_KEY) return null;
+  // Anthropic models use the InvokeModel/anthropic-payload transport; everything
+  // else (DeepSeek, Kimi) uses the model-agnostic Converse transport. Both hit
+  // Bedrock with the same bearer key — only the request/response shape differs.
   return {
     provider: 'bedrock',
-    kind: 'bedrock',
+    kind: managed.transport,
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.bedrockModelId,
-    pricing: livePricing(managed.bedrockModelId),
-  };
-}
-
-function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.OPENROUTER_API_KEY) return null;
-  return {
-    provider: 'openrouter',
-    kind: 'openai-compat',
-    baseUrl: config.OPENROUTER_API_URL,
-    apiKey: config.OPENROUTER_API_KEY,
-    billingMode: 'credits',
-    markup: llmPriceMarkup(),
-    appName: 'Kortix',
-    appReferer: config.KORTIX_URL,
-    resolvedModel: managed.openRouterModelId,
-    pricing: livePricing(managed.openRouterModelId),
+    pricing: livePricing(managed.pricingRef),
   };
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  return [bedrockManagedDescriptor(managed), openRouterManagedDescriptor(managed)].filter(
-    (d): d is UpstreamDescriptor => d !== null,
-  );
+  return [bedrockManagedDescriptor(managed)].filter((d): d is UpstreamDescriptor => d !== null);
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {

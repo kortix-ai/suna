@@ -29,12 +29,16 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  // The Bedrock inference-profile id, when the model is reachable on Bedrock.
-  // Only Anthropic models are — our Bedrock transport speaks the Anthropic-on-
-  // Bedrock payload format — so non-Anthropic (Chinese) models omit this and are
-  // served via OpenRouter instead. Absent here ⇒ no Bedrock candidate is built.
-  bedrockModelId?: string;
-  openRouterModelId: string;
+  // Bedrock invocation id (a cross-region inference-profile id like
+  // `us.anthropic.claude-opus-4-8`, or a base model id like `deepseek.v3.2`).
+  // Every managed model runs on Bedrock through our own credentials.
+  bedrockModelId: string;
+  // Which Bedrock transport carries it:
+  //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
+  //   'bedrock-converse' → the model-agnostic Converse API (DeepSeek, Kimi, …)
+  transport: 'bedrock' | 'bedrock-converse';
+  // models.dev id for live pricing — Bedrock ids don't always match the catalog.
+  pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
 }
 
@@ -45,46 +49,43 @@ export interface ManagedModel {
 // (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
-// Every managed model routes through our own provider keys and is billed as
-// Kortix credits with markup, so the gateway enforces budgets/logging/spend on
-// all of them. Anthropic frontier goes via Bedrock; the rest via OpenRouter.
+// Bedrock-only: every managed model runs on AWS Bedrock through our own bearer
+// key and is billed as Kortix credits with markup, so the gateway enforces
+// budgets/logging/spend on all of them. Anthropic frontier uses the proven
+// Anthropic-payload transport; DeepSeek/Kimi use the Converse transport.
+// (OpenRouter was dropped — its per-provider availability, e.g. Kimi only on
+// `novita`, made non-Anthropic models flaky; Qwen/GLM aren't on Bedrock at all.)
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
     name: 'Claude Opus 4.8',
     bedrockModelId: 'us.anthropic.claude-opus-4-8',
-    openRouterModelId: 'anthropic/claude-opus-4.8',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
   },
   {
     id: 'claude-sonnet-4.6',
     name: 'Claude Sonnet 4.6',
     bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
-    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
   },
   {
     id: 'deepseek-v3.2',
     name: 'DeepSeek V3.2',
-    openRouterModelId: 'deepseek/deepseek-v3.2',
-    tier: 'balanced',
-  },
-  {
-    id: 'qwen3-max',
-    name: 'Qwen3 Max',
-    openRouterModelId: 'qwen/qwen3-max',
-    tier: 'balanced',
-  },
-  {
-    id: 'glm-4.6',
-    name: 'GLM-4.6',
-    openRouterModelId: 'z-ai/glm-4.6',
+    bedrockModelId: 'deepseek.v3.2',
+    transport: 'bedrock-converse',
+    pricingRef: 'deepseek/deepseek-v3.2',
     tier: 'balanced',
   },
   {
     id: 'kimi-k2',
     name: 'Kimi K2',
-    openRouterModelId: 'moonshotai/kimi-k2',
+    bedrockModelId: 'moonshotai.kimi-k2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'moonshotai/kimi-k2',
     tier: 'balanced',
   },
 ];
