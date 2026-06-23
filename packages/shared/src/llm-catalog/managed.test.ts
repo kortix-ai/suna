@@ -1,23 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   DEFAULT_MANAGED_MODEL_IDS,
-  FREE_OPENCODE_ZEN_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   getManagedModel,
-  isFreeOpencodeZenModel,
   isManagedModelId,
 } from './index';
-
-describe('free OpenCode Zen models', () => {
-  test('recognizes the catalog `-free` Zen set, not managed models', () => {
-    expect(FREE_OPENCODE_ZEN_MODEL_IDS.size).toBeGreaterThan(0);
-    for (const id of FREE_OPENCODE_ZEN_MODEL_IDS) expect(id.endsWith('-free')).toBe(true);
-    expect(isFreeOpencodeZenModel('deepseek-v4-flash-free')).toBe(true);
-    expect(isFreeOpencodeZenModel('claude-opus-4.8')).toBe(false);
-    expect(isFreeOpencodeZenModel('nope')).toBe(false);
-  });
-});
 
 describe('managed catalog', () => {
   test('exposes the managed lineup', () => {

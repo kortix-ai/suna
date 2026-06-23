@@ -3,9 +3,10 @@ import {
   type UpstreamDescriptor,
   resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel, isFreeOpencodeZenModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel } from '@kortix/shared/llm-catalog';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
+import { isFreeOpencodeZenModel } from '../../router/config/model-pricing';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 

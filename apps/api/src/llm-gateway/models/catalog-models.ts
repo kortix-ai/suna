@@ -1,5 +1,6 @@
 import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
 import { resolveCatalogUpstream } from '@kortix/llm-gateway';
+import { freeOpencodeZenModelIds } from '../../router/config/model-pricing';
 import { codexModelIds } from './codex-models';
 
 interface GatewayModel {
@@ -40,6 +41,10 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
     if (!resolveCatalogUpstream(provider.id)) continue;
+    // OpenCode Zen is served separately: only its FREE models, under the dedicated
+    // `opencode` provider (gatewayOpencodeZenModels). Don't BYOK-serve the full set
+    // here, or paid Zen models would show up unusable without a user key.
+    if (provider.id === 'opencode') continue;
     for (const model of provider.models) {
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
@@ -49,6 +54,23 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
         temperature: false,
       };
     }
+  }
+  return out;
+}
+
+// The free OpenCode Zen models (models.dev cost 0, live), served at $0 through the
+// Kortix Zen key. Keyed `opencode/<id>`; the daemon surfaces them under a dedicated
+// `opencode` provider. Empty until the pricing fetch lands (graceful).
+export function gatewayOpencodeZenModels(): Record<string, GatewayModel> {
+  const out: Record<string, GatewayModel> = {};
+  for (const id of freeOpencodeZenModelIds()) {
+    out[`opencode/${id}`] = {
+      name: catalogNameById.get(`opencode/${id}`) ?? humanize(id),
+      reasoning: true,
+      tool_call: true,
+      attachment: false,
+      temperature: false,
+    };
   }
   return out;
 }
@@ -75,6 +97,7 @@ export async function gatewayModelCatalog(
   return {
     ...managedModels(),
     ...gatewayModelsAll(),
+    ...gatewayOpencodeZenModels(),
     ...gatewayCodexModels(),
   };
 }

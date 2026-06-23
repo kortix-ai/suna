@@ -222,21 +222,20 @@ describe('buildOpencodeConfigContent — free OpenCode Zen split into its own pr
     KORTIX_LLM_API_KEY: 'kyolo_abc123',
   }
 
-  test('free Zen models become a dedicated `opencode` provider with bare keys; paid Zen dropped', async () => {
+  test('the gateway-served Zen models become a dedicated `opencode` provider with bare keys', async () => {
+    // The gateway serves only the FREE Zen models under `opencode/…` (incl.
+    // codename ones like `big-pickle` with no `-free` suffix); the daemon groups
+    // all of them, stripping the prefix.
     stubGatewayModels({
       'claude-opus-4.8': { name: 'Claude Opus 4.8' },
       'opencode/deepseek-v4-flash-free': { name: 'DeepSeek V4 Flash Free' },
-      'opencode/minimax-m3-free': { name: 'MiniMax M3 Free' },
-      'opencode/claude-opus-4-8': { name: 'Claude Opus 4.8 (paid Zen)' },
+      'opencode/big-pickle': { name: 'Big Pickle' },
     })
     const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
 
-    // Dedicated provider, friendly name, bare model keys (no `opencode/` prefix).
     expect(config.provider.opencode.name).toBe('OpenCode Zen')
     expect(config.provider.opencode.models['deepseek-v4-flash-free']).toBeDefined()
-    expect(config.provider.opencode.models['minimax-m3-free']).toBeDefined()
-    // Paid Zen model is not free → dropped.
-    expect(config.provider.opencode.models['claude-opus-4-8']).toBeUndefined()
+    expect(config.provider.opencode.models['big-pickle']).toBeDefined() // codename, no -free suffix
     // Zen models are NOT under kortix; managed models still are.
     expect(config.provider.kortix.models['opencode/deepseek-v4-flash-free']).toBeUndefined()
     expect(config.provider.kortix.models['claude-opus-4.8']).toBeDefined()

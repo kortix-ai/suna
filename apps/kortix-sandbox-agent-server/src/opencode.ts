@@ -169,10 +169,10 @@ async function buildGatewayProviders(
   const zenModels: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(all)) {
     if (id.startsWith('opencode/')) {
-      const bare = id.slice('opencode/'.length)
-      // Only the free (`-free`) Zen models — they're the ones the gateway serves
-      // through the Kortix Zen key at $0. Paid Zen models need the user's own key.
-      if (bare.endsWith('-free')) zenModels[bare] = model
+      // The gateway only serves the FREE Zen models under `opencode/…` (paid Zen
+      // is excluded server-side), so take all of them. Strip the prefix so the
+      // wire model is the bare id the dedicated `opencode` provider sends.
+      zenModels[id.slice('opencode/'.length)] = model
     } else {
       kortixModels[id] = model
     }
