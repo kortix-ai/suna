@@ -1,4 +1,5 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
+import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -438,6 +439,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: projectId });
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -853,6 +855,7 @@ projectsApp.openapi(
   const provider = c.req.param('provider');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { type: 'project', id: projectId });
 
   const cfg = OAUTH_PROVIDERS[provider];
   if (!cfg) return c.json({ error: 'Not found' }, 404);
@@ -888,6 +891,7 @@ projectsApp.openapi(
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: projectId });
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
