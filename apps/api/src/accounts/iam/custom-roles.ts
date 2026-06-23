@@ -491,6 +491,135 @@ iamRouter.openapi(
   },
 );
 
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/policies/{policyId}',
+    tags: ['iam'],
+    summary: 'Change a policy’s role / scope / expiry (principal is immutable)',
+    ...auth,
+    request: { params: PolicyIdParam, body: { content: { 'application/json': { schema: Any } } } },
+    responses: { 200: json(Any, 'Updated policy'), ...errors(400, 401, 403, 404) },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const policyId = c.req.param('policyId');
+    // Editing an assignment is a create-class action — gate on POLICY_CREATE.
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+
+    const [existing] = await db
+      .select()
+      .from(iamPolicies)
+      .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
+      .limit(1);
+    if (!existing) return c.json({ error: 'policy not found' }, 404);
+
+    const body = await readBody(c);
+    // Re-validate the scope/role/effect/expiry using the same rules as create,
+    // re-using the existing principal (PATCH never moves a policy to a new
+    // principal — delete + create for that).
+    const parsed = await parsePolicyInput(accountId, {
+      ...body,
+      principalType: existing.principalType,
+      principalId: existing.principalId,
+    });
+    if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
+
+    const [row] = await db
+      .update(iamPolicies)
+      .set({
+        roleId: parsed.value.roleId,
+        scopeType: parsed.value.scopeType,
+        scopeId: parsed.value.scopeId,
+        expiresAt: parsed.value.expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
+      .returning();
+    await invalidateIamCacheForPolicyPrincipal(existing.principalType, existing.principalId);
+    await auditIam(c, {
+      accountId,
+      action: 'iam.policy.update',
+      resourceType: 'account',
+      resourceId: policyId,
+      after: { role_id: parsed.value.roleId, scope_type: parsed.value.scopeType, scope_id: parsed.value.scopeId },
+    });
+    return c.json(serializePolicy(row!));
+  },
+);
+
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/policies:bulk-import',
+    tags: ['iam'],
+    summary: 'Create many policies, referencing roles by key (portable import)',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: Any } } } },
+    responses: { 200: json(Any, 'Import result'), ...errors(400, 401, 403) },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+
+    const body = await readBody(c);
+    const entries = Array.isArray(body.policies) ? (body.policies as Array<Record<string, unknown>>) : [];
+    // Resolve role keys → ids once (custom roles only; built-ins aren't bindable).
+    const customRoles = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));
+    const roleIdByKey = new Map(customRoles.map((r) => [r.key, r.roleId]));
+
+    const result = { attempted: entries.length, created: 0, skipped: 0, errors: [] as Array<{ index: number; error: string }> };
+    const bustedPrincipals: Array<{ t: string; id: string }> = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i]!;
+      const roleKey = typeof e.role_key === 'string' ? e.role_key : '';
+      const roleId = roleIdByKey.get(roleKey);
+      if (!roleId) {
+        result.errors.push({ index: i, error: `unknown role_key: ${roleKey}` });
+        result.skipped++;
+        continue;
+      }
+      const parsed = await parsePolicyInput(accountId, {
+        principalType: e.principal_type,
+        principalId: e.principal_id,
+        scopeType: e.scope_type,
+        scopeId: e.scope_id,
+        roleId,
+        effect: e.effect,
+        expires_at: e.expires_at,
+      });
+      if (!parsed.ok) {
+        result.errors.push({ index: i, error: parsed.error });
+        result.skipped++;
+        continue;
+      }
+      await db.insert(iamPolicies).values({
+        accountId,
+        principalType: parsed.value.principalType,
+        principalId: parsed.value.principalId,
+        roleId: parsed.value.roleId,
+        scopeType: parsed.value.scopeType,
+        scopeId: parsed.value.scopeId,
+        expiresAt: parsed.value.expiresAt,
+        grantedBy: userId,
+      });
+      bustedPrincipals.push({ t: parsed.value.principalType, id: parsed.value.principalId });
+      result.created++;
+    }
+    for (const p of bustedPrincipals) await invalidateIamCacheForPolicyPrincipal(p.t, p.id);
+    await auditIam(c, {
+      accountId,
+      action: 'iam.policy.bulk_import',
+      resourceType: 'account',
+      resourceId: accountId,
+      after: { attempted: result.attempted, created: result.created, skipped: result.skipped },
+    });
+    return c.json(result);
+  },
+);
+
 // Shared policy-input parser/validator (v1: allow-only, conditions ignored).
 async function parsePolicyInput(
   accountId: string,
