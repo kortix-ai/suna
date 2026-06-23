@@ -5,15 +5,13 @@
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
 image:
-  tag: "0.9.38"
-
+  tag: "0.9.75"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
-
 resources:
   requests:
     cpu: "500m"
@@ -21,7 +19,6 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
-
 # Public, direct. Prod sandboxes hit the gateway straight at this host
 # (LLM_GATEWAY_BASE_URL=https://gateway.kortix.com/v1/llm) so LLM streams live
 # on gateway pods, not the API — API deploys don't cut in-flight streams.
