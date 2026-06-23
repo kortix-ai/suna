@@ -800,6 +800,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE, { type: 'project', id: projectId });
 
   const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
@@ -924,6 +925,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
 
   const draft = parseAppDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
@@ -975,6 +977,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
 
   let manifest: ParsedManifest;
   try {
@@ -1024,6 +1027,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
 
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid slug' }, 400);
