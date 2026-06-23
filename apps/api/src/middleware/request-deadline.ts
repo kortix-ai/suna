@@ -57,6 +57,7 @@ const EXEMPT_PREFIXES = [
   '/v1/git',      // git smart-HTTP (large packfile up/download)
   '/v1/router',   // LLM gateway — streamed chat completions
   '/v1/llm',      // LLM chat completions (streamed; p99 >10s is normal)
+  '/v1/llm-gateway', // reverse proxy to the standalone gateway (streamed SSE)
   '/v1/executor', // connector proxy — forwards to arbitrary upstream APIs
   '/v1/webhooks', // inbound webhooks (Slack, …) — callers retry, don't truncate
   '/v1/billing/webhooks',   // Stripe webhook processing (observed >60s, legit)
