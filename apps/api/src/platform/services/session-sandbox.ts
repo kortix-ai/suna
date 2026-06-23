@@ -15,6 +15,7 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import {
@@ -808,6 +809,10 @@ export async function provisionSessionSandbox(opts: {
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }
+      // Tell the originating channel (Slack) so the live thread shows the friendly
+      // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
+      // a no-op for non-channel sessions.
+      notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
       const errTl = tl.summary();
       recordProviderEvent({
         provider: providerName, kind: 'provision', outcome: 'error',
