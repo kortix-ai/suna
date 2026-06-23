@@ -148,8 +148,29 @@ export async function stageBuildContext(
     const fs = await import('node:fs/promises');
     await fs.writeFile(composedPath, composed);
   }
+  // Fail-loud completeness guard: a context missing scaffold.git / the agent
+  // binary / the composed Dockerfile reaches the provider as a confusing remote
+  // "Path does not exist", and the auto-build can't tell it's a staging miss to
+  // recover from. Assert at the source so a miss is caught here AND is retryable
+  // (the daytona adapter re-stages on "staging incomplete").
+  await assertContextComplete(contextDir, dockerfileName);
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
+}
+
+/**
+ * Verify the staged context contains the load-bearing files the composed
+ * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
+ * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
+ */
+async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
+  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+    try {
+      await stat(join(contextDir, rel));
+    } catch {
+      throw new Error(`build context staging incomplete: ${rel} missing in ${contextDir}`);
+    }
+  }
 }
 
 async function newestMtimeMs(dir: string): Promise<number> {
