@@ -12,6 +12,7 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import {
   ACCOUNT_ACTIONS,
   assertAuthorized,
@@ -95,6 +96,8 @@ iamRouter.openapi(
     .returning({ userId: accountMembers.userId, isSuperAdmin: accountMembers.isSuperAdmin });
 
   if (!updated) return c.json({ error: 'member not found' }, 404);
+  // Super-admin bypasses every gate — a revoke must take effect immediately.
+  invalidateIamCacheForUser(targetUserId);
 
   await auditIam(c, {
     accountId,

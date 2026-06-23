@@ -1,6 +1,7 @@
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
 import { authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
 import { notePoolPresence } from '../../platform/services/warm-pool';
 import { preResumeRecentStoppedSessions } from '../routes/shared';
@@ -100,7 +101,9 @@ export async function loadVisibleSession(
 // per statement, revocations lag at most one TTL window, grants are instant.
 const loadProjectMemberRole = ttlMemo({
   ttlMs: 15_000,
-  keyFn: (projectId: string, userId: string) => `${projectId}|${userId}`,
+  // Key is `${userId}|${projectId}` (userId-first) so a single
+  // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
+  keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
   loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
     const [row] = await db
       .select({ projectRole: projectMembers.projectRole })
@@ -111,6 +114,7 @@ const loadProjectMemberRole = ttlMemo({
   },
   shouldCache: (role) => role !== null,
 });
+registerPrincipalScopedMemo(loadProjectMemberRole);
 
 export async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
   return loadProjectMemberRole(projectId, userId);
@@ -150,6 +154,9 @@ export async function grantProjectRole(input: {
         ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       },
     });
+  // The role just changed — drop this user's cached authz so the new role is
+  // effective on their next request, not after the ~15s TTL window.
+  invalidateIamCacheForUser(input.userId);
 }
 
 /**

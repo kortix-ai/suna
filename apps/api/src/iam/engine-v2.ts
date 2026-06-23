@@ -25,6 +25,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
+import { registerPrincipalScopedMemo } from './cache-invalidation';
 import type {
   AuthorizeResult,
   AuthorizeTarget,
@@ -154,6 +155,9 @@ const resolveActorV2 = ttlMemo({
   loader: resolveActorV2Uncached,
   shouldCache: (actor) => actor !== null,
 });
+// Key is `${userId}|…` → bust per principal on account-member / group-membership
+// changes (see cache-invalidation.ts).
+registerPrincipalScopedMemo(resolveActorV2);
 
 /**
  * Look up the actor's effective role on a specific project. Combines
@@ -211,6 +215,9 @@ const loadProjectRoleRows = ttlMemo({
   // see access on their next request, not after a TTL window.
   shouldCache: (v) => v.directRole !== null || v.groupRoles.length > 0,
 });
+// Key is `${userId}|${projectId}|…` → bust per principal on project-member /
+// project-group-grant changes.
+registerPrincipalScopedMemo(loadProjectRoleRows);
 
 async function loadEffectiveProjectRole(
   actor: ResolvedActorV2,

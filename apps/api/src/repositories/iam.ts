@@ -6,6 +6,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { invalidateIamCacheForUser, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -184,6 +185,9 @@ export async function addGroupMembers(args: {
     )
     .onConflictDoNothing()
     .returning({ userId: accountGroupMembers.userId });
+  // Group membership feeds project-role resolution — bust each added member so
+  // any access the group grants is effective immediately, not after the TTL.
+  invalidateIamCacheForUsers(filtered);
   return { added: inserted.length };
 }
 
@@ -195,6 +199,7 @@ export async function removeGroupMember(
     .delete(accountGroupMembers)
     .where(and(eq(accountGroupMembers.groupId, groupId), eq(accountGroupMembers.userId, userId)))
     .returning({ userId: accountGroupMembers.userId });
+  if (rows.length > 0) invalidateIamCacheForUser(userId);
   return rows.length > 0;
 }
 

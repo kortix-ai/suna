@@ -1,5 +1,6 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
 import { PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -980,6 +981,7 @@ projectsApp.openapi(
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
+    invalidateIamCacheForUser(targetUserId);
 
     return c.json({
       user_id: targetUserId,
@@ -1049,6 +1051,7 @@ projectsApp.openapi(
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
+  invalidateIamCacheForUser(targetUserId);
 
   return c.json({ ok: true });
 },

@@ -1,5 +1,6 @@
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
@@ -201,6 +202,7 @@ projectsApp.openapi(
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
       },
     });
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
 },
@@ -261,6 +263,7 @@ projectsApp.openapi(
     .returning({ groupId: projectGroupGrants.groupId });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
+  await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
 );
@@ -304,6 +307,7 @@ projectsApp.openapi(
         eq(projectGroupGrants.groupId, groupId),
       ),
     );
+  await invalidateIamCacheForGroup(groupId);
 
   return c.json({ ok: true });
 },
