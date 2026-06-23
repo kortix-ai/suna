@@ -31,12 +31,21 @@ process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
+// One push per build attempt — the composed Dockerfile path (== context dir).
+// Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
+const contextPaths: string[] = [];
+// Per-test behavior (default: a clean successful build), driven by the tests.
+let createImpl: () => Promise<void> = async () => {};
+let snapshotState: () => string = () => 'active';
 
 mock.module('@daytonaio/sdk', () => ({
   Image: {
     fromDockerfile(path: string) {
       dockerfileSeen = readFileSync(path, 'utf8');
+      // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
+      // finally cleans the context after, so this can't be asserted afterward.
       scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
+      contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
   },
@@ -45,8 +54,10 @@ mock.module('@daytonaio/sdk', () => ({
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({
     snapshot: {
-      create: async () => undefined,
-      get: async () => ({ state: 'active' }),
+      create: async () => {
+        await createImpl();
+      },
+      get: async () => ({ state: snapshotState() }),
       delete: async () => undefined,
     },
   }),
@@ -59,16 +70,61 @@ afterAll(() => {
   rmSync(fixtureRoot, { recursive: true, force: true });
 });
 
+const buildInput = (name: string) =>
+  ({ snapshotName: name, image: 'ubuntu:24.04', spec: {}, slug: 'default' }) as Parameters<
+    typeof daytonaProvider.buildSnapshot
+  >[0];
+
 describe('Daytona snapshot build context', () => {
   test('stages every file referenced by the generated Dockerfile before calling Daytona', async () => {
-    await daytonaProvider.buildSnapshot({
-      snapshotName: 'kortix-test-context',
-      image: 'ubuntu:24.04',
-      spec: {},
-      slug: 'default',
-    });
+    contextPaths.length = 0;
+    createImpl = async () => {};
+    snapshotState = () => 'active';
+
+    await daytonaProvider.buildSnapshot(buildInput('kortix-test-context'));
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
   });
+});
+
+describe('Daytona auto-build self-heal', () => {
+  test('re-stages a FRESH context + retries on a stale-context error, then succeeds', async () => {
+    contextPaths.length = 0;
+    let attempt = 0;
+    let built = false;
+    createImpl = async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        // exactly the reported symptom: the SDK can't find scaffold.git in the context
+        throw new Error('Path does not exist: /tmp/kortix-snap-OxOgZY/scaffold.git');
+      }
+      built = true; // 2nd attempt succeeds
+    };
+    snapshotState = () => (built ? 'active' : 'error');
+
+    await daytonaProvider.buildSnapshot(buildInput('kortix-selfheal'));
+
+    expect(attempt).toBe(2); // retried once — did NOT require a manual rebuild
+    expect(contextPaths.length).toBe(2); // staged twice
+    // Distinct temp dirs prove each attempt got a NEW context. The bug staged
+    // ONCE outside the loop, so the disturbed context never recovered.
+    expect(new Set(contextPaths).size).toBe(2);
+  }, 15_000);
+
+  test('does NOT retry a genuine build error — fails fast, no wasted rebuild', async () => {
+    contextPaths.length = 0;
+    let attempt = 0;
+    createImpl = async () => {
+      attempt += 1;
+      throw new Error('podman build: unknown instruction FOOBAR on line 3');
+    };
+    snapshotState = () => 'error';
+
+    await expect(daytonaProvider.buildSnapshot(buildInput('kortix-realfail'))).rejects.toThrow(
+      /Snapshot build failed/,
+    );
+    expect(attempt).toBe(1); // a real build error is NOT re-staged/retried
+    expect(contextPaths.length).toBe(1);
+  }, 15_000);
 });
