@@ -237,6 +237,12 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
  */
 export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  // Refuse an empty/truncated dist (e.g. an interrupted `bun build`) at the source.
+  // The host re-validates (ELF/size + post-swap size match), but failing here keeps
+  // a dead agent from ever being uploaded + swapped into a template.
+  if ((await stat(AGENT_BIN_PATH)).size === 0) {
+    throw new Error(`agent binary ${AGENT_BIN_PATH} is empty — refusing to stage for agent-swap`);
+  }
   const dir = await mkdtemp(join(tmpdir(), 'kortix-agent-swap-'));
   const gzPath = join(dir, 'kortix-agent.gz');
   await gzipFile(AGENT_BIN_PATH, gzPath);

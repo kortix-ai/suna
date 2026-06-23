@@ -26,7 +26,6 @@ import {
   recordTemplateFailed,
   refreshTemplateState,
   resolveTemplateBySlug,
-  userContentKeyAt,
   type ResolvedTemplate,
 } from './templates';
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
@@ -134,6 +133,7 @@ export async function ensureSandboxImage(
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
       provider: buildProvider,
+      swapKey: identity.swapKey,
     });
     return {
       snapshotName: identity.snapshotName,
@@ -212,31 +212,32 @@ type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 /**
  * Try the provider's agent-only swap instead of a full rebuild. Returns true iff
  * the new snapshot was produced by swapping just the kortix-agent binary into the
- * predecessor's rootfs. Deliberately conservative — fires ONLY when:
+ * predecessor's rootfs. Conservative + CORRECT — fires ONLY when:
  *   • the provider supports it (Platinum; Daytona has no `swapAgent`),
- *   • a distinct predecessor snapshot exists, and
- *   • the drift is verifiably agent-only — the shared default's user image is a
- *     constant, and a custom template's predecessor user image (re-resolved at its
- *     build commit) hashes to the SAME user-content key as the new identity.
- * Any uncertainty or error → false, and the caller does a normal rebuild. A bad
- * swap must never produce a wrong image, and a swap fault must never block a build.
+ *   • a distinct predecessor snapshot exists (there's a real drift), and
+ *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
+ *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so
+ *     the ONLY thing that changed is the agent binary. A bumped opencode /
+ *     entrypoint / CLI / slack-cli / executor-sdk / manifest-schema / browser /
+ *     layer version — or the user image or spec — moves swapKey → full rebuild.
+ *     (No isShared shortcut: the shared default's runtime LAYER is not constant,
+ *     so it must pass the same swapKey gate as everything else.)
+ * Any uncertainty/error → false → the caller rebuilds. On a swap that FAILED after
+ * the provider created the new-name row, that row is reaped so it can't 409 the
+ * fallback rebuild. A bad swap must never ship a wrong image, and a swap fault
+ * must never block the build.
  */
 async function maybeSwapAgent(
-  project: GitBackedProject,
   template: ResolvedTemplate,
   identity: TemplateIdentity,
   provider: SandboxProviderAdapter,
   prevSnapshot: string | null,
 ): Promise<boolean> {
   if (!provider.swapAgent || !prevSnapshot || prevSnapshot === identity.snapshotName) return false;
-
-  let agentOnly = template.isShared;
-  if (!agentOnly && template.builtFromCommit) {
-    const predecessorKey = await userContentKeyAt(project, template, template.builtFromCommit);
-    agentOnly = predecessorKey != null && predecessorKey === identity.userContentKey;
-  }
-  if (!agentOnly) return false;
-
+  // Agent-ONLY drift ⇔ everything except the agent binary is byte-identical to the
+  // predecessor. The predecessor's swapKey must be STORED (null for pre-rollout or
+  // never-built rows → rebuild) and equal to the new identity's swapKey.
+  if (!template.swapKey || template.swapKey !== identity.swapKey) return false;
   // The predecessor must still be materializable on the provider (its CAS chunks).
   if ((await provider.getSnapshotState(prevSnapshot)) !== 'active') return false;
 
@@ -252,6 +253,10 @@ async function maybeSwapAgent(
       `[snapshots] ${template.slug}: agent-swap failed, falling back to full rebuild: ` +
       `${(err as Error)?.message ?? err}`,
     );
+    // Reap any half-created new-name row so the fallback buildSnapshot (same name)
+    // isn't blocked by a name-collision 409 — pickBuildHost has no state filter for
+    // non-admin/org callers, which is exactly how Kortix builds authenticate.
+    await provider.deleteSnapshot(identity.snapshotName).catch(() => {});
     return false;
   }
 }
@@ -294,7 +299,7 @@ async function runInlineBuild(
     // ship just the agent + have the host debugfs-swap it into the predecessor's
     // rootfs (~seconds, ~one agent's worth of CAS chunks). Any miss/failure → a
     // normal buildSnapshot below — the swap is a pure optimization, never a gate.
-    const swapped = await maybeSwapAgent(project, template, identity, provider, prevSnapshot);
+    const swapped = await maybeSwapAgent(template, identity, provider, prevSnapshot);
     if (!swapped) await provider.buildSnapshot({
       snapshotName: identity.snapshotName,
       image: template.image ?? undefined,
@@ -328,6 +333,7 @@ async function runInlineBuild(
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
       provider: opts.buildProvider,
+      swapKey: identity.swapKey,
     });
     // One-template invariant: a successful rebuild supersedes the previous
     // snapshot. Delete it so old runtime fingerprints don't accumulate — this
