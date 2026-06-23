@@ -262,9 +262,9 @@ describe('relayTurnStep (chat.update model)', () => {
 });
 
 describe('expired turn rows', () => {
-  test('drops a late answer relay without posting to Slack', async () => {
+  test('drops a late answer relay without posting — but clears the stranded ⏳', async () => {
     dbResults = [
-      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn
+      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn (expired)
       [], // delete expired turn
     ];
 
@@ -275,7 +275,9 @@ describe('expired turn rows', () => {
     expect(calls('postBlocks').length).toBe(0);
     expect(calls('updateBlocks').length).toBe(0);
     expect(calls('addReaction').length).toBe(0);
-    expect(calls('removeReaction').length).toBe(0);
+    // The expired un-finalized row had a ⏳ on the user's message — reaping it now
+    // clears that reaction so it doesn't linger forever.
+    expect(calls('removeReaction').length).toBe(1);
   });
 });
 

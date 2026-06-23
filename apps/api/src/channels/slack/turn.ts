@@ -46,6 +46,17 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
   if (!row) return null;
   const expiry = new Date(row.expiresAt).getTime();
   if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+    // Reaping an expired un-finalized row: best-effort clear the ⏳ first so a
+    // stale hourglass doesn't sit on the user's message forever (the GC only
+    // sweeps live rows; once this row is gone nothing else can clear it).
+    if (!row.finalized) {
+      const ev = row.originatingEvent as SlackEvent | undefined;
+      const triggerTs = row.triggerTs || ev?.ts;
+      if (row.channel && triggerTs) {
+        const token = await loadSlackTokenForProject(row.projectId);
+        if (token) await removeReaction(token, row.channel, triggerTs, WORKING_EMOJI).catch(() => {});
+      }
+    }
     await deleteTurn(sessionId);
     return null;
   }
@@ -130,6 +141,15 @@ setInterval(() => {
               ':warning: *This run was closed after 30 minutes of silence* — it may have stalled or run out of credits.',
             title: 'Run timed out',
           });
+        } else {
+          // No token (app uninstalled / token rotated) → we can't post or clear
+          // the ⏳. Reap the row anyway (below) and surface it so a dead install
+          // is observable instead of silently dropping every turn.
+          console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
+            projectId: row.projectId,
+            teamId: row.teamId,
+            sessionId: row.sessionId,
+          });
         }
         await deleteTurn(row.sessionId);
       }
@@ -151,7 +171,17 @@ export async function startTurn(
 ): Promise<LiveTurn | null> {
   if (!event.channel || !event.ts || !event.user) return null;
   const token = await loadSlackTokenForProject(projectId);
-  if (!token) return null;
+  if (!token) {
+    // No bot token (app uninstalled / token rotated) → we can't even react. Log
+    // it so a dead install is observable rather than the bot silently ignoring
+    // every mention.
+    console.warn('[slack-webhook] startTurn: no Slack token for project — cannot start turn', {
+      projectId,
+      teamId,
+      channel: event.channel,
+    });
+    return null;
+  }
   await joinChannel(token, event.channel);
   // The only eager feedback is a ⏳ reaction on the user's own message — a
   // lightweight "received, working on it" signal that lives ON their message,
@@ -526,7 +556,16 @@ export async function relayTurnEnd(
   errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) return false;
+  if (!handle) {
+    // No open turn — the row was finalized/expired/GC'd before this arrived. A
+    // dropped IDLE is the benign tail of an already-answered turn, but a dropped
+    // ERROR means we lost a real failure signal, so surface that one.
+    if (status === 'error') {
+      console.warn('[slack-webhook] turn-end ERROR relay dropped — no open turn for session', { sessionId });
+    }
+    return false;
+  }
+  if (handle.finalized) return false;
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
     // Turn the opencode error into honest, specific copy (out of credits /
