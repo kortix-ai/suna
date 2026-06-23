@@ -101,6 +101,9 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
     }
+    if (!('small_model' in out) || typeof out.small_model !== 'string') {
+      out.small_model = DEFAULT_KORTIX_MODEL
+    }
     // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
     // allowlist — opencode loads ONLY these and ignores every provider it would
     // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,

@@ -45,6 +45,7 @@ export type {
   BillingMode,
   GatewayConfig,
   GatewayHooks,
+  GatewayLogger,
   GatewayTrace,
   ModelCatalog,
   ModelInfo,
