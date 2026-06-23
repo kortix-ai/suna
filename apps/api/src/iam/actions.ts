@@ -96,6 +96,36 @@ export const PROJECT_ACTIONS = {
   PROJECT_GATEWAY_ROUTING_EDIT: 'project.gateway.routing.edit',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
+
+  // ── Per-capability leaf actions (IAM v1) ────────────────────────────────
+  // Each project feature gets its own read/write leaf so a custom role can
+  // DEACTIVATE one capability (omit the leaf) without losing the rest. Until a
+  // route is migrated to assert these, it keeps gating on project.read/write,
+  // so adding them is additive: every write leaf is also seeded into the Editor
+  // built-in role and every read leaf into Viewer (see role-perms.ts), so no
+  // existing editor/viewer loses a capability. All resolve to 'project' scope
+  // (prefix = 'project') via resourceTypeForAction.
+  PROJECT_AGENT_READ: 'project.agent.read',
+  PROJECT_AGENT_WRITE: 'project.agent.write',
+  PROJECT_SKILL_READ: 'project.skill.read',
+  PROJECT_SKILL_WRITE: 'project.skill.write',
+  PROJECT_COMMAND_READ: 'project.command.read',
+  PROJECT_COMMAND_WRITE: 'project.command.write',
+  PROJECT_SCHEDULE_READ: 'project.schedule.read',
+  PROJECT_SCHEDULE_WRITE: 'project.schedule.write',
+  PROJECT_WEBHOOK_READ: 'project.webhook.read',
+  PROJECT_WEBHOOK_WRITE: 'project.webhook.write',
+  PROJECT_FILE_READ: 'project.file.read',
+  PROJECT_FILE_WRITE: 'project.file.write',
+  PROJECT_CUSTOMIZE_READ: 'project.customize.read',
+  PROJECT_CUSTOMIZE_WRITE: 'project.customize.write',
+  PROJECT_GITOPS_READ: 'project.gitops.read',
+  PROJECT_GITOPS_PUSH: 'project.gitops.push',
+  PROJECT_GITOPS_MERGE: 'project.gitops.merge',
+  PROJECT_SECRET_READ: 'project.secret.read',
+  PROJECT_SECRET_WRITE: 'project.secret.write',
+  PROJECT_CONNECTOR_READ: 'project.connector.read',
+  PROJECT_CONNECTOR_WRITE: 'project.connector.write',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────

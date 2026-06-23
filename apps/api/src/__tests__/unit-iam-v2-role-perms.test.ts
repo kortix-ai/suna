@@ -98,6 +98,46 @@ describe('IAM V2 — role helpers', () => {
 });
 
 describe('IAM V2 — no unknown actions', () => {
+  // IAM v1 per-capability leaves: backward-compat invariant. Editor must hold
+  // every write leaf (it had all of these via project.write before) and Viewer
+  // every read leaf (via project.read). Viewer must NOT gain any write leaf.
+  test('per-capability leaves preserve the editor/viewer capability surface', () => {
+    const writeLeaves = [
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+      PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
+      PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
+      PROJECT_ACTIONS.PROJECT_SCHEDULE_WRITE,
+      PROJECT_ACTIONS.PROJECT_WEBHOOK_WRITE,
+      PROJECT_ACTIONS.PROJECT_FILE_WRITE,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+      PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+      PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    ];
+    const readLeaves = [
+      PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      PROJECT_ACTIONS.PROJECT_SKILL_READ,
+      PROJECT_ACTIONS.PROJECT_COMMAND_READ,
+      PROJECT_ACTIONS.PROJECT_SCHEDULE_READ,
+      PROJECT_ACTIONS.PROJECT_WEBHOOK_READ,
+      PROJECT_ACTIONS.PROJECT_FILE_READ,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+      PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    ];
+    for (const a of writeLeaves) {
+      expect(projectRoleAllows('editor', a)).toBe(true);
+      expect(projectRoleAllows('manager', a)).toBe(true);
+      expect(projectRoleAllows('viewer', a)).toBe(false);
+    }
+    for (const a of readLeaves) {
+      expect(projectRoleAllows('viewer', a)).toBe(true);
+      expect(projectRoleAllows('editor', a)).toBe(true);
+    }
+  });
+
   // Every action in the V2 role table must exist in actions.ts. A typo
   // here would silently grant nothing.
   test('every role action is a known action key', () => {
