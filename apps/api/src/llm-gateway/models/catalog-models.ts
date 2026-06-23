@@ -1,5 +1,6 @@
 import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
 import { resolveCatalogUpstream } from '@kortix/llm-gateway';
+import { config } from '../../config';
 import { freeOpencodeZenModelIds } from '../../router/config/model-pricing';
 import { codexModelIds } from './codex-models';
 
@@ -63,6 +64,11 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
 // `opencode` provider. Empty until the pricing fetch lands (graceful).
 export function gatewayOpencodeZenModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
+  // Dormant until a Kortix Zen key is provisioned (parked for team discussion).
+  // No key ⇒ no served Zen models ⇒ the daemon builds no `opencode` provider and
+  // resolution can't route any, so the whole feature is inert. Set
+  // OPENCODE_ZEN_API_KEY to turn it on.
+  if (!config.OPENCODE_ZEN_API_KEY) return out;
   for (const id of freeOpencodeZenModelIds()) {
     out[`opencode/${id}`] = {
       name: catalogNameById.get(`opencode/${id}`) ?? humanize(id),
