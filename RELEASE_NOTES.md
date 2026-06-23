@@ -1,3 +1,3 @@
 Gateway improvements
 
-Gateway streaming improvement, reliability & more bedrock models
+Gateway improvements, streaming, reliability & more bedrock models
