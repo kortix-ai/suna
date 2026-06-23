@@ -88,7 +88,9 @@ export function buildServer(): GatewayServer {
 
   // Shallow liveness: the process is up. The k8s livenessProbe should point here
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
-  app.get('/health/live', (c) => c.json({ ok: true }));
+  // Includes version/commit so a rollout can be confirmed with one cheap probe
+  // (no deep dependency checks) — `curl /health/live` shows which build is live.
+  app.get('/health/live', (c) => c.json({ ok: true, version: SERVICE_VERSION, commit: SERVICE_COMMIT }));
 
   // Deep health/readiness, built for an external monitor: an overall status, the
   // specific incidents, dependency checks, and a rolling error rate. Returns HTTP
