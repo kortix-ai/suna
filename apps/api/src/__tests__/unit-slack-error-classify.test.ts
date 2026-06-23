@@ -39,9 +39,29 @@ describe('classifyTurnError', () => {
     expect(r.title).toBe('Run stopped');
   });
 
-  test('abort — detected from message text too', () => {
-    const r = classifyTurnError({ message: 'Request was cancelled' });
+  test('abort — detected from an anchored user-stop phrase', () => {
+    const r = classifyTurnError({ message: 'Cancelled by user' });
     expect(r.aborted).toBe(true);
+  });
+
+  // Regression (review finding 1): a real failure status must never be read as a
+  // user stop just because its body contains the word "abort"/"cancelled".
+  test('500 whose body says "aborted" is transient, NOT a quiet user stop', () => {
+    const r = classifyTurnError({ name: 'APIError', statusCode: 500, message: 'Upstream aborted the connection' });
+    expect(r.aborted).toBe(false);
+    expect(r.title).toBe('Provider unavailable');
+  });
+
+  test('402 whose body says "cancelled" still classifies as out of credits', () => {
+    const r = classifyTurnError({ statusCode: 402, message: 'payment cancelled — insufficient credits' });
+    expect(r.aborted).toBe(false);
+    expect(r.title).toBe('Out of credits');
+  });
+
+  test('a bare "the provider cancelled the subscription" is surfaced, not silenced as a stop', () => {
+    const r = classifyTurnError({ message: 'The provider cancelled the subscription for this API key' });
+    expect(r.aborted).toBe(false);
+    expect(r.title).toBe('Run failed');
   });
 
   test('provider auth error → actionable provider-config copy', () => {
@@ -131,6 +151,25 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ name: 'UnknownError', message: 'connect ETIMEDOUT 1.2.3.4:443' });
     expect(r.title).toBe('Provider unavailable');
     expect(r.text).not.toContain('ETIMEDOUT');
+  });
+
+  // Regression (review finding 2): a retryable 5xx whose body mentions a "safety
+  // system" is transient, not a permanent content-policy refusal.
+  test('5xx mentioning "safety-check service" is transient, not a content block', () => {
+    const r = classifyTurnError({ name: 'APIError', statusCode: 500, message: 'Internal error in safety-check service; please retry' });
+    expect(r.title).toBe('Provider unavailable');
+  });
+
+  // Regression (review finding 5): a non-5xx permanent error whose body merely
+  // narrates "internal server error" must not be relabeled transient.
+  test('400 whose body narrates "internal server error" is surfaced, not faux-transient', () => {
+    const r = classifyTurnError({
+      statusCode: 400,
+      isRetryable: false,
+      message: 'the upstream returned an internal server error while validating the request',
+    });
+    expect(r.title).toBe('Run failed');
+    expect(r.text).toContain('internal server error');
   });
 
   test('detail-less unknown error names the error type for debuggability', () => {

@@ -42,12 +42,24 @@ export interface ClassifiedTurnError {
   aborted: boolean;
 }
 
-// User-initiated stops (matches session-error-banner.tsx ABORT_PATTERNS). These
-// aren't failures — don't paint them red.
-const ABORT_PATTERNS = ['operation was aborted', 'aborted', 'abort', 'cancelled', 'canceled'];
+// User-initiated stops. Anchored phrases (not bare 'abort'/'cancelled') so a
+// real failure whose body merely mentions "aborted the connection" isn't read as
+// a quiet user stop — and a present HTTP failure status vetoes the text path
+// entirely (a 4xx/5xx is never a user abort).
+const ABORT_PATTERNS = [
+  'operation was aborted',
+  'request was aborted',
+  'aborted by user',
+  'user aborted',
+  'user cancelled',
+  'user canceled',
+  'cancelled by user',
+  'canceled by user',
+];
 
-function isAbort(name: string, lower: string): boolean {
+function isAbort(name: string, status: number | undefined, lower: string): boolean {
   if (name === 'MessageAbortedError') return true;
+  if (typeof status === 'number' && status >= 400) return false;
   return ABORT_PATTERNS.some((p) => lower.includes(p));
 }
 
@@ -90,17 +102,26 @@ function isContextWindow(lower: string): boolean {
 }
 
 // Model declined on content-policy grounds. Keep the copy neutral and NEVER echo
-// the raw safety text — it's alarming in a public channel.
-function isContentFilter(lower: string): boolean {
+// the raw safety text — it's alarming in a public channel. Anchored phrases (not
+// bare 'safety'/'flagged'/'cannot assist'), and a retryable/5xx upstream error is
+// never a policy refusal — let the transient branch own those.
+function isContentFilter(status: number | undefined, isRetryable: boolean | undefined, lower: string): boolean {
+  if (isRetryable === true || status === 408 || (typeof status === 'number' && status >= 500 && status <= 599)) {
+    return false;
+  }
   return (
     lower.includes('content filter') ||
     lower.includes('content_filter') ||
     lower.includes('content policy') ||
     lower.includes('content_policy') ||
-    lower.includes('safety') ||
-    lower.includes('flagged') ||
     lower.includes('responsible ai') ||
-    lower.includes('cannot assist')
+    lower.includes('safety policy') ||
+    lower.includes('safety system') ||
+    lower.includes('safety guidelines') ||
+    lower.includes('flagged by content') ||
+    lower.includes('flagged as inappropriate') ||
+    lower.includes("can't assist with that request") ||
+    lower.includes('cannot assist with that request')
   );
 }
 
@@ -132,18 +153,17 @@ function isModelNotFound(status: number | undefined, lower: string): boolean {
 function isTransient(status: number | undefined, isRetryable: boolean | undefined, lower: string): boolean {
   if (isRetryable === true) return true;
   if (status === 408 || (typeof status === 'number' && status >= 500 && status <= 599)) return true;
+  // Only status-LESS socket/DNS signals here — a genuine transient 5xx/timeout
+  // already carries isRetryable or a 5xx status above. The prose 5xx phrases were
+  // dropped so a non-5xx permanent error whose body merely narrates "internal
+  // server error" isn't mislabeled transient (it falls through to the real error).
   return (
     lower.includes('fetch failed') ||
     lower.includes('etimedout') ||
     lower.includes('econnrefused') ||
     lower.includes('econnreset') ||
     lower.includes('enotfound') ||
-    lower.includes('socket hang up') ||
-    lower.includes('network error') ||
-    lower.includes('service unavailable') ||
-    lower.includes('bad gateway') ||
-    lower.includes('gateway timeout') ||
-    lower.includes('internal server error')
+    lower.includes('socket hang up')
   );
 }
 
@@ -180,7 +200,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
   const lower = message.toLowerCase();
 
   // 1. User stopped the run (or a follow-up superseded it) — quiet, not a failure.
-  if (isAbort(name, lower)) {
+  if (isAbort(name, status, lower)) {
     return { title: 'Run stopped', text: '_Run stopped._', aborted: true };
   }
 
@@ -220,18 +240,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 5. Content-policy refusal — neutral copy, never echo the raw safety text.
-  if (isContentFilter(lower)) {
-    return {
-      title: 'Request blocked',
-      text:
-        `:no_entry: *The model declined to answer this request on content-policy grounds.*` +
-        ` Try rephrasing it.`,
-      aborted: false,
-    };
-  }
-
-  // 6. Conversation outgrew the context window.
+  // 5. Conversation outgrew the context window.
   if (isContextWindow(lower)) {
     return {
       title: 'Conversation too long',
@@ -242,7 +251,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 7. Model doesn't exist / isn't enabled — a config fix.
+  // 6. Model doesn't exist / isn't enabled — a config fix.
   if (isModelNotFound(status, lower)) {
     return {
       title: 'Model unavailable',
@@ -253,7 +262,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 8. Provider auth / config — bad or expired key, billing not set up.
+  // 7. Provider auth / config — bad or expired key, billing not set up.
   if (isProviderConfig(name, status)) {
     const who = providerID ? `the ${providerID} provider` : 'the model provider';
     return {
@@ -265,13 +274,26 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 9. Transient provider/network trouble — temporary, retry guidance, no raw body.
+  // 8. Transient provider/network trouble — temporary, retry guidance, no raw body.
+  //    Checked BEFORE content-filter so a retryable 5xx whose body mentions a
+  //    "safety system" isn't mislabeled a permanent policy refusal.
   if (isTransient(status, isRetryable, lower)) {
     return {
       title: 'Provider unavailable',
       text:
         `:warning: *The model provider had a temporary problem, so the run couldn't finish.*` +
         ` It usually clears in a moment — mention me again to retry.`,
+      aborted: false,
+    };
+  }
+
+  // 9. Content-policy refusal — neutral copy, never echo the raw safety text.
+  if (isContentFilter(status, isRetryable, lower)) {
+    return {
+      title: 'Request blocked',
+      text:
+        `:no_entry: *The model declined to answer this request on content-policy grounds.*` +
+        ` Try rephrasing it.`,
       aborted: false,
     };
   }

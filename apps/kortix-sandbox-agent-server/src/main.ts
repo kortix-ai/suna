@@ -989,11 +989,14 @@ async function readRootTurnError(
       }
     }>
     if (!Array.isArray(rows)) return undefined
-    // The most recent assistant message decides the turn's outcome: if it carries
-    // an error the turn failed; if it's clean, an older error from a prior turn in
-    // the same session is irrelevant.
+    // The most recent assistant message decides the turn's outcome. Crucially,
+    // stop at the turn boundary: if a USER message is the newest row (a pending or
+    // follow-up turn that hasn't produced an assistant reply yet), treat the run
+    // as clean — never walk back into a PRIOR turn's already-superseded error and
+    // relay it as this turn's failure.
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
+      if (info?.role === 'user') return undefined
       if (info?.role !== 'assistant') continue
       return info.error ? flattenOpencodeError(info.error) : undefined
     }
