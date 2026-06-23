@@ -1121,6 +1121,13 @@ export default {
       server.timeout(req, 0);
     }
 
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
+      server.timeout(req, 0);
+    }
+
     // ── Subdomain preview routing ──────────────────────────────────────
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.

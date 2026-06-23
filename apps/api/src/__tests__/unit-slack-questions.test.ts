@@ -13,10 +13,16 @@ const record = (fn: string) => (...args: unknown[]) => {
   slackCalls.push({ fn, args });
 };
 
+let postBlocksResult: string | null = '99.99';
+let postMessageResult: string | null = '88.88';
 mock.module('../channels/slack-api', () => ({
   postBlocks: async (...a: unknown[]) => {
     record('postBlocks')(...a);
-    return '99.99';
+    return postBlocksResult;
+  },
+  postMessage: async (...a: unknown[]) => {
+    record('postMessage')(...a);
+    return postMessageResult;
   },
   updateMessage: async (...a: unknown[]) => record('updateMessage')(...a),
 }));
@@ -69,6 +75,8 @@ beforeEach(() => {
   slackCalls = [];
   dbResults = [];
   spawnArgs = null;
+  postBlocksResult = '99.99';
+  postMessageResult = '88.88';
   activeTurn = { token: 'xoxb-test', channel: 'C1', triggerTs: '10.10', sessionId: 'sess-1' };
 });
 
@@ -129,6 +137,29 @@ describe('postQuestion → interactive buttons', () => {
     const res = await postQuestion('sess-1', [{ question: 'Q?', options: [{ label: 'A' }] }] as any);
     expect(res.ok).toBe(false);
     expect(slackCalls.find((c) => c.fn === 'postBlocks')).toBeUndefined();
+  });
+
+  test('block render rejected → plain-text fallback so the question is not lost', async () => {
+    postBlocksResult = null; // Slack rejected the blocks (e.g. invalid_blocks)
+    const res = await postQuestion('sess-1', [
+      { question: 'Ship it?', options: [{ label: 'Yes', description: 'go now' }, { label: 'No' }] },
+    ] as any);
+
+    // Still ok (the question reached the thread) so the agent ends cleanly.
+    expect(res.ok).toBe(true);
+    const plain = slackCalls.find((c) => c.fn === 'postMessage');
+    expect(plain).toBeTruthy();
+    const text = String(plain!.args[2]);
+    expect(text).toContain('Ship it?');
+    expect(text).toContain('Yes');
+    expect(text).toContain('Reply in this thread');
+  });
+
+  test('both block AND plain renders fail → ok:false', async () => {
+    postBlocksResult = null;
+    postMessageResult = null;
+    const res = await postQuestion('sess-1', [{ question: 'Q?', options: [{ label: 'A' }] }] as any);
+    expect(res.ok).toBe(false);
   });
 });
 

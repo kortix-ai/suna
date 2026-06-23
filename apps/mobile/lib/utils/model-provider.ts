@@ -27,16 +27,19 @@ export type ModelProvider =
  * Check if a model ID corresponds to a Kortix mode (Basic or Advanced)
  */
 export function isKortixMode(modelId: string): boolean {
-  // New Kortix registry IDs
-  if (modelId === 'kortix/basic' || modelId === 'kortix/power' ||
-      modelId === 'kortix-basic' || modelId === 'kortix-power') {
+  const id = modelId.startsWith('kortix/') ? modelId.slice('kortix/'.length) : modelId;
+  if (id === 'claude-opus-4.8' || id === 'claude-sonnet-4.6' ||
+      id === 'kimi-k2' || id === 'kimi-k2-thinking' || id === 'minimax-m2.5' ||
+      id === 'glm-4.6' || id === 'glm-4.7' || id === 'qwen3-max') {
     return true;
   }
-  // Legacy: Kortix Basic (Haiku 4.5)
+  // Back-compat: previously branded Kortix modes.
+  if (id === 'basic' || id === 'power' || id === 'kortix-basic' || id === 'kortix-power') {
+    return true;
+  }
   if (modelId.includes('claude-haiku-4-5') || modelId.includes('heol2zyy5v48')) {
     return true;
   }
-  // Legacy: Kortix Advanced Mode (Sonnet 4.5)
   if (modelId.includes('claude-sonnet-4-5') || modelId.includes('few7z4l830xh')) {
     return true;
   }

@@ -35,7 +35,10 @@ mock.module('../channels/slack-api', () => ({
     return '11.11';
   },
   stopStream: async (...a: unknown[]) => record('stopStream')(...a),
-  updateBlocks: async (...a: unknown[]) => record('updateBlocks')(...a),
+  updateBlocks: async (...a: unknown[]) => {
+    record('updateBlocks')(...a);
+    return true; // chat.update succeeded (real updateBlocks returns a boolean)
+  },
   updateMessage: async (...a: unknown[]) => record('updateMessage')(...a),
 }));
 
@@ -96,7 +99,8 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep } = await import('../channels/slack/turn');
+const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
+  await import('../channels/slack/turn');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {
@@ -259,9 +263,9 @@ describe('relayTurnStep (chat.update model)', () => {
 });
 
 describe('expired turn rows', () => {
-  test('drops a late answer relay without posting to Slack', async () => {
+  test('drops a late answer relay without posting — but clears the stranded ⏳', async () => {
     dbResults = [
-      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn
+      [streamRow({ expiresAt: new Date(Date.now() - 60_000) })], // loadTurn (expired)
       [], // delete expired turn
     ];
 
@@ -272,7 +276,9 @@ describe('expired turn rows', () => {
     expect(calls('postBlocks').length).toBe(0);
     expect(calls('updateBlocks').length).toBe(0);
     expect(calls('addReaction').length).toBe(0);
-    expect(calls('removeReaction').length).toBe(0);
+    // The expired un-finalized row had a ⏳ on the user's message — reaping it now
+    // clears that reaction so it doesn't linger forever.
+    expect(calls('removeReaction').length).toBe(1);
   });
 });
 
@@ -322,7 +328,7 @@ describe('relayTurnEnd', () => {
     expect(calls('removeReaction').length).toBe(1);
   });
 
-  test('error close on a turn with no plan message posts failure copy fresh', async () => {
+  test('error close on a turn with no plan message posts failure copy + session footer', async () => {
     dbResults = [
       [streamRow({ messageTs: null, steps: [] })], // loadTurn
       [{ sessionId: 'sess-1' }], // claimFinalize
@@ -331,8 +337,92 @@ describe('relayTurnEnd', () => {
 
     const ok = await relayTurnEnd('sess-1', 'error');
     expect(ok).toBe(true);
-    const posted = calls('postMessage')[0]!;
+    // No plan stream → fresh post, now as blocks so it carries an "Open session" footer.
+    expect(calls('postMessage').length).toBe(0);
+    const posted = calls('postBlocks')[0]!;
     expect(String(posted.args[2])).toContain('error');
+    const blocks = posted.args[3] as Array<{ type: string }>;
+    expect(blocks.map((b) => b.type)).toEqual(['section', 'context']);
     expect(calls('addReaction').length).toBe(0);
+  });
+
+  test('out-of-credits error renders the credits copy + "Out of credits" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn (has a plan message)
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', {
+      name: 'APIError',
+      statusCode: 402,
+      message: 'Payment Required: Insufficient credits. Balance: $-0.06',
+    });
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe('Out of credits');
+    const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
+    const section = blocks.find((b) => b.type === 'section');
+    expect(section?.text?.text.toLowerCase()).toContain('out of credits');
+    expect(section?.text?.text).toContain('$-0.06');
+    expect(calls('addReaction').length).toBe(0); // ✅ is reserved for real answers
+  });
+
+  test('usage-limit error renders the rate-limit copy + "Usage limit reached" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', { statusCode: 429, message: 'Too Many Requests' });
+    expect(ok).toBe(true);
+    expect(calls('updateBlocks')[0]!.args[3]).toBe('Usage limit reached');
+  });
+
+  test('aborted run closes quietly — retitled, no failure body, no ✅', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayTurnEnd('sess-1', 'error', { name: 'MessageAbortedError', message: 'aborted' });
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe('Run stopped');
+    const blocks = update.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
+    // No failure section — just the (re-titled) plan + the footer.
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'context']);
+    expect(blocks[0]!.tasks![0]!.status).toBe('complete'); // not 'error'
+    expect(calls('addReaction').length).toBe(0);
+  });
+});
+
+describe('relayProvisioningFailure', () => {
+  test('posts the platform reason AS-IS (no re-classification) with a "Couldn\'t start" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn — turn row was saved at session-create time
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayProvisioningFailure('sess-1', 'The sandbox provider is at capacity right now. Try again in a minute.');
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe("Couldn't start");
+    const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
+    const section = blocks.find((b) => b.type === 'section');
+    expect(section?.text?.text).toContain('at capacity');
+    expect(calls('removeReaction').length).toBe(1); // ⏳ cleared
+    expect(calls('addReaction').length).toBe(0); // not a success
+  });
+
+  test('no open turn (non-Slack session) → no-op', async () => {
+    dbResults = [[]]; // loadTurn finds nothing
+    const ok = await relayProvisioningFailure('sess-unknown', 'whatever');
+    expect(ok).toBe(false);
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('postMessage').length).toBe(0);
   });
 });

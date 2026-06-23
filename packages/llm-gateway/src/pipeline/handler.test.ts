@@ -239,4 +239,71 @@ describe('gateway.chatCompletions', () => {
     expect(second.status).toBe(503);
     expect((await second.json()).code).toBe('upstream_unavailable');
   });
+
+  // BYOK-out-of-quota → managed fallback. resolveUpstream queues a managed model
+  // behind the user's own key; a 429/402/403 on the key falls over to it.
+  const byok: UpstreamDescriptor = {
+    provider: 'anthropic',
+    kind: 'openai-compat',
+    baseUrl: 'https://byok.test/v1',
+    apiKey: 'user-key',
+    billingMode: 'none',
+    markup: 0,
+  };
+  const completion = JSON.stringify({
+    id: 'x',
+    choices: [{ message: { content: 'ok' } }],
+    usage: { prompt_tokens: 1, completion_tokens: 1 },
+  });
+  const byokBody = '{"model":"anthropic/claude","messages":[]}';
+
+  test('a BYOK rate-limit (429) falls over to the managed fallback', async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [byok, managed] });
+    const fetchImpl: FetchImpl = async (url) =>
+      String(url).includes('byok.test')
+        ? new Response('{"error":"rate_limit"}', { status: 429 })
+        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(res.status).toBe(200);
+    await flush();
+    const ok = traces.find((t) => t.ok);
+    expect(ok?.provider).toBe('openrouter'); // fell over from byok(anthropic) → managed
+    expect(ok?.candidatesTried).toEqual(['anthropic', 'openrouter']);
+  });
+
+  test('a quota error (402) also falls over to the fallback', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [byok, managed] });
+    const fetchImpl: FetchImpl = async (url) =>
+      String(url).includes('byok.test')
+        ? new Response('{"error":"insufficient_quota"}', { status: 402 })
+        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('a non-limit BYOK 4xx (400 bad request) returns as-is — no fallback', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [byok, managed] });
+    const fetchImpl: FetchImpl = async () => new Response('{"error":"bad_request"}', { status: 400 });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('a 429 with no fallback candidate is returned, not swallowed', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [byok] });
+    const fetchImpl: FetchImpl = async () => new Response('{"error":"rate_limit"}', { status: 429 });
+    const res = await createGateway(hooks, { retry: { ...fastRetry, maxAttempts: 1 } }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(res.status).toBe(429);
+  });
 });
