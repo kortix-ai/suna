@@ -20,6 +20,7 @@ import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
@@ -259,6 +260,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Human-side capability gate (Git Ops). Editors/managers hold it; a custom
+    // role omits project.gitops.push to take Git-Ops away from a department.
+    await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, { type: 'project', id: projectId });
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
     // Default-deny — a scoped agent must be granted project.cr.open.
@@ -383,6 +387,7 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, { type: 'project', id: projectId });
 
     const body = await readBody(c);
     const message = normalizeString(body.message) ?? undefined;
