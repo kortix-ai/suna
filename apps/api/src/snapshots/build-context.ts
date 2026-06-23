@@ -27,21 +27,25 @@ const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
-const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
+// These artifact paths are read LAZILY (per call, not as module-load consts).
+// build-context is imported once and shared across the whole `bun test` process;
+// tests override KORTIX_SNAPSHOT_* per suite, so module-load consts let the
+// first-imported suite's fixtures win and break sibling suites in a combined run.
+// In production the env is set once, so reading per-call is behaviour-neutral.
+const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
-const CLI_BIN_PATH = process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
+const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
-const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
+const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
+const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
+const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
-// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`), moving
-// the one-time first-instance cost off the session hot path.
-const OPENCODE_CONFIG_SRC_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
+// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
+const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
 
 const OPENCODE_VERSION = '1.15.10';
@@ -78,6 +82,12 @@ export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
 ): Promise<StagedContext> {
+  const AGENT_BIN_PATH = agentBinPath();
+  const CLI_BIN_PATH = cliBinPath();
+  const ENTRYPOINT_PATH = entrypointSrcPath();
+  const SLACK_CLI_SRC_PATH = slackCliSrcPath();
+  const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
+  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
@@ -236,6 +246,7 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
  * host debugfs-swap it into the predecessor's rootfs. Caller cleans up.
  */
 export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
+  const AGENT_BIN_PATH = agentBinPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   // Refuse an empty/truncated dist (e.g. an interrupted `bun build`) at the source.
   // The host re-validates (ELF/size + post-swap size match), but failing here keeps

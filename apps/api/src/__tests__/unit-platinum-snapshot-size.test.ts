@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,13 +21,6 @@ await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
 await mkdir(opencodeConfigPath, { recursive: true });
-
-process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
-process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
-process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
-process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
-process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
 
 type FromBuildPayload = {
   name: string;
@@ -59,8 +52,11 @@ mock.module('../shared/platinum', () => ({
   },
 }));
 
+// Capture the real fetch; install the 200-stub PER-TEST (beforeEach), NOT at
+// module load — a module-level override here is process-global in bun and was
+// clobbering sibling test files' fetch (it broke the daytona suite in combined runs).
 const originalFetch = globalThis.fetch;
-globalThis.fetch = Object.assign(
+const stubFetch = Object.assign(
   async () => new Response('', { status: 200 }),
   { preconnect: originalFetch.preconnect },
 ) as typeof fetch;
@@ -70,6 +66,19 @@ const { platinumProvider } = await import('../snapshots/providers/platinum');
 beforeEach(() => {
   fromBuildPayloads = [];
   registeredTemplateName = '';
+  globalThis.fetch = stubFetch;
+  // Per-test (not module load): build-context reads these lazily, so setting here
+  // keeps this suite's fixtures from leaking into sibling suites in combined runs.
+  process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
+  process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
+  process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
+  process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
+  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
+  process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 afterAll(() => {

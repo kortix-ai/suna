@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -22,12 +22,17 @@ await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
 await mkdir(opencodeConfigPath, { recursive: true });
 
-process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
-process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
-process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
-process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
-process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
+// Set per-test (NOT at module load): build-context reads these lazily, so setting
+// them in beforeEach makes THIS suite's fixtures win during its own tests without
+// leaking into sibling suites that override the same vars in a combined run.
+beforeEach(() => {
+  process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
+  process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
+  process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
+  process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
+  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
+  process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
+});
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
