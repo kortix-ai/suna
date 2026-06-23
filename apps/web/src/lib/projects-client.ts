@@ -1152,6 +1152,36 @@ export async function setConnectorCredential(projectId: string, slug: string, va
   );
 }
 
+export interface ExecutorExecutionLogEntry {
+  executionId: string;
+  actionPath: string;
+  actingUserId: string | null;
+  sessionId: string | null;
+  status: 'ok' | 'error' | 'denied' | 'pending_approval';
+  risk: ConnectorAction['risk'] | null;
+  requestDigest: string | null;
+  requestSummary: Record<string, unknown> | null;
+  resultSummary: Record<string, unknown> | null;
+  durationMs: number | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export async function listExecutorExecutionLogs(
+  projectId: string,
+  opts: { connectorSlug?: string; limit?: number } = {},
+) {
+  const params = new URLSearchParams();
+  if (opts.connectorSlug) params.set('connectorSlug', opts.connectorSlug);
+  if (opts.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ executions: ExecutorExecutionLogEntry[] }>(
+      `/executor/projects/${projectId}/executions${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 // ─── Executor policies (kortix.toml-backed) ────────────────────────────────
 
 export type PolicyAction = 'always_run' | 'require_approval' | 'block';

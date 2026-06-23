@@ -11,6 +11,7 @@ import {
   type AdminConnectorView,
   type CatalogConnector,
   type DefaultMode,
+  type ExecutorExecutionLogView,
   type ExecutorPrincipal,
   type ExecutorRouterDeps,
   type ProjectPoliciesViewResponse,
@@ -165,6 +166,25 @@ const deps: ExecutorRouterDeps = {
         ? world.credentials.has(credKey(conn.connectorId, conn.credentialMode === 'per_user' ? viewerUserId : null))
         : true,
     })),
+  listExecutionLogs: async (_projectId, opts): Promise<ExecutorExecutionLogView[]> =>
+    world.executions
+      .filter((rec) => !opts.connectorSlug || rec.actionPath.startsWith(`${opts.connectorSlug}.`))
+      .slice(-opts.limit)
+      .reverse()
+      .map((rec, index) => ({
+        executionId: `exec-${index}`,
+        actionPath: rec.actionPath,
+        actingUserId: rec.actingUserId,
+        sessionId: rec.sessionId,
+        status: rec.status,
+        risk: rec.risk,
+        requestDigest: rec.requestDigest,
+        requestSummary: rec.requestSummary,
+        resultSummary: rec.resultSummary,
+        durationMs: rec.durationMs,
+        createdAt: (rec.createdAt ?? new Date(0)).toISOString(),
+        resolvedAt: rec.resolvedAt ? rec.resolvedAt.toISOString() : null,
+      })),
   syncConnectors: async () => ({ synced: world.connectors.size, errors: [] }),
   setSharing: async (_projectId, slug, intent) => {
     const conn = world.connectors.get(slug);
@@ -231,6 +251,32 @@ describe('POST /call', () => {
     expect(world.upstream[0]!.headers.Authorization).toBe('Bearer sk_live_xyz');
     expect(JSON.parse(world.upstream[0]!.body!)).toEqual({ amount: 999 });
     expect(world.executions.at(-1)).toMatchObject({ status: 'ok', actingUserId: ALICE });
+  });
+
+  test('admin can read the dedicated Executor audit log, separate from chat history', async () => {
+    await req('/call', {
+      method: 'POST',
+      headers: { 'x-test-user': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: { amount: 123 } }),
+    });
+
+    const res = await req(`/projects/${PROJECT}/executions?connectorSlug=stripe&limit=5`, {
+      headers: { 'x-test-admin': ALICE },
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.executions).toHaveLength(1);
+    expect(json.executions[0]).toMatchObject({
+      actionPath: 'stripe.charges.create',
+      status: 'ok',
+      risk: 'write',
+      actingUserId: ALICE,
+      sessionId: 'sess-1',
+      requestSummary: { args: { amount: 123 } },
+      resultSummary: { http_status: 200, response: { id: 'ch_1', paid: true } },
+    });
+    expect(json.executions[0].requestDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(json.executions[0].durationMs).toBeGreaterThanOrEqual(0);
   });
 
   test('400 missing fields', async () => {

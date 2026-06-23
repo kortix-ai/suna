@@ -95,6 +95,32 @@ describe('handleCall — happy path', () => {
     expect(records.at(-1)).toMatchObject({ status: 'ok', risk: 'write', actingUserId: ALICE });
   });
 
+  test('audit record stores sanitized request/result detail and timing', async () => {
+    const { deps, records } = makeDeps();
+    await handleCall(deps, {
+      ...baseInput,
+      args: { amount: 500, api_key: 'sk_live_should_never_be_stored' },
+    });
+    const record = records.at(-1);
+    if (!record) throw new Error('expected an executor audit record');
+    expect(record.requestDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(record.durationMs).toBeGreaterThanOrEqual(0);
+    expect(record.createdAt).toBeInstanceOf(Date);
+    expect(record.resolvedAt).toBeInstanceOf(Date);
+    expect(record.requestSummary).toMatchObject({
+      connector_slug: 'stripe',
+      connector_provider: 'openapi',
+      action_path: 'stripe.charges.create',
+      arg_keys: ['amount', 'api_key'],
+      args: { amount: 500, api_key: '[redacted]' },
+    });
+    expect(record.resultSummary).toMatchObject({
+      http_status: 200,
+      response: { id: 'ch_1' },
+    });
+    expect(JSON.stringify(record)).not.toContain('sk_live_should_never_be_stored');
+  });
+
   test('per_user mode resolves the acting user\'s own credential', async () => {
     const { deps, credentialCalls } = makeDeps({ connector: { ...STRIPE, credentialMode: 'per_user' } });
     await handleCall(deps, baseInput);

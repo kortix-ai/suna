@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { logger } from '../lib/logger';
 import { SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
 import {
@@ -63,7 +64,14 @@ export interface ExecutionRecord {
   sessionId: string | null;
   status: 'ok' | 'error' | 'denied' | 'pending_approval';
   risk: Risk | null;
+  /** Stable digest of the sanitized request envelope. Never stores raw secrets. */
+  requestDigest: string | null;
+  /** Sanitized input/context snapshot for the dedicated Executor audit log. */
+  requestSummary: Record<string, unknown> | null;
   resultSummary: Record<string, unknown> | null;
+  durationMs: number | null;
+  createdAt?: Date;
+  resolvedAt?: Date;
 }
 
 export interface GatewayDeps {
@@ -192,26 +200,52 @@ async function connectorUsable(
 
 /** Run one executor call through the full gateway path. */
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
+  const startedAt = Date.now();
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
   const connector = resolved.connector;
   if (!connector || !connector.enabled) {
-    await audit(deps, input, null, 'denied', null, { reason: 'connector_not_found' });
+    await audit(
+      deps,
+      input,
+      null,
+      'denied',
+      null,
+      { reason: 'connector_not_found' },
+      { startedAt, resolvedSlug: resolved.slug },
+    );
     return { status: 'denied', reason: 'connector_not_found' };
   }
 
   const action = await deps.loadAction(connector.connectorId, input.actionPath);
   if (!action) {
-    await audit(deps, input, connector.connectorId, 'denied', null, { reason: 'action_not_found' });
+    await audit(
+      deps,
+      input,
+      connector,
+      'denied',
+      null,
+      { reason: 'action_not_found' },
+      { startedAt, resolvedSlug: resolved.slug },
+    );
     return { status: 'denied', reason: 'action_not_found' };
   }
 
   const usable = await connectorUsable(deps, connector, input.subject);
   if (!usable.ok) {
-    await audit(deps, input, connector.connectorId, 'denied', action.risk, {
-      reason: usable.reason,
-    });
+    await audit(
+      deps,
+      input,
+      connector,
+      'denied',
+      action.risk,
+      {
+        reason: usable.reason,
+        provider: connector.provider,
+      },
+      { startedAt, resolvedSlug: resolved.slug },
+    );
     return { status: 'denied', reason: usable.reason };
   }
 
@@ -231,17 +265,33 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       defaultMode,
     });
     if (decision.action === 'block') {
-      await audit(deps, input, connector.connectorId, 'denied', action.risk, {
-        reason: 'policy_block',
-        policy_source: decision.source,
-      });
+      await audit(
+        deps,
+        input,
+        connector,
+        'denied',
+        action.risk,
+        {
+          reason: 'policy_block',
+          policy_source: decision.source,
+        },
+        { startedAt, resolvedSlug: resolved.slug },
+      );
       return { status: 'denied', reason: 'policy_block' };
     }
     if (decision.action === 'require_approval') {
-      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-        reason: 'policy_require_approval',
-        policy_source: decision.source,
-      });
+      await audit(
+        deps,
+        input,
+        connector,
+        'pending_approval',
+        action.risk,
+        {
+          reason: 'policy_require_approval',
+          policy_source: decision.source,
+        },
+        { startedAt, resolvedSlug: resolved.slug },
+      );
       return { status: 'pending_approval', reason: 'policy_require_approval' };
     }
   }
@@ -263,20 +313,47 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         args: rest,
       });
       if (outcome.ok) {
-        await audit(deps, input, connector.connectorId, 'ok', action.risk, { method: action.binding.method });
+        await audit(
+          deps,
+          input,
+          connector,
+          'ok',
+          action.risk,
+          {
+            method: action.binding.method,
+            response: outcome.data,
+          },
+          { startedAt, resolvedSlug: resolved.slug },
+        );
         return { status: 'ok', data: outcome.data, risk: action.risk };
       }
       if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-          reason: 'tunnel_permission_required',
-          request_id: outcome.requestId,
-        });
+        await audit(
+          deps,
+          input,
+          connector,
+          'pending_approval',
+          action.risk,
+          {
+            reason: 'tunnel_permission_required',
+            request_id: outcome.requestId,
+          },
+          { startedAt, resolvedSlug: resolved.slug },
+        );
         return {
           status: 'pending_approval',
           reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
         };
       }
-      await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: outcome.message.slice(0, 500) });
+      await audit(
+        deps,
+        input,
+        connector,
+        'error',
+        action.risk,
+        { reason: outcome.message.slice(0, 500) },
+        { startedAt, resolvedSlug: resolved.slug },
+      );
       logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
@@ -330,25 +407,51 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
     }
     if (result.ok) {
-      await audit(deps, input, connector.connectorId, 'ok', action.risk, {
-        http_status: result.status,
-      });
+      await audit(
+        deps,
+        input,
+        connector,
+        'ok',
+        action.risk,
+        {
+          http_status: result.status,
+          response: result.data,
+        },
+        { startedAt, resolvedSlug: resolved.slug },
+      );
       return { status: 'ok', data: result.data, risk: action.risk };
     }
     const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
-    await audit(deps, input, connector.connectorId, 'error', action.risk, {
-      http_status: result.status,
-      reason: reason.slice(0, 500),
-    });
+    await audit(
+      deps,
+      input,
+      connector,
+      'error',
+      action.risk,
+      {
+        http_status: result.status,
+        reason: reason.slice(0, 500),
+        response: result.data,
+      },
+      { startedAt, resolvedSlug: resolved.slug },
+    );
     logger.warn(
       `[executor] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
     );
     return { status: 'error', reason };
   } catch (e) {
     const reason = (e as Error).message + fallbackHint(connector, action.binding);
-    await audit(deps, input, connector.connectorId, 'error', action.risk, {
-      reason: reason.slice(0, 500),
-    });
+    await audit(
+      deps,
+      input,
+      connector,
+      'error',
+      action.risk,
+      {
+        reason: reason.slice(0, 500),
+      },
+      { startedAt, resolvedSlug: resolved.slug },
+    );
     logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
     return { status: 'error', reason };
   }
@@ -402,24 +505,109 @@ function fallbackHint(connector: GatewayConnector, binding: ActionBinding): stri
 async function audit(
   deps: GatewayDeps,
   input: CallInput,
-  connectorId: string | null,
+  connector: GatewayConnector | null,
   status: ExecutionRecord['status'],
   risk: Risk | null,
   summary: Record<string, unknown> | null,
+  meta: { startedAt?: number; resolvedSlug?: string } = {},
 ): Promise<void> {
   try {
+    const resolvedAt = new Date();
+    const startedAt = typeof meta.startedAt === 'number' ? meta.startedAt : resolvedAt.getTime();
+    const actionPath = `${meta.resolvedSlug ?? input.connectorSlug}.${input.actionPath}`;
+    const requestSummary = buildRequestSummary(input, connector, actionPath);
     await deps.recordExecution({
       accountId: input.accountId,
       projectId: input.projectId,
-      connectorId,
-      actionPath: `${input.connectorSlug}.${input.actionPath}`,
+      connectorId: connector?.connectorId ?? null,
+      actionPath,
       actingUserId: input.subject.userId,
       sessionId: input.sessionId ?? null,
       status,
       risk,
-      resultSummary: summary,
+      requestDigest: digest(requestSummary),
+      requestSummary,
+      resultSummary: sanitizeRecord(summary),
+      durationMs: Math.max(0, resolvedAt.getTime() - startedAt),
+      createdAt: new Date(startedAt),
+      resolvedAt,
     });
   } catch {
     /* auditing must never break the call path */
   }
+}
+
+function buildRequestSummary(
+  input: CallInput,
+  connector: GatewayConnector | null,
+  actionPath: string,
+): Record<string, unknown> {
+  const args = input.args ?? {};
+  return {
+    connector_slug: connector?.slug ?? input.connectorSlug,
+    connector_provider: connector?.provider ?? null,
+    action_path: actionPath,
+    action: input.actionPath,
+    arg_keys: Object.keys(args).sort(),
+    args: sanitizeValue(args),
+  };
+}
+
+function sanitizeRecord(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  const sanitized = sanitizeValue(value);
+  return sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized)
+    ? sanitized as Record<string, unknown>
+    : { value: sanitized };
+}
+
+const SENSITIVE_KEY = /(^|[_-])(api[_-]?key|auth|authorization|cookie|credential|password|private[_-]?key|refresh[_-]?token|secret|token)([_-]|$)/i;
+const MAX_STRING = 1_000;
+const MAX_ARRAY = 25;
+const MAX_OBJECT_KEYS = 80;
+const MAX_DEPTH = 5;
+
+function sanitizeValue(value: unknown, depth = 0, key = ''): unknown {
+  if (key && SENSITIVE_KEY.test(key)) return '[redacted]';
+  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (looksSensitive(value)) return '[redacted]';
+    return value.length > MAX_STRING ? `${value.slice(0, MAX_STRING)}… (${value.length} chars)` : value;
+  }
+  if (typeof value !== 'object') return String(value);
+  if (depth >= MAX_DEPTH) return '[max_depth]';
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_ARRAY).map((item) => sanitizeValue(item, depth + 1));
+    if (value.length > MAX_ARRAY) items.push(`… ${value.length - MAX_ARRAY} more`);
+    return items;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, MAX_OBJECT_KEYS);
+  const out: Record<string, unknown> = {};
+  for (const [childKey, childValue] of entries) {
+    out[childKey] = sanitizeValue(childValue, depth + 1, childKey);
+  }
+  const total = Object.keys(value as Record<string, unknown>).length;
+  if (total > MAX_OBJECT_KEYS) out.__truncated_keys = total - MAX_OBJECT_KEYS;
+  return out;
+}
+
+function looksSensitive(value: string): boolean {
+  // Common bearer/basic/token-looking values. Keep this conservative: the audit
+  // log is for debugging, not a second secret store.
+  return (
+    /^(bearer|basic)\s+[a-z0-9._~+/-]+=*$/i.test(value)
+    || /^sk_(live|test)_[a-z0-9_]+$/i.test(value)
+    || /^xox[baprs]-/i.test(value)
+  );
+}
+
+function digest(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+function canonicalJson(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(obj[key])}`).join(',')}}`;
 }
