@@ -14,10 +14,11 @@ const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left
 function isAdvancedModel(modelId: string | undefined): boolean {
   if (!modelId) return false;
   return (
-    modelId === 'kortix/power' ||
+    modelId === 'kortix/claude-opus-4.8' ||
+    modelId === 'claude-opus-4.8' ||
     modelId === 'kortix-power' ||
-    modelId.includes('claude-sonnet-4-5') ||
-    modelId.includes('sonnet')
+    modelId.includes('claude-opus') ||
+    modelId.includes('opus')
   );
 }
 

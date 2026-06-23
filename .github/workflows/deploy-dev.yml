@@ -509,7 +509,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → read the dev cluster
-      contents: write # push the values bump to main
+      contents: write # push the values-bump branch
+      pull-requests: write # open/merge the GitOps bump PR into protected main
     env:
       AWS_REGION: us-west-2
       CLUSTER: kortix-dev-eks
@@ -517,6 +518,7 @@ jobs:
       APP: kortix-gateway
       VALUES: infra/k8s/envs/dev/gateway-values.yaml
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -524,24 +526,55 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Bump dev gateway image tag + commit
+      # main is protected ("changes through PR"), so a direct `git push origin
+      # main` is silently rejected — which left gateway-values pinned at a stale
+      # tag while the watch span 40× on the old healthy pods. Bump through a PR
+      # exactly like the API job, then verify origin/main actually carries the
+      # new tag before watching (so a failed bump fails the job, loudly).
+      - name: Bump dev gateway image tag through GitOps PR
         id: bump
         run: |
           set -euo pipefail
           TAG="dev-${GITHUB_SHA::8}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          verify_remote_tag() {
+            git fetch origin main --quiet
+            remote_tag="$(git show origin/main:"$VALUES" | yq '.image.tag')"
+            if [ "$remote_tag" != "$TAG" ]; then
+              echo "::error::GitOps source is still at '$remote_tag', expected '$TAG'. Refusing to watch old healthy pods."
+              return 1
+            fi
+            echo "GitOps source verified: origin/main:$VALUES image.tag=$TAG"
+          }
+
           if [ "$(yq '.image.tag' "$VALUES")" = "$TAG" ]; then
             echo "values already at $TAG — no commit needed."
+            verify_remote_tag
           else
+            BR="chore/dev-eks-deploy-gateway-${TAG}"
             TAG="$TAG" yq -i '.image.tag = strenv(TAG)' "$VALUES"
             git config user.name  "kortix-ci[bot]"
             git config user.email "kortix-ci[bot]@users.noreply.github.com"
+            git checkout -B "$BR"
             git add "$VALUES"
             git commit -m "chore(dev-eks): deploy gateway ${TAG} [skip ci]"
-            for attempt in 1 2 3; do
-              git pull --rebase --autostash origin main && git push origin main && break
-              echo "push attempt ${attempt} lost a race — retrying"; sleep 3
-            done
+            git push -f origin "HEAD:$BR"
+
+            body="GitOps bump for the gateway image built by ${GITHUB_RUN_ID}: ${TAG}."
+            gh pr create --base main --head "$BR" \
+              --title "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
+              --body "$body" || true
+            PR="$(gh pr view "$BR" --json number --jq '.number')"
+
+            gh pr merge "$PR" --squash --delete-branch \
+              --subject "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
+              --body "" \
+              || gh pr merge "$PR" --squash --delete-branch --admin \
+                --subject "chore(dev-eks): deploy gateway ${TAG} [skip ci]" \
+                --body ""
+
+            verify_remote_tag
           fi
 
       - name: Configure AWS credentials (OIDC)
@@ -563,6 +596,23 @@ jobs:
       - name: Update kubeconfig
         if: steps.guard.outputs.exists == 'true'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Code is the first-class copy: keep the live Argo CD Application in lockstep
+      # with the committed manifest. On dev-eks these Applications are NOT owned by
+      # an app-of-apps, so a stale field — e.g. targetRevision left on the retired
+      # `gateway` branch — silently freezes the gateway on an old image while Argo
+      # reports Synced/Healthy against the dead branch. Re-applying the manifest
+      # every deploy means the cluster always derives from the repo. Best-effort:
+      # if the deploy role lacks argocd-namespace RBAC it warns (then grant it),
+      # but it never blocks the rollout watch below.
+      - name: Reconcile Argo CD Application from repo (code is source of truth)
+        if: steps.guard.outputs.exists == 'true'
+        continue-on-error: true
+        run: |
+          kubectl apply -f infra/k8s/argocd/applications/gateway-dev.yaml \
+            || echo "::warning::could not apply gateway-dev Application (argocd RBAC for the deploy role?) — live app may be drifted from the repo"
+          kubectl -n argocd annotate application kortix-gateway-dev \
+            argocd.argoproj.io/refresh=hard --overwrite 2>/dev/null || true
 
       # Soft wait: the gateway Ingress chart fails to render until gateway-values
       # carries the ACM cert ARN, so the FIRST deploy (pre-cert) can't roll out.
