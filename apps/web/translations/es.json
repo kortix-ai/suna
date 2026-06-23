@@ -3436,7 +3436,7 @@
     },
     "appProjectsIdCustomizeMembersPage": {
       "line92JsxTextProjectMembers": "Miembros del proyecto",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Controla quién puede acceder a este proyecto. Los propietarios de la cuenta y los administradores siempre tienen acceso de gestor. Invita a compañeros por correo electrónico o cambia su rol abajo.",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Gestiona quién puede acceder a este proyecto y sus roles.",
       "line140JsxAttrTitleInviteByEmail": "Invitar por correo electrónico",
       "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "Agrega un usuario existente de Kortix a este proyecto.",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
@@ -3446,10 +3446,10 @@
     },
     "appProjectsIdCustomizeSecretsPage": {
       "line104JsxTextProjectSecrets": "Secretos del proyecto",
-      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Pares clave-valor inyectados como variables de entorno en cada nuevo sandbox de sesión para este proyecto. Las claves obligatorias provienen de tu",
+      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Variables de entorno inyectadas en cada nueva sesión.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifiesto. Los valores se cifran en reposo.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Las sesiones aún pueden iniciarse, pero el agente probablemente fallará hasta que se establezcan.",
-      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "Pares clave-valor inyectados en cada nuevo sandbox de sesión.",
+      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "Variables de entorno inyectadas en cada nueva sesión.",
       "line311JsxTextConnectProvider": "Conectar proveedor",
       "line373JsxTextRemoveThisSecret": "¿Eliminar este secreto?",
       "line395JsxTextNotSet": "No establecido",
@@ -5340,8 +5340,8 @@
       "line262JsxTextNoSnapshotBuildsYetTheFirstBuildKicks": "Aún no hay builds de snapshots. El primer build se inicia automáticamente cuando se crea el proyecto; normalmente se completa en unos minutos."
     },
     "componentsProjectsTriggersView": {
-      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Puntos de entrada activados por cron. Cuando se activa una programación, arranca un sandbox de sesión nuevo con la plantilla de prompt renderizada inyectada como",
-      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "Puntos de entrada HTTP firmados. Cuando una solicitud llega a la URL del webhook, arranca un sandbox de sesión nuevo con la plantilla de prompt renderizada inyectada como",
+      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Ejecuta el agente automáticamente según un horario.",
+      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "Inicia una sesión con solicitudes HTTP POST firmadas.",
       "line421JsxTextTriggerFile": "archivo de disparador",
       "line421JsxTextFailedToParse": "no se pudo analizar",
       "line623JsxTextFireNow": "Ejecutar ahora",
@@ -5372,8 +5372,8 @@
       "line1438JsxTextAccessRequired": "Acceso requerido",
       "line1440JsxTextYouDonAposTHavePermissionToView": "No tienes permiso para ver los disparadores de este proyecto.",
       "line1450JsxTextFailedToLoadTriggers": "No se pudieron cargar los disparadores",
-      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Puntos de entrada impulsados por cron. Cuando se ejecuta un horario, se inicia un sandbox de sesión nuevo con la plantilla de prompt renderizada inyectada como",
-      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "Puntos de entrada HTTP firmados. Cuando una solicitud llega a la URL del webhook, se inicia un sandbox de sesión nuevo con la plantilla de prompt renderizada inyectada como"
+      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Ejecuta el agente automáticamente según un horario.",
+      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "Inicia una sesión con solicitudes HTTP POST firmadas."
     },
     "componentsProvidersConnectProviderContent": {
       "line663JsxAttrPlaceholderSearchProviders": "Buscar proveedores...",
@@ -7660,7 +7660,7 @@
     "autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextCreateAn48a275ca": "crear un agente",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrTitleNoc31e05e1": "Sin versiones",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrDescriptionBranches801ec5e2": "Las ramas aparecen aquí a medida que las sesiones las crean.",
-    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "Ejecute este proyecto desde el chat: conecte un espacio de trabajo de Slack y su agente responderá en los canales a los que lo invite.",
+    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "Conecta Slack para que tu agente responda en los canales invitados.",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220": "Abra un proyecto para administrar su conexión de Slack.",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4": "Trae tu propia aplicación de Slack",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb": "Las configuraciones autohospedadas no tienen OAuth conectado: pegue un manifiesto y tokens para finalizar la instalación. Almacenado cifrado en los secretos de este proyecto.",
@@ -7741,7 +7741,7 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626": "Establecerá el valor de la credencial después de agregarla, desde la página del conector.",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e": "y resuelto en el lado del servidor, nunca inyectado en la zona de pruebas.",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d": "Desarrolla en tu propia máquina",
-    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "Este proyecto se encuentra en un repositorio de git. Clónelo, ábralo en su propio agente de codificación (Claude Code, Cursor, Codex, opencode) y envíe su cambio.",
+    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "Clona el repositorio y desarrolla localmente con tu propio agente.",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb": "No se pudo cargar este proyecto",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa": "Obtenga acceso al repositorio",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f": "Este repositorio es privado y propiedad de Kortix. Agregue su cuenta de GitHub como colaborador, luego acepte la invitación que GitHub le envía por correo electrónico.",

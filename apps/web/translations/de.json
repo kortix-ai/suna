@@ -3436,7 +3436,7 @@
     },
     "appProjectsIdCustomizeMembersPage": {
       "line92JsxTextProjectMembers": "Projektmitglieder",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Steuere, wer auf dieses Projekt zugreifen kann. Kontoinhaber und Administratoren haben immer Managerzugriff. Lade Teammitglieder per E-Mail ein oder ändere unten ihre Rolle.",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "Verwalte, wer auf dieses Projekt zugreifen kann und welche Rollen sie haben.",
       "line140JsxAttrTitleInviteByEmail": "Per E-Mail einladen",
       "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "Füge diesem Projekt einen bestehenden Kortix-Benutzer hinzu.",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
@@ -3446,10 +3446,10 @@
     },
     "appProjectsIdCustomizeSecretsPage": {
       "line104JsxTextProjectSecrets": "Projekt-Secrets",
-      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Schlüssel-Wert-Paare, die als Umgebungsvariablen in jede neue Sitzungssandbox für dieses Projekt injiziert werden. Erforderliche Schlüssel stammen aus deinem",
+      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "Umgebungsvariablen, die in jede neue Sitzung injiziert werden.",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "Manifest. Werte werden ruhend verschlüsselt.",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "Sitzungen können weiterhin starten, aber der Agent wird wahrscheinlich fehlschlagen, bis diese festgelegt sind.",
-      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "Schlüssel-Wert-Paare, die in jede neue Sitzungssandbox injiziert werden.",
+      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "Umgebungsvariablen, die in jede neue Sitzung injiziert werden.",
       "line311JsxTextConnectProvider": "Anbieter verbinden",
       "line373JsxTextRemoveThisSecret": "Dieses Secret entfernen?",
       "line395JsxTextNotSet": "Nicht festgelegt",
@@ -5340,8 +5340,8 @@
       "line262JsxTextNoSnapshotBuildsYetTheFirstBuildKicks": "Noch keine Snapshot-Builds. Der erste Build startet automatisch, wenn das Projekt erstellt wird; normalerweise ist er innerhalb weniger Minuten abgeschlossen."
     },
     "componentsProjectsTriggersView": {
-      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Cron-gesteuerte Einstiegspunkte. Wenn ein Zeitplan ausgelöst wird, startet eine frische Session-Sandbox mit der gerenderten Prompt-Vorlage, die eingefügt wird als",
-      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "Signierte HTTP-Einstiegspunkte. Wenn eine Anfrage die Webhook-URL erreicht, startet eine frische Session-Sandbox mit der gerenderten Prompt-Vorlage, die eingefügt wird als",
+      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Den Agent automatisch nach einem Zeitplan ausführen.",
+      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "Starte eine Sitzung über signierte HTTP-POST-Anfragen.",
       "line421JsxTextTriggerFile": "Trigger-Datei",
       "line421JsxTextFailedToParse": "konnte nicht geparst werden",
       "line623JsxTextFireNow": "Jetzt auslösen",
@@ -5372,8 +5372,8 @@
       "line1438JsxTextAccessRequired": "Zugriff erforderlich",
       "line1440JsxTextYouDonAposTHavePermissionToView": "Sie haben keine Berechtigung, die Trigger dieses Projekts anzuzeigen.",
       "line1450JsxTextFailedToLoadTriggers": "Trigger konnten nicht geladen werden",
-      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Cron-gesteuerte Einstiegspunkte. Wenn ein Zeitplan auslöst, startet eine frische Session-Sandbox mit der gerenderten Prompt-Vorlage als",
-      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "Signierte HTTP-Einstiegspunkte. Wenn eine Anfrage die Webhook-URL erreicht, startet eine frische Session-Sandbox mit der gerenderten Prompt-Vorlage als"
+      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "Den Agent automatisch nach einem Zeitplan ausführen.",
+      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "Starte eine Sitzung über signierte HTTP-POST-Anfragen."
     },
     "componentsProvidersConnectProviderContent": {
       "line663JsxAttrPlaceholderSearchProviders": "Anbieter suchen...",
@@ -7660,7 +7660,7 @@
     "autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextCreateAn48a275ca": "Erstellen Sie einen Agenten",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrTitleNoc31e05e1": "Keine Versionen",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrDescriptionBranches801ec5e2": "Zweige werden hier angezeigt, wenn Sitzungen sie erstellen.",
-    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "Führen Sie dieses Projekt über den Chat aus – verbinden Sie einen Slack-Workspace und Ihr Agent antwortet in den Kanälen, zu denen Sie ihn einladen.",
+    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "Verbinde Slack, damit dein Agent in eingeladenen Kanälen antwortet.",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220": "Öffnen Sie ein Projekt, um seine Slack-Verbindung zu verwalten.",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4": "Bringen Sie Ihre eigene Slack-App mit",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb": "Bei selbst gehosteten Setups ist OAuth nicht verkabelt. Fügen Sie ein Manifest und Token ein, um die Installation abzuschließen. Verschlüsselt in den Geheimnissen dieses Projekts gespeichert",
@@ -7741,7 +7741,7 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626": "Sie legen den Wert der Anmeldeinformationen nach dem Hinzufügen auf der Seite des Connectors fest.",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e": "und serverseitig aufgelöst, niemals in die Sandbox injiziert.",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d": "Entwickeln Sie auf Ihrem eigenen Computer",
-    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "Dieses Projekt befindet sich in einem Git-Repo. Klonen Sie es, öffnen Sie es in Ihrem eigenen Codierungsagenten – Claude Code, Cursor, Codex, Opencode – und senden Sie Ihre Änderung",
+    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "Klone das Repo und entwickle lokal mit deinem eigenen Agenten.",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb": "Dieses Projekt konnte nicht geladen werden",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa": "Erhalten Sie Zugriff auf das Repo",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f": "Dieses Repo ist privat und Eigentum von Kortix. Fügen Sie Ihr GitHub-Konto als Mitarbeiter hinzu und nehmen Sie dann die Einladung an, die GitHub Ihnen per E-Mail sendet.",

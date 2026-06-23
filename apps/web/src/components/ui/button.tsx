@@ -16,8 +16,10 @@ const buttonVariants = cva(
         blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
         'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
         'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
-        danger: 'bg-destructive text-background hover:bg-destructive/90 focus-visible:ring-destructive/35 focus-visible:ring-offset-4 focus-visible:ring-2',
-        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85 focus-visible:ring-destructive/35 focus-visible:ring-offset-1 focus-visible:ring-2',
+        danger:
+          'bg-destructive text-background hover:bg-destructive/90 focus-visible:ring-destructive/35 focus-visible:ring-offset-4 focus-visible:ring-2',
+        destructive:
+          'bg-destructive/80 text-background hover:bg-destructive/85 focus-visible:ring-destructive/35 focus-visible:ring-offset-1 focus-visible:ring-2',
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
@@ -25,8 +27,9 @@ const buttonVariants = cva(
         'secondary-outline': 'bg-secondary hover:bg-secondary border border-border text-foreground',
         sidebar: 'text-sidebar-foreground hover:bg-sidebar-accent/80 ',
         background: 'bg-background hover:bg-background/90  text-foreground ',
-        input: 'bg-input text-primary hover:bg-input',
-        accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10 rounded-md',
+        input:
+          'bg-input dark:bg-input/30  text-foreground hover:bg-input/95 dark:hover:bg-input/235',
+        accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/8 rounded-md',
         ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
         muted: 'bg-muted text-foreground hover:bg-muted/90',
         link: 'text-foreground underline-offset-4 hover:underline bg-transparent',

@@ -180,6 +180,7 @@ function InputGroupSearchInput({ className, variant = 'transparent', ...props }:
     <Input
       data-slot="input-group-search-control"
       variant={variant}
+      size="md"
       className={cn('peer placeholder:text-muted-foreground/60 pl-9', className)}
       {...props}
     />

@@ -3436,7 +3436,7 @@
     },
     "appProjectsIdCustomizeMembersPage": {
       "line92JsxTextProjectMembers": "プロジェクトメンバー",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "このプロジェクトにアクセスできるユーザーを管理します。アカウント所有者と管理者は常にマネージャー権限を持ちます。チームメイトをメールで招待するか、下でロールを変更してください。",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "このプロジェクトへのアクセス権と役割を管理します。",
       "line140JsxAttrTitleInviteByEmail": "メールで招待",
       "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "既存の Kortix ユーザーをこのプロジェクトに追加します。",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
@@ -3446,10 +3446,10 @@
     },
     "appProjectsIdCustomizeSecretsPage": {
       "line104JsxTextProjectSecrets": "プロジェクトシークレット",
-      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "このプロジェクトの新しい各セッション sandbox に環境変数として注入されるキーと値のペア。必須キーは次から取得されます:",
+      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "各新規セッションに注入される環境変数。",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest。値は保存時に暗号化されます。",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "セッションは引き続き開始できますが、これらが設定されるまでエージェントは失敗する可能性があります。",
-      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "新しい各セッション sandbox に注入されるキーと値のペア。",
+      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "各新規セッションに注入される環境変数。",
       "line311JsxTextConnectProvider": "プロバイダーを接続",
       "line373JsxTextRemoveThisSecret": "このシークレットを削除しますか？",
       "line395JsxTextNotSet": "未設定",
@@ -5340,8 +5340,8 @@
       "line262JsxTextNoSnapshotBuildsYetTheFirstBuildKicks": "スナップショットのビルドはまだありません。最初のビルドはプロジェクト作成時に自動的に開始され、通常は数分以内に完了します。"
     },
     "componentsProjectsTriggersView": {
-      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "cron によって駆動されるエントリーポイントです。スケジュールが発火すると、新しいセッションサンドボックスが起動し、レンダリング済みのプロンプトテンプレートが次として挿入されます:",
-      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "署名付き HTTP エントリーポイントです。リクエストが webhook URL に到達すると、新しいセッションサンドボックスが起動し、レンダリング済みのプロンプトテンプレートが次として挿入されます:",
+      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "スケジュールに従ってエージェントを自動実行します。",
+      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "署名付きHTTP POSTリクエストでセッションを開始します。",
       "line421JsxTextTriggerFile": "トリガーファイル",
       "line421JsxTextFailedToParse": "解析に失敗しました",
       "line623JsxTextFireNow": "今すぐ実行",
@@ -5372,8 +5372,8 @@
       "line1438JsxTextAccessRequired": "アクセスが必要です",
       "line1440JsxTextYouDonAposTHavePermissionToView": "このプロジェクトのトリガーを表示する権限がありません。",
       "line1450JsxTextFailedToLoadTriggers": "トリガーの読み込みに失敗しました",
-      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "cron駆動のエントリーポイントです。スケジュールが実行されると、新しいセッションサンドボックスが起動し、レンダリング済みのプロンプトテンプレートが次として注入されます",
-      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "署名付きHTTPエントリーポイントです。リクエストがWebhook URLに到達すると、新しいセッションサンドボックスが起動し、レンダリング済みのプロンプトテンプレートが次として注入されます"
+      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "スケジュールに従ってエージェントを自動実行します。",
+      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "署名付きHTTP POSTリクエストでセッションを開始します。"
     },
     "componentsProvidersConnectProviderContent": {
       "line663JsxAttrPlaceholderSearchProviders": "プロバイダーを検索...",
@@ -7660,7 +7660,7 @@
     "autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextCreateAn48a275ca": "エージェントを作成する",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrTitleNoc31e05e1": "バージョンなし",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrDescriptionBranches801ec5e2": "セッションがブランチを作成すると、ブランチがここに表示されます。",
-    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "このプロジェクトをチャットから実行します。Slack ワークスペースに接続すると、エージェントは招待したチャネルで応答します。",
+    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "Slackを接続すると、招待したチャンネルでエージェントが応答します。",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220": "プロジェクトを開いて、Slack 接続を管理します。",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4": "独自の Slack アプリを持ち込む",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb": "セルフホスト型セットアップには OAuth が接続されていません。マニフェストとトークンを貼り付けてインストールを完了します。このプロジェクトのシークレットに暗号化して保存されます",
@@ -7741,7 +7741,7 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626": "追加後に、コネクタのページから資格情報の値を設定します。",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e": "サーバー側で解決され、サンドボックスに挿入されることはありません。",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d": "自分のマシンで開発する",
-    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "このプロジェクトは 1 つの Git リポジトリに存在します。クローンを作成し、独自のコーディング エージェント (Claude Code、Cursor、Codex、opencode) で開き、変更を送信します。",
+    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "リポジトリをクローンし、独自のエージェントでローカル開発します。",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb": "このプロジェクトを読み込めませんでした",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa": "リポジトリにアクセスする",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f": "このリポジトリは非公開であり、Kortix が所有しています。 GitHub アカウントをコラボレーターとして追加し、GitHub からの招待メールを受け入れます。",

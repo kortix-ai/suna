@@ -17,10 +17,17 @@ function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive
 
 interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> {
   variant?: 'default' | 'secondary' | 'accent';
+  type?: 'default' | 'underline';
   size?: 'default' | 'xs' | 'sm' | 'lg';
 }
 
-function TabsList({ className, variant = 'secondary', size = 'default', ...props }: TabsListProps) {
+function TabsList({
+  className,
+  variant = 'secondary',
+  type = 'default',
+  size = 'default',
+  ...props
+}: TabsListProps) {
   const sizeMap = {
     default: 'h-9',
     xs: 'h-7',
@@ -31,10 +38,13 @@ function TabsList({ className, variant = 'secondary', size = 'default', ...props
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'text-muted-foreground inline-flex w-fit items-center justify-center gap-1 rounded-md',
+        'text-muted-foreground inline-flex w-fit items-center justify-center',
+        type === 'default' && 'gap-1 rounded-md',
         className,
-        variant === 'secondary' && 'bg-foreground/10 p-[1.5px] px-[2px]',
-        variant === 'accent' && 'bg-accent',
+        type === 'default' && variant === 'secondary' && 'bg-foreground/10 p-[1.5px] px-[2px]',
+        type === 'default' && variant === 'accent' && 'bg-accent',
+        type === 'underline' &&
+          'border-border **:data-[slot=tabs-trigger]:hover:bg-secondary **:data-[slot=tabs-trigger]:hover:text-foreground **:data-[slot=tabs-trigger]:data-[state=active]:border-b-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-x-0 **:data-[slot=tabs-trigger]:border-t-0 **:data-[slot=tabs-trigger]:border-b-[1.5px] **:data-[slot=tabs-trigger]:border-b-transparent **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:px-3 **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent',
         sizeMap[size],
       )}
       {...props}
@@ -53,7 +63,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "focus-visible:ring-kortix-blue inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-2.5px)] border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus-visible:ring-kortix-blue duration-normal ease-default inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-2.5px)] border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-foreground/6 data-[state=inactive]:bg-transparent',
         'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80',
 

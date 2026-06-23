@@ -1,29 +1,12 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-/**
- * Changes — the Customize section for reviewing & landing work.
- *
- * Two thin surfaces behind one rail entry:
- *   • Change requests — the merge queue. Each open CR can be Merged or
- *     Rejected inline (one click, no leaving the overlay); the row opens the
- *     full diff dialog if you want to inspect before landing. This is the
- *     "keep growing main" loop.
- *   • Versions — the project's branches (each session runs on one), read-only.
- *
- * CR hooks read the project from <ProjectFilesProvider>, so we wrap the view
- * in it (same as the Files section).
- */
-
-import { useQuery } from '@tanstack/react-query';
-import { formatDistanceToNowStrict } from 'date-fns';
-import { GitBranch, GitMerge, GitPullRequest, Loader2, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProjectFilesProvider } from '@/features/project-files';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import {
@@ -33,10 +16,19 @@ import {
   useReopenChangeRequest,
 } from '@/features/project-files/hooks/use-change-requests';
 import { getProject, listProjectBranches, type ChangeRequestStatus } from '@/lib/projects-client';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-
-import { CustomizeSectionHeader } from '../../customize-section-header';
+import {
+  GitBranch,
+  GitMerge,
+  GitMergeSolid,
+  GitPullRequest,
+  XCircleSolid,
+} from '@mynaui/icons-react';
+import { useQuery } from '@tanstack/react-query';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+import CustomizeSectionWrapper from '../component/section-wrapper';
 
 function rel(iso: string | null): string {
   if (!iso) return '';
@@ -72,35 +64,32 @@ function ChangesInner({ projectId }: { projectId: string }) {
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader
-        icon={GitPullRequest}
-        title="Changes"
-        count={tab === 'crs' ? openCount : undefined}
-      />
+      <CustomizeSectionWrapper title="Changes" description="Review and merge change requests">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as 'crs' | 'versions')}
+          className="space-y-6"
+        >
+          <TabsList type="underline" className="flex w-full items-center justify-start">
+            <TabsTrigger value="crs" className="w-fit flex-none">
+              Change Requests
+            </TabsTrigger>
+            <TabsTrigger value="versions" className="w-fit flex-none">
+              Versions
+            </TabsTrigger>
+          </TabsList>
 
-      {/* Tabs */}
-      <div className="border-border/60 flex shrink-0 items-center gap-1 border-b px-3 py-2">
-        <SegTab active={tab === 'crs'} onClick={() => setTab('crs')}>
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChangesViewJsxTextChangeRequestsb28a4513',
-          )}
-        </SegTab>
-        <SegTab active={tab === 'versions'} onClick={() => setTab('versions')}>
-          Versions
-        </SegTab>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 py-6">
-          {tab === 'crs' ? (
+          <TabsContent value="crs">
             <ChangeRequestsTab onOpenDetail={setDetailCrId} />
-          ) : (
-            <VersionsTab projectId={projectId} />
-          )}
-        </div>
-      </div>
+          </TabsContent>
 
-      <ChangeRequestDetailDialog crId={detailCrId} onClose={() => setDetailCrId(null)} />
+          <TabsContent value="versions">
+            <VersionsTab projectId={projectId} />
+          </TabsContent>
+        </Tabs>
+
+        <ChangeRequestDetailDialog crId={detailCrId} onClose={() => setDetailCrId(null)} />
+      </CustomizeSectionWrapper>
     </div>
   );
 }
@@ -129,8 +118,6 @@ function SegTab({
     </button>
   );
 }
-
-/* ─── Change requests ───────────────────────────────────────────────────── */
 
 const STATUS_FILTERS: { value: ChangeRequestStatus; label: string }[] = [
   { value: 'open', label: 'Open' },
@@ -215,9 +202,26 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
             return (
               <li
                 key={cr.cr_id}
-                className="group border-border/60 bg-card hover:border-foreground/20 flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition-colors"
+                className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2 transition-colors"
               >
-                <CrStatusIcon status={cr.status} />
+                <span
+                  className={cn(
+                    'flex size-9 items-center justify-center rounded-sm',
+                    cr.status === 'merged'
+                      ? 'bg-kortix-green/15'
+                      : cr.status === 'closed'
+                        ? 'bg-kortix-red/15'
+                        : 'bg-kortix-blue/15',
+                  )}
+                >
+                  {cr.status === 'merged' ? (
+                    <GitMergeSolid className="text-kortix-green size-5" />
+                  ) : cr.status === 'closed' ? (
+                    <XCircleSolid className="text-kortix-red size-5" />
+                  ) : (
+                    <GitPullRequest className="text-kortix-blue size-5" />
+                  )}
+                </span>
                 <button
                   type="button"
                   onClick={() => onOpenDetail(cr.cr_id)}
@@ -228,7 +232,7 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                     <span className="text-foreground truncate text-sm font-medium">{cr.title}</span>
                   </div>
                   <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
-                    <GitBranch className="h-3 w-3 shrink-0" />
+                    <GitBranch className="size-3 shrink-0" />
                     <span className="max-w-[140px] truncate font-mono">{cr.head_ref}</span>
                     <span className="text-muted-foreground/40">→</span>
                     <span className="max-w-[100px] truncate font-mono">{cr.base_ref}</span>
@@ -248,22 +252,16 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-muted-foreground hover:text-foreground h-7 px-2.5 text-xs"
                       onClick={() => onClose(cr.cr_id)}
                       disabled={busy}
                     >
                       Reject
                     </Button>
-                    <Button
-                      size="sm"
-                      className="h-7 gap-1.5 px-2.5 text-xs"
-                      onClick={() => onMerge(cr.cr_id)}
-                      disabled={busy}
-                    >
+                    <Button size="sm" onClick={() => onMerge(cr.cr_id)} disabled={busy}>
                       {busy ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loading className="size-3.5 animate-spin" />
                       ) : (
-                        <GitMerge className="h-3.5 w-3.5" />
+                        <GitMerge className="size-3.5" />
                       )}
                       Merge
                     </Button>
@@ -273,7 +271,6 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 shrink-0 px-2.5 text-xs"
                     onClick={() => onReopen(cr.cr_id)}
                     disabled={busy}
                   >
@@ -288,15 +285,6 @@ function ChangeRequestsTab({ onOpenDetail }: { onOpenDetail: (crId: string) => v
     </div>
   );
 }
-
-function CrStatusIcon({ status }: { status: ChangeRequestStatus }) {
-  const cls = 'h-4 w-4 shrink-0';
-  if (status === 'merged') return <GitMerge className={cn(cls, 'text-primary')} />;
-  if (status === 'closed') return <XCircle className={cn(cls, 'text-muted-foreground')} />;
-  return <GitPullRequest className={cn(cls, 'text-foreground')} />;
-}
-
-/* ─── Versions (branches) ───────────────────────────────────────────────── */
 
 function VersionsTab({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');

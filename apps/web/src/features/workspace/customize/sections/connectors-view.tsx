@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
  * app — the model is App → Profile → Tools → Permissions.
  */
 
+import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -33,15 +34,14 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -57,9 +57,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -75,16 +73,19 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
   createConnector,
   deleteConnector,
   getConnectorConfig,
   getConnectorPolicies,
+  getConnectStatus,
   listConnectors,
   listPipedreamApps,
-  getConnectStatus,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -101,7 +102,6 @@ import {
   type ConnectorPolicyRule,
   type ConnectorSharing,
 } from '@/lib/projects-client';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
@@ -267,8 +267,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     mutationFn: () => syncConnectors(projectId),
     onSuccess: (res) => {
       invalidate();
-      if (res.errors.length)
-        warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
+      if (res.errors.length) warningToast(`Synced ${res.synced}, ${res.errors.length} with issues`);
       else successToast(`Synced ${res.synced} connector(s)`);
     },
     onError: (err: Error) => errorToast(err.message || 'Sync failed'),
@@ -371,8 +370,8 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
 
 function statusDot(c: AdminConnector): string {
   if (c.status === 'error') return 'bg-destructive';
-  if (c.authSecret && !c.secretSet) return 'bg-amber-500';
-  return 'bg-emerald-500';
+  if (c.authSecret && !c.secretSet) return 'bg-kortix-orange';
+  return 'bg-kortix-green';
 }
 
 /** Forward-facing status as a calm badge (the detail header). */
@@ -433,7 +432,7 @@ function SaveBar({
   return (
     <div className="border-border/60 mt-5 flex items-center justify-end gap-2 border-t pt-4">
       <span className="text-muted-foreground mr-auto flex items-center gap-1.5 text-xs">
-        <span className="size-1.5 rounded-full bg-amber-500" />
+        <span className="bg-kortix-orange size-1.5 rounded-full" />
         {tI18nHardcoded.raw(
           'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextUnsavedChanges4682b870',
         )}
@@ -921,8 +920,8 @@ function ConnectorDetail({
               </Button>
             }
           >
-            Connecting or disconnecting the workspace, and the bot token, live in the Channels
-            tab. Here you control who can use it and review its tools.
+            Connecting or disconnecting the workspace, and the bot token, live in the Channels tab.
+            Here you control who can use it and review its tools.
           </InfoBanner>
         )}
         {/* Computer connectors are connected + permissioned in the Computers tab
@@ -945,8 +944,8 @@ function ConnectorDetail({
               </Button>
             }
           >
-            Connect a machine, and grant or revoke per-capability access, in the Computers
-            tab. Here you control who can use it and review its tools.
+            Connect a machine, and grant or revoke per-capability access, in the Computers tab. Here
+            you control who can use it and review its tools.
           </InfoBanner>
         )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
@@ -1359,8 +1358,8 @@ const POLICY_CHOICES: { value: PolicyChoice; label: string }[] = [
 ];
 
 const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string }> = {
-  always_run: { label: 'Allow', tint: 'text-emerald-600 dark:text-emerald-400' },
-  require_approval: { label: 'Ask', tint: 'text-amber-600 dark:text-amber-400' },
+  always_run: { label: 'Allow', tint: 'text-kortix-green' },
+  require_approval: { label: 'Ask', tint: 'text-kortix-yellow' },
   block: { label: 'Block', tint: 'text-destructive' },
 };
 
@@ -1745,10 +1744,7 @@ function PermissionsSection({
                             <span className="text-muted-foreground text-xs">{t.description}</span>
                           )}
                         </div>
-                        <CodeSnippet
-                          code={tsSignature(connector.slug, t)}
-                          language="typescript"
-                        />
+                        <CodeSnippet code={tsSignature(connector.slug, t)} language="typescript" />
                         <CodeSnippet
                           code={JSON.stringify(
                             t.inputSchema ?? { type: 'object', properties: {} },

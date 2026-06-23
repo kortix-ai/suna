@@ -1,8 +1,10 @@
-"use client";
+'use client';
 
-import { useTranslations } from 'next-intl';
+import { CalendarClock, ChevronDown, Clock } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -10,13 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { errorToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { ChevronDown, Clock, CalendarClock } from 'lucide-react';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 type Frequency = 'minutes' | 'hourly' | 'daily' | 'weekly' | 'monthly';
 
@@ -34,19 +32,10 @@ interface ScheduleBuilderProps {
   onChange: (cronExpr: string) => void;
   compact?: boolean;
   disabled?: boolean;
-  /**
-   * Opt-in: show a "Once" tab for a one-off schedule that fires a single
-   * time at an exact instant. When the parent doesn't pass `onRunAtChange`,
-   * the builder stays cron-only (backward compatible).
-   */
   allowOnce?: boolean;
-  /** Current one-off instant (ISO-8601). Null/undefined ⇒ recurring mode. */
   runAt?: string | null;
-  /** Fired when the one-off instant changes. `null` ⇒ switched back to recurring. */
   onRunAtChange?: (iso: string | null) => void;
 }
-
-// ─── Cron ↔ State ───────────────────────────────────────────────────────────
 
 const DEFAULT_STATE: ScheduleState = {
   frequency: 'daily',
@@ -56,147 +45,6 @@ const DEFAULT_STATE: ScheduleState = {
   weekdays: [1, 2, 3, 4, 5],
   monthDay: 1,
 };
-
-function stateToCron(s: ScheduleState): string {
-  switch (s.frequency) {
-    case 'minutes':
-      return `0 */${s.interval} * * * *`;
-    case 'hourly':
-      return `0 ${s.minute} */${s.interval} * * *`;
-    case 'daily':
-      return `0 ${s.minute} ${s.hour} * * *`;
-    case 'weekly': {
-      const days = s.weekdays.length > 0 ? s.weekdays.sort().join(',') : '*';
-      return `0 ${s.minute} ${s.hour} * * ${days}`;
-    }
-    case 'monthly':
-      return `0 ${s.minute} ${s.hour} ${s.monthDay} * *`;
-    default:
-      return `0 ${s.minute} ${s.hour} * * *`;
-  }
-}
-
-function cronToState(expr: string): ScheduleState | null {
-  try {
-    const parts = expr.trim().split(/\s+/);
-    if (parts.length !== 6) return null;
-    const [_sec, min, hour, day, _month, weekday] = parts;
-
-    if (min.startsWith('*/') && hour === '*' && day === '*' && weekday === '*') {
-      return { ...DEFAULT_STATE, frequency: 'minutes', interval: parseInt(min.slice(2)) || 15 };
-    }
-    if (hour.startsWith('*/') && day === '*' && weekday === '*') {
-      return { ...DEFAULT_STATE, frequency: 'hourly', interval: parseInt(hour.slice(2)) || 1, minute: parseInt(min) || 0 };
-    }
-    if (!day.includes('*') && !day.includes('/') && weekday === '*') {
-      return { ...DEFAULT_STATE, frequency: 'monthly', hour: parseInt(hour) || 9, minute: parseInt(min) || 0, monthDay: parseInt(day) || 1 };
-    }
-    if (day === '*' && weekday !== '*') {
-      let days: number[];
-      if (weekday.includes('-')) {
-        const [start, end] = weekday.split('-').map(Number);
-        days = [];
-        for (let i = start; i <= end; i++) days.push(i);
-      } else {
-        days = weekday.split(',').map(Number).filter(n => !isNaN(n));
-      }
-      return { ...DEFAULT_STATE, frequency: 'weekly', hour: parseInt(hour) || 9, minute: parseInt(min) || 0, weekdays: days.length > 0 ? days : [1, 2, 3, 4, 5] };
-    }
-    if (day === '*' && weekday === '*' && !hour.includes('*') && !hour.includes('/')) {
-      return { ...DEFAULT_STATE, frequency: 'daily', hour: parseInt(hour) || 9, minute: parseInt(min) || 0 };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function describeSchedule(s: ScheduleState): string {
-  const time = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  switch (s.frequency) {
-    case 'minutes':
-      return `Runs every ${s.interval} minute${s.interval === 1 ? '' : 's'}`;
-    case 'hourly':
-      return s.interval === 1
-        ? `Runs every hour at :${String(s.minute).padStart(2, '0')}`
-        : `Runs every ${s.interval} hours at :${String(s.minute).padStart(2, '0')}`;
-    case 'daily':
-      return `Runs every day at ${time}`;
-    case 'weekly': {
-      if (s.weekdays.length === 0) return 'No days selected';
-      if (s.weekdays.length === 7) return `Runs every day at ${time}`;
-      const sorted = [...s.weekdays].sort();
-      if (sorted.join(',') === '1,2,3,4,5') return `Runs weekdays at ${time}`;
-      if (sorted.join(',') === '0,6') return `Runs weekends at ${time}`;
-      return `Runs ${sorted.map(d => dayNames[d]).join(', ')} at ${time}`;
-    }
-    case 'monthly':
-      return `Runs on the ${s.monthDay}${ordSuffix(s.monthDay)} of each month at ${time}`;
-    default:
-      return '';
-  }
-}
-
-// ─── One-off (run-once) helpers ───────────────────────────────────────────
-// A one-off schedule is an exact instant, not a cron expression. We round-trip
-// through the browser-local `datetime-local` input value, treating the picked
-// wall-clock time as the user's own local time → an absolute ISO instant.
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** ISO instant → `YYYY-MM-DDTHH:mm` for a <input type="datetime-local">. */
-function isoToLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-/** `datetime-local` value (local wall clock) → absolute ISO instant. */
-function localInputToIso(v: string): string | null {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
-/** A sensible default for a fresh one-off: the next top-of-hour. */
-function defaultRunAtIso(): string {
-  const d = new Date();
-  d.setHours(d.getHours() + 1, 0, 0, 0);
-  return d.toISOString();
-}
-
-function describeRunAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'Pick a date and time';
-  const when = d.toLocaleString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-  return d.getTime() <= Date.now() ? `${when} · in the past` : `Runs once on ${when}`;
-}
-
-function ordSuffix(n: number): string {
-  if (n >= 11 && n <= 13) return 'th';
-  switch (n % 10) {
-    case 1: return 'st';
-    case 2: return 'nd';
-    case 3: return 'rd';
-    default: return 'th';
-  }
-}
-
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-const FREQUENCY_TABS: { value: Frequency; label: string }[] = [
-  { value: 'minutes', label: 'Minutes' },
-  { value: 'hourly', label: 'Hourly' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-];
 
 const WEEKDAY_BUTTONS = [
   { value: 1, label: 'Mo' },
@@ -208,312 +56,561 @@ const WEEKDAY_BUTTONS = [
   { value: 0, label: 'Su' },
 ];
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOURS = Array.from({ length: 24 }, (_, index) => index);
 const MINUTE_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
-// ─── Component ──────────────────────────────────────────────────────────────
+type Cadence = 'minutes' | 'hourly' | 'daily' | 'weekdays' | 'weekends' | 'weekly' | 'monthly';
 
-export function ScheduleBuilder({ value, onChange, disabled, allowOnce, runAt, onRunAtChange }: ScheduleBuilderProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+const CADENCES: { value: Cadence; label: string }[] = [
+  { value: 'minutes', label: 'Every few minutes' },
+  { value: 'hourly', label: 'Every few hours' },
+  { value: 'daily', label: 'Every day' },
+  { value: 'weekdays', label: 'Weekdays' },
+  { value: 'weekends', label: 'Weekends' },
+  { value: 'weekly', label: 'Custom days' },
+  { value: 'monthly', label: 'Every month' },
+];
+
+function stateToCron(state: ScheduleState): string {
+  switch (state.frequency) {
+    case 'minutes':
+      return `0 */${state.interval} * * * *`;
+    case 'hourly':
+      return `0 ${state.minute} */${state.interval} * * *`;
+    case 'daily':
+      return `0 ${state.minute} ${state.hour} * * *`;
+    case 'weekly':
+      return `0 ${state.minute} ${state.hour} * * ${[...state.weekdays].sort().join(',')}`;
+    case 'monthly':
+      return `0 ${state.minute} ${state.hour} ${state.monthDay} * *`;
+  }
+}
+
+function cronToState(expression: string): ScheduleState | null {
+  try {
+    const parts = expression.trim().split(/\s+/);
+    if (parts.length !== 6) return null;
+
+    const [, minute, hour, day, , weekday] = parts;
+    if (minute.startsWith('*/') && hour === '*' && day === '*' && weekday === '*') {
+      return {
+        ...DEFAULT_STATE,
+        frequency: 'minutes',
+        interval: Number.parseInt(minute.slice(2), 10) || 15,
+      };
+    }
+    if (hour.startsWith('*/') && day === '*' && weekday === '*') {
+      return {
+        ...DEFAULT_STATE,
+        frequency: 'hourly',
+        interval: Number.parseInt(hour.slice(2), 10) || 1,
+        minute: Number.parseInt(minute, 10) || 0,
+      };
+    }
+    if (day !== '*' && !day.includes('/') && weekday === '*') {
+      return {
+        ...DEFAULT_STATE,
+        frequency: 'monthly',
+        hour: Number.parseInt(hour, 10) || 9,
+        minute: Number.parseInt(minute, 10) || 0,
+        monthDay: Number.parseInt(day, 10) || 1,
+      };
+    }
+    if (day === '*' && weekday !== '*') {
+      const weekdays = weekday.includes('-')
+        ? Array.from(
+            { length: Number(weekday.split('-')[1]) - Number(weekday.split('-')[0]) + 1 },
+            (_, index) => Number(weekday.split('-')[0]) + index,
+          )
+        : weekday.split(',').map(Number).filter(Number.isFinite);
+      if (weekdays.length === 0) return null;
+      return {
+        ...DEFAULT_STATE,
+        frequency: 'weekly',
+        hour: Number.parseInt(hour, 10) || 9,
+        minute: Number.parseInt(minute, 10) || 0,
+        weekdays,
+      };
+    }
+    if (day === '*' && weekday === '*' && !hour.includes('*') && !hour.includes('/')) {
+      return {
+        ...DEFAULT_STATE,
+        frequency: 'daily',
+        hour: Number.parseInt(hour, 10) || 9,
+        minute: Number.parseInt(minute, 10) || 0,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function ordinal(value: number): string {
+  if (value >= 11 && value <= 13) return 'th';
+  return value % 10 === 1 ? 'st' : value % 10 === 2 ? 'nd' : value % 10 === 3 ? 'rd' : 'th';
+}
+
+function describeSchedule(state: ScheduleState): string {
+  const time = `${String(state.hour).padStart(2, '0')}:${String(state.minute).padStart(2, '0')}`;
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  switch (state.frequency) {
+    case 'minutes':
+      return `Runs every ${state.interval} minute${state.interval === 1 ? '' : 's'}`;
+    case 'hourly':
+      return state.interval === 1
+        ? `Runs every hour at :${String(state.minute).padStart(2, '0')}`
+        : `Runs every ${state.interval} hours at :${String(state.minute).padStart(2, '0')}`;
+    case 'daily':
+      return `Runs every day at ${time}`;
+    case 'weekly': {
+      const sorted = [...state.weekdays].sort();
+      if (sorted.join(',') === '1,2,3,4,5') return `Runs weekdays at ${time}`;
+      if (sorted.join(',') === '0,6') return `Runs weekends at ${time}`;
+      if (sorted.length === 7) return `Runs every day at ${time}`;
+      return `Runs ${sorted.map((day) => names[day]).join(', ')} at ${time}`;
+    }
+    case 'monthly':
+      return `Runs on the ${state.monthDay}${ordinal(state.monthDay)} of each month at ${time}`;
+  }
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function isoToLocalInput(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function localInputToIso(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function defaultRunAtIso(): string {
+  const date = new Date();
+  date.setHours(date.getHours() + 1, 0, 0, 0);
+  return date.toISOString();
+}
+
+function describeRunAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Pick a date and time';
+  const formatted = date.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return date.getTime() <= Date.now() ? `${formatted} is in the past` : `Runs once on ${formatted}`;
+}
+
+function cadenceFor(state: ScheduleState): Cadence {
+  if (state.frequency !== 'weekly') return state.frequency;
+  const weekdays = [...state.weekdays].sort().join(',');
+  if (weekdays === '1,2,3,4,5') return 'weekdays';
+  if (weekdays === '0,6') return 'weekends';
+  return 'weekly';
+}
+
+export function ScheduleBuilder({
+  value,
+  onChange,
+  compact = false,
+  disabled,
+  allowOnce,
+  runAt,
+  onRunAtChange,
+}: ScheduleBuilderProps) {
   const [state, setState] = useState<ScheduleState>(() => cronToState(value) ?? DEFAULT_STATE);
-  const [showCron, setShowCron] = useState(false);
+  const [showCron, setShowCron] = useState(() => cronToState(value) === null);
   const [rawCron, setRawCron] = useState(value);
-  const [isCustom, setIsCustom] = useState(() => cronToState(value) === null);
+  const [cronError, setCronError] = useState<string | null>(null);
 
-  // One-off mode is driven entirely by the parent: we're in it iff the parent
-  // gave us a `runAt`. Switching tabs just toggles that value back and forth.
   const onceMode = Boolean(allowOnce && onRunAtChange && runAt != null);
-  const selectRecurring = (freq: Frequency) => {
-    onRunAtChange?.(null);
-    update({ frequency: freq });
-  };
-  const selectOnce = () => {
-    onRunAtChange?.(runAt ?? defaultRunAtIso());
-  };
+  const isCustom = cronToState(rawCron) === null;
+  const hasPastRunAt = Boolean(runAt && new Date(runAt).getTime() <= Date.now());
 
   useEffect(() => {
     const parsed = cronToState(value);
-    if (parsed) { setState(parsed); setIsCustom(false); }
-    else { setIsCustom(true); }
+    if (parsed) setState(parsed);
     setRawCron(value);
+    setShowCron((visible) => visible || !parsed);
   }, [value]);
 
-  const update = useCallback((partial: Partial<ScheduleState>) => {
-    setState(prev => {
-      const next = { ...prev, ...partial };
+  const update = useCallback(
+    (partial: Partial<ScheduleState>) => {
+      const next = { ...state, ...partial };
+      setState(next);
       const cron = stateToCron(next);
       setRawCron(cron);
-      setIsCustom(false);
-      setTimeout(() => onChange(cron), 0);
-      return next;
-    });
-  }, [onChange]);
+      setCronError(null);
+      onChange(cron);
+    },
+    [onChange, state],
+  );
 
-  const onRawCronEdit = (expr: string) => {
-    setRawCron(expr);
-    const parsed = cronToState(expr);
-    if (parsed) { setState(parsed); setIsCustom(false); }
-    else { setIsCustom(true); }
-    onChange(expr);
+  const selectCadence = (cadence: Cadence) => {
+    const presets: Record<Cadence, Partial<ScheduleState>> = {
+      minutes: { frequency: 'minutes' },
+      hourly: { frequency: 'hourly' },
+      daily: { frequency: 'daily' },
+      weekdays: { frequency: 'weekly', weekdays: [1, 2, 3, 4, 5] },
+      weekends: { frequency: 'weekly', weekdays: [0, 6] },
+      weekly: { frequency: 'weekly' },
+      monthly: { frequency: 'monthly' },
+    };
+    onRunAtChange?.(null);
+    update(presets[cadence]);
   };
 
+  const selectOnce = () => onRunAtChange?.(runAt ?? defaultRunAtIso());
+
   const toggleWeekday = (day: number) => {
-    const next = state.weekdays.includes(day)
-      ? state.weekdays.filter(d => d !== day)
+    const weekdays = state.weekdays.includes(day)
+      ? state.weekdays.filter((value) => value !== day)
       : [...state.weekdays, day];
-    update({ weekdays: next });
+    if (weekdays.length === 0) {
+      warningToast('Select at least one day');
+      return;
+    }
+    update({ weekdays });
+  };
+
+  const onRawCronEdit = (expression: string) => {
+    setRawCron(expression);
+    const parsed = cronToState(expression);
+    if (parsed) {
+      setState(parsed);
+      setCronError(null);
+    }
+    onChange(expression);
+  };
+
+  const validateRawCron = () => {
+    if (!isCustom) {
+      setCronError(null);
+      return;
+    }
+    const message = 'Use a supported six-field cron expression.';
+    setCronError(message);
+    errorToast('Check the cron expression', { description: message });
   };
 
   const needsTime = state.frequency !== 'minutes';
-
-  // ── Custom cron fallback ── (one-off mode wins; cron value is irrelevant there)
-
-  if (isCustom && !onceMode) {
-    return (
-      <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
-        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line210JsxTextCustomCronExpression')}</p>
-        <Input type="text"
-          value={rawCron}
-          onChange={(e) => onRawCronEdit(e.target.value)}
-          className="font-mono text-sm h-9"
-          placeholder="0 0 9 * * *"
-          disabled={disabled}
-        />
-        <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line219JsxTextText6FieldSecondMinuteHourDayMonthWeekday')}</p>
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          onClick={() => update({ frequency: 'daily' })}
-          disabled={disabled}
-          className="h-auto p-0 text-xs"
-        >{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line229JsxTextSwitchToVisualEditor')}</Button>
-      </div>
-    );
-  }
-
-  // ── Visual editor ──
+  const cadence = cadenceFor(state);
 
   return (
-    <div className={cn("space-y-2", disabled && "opacity-60 pointer-events-none select-none")}>
-      {/* Frequency tabs */}
-      <FilterBar className="w-full">
-        {FREQUENCY_TABS.map(({ value: freq, label }) => (
-          <FilterBarItem
-            key={freq}
-            onClick={() => selectRecurring(freq)}
-            disabled={disabled}
-            data-state={!onceMode && state.frequency === freq ? 'active' : 'inactive'}
-            className="flex-1"
-          >
-            {label}
-          </FilterBarItem>
-        ))}
-        {allowOnce && onRunAtChange && (
-          <FilterBarItem
-            onClick={selectOnce}
-            disabled={disabled}
-            data-state={onceMode ? 'active' : 'inactive'}
-            className="flex-1"
-          >
-            Once
-          </FilterBarItem>
-        )}
-      </FilterBar>
+    <div
+      className={cn(
+        'space-y-3',
+        compact && 'space-y-2',
+        disabled && 'pointer-events-none opacity-60 select-none',
+      )}
+    >
+      {allowOnce && onRunAtChange ? (
+        <Tabs
+          value={onceMode ? 'once' : 'recurring'}
+          onValueChange={(mode) => (mode === 'once' ? selectOnce() : onRunAtChange(null))}
+        >
+          <TabsList size="sm" className="w-full sm:w-fit">
+            <TabsTrigger value="recurring" className="min-w-24">
+              Repeats
+            </TabsTrigger>
+            <TabsTrigger value="once" className="min-w-24">
+              Once
+            </TabsTrigger>
+          </TabsList>
 
-      {/* One-off picker — a single exact instant, not a recurring rule. */}
-      {onceMode && (
-        <div className="space-y-2 px-1 pt-0.5">
-          <div className="flex items-center gap-2">
-            <CalendarClock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Input
-              type="datetime-local"
-              value={runAt ? isoToLocalInput(runAt) : ''}
-              min={isoToLocalInput(new Date().toISOString())}
-              onChange={(e) => onRunAtChange?.(localInputToIso(e.target.value))}
-              className="h-8 w-auto text-sm"
-              disabled={disabled}
+          <TabsContent value="once" className="mt-3 space-y-2">
+            <label className="text-foreground flex flex-col gap-2 text-sm font-medium sm:flex-row sm:items-center">
+              <span className="text-muted-foreground flex items-center gap-2">
+                <CalendarClock className="size-4" />
+                Run at
+              </span>
+              <Input
+                type="datetime-local"
+                value={runAt ? isoToLocalInput(runAt) : ''}
+                min={isoToLocalInput(new Date().toISOString())}
+                onChange={(event) => onRunAtChange(localInputToIso(event.target.value))}
+                onBlur={() => {
+                  if (hasPastRunAt) warningToast('Choose a future time');
+                }}
+                aria-invalid={hasPastRunAt}
+                className="h-9 w-full sm:w-auto"
+                disabled={disabled}
+              />
+            </label>
+            <SchedulePreview
+              text={runAt ? describeRunAt(runAt) : 'Pick a date and time'}
+              error={hasPastRunAt}
             />
-          </div>
-          <p className="text-xs text-muted-foreground/60">
-            {runAt ? describeRunAt(runAt) : 'Pick a date and time'}
-          </p>
-        </div>
+          </TabsContent>
+
+          <TabsContent value="recurring" className="mt-3">
+            <RecurringControls
+              state={state}
+              cadence={cadence}
+              compact={compact}
+              disabled={disabled}
+              needsTime={needsTime}
+              previewText={isCustom ? 'Custom cron expression' : undefined}
+              onCadenceChange={selectCadence}
+              onUpdate={update}
+              onToggleWeekday={toggleWeekday}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <RecurringControls
+          state={state}
+          cadence={cadence}
+          compact={compact}
+          disabled={disabled}
+          needsTime={needsTime}
+          previewText={isCustom ? 'Custom cron expression' : undefined}
+          onCadenceChange={selectCadence}
+          onUpdate={update}
+          onToggleWeekday={toggleWeekday}
+        />
       )}
 
-      {/* Controls — flat layout, no extra card chrome. The frequency pills
-          above already group these visually. */}
       {!onceMode && (
-      <div className="space-y-2 px-1 pt-0.5">
-        {/* Interval row — minutes & hourly */}
+        <div className="space-y-2">
+          <Button
+            type="button"
+            variant="text"
+            size="xs"
+            onClick={() => setShowCron((visible) => !visible)}
+            disabled={disabled}
+            className="transition-transform active:scale-[0.96]"
+          >
+            <ChevronDown
+              className={cn('size-3 transition-transform duration-150', showCron && 'rotate-180')}
+            />
+            {showCron ? 'Hide cron expression' : 'Use cron expression'}
+          </Button>
+
+          {showCron && (
+            <div className="space-y-1.5">
+              <label
+                className="text-foreground text-sm font-medium"
+                htmlFor="schedule-cron-expression"
+              >
+                Advanced cron expression
+              </label>
+              <Input
+                id="schedule-cron-expression"
+                type="text"
+                value={rawCron}
+                onChange={(event) => onRawCronEdit(event.target.value)}
+                onBlur={validateRawCron}
+                aria-invalid={Boolean(cronError)}
+                className="h-9 font-mono text-sm"
+                placeholder="0 0 9 * * *"
+                disabled={disabled}
+              />
+              <p className={cn('text-muted-foreground text-xs', cronError && 'text-destructive')}>
+                {cronError ??
+                  (isCustom
+                    ? 'The visual editor will stay available for supported schedules.'
+                    : 'Six fields: second, minute, hour, day, month, weekday.')}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface RecurringControlsProps {
+  state: ScheduleState;
+  cadence: Cadence;
+  compact: boolean;
+  disabled?: boolean;
+  needsTime: boolean;
+  previewText?: string;
+  onCadenceChange: (cadence: Cadence) => void;
+  onUpdate: (partial: Partial<ScheduleState>) => void;
+  onToggleWeekday: (day: number) => void;
+}
+
+function RecurringControls({
+  state,
+  cadence,
+  compact,
+  disabled,
+  needsTime,
+  previewText,
+  onCadenceChange,
+  onUpdate,
+  onToggleWeekday,
+}: RecurringControlsProps) {
+  return (
+    <div className={cn('space-y-3', compact && 'space-y-2')}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Repeat</span>
+        <Select
+          value={cadence}
+          onValueChange={(value) => onCadenceChange(value as Cadence)}
+          disabled={disabled}
+        >
+          <SelectTrigger className="h-9 min-w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CADENCES.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         {(state.frequency === 'minutes' || state.frequency === 'hourly') && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Every</span>
+          <>
             <Select
               value={String(state.interval)}
-              onValueChange={(v) => update({ interval: Number(v) })}
+              onValueChange={(value) => onUpdate({ interval: Number(value) })}
               disabled={disabled}
             >
-              <SelectTrigger className="w-20 h-8 text-sm cursor-pointer hover:bg-muted/40 transition-colors">
+              <SelectTrigger className="h-9 w-18">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {(state.frequency === 'minutes'
                   ? [1, 2, 3, 5, 10, 15, 20, 30, 45]
                   : [1, 2, 3, 4, 6, 8, 12]
-                ).map(n => (
-                  <SelectItem key={n} value={String(n)} className="cursor-pointer data-[highlighted]:bg-muted/70">{n}</SelectItem>
+                ).map((value) => (
+                  <SelectItem key={value} value={String(value)}>
+                    {value}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-muted-foreground">
               {state.frequency === 'minutes' ? 'minutes' : `hour${state.interval === 1 ? '' : 's'}`}
             </span>
-          </div>
+          </>
         )}
 
-        {/* Month day row */}
         {state.frequency === 'monthly' && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line287JsxTextOnDay')}</span>
+          <>
+            <span className="text-muted-foreground">on day</span>
             <Select
               value={String(state.monthDay)}
-              onValueChange={(v) => update({ monthDay: Number(v) })}
+              onValueChange={(value) => onUpdate({ monthDay: Number(value) })}
               disabled={disabled}
             >
-              <SelectTrigger className="w-20 h-8 text-sm cursor-pointer hover:bg-muted/40 transition-colors">
+              <SelectTrigger className="h-9 w-18">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                  <SelectItem key={d} value={String(d)} className="cursor-pointer data-[highlighted]:bg-muted/70">{d}</SelectItem>
+                {Array.from({ length: 31 }, (_, index) => index + 1).map((value) => (
+                  <SelectItem key={value} value={String(value)}>
+                    {value}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line302JsxTextOfEachMonth')}</span>
-          </div>
+          </>
         )}
+      </div>
 
-        {/* Weekday chips */}
-        {state.frequency === 'weekly' && (
-          <div className="flex items-center gap-1">
-            {WEEKDAY_BUTTONS.map(({ value: day, label }, idx) => (
+      {cadence === 'weekly' && (
+        <div className="flex flex-wrap gap-1.5" aria-label="Days to run">
+          {WEEKDAY_BUTTONS.map(({ value, label }) => {
+            const selected = state.weekdays.includes(value);
+            return (
               <Button
-                key={`${day}-${idx}`}
+                key={value}
                 type="button"
-                onClick={() => toggleWeekday(day)}
-                disabled={disabled}
-                variant={state.weekdays.includes(day) ? "default" : "outline"}
+                variant={selected ? 'subtle' : 'outline'}
                 size="sm"
-                className="flex-1"
+                aria-pressed={selected}
+                onClick={() => onToggleWeekday(value)}
+                disabled={disabled}
+                className="min-w-10 transition-transform active:scale-[0.96]"
               >
                 {label}
               </Button>
-            ))}
-          </div>
-        )}
-
-        {/* Time row */}
-        {needsTime && (
-          <div className="flex items-center gap-2">
-            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            {state.frequency === 'hourly' ? (
-              <>
-                <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line331JsxTextAtMinute')}</span>
-                <Select
-                  value={String(state.minute)}
-                  onValueChange={(v) => update({ minute: Number(v) })}
-                  disabled={disabled}
-                >
-                  <SelectTrigger className="w-20 h-8 text-sm cursor-pointer hover:bg-muted/40 transition-colors">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MINUTE_OPTIONS.map(m => (
-                      <SelectItem key={m} value={String(m)} className="cursor-pointer data-[highlighted]:bg-muted/70">
-                        :{String(m).padStart(2, '0')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            ) : (
-              <>
-                <span className="text-sm text-muted-foreground">at</span>
-                <Select
-                  value={String(state.hour)}
-                  onValueChange={(v) => update({ hour: Number(v) })}
-                  disabled={disabled}
-                >
-                  <SelectTrigger className="w-20 h-8 text-sm cursor-pointer hover:bg-muted/40 transition-colors">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HOURS.map(h => (
-                      <SelectItem key={h} value={String(h)} className="cursor-pointer data-[highlighted]:bg-muted/70">
-                        {String(h).padStart(2, '0')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-sm font-medium text-muted-foreground">:</span>
-                <Select
-                  value={String(state.minute)}
-                  onValueChange={(v) => update({ minute: Number(v) })}
-                  disabled={disabled}
-                >
-                  <SelectTrigger className="w-20 h-8 text-sm cursor-pointer hover:bg-muted/40 transition-colors">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MINUTE_OPTIONS.map(m => (
-                      <SelectItem key={m} value={String(m)} className="cursor-pointer data-[highlighted]:bg-muted/70">
-                        {String(m).padStart(2, '0')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Summary — small caption, no card divider since the wrapping
-            card is gone. */}
-        <p className="text-xs text-muted-foreground/60">
-          {describeSchedule(state)}
-        </p>
-      </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Cron expression toggle — hidden for one-off schedules (no cron). */}
-      {!onceMode && (
-      <div>
-        <Button
-          type="button"
-          variant="muted"
-          size="xs"
-          onClick={() => setShowCron(!showCron)}
-          disabled={disabled}
-        >
-          <ChevronDown className={cn("h-3 w-3 transition-transform", showCron && "rotate-180")} />
-          {showCron ? 'Hide' : 'Edit'}{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line407JsxTextCronExpression')}</Button>
-        {showCron && (
-          <div className="mt-2 space-y-1">
-            <Input type="text"
-              value={rawCron}
-              onChange={(e) => onRawCronEdit(e.target.value)}
-              className="font-mono text-xs h-8"
-              placeholder="0 0 9 * * *"
+      {needsTime && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Clock className="text-muted-foreground size-4" />
+          <span className="text-muted-foreground">
+            {state.frequency === 'hourly' ? 'at minute' : 'at'}
+          </span>
+          {state.frequency !== 'hourly' && (
+            <Select
+              value={String(state.hour)}
+              onValueChange={(value) => onUpdate({ hour: Number(value) })}
               disabled={disabled}
-            />
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksScheduleBuilder.line419JsxTextText6FieldSecMinHourDayMonthWeekday')}</p>
-          </div>
-        )}
-      </div>
+            >
+              <SelectTrigger className="h-9 w-18">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {HOURS.map((value) => (
+                  <SelectItem key={value} value={String(value)}>
+                    {String(value).padStart(2, '0')}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {state.frequency !== 'hourly' && (
+            <span className="text-muted-foreground font-medium">:</span>
+          )}
+          <Select
+            value={String(state.minute)}
+            onValueChange={(value) => onUpdate({ minute: Number(value) })}
+            disabled={disabled}
+          >
+            <SelectTrigger className="h-9 w-18">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MINUTE_OPTIONS.map((value) => (
+                <SelectItem key={value} value={String(value)}>
+                  {state.frequency === 'hourly'
+                    ? `:${String(value).padStart(2, '0')}`
+                    : String(value).padStart(2, '0')}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
+
+      <SchedulePreview text={previewText ?? describeSchedule(state)} />
     </div>
   );
 }
 
-export { describeSchedule, cronToState, stateToCron, type ScheduleState };
+function SchedulePreview({ text, error = false }: { text: string; error?: boolean }) {
+  return (
+    <p
+      className={cn(
+        'text-muted-foreground flex items-center gap-2 text-xs tabular-nums',
+        error && 'text-destructive',
+      )}
+    >
+      <CalendarClock className="size-3.5 shrink-0" />
+      {text}
+    </p>
+  );
+}
+
+export { cronToState, describeSchedule, stateToCron, type ScheduleState };

@@ -3432,7 +3432,7 @@
     },
     "appProjectsIdCustomizeMembersPage": {
       "line92JsxTextProjectMembers": "项目成员",
-      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "控制谁可以访问此项目。账户所有者和管理员始终拥有经理访问权限。通过电子邮件邀请队友，或在下方更改他们的角色。",
+      "line94JsxTextControlWhoCanAccessThisProjectAccountOwners": "管理谁可以访问此项目及其角色。",
       "line140JsxAttrTitleInviteByEmail": "通过电子邮件邀请",
       "line141JsxAttrDescriptionAddAnExistingKortixUserToThisProject": "将现有 Kortix 用户添加到此项目。",
       "line151JsxAttrPlaceholderTeammateExampleCom": "teammate@example.com",
@@ -3442,10 +3442,10 @@
     },
     "appProjectsIdCustomizeSecretsPage": {
       "line104JsxTextProjectSecrets": "项目密钥",
-      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "作为环境变量注入到此项目每个新会话 sandbox 中的键值对。必需键来自你的",
+      "line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto": "注入每个新会话的环境变量。",
       "line109JsxTextManifestValuesAreEncryptedAtRest": "manifest。值会进行静态加密。",
       "line278JsxTextSessionsCanStillStartButTheAgentWill": "会话仍可启动，但在设置这些值之前，代理很可能会失败。",
-      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "注入到每个新会话 sandbox 中的键值对。",
+      "line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession": "注入每个新会话的环境变量。",
       "line311JsxTextConnectProvider": "连接提供方",
       "line373JsxTextRemoveThisSecret": "移除此密钥？",
       "line395JsxTextNotSet": "未设置",
@@ -5336,8 +5336,8 @@
       "line262JsxTextNoSnapshotBuildsYetTheFirstBuildKicks": "还没有快照构建。首次构建会在创建项目时自动启动；通常会在几分钟内完成。"
     },
     "componentsProjectsTriggersView": {
-      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "由 cron 驱动的入口点。计划触发时，会启动一个新的会话沙盒，并将渲染后的提示词模板注入为",
-      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "签名 HTTP 入口点。当请求命中 webhook URL 时，会启动一个新的会话沙盒，并将渲染后的提示词模板注入为",
+      "line251JsxTextCronDrivenEntryPointsWhenAScheduleFires": "按计划自动运行代理。",
+      "line270JsxTextSignedHttpEntryPointsWhenARequestHits": "通过签名的 HTTP POST 请求启动会话。",
       "line421JsxTextTriggerFile": "触发文件",
       "line421JsxTextFailedToParse": "解析失败",
       "line623JsxTextFireNow": "立即触发",
@@ -5368,8 +5368,8 @@
       "line1438JsxTextAccessRequired": "需要访问权限",
       "line1440JsxTextYouDonAposTHavePermissionToView": "你没有权限查看此项目的触发器。",
       "line1450JsxTextFailedToLoadTriggers": "加载触发器失败",
-      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "由 cron 驱动的入口点。计划触发时，会启动一个新的会话沙盒，并将渲染后的提示模板注入为",
-      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "签名 HTTP 入口点。当请求到达 webhook URL 时，会启动一个新的会话沙盒，并将渲染后的提示模板注入为"
+      "line253JsxTextCronDrivenEntryPointsWhenAScheduleFires": "按计划自动运行代理。",
+      "line272JsxTextSignedHttpEntryPointsWhenARequestHits": "通过签名的 HTTP POST 请求启动会话。"
     },
     "componentsProvidersConnectProviderContent": {
       "line663JsxAttrPlaceholderSearchProviders": "搜索提供商...",
@@ -7656,7 +7656,7 @@
     "autoComponentsProjectsCustomizeSectionsAgentsViewJsxTextCreateAn48a275ca": "创建代理",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrTitleNoc31e05e1": "无版本",
     "autoComponentsProjectsCustomizeSectionsChangesViewJsxAttrDescriptionBranches801ec5e2": "当会话创建分支时，分支会显示在此处。",
-    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "通过聊天运行此项目 - 连接 Slack 工作区，您的代理会在您邀请其加入的频道中做出响应。",
+    "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db": "连接 Slack，让您的代理在受邀频道中响应。",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220": "打开一个项目来管理其 Slack 连接。",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4": "自带 Slack 应用程序",
     "autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf7c5e4adb": "自托管设置没有连接 OAuth - 粘贴清单和令牌即可完成安装。加密存储在该项目的秘密中",
@@ -7737,7 +7737,7 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626": "您将在添加后从连接器页面设置凭据值。",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e": "并在服务器端解析，从未注入到沙箱中。",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d": "在自己的机器上开发",
-    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "该项目位于一个 git 存储库中。克隆它，在您自己的编码代理中打开它 - Claude Code、Cursor、Codex、opencode - 并发送您的更改",
+    "autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b": "克隆仓库，使用你自己的代理在本地开发。",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb": "无法加载该项目",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleGetd1e11afa": "访问存储库",
     "autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintThiseeeaf15f": "该存储库是私有的，由 Kortix 所有。将您的 GitHub 帐户添加为协作者，然后接受 GitHub 通过电子邮件发送给您的邀请。",

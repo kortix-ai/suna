@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
@@ -32,7 +33,6 @@ import {
   readProjectFile,
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import {
   DangerTriangleSolid,
@@ -219,7 +219,7 @@ function AgentDisclosure({
     <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
       <DisclosureTrigger variant="outline">
         <Button
-          variant="ghost-input"
+          variant="accent"
           className={cn('flex w-full items-center justify-start rounded-none')}
         >
           <span className="truncate text-sm font-medium">{agent.name}</span>

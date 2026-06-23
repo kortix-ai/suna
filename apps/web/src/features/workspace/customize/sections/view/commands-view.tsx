@@ -199,7 +199,7 @@ function CommandDisclosure({ projectId, command }: { projectId: string; command:
     <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
       <DisclosureTrigger variant="outline">
         <Button
-          variant="ghost-input"
+          variant="accent"
           className={cn('flex w-full items-center justify-start rounded-none')}
         >
           <span className="truncate text-sm font-medium">/{command.name}</span>

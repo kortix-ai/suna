@@ -92,7 +92,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -168,6 +167,7 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { Cable, Plug, Radio, Zap } from 'lucide-react';
 
 const BRAND_COLORS = [
@@ -1972,6 +1972,29 @@ export default function BrandPage() {
                               'appHomeDesignSystemPage.line1421JsxTextGeneralSettings',
                             )}
                           </p>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs">Underline</p>
+                      <Tabs defaultValue="underline-account">
+                        <TabsList type="underline">
+                          <TabsTrigger value="underline-account">Account</TabsTrigger>
+                          <TabsTrigger value="underline-password">Password</TabsTrigger>
+                          <TabsTrigger value="underline-settings">Settings</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="underline-account">
+                          <p className="text-muted-foreground mt-2 text-sm">
+                            Account settings and preferences.
+                          </p>
+                        </TabsContent>
+                        <TabsContent value="underline-password">
+                          <p className="text-muted-foreground mt-2 text-sm">
+                            Change your password.
+                          </p>
+                        </TabsContent>
+                        <TabsContent value="underline-settings">
+                          <p className="text-muted-foreground mt-2 text-sm">General settings.</p>
                         </TabsContent>
                       </Tabs>
                     </div>

@@ -1,7 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -34,6 +32,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { Copy, MessageSquare, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -448,7 +447,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
     <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
       <DisclosureTrigger variant="outline">
         <Button
-          variant="ghost-input"
+          variant="accent"
           className={cn('flex h-fit w-full items-center justify-between rounded-none py-2.5')}
         >
           <div className="min-w-0 text-left">
@@ -465,7 +464,10 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
           </div>
         </Button>
       </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName="border-border border-t px-4 py-5">
+      <DisclosureContent
+        variant="outline"
+        contentClassName="border-border bg-popover border-t px-4 py-5"
+      >
         {content}
       </DisclosureContent>
     </Disclosure>

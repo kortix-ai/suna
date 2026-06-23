@@ -458,7 +458,9 @@ function SecretTableRow({
   return (
     <TableRow
       className={cn(
-        row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]',
+        row.requirement === 'required' &&
+          row.effectiveSource === 'none' &&
+          'bg-kortix-orange/[0.04]',
       )}
     >
       <TableCell className="max-w-[180px]">

@@ -40,7 +40,7 @@ export function DevView({ projectId }: { projectId: string }) {
         'autoComponentsProjectsCustomizeSectionsDevViewJsxTextDevelopOn125f276d',
       )}
       description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProject56f17947',
+        'autoComponentsProjectsCustomizeSectionsDevViewJsxTextThisProjectfee1f74b',
       )}
     >
       {projectQuery.isLoading && (

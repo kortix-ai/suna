@@ -1,51 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-/**
- * <ScheduleView /> — Shared body for the Customize "Schedules" and
- * "Webhooks" pages. One component, type-scoped: pass `type: "cron"` for
- * schedules, `type: "webhook"` for webhooks. The list is filtered, the
- * Create dialog is forced to the matching type (no source picker), and
- * the page copy / empty state / detail sheet adapt accordingly.
- *
- * UX shape, per type:
- *   • Schedules — rows show cron description + timezone; create dialog
- *     opens straight into the cron-preset builder.
- *   • Webhooks  — rows show signing-secret status; create dialog opens
- *     straight into the signing-secret field; detail sheet exposes
- *     endpoint URL + curl example.
- *
- * The CRUD path is the same in both cases — kortix.toml round-trip via
- * `createProjectTrigger` / `updateProjectTrigger` / `deleteProjectTrigger`.
- */
-
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Copy,
-  MessageSquare,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  RefreshCw,
-  Sparkles,
-  Terminal,
-  Timer,
-  Trash2,
-  UserCircle,
-  Webhook,
-  Zap,
-} from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
 import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
 import {
   AlertDialog,
@@ -57,9 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { ButtonGroup } from '@/components/ui/button-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -86,15 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetContent } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -122,7 +73,31 @@ import {
   type ProjectTrigger,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid, Search } from '@mynaui/icons-react';
+import {
+  AlarmClockSolid,
+  DangerTriangleSolid,
+  PauseSolid,
+  Pencil,
+  PlaySolid,
+  Search,
+  TrashSolid,
+} from '@mynaui/icons-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Copy,
+  MoreHorizontal,
+  Play,
+  Plus,
+  RefreshCw,
+  Timer,
+  Webhook,
+} from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -260,7 +235,7 @@ type TriggerKind = 'cron' | 'webhook';
 
 interface TypeMeta {
   pageTitle: string;
-  icon: typeof Zap;
+  icon: typeof Timer;
   createButtonLabel: string;
   empty: {
     title: string;
@@ -275,7 +250,7 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
     createButtonLabel: 'New schedule',
     empty: {
       title: 'No schedules yet',
-      body: 'Schedules spawn a session on a cron expression — daily digests, weekly reports, hourly polls. The agent runs end-to-end on the cloud API.',
+      body: 'Create a schedule to run the agent on a recurring cadence.',
     },
   },
   webhook: {
@@ -284,7 +259,7 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
     createButtonLabel: 'New webhook',
     empty: {
       title: 'No webhooks yet',
-      body: 'Webhooks accept signed HTTP POSTs from external systems — Slack events, deploy hooks, alerting pipelines. Each one routes to a single project session.',
+      body: 'Create a webhook to start a session from external HTTP events.',
     },
   },
 };
@@ -346,11 +321,11 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
         title={meta.pageTitle}
         description={
           type === 'cron'
-            ? tHardcodedUi.raw(
-                'componentsProjectsScheduleView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
+            ? tHardcodedUi(
+                'componentsProjectsTriggersView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
               )
-            : tHardcodedUi.raw(
-                'componentsProjectsScheduleView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
+            : tHardcodedUi(
+                'componentsProjectsTriggersView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
               )
         }
         action={
@@ -399,18 +374,18 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
             <InfoBanner
               icon={DangerTriangleSolid}
               title={tHardcodedUi.raw(
-                'componentsProjectsScheduleView.line1438JsxTextAccessRequired',
+                'componentsProjectsTriggersView.line1438JsxTextAccessRequired',
               )}
             >
               {tHardcodedUi.raw(
-                'componentsProjectsScheduleView.line1440JsxTextYouDonAposTHavePermissionToView',
+                'componentsProjectsTriggersView.line1440JsxTextYouDonAposTHavePermissionToView',
               )}
             </InfoBanner>
           ) : triggersQuery.isError ? (
             <ErrorState
               size="sm"
               title={tHardcodedUi.raw(
-                'componentsProjectsScheduleView.line1450JsxTextFailedToLoadTriggers',
+                'componentsProjectsTriggersView.line1450JsxTextFailedToLoadTriggers',
               )}
               description={(triggersQuery.error as Error)?.message ?? 'Failed to load triggers'}
               action={
@@ -443,19 +418,14 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
             </p>
           ) : (
             <>
-              {activeCount < triggers.length ? (
-                <p className="text-muted-foreground text-xs">
-                  {activeCount} of {triggers.length} active
-                </p>
-              ) : null}
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
+                    <TableHead className="size-8 p-0" />
                     <TableHead>Name</TableHead>
                     <TableHead>{type === 'cron' ? 'Schedule' : 'Signing'}</TableHead>
                     <TableHead>Agent</TableHead>
                     <TableHead>Last fired</TableHead>
-                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -470,6 +440,22 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                         className="cursor-pointer"
                         onClick={() => setSelectedId(trigger.slug)}
                       >
+                        <TableCell className="size-8 pr-0 pl-4">
+                          <div
+                            className={cn(
+                              'inline-flex size-8 shrink-0 items-center justify-center rounded-sm border font-semibold',
+                              !trigger.enabled
+                                ? 'bg-kortix-green/10 text-kortix-green'
+                                : 'bg-kortix-red/10 text-kortix-red',
+                            )}
+                          >
+                            {!trigger.enabled ? (
+                              <AlarmClockSolid className="size-5 shrink-0" />
+                            ) : (
+                              <PauseSolid className="size-6 shrink-0" />
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="max-w-[200px]">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">{name}</p>
@@ -486,11 +472,6 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
                         </TableCell>
                         <TableCell className="text-muted-foreground text-xs">
                           {lastFired ? relativeTime(lastFired) : 'Never'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
-                            {trigger.enabled ? 'Active' : 'Paused'}
-                          </Badge>
                         </TableCell>
                       </TableRow>
                     );
@@ -528,7 +509,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
         }}
       />
 
-      <TriggerDetailModal
+      <TriggerDetailSheet
         projectId={projectId}
         trigger={selectedTrigger}
         open={!!selectedTrigger}
@@ -553,7 +534,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
   );
 }
 
-function TriggerDetailModal({
+function TriggerDetailSheet({
   projectId,
   trigger,
   open,
@@ -580,7 +561,7 @@ function TriggerDetailModal({
             : 'Session provisioning',
         });
       } else if (res.status === 'queued') {
-        successToast('Trigger queued', { description: res.reason ?? 'Backpressure — will retry' });
+        successToast('Trigger queued', { description: res.reason ?? 'Backpressure, will retry' });
       } else {
         errorToast('Trigger failed', { description: res.error });
       }
@@ -604,74 +585,87 @@ function TriggerDetailModal({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]">
-        <SheetHeader className="space-y-1 px-5 pt-5 pb-3">
-          <div className="flex items-center gap-2.5">
-            <EntityAvatar icon={isCron ? Timer : Webhook} size="sm" />
-            <SheetTitle className="flex-1 truncate text-sm font-semibold">
+      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-md">
+        <SheetBody className="gap-0 space-y-6 overflow-y-auto p-0">
+          <header className="space-y-2">
+            <h1 className="text-foreground text-xl font-semibold tracking-tight text-balance">
               {getTriggerName(trigger)}
-            </SheetTitle>
-            <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
-              {trigger.enabled ? 'Active' : 'Paused'}
-            </Badge>
+            </h1>
+            <TriggerDetailToolbar
+              enabled={trigger.enabled}
+              firePending={fire.isPending}
+              togglePending={toggle.isPending}
+              fireLabel={tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}
+              onFire={() => fire.mutate()}
+              onToggle={() => toggle.mutate(!trigger.enabled)}
+              onDelete={onDelete}
+            />
+          </header>
+
+          <div className="space-y-8">
+            {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
+            <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+            <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+            <MetaSection trigger={trigger} />
           </div>
-          <SheetDescription className="text-muted-foreground/70 font-mono text-xs">
-            {trigger.slug}
-          </SheetDescription>
-        </SheetHeader>
-
-        <Separator />
-
-        <SheetBody className="space-y-6 px-5 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => fire.mutate()}
-              disabled={fire.isPending}
-            >
-              {fire.isPending ? (
-                <Loading className="size-3.5 shrink-0 animate-spin" />
-              ) : (
-                <Play className="size-3.5 shrink-0" />
-              )}
-              {tHardcodedUi.raw('componentsProjectsScheduleView.line623JsxTextFireNow')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => toggle.mutate(!trigger.enabled)}
-              disabled={toggle.isPending}
-            >
-              {toggle.isPending ? (
-                <Loading className="size-3.5 shrink-0 animate-spin" />
-              ) : trigger.enabled ? (
-                <Pause className="size-3.5 shrink-0" />
-              ) : (
-                <Play className="size-3.5 shrink-0" />
-              )}
-              {trigger.enabled ? 'Pause' : 'Enable'}
-            </Button>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:bg-muted hover:text-foreground gap-1.5"
-              onClick={onDelete}
-            >
-              <Trash2 className="size-3.5 shrink-0" />
-              Delete
-            </Button>
-          </div>
-
-          {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
-          <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-          <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-          <MetaSection trigger={trigger} />
         </SheetBody>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function TriggerDetailToolbar({
+  enabled,
+  firePending,
+  togglePending,
+  fireLabel,
+  onFire,
+  onToggle,
+  onDelete,
+}: {
+  enabled: boolean;
+  firePending: boolean;
+  togglePending: boolean;
+  fireLabel: string;
+  onFire: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button size="sm" className="gap-1.5" onClick={onFire} disabled={firePending}>
+        {firePending ? (
+          <Loading className="shrink-0 animate-spin" />
+        ) : (
+          <Play className="shrink-0" />
+        )}
+        {fireLabel}
+      </Button>
+      <Button size="sm" variant="outline" onClick={onToggle} disabled={togglePending}>
+        {togglePending ? (
+          <Loading className="shrink-0 animate-spin" />
+        ) : enabled ? (
+          <PauseSolid className="shrink-0" />
+        ) : (
+          <PlaySolid className="shrink-0" />
+        )}
+        {enabled ? 'Pause' : 'Enable'}
+      </Button>
+      <div className="min-w-2 flex-1" />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="icon" variant="ghost" aria-label="More actions">
+            <MoreHorizontal className="size-4 shrink-0" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={onDelete} variant="destructive">
+            <TrashSolid className="shrink-0" />
+            Delete trigger
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
@@ -695,14 +689,14 @@ function OwnerSection({
   });
   return (
     <section className="space-y-2">
-      <SectionHeader title="Runs as" icon={UserCircle} />
+      <Label>Runs as</Label>
       <RunsAsSelect
         projectId={projectId}
         value={trigger.owner_user_id}
         onChange={(id) => save.mutate(id)}
         disabled={save.isPending}
       />
-      <p className="text-muted-foreground text-xs">
+      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
         Automated runs act as this member. Connectors set to “each member brings their own profile”
         use this person’s connected accounts; shared connectors are unaffected. Defaults to whoever
         created the trigger.
@@ -711,48 +705,46 @@ function OwnerSection({
   );
 }
 
-/* ─── Detail sections ───────────────────────────────────────────────────── */
-
-function SectionHeader({
-  title,
-  icon: Icon,
-  action,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  action?: React.ReactNode;
-}) {
+function PropertyTable({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
-    <div className="flex items-center gap-2">
-      <Icon className="text-muted-foreground/60 h-3.5 w-3.5" />
-      <span className="text-muted-foreground/70 flex-1 text-xs font-medium tracking-wide uppercase">
-        {title}
-      </span>
-      {action}
-    </div>
+    <Table>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.label} className="hover:bg-transparent">
+            <TableCell className="text-muted-foreground w-[34%] py-2 text-sm font-medium">
+              {row.label}
+            </TableCell>
+            <TableCell className="py-2 text-sm">{row.value}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
 function CronSection({ trigger }: { trigger: ProjectTrigger }) {
-  // One-off schedules carry an absolute instant instead of a cron expression.
-
   const tI18nHardcoded = useTranslations('hardcodedUi');
+
   if (trigger.run_at) {
     const d = new Date(trigger.run_at);
     const valid = !Number.isNaN(d.getTime());
     return (
       <section className="space-y-2">
-        <SectionHeader title="Schedule" icon={Timer} />
-        <div className="border-border/70 bg-muted/20 space-y-1.5 rounded-2xl border px-4 py-3">
-          <div className="text-foreground text-sm font-medium">
-            {valid ? describeRunAt(trigger.run_at) : 'Runs once'}
-          </div>
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            <span>
-              {tI18nHardcoded.raw('autoComponentsProjectsScheduleViewJsxTextOneOffFiresAacd67796')}
-            </span>
-          </div>
-        </div>
+        <Label>Schedule</Label>
+        <PropertyTable
+          rows={[
+            {
+              label: 'When',
+              value: valid ? describeRunAt(trigger.run_at) : 'Runs once',
+            },
+            {
+              label: 'Type',
+              value: tI18nHardcoded.raw(
+                'autoComponentsProjectsScheduleViewJsxTextOneOffFiresAacd67796',
+              ),
+            },
+          ]}
+        />
       </section>
     );
   }
@@ -762,101 +754,89 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
 
   return (
     <section className="space-y-2">
-      <SectionHeader title="Schedule" icon={Timer} />
-      <div className="border-border/70 bg-muted/20 space-y-1.5 rounded-2xl border px-4 py-3">
-        <div className="text-foreground text-sm font-medium">{describeCron(expr)}</div>
-        <div className="text-muted-foreground flex items-center gap-2 text-xs">
-          <code className="bg-background rounded px-1.5 py-0.5 font-mono">{expr}</code>
-          <span className="text-muted-foreground/40">·</span>
-          <span>{tz}</span>
-        </div>
-      </div>
+      <Label>Schedule</Label>
+      <PropertyTable
+        rows={[
+          { label: 'When', value: describeCron(expr) },
+          {
+            label: 'Expression',
+            value: <code className="text-foreground text-xs font-medium">{expr}</code>,
+          },
+          { label: 'Timezone', value: tz },
+        ]}
+      />
     </section>
   );
 }
 
 function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // The API hands us the public webhook URL directly — no client-side
-  // assembly needed.
   const url = trigger.webhook_url ?? '';
   const curl = useMemo(() => buildCurlExample(url), [url]);
 
   return (
-    <section className="space-y-3">
-      <div className="space-y-2">
-        <SectionHeader title="Endpoint" icon={Webhook} />
-        <div className="border-border/70 bg-muted/20 rounded-2xl border">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <code className="text-foreground min-w-0 flex-1 truncate font-mono text-xs">{url}</code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 gap-1 px-2 text-xs"
-              onClick={() => void copyToClipboard(url, 'Webhook URL copied')}
-            >
-              <Copy className="h-3 w-3" />
-              Copy
-            </Button>
-          </div>
-          <Separator />
-          <div className="text-muted-foreground flex items-center gap-2 px-3 py-1.5 text-xs">
-            {trigger.secret_env ? (
-              <>
-                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                {tHardcodedUi.raw(
-                  'componentsProjectsScheduleView.line744JsxTextSignedViaProjectSecret',
-                )}
-                <code className="ml-1 font-mono">{trigger.secret_env}</code>
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                {tHardcodedUi.raw(
-                  'componentsProjectsScheduleView.line749JsxTextNoSigningSecretConfigured',
-                )}
-              </>
-            )}
-          </div>
+    <div className="space-y-8">
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Endpoint</Label>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => void copyToClipboard(url, 'Webhook URL copied')}
+          >
+            <Copy className="size-3 shrink-0" />
+            Copy
+          </Button>
         </div>
-      </div>
+        <code className="text-foreground block truncate text-xs font-medium">{url}</code>
+        {trigger.secret_env ? (
+          <InfoBanner tone="success" className="text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsTriggersView.line744JsxTextSignedViaProjectSecret',
+            )}{' '}
+            <code className="font-medium">{trigger.secret_env}</code>
+          </InfoBanner>
+        ) : (
+          <InfoBanner tone="warning" className="text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsTriggersView.line749JsxTextNoSigningSecretConfigured',
+            )}
+          </InfoBanner>
+        )}
+      </section>
 
-      <div className="space-y-2">
-        <SectionHeader
-          title={tHardcodedUi.raw(
-            'componentsProjectsScheduleView.line758JsxAttrTitleSampleRequest',
-          )}
-          icon={Terminal}
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 gap-1 px-1.5 text-xs"
-              onClick={() => void copyToClipboard(curl, 'cURL copied')}
-            >
-              <Copy className="h-3 w-3" />
-              Copy
-            </Button>
-          }
-        />
-        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[200px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-snug">
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label>Sample request</Label>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => void copyToClipboard(curl, 'cURL copied')}
+          >
+            <Copy className="size-3 shrink-0" />
+            Copy
+          </Button>
+        </div>
+        <pre className="bg-muted/40 text-foreground max-h-[200px] overflow-auto rounded-md px-3 py-2.5 font-mono text-xs leading-snug">
           {curl}
         </pre>
-        <p className="text-muted-foreground/70 text-xs">
+        <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
           Replace{' '}
           <code className="font-mono">
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line776JsxTextBody')}
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line776JsxTextBody')}
           </code>{' '}
           and{' '}
           <code className="font-mono">
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line777JsxTextSecret')}
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line777JsxTextSecret')}
           </code>
           {tHardcodedUi.raw(
-            'componentsProjectsScheduleView.line777JsxTextTheSignatureMustCoverTheRawRequestBody',
+            'componentsProjectsTriggersView.line777JsxTextTheSignatureMustCoverTheRawRequestBody',
           )}
         </p>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -873,8 +853,6 @@ function PromptTemplateSection({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(trigger.prompt_template);
 
-  // Re-sync on trigger change (e.g. switching between selections) without
-  // clobbering an in-flight edit.
   useEffect(() => {
     if (!editing) setDraft(trigger.prompt_template);
   }, [trigger.prompt_template, editing]);
@@ -891,59 +869,54 @@ function PromptTemplateSection({
 
   return (
     <section className="space-y-2">
-      <SectionHeader
-        title={tHardcodedUi.raw('componentsProjectsScheduleView.line817JsxAttrTitlePromptTemplate')}
-        icon={Sparkles}
-        action={
-          editing ? (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => {
-                  setDraft(trigger.prompt_template);
-                  setEditing(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="h-6 px-2 text-xs"
-                disabled={save.isPending || !draft.trim() || draft === trigger.prompt_template}
-                onClick={() => save.mutate()}
-              >
-                {save.isPending ? <Loading className="size-3 shrink-0 animate-spin" /> : 'Save'}
-              </Button>
-            </div>
-          ) : (
+      <div className="flex items-center justify-between gap-2">
+        <Label>
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line817JsxAttrTitlePromptTemplate')}
+        </Label>
+        {editing ? (
+          <ButtonGroup>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-6 gap-1 px-1.5 text-xs"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setDraft(trigger.prompt_template);
+                setEditing(false);
+              }}
             >
-              <Pencil className="h-3 w-3" />
-              Edit
+              Cancel
             </Button>
-          )
-        }
-      />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={save.isPending || !draft.trim() || draft === trigger.prompt_template}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? <Loading className="size-3 shrink-0" /> : 'Save'}
+            </Button>
+          </ButtonGroup>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="size-3.5 shrink-0" />
+            Edit
+          </Button>
+        )}
+      </div>
+
       {editing ? (
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={6}
-          className="resize-y font-mono text-xs leading-relaxed"
+          variant="accent"
+          className="resize-y font-mono leading-relaxed"
           autoFocus
         />
       ) : (
-        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[200px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+        <pre className="bg-foreground/5 text-foreground max-h-[200px] overflow-auto rounded-md px-3 py-2.5 font-mono text-xs leading-relaxed whitespace-pre-wrap">
           {trigger.prompt_template}
         </pre>
       )}
-      <p className="text-muted-foreground/70 text-xs">
+      <p className="text-muted-foreground/70 text-xs leading-relaxed text-pretty">
         Placeholders: <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
         <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
         <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
@@ -954,37 +927,30 @@ function PromptTemplateSection({
 }
 
 function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
-  const rows: Array<[label: string, value: string]> = [
-    ['Slug', trigger.slug],
-    ['Agent', trigger.agent],
-    ['Source file', trigger.path],
-    [
-      'Last fired',
-      trigger.last_fired_at ? new Date(trigger.last_fired_at).toLocaleString() : 'Never',
-    ],
-  ];
   return (
     <section className="space-y-2">
-      <SectionHeader title="Metadata" icon={AlertCircle} />
-      <dl className="border-border/40 bg-muted/10 rounded-2xl border">
-        {rows.map(([label, value], i) => (
-          <div
-            key={label}
-            className={cn(
-              'flex items-center justify-between gap-3 px-3 py-2 text-xs',
-              i > 0 && 'border-border/30 border-t',
-            )}
-          >
-            <dt className="text-muted-foreground/70">{label}</dt>
-            <dd className="text-foreground truncate font-mono">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <Label>Properties</Label>
+      <PropertyTable
+        rows={[
+          { label: 'Slug', value: <span className="font-mono text-xs">{trigger.slug}</span> },
+          { label: 'Agent', value: <span className="font-mono text-xs">{trigger.agent}</span> },
+          {
+            label: 'Source file',
+            value: <span className="font-mono text-xs">{trigger.path}</span>,
+          },
+          {
+            label: 'Last fired',
+            value: (
+              <span className="text-xs tabular-nums">
+                {trigger.last_fired_at ? new Date(trigger.last_fired_at).toLocaleString() : 'Never'}
+              </span>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }
-
-/* ─── Create dialog — 3-step wizard, mirrors main-branch UX ─────────────── */
 
 const TIMEZONES = [
   'UTC',
@@ -1001,15 +967,30 @@ const TIMEZONES = [
   'Australia/Sydney',
 ];
 
-type WizardStep = 'source' | 'action' | 'config';
+type WizardStep = 'setup' | 'details';
 
-/**
- * "Runs as" owner picker. The selected member is who this trigger's automated
- * sessions act AS — so a connector set to "each member brings their own"
- * resolves to THAT member's connected accounts in scheduled/webhook runs
- * (a shared connector is unaffected). Reused by the create wizard and the
- * detail sheet. Reads the project's member list (cached query).
- */
+function TriggerModalSection({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="space-y-0.5">
+        <p className="text-foreground text-sm font-medium">{label}</p>
+        {description ? (
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{description}</p>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function RunsAsSelect({
   projectId,
   value,
@@ -1027,7 +1008,6 @@ function RunsAsSelect({
     staleTime: 60_000,
   });
   const viewerId = data?.viewer_user_id ?? null;
-  // Only members who can actually run in this project are eligible owners.
   const eligible = (data?.members ?? []).filter(
     (m: ProjectAccessMember) =>
       m.effective_project_role != null ||
@@ -1064,29 +1044,20 @@ function CreateTriggerModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (slug: string) => void;
-  /** When set, the wizard collapses to two steps and the source-type picker
-   * + action step are skipped — the dialog only edits the source-specific
-   * settings + name/prompt/agent. Used by the per-type pages. */
   forcedType?: TriggerKind;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [step, setStep] = useState<WizardStep>('source');
 
-  // Source
+  const [step, setStep] = useState<WizardStep>('setup');
   const [sourceType, setSourceType] = useState<TriggerKind>(forcedType ?? 'cron');
   const [cronExpr, setCronExpr] = useState('0 0 9 * * *');
-  // Non-null ⇒ a one-off ("run once") schedule at this ISO instant. The
-  // ScheduleBuilder owns the toggle between recurring (cron) and once (runAt).
   const [runAt, setRunAt] = useState<string | null>(null);
   const [timezone, setTimezone] = useState('UTC');
   const [webhookSecret, setWebhookSecret] = useState('');
 
-  // Config
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [agentName, setAgentName] = useState('default');
-  // Who the trigger runs as. Defaults to the current user (the creator) once the
-  // member list loads; the picker lets you hand it to a teammate.
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
@@ -1103,10 +1074,9 @@ function CreateTriggerModal({
     }
   }, [open, ownerUserId, access.data?.viewer_user_id]);
 
-  // Reset on close → next open starts fresh.
   useEffect(() => {
     if (!open) {
-      setStep('source');
+      setStep('setup');
       setSourceType(forcedType ?? 'cron');
       setCronExpr('0 0 9 * * *');
       setRunAt(null);
@@ -1139,9 +1109,6 @@ function CreateTriggerModal({
 
       const slug = slugifyName(trimmedName);
 
-      // For webhook triggers, the secret VALUE is stored in project_secrets
-      // (encrypted) and the trigger file holds only a reference to its name.
-      // This keeps credentials out of git.
       let secretEnv: string | undefined;
       if (sourceType === 'webhook') {
         secretEnv = `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
@@ -1165,8 +1132,6 @@ function CreateTriggerModal({
       });
     },
     onSuccess: (listing) => {
-      // The endpoint returns the updated listing. The newly-created trigger
-      // is in there — find it by name+type so we can open its detail.
       const created = listing.triggers
         .filter((t) => t.type === sourceType && t.name === name.trim())
         .slice(-1)[0];
@@ -1194,39 +1159,57 @@ function CreateTriggerModal({
     );
   }
 
-  const isValid = (): boolean => {
-    if (!name.trim()) return false;
-    if (sourceType === 'cron' && !runAt && !cronExpr.trim()) return false;
-    if (sourceType === 'webhook' && !webhookSecret.trim()) return false;
-    if (!prompt.trim()) return false;
-    return true;
+  const validate = (): string | null => {
+    const setupError = validateSetup();
+    if (setupError) return setupError;
+    if (!name.trim()) return 'Name is required';
+    if (!prompt.trim()) return 'Prompt is required';
+    return null;
   };
 
-  // Dialog title + per-step description, type-aware. The typed flow
-  // (`forcedType` set) is a 2-step wizard, so descriptions are tighter.
+  const validateSetup = (): string | null => {
+    if (sourceType === 'cron') {
+      if (runAt) {
+        if (Number.isNaN(Date.parse(runAt))) return 'Pick a valid date and time';
+        if (Date.parse(runAt) <= Date.now()) return 'Pick a time in the future';
+      } else if (!cronExpr.trim()) {
+        return 'Cron expression is required';
+      }
+    }
+    if (sourceType === 'webhook' && !webhookSecret.trim()) return 'Webhook secret is required';
+    return null;
+  };
+
+  const isValid = (): boolean => validate() == null;
+
   const dialogTitle =
     forcedType === 'cron'
       ? 'New schedule'
       : forcedType === 'webhook'
         ? 'New webhook'
         : 'Create trigger';
-  const dialogIcon = forcedType === 'cron' ? Timer : forcedType === 'webhook' ? Webhook : Calendar;
-  const ModalIcon = dialogIcon;
-  const stepDescription = (() => {
-    if (step === 'source') {
-      if (forcedType === 'cron') return 'Pick when this schedule should fire.';
-      if (forcedType === 'webhook') return 'Set the signing secret for this webhook.';
-      return 'Choose when this trigger should fire.';
-    }
-    if (step === 'action') return 'Choose what happens when the trigger fires.';
-    return 'Configure the details.';
-  })();
+  const dialogDescription =
+    forcedType === 'cron'
+      ? 'Set when this schedule fires, what it does, and who it runs as.'
+      : forcedType === 'webhook'
+        ? 'Configure the signing secret, action, and identity for this webhook.'
+        : 'Pick a source, set when it fires, and what it does.';
   const createButtonLabel =
     forcedType === 'cron'
-      ? 'Create Schedule'
+      ? 'Create schedule'
       : forcedType === 'webhook'
-        ? 'Create Webhook'
-        : 'Create Trigger';
+        ? 'Create webhook'
+        : 'Create trigger';
+  const setupLabel = sourceType === 'cron' ? 'Schedule' : 'Webhook';
+  const goToDetails = () => {
+    const setupError = validateSetup();
+    if (setupError) {
+      setError(setupError);
+      return;
+    }
+    setError(null);
+    setStep('details');
+  };
 
   return (
     <Modal
@@ -1236,140 +1219,178 @@ function CreateTriggerModal({
         if (!next) onOpenChange(false);
       }}
     >
-      <ModalContent className="flex max-h-[90vh] flex-col lg:max-w-[540px]">
-        <ModalHeader className="shrink-0 space-y-0.5">
-          <ModalTitle className="flex items-center gap-2 text-sm font-semibold">
-            <ModalIcon className="text-muted-foreground size-3.5 shrink-0" />
-            {dialogTitle}
-          </ModalTitle>
-          <ModalDescription className="text-muted-foreground/60 text-xs">
-            {stepDescription}
-          </ModalDescription>
+      <ModalContent className="gap-0 overflow-hidden p-0 sm:max-w-lg" modalClassName="lg:max-w-lg">
+        <ModalHeader className="pb-1">
+          <ModalTitle>{dialogTitle}</ModalTitle>
+          <ModalDescription>{dialogDescription}</ModalDescription>
+          <div
+            className="flex items-center gap-2 pt-3"
+            aria-label={`Step ${step === 'setup' ? 1 : 2} of 2`}
+          >
+            {[
+              { id: 'setup', label: setupLabel },
+              { id: 'details', label: 'Details' },
+            ].map((item, index) => {
+              const isCurrent = step === item.id;
+              const isComplete = step === 'details' && index === 0;
+              return (
+                <div className="flex items-center gap-2" key={item.id}>
+                  {index > 0 && <span className="bg-border h-px w-5" aria-hidden="true" />}
+                  <span
+                    className={cn(
+                      'flex size-5 items-center justify-center rounded-full text-xs font-medium tabular-nums',
+                      isCurrent
+                        ? 'bg-primary text-primary-foreground'
+                        : isComplete
+                          ? 'bg-primary/10 text-primary'
+                          : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {isComplete ? <Check className="size-3" /> : index + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-xs',
+                      isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground',
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </ModalHeader>
 
-        <ModalBody className="max-h-[60vh] overflow-y-auto py-1">
-          {/* ── Step 1: Source ───────────────────────────────────── */}
-          {step === 'source' && (
-            <div className="space-y-4">
-              {!forcedType && (
-                <div className="space-y-1.5">
-                  <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
-                    {tHardcodedUi.raw(
-                      'componentsProjectsScheduleView.line1079JsxTextTriggerSource',
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <SourceCard
-                      icon={Timer}
-                      title="Cron"
-                      description={tHardcodedUi.raw(
-                        'componentsProjectsScheduleView.line1085JsxAttrDescriptionTimeBasedSchedule',
-                      )}
-                      selected={sourceType === 'cron'}
-                      onClick={() => setSourceType('cron')}
-                    />
-                    <SourceCard
-                      icon={Webhook}
-                      title="Webhook"
-                      description={tHardcodedUi.raw(
-                        'componentsProjectsScheduleView.line1092JsxAttrDescriptionFiresOnHttpRequest',
-                      )}
-                      selected={sourceType === 'webhook'}
-                      onClick={() => setSourceType('webhook')}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {sourceType === 'cron' && (
-                <div className="space-y-1.5 pt-1">
-                  <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
-                    Schedule
-                  </div>
-                  <ScheduleBuilder
-                    value={cronExpr}
-                    onChange={setCronExpr}
-                    allowOnce
-                    runAt={runAt}
-                    onRunAtChange={setRunAt}
-                  />
-                </div>
-              )}
-
-              {sourceType === 'webhook' && (
-                <WebhookSourceConfig secret={webhookSecret} onSecretChange={setWebhookSecret} />
-              )}
-            </div>
-          )}
-
-          {/* ── Step 2: Action ───────────────────────────────────── */}
-          {step === 'action' && (
-            <div className="space-y-1.5">
-              <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
-                {tHardcodedUi.raw('componentsProjectsScheduleView.line1122JsxTextActionType')}
-              </div>
-              <div className="grid grid-cols-1 gap-2">
+        <ModalBody className="max-h-[min(64vh,600px)] space-y-6 overflow-y-auto px-5 py-5">
+          {step === 'setup' && !forcedType && (
+            <TriggerModalSection
+              label="Trigger source"
+              description="Choose what starts this automation."
+            >
+              <div className="overflow-hidden rounded-md">
                 <SourceCard
-                  icon={MessageSquare}
-                  title="Prompt"
+                  icon={Timer}
+                  title="Cron"
                   description={tHardcodedUi.raw(
-                    'componentsProjectsScheduleView.line1128JsxAttrDescriptionSpawnASessionAndSendThisInstructionTo',
+                    'componentsProjectsTriggersView.line1085JsxAttrDescriptionTimeBasedSchedule',
                   )}
-                  selected
-                  onClick={() => {
-                    /* prompt is the only cloud action type */
-                  }}
+                  selected={sourceType === 'cron'}
+                  onClick={() => setSourceType('cron')}
+                />
+                <SourceCard
+                  icon={Webhook}
+                  title="Webhook"
+                  description={tHardcodedUi.raw(
+                    'componentsProjectsTriggersView.line1092JsxAttrDescriptionFiresOnHttpRequest',
+                  )}
+                  selected={sourceType === 'webhook'}
+                  onClick={() => setSourceType('webhook')}
                 />
               </div>
-              <p className="text-muted-foreground/70 px-1 pt-2 text-xs">
-                {tHardcodedUi.raw(
-                  'componentsProjectsScheduleView.line1134JsxTextCommandHttpAndTicketCreateActionsLiveOn',
-                )}
-              </p>
-            </div>
+            </TriggerModalSection>
           )}
 
-          {/* ── Step 3: Config ───────────────────────────────────── */}
-          {step === 'config' && (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="trigger-name">Name</Label>
+          {step === 'setup' && sourceType === 'cron' && (
+            <TriggerModalSection
+              label="Schedule"
+              description="Pick a recurring cadence or a one-time run."
+            >
+              <ScheduleBuilder
+                value={cronExpr}
+                onChange={setCronExpr}
+                allowOnce
+                runAt={runAt}
+                onRunAtChange={setRunAt}
+              />
+              {!runAt && (
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <p className="text-muted-foreground text-xs text-pretty">
+                    Times follow the selected timezone.
+                  </p>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger
+                      className="text-muted-foreground hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full border-none bg-transparent px-3 text-xs"
+                      title="Timezone"
+                    >
+                      <AlarmClockSolid className="size-3.5" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIMEZONES.map((tz) => (
+                        <SelectItem key={tz} value={tz} className="cursor-pointer">
+                          {tz}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </TriggerModalSection>
+          )}
+
+          {step === 'setup' && sourceType === 'webhook' && (
+            <TriggerModalSection
+              label="Signing secret"
+              description="Used to verify inbound requests before the trigger fires."
+            >
+              <WebhookSourceConfig secret={webhookSecret} onSecretChange={setWebhookSecret} />
+            </TriggerModalSection>
+          )}
+
+          {step === 'setup' && error && (
+            <InfoBanner tone="destructive" className="text-xs">
+              {error}
+            </InfoBanner>
+          )}
+
+          {step === 'details' && (
+            <>
+              <TriggerModalSection
+                label="Name"
+                description="Shown in the schedule or webhook list."
+              >
                 <Input
                   id="trigger-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={tHardcodedUi.raw(
-                    'componentsProjectsScheduleView.line1151JsxAttrPlaceholderDailyStandupDigest',
+                    'componentsProjectsTriggersView.line1151JsxAttrPlaceholderDailyStandupDigest',
                   )}
                   maxLength={64}
+                  autoFocus
                 />
-              </div>
+              </TriggerModalSection>
 
-              <div className="space-y-2">
-                <Label htmlFor="trigger-prompt">Prompt</Label>
+              <TriggerModalSection
+                label="Prompt"
+                description="Spawn a session and send this instruction when the trigger fires."
+              >
                 <Textarea
                   id="trigger-prompt"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={tHardcodedUi.raw(
-                    'componentsProjectsScheduleView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
+                    'componentsProjectsTriggersView.line1162JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
                   )}
-                  rows={4}
+                  rows={5}
                 />
-                <p className="text-muted-foreground text-xs">
+                <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
                   {tHardcodedUi.raw(
-                    'componentsProjectsScheduleView.line1166JsxTextMustachePlaceholdersSupported',
+                    'componentsProjectsTriggersView.line1166JsxTextMustachePlaceholdersSupported',
                   )}{' '}
                   <code className="font-mono">{'{{ message.text }}'}</code>,{' '}
                   <code className="font-mono">{'{{ message.source }}'}</code>,{' '}
                   <code className="font-mono">{'{{ trigger.type }}'}</code>,{' '}
                   <code className="font-mono">{'{{ fired_at }}'}</code>.
                 </p>
-              </div>
+              </TriggerModalSection>
 
-              <div className="space-y-2">
-                <Label htmlFor="trigger-agent">Agent</Label>
+              <TriggerModalSection
+                label="Agent"
+                description="Which agent profile handles each run."
+              >
                 <Input
                   id="trigger-agent"
                   type="text"
@@ -1378,68 +1399,39 @@ function CreateTriggerModal({
                   placeholder="default"
                   className="font-mono text-sm"
                 />
-              </div>
+              </TriggerModalSection>
 
-              <div className="space-y-2">
-                <Label>Runs as</Label>
+              <TriggerModalSection
+                label="Runs as"
+                description="Every run acts as this member. Personal connectors use their connected accounts."
+              >
                 <RunsAsSelect projectId={projectId} value={ownerUserId} onChange={setOwnerUserId} />
-                <p className="text-muted-foreground text-xs">
-                  Every run acts as this member. Connectors set to “each member brings their own
-                  profile” use this person’s connected accounts — so a personal cron (e.g. email
-                  triage) uses your own Gmail. Shared connectors are unaffected.
-                </p>
-              </div>
+              </TriggerModalSection>
 
               {error && (
-                <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                  <span>{error}</span>
-                </div>
+                <InfoBanner tone="destructive" className="text-xs">
+                  {error}
+                </InfoBanner>
               )}
-            </div>
+            </>
           )}
         </ModalBody>
 
-        <ModalFooter className="mt-0 shrink-0 justify-between gap-3 sm:justify-between">
+        <ModalFooter className="mt-0 shrink-0 justify-between gap-2 px-5 py-4">
+          {step === 'details' ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStep('setup')}
+              className="cursor-pointer"
+            >
+              <ArrowLeft className="size-4" />
+              Back
+            </Button>
+          ) : (
+            <span />
+          )}
           <div className="flex items-center gap-2">
-            {step !== 'source' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  // Typed flow skips the action step entirely — Back jumps
-                  // straight from config → source.
-                  if (step === 'config') {
-                    setStep(forcedType ? 'source' : 'action');
-                  } else {
-                    setStep('source');
-                  }
-                }}
-                className="cursor-pointer"
-              >
-                <ArrowLeft className="mr-1 h-4 w-4" /> Back
-              </Button>
-            )}
-            {step === 'source' && sourceType === 'cron' && !runAt && (
-              <Select value={timezone} onValueChange={setTimezone}>
-                <SelectTrigger
-                  className="border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full bg-transparent px-3 text-sm"
-                  title="Timezone"
-                >
-                  <Clock className="h-3.5 w-3.5" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONES.map((tz) => (
-                    <SelectItem key={tz} value={tz} className="cursor-pointer">
-                      {tz}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <div className="flex gap-3">
             <Button
               variant="outline"
               size="sm"
@@ -1448,22 +1440,12 @@ function CreateTriggerModal({
             >
               Cancel
             </Button>
-            {step === 'source' && (
-              <Button
-                size="sm"
-                // Typed flow skips the action step — Source → Config.
-                onClick={() => setStep(forcedType ? 'config' : 'action')}
-                className="cursor-pointer"
-              >
-                Next <ArrowRight className="ml-1 h-4 w-4" />
+            {step === 'setup' ? (
+              <Button size="sm" onClick={goToDetails} className="cursor-pointer">
+                Continue
+                <ArrowRight className="size-4" />
               </Button>
-            )}
-            {step === 'action' && (
-              <Button size="sm" onClick={() => setStep('config')} className="cursor-pointer">
-                Next <ArrowRight className="ml-1 h-4 w-4" />
-              </Button>
-            )}
-            {step === 'config' && (
+            ) : (
               <Button
                 size="sm"
                 onClick={() => create.mutate()}
@@ -1471,7 +1453,6 @@ function CreateTriggerModal({
                 className="cursor-pointer"
               >
                 {create.isPending ? 'Creating…' : createButtonLabel}
-                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}
           </div>
@@ -1499,17 +1480,23 @@ function SourceCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex h-auto w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
-        selected
-          ? 'border-primary/50 bg-primary/[0.04]'
-          : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+        'duration-normal ease-default flex h-auto w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+        selected ? 'bg-primary/6' : 'hover:bg-foreground/3',
       )}
     >
-      <Icon className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
+      <div
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-sm',
+          selected ? 'bg-primary/10 text-primary' : 'bg-muted/40 text-muted-foreground',
+        )}
+      >
+        <Icon className="size-4" />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="text-foreground text-sm font-medium">{title}</div>
-        <div className="text-muted-foreground/60 mt-0.5 text-xs">{description}</div>
+        <div className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</div>
       </div>
+      {selected && <Check className="text-primary size-4 shrink-0" />}
     </button>
   );
 }
@@ -1523,10 +1510,10 @@ function WebhookSourceConfig({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="space-y-3 pt-2">
+    <div className="space-y-4">
       <div className="space-y-2">
         <Label>
-          {tHardcodedUi.raw('componentsProjectsScheduleView.line1325JsxTextSigningSecret')}
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1325JsxTextSigningSecret')}
         </Label>
         <div className="flex gap-2">
           <Input
@@ -1540,41 +1527,39 @@ function WebhookSourceConfig({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 gap-1 px-3 text-xs"
+            className="h-9 shrink-0 gap-1 px-3 text-xs"
             onClick={() => onSecretChange(generateSecret())}
           >
-            <RefreshCw className="h-3 w-3" />
+            <RefreshCw className="size-3" />
             Generate
           </Button>
         </div>
       </div>
 
-      <div className="bg-muted/50 space-y-1.5 rounded-2xl border p-3">
+      <div className="bg-muted/40 space-y-1.5 rounded-md p-4">
         <div className="text-muted-foreground text-xs font-medium">
-          {tHardcodedUi.raw('componentsProjectsScheduleView.line1349JsxTextExternalUrl')}
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1349JsxTextExternalUrl')}
         </div>
         <code className="text-foreground block font-mono text-xs break-all">
           {buildWebhookUrl('<trigger-id>')}
         </code>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
           {tHardcodedUi.raw(
-            'componentsProjectsScheduleView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
+            'componentsProjectsTriggersView.line1355JsxTextWeGenerateTheTriggerIdOnCreatePost',
           )}{' '}
           <code className="font-mono text-xs">X-Kortix-Signature</code>
-          {tHardcodedUi.raw('componentsProjectsScheduleView.line1357JsxTextHeaderSetTo')}{' '}
+          {tHardcodedUi.raw('componentsProjectsTriggersView.line1357JsxTextHeaderSetTo')}{' '}
           <code className="font-mono text-xs">
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line1359JsxTextSha256LtHmacGt')}
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line1359JsxTextSha256LtHmacGt')}
           </code>{' '}
           {tHardcodedUi.raw(
-            'componentsProjectsScheduleView.line1360JsxTextComputedOverTheRawBodyWithTheSecret',
+            'componentsProjectsTriggersView.line1360JsxTextComputedOverTheRawBodyWithTheSecret',
           )}
         </p>
       </div>
     </div>
   );
 }
-
-/* ─── Delete dialog ─────────────────────────────────────────────────────── */
 
 function DeleteDialog({
   projectId,
@@ -1602,14 +1587,14 @@ function DeleteDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line1394JsxTextDeleteTrigger')}
+            {tHardcodedUi.raw('componentsProjectsTriggersView.line1394JsxTextDeleteTrigger')}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {target && (
               <>
                 Remove <span className="text-foreground font-medium">{getTriggerName(target)}</span>{' '}
                 {tHardcodedUi.raw(
-                  'componentsProjectsScheduleView.line1402JsxTextAndStopAnyFutureRunsFromItPast',
+                  'componentsProjectsTriggersView.line1402JsxTextAndStopAnyFutureRunsFromItPast',
                 )}
               </>
             )}
