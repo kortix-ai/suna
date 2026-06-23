@@ -540,6 +540,8 @@ projectsApp.openapi(
     error_name?: string;
     error_message?: string;
     error_status?: number;
+    error_retryable?: boolean;
+    error_provider?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -564,6 +566,8 @@ projectsApp.openapi(
             name: typeof body.error_name === 'string' ? body.error_name : undefined,
             message: typeof body.error_message === 'string' ? body.error_message : undefined,
             statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
+            isRetryable: typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
+            providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
           }
         : undefined;
     const ok = await relayTurnEnd(sessionId, status, errorInfo);

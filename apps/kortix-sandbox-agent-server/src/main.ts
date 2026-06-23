@@ -14,7 +14,7 @@ import {
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { startOpencodeEventLoop, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
@@ -927,7 +927,13 @@ async function relayTurnEndToApi(
     status: effectiveStatus,
     opencode_session_id: opencodeSessionId,
     ...(error
-      ? { error_name: error.name, error_message: error.message, error_status: error.statusCode }
+      ? {
+          error_name: error.name,
+          error_message: error.message,
+          error_status: error.statusCode,
+          error_retryable: error.isRetryable,
+          error_provider: error.providerID,
+        }
       : {}),
   })
   // This is the ONLY signal that finalizes a turn the agent ended without
@@ -974,7 +980,13 @@ async function readRootTurnError(
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
     if (!res.ok) return undefined
     const rows = (await res.json()) as Array<{
-      info?: { role?: string; error?: { name?: string; data?: { message?: string; statusCode?: number } } }
+      info?: {
+        role?: string
+        error?: {
+          name?: string
+          data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+        }
+      }
     }>
     if (!Array.isArray(rows)) return undefined
     // The most recent assistant message decides the turn's outcome: if it carries
@@ -983,8 +995,7 @@ async function readRootTurnError(
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
       if (info?.role !== 'assistant') continue
-      const err = info.error
-      return err ? { name: err.name, message: err.data?.message, statusCode: err.data?.statusCode } : undefined
+      return info.error ? flattenOpencodeError(info.error) : undefined
     }
     return undefined
   } catch {

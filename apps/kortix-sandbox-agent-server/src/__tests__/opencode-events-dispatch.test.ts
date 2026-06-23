@@ -24,7 +24,32 @@ describe('dispatch — session.error flattening', () => {
       name: 'APIError',
       message: 'Payment Required: Insufficient credits. Balance: $-0.06',
       statusCode: 402,
+      isRetryable: undefined,
+      providerID: undefined,
     })
+  })
+
+  test('flattens isRetryable (APIError) and providerID (ProviderAuthError)', () => {
+    let api: OpencodeTurnError | undefined
+    dispatch(
+      {
+        type: 'session.error',
+        properties: { sessionID: 's', error: { name: 'APIError', data: { message: 'oops', statusCode: 503, isRetryable: true } } },
+      },
+      { onSessionError: (_id, e) => (api = e) },
+    )
+    expect(api?.isRetryable).toBe(true)
+    expect(api?.statusCode).toBe(503)
+
+    let auth: OpencodeTurnError | undefined
+    dispatch(
+      {
+        type: 'session.error',
+        properties: { sessionID: 's', error: { name: 'ProviderAuthError', data: { message: 'bad key', providerID: 'anthropic' } } },
+      },
+      { onSessionError: (_id, e) => (auth = e) },
+    )
+    expect(auth?.providerID).toBe('anthropic')
   })
 
   test('session.error with no error payload passes undefined (still finalizes)', () => {

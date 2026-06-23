@@ -28,6 +28,10 @@ export interface OpencodeTurnError {
   message?: string
   /** Upstream HTTP status for an `APIError` (402 = credits, 429 = rate limit). */
   statusCode?: number
+  /** `APIError.data.isRetryable` — opencode's own transient/permanent signal. */
+  isRetryable?: boolean
+  /** `ProviderAuthError.data.providerID` — lets the Slack copy name the provider. */
+  providerID?: string
 }
 
 type OpencodeEventHandlers = {
@@ -121,6 +125,23 @@ export function startOpencodeEventLoop(
   }
 }
 
+// Flatten opencode's nested error ({ name, data: { message, statusCode,
+// isRetryable, providerID } }) into the wire shape apps/api classifies. Shared
+// by the session.error dispatch and the idle-time last-message read so both
+// carry the same fields. Exported for unit testing.
+export function flattenOpencodeError(e: {
+  name?: string
+  data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+}): OpencodeTurnError {
+  return {
+    name: e.name,
+    message: e.data?.message,
+    statusCode: e.data?.statusCode,
+    isRetryable: e.data?.isRetryable,
+    providerID: e.data?.providerID,
+  }
+}
+
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
 export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
@@ -138,14 +159,17 @@ export function dispatch(event: { type?: string; properties?: unknown }, handler
   }
   if (event.type === 'session.error' && handlers.onSessionError) {
     const props = event.properties as
-      | { sessionID?: string; error?: { name?: string; data?: { message?: string; statusCode?: number } } }
+      | {
+          sessionID?: string
+          error?: {
+            name?: string
+            data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+          }
+        }
       | undefined
     if (props?.sessionID) {
       const e = props.error
-      handlers.onSessionError(
-        props.sessionID,
-        e ? { name: e.name, message: e.data?.message, statusCode: e.data?.statusCode } : undefined,
-      )
+      handlers.onSessionError(props.sessionID, e ? flattenOpencodeError(e) : undefined)
     }
   }
 }
