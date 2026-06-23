@@ -4,9 +4,11 @@
 # deploy; git revert is the rollback.
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
-# ROLLBACK 2026-06-23: pinned to the existing :0.9.68 release image (zero rebuild).
+# The 0.9.68 rollback intentionally does NOT touch the gateway: there was no
+# gateway in the 0.9.68 stack (it entered prod EKS at v0.9.72), and no :0.9.68
+# gateway image exists. Kept on its current 0.9.77 so Argo stays healthy.
 image:
-  tag: "0.9.68"
+  tag: "0.9.77"
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
