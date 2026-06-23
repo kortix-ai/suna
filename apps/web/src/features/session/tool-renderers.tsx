@@ -12,6 +12,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { QuestionPrompt } from '@/features/session/question-prompt';
+import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   extractReadableHtml,
@@ -299,18 +300,6 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
 }
 
 type ServicePreviewState = ReturnType<typeof useServicePreview>;
-
-const LINK_ONLY_PREVIEW_EXT_RE = /\.(pdf|docx?|pptx?|xlsx?)(?:[?#]|$)/i;
-
-function prefersPreviewLink(candidateUrl: string | null): boolean {
-  if (!candidateUrl) return false;
-  try {
-    const url = new URL(candidateUrl);
-    return LINK_ONLY_PREVIEW_EXT_RE.test(`${url.pathname}${url.search}`);
-  } catch {
-    return LINK_ONLY_PREVIEW_EXT_RE.test(candidateUrl);
-  }
-}
 
 function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
   const { previewUrl, displayLabel, handleRefresh, openInBrowser } = preview;
