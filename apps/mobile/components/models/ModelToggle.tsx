@@ -37,17 +37,17 @@ export function ModelToggle({
 
   const basicModel = React.useMemo(() => {
     return models.find(m =>
-      m.id === 'kortix/basic' ||
-      m.id === 'kortix-basic' ||
-      m.id.includes('claude-haiku-4-5')
+      m.id === 'kortix/claude-sonnet-4.6' ||
+      m.id === 'claude-sonnet-4.6' ||
+      m.id.includes('claude-sonnet')
     );
   }, [models]);
 
   const advancedModel = React.useMemo(() => {
     return models.find(m =>
-      m.id === 'kortix/power' ||
-      m.id === 'kortix-power' ||
-      m.id.includes('claude-sonnet-4-5')
+      m.id === 'kortix/claude-opus-4.8' ||
+      m.id === 'claude-opus-4.8' ||
+      m.id.includes('claude-opus')
     );
   }, [models]);
 
