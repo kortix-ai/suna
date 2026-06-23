@@ -1,6 +1,7 @@
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
+import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
 import { loadSlackTokenForProject } from '../install-store';
@@ -585,3 +586,24 @@ export async function relayTurnEnd(
   await deleteTurn(sessionId);
   return true;
 }
+
+// A session this thread was waiting on died during async provisioning (provider
+// capacity, git-auth, generic). The agent never ran, so no step/answer/`end`
+// ever arrives — without this the ⏳ sits until the 30-min GC closes it with the
+// wrong reason. The platform already classified a friendly message, so post it
+// AS-IS (don't re-run classifyTurnError on it). Registered as the global session-
+// failure notifier; a no-op for non-Slack sessions (no turn row to load).
+export async function relayProvisioningFailure(sessionId: string, message: string): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) return false;
+  if (!(await claimFinalize(sessionId))) return false;
+  const detail = (message ?? '').trim().slice(0, 400) || 'Provisioning failed before the run could start.';
+  await finalizeTurn(handle, { error: `:warning: *I couldn't start this run.* ${detail}`, title: "Couldn't start" });
+  await deleteTurn(sessionId);
+  return true;
+}
+
+// Wire the relay into the platform's provisioning-failure hook (dependency-
+// inverted so platform/ never imports channels/). Runs once when this module is
+// first imported — which is at server boot, since the Slack app mounts it.
+registerSessionFailureNotifier(relayProvisioningFailure);

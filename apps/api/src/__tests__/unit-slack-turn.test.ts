@@ -99,7 +99,8 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep } = await import('../channels/slack/turn');
+const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
+  await import('../channels/slack/turn');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {
@@ -395,5 +396,33 @@ describe('relayTurnEnd', () => {
     expect(blocks.map((b) => b.type)).toEqual(['plan', 'context']);
     expect(blocks[0]!.tasks![0]!.status).toBe('complete'); // not 'error'
     expect(calls('addReaction').length).toBe(0);
+  });
+});
+
+describe('relayProvisioningFailure', () => {
+  test('posts the platform reason AS-IS (no re-classification) with a "Couldn\'t start" title', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn — turn row was saved at session-create time
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
+    ];
+
+    const ok = await relayProvisioningFailure('sess-1', 'The sandbox provider is at capacity right now. Try again in a minute.');
+    expect(ok).toBe(true);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe("Couldn't start");
+    const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
+    const section = blocks.find((b) => b.type === 'section');
+    expect(section?.text?.text).toContain('at capacity');
+    expect(calls('removeReaction').length).toBe(1); // ⏳ cleared
+    expect(calls('addReaction').length).toBe(0); // not a success
+  });
+
+  test('no open turn (non-Slack session) → no-op', async () => {
+    dbResults = [[]]; // loadTurn finds nothing
+    const ok = await relayProvisioningFailure('sess-unknown', 'whatever');
+    expect(ok).toBe(false);
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('postMessage').length).toBe(0);
   });
 });
