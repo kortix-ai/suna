@@ -29,12 +29,18 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  // The Bedrock inference-profile id, when the model is reachable on Bedrock.
-  // Only Anthropic models are — our Bedrock transport speaks the Anthropic-on-
-  // Bedrock payload format — so non-Anthropic (Chinese) models omit this and are
-  // served via OpenRouter instead. Absent here ⇒ no Bedrock candidate is built.
-  bedrockModelId?: string;
-  openRouterModelId: string;
+  // The upstream's own model id, interpreted per `transport`:
+  //   'bedrock' / 'bedrock-converse' → a Bedrock id (`us.anthropic.claude-opus-4-8`,
+  //                                    `moonshotai.kimi-k2.5`)
+  //   'openrouter'                   → an OpenRouter slug (`z-ai/glm-4.6`)
+  upstreamModelId: string;
+  // Which upstream + wire format carries it:
+  //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
+  //   'bedrock-converse' → model-agnostic Bedrock Converse API (Kimi, MiniMax, …)
+  //   'openrouter'       → OpenRouter (openai-compat) for models not on Bedrock
+  transport: 'bedrock' | 'bedrock-converse' | 'openrouter';
+  // models.dev id for live pricing — upstream ids don't always match the catalog.
+  pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
 }
 
@@ -45,46 +51,75 @@ export interface ManagedModel {
 // (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
-// Every managed model routes through our own provider keys and is billed as
-// Kortix credits with markup, so the gateway enforces budgets/logging/spend on
-// all of them. Anthropic frontier goes via Bedrock; the rest via OpenRouter.
+// Every managed model runs through OUR keys and is billed as Kortix credits with
+// markup, so the gateway enforces budgets/logging/spend on all of them. Bedrock
+// is preferred (consistent, no per-provider routing surprises): Anthropic via the
+// proven Anthropic-payload transport, Kimi/MiniMax via Converse. Models Bedrock
+// doesn't host (GLM, Qwen) go via OpenRouter. (Kimi is on Bedrock specifically
+// because its only OpenRouter provider, `novita`, is excluded by our data policy.)
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
     name: 'Claude Opus 4.8',
-    bedrockModelId: 'us.anthropic.claude-opus-4-8',
-    openRouterModelId: 'anthropic/claude-opus-4.8',
+    upstreamModelId: 'us.anthropic.claude-opus-4-8',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
   },
   {
     id: 'claude-sonnet-4.6',
     name: 'Claude Sonnet 4.6',
-    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
-    openRouterModelId: 'anthropic/claude-sonnet-4.6',
-    tier: 'balanced',
-  },
-  {
-    id: 'deepseek-v3.2',
-    name: 'DeepSeek V3.2',
-    openRouterModelId: 'deepseek/deepseek-v3.2',
-    tier: 'balanced',
-  },
-  {
-    id: 'qwen3-max',
-    name: 'Qwen3 Max',
-    openRouterModelId: 'qwen/qwen3-max',
-    tier: 'balanced',
-  },
-  {
-    id: 'glm-4.6',
-    name: 'GLM-4.6',
-    openRouterModelId: 'z-ai/glm-4.6',
+    upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
   },
   {
     id: 'kimi-k2',
     name: 'Kimi K2',
-    openRouterModelId: 'moonshotai/kimi-k2',
+    upstreamModelId: 'moonshotai.kimi-k2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'moonshotai/kimi-k2',
+    tier: 'balanced',
+  },
+  {
+    id: 'kimi-k2-thinking',
+    name: 'Kimi K2 Thinking',
+    upstreamModelId: 'moonshot.kimi-k2-thinking',
+    transport: 'bedrock-converse',
+    pricingRef: 'moonshotai/kimi-k2-thinking',
+    tier: 'balanced',
+  },
+  {
+    id: 'minimax-m2.5',
+    name: 'MiniMax M2.5',
+    upstreamModelId: 'minimax.minimax-m2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'minimax/minimax-m2',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.6',
+    name: 'GLM-4.6',
+    upstreamModelId: 'z-ai/glm-4.6',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.7',
+    name: 'GLM-4.7',
+    upstreamModelId: 'z-ai/glm-4.7',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.7',
+    tier: 'balanced',
+  },
+  {
+    id: 'qwen3-max',
+    name: 'Qwen3 Max',
+    upstreamModelId: 'qwen/qwen3-max',
+    transport: 'openrouter',
+    pricingRef: 'qwen/qwen3-max',
     tier: 'balanced',
   },
 ];

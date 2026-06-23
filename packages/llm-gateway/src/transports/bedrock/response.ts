@@ -32,7 +32,10 @@ function bedrockEventStreamToSse(response: Response): Response {
           const { done, value } = await reader.read();
           if (done) break;
           if (!value || !value.length) continue;
-          buf = pos === 0 ? value : concat(buf.subarray(pos), value);
+          // Carry any unconsumed leftover. pos can be 0 with bytes still in buf
+          // (a sub-12-byte tail the inner loop never entered) — keying off
+          // `pos === 0` would drop it, so test for full consumption.
+          buf = buf.length === pos ? value : concat(buf.subarray(pos), value);
           pos = 0;
 
           // Parse every complete frame in the buffer, advancing a read offset

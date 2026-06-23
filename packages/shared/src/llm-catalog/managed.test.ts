@@ -8,14 +8,16 @@ import {
 } from './index';
 
 describe('managed catalog', () => {
-  test('exposes the expected passthrough lineup', () => {
+  test('exposes the managed lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'claude-opus-4.8',
       'claude-sonnet-4.6',
-      'deepseek-v3.2',
-      'qwen3-max',
-      'glm-4.6',
       'kimi-k2',
+      'kimi-k2-thinking',
+      'minimax-m2.5',
+      'glm-4.6',
+      'glm-4.7',
+      'qwen3-max',
     ]);
   });
 
@@ -29,20 +31,24 @@ describe('managed catalog', () => {
     expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
   });
 
-  test('only Anthropic models carry a Bedrock id; Chinese models route via OpenRouter', () => {
+  test('every model has an upstream id, transport, and pricing ref', () => {
     for (const m of MANAGED_MODELS) {
-      expect(m.openRouterModelId.length).toBeGreaterThan(0);
-      if (m.openRouterModelId.startsWith('anthropic/')) {
-        expect(m.bedrockModelId, `${m.id} should be Bedrock-routable`).toBeDefined();
-      } else {
-        expect(m.bedrockModelId, `${m.id} (non-Anthropic) must not claim a Bedrock id`).toBeUndefined();
-      }
+      expect(m.upstreamModelId.length, `${m.id} needs an upstream id`).toBeGreaterThan(0);
+      expect(m.pricingRef.length, `${m.id} needs a pricing ref`).toBeGreaterThan(0);
+      expect(['bedrock', 'bedrock-converse', 'openrouter']).toContain(m.transport);
     }
   });
 
-  test('every Bedrock id is an Anthropic inference profile (our Bedrock transport is Anthropic-only)', () => {
+  test('transport matches the upstream id shape', () => {
     for (const m of MANAGED_MODELS) {
-      if (m.bedrockModelId) expect(m.bedrockModelId).toContain('anthropic.claude');
+      if (m.upstreamModelId.includes('anthropic.claude')) {
+        expect(m.transport, `${m.id} (Anthropic) → invoke`).toBe('bedrock');
+      } else if (m.transport === 'openrouter') {
+        // OpenRouter slugs are provider/model.
+        expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
+      } else {
+        expect(m.transport, `${m.id} (non-Anthropic Bedrock) → Converse`).toBe('bedrock-converse');
+      }
     }
   });
 });
@@ -50,7 +56,10 @@ describe('managed catalog', () => {
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
     expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('kimi-k2')?.openRouterModelId).toBe('moonshotai/kimi-k2');
+    expect(getManagedModel('kimi-k2')?.upstreamModelId).toBe('moonshotai.kimi-k2.5');
+    expect(getManagedModel('kimi-k2')?.transport).toBe('bedrock-converse');
+    expect(getManagedModel('glm-4.6')?.transport).toBe('openrouter');
+    expect(getManagedModel('glm-4.6')?.upstreamModelId).toBe('z-ai/glm-4.6');
   });
 
   test('retired branded ids still resolve (to the nearest current model) so stored configs do not break', () => {
