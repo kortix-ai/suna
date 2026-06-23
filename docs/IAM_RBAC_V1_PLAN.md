@@ -1,6 +1,6 @@
 # IAM/RBAC v1 — Project-Scoped Roles, Policies & Resource Permissions
 
-> Status: **PLAN — not yet executed.** Drafted on branch `feat/iam-rbac-v1`.
+> Status: **IN PROGRESS** on branch `feat/iam-rbac-v1`. Phase 0 + 1a done; Phase 1b partial. See §10.
 > Owner: Ino. Author: planning pass (survey of the live authz code, 2026-06-23).
 > Companion reading: `apps/api/src/iam/*`, `apps/web/src/lib/iam-client.ts`, `packages/db/MIGRATIONS.md`.
 
@@ -177,3 +177,24 @@ This is the single biggest correctness risk. A file-based resource (agents/skill
 - [ ] **Phase 4 (optional/flagged)** — `authorizeGitProxy` + token cap stamping + `iam_resource_grants` fail-closed + group tab.
 
 **Reusable templates to lift, not rebuild:** `project_secret_grants` + `share.ts isSecretUsableBy` (resource grants), the r6 Members `loadProjectForUser + assertAuthorized` pattern (route gates), `agent-scope.ts` (role ∩ grant), `project_group_grants` (group→project→role), the additive role slices (seeds), the pre-built `iam-client.ts` types/endpoints (the contract).
+
+---
+
+## 10. Implementation progress (branch `feat/iam-rbac-v1`)
+
+**Decisions taken (per §7 recommendations; revisit Q4/Q8 together):** accept owner/admin bypass (Q1); v1 union-only deactivation (Q2); keep `manage`→`project.write` collapse (Q3); defer Phase 4 unless "can't SEE the rest" is hard-required (Q8).
+
+### ✅ Done & committed (all additive, tsc-clean, unit-tested, no lockout risk)
+
+- **Phase 0 — cache revoke-invalidation.** `ttl-memo` gains `invalidate(key)` / `invalidateByPrefix(prefix)`; new `iam/cache-invalidation.ts` registry (push-based, no import cycle); the 4 authz memos register; the project-member memo key is unified to `userId`-first so one prefix busts all. Wired into every revoke/demote/role-change site: `grantProjectRole`, project-member + group-grant CRUD (r6/r7), account member remove/role/leave, super-admin toggle, group-membership repo helpers, SCIM users+groups, SSO JIT sync. Grants stay instant (nulls uncached); expiry self-heals within the TTL. Tests: `unit-ttl-memo`, `unit-iam-cache-invalidation`.
+- **Phase 1a — leaf catalog + role seeds.** Added `project.{agent,skill,command,schedule,webhook,file,customize,gitops,secret,connector}.{read,write}` (+ `gitops.push/merge`) to `PROJECT_ACTIONS`; seeded every write leaf into Editor and read leaf into Viewer so no current capability is lost. Guarded by a backward-compat invariant test in `unit-iam-v2-role-perms`.
+- **Phase 1b (partial) — route gates.** Asserted `project.deploy` (app deploy/stop, r5), `project.customize.write` (apps-config, r5), `project.gitops.merge` (CR merge, r9). Behavior-identical today; the hook a custom role omits to deactivate the capability.
+
+### ⏳ Next (do together — needs the live ke2e suite + product calls)
+
+1. **Finish Phase 1b route gates** (fail-OPEN if missed, so safe to complete incrementally; verify each with ke2e): secrets create/delete → `project.secret.write` (r3); connector config → `project.connector.write`; `[[apps]]` CRUD → `project.customize.write` (r4); CR create/commit-push → `project.gitops.push` (r8). **File-based agents/skills/commands/memory** are git files (no per-type route) → they stay under the generic write/CR gate in v1; per-type granularity is Phase 4 (path-keyed resource grants).
+2. **Phase 2 — DB custom roles.** Migration `iam_roles` + `iam_role_actions` + `iam_resource_type` enum (use the `migration` skill); seed the 6 built-ins as `is_builtin` rows; engine `resolveEffectiveActions` union + `resolveActorV2.hasCustomPolicies` short-circuit (keeps the hot path off the policy join — and makes it a no-op for everyone until policies exist); build the dark `/iam/roles`, `/iam/roles/:id/permissions`, `/iam/actions` backend; wire `ROLE_*`/`POLICY_*` into `ADMIN_EXTRAS`. **Gate: a seed-equality test (DB-resolved set == frozen-Set for every built-in) before flipping the engine to consume the union.**
+3. **Phase 3 — policies + frontend.** `iam_policies` + engine union over member/group/token principals; `/iam/policies` CRUD; seed the read+run **"User" role** (Q4 — confirm contents); Roles UI + capability checkbox matrix (wire the dark `iam-client`); `useProjectCan` batch section-gating in `customize-overlay.tsx`; SA bridge (`principal_type='token'`).
+4. **Phase 4 (flagged) — bypass seams + resource grants.** `authorizeGitProxy` honoring `GitScope` + token caps (default-allow legacy); `iam_resource_grants` fail-closed; group tab in SharingPicker.
+
+**Note:** until Phase 2 lands, the new leaves + Phase-1b gates are inert for built-in roles (everyone holds the leaves) — they're the groundwork. The first user-visible deactivation arrives with Phase 2 custom roles, which can immediately omit the **existing** `project.trigger.*` leaves (Schedules/Webhooks), `members.manage`, gateway.* etc., plus the Phase-1b-gated deploy/customize/gitops-merge.
