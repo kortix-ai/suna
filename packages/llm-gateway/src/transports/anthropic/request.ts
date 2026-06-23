@@ -105,6 +105,33 @@ function translateToolChoice(tc: unknown): unknown {
   return undefined;
 }
 
+const EPHEMERAL = { type: 'ephemeral' } as const;
+
+function cacheTailBlock(message: any): void {
+  if (!message) return;
+  const content = message.content;
+  if (typeof content === 'string') {
+    if (content) message.content = [{ type: 'text', text: content, cache_control: EPHEMERAL }];
+    return;
+  }
+  if (Array.isArray(content) && content.length) {
+    const last = content[content.length - 1];
+    if (last && typeof last === 'object') last.cache_control = EPHEMERAL;
+  }
+}
+
+function applyPromptCaching(payload: Record<string, any>): void {
+  if (typeof payload.system === 'string' && payload.system) {
+    payload.system = [{ type: 'text', text: payload.system, cache_control: EPHEMERAL }];
+  }
+  if (Array.isArray(payload.tools) && payload.tools.length) {
+    payload.tools[payload.tools.length - 1].cache_control = EPHEMERAL;
+  }
+  if (Array.isArray(payload.messages) && payload.messages.length) {
+    cacheTailBlock(payload.messages[payload.messages.length - 1]);
+  }
+}
+
 export function buildAnthropicCorePayload(body: Record<string, any>): Record<string, unknown> {
   const { system, messages } = translateMessages(body.messages ?? []);
 
@@ -122,6 +149,7 @@ export function buildAnthropicCorePayload(body: Record<string, any>): Record<str
   const toolChoice = translateToolChoice(body.tool_choice);
   if (toolChoice) payload.tool_choice = toolChoice;
 
+  applyPromptCaching(payload);
   return payload;
 }
 

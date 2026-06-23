@@ -12,6 +12,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { QuestionPrompt } from '@/features/session/question-prompt';
+import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   extractReadableHtml,
@@ -219,10 +220,13 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setIsLoading(false), 5000);
+    if (!isLoading || !previewUrl) return;
+    const t = setTimeout(() => {
+      setIsLoading(false);
+      setHasError(true);
+    }, 8000);
     return () => clearTimeout(t);
-  }, [isLoading, refreshKey]);
+  }, [isLoading, previewUrl, refreshKey]);
 
   const displayLabel = label || (proxy ? 'App preview' : url);
 
@@ -270,7 +274,10 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     openExternal(previewUrl ?? undefined);
   }, [openExternal, previewUrl]);
 
-  const onLoad = useCallback(() => setIsLoading(false), []);
+  const onLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
+  }, []);
   const onError = useCallback(() => {
     setIsLoading(false);
     setHasError(true);
@@ -294,21 +301,46 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
 
 type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
+function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
+  const { previewUrl, displayLabel, handleRefresh, openInBrowser } = preview;
+  const label = previewUrl || displayLabel;
+
+  return (
+    <div className="bg-background absolute inset-0 z-10 flex items-center justify-center p-6">
+      <div className="flex max-w-2xl flex-col items-center gap-3 text-center">
+        <button
+          type="button"
+          onClick={openInBrowser}
+          disabled={!previewUrl}
+          className={cn(
+            'text-foreground inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium shadow-2xs transition-colors',
+            previewUrl
+              ? 'hover:bg-muted'
+              : 'cursor-not-allowed opacity-60',
+          )}
+        >
+          <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+          <span className="break-all font-mono">{label}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          Retry preview
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 16:9 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // In the side panel, fill the available height; inline in chat keep 16:9.
   const fill = useContext(ToolSurfaceContext) === 'panel';
-  const {
-    previewUrl,
-    displayLabel,
-    isLoading,
-    hasError,
-    refreshKey,
-    handleRefresh,
-    onLoad,
-    onError,
-  } = preview;
+  const { previewUrl, displayLabel, isLoading, hasError, refreshKey, onLoad, onError } = preview;
+  const linkOnlyPreview = prefersPreviewLink(previewUrl);
 
   // Render the iframe at its container's real size (16:9) with NO CSS transform.
   // Cross-origin iframes (OOPIFs) under `transform: scale()` hit a Chromium
@@ -320,7 +352,7 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
     <div
       className={cn('relative w-full overflow-hidden bg-white', fill ? 'h-full' : 'aspect-video')}
     >
-      {(isLoading || !previewUrl) && (
+      {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-muted-foreground flex items-center gap-2">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -330,23 +362,8 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
           </div>
         </div>
       )}
-      {hasError && (
-        <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-          <div className="text-muted-foreground text-center">
-            <p className="text-xs">
-              {tHardcodedUi.raw('componentsSessionToolRenderers.line387JsxTextFailedToLoad')}
-            </p>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="text-primary mt-1 text-xs hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-      {previewUrl && (
+      {(hasError || linkOnlyPreview) && <ServicePreviewUrlFallback preview={preview} />}
+      {previewUrl && !linkOnlyPreview && (
         <iframe
           key={refreshKey}
           src={previewUrl}
