@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
   stageBuildContext,
+  stageAgentBinaryGz,
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   DEFAULT_DISK_GB,
@@ -159,6 +160,36 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});
+    }
+  }
+
+  /**
+   * Agent-only fast path: build NEW snapshot from a PREDECESSOR snapshot by
+   * swapping ONLY the kortix-agent binary inside its rootfs (no podman rebuild).
+   * Ships just the agent .gz via the same presign path; the host debugfs-swaps it
+   * into the predecessor's materialized rootfs + re-chunks (CAS delta). The caller
+   * uses this ONLY when the user image is unchanged AND the predecessor is active
+   * on Platinum — otherwise it falls back to a normal buildSnapshot.
+   */
+  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<void> {
+    const { gzPath, cleanup } = await stageAgentBinaryGz();
+    try {
+      const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
+        '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+      );
+      const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(gzPath)) });
+      if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
+      await platinumJson<PlatinumTemplate>('/v1/templates/swap-agent', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newSnapshotName,
+          source_template_name: sourceSnapshotName,
+          agent_s3_key: context_s3_key,
+        }),
+      });
+      await this.waitForActive(newSnapshotName);
+    } finally {
+      await cleanup();
     }
   }
 

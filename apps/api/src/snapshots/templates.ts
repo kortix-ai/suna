@@ -389,15 +389,26 @@ export async function computeTemplateIdentity(
   userDockerfile: string;
   /** Commit the Dockerfile was read from; null for default/image templates. */
   builtFromCommit: string | null;
+  /**
+   * Identity of the USER image alone — the same inputs as contentHash MINUS the
+   * runtime fingerprint. An agent-server bump only moves runtimeFingerprint, so
+   * this stays stable across it. The builder compares it against the predecessor
+   * template's stored key to tell "same user image, new agent" (→ a cheap CAS
+   * agent-swap on Platinum) from a real user-image change (→ a full rebuild).
+   */
+  userContentKey: string;
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
-  const hash = computeSnapshotHash({
+  const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
-    runtimeFingerprint,
-  });
+  };
+  const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
+  // Runtime-independent key: a fixed sentinel for the runtime segment isolates the
+  // user-image inputs (dockerfile + context + spec). Stable across agent bumps.
+  const userContentKey = computeSnapshotHash({ ...hashInputs, runtimeFingerprint: '__user_content__' }).shortHash;
   const namePrefix = template.isShared ? 'kortix-default' : 'kortix-tpl';
   return {
     snapshotName: `${namePrefix}-${hash.shortHash}`,
@@ -406,6 +417,7 @@ export async function computeTemplateIdentity(
     runtimeFingerprint,
     userDockerfile,
     builtFromCommit: commit,
+    userContentKey,
   };
 }
 
@@ -427,6 +439,46 @@ export async function resolveUserDockerfile(
     return { dockerfile: `FROM ${template.image}\n`, commit: null };
   }
   throw new Error(`Sandbox template "${template.slug}" has neither image nor dockerfilePath`);
+}
+
+/**
+ * The runtime-independent user-content key (== computeTemplateIdentity's
+ * userContentKey) computed AS OF a specific commit, resolving the Dockerfile the
+ * SAME way (read + normalize) so keys are comparable. The builder compares the
+ * predecessor's (at its build commit) against the current identity to decide if a
+ * drift is agent-only — same key ⇒ only the agent changed ⇒ CAS agent-swap, not a
+ * rebuild. Returns null when it can't be resolved (missing commit/file, empty, or
+ * image-only template), so the caller safely falls back to a full rebuild.
+ */
+export async function userContentKeyAt(
+  project: GitBackedProject,
+  template: ResolvedTemplate,
+  commit: string,
+): Promise<string | null> {
+  try {
+    let dockerfile: string;
+    let contextTreeOid: string;
+    if (template.isShared) {
+      dockerfile = PLATFORM_DEFAULT_USER_DOCKERFILE;
+      contextTreeOid = 'platform-default';
+    } else if (template.dockerfilePath) {
+      dockerfile = normalizeUserDockerfileForSnapshot(
+        await readRepoFile(project, template.dockerfilePath, commit),
+      );
+      if (!dockerfile.trim()) return null;
+      contextTreeOid = `template:${template.slug}`;
+    } else {
+      return null; // image-only: no user Dockerfile to diff → rebuild
+    }
+    return computeSnapshotHash({
+      dockerfile,
+      contextTreeOid,
+      spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
+      runtimeFingerprint: '__user_content__',
+    }).shortHash;
+  } catch {
+    return null;
+  }
 }
 
 /**

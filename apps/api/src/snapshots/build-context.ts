@@ -230,6 +230,19 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
   );
 }
 
+/**
+ * Gzip ONLY the kortix-agent binary to a temp .gz — for the Platinum agent-swap
+ * fast path, which ships just the agent (not a whole build context) and has the
+ * host debugfs-swap it into the predecessor's rootfs. Caller cleans up.
+ */
+export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  const dir = await mkdtemp(join(tmpdir(), 'kortix-agent-swap-'));
+  const gzPath = join(dir, 'kortix-agent.gz');
+  await gzipFile(AGENT_BIN_PATH, gzPath);
+  return { gzPath, cleanup: async () => { await rm(dir, { recursive: true, force: true }).catch(() => {}); } };
+}
+
 async function stageScaffoldRepo(contextDir: string): Promise<void> {
   const work = join(contextDir, '.scaffold-work');
   await mkdir(work, { recursive: true });

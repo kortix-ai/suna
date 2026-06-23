@@ -17,7 +17,7 @@ import { and, desc, eq, lt } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type ProviderState } from './providers';
+import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
 import {
   computeTemplateIdentity,
@@ -26,6 +26,7 @@ import {
   recordTemplateFailed,
   refreshTemplateState,
   resolveTemplateBySlug,
+  userContentKeyAt,
   type ResolvedTemplate,
 } from './templates';
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
@@ -209,6 +210,53 @@ export async function ensureSandboxImage(
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
 /**
+ * Try the provider's agent-only swap instead of a full rebuild. Returns true iff
+ * the new snapshot was produced by swapping just the kortix-agent binary into the
+ * predecessor's rootfs. Deliberately conservative — fires ONLY when:
+ *   • the provider supports it (Platinum; Daytona has no `swapAgent`),
+ *   • a distinct predecessor snapshot exists, and
+ *   • the drift is verifiably agent-only — the shared default's user image is a
+ *     constant, and a custom template's predecessor user image (re-resolved at its
+ *     build commit) hashes to the SAME user-content key as the new identity.
+ * Any uncertainty or error → false, and the caller does a normal rebuild. A bad
+ * swap must never produce a wrong image, and a swap fault must never block a build.
+ */
+async function maybeSwapAgent(
+  project: GitBackedProject,
+  template: ResolvedTemplate,
+  identity: TemplateIdentity,
+  provider: SandboxProviderAdapter,
+  prevSnapshot: string | null,
+): Promise<boolean> {
+  if (!provider.swapAgent || !prevSnapshot || prevSnapshot === identity.snapshotName) return false;
+
+  let agentOnly = template.isShared;
+  if (!agentOnly && template.builtFromCommit) {
+    const predecessorKey = await userContentKeyAt(project, template, template.builtFromCommit);
+    agentOnly = predecessorKey != null && predecessorKey === identity.userContentKey;
+  }
+  if (!agentOnly) return false;
+
+  // The predecessor must still be materializable on the provider (its CAS chunks).
+  if ((await provider.getSnapshotState(prevSnapshot)) !== 'active') return false;
+
+  try {
+    console.log(
+      `[snapshots] ${template.slug}: agent-only drift ${prevSnapshot} → ${identity.snapshotName}; ` +
+      `CAS agent-swap (no rebuild)`,
+    );
+    await provider.swapAgent(identity.snapshotName, prevSnapshot);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[snapshots] ${template.slug}: agent-swap failed, falling back to full rebuild: ` +
+      `${(err as Error)?.message ?? err}`,
+    );
+    return false;
+  }
+}
+
+/**
  * Do the actual provider build for a resolved (template, identity) pair and
  * record the result on the template row + build log. Always called behind the
  * `inflightBuilds` dedup in `ensureSandboxImage` — never directly.
@@ -240,7 +288,14 @@ async function runInlineBuild(
 
   const prevSnapshot = template.providerSnapshotName;
   try {
-    await provider.buildSnapshot({
+    // ── Agent-only fast path (Platinum CAS agent-swap) ────────────────────────
+    // If the predecessor differs from the new identity ONLY by the agent binary
+    // (same user image) and the provider can swap in place, skip the full rebuild:
+    // ship just the agent + have the host debugfs-swap it into the predecessor's
+    // rootfs (~seconds, ~one agent's worth of CAS chunks). Any miss/failure → a
+    // normal buildSnapshot below — the swap is a pure optimization, never a gate.
+    const swapped = await maybeSwapAgent(project, template, identity, provider, prevSnapshot);
+    if (!swapped) await provider.buildSnapshot({
       snapshotName: identity.snapshotName,
       image: template.image ?? undefined,
       userDockerfile: identity.userDockerfile,
