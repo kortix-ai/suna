@@ -18,21 +18,21 @@ import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-import { useQuery } from '@tanstack/react-query';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
-import { listProjectSecrets } from '@/lib/projects-client';
-import { LLM_PROVIDERS } from '@/lib/llm-providers';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
+import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { LLM_PROVIDERS } from '@/lib/llm-providers';
+import { listProjectSecrets } from '@/lib/projects-client';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { useQuery } from '@tanstack/react-query';
 import type { FlatModel } from './session-chat-input';
 
 // Re-export for consumers
@@ -146,7 +146,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
   );
-  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(undefined);
+  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(
+    undefined,
+  );
 
   // Track project secrets whenever we're in a project (not only while the picker
   // is open) so connecting/disconnecting a provider flips model visibility live —

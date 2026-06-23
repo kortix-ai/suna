@@ -175,11 +175,11 @@ function InputGroupSearchIcon({ className, ...props }: React.ComponentProps<'div
   );
 }
 
-function InputGroupSearchInput({ className, ...props }: InputProps) {
+function InputGroupSearchInput({ className, variant = 'transparent', ...props }: InputProps) {
   return (
     <Input
       data-slot="input-group-search-control"
-      variant="transparent"
+      variant={variant}
       className={cn('peer placeholder:text-muted-foreground/60 pl-9', className)}
       {...props}
     />

@@ -1,20 +1,19 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-/**
- * Inline Marketplace surface — rendered as a Customize section, sitting right
- * next to Skills / Agents / Commands (not a floating overlay). Browse the
- * registry and 1-click install skills straight into THIS project's repo, live
- * in the next session. Skills-only for now.
- */
-
 import { useQuery } from '@tanstack/react-query';
 import { Store } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
+import { AddToProjectDialog } from '@/components/marketplace/add-to-project-dialog';
+import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
+import { MarketplaceDiscover } from '@/components/marketplace/marketplace-discover';
+import { MarketplaceInstalledPanel } from '@/components/marketplace/marketplace-installed-panel';
+import { MarketplaceItemDetail } from '@/components/marketplace/marketplace-item-detail';
+import { Badge } from '@/components/ui/badge';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import {
   useInstalledItems,
   useRegistryUpdates,
@@ -23,23 +22,20 @@ import {
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { getProjectDetail } from '@/lib/projects-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
-import { AddToProjectDialog } from './add-to-project-dialog';
-import { MarketplaceBrowser } from './marketplace-browser';
-import { MarketplaceDiscover } from './marketplace-discover';
-import { MarketplaceInstalledPanel } from './marketplace-installed-panel';
-import { MarketplaceItemDetail } from './marketplace-item-detail';
 
+type Tab = 'explore' | 'marketplaces' | 'installed';
+
+/** Inline Marketplace — browse the registry and install skills into this project. */
 export function MarketplaceView({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const t = useTranslations('hardcodedUi');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const closeDetail = useMarketplaceDetailStore((s) => s.close);
+
+  const [tab, setTab] = useState<Tab>('explore');
+  const [source, setSource] = useState('all');
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
 
-  // Leave the detail when this surface unmounts so reopening starts on the
-  // gallery, never on a stale detail page.
   useEffect(() => () => closeDetail(), [closeDetail]);
-  const [tab, setTab] = useState<'explore' | 'marketplaces' | 'installed'>('explore');
-  const [source, setSource] = useState('all');
 
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
@@ -68,29 +64,29 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
     }
   };
 
-  const onAdd = (it: MarketplaceItem) => setAddItem(it);
+  const addDialog = (
+    <AddToProjectDialog
+      item={addItem}
+      open={!!addItem}
+      onOpenChange={(open) => !open && setAddItem(null)}
+      fixedProjectId={projectId}
+      fixedProjectName={projectName}
+    />
+  );
 
-  // A selected item takes over the whole surface as a full-bleed detail page
-  // (its own back button + top bar), so the section header is hidden here.
   if (openId) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <MarketplaceItemDetail
           onBack={closeDetail}
-          onAdd={onAdd}
+          onAdd={setAddItem}
           onRemove={onRemove}
-          addLabel={tI18nHardcoded.raw(
+          addLabel={t.raw(
             'autoComponentsMarketplaceMarketplaceViewJsxAttrAddLabelAddToThisc1246454',
           )}
           installedNames={installedNames}
         />
-        <AddToProjectDialog
-          item={addItem}
-          open={!!addItem}
-          onOpenChange={(o) => !o && setAddItem(null)}
-          fixedProjectId={projectId}
-          fixedProjectName={projectName}
-        />
+        {addDialog}
       </div>
     );
   }
@@ -120,12 +116,12 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
             >
               Installed
               {installedCount > 0 && (
-                <span className="text-muted-foreground/60 ml-1">{installedCount}</span>
+                <span className="text-muted-foreground/60 ml-1 tabular-nums">{installedCount}</span>
               )}
               {updateCount > 0 && (
-                <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                <Badge variant="warning" size="sm" className="ml-1.5 min-w-4 px-1">
                   {updateCount}
-                </span>
+                </Badge>
               )}
             </FilterBarItem>
           </FilterBar>
@@ -134,45 +130,25 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {tab === 'explore' ? (
-          <>
-            <p className="text-muted-foreground mb-4 text-sm">
-              {tI18nHardcoded.raw(
-                'autoComponentsMarketplaceMarketplaceViewJsxTextOneClickAddsA6902b908',
-              )}
-            </p>
-            <MarketplaceBrowser
-              installedNames={installedNames}
-              source={source}
-              onSourceChange={setSource}
-              onAdd={onAdd}
-            />
-          </>
+          <MarketplaceBrowser
+            installedNames={installedNames}
+            source={source}
+            onSourceChange={setSource}
+            onAdd={setAddItem}
+          />
         ) : tab === 'marketplaces' ? (
-          <>
-            <p className="text-muted-foreground mb-4 text-sm">
-              {tI18nHardcoded.raw(
-                'autoComponentsMarketplaceMarketplaceViewJsxTextEnableSourcesToPulle6187609',
-              )}
-            </p>
-            <MarketplaceDiscover
-              onBrowse={(id) => {
-                setSource(id);
-                setTab('explore');
-              }}
-            />
-          </>
+          <MarketplaceDiscover
+            onBrowse={(id) => {
+              setSource(id);
+              setTab('explore');
+            }}
+          />
         ) : (
           <MarketplaceInstalledPanel projectId={projectId} onBrowse={() => setTab('explore')} />
         )}
       </div>
 
-      <AddToProjectDialog
-        item={addItem}
-        open={!!addItem}
-        onOpenChange={(o) => !o && setAddItem(null)}
-        fixedProjectId={projectId}
-        fixedProjectName={projectName}
-      />
+      {addDialog}
     </div>
   );
 }

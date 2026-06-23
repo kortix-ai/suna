@@ -19,6 +19,7 @@ import { useIsMobile } from '@/hooks/utils';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
+import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { ArrowLeft } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -132,14 +133,11 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
       <ModalContent
         showCloseButton={false}
+        closeOnOutsideClick={false}
         variant="base"
         aria-describedby={undefined}
-        onPointerDownOutside={(event) => {
-          const target = event.detail.originalEvent.target as Element | null;
-          if (
-            target?.closest('[data-file-preview-overlay]') ||
-            target?.closest('iframe[id^="pipedream-connect-iframe-"]')
-          ) {
+        onEscapeKeyDown={(event) => {
+          if (hasOpenFloatingLayer() || hasOpenNestedDialog()) {
             event.preventDefault();
           }
         }}

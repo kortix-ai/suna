@@ -30,14 +30,12 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  Loader2,
   MessageSquare,
   Pause,
   Pencil,
   Play,
   Plus,
   RefreshCw,
-  ShieldAlert,
   Sparkles,
   Terminal,
   Timer,
@@ -61,21 +59,26 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -86,13 +89,25 @@ import {
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
+  SheetBody,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState as EmptyStateBox } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { getEnv } from '@/lib/env-config';
 import {
@@ -106,8 +121,8 @@ import {
   type ProjectAccessMember,
   type ProjectTrigger,
 } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { DangerTriangleSolid, Search } from '@mynaui/icons-react';
 
 /* ─── Cron presets ──────────────────────────────────────────────────────── */
 
@@ -233,10 +248,10 @@ function generateSecret(): string {
 async function copyToClipboard(value: string, label = 'Copied'): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success(label);
+    successToast(label);
     return true;
   } catch {
-    toast.error('Copy failed — select and copy manually');
+    errorToast('Copy failed — select and copy manually');
     return false;
   }
 }
@@ -276,7 +291,6 @@ const TYPE_META: Record<TriggerKind, TypeMeta> = {
 
 export function ScheduleView({ projectId, type }: { projectId: string; type: TriggerKind }) {
   const meta = TYPE_META[type];
-  const Icon = meta.icon;
 
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -289,6 +303,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
     staleTime: 5_000,
   });
 
+  const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
@@ -301,122 +316,205 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
     [queryClient, queryKey],
   );
 
-  // Project-level kill-switch (server-side `triggers_paused`). When on, the
-  // platform auto-runs NONE of this project's triggers regardless of each
-  // trigger's repo `enabled` — used to stop a repo deployed to two control
-  // planes from double-firing. Shared across the Schedules + Webhooks views;
-  // toggling here writes back to the same `['project-triggers', projectId]`
-  // cache both pages read.
-  // The kill-switch toggle lives in Customize → Settings now (a small, tucked-
-  // away dev control). Here we only read the paused state to show a compact
-  // notice so an operator viewing triggers knows why scheduled runs are silent.
   const triggersPaused = triggersQuery.data?.triggers_paused ?? false;
 
-  // Filter to just this view's type — the API returns every trigger
-  // because they share one `kortix.toml`, but each page is scoped.
   const allTriggers = triggersQuery.data?.triggers ?? [];
   const triggers = allTriggers.filter((t) => t.type === type);
   const parseErrors = triggersQuery.data?.errors ?? [];
   const selectedTrigger = triggers.find((t) => t.slug === selectedId) ?? null;
   const activeCount = triggers.filter((t) => t.enabled).length;
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return triggers;
+    return triggers.filter((t) => {
+      const name = getTriggerName(t).toLowerCase();
+      return (
+        name.includes(q) ||
+        t.slug.toLowerCase().includes(q) ||
+        t.agent.toLowerCase().includes(q) ||
+        getTriggerSubtitle(t).toLowerCase().includes(q)
+      );
+    });
+  }, [triggers, query]);
+
+  const showContent = !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError;
+
   return (
-    <CustomizeSectionWrapper
-      title={tHardcodedUi.raw('componentsProjectsScheduleView.pageTitle')}
-      description={
-        type === 'cron'
-          ? tHardcodedUi.raw(
-              'componentsProjectsScheduleView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
-            )
-          : tHardcodedUi.raw(
-              'componentsProjectsScheduleView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
-            )
-      }
-    >
-      {triggersPaused && !triggersQuery.isLoading && !isForbidden && !triggersQuery.isError && (
-        <InfoBanner tone="warning" icon={AlertTriangle}>
-          Triggers are paused for this project — scheduled runs and incoming webhooks are ignored
-          (manual test-fires still work). Resume in Customize → Settings.
-        </InfoBanner>
-      )}
+    <>
+      <CustomizeSectionWrapper
+        title={meta.pageTitle}
+        description={
+          type === 'cron'
+            ? tHardcodedUi.raw(
+                'componentsProjectsScheduleView.line253JsxTextCronDrivenEntryPointsWhenAScheduleFires',
+              )
+            : tHardcodedUi.raw(
+                'componentsProjectsScheduleView.line272JsxTextSignedHttpEntryPointsWhenARequestHits',
+              )
+        }
+        action={
+          showContent ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="size-4 shrink-0" />
+              {meta.createButtonLabel}
+            </Button>
+          ) : null
+        }
+      >
+        <div className="space-y-4">
+          {triggersPaused && showContent && (
+            <InfoBanner tone="warning" icon={AlertTriangle}>
+              Triggers are paused for this project — scheduled runs and incoming webhooks are
+              ignored (manual test-fires still work). Resume in Customize → Settings.
+            </InfoBanner>
+          )}
 
-      {triggersQuery.isLoading ? (
-        <TriggersSkeleton />
-      ) : isForbidden ? (
-        <ForbiddenNotice />
-      ) : triggersQuery.isError ? (
-        <ErrorNotice
-          message={(triggersQuery.error as Error)?.message ?? 'Failed to load triggers'}
-          onRetry={() => triggersQuery.refetch()}
-        />
-      ) : triggers.length === 0 ? (
-        <SectionCard
-          title={meta.pageTitle}
-          action={
-            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              {meta.createButtonLabel}
-            </Button>
-          }
-          flush
-        >
-          <EmptyStateBox
-            icon={type === 'cron' ? Timer : Webhook}
-            size="sm"
-            title={meta.empty.title}
-            description={meta.empty.body}
-            action={
-              <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" />
-                {meta.createButtonLabel}
-              </Button>
-            }
-          />
-        </SectionCard>
-      ) : (
-        <SectionCard
-          title={meta.pageTitle}
-          count={triggers.length}
-          description={`${activeCount} of ${triggers.length} active`}
-          action={
-            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              {meta.createButtonLabel}
-            </Button>
-          }
-          flush
-        >
-          <List>
-            {triggers.map((trigger) => (
-              <TriggerRow
-                key={trigger.slug}
-                trigger={trigger}
-                onSelect={() => setSelectedId(trigger.slug)}
+          {showContent && triggers.length > 0 ? (
+            <InputGroupSearch>
+              <InputGroupSearchIcon>
+                <Search />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                placeholder={`Search ${type === 'cron' ? 'schedules' : 'webhooks'}`}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
               />
-            ))}
-          </List>
-        </SectionCard>
-      )}
+              <InputGroupSearchClear onClick={() => setQuery('')} />
+            </InputGroupSearch>
+          ) : null}
 
-      {parseErrors.length > 0 && (
-        <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
-          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
-            {parseErrors.length}
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line421JsxTextTriggerFile')}{' '}
-            {parseErrors.length === 1 ? '' : 's'}
-            {tHardcodedUi.raw('componentsProjectsScheduleView.line421JsxTextFailedToParse')}
-          </p>
-          <ul className="space-y-0.5 text-xs text-amber-700/80 dark:text-amber-400/80">
-            {parseErrors.map((err) => (
-              <li key={err.slug}>
-                <code className="font-mono">{err.path}</code> — {err.error}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {triggersQuery.isLoading ? (
+            <div className="space-y-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
+          ) : isForbidden ? (
+            <InfoBanner
+              icon={DangerTriangleSolid}
+              title={tHardcodedUi.raw(
+                'componentsProjectsScheduleView.line1438JsxTextAccessRequired',
+              )}
+            >
+              {tHardcodedUi.raw(
+                'componentsProjectsScheduleView.line1440JsxTextYouDonAposTHavePermissionToView',
+              )}
+            </InfoBanner>
+          ) : triggersQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title={tHardcodedUi.raw(
+                'componentsProjectsScheduleView.line1450JsxTextFailedToLoadTriggers',
+              )}
+              description={(triggersQuery.error as Error)?.message ?? 'Failed to load triggers'}
+              action={
+                <Button variant="outline" size="sm" onClick={() => triggersQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : triggers.length === 0 ? (
+            <EmptyStateBox
+              icon={type === 'cron' ? Timer : Webhook}
+              size="sm"
+              title={meta.empty.title}
+              description={meta.empty.body}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCreateOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Plus className="size-3.5 shrink-0" />
+                  {meta.createButtonLabel}
+                </Button>
+              }
+            />
+          ) : filtered.length === 0 ? (
+            <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+              No matches for <span className="text-foreground font-mono">{query}</span>.
+            </p>
+          ) : (
+            <>
+              {activeCount < triggers.length ? (
+                <p className="text-muted-foreground text-xs">
+                  {activeCount} of {triggers.length} active
+                </p>
+              ) : null}
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Name</TableHead>
+                    <TableHead>{type === 'cron' ? 'Schedule' : 'Signing'}</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Last fired</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((trigger) => {
+                    const name = getTriggerName(trigger);
+                    const subtitle = getTriggerSubtitle(trigger);
+                    const lastFired = trigger.last_fired_at;
 
-      <CreateTriggerDialog
+                    return (
+                      <TableRow
+                        key={trigger.slug}
+                        className="cursor-pointer"
+                        onClick={() => setSelectedId(trigger.slug)}
+                      >
+                        <TableCell className="max-w-[200px]">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{name}</p>
+                            <p className="text-muted-foreground font-mono text-xs">
+                              {trigger.slug.slice(0, 8)}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm whitespace-normal">
+                          {subtitle}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs tracking-wide uppercase">
+                          {trigger.agent}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {lastFired ? relativeTime(lastFired) : 'Never'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
+                            {trigger.enabled ? 'Active' : 'Paused'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </>
+          )}
+
+          {parseErrors.length > 0 && (
+            <InfoBanner tone="warning" icon={AlertTriangle} title="Trigger file parse errors">
+              <ul className="space-y-0.5 text-xs">
+                {parseErrors.map((err) => (
+                  <li key={err.slug}>
+                    <code className="font-mono">{err.path}</code> — {err.error}
+                  </li>
+                ))}
+              </ul>
+            </InfoBanner>
+          )}
+        </div>
+      </CustomizeSectionWrapper>
+
+      <CreateTriggerModal
         projectId={projectId}
         forcedType={type}
         open={createOpen}
@@ -430,7 +528,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
         }}
       />
 
-      <TriggerDetailSheet
+      <TriggerDetailModal
         projectId={projectId}
         trigger={selectedTrigger}
         open={!!selectedTrigger}
@@ -451,43 +549,11 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
           invalidate();
         }}
       />
-    </CustomizeSectionWrapper>
+    </>
   );
 }
 
-/* ─── Row ───────────────────────────────────────────────────────────────── */
-
-function TriggerRow({ trigger, onSelect }: { trigger: ProjectTrigger; onSelect: () => void }) {
-  const isCron = trigger.type === 'cron';
-  const name = getTriggerName(trigger);
-  const subtitle = getTriggerSubtitle(trigger);
-  const lastFired = trigger.last_fired_at;
-
-  return (
-    <ListRow
-      onClick={onSelect}
-      leading={<EntityAvatar icon={isCron ? Timer : Webhook} />}
-      title={name}
-      badges={
-        <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
-          {trigger.enabled ? 'Active' : 'Paused'}
-        </Badge>
-      }
-      subtitle={
-        <InlineMeta>
-          <span className="font-mono">{trigger.slug.slice(0, 8)}</span>
-          <span>{subtitle}</span>
-          <span>{lastFired ? `Fired ${relativeTime(lastFired)}` : 'Never fired'}</span>
-          <span className="tracking-wide uppercase">{trigger.agent}</span>
-        </InlineMeta>
-      }
-    />
-  );
-}
-
-/* ─── Detail Sheet ──────────────────────────────────────────────────────── */
-
-function TriggerDetailSheet({
+function TriggerDetailModal({
   projectId,
   trigger,
   open,
@@ -502,12 +568,43 @@ function TriggerDetailSheet({
   onDelete: () => void;
   onMutated: () => void;
 }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+
+  const fire = useMutation({
+    mutationFn: () => fireProjectTrigger(projectId, trigger!.slug),
+    onSuccess: (res) => {
+      if (res.status === 'fired') {
+        successToast('Trigger fired', {
+          description: res.session_id
+            ? `Session ${res.session_id.slice(0, 8)}…`
+            : 'Session provisioning',
+        });
+      } else if (res.status === 'queued') {
+        successToast('Trigger queued', { description: res.reason ?? 'Backpressure — will retry' });
+      } else {
+        errorToast('Trigger failed', { description: res.error });
+      }
+      onMutated();
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to fire'),
+  });
+
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger!.slug, { enabled }),
+    onSuccess: (_data, enabled) => {
+      successToast(enabled ? 'Trigger enabled' : 'Trigger paused');
+      onMutated();
+    },
+    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to update'),
+  });
+
   if (!trigger) return null;
+
   const isCron = trigger.type === 'cron';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 sm:max-w-[520px] sm:px-0">
+      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-[520px]">
         <SheetHeader className="space-y-1 px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
             <EntityAvatar icon={isCron ? Timer : Webhook} size="sm" />
@@ -525,119 +622,56 @@ function TriggerDetailSheet({
 
         <Separator />
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <DetailBody
-            projectId={projectId}
-            trigger={trigger}
-            onMutated={onMutated}
-            onDelete={onDelete}
-          />
-        </div>
+        <SheetBody className="space-y-6 px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => fire.mutate()}
+              disabled={fire.isPending}
+            >
+              {fire.isPending ? (
+                <Loading className="size-3.5 shrink-0 animate-spin" />
+              ) : (
+                <Play className="size-3.5 shrink-0" />
+              )}
+              {tHardcodedUi.raw('componentsProjectsScheduleView.line623JsxTextFireNow')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => toggle.mutate(!trigger.enabled)}
+              disabled={toggle.isPending}
+            >
+              {toggle.isPending ? (
+                <Loading className="size-3.5 shrink-0 animate-spin" />
+              ) : trigger.enabled ? (
+                <Pause className="size-3.5 shrink-0" />
+              ) : (
+                <Play className="size-3.5 shrink-0" />
+              )}
+              {trigger.enabled ? 'Pause' : 'Enable'}
+            </Button>
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground gap-1.5"
+              onClick={onDelete}
+            >
+              <Trash2 className="size-3.5 shrink-0" />
+              Delete
+            </Button>
+          </div>
+
+          {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
+          <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+          <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+          <MetaSection trigger={trigger} />
+        </SheetBody>
       </SheetContent>
     </Sheet>
-  );
-}
-
-function DetailBody({
-  projectId,
-  trigger,
-  onMutated,
-  onDelete,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  onMutated: () => void;
-  onDelete: () => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const isCron = trigger.type === 'cron';
-
-  // ── Mutations ──────────────────────────────────────────────────────────
-  const fire = useMutation({
-    mutationFn: () => fireProjectTrigger(projectId, trigger.slug),
-    onSuccess: (res) => {
-      if (res.status === 'fired') {
-        toast.success('Trigger fired', {
-          description: res.session_id
-            ? `Session ${res.session_id.slice(0, 8)}…`
-            : 'Session provisioning',
-        });
-      } else if (res.status === 'queued') {
-        toast.success('Trigger queued', { description: res.reason ?? 'Backpressure — will retry' });
-      } else {
-        toast.error('Trigger failed', { description: res.error });
-      }
-      onMutated();
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to fire'),
-  });
-
-  const toggle = useMutation({
-    mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger.slug, { enabled }),
-    onSuccess: (_data, enabled) => {
-      toast.success(enabled ? 'Trigger enabled' : 'Trigger paused');
-      onMutated();
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update'),
-  });
-
-  return (
-    <div className="space-y-6">
-      {/* Action bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => fire.mutate()}
-          disabled={fire.isPending}
-        >
-          {fire.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-          {tHardcodedUi.raw('componentsProjectsScheduleView.line623JsxTextFireNow')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => toggle.mutate(!trigger.enabled)}
-          disabled={toggle.isPending}
-        >
-          {toggle.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : trigger.enabled ? (
-            <Pause className="h-3.5 w-3.5" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-          {trigger.enabled ? 'Pause' : 'Enable'}
-        </Button>
-        <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground gap-1.5"
-          onClick={onDelete}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete
-        </Button>
-      </div>
-
-      {/* Type-specific section */}
-      {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
-
-      {/* Prompt template — inline editable */}
-      <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-
-      {/* Runs as — the member this trigger's automated runs act as */}
-      <OwnerSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-
-      {/* Meta */}
-      <MetaSection trigger={trigger} />
-    </div>
   );
 }
 
@@ -654,10 +688,10 @@ function OwnerSection({
     mutationFn: (userId: string) =>
       updateProjectTrigger(projectId, trigger.slug, { owner_user_id: userId }),
     onSuccess: () => {
-      toast.success('Updated who this runs as');
+      successToast('Updated who this runs as');
       onMutated();
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to update owner'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to update owner'),
   });
   return (
     <section className="space-y-2">
@@ -848,11 +882,11 @@ function PromptTemplateSection({
   const save = useMutation({
     mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { prompt_template: draft }),
     onSuccess: () => {
-      toast.success('Prompt saved');
+      successToast('Prompt saved');
       setEditing(false);
       onMutated();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to save'),
+    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to save'),
   });
 
   return (
@@ -880,7 +914,7 @@ function PromptTemplateSection({
                 disabled={save.isPending || !draft.trim() || draft === trigger.prompt_template}
                 onClick={() => save.mutate()}
               >
-                {save.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
+                {save.isPending ? <Loading className="size-3 shrink-0 animate-spin" /> : 'Save'}
               </Button>
             </div>
           ) : (
@@ -1019,7 +1053,7 @@ function RunsAsSelect({
   );
 }
 
-function CreateTriggerDialog({
+function CreateTriggerModal({
   projectId,
   open,
   onOpenChange,
@@ -1136,7 +1170,7 @@ function CreateTriggerDialog({
       const created = listing.triggers
         .filter((t) => t.type === sourceType && t.name === name.trim())
         .slice(-1)[0];
-      toast.success('Trigger created', {
+      successToast('Trigger created', {
         description:
           sourceType === 'cron'
             ? runAt
@@ -1177,7 +1211,7 @@ function CreateTriggerDialog({
         ? 'New webhook'
         : 'Create trigger';
   const dialogIcon = forcedType === 'cron' ? Timer : forcedType === 'webhook' ? Webhook : Calendar;
-  const DialogIcon = dialogIcon;
+  const ModalIcon = dialogIcon;
   const stepDescription = (() => {
     if (step === 'source') {
       if (forcedType === 'cron') return 'Pick when this schedule should fire.';
@@ -1195,19 +1229,25 @@ function CreateTriggerDialog({
         : 'Create Trigger';
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-[540px]">
-        <DialogHeader className="shrink-0 space-y-0.5">
-          <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
-            <DialogIcon className="text-muted-foreground h-3.5 w-3.5" />
+    <Modal
+      open={open}
+      onOpenChange={(next) => {
+        if (create.isPending) return;
+        if (!next) onOpenChange(false);
+      }}
+    >
+      <ModalContent className="flex max-h-[90vh] flex-col lg:max-w-[540px]">
+        <ModalHeader className="shrink-0 space-y-0.5">
+          <ModalTitle className="flex items-center gap-2 text-sm font-semibold">
+            <ModalIcon className="text-muted-foreground size-3.5 shrink-0" />
             {dialogTitle}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground/60 text-xs">
+          </ModalTitle>
+          <ModalDescription className="text-muted-foreground/60 text-xs">
             {stepDescription}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="-mx-6 flex-1 overflow-y-auto px-6 py-1">
+        <ModalBody className="max-h-[60vh] overflow-y-auto py-1">
           {/* ── Step 1: Source ───────────────────────────────────── */}
           {step === 'source' && (
             <div className="space-y-4">
@@ -1358,10 +1398,9 @@ function CreateTriggerDialog({
               )}
             </div>
           )}
-        </div>
+        </ModalBody>
 
-        {/* ── Footer — no divider; spacing alone separates it from the body. */}
-        <div className="mt-5 flex shrink-0 items-center justify-between gap-3">
+        <ModalFooter className="mt-0 shrink-0 justify-between gap-3 sm:justify-between">
           <div className="flex items-center gap-2">
             {step !== 'source' && (
               <Button
@@ -1436,9 +1475,9 @@ function CreateTriggerDialog({
               </Button>
             )}
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -1552,10 +1591,10 @@ function DeleteDialog({
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
     onSuccess: () => {
-      toast.success('Trigger deleted');
+      successToast('Trigger deleted');
       onDeleted();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to delete'),
+    onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to delete'),
   });
 
   return (
@@ -1587,51 +1626,5 @@ function DeleteDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-/* ─── Loading / empty / error ───────────────────────────────────────────── */
-
-function TriggersSkeleton() {
-  return (
-    <div className="space-y-1.5">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-[60px] rounded-xl" />
-      ))}
-    </div>
-  );
-}
-
-function ForbiddenNotice() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <div className="border-border/70 bg-muted/20 text-foreground flex items-start gap-3 rounded-2xl border px-4 py-3">
-      <ShieldAlert className="text-muted-foreground mt-0.5 h-4 w-4 flex-shrink-0" />
-      <div className="space-y-0.5 text-sm">
-        <p className="font-medium">
-          {tHardcodedUi.raw('componentsProjectsScheduleView.line1438JsxTextAccessRequired')}
-        </p>
-        <p className="text-muted-foreground text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsScheduleView.line1440JsxTextYouDonAposTHavePermissionToView',
-          )}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <div className="border-destructive/30 bg-destructive/5 rounded-2xl border px-4 py-3">
-      <p className="text-destructive text-sm font-medium">
-        {tHardcodedUi.raw('componentsProjectsScheduleView.line1450JsxTextFailedToLoadTriggers')}
-      </p>
-      <p className="text-destructive/80 mt-1 text-xs">{message}</p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
   );
 }

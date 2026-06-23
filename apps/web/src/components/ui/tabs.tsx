@@ -16,7 +16,7 @@ function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive
 }
 
 interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> {
-  variant?: 'default' | 'secondary';
+  variant?: 'default' | 'secondary' | 'accent';
   size?: 'default' | 'xs' | 'sm' | 'lg';
 }
 
@@ -31,9 +31,10 @@ function TabsList({ className, variant = 'secondary', size = 'default', ...props
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'text-muted-foreground inline-flex w-fit items-center justify-center gap-1 rounded-lg',
+        'text-muted-foreground inline-flex w-fit items-center justify-center gap-1 rounded-md',
         className,
         variant === 'secondary' && 'bg-foreground/10 p-[1.5px] px-[2px]',
+        variant === 'accent' && 'bg-accent',
         sizeMap[size],
       )}
       {...props}
@@ -52,7 +53,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "focus-visible:ring-kortix-blue inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-1.5px)] border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus-visible:ring-kortix-blue inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-2.5px)] border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-foreground/6 data-[state=inactive]:bg-transparent',
         'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80',
 
@@ -84,12 +85,17 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
 }
 
 /** Compact Radix TabsList — use inside <Tabs> root for smaller contexts. */
-function TabsListCompact({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.List>) {
+function TabsListCompact({
+  className,
+  variant = 'default',
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.List> & { variant?: 'default' | 'accent' }) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
         'bg-foreground/10 text-muted-foreground inline-flex h-7 w-fit items-center justify-center gap-0.5 rounded-md p-[1.5px] px-[2px]',
+        variant === 'accent' && 'bg-accent',
         className,
       )}
       {...props}
@@ -106,7 +112,7 @@ function TabsTriggerCompact({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'focus-visible:ring-kortix-blue inline-flex h-[calc(100%-2px)] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-sm border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-[0.6px] focus-visible:outline-none',
+        'focus-visible:ring-kortix-blue inline-flex h-[100%] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[calc(var(--radius)-3px)] border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-[0.6px] focus-visible:outline-none',
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-foreground/6 data-[state=inactive]:bg-transparent',
         'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80',
         'disabled:pointer-events-none disabled:opacity-50',

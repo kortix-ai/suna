@@ -1,15 +1,20 @@
 'use client';
 
-import { ExternalLink, Loader2, PackageSearch, Plus, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, Loader2, PackageSearch, Plus, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useMarketplaceItems,
   useMarketplaces,
@@ -19,6 +24,7 @@ import {
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
+import { Search } from '@mynaui/icons-react';
 import { AddMarketplaceDialog } from './add-marketplace-dialog';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemCard } from './marketplace-item-card';
@@ -145,17 +151,19 @@ export function MarketplaceBrowser({
     <div className="space-y-4">
       {/* Search + type filters + add */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-          <Input
+        <InputGroupSearch className="w-full sm:max-w-xs">
+          <InputGroupSearchIcon>
+            <Search />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={tI18nHardcoded.raw(
               'autoComponentsMarketplaceMarketplaceBrowserJsxAttrPlaceholderSearchTheMarketplace188bc1ee',
             )}
-            className="pl-9"
           />
-        </div>
+          <InputGroupSearchClear onClick={() => setQuery('')} />
+        </InputGroupSearch>
         <div className="flex items-center gap-2">
           {showTypeTabs && (
             <FilterBar className="overflow-x-auto">

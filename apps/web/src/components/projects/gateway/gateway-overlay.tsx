@@ -1,6 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { IconClose } from '@/components/ui/kortix-icons';
+import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { getProjectDetail } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { useGatewayOverlayStore, type GatewaySection } from '@/stores/gateway-overlay-store';
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -9,28 +15,25 @@ import {
   DollarSign,
   FlaskConical,
   KeyRound,
-  type LucideIcon,
   Plug,
   RefreshCw,
   ScrollText,
   Wallet,
+  type LucideIcon,
 } from 'lucide-react';
-
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { IconClose } from '@/components/ui/kortix-icons';
-import { cn } from '@/lib/utils';
-import { getProjectDetail } from '@/lib/projects-client';
-import { useGatewayOverlayStore, type GatewaySection } from '@/stores/gateway-overlay-store';
-
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-
-import { GatewayOverview } from './gateway-overview';
-import { GatewayCost } from './gateway-cost';
-import { GatewayUsage } from './gateway-usage';
-import { GatewayLogs } from './gateway-logs';
+import { useState } from 'react';
 import { GatewayBudgets } from './gateway-budgets';
+import { GatewayCost } from './gateway-cost';
 import { GatewayKeys } from './gateway-keys';
+import { GatewayLogs } from './gateway-logs';
+import { GatewayOverview } from './gateway-overview';
 import { GatewayPlayground } from './gateway-playground';
+import { GatewayUsage } from './gateway-usage';
+
+export const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+
+export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
+export const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 const SECTIONS: { id: GatewaySection; label: string; description: string; icon: LucideIcon }[] = [
   {
@@ -42,7 +45,8 @@ const SECTIONS: { id: GatewaySection; label: string; description: string; icon: 
   {
     id: 'cost',
     label: 'Cost',
-    description: 'Where spend goes — daily cost, cost by model, and total cost per session (LLM + compute).',
+    description:
+      'Where spend goes — daily cost, cost by model, and total cost per session (LLM + compute).',
     icon: DollarSign,
   },
   {
@@ -54,7 +58,8 @@ const SECTIONS: { id: GatewaySection; label: string; description: string; icon: 
   {
     id: 'logs',
     label: 'Logs',
-    description: 'Every LLM request routed through the gateway — model, status, latency, tokens, and cost.',
+    description:
+      'Every LLM request routed through the gateway — model, status, latency, tokens, and cost.',
     icon: ScrollText,
   },
   {
@@ -84,7 +89,8 @@ const SECTIONS: { id: GatewaySection; label: string; description: string; icon: 
   {
     id: 'providers',
     label: 'Providers',
-    description: 'Connect your own provider keys (BYOK) — stored per-project and injected into every new session.',
+    description:
+      'Connect your own provider keys (BYOK) — stored per-project and injected into every new session.',
     icon: Plug,
   },
 ];
@@ -122,9 +128,7 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
           'project-gateway-logs',
           'project-gateway-budgets',
           'project-gateway-keys',
-        ].map((key) =>
-          queryClient.refetchQueries({ queryKey: [key, projectId], type: 'active' }),
-        ),
+        ].map((key) => queryClient.refetchQueries({ queryKey: [key, projectId], type: 'active' })),
       );
     } finally {
       setRefreshing(false);
@@ -144,15 +148,15 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
       >
         <DialogTitle className="sr-only">Gateway · {projectName || 'project'}</DialogTitle>
 
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-3">
+        <div className="border-border/60 flex h-14 shrink-0 items-center justify-between border-b pr-3 pl-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <div className="bg-primary/10 text-primary flex size-7 items-center justify-center rounded-lg">
               <Activity className="size-4" />
             </div>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="text-sm font-semibold text-foreground">Gateway</span>
+              <span className="text-foreground text-sm font-semibold">Gateway</span>
               {projectName && (
-                <span className="truncate rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="bg-muted text-muted-foreground truncate rounded-full px-2 py-0.5 text-xs">
                   {projectName}
                 </span>
               )}
@@ -164,7 +168,7 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
               onClick={refreshAll}
               disabled={refreshing}
               aria-label="Refresh stats"
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground disabled:opacity-60"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors duration-150 disabled:opacity-60"
             >
               <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             </button>
@@ -172,16 +176,16 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
               type="button"
               onClick={close}
               aria-label="Close"
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-8 items-center justify-center rounded-lg transition-colors duration-150"
             >
               <IconClose className="size-4" />
             </button>
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 bg-background">
-          <nav className="flex w-56 shrink-0 flex-col border-r border-border/50 p-3">
-            <div className="px-2.5 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
+        <div className="bg-background flex min-h-0 flex-1">
+          <nav className="border-border/50 flex w-56 shrink-0 flex-col border-r p-3">
+            <div className="text-muted-foreground/50 px-2.5 pb-2 text-xs font-medium tracking-wide uppercase">
               Gateway
             </div>
             <div className="flex flex-col gap-0.5">
@@ -196,7 +200,7 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
                     className={cn(
                       'group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all duration-150',
                       isActive
-                        ? 'bg-primary/10 font-medium text-primary'
+                        ? 'bg-primary/10 text-primary font-medium'
                         : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
                     )}
                   >
@@ -207,20 +211,20 @@ export function GatewayOverlay({ projectId }: { projectId: string }) {
                       )}
                     />
                     <span className="flex-1 text-left">{s.label}</span>
-                    {isActive && <span className="size-1.5 rounded-full bg-primary" />}
+                    {isActive && <span className="bg-primary size-1.5 rounded-full" />}
                   </button>
                 );
               })}
             </div>
           </nav>
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-center gap-3 border-b border-border/50 px-6 py-3">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <div className="border-border/50 flex shrink-0 items-center gap-3 border-b px-6 py-3">
+              <div className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-xl">
                 <active.icon className="size-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-base font-semibold text-foreground">{active.label}</div>
-                <div className="truncate text-xs text-muted-foreground">{active.description}</div>
+                <div className="text-foreground text-base font-semibold">{active.label}</div>
+                <div className="text-muted-foreground truncate text-xs">{active.description}</div>
               </div>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">

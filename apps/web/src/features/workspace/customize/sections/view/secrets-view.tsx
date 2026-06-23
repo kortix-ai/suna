@@ -3,36 +3,11 @@
 import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  Check,
-  FileWarning,
-  KeyRound,
-  Loader2,
-  Lock,
-  MoreHorizontal,
-  Pencil,
-  Plug,
-  Plus,
-  Search,
-  Trash2,
-  User,
-  Users,
-} from 'lucide-react';
+import { KeyRound, MoreHorizontal, Plug, Plus } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,14 +15,40 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import {
   SharingPicker,
   intentToSelection,
@@ -65,9 +66,16 @@ import {
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import CustomizeSectionWrapper from '../component/section-wrapper';
+import {
+  DangerTriangleSolid,
+  LockSolid,
+  Pencil,
+  Search,
+  TrashSolid,
+  UserSolid,
+  UsersSolid,
+} from '@mynaui/icons-react';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
@@ -99,30 +107,242 @@ interface SecretRow {
 
 export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const queryClient = useQueryClient();
+  const queryKey = ['project-secrets', projectId];
+
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey,
     queryFn: () => listProjectSecrets(projectId),
     staleTime: 10_000,
   });
 
+  const normalized = useMemo(() => normalizeResponse(secretsQuery.data), [secretsQuery.data]);
+  const canManage = normalized.can_manage ?? false;
+  const allRows = useMemo(() => buildRows(normalized), [normalized]);
+
+  const missingRequired = allRows.filter(
+    (r) => r.requirement === 'required' && r.effectiveSource === 'none',
+  );
+
+  const [query, setQuery] = useState('');
+  const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [sharedDialogOpen, setSharedDialogOpen] = useState(false);
+  const [sharedDialogRow, setSharedDialogRow] = useState<SecretRow | null>(null);
+  const [personalDialog, setPersonalDialog] = useState<{ open: boolean; row: SecretRow | null }>({
+    open: false,
+    row: null,
+  });
+
+  const removeShared = useMutation({
+    mutationFn: (name: string) => deleteProjectSecret(projectId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  const removeMine = useMutation({
+    mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+  const setSource = useMutation({
+    mutationFn: ({ name, active }: { name: string; active: boolean }) =>
+      setPersonalProjectSecret(projectId, name, { active }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  });
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return allRows;
+    return allRows.filter((r) => r.name.toLowerCase().includes(q));
+  }, [allRows, query]);
+
+  const openSharedCreate = () => {
+    setSharedDialogRow(null);
+    setSharedDialogOpen(true);
+  };
+  const openSharedEdit = (row: SecretRow) => {
+    setSharedDialogRow(row);
+    setSharedDialogOpen(true);
+  };
+
+  const chooseSource = useCallback(
+    (row: SecretRow, source: 'shared' | 'mine') => {
+      if (source === 'mine') {
+        if (row.mine) {
+          if (!row.mine.active) setSource.mutate({ name: row.name, active: true });
+        } else {
+          setPersonalDialog({ open: true, row });
+        }
+      } else if (row.mine?.active) {
+        setSource.mutate({ name: row.name, active: false });
+      }
+    },
+    [setSource],
+  );
+
   return (
-    <CustomizeSectionWrapper
-      title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
-      description={tHardcodedUi.raw(
-        'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
-      )}
-    >
-      {secretsQuery.isLoading ? (
-        <SecretsSkeleton />
-      ) : secretsQuery.isError ? (
-        <ErrorNotice
-          message={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
-          onRetry={() => secretsQuery.refetch()}
-        />
-      ) : (
-        <SecretsCard projectId={projectId} data={secretsQuery.data} />
-      )}
-    </CustomizeSectionWrapper>
+    <>
+      <CustomizeSectionWrapper
+        // className="max-w-3xl"
+        title={tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line104JsxTextProjectSecrets')}
+        description={tHardcodedUi.raw(
+          'appProjectsIdCustomizeSecretsPage.line106JsxTextKeyValuePairsInjectedAsEnvironmentVariablesInto',
+        )}
+        action={
+          !secretsQuery.isLoading && !secretsQuery.isError ? (
+            <div className="flex items-center gap-1.5">
+              {canManage && (
+                <Button size="sm" variant="outline" onClick={() => setProviderModalOpen(true)}>
+                  <Plug className="size-4 shrink-0" />
+                  {tI18nHardcoded.raw(
+                    'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
+                  )}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={
+                  canManage ? openSharedCreate : () => setPersonalDialog({ open: true, row: null })
+                }
+              >
+                <Icon.Plus className="size-4 shrink-0" />
+                Add
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        <div className="space-y-4">
+          <InputGroupSearch>
+            <InputGroupSearchIcon>
+              <Search />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              placeholder="Search secrets"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <InputGroupSearchClear onClick={() => setQuery('')} />
+          </InputGroupSearch>
+
+          {secretsQuery.isLoading ? (
+            <div className="space-y-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 rounded-md" />
+              ))}
+            </div>
+          ) : secretsQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title={tHardcodedUi.raw(
+                'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
+              )}
+              description={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
+              action={
+                <Button variant="outline" size="sm" onClick={() => secretsQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              {missingRequired.length > 0 && (
+                <InfoBanner
+                  tone="warning"
+                  icon={DangerTriangleSolid}
+                  title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set for you`}
+                >
+                  {tHardcodedUi.raw(
+                    'appProjectsIdCustomizeSecretsPage.line278JsxTextSessionsCanStillStartButTheAgentWill',
+                  )}
+                </InfoBanner>
+              )}
+
+              {filtered.length === 0 ? (
+                query.trim() ? (
+                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                    No matches for <span className="text-foreground font-mono">{query}</span>.
+                  </p>
+                ) : (
+                  <EmptyState
+                    icon={KeyRound}
+                    size="sm"
+                    title="No secrets yet"
+                    description="Add one to inject it into every new session."
+                    action={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={
+                          canManage
+                            ? openSharedCreate
+                            : () => setPersonalDialog({ open: true, row: null })
+                        }
+                      >
+                        <Plus className="size-3.5 shrink-0" />
+                        Add secret
+                      </Button>
+                    }
+                  />
+                )
+              ) : (
+                <Table className="overflow-hidden rounded-md">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead className="w-[52px]">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((row) => (
+                      <SecretTableRow
+                        key={row.name}
+                        row={row}
+                        canManage={canManage}
+                        busy={
+                          (setSource.isPending && setSource.variables?.name === row.name) ||
+                          (removeMine.isPending && removeMine.variables === row.name) ||
+                          (removeShared.isPending && removeShared.variables === row.name)
+                        }
+                        onChooseSource={chooseSource}
+                        onEditShared={() => openSharedEdit(row)}
+                        onDeleteShared={() => removeShared.mutate(row.name)}
+                        onEditMine={() => setPersonalDialog({ open: true, row })}
+                        onRemoveMine={() => removeMine.mutate(row.name)}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              <SecretDialog
+                open={sharedDialogOpen}
+                onOpenChange={setSharedDialogOpen}
+                projectId={projectId}
+                row={sharedDialogRow}
+                onSaved={() => queryClient.invalidateQueries({ queryKey })}
+              />
+              <PersonalSecretDialog
+                open={personalDialog.open}
+                row={personalDialog.row}
+                projectId={projectId}
+                onClose={() => setPersonalDialog({ open: false, row: null })}
+                onSaved={() => queryClient.invalidateQueries({ queryKey })}
+              />
+            </>
+          )}
+        </div>
+      </CustomizeSectionWrapper>
+      <ProjectProviderModal
+        projectId={projectId}
+        open={providerModalOpen}
+        onOpenChange={setProviderModalOpen}
+      />
+    </>
   );
 }
 
@@ -148,7 +368,6 @@ function normalizeResponse(
   };
 }
 
-/** Merge stored secrets + manifest requirements into a single sortable list. */
 function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefined): SecretRow[] {
   const data = normalizeResponse(raw);
   const requirementByName = new Map<string, Requirement>();
@@ -195,220 +414,24 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
   return rows;
 }
 
-/** Short label for the shared row's sharing scope (null = the implicit project-wide). */
 function sharingScopeLabel(sharing: ConnectorSharing | null): string | null {
   if (!sharing || sharing.mode === 'project') return null;
   return sharing.mode === 'private' ? 'Owner only' : 'Select members';
 }
 
-function SecretsCard({
-  projectId,
-  data,
-}: {
-  projectId: string;
-  data: ProjectSecretsResponse | ProjectSecret[] | null | undefined;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const queryKey = ['project-secrets', projectId];
-
-  const normalized = useMemo(() => normalizeResponse(data), [data]);
-  const canManage = normalized.can_manage ?? false;
-  const allRows = useMemo(() => buildRows(normalized), [normalized]);
-
-  // "Missing" = the member has no effective value (shared not reaching them and
-  // no active override of their own).
-  const missingRequired = allRows.filter(
-    (r) => r.requirement === 'required' && r.effectiveSource === 'none',
-  );
-
-  const [search, setSearch] = useState('');
-  const [providerModalOpen, setProviderModalOpen] = useState(false);
-
-  // Shared (manager) add/edit dialog — null row = create new.
-  const [sharedDialogOpen, setSharedDialogOpen] = useState(false);
-  const [sharedDialogRow, setSharedDialogRow] = useState<SecretRow | null>(null);
-  // Personal override dialog (any member). `open` is tracked separately so
-  // "create new" (row === null) is distinct from "closed".
-  const [personalDialog, setPersonalDialog] = useState<{ open: boolean; row: SecretRow | null }>({
-    open: false,
-    row: null,
-  });
-
-  const removeShared = useMutation({
-    mutationFn: (name: string) => deleteProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
-  });
-  const removeMine = useMutation({
-    mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
-  });
-  // The per-key source choice (use shared vs use mine) — only flips the active
-  // flag; the value is set via the personal dialog.
-  const setSource = useMutation({
-    mutationFn: ({ name, active }: { name: string; active: boolean }) =>
-      setPersonalProjectSecret(projectId, name, { active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
-  });
-
-  const filtered = useMemo(() => {
-    if (!search) return allRows;
-    const q = search.toLowerCase();
-    return allRows.filter((r) => r.name.toLowerCase().includes(q));
-  }, [allRows, search]);
-
-  const openSharedCreate = () => {
-    setSharedDialogRow(null);
-    setSharedDialogOpen(true);
-  };
-  const openSharedEdit = (row: SecretRow) => {
-    setSharedDialogRow(row);
-    setSharedDialogOpen(true);
-  };
-
-  const chooseSource = useCallback(
-    (row: SecretRow, source: 'shared' | 'mine') => {
-      if (source === 'mine') {
-        if (row.mine) {
-          if (!row.mine.active) setSource.mutate({ name: row.name, active: true });
-        } else {
-          // No personal value yet — collect one.
-          setPersonalDialog({ open: true, row });
-        }
-      } else {
-        // Use shared: deactivate the override if we have one (kept for later).
-        if (row.mine?.active) setSource.mutate({ name: row.name, active: false });
-      }
-    },
-    [setSource],
-  );
-
-  return (
-    <div className="space-y-4">
-      <ManifestStatusBanner
-        status={normalized.manifest_status}
-        path={normalized.manifest_path}
-        error={normalized.manifest_error}
-        envCount={normalized.required.length + normalized.optional.length}
-      />
-
-      {missingRequired.length > 0 && (
-        <InfoBanner
-          tone="warning"
-          icon={AlertTriangle}
-          title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set for you`}
-        >
-          {tHardcodedUi.raw(
-            'appProjectsIdCustomizeSecretsPage.line278JsxTextSessionsCanStillStartButTheAgentWill',
-          )}
-        </InfoBanner>
-      )}
-
-      <ProjectProviderModal
-        projectId={projectId}
-        open={providerModalOpen}
-        onOpenChange={setProviderModalOpen}
-      />
-
-      <SectionCard
-        title="Secrets"
-        description={tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line290JsxAttrDescriptionKeyValuePairsInjectedIntoEveryNewSession',
-        )}
-        flush
-        action={
-          <div className="flex items-center gap-2">
-            <div className="relative w-44">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-              <Input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Filter..."
-                className="h-8 pl-8 text-xs shadow-none"
-              />
-            </div>
-            {canManage && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => setProviderModalOpen(true)}
-              >
-                <Plug className="h-3.5 w-3.5" />
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
-                )}
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={
-                canManage ? openSharedCreate : () => setPersonalDialog({ open: true, row: null })
-              }
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add
-            </Button>
-          </div>
-        }
-      >
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={KeyRound}
-            title={search ? 'No matches' : 'No secrets yet'}
-            description={
-              search
-                ? 'No secrets match your filter.'
-                : 'Add one to inject it into every new session.'
-            }
-          />
-        ) : (
-          <List>
-            {filtered.map((row) => (
-              <SecretListRow
-                key={row.name}
-                row={row}
-                canManage={canManage}
-                busy={
-                  (setSource.isPending && setSource.variables?.name === row.name) ||
-                  (removeMine.isPending && removeMine.variables === row.name) ||
-                  (removeShared.isPending && removeShared.variables === row.name)
-                }
-                onChooseSource={chooseSource}
-                onEditShared={() => openSharedEdit(row)}
-                onDeleteShared={() => removeShared.mutate(row.name)}
-                onEditMine={() => setPersonalDialog({ open: true, row })}
-                onRemoveMine={() => removeMine.mutate(row.name)}
-              />
-            ))}
-          </List>
-        )}
-      </SectionCard>
-
-      <SecretDialog
-        open={sharedDialogOpen}
-        onOpenChange={setSharedDialogOpen}
-        projectId={projectId}
-        row={sharedDialogRow}
-        onSaved={() => queryClient.invalidateQueries({ queryKey })}
-      />
-      <PersonalSecretDialog
-        open={personalDialog.open}
-        row={personalDialog.row}
-        projectId={projectId}
-        onClose={() => setPersonalDialog({ open: false, row: null })}
-        onSaved={() => queryClient.invalidateQueries({ queryKey })}
-      />
-    </div>
-  );
+function effectiveStatusLabel(row: SecretRow): string {
+  if (row.system) return row.sharedConfigured ? 'Managed by Kortix' : 'Not set';
+  if (row.effectiveSource === 'mine') return 'Using your own value';
+  if (row.effectiveSource === 'shared') return 'Using the shared value';
+  if (row.sharedConfigured && !row.usableByMe) {
+    return "Shared value exists but isn't shared with you";
+  }
+  let label = 'Not set';
+  if (row.mine) label += ' · your value saved';
+  return label;
 }
 
-/** One secret row: name + badges + the per-key source chooser + actions. */
-function SecretListRow({
+function SecretTableRow({
   row,
   canManage,
   busy,
@@ -430,103 +453,77 @@ function SecretListRow({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const scopeLabel = sharingScopeLabel(row.sharing);
   const canManageShared = canManage && !row.system;
-
-  // Git-auth / Kortix-managed rows keep their dedicated, simpler treatment.
-  if (row.system) {
-    return (
-      <ListRow
-        compact
-        leading={<EntityAvatar icon={KeyRound} size="sm" />}
-        title={
-          <code className="text-foreground truncate font-mono text-xs leading-none">
-            {row.name}
-          </code>
-        }
-        badges={
-          <Badge variant="outline" size="sm">
-            Managed
-          </Badge>
-        }
-        subtitle={
-          <span className="text-muted-foreground truncate text-xs leading-none">
-            {row.sharedConfigured ? 'Managed by Kortix' : 'Not set'}
-          </span>
-        }
-      />
-    );
-  }
-
-  const subtitle = (
-    <span className="text-muted-foreground truncate text-xs leading-none">
-      {row.effectiveSource === 'mine'
-        ? 'Using your own value'
-        : row.effectiveSource === 'shared'
-          ? 'Using the shared value'
-          : row.sharedConfigured && !row.usableByMe
-            ? 'Shared value exists but isn’t shared with you'
-            : 'Not set'}
-      {row.mine && row.effectiveSource !== 'mine' && ' · your value saved'}
-    </span>
-  );
+  const statusLabel = effectiveStatusLabel(row);
 
   return (
-    <ListRow
-      compact
+    <TableRow
       className={cn(
         row.requirement === 'required' && row.effectiveSource === 'none' && 'bg-amber-500/[0.02]',
       )}
-      leading={<EntityAvatar icon={row.effectiveSource === 'mine' ? User : KeyRound} size="sm" />}
-      title={
-        <code className="text-foreground truncate font-mono text-xs leading-none">{row.name}</code>
-      }
-      badges={
-        <>
-          {row.requirement === 'required' && (
-            <Badge variant="warning" size="sm">
-              Required
-            </Badge>
-          )}
-          {row.requirement === 'optional' && (
-            <Badge variant="outline" size="sm">
-              Optional
-            </Badge>
-          )}
-          {scopeLabel && (
-            <Badge variant="outline" size="sm">
-              {scopeLabel}
-            </Badge>
-          )}
-        </>
-      }
-      subtitle={subtitle}
-      trailing={
-        <div className="flex items-center gap-1.5">
+    >
+      <TableCell className="max-w-[180px]">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <code className="text-foreground truncate font-mono text-xs">{row.name}</code>
+          <div className="flex flex-wrap gap-1">
+            {row.system && (
+              <Badge variant="outline" size="xs">
+                Managed
+              </Badge>
+            )}
+            {row.requirement === 'required' && (
+              <Badge variant="warning" size="xs">
+                Required
+              </Badge>
+            )}
+            {row.requirement === 'optional' && (
+              <Badge variant="outline" size="xs">
+                Optional
+              </Badge>
+            )}
+            {scopeLabel && (
+              <Badge variant="outline" size="xs">
+                {scopeLabel}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground max-w-[200px] text-xs font-medium whitespace-normal">
+        {statusLabel}
+      </TableCell>
+      <TableCell>
+        {row.system ? (
+          <span className="text-muted-foreground/50 text-xs">—</span>
+        ) : (
           <SourceChooser row={row} busy={busy} onChoose={(s) => onChooseSource(row, s)} />
+        )}
+      </TableCell>
+      <TableCell>
+        {row.system ? null : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-7 w-7"
                 aria-label={tI18nHardcoded.raw(
                   'autoComponentsProjectsCustomizeSectionsSecretsViewJsxAttrAriaLabelda70cb1c',
                 )}
               >
                 {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <Loading className="size-3.5 shrink-0 animate-spin" />
                 ) : (
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <MoreHorizontal className="size-3.5 shrink-0" />
                 )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuItem onClick={onEditMine}>
-                <User className="h-3.5 w-3.5" />
+                <UserSolid className="size-3.5 shrink-0" />
                 {row.mine ? 'Edit my value' : 'Use my own value'}
               </DropdownMenuItem>
               {row.mine && (
                 <DropdownMenuItem onClick={onRemoveMine} variant="destructive">
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <TrashSolid className="size-3.5 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextRemoveMy28722d0f',
                   )}
@@ -536,12 +533,12 @@ function SecretListRow({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onEditShared}>
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="size-3.5 shrink-0" />
                     {row.sharedConfigured ? 'Edit shared value' : 'Set shared value'}
                   </DropdownMenuItem>
                   {row.sharedConfigured && (
                     <DropdownMenuItem onClick={onDeleteShared} variant="destructive">
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <TrashSolid className="size-3.5 shrink-0" />
                       {tI18nHardcoded.raw(
                         'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextDeleteSharedd7bb1731',
                       )}
@@ -551,13 +548,12 @@ function SecretListRow({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      }
-    />
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
-/** The per-key segmented choice: use the shared value or your own. */
 function SourceChooser({
   row,
   busy,
@@ -568,50 +564,43 @@ function SourceChooser({
   onChoose: (source: 'shared' | 'mine') => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const usingMine = row.effectiveSource === 'mine';
-  // Picking "Shared" is only meaningful if a shared value can reach the member.
   const sharedAvailable = row.sharedConfigured && row.usableByMe;
+  const tabValue =
+    row.effectiveSource === 'mine' ? 'mine' : row.effectiveSource === 'shared' ? 'shared' : '';
+
   return (
-    <div className="border-border/60 flex items-center rounded-2xl border p-0.5">
-      <button
-        type="button"
-        disabled={busy || !sharedAvailable}
-        onClick={() => onChoose('shared')}
-        className={cn(
-          'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
-          !usingMine && sharedAvailable
-            ? 'bg-muted text-foreground font-medium'
-            : 'text-muted-foreground hover:text-foreground disabled:hover:text-muted-foreground disabled:opacity-40',
-        )}
-        title={
-          sharedAvailable ? 'Use the shared project value' : 'No shared value available to you'
-        }
-      >
-        <Users className="h-3 w-3" />
-        Shared
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onChoose('mine')}
-        className={cn(
-          'flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed',
-          usingMine
-            ? 'bg-primary/10 text-primary font-medium'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsSecretsViewJsxAttrTitleUsed8cf287f',
-        )}
-      >
-        <Lock className="h-3 w-3" />
-        Mine
-      </button>
-    </div>
+    <Tabs
+      className="gap-0"
+      value={tabValue}
+      onValueChange={(value) => {
+        if (value === 'shared' || value === 'mine') onChoose(value);
+      }}
+    >
+      <TabsListCompact variant="accent">
+        <TabsTriggerCompact
+          value="shared"
+          disabled={busy || !sharedAvailable}
+          title={
+            sharedAvailable ? 'Use the shared project value' : 'No shared value available to you'
+          }
+        >
+          <UsersSolid />
+          Shared
+        </TabsTriggerCompact>
+        <TabsTriggerCompact
+          value="mine"
+          disabled={busy}
+          title={tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsSecretsViewJsxAttrTitleUsed8cf287f',
+          )}
+        >
+          <LockSolid />
+          Mine
+        </TabsTriggerCompact>
+      </TabsListCompact>
+    </Tabs>
   );
 }
-
-// ─── Shared (manager) add / set / rotate dialog ──────────────────────────────
 
 function SecretDialog({
   open,
@@ -623,12 +612,10 @@ function SecretDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  /** null = create a brand-new shared secret; otherwise set/edit this row. */
   row: SecretRow | null;
   onSaved: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
@@ -686,79 +673,57 @@ function SecretDialog({
       : `Set ${row.name}`;
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(next) => {
         if (save.isPending) return;
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
+      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{title}</ModalTitle>
+          <ModalDescription>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextTheShared55c37a86',
             )}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-          {/* Dummy fields absorb browser autofill so the real inputs below
-              aren't treated as a username/password login form. */}
-          <input
-            type="text"
-            name="username"
-            autoComplete="username"
-            className="hidden"
-            tabIndex={-1}
-            aria-hidden="true"
-          />
-          <input
-            type="password"
-            name="password"
-            autoComplete="new-password"
-            className="hidden"
-            tabIndex={-1}
-            aria-hidden="true"
-          />
-          <div className="space-y-1.5">
-            <Label htmlFor="secret-dialog-name">Name</Label>
-            <Input
-              id="secret-dialog-name"
-              name="kortix-secret-name"
-              value={fixedName ?? name}
-              onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-              placeholder="KEY_NAME"
-              className="font-mono"
-              autoFocus={!fixedName}
-              autoComplete="off"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              disabled={!!fixedName || save.isPending}
-              required
-            />
-          </div>
+          </ModalDescription>
+        </ModalHeader>
+        <form onSubmit={handleSubmit} autoComplete="off">
+          <ModalBody className="max-h-[60vh] overflow-y-auto">
+            <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
+              <Input
+                id="secret-dialog-name"
+                name="kortix-secret-name"
+                value={fixedName ?? name}
+                onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                placeholder="KEY_NAME"
+                className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
+                autoFocus={!fixedName}
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                disabled={!!fixedName || save.isPending}
+                required
+              />
+              <Input
+                id="secret-dialog-value"
+                name="kortix-secret-value"
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="••••••••"
+                className="bg-secondary rounded-none rounded-t-sm border-none font-mono"
+                autoComplete="new-password"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                autoFocus={!!fixedName}
+                disabled={save.isPending}
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="secret-dialog-value">
-              {row?.sharedConfigured ? 'New value' : 'Value'}
-            </Label>
-            <Input
-              id="secret-dialog-value"
-              name="kortix-secret-value"
-              type="password"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="••••••••"
-              className="font-mono"
-              autoComplete="new-password"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              autoFocus={!!fixedName}
-              disabled={save.isPending}
-            />
             {row?.sharedConfigured && (
               <p className="text-muted-foreground text-xs">
                 {tI18nHardcoded.raw(
@@ -766,14 +731,16 @@ function SecretDialog({
                 )}
               </p>
             )}
-          </div>
 
-          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} />
+            <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} />
+          </ModalBody>
 
-          <DialogFooter>
+          <ModalFooter className="sm:justify-between">
             <Button
               type="button"
-              variant="outline"
+              variant="outline-ghost"
+              size="sm"
+              className="w-full sm:w-auto"
               onClick={() => onOpenChange(false)}
               disabled={save.isPending}
             >
@@ -781,25 +748,24 @@ function SecretDialog({
             </Button>
             <Button
               type="submit"
+              size="sm"
+              className="w-full sm:w-auto"
               disabled={
                 (!fixedName && !name.trim()) ||
                 (requiresValue && !value.trim()) ||
                 !isSharingComplete(sharing) ||
                 save.isPending
               }
-              className="gap-1.5"
             >
-              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
               Save
             </Button>
-          </DialogFooter>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }
-
-// ─── Personal override dialog (any member) ───────────────────────────────────
 
 function PersonalSecretDialog({
   open,
@@ -809,7 +775,6 @@ function PersonalSecretDialog({
   onSaved,
 }: {
   open: boolean;
-  /** The key to override; null = the member is adding a brand-new personal key. */
   row: SecretRow | null;
   projectId: string;
   onClose: () => void;
@@ -857,235 +822,81 @@ function PersonalSecretDialog({
   }
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(next) => {
-        if (!save.isPending && !next) onClose();
+        if (save.isPending) return;
+        if (!next) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{row ? `Your value for ${row.name}` : 'Add your own secret'}</DialogTitle>
-          <DialogDescription>
+      <ModalContent className="z-[999999999] lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{row ? `Your value for ${row.name}` : 'Add your own secret'}</ModalTitle>
+          <ModalDescription>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextAPrivate3616193c',
             )}
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-          <input
-            type="text"
-            name="username"
-            autoComplete="username"
-            className="hidden"
-            tabIndex={-1}
-            aria-hidden="true"
-          />
-          <input
-            type="password"
-            name="password"
-            autoComplete="new-password"
-            className="hidden"
-            tabIndex={-1}
-            aria-hidden="true"
-          />
-          <div className="space-y-1.5">
-            <Label htmlFor="personal-secret-name">Name</Label>
-            <Input
-              id="personal-secret-name"
-              value={fixedName ?? name}
-              onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-              placeholder="KEY_NAME"
-              className="font-mono"
-              autoFocus={!fixedName}
-              autoComplete="off"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              disabled={!!fixedName || save.isPending}
-              required
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="personal-secret-value">{row?.mine ? 'New value' : 'Value'}</Label>
-            <Input
-              id="personal-secret-value"
-              type="password"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="••••••••"
-              className="font-mono"
-              autoComplete="new-password"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              autoFocus={!!fixedName}
+          </ModalDescription>
+        </ModalHeader>
+        <form onSubmit={handleSubmit} autoComplete="off">
+          <ModalBody>
+            <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
+              <Input
+                id="personal-secret-name"
+                value={fixedName ?? name}
+                onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
+                placeholder="KEY_NAME"
+                variant="default"
+                className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
+                autoFocus={!fixedName}
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                disabled={!!fixedName || save.isPending}
+                required
+              />
+              <Input
+                id="personal-secret-value"
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="••••••••"
+                className="bg-secondary rounded-none rounded-t-sm border-none font-mono"
+                autoComplete="new-password"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-form-type="other"
+                autoFocus={!!fixedName}
+                disabled={save.isPending}
+              />
+            </div>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline-ghost"
+              size="sm"
+              className="w-full sm:w-auto"
+              onClick={onClose}
               disabled={save.isPending}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={save.isPending}>
+            >
               Cancel
             </Button>
             <Button
               type="submit"
+              size="sm"
+              className="w-full gap-1.5 sm:w-auto"
               disabled={(!fixedName && !name.trim()) || !value.trim() || save.isPending}
-              className="gap-1.5"
             >
-              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {save.isPending && <Loading className="size-4 shrink-0 animate-spin" />}
               {tI18nHardcoded.raw(
                 'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextUseMineb9944133',
               )}
             </Button>
-          </DialogFooter>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ManifestStatusBanner({
-  status,
-  path,
-  error,
-  envCount,
-}: {
-  status?: 'loaded' | 'missing' | 'error';
-  path?: string;
-  error?: string;
-  envCount: number;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  if (status === 'loaded') {
-    // Manifest loaded and DECLARED envs — keep the banner subtle.
-    if (envCount > 0) {
-      return (
-        <InfoBanner tone="success" icon={Check}>
-          {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line675JsxTextManifestLoadedFrom')}{' '}
-          <code className="bg-background rounded px-1 py-0.5 font-mono">{path}</code> · {envCount}{' '}
-          env {envCount === 1 ? 'key' : 'keys'} declared
-        </InfoBanner>
-      );
-    }
-    // Manifest loaded but no envs — tell the user where to add them.
-    return (
-      <InfoBanner
-        tone="neutral"
-        icon={FileWarning}
-        title={tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line686JsxAttrTitleManifestLoadedButNoEnvKeysDeclared',
-        )}
-      >
-        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextAddA')}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">[env]</code>
-        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line688JsxTextSectionTo')}{' '}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">{path}</code> with{' '}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">required</code> /{' '}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">optional</code>
-        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line692JsxTextStringArrays')}
-      </InfoBanner>
-    );
-  }
-
-  if (status === 'missing') {
-    return (
-      <InfoBanner
-        tone="neutral"
-        icon={FileWarning}
-        title={tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line699JsxAttrTitleNoManifestFound',
-        )}
-      >
-        {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line700JsxTextCommitA')}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
-        {tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line700JsxTextToThisProjectToDeclareRequiredOptionalEnv',
-        )}
-      </InfoBanner>
-    );
-  }
-
-  if (status === 'error') {
-    return (
-      <InfoBanner
-        tone="warning"
-        icon={AlertTriangle}
-        title={
-          <>
-            {tHardcodedUi.raw('appProjectsIdCustomizeSecretsPage.line713JsxTextCouldnTRead')}{' '}
-            <code className="bg-background rounded px-1 py-0.5 font-mono">
-              {path ?? 'kortix.toml'}
-            </code>
-          </>
-        }
-      >
-        {error && <p className="break-all opacity-80">{error}</p>}
-        <p className="opacity-80">
-          {tHardcodedUi.raw(
-            'appProjectsIdCustomizeSecretsPage.line720JsxTextCheckTheRepoIsReachableAndLinkedThrough',
-          )}
-        </p>
-      </InfoBanner>
-    );
-  }
-
-  // Old API build that doesn't return manifest_status. Tell the user — most
-  // likely they just need to restart their API dev server.
-  return (
-    <InfoBanner
-      tone="warning"
-      icon={AlertTriangle}
-      title={tHardcodedUi.raw(
-        'appProjectsIdCustomizeSecretsPage.line729JsxAttrTitleManifestStatusUnavailable',
-      )}
-    >
-      <p className="opacity-80">
-        {tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line731JsxTextTheApiIsnTReturningManifestInfoRestart',
-        )}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">apps/api</code>
-        {tHardcodedUi.raw(
-          'appProjectsIdCustomizeSecretsPage.line732JsxTextToPickUpRequiredOptionalKeysFromYour',
-        )}
-        <code className="bg-background rounded px-1 py-0.5 font-mono">kortix.toml</code>.
-      </p>
-    </InfoBanner>
-  );
-}
-
-function SecretsSkeleton() {
-  return (
-    <Card className="gap-0 overflow-hidden py-0">
-      <div className="border-border/60 border-b px-6 py-4">
-        <Skeleton className="h-8 w-full" />
-      </div>
-      <div className="divide-border/60 divide-y">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="flex items-center gap-3 px-6 py-3">
-            <Skeleton className="h-4 w-[200px]" />
-            <Skeleton className="h-4 flex-1" />
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <InfoBanner
-      tone="destructive"
-      title={tHardcodedUi.raw(
-        'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
-      )}
-      action={
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      }
-    >
-      {message}
-    </InfoBanner>
+      </ModalContent>
+    </Modal>
   );
 }

@@ -6,8 +6,18 @@ import * as React from 'react';
 
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
+import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 
-const Sheet = SheetPrimitive.Root;
+const Sheet = ({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) => {
+  const parentDepth = useDialogDepth();
+  const depth = parentDepth + 1;
+
+  return (
+    <DialogDepthProvider depth={depth}>
+      <SheetPrimitive.Root {...props} />
+    </DialogDepthProvider>
+  );
+};
 
 const SheetTrigger = SheetPrimitive.Trigger;
 
@@ -18,20 +28,25 @@ const SheetPortal = SheetPrimitive.Portal;
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <SheetPrimitive.Overlay
-    className={cn(
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/80',
-      className,
-    )}
-    {...props}
-    ref={ref}
-  />
-));
+>(({ className, style, ...props }, ref) => {
+  const depth = useDialogDepth();
+
+  return (
+    <SheetPrimitive.Overlay
+      className={cn(
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 bg-black/80',
+        className,
+      )}
+      style={{ zIndex: dialogOverlayZ(depth), ...style }}
+      {...props}
+      ref={ref}
+    />
+  );
+});
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
 const sheetVariants = cva(
-  'fixed z-50 flex min-h-0 flex-col gap-4 overflow-hidden bg-background p-4 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out h-[calc(100vh-1.4rem)]',
+  'fixed flex min-h-0 flex-col gap-4 overflow-hidden bg-background p-4 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out h-[calc(100vh-1.4rem)]',
   {
     variants: {
       side: {
@@ -62,26 +77,39 @@ const SheetContent = React.forwardRef<
   SheetContentProps
 >(
   (
-    { side = 'right', className, children, showCloseButton = true, overlayClassName, ...props },
+    {
+      side = 'right',
+      className,
+      children,
+      showCloseButton = true,
+      overlayClassName,
+      style,
+      ...props
+    },
     ref,
-  ) => (
-    <SheetPortal>
-      <SheetOverlay className={overlayClassName} />
-      <SheetPrimitive.Content
-        ref={ref}
-        className={cn(sheetVariants({ side }), className)}
-        {...props}
-      >
-        {children}
-        {showCloseButton && (
-          <SheetPrimitive.Close className="border-input bg-background/80 text-primary ring-offset-background hover:bg-background/80 hover:text-primary focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 inline-flex size-8 items-center justify-center rounded-md border p-0 text-xs font-medium opacity-70 transition-all hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
-            <Icon.Close className="size-[1.15rem] stroke-0" />
-            <span className="sr-only">Close</span>
-          </SheetPrimitive.Close>
-        )}
-      </SheetPrimitive.Content>
-    </SheetPortal>
-  ),
+  ) => {
+    const depth = useDialogDepth();
+
+    return (
+      <SheetPortal>
+        <SheetOverlay className={overlayClassName} />
+        <SheetPrimitive.Content
+          ref={ref}
+          className={cn(sheetVariants({ side }), className)}
+          style={{ zIndex: dialogContentZ(depth), ...style }}
+          {...props}
+        >
+          {children}
+          {showCloseButton && (
+            <SheetPrimitive.Close className="border-input bg-background/80 text-primary ring-offset-background hover:bg-background/80 hover:text-primary focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 inline-flex size-8 items-center justify-center rounded-md border p-0 text-xs font-medium opacity-70 transition-all hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
+              <Icon.Close className="size-[1.15rem] stroke-0" />
+              <span className="sr-only">Close</span>
+            </SheetPrimitive.Close>
+          )}
+        </SheetPrimitive.Content>
+      </SheetPortal>
+    );
+  },
 );
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 

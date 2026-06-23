@@ -29,7 +29,7 @@ function AlertMedia({
       data-slot="alert-media"
       variant={variant}
       className={cn(
-        'size-4 shrink-0 self-start [&_svg]:text-current [&_svg:not([class*="size-"])]:size-4',
+        'mt-0.5 size-4 shrink-0 self-start [&_svg]:text-current [&_svg:not([class*="size-"])]:size-4',
         className,
       )}
       {...props}
