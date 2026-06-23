@@ -149,6 +149,20 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
+// Free OpenCode Zen models (the `-free` set from the catalog). The gateway serves
+// these through a Kortix-owned Zen key at $0, so users get them without their own
+// OPENCODE_API_KEY. Resolution keys off this set; the daemon surfaces them under a
+// dedicated `opencode` provider (not `kortix`).
+export const FREE_OPENCODE_ZEN_MODEL_IDS = new Set(
+  (CATALOG.providers.find((p) => p.id === 'opencode')?.models ?? [])
+    .filter((m) => m.id.endsWith('-free'))
+    .map((m) => m.id),
+);
+
+export function isFreeOpencodeZenModel(id: string): boolean {
+  return FREE_OPENCODE_ZEN_MODEL_IDS.has(id);
+}
+
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',
   'kortix',

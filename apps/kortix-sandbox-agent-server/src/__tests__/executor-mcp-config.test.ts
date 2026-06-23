@@ -215,3 +215,40 @@ describe('buildOpencodeConfigContent — Slack sessions deny the question tool',
     expect(config.permission.question).toBe('deny')
   })
 })
+
+describe('buildOpencodeConfigContent — free OpenCode Zen split into its own provider', () => {
+  const GATEWAY_ENV = {
+    KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
+    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+  }
+
+  test('free Zen models become a dedicated `opencode` provider with bare keys; paid Zen dropped', async () => {
+    stubGatewayModels({
+      'claude-opus-4.8': { name: 'Claude Opus 4.8' },
+      'opencode/deepseek-v4-flash-free': { name: 'DeepSeek V4 Flash Free' },
+      'opencode/minimax-m3-free': { name: 'MiniMax M3 Free' },
+      'opencode/claude-opus-4-8': { name: 'Claude Opus 4.8 (paid Zen)' },
+    })
+    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+
+    // Dedicated provider, friendly name, bare model keys (no `opencode/` prefix).
+    expect(config.provider.opencode.name).toBe('OpenCode Zen')
+    expect(config.provider.opencode.models['deepseek-v4-flash-free']).toBeDefined()
+    expect(config.provider.opencode.models['minimax-m3-free']).toBeDefined()
+    // Paid Zen model is not free → dropped.
+    expect(config.provider.opencode.models['claude-opus-4-8']).toBeUndefined()
+    // Zen models are NOT under kortix; managed models still are.
+    expect(config.provider.kortix.models['opencode/deepseek-v4-flash-free']).toBeUndefined()
+    expect(config.provider.kortix.models['claude-opus-4.8']).toBeDefined()
+    // Both providers allowlisted so opencode loads them.
+    expect(config.enabled_providers).toContain('kortix')
+    expect(config.enabled_providers).toContain('opencode')
+  })
+
+  test('no opencode provider (and not allowlisted) when there are no free Zen models', async () => {
+    stubGatewayModels({ 'claude-opus-4.8': { name: 'Claude Opus 4.8' } })
+    const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
+    expect(config.provider.opencode).toBeUndefined()
+    expect(config.enabled_providers).not.toContain('opencode')
+  })
+})
