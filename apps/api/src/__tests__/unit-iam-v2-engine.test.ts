@@ -6,6 +6,8 @@ import { describe, test, expect } from 'bun:test';
 import {
   scopeForActionV2,
   deriveEffectiveProjectRole,
+  customPolicyAllows,
+  type CustomAction,
 } from '../iam/engine-v2';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 
@@ -80,5 +82,44 @@ describe('deriveEffectiveProjectRole', () => {
 
   test('member with direct Manager → manager (no implicit needed)', () => {
     expect(deriveEffectiveProjectRole('member', 'manager', [])).toBe('manager');
+  });
+});
+
+describe('customPolicyAllows (DB custom-role union)', () => {
+  const proj = (id: string) => ({ type: 'project' as const, id });
+  const acct = { type: 'account' as const };
+
+  test('no custom actions → never allows', () => {
+    expect(customPolicyAllows([], 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1'))).toBe(false);
+  });
+
+  test('project-scoped policy grants only on its own project', () => {
+    const ca: CustomAction[] = [{ scopeType: 'project', scopeId: 'p1', action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE }];
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p1'))).toBe(true);
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('p2'))).toBe(false);
+    // wrong action on the right project
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('p1'))).toBe(false);
+  });
+
+  test('account-scoped policy grants on every project AND account actions', () => {
+    const ca: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE }];
+    expect(customPolicyAllows(ca, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('anything'))).toBe(true);
+    const acctCa: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: ACCOUNT_ACTIONS.MEMBER_READ }];
+    expect(customPolicyAllows(acctCa, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(true);
+  });
+
+  test('a project-scoped policy can NOT grant an account-scoped action', () => {
+    const ca: CustomAction[] = [{ scopeType: 'project', scopeId: 'p1', action: ACCOUNT_ACTIONS.MEMBER_READ }];
+    expect(customPolicyAllows(ca, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(false);
+  });
+
+  test('deactivation = omission: a role granting agent.write but not gitops.merge', () => {
+    const marketing: CustomAction[] = [
+      { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_READ },
+      { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_AGENT_WRITE },
+    ];
+    expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('company'))).toBe(true);
+    // gitops.merge omitted → not granted (Git Ops deactivated for this dept role)
+    expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('company'))).toBe(false);
   });
 });

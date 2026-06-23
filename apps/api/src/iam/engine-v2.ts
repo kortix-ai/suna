@@ -1,17 +1,21 @@
 // IAM V2 engine. The only authorization path — the V1 policy engine and
 // its accounts.iam_v2_enabled rollout flag were retired in PR5.
 //
-// Decides access from three tables:
+// Decides access from the built-in role tables…
 //   - account_members         (account_role, is_super_admin)
 //   - project_members         (direct per-user project_role)
 //   - project_group_grants    (group → project → project_role, expanded
 //                               via account_group_members)
+// …UNIONED (allow-only, highest-wins) with DB-driven custom roles (IAM v1):
+//   - iam_policies + iam_role_actions  (member/group principal → custom role's
+//                                        action set, at account or project scope)
 //
-// No iam_policies. No scope grammar. No conditions. No deny precedence.
-// One role determines what you can do at the level that role applies.
+// No deny precedence, no conditions. The built-in role is the fast path; a
+// custom policy can only ADD actions, never remove — so built-in roles behave
+// exactly as before and the union is inert until an admin creates a custom role.
 //
-// The pure-function helpers (deriveEffectiveProjectRole, scopeForAction)
-// are exported so they can be unit-tested without a DB.
+// The pure-function helpers (deriveEffectiveProjectRole, scopeForActionV2,
+// customPolicyAllows) are exported so they can be unit-tested without a DB.
 
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
@@ -19,6 +23,8 @@ import {
   accountMembers,
   accountTokens,
   accounts,
+  iamPolicies,
+  iamRoleActions,
   projectGroupGrants,
   projectMembers,
   projects,
@@ -111,18 +117,28 @@ const IAM_CACHE_TTL_MS = (() => {
   return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
 })();
 
+/** A custom-role action this actor holds, with the scope it applies at.
+ *  scopeType 'account' grants everywhere; 'project' grants only on scopeId. */
+export type CustomAction = { scopeType: string; scopeId: string | null; action: string };
+
 type ResolvedActorV2 = {
   isSuperAdmin: boolean;
   accountRole: AccountRole | null;
   groupIds: string[];
   accountMfaRequired: boolean;
+  /** Actions granted by DB custom roles via iam_policies (member + group
+   *  principals). Empty for the common no-custom-roles account. */
+  customActions: CustomAction[];
 };
 
 async function resolveActorV2Uncached(
   userId: string,
   accountId: string,
 ): Promise<ResolvedActorV2 | null> {
-  const [memberRows, groups] = await Promise.all([
+  // The custom-policy query is self-contained (group membership via a subquery)
+  // so all three run in ONE parallel batch — no added latency depth. It returns
+  // [] for the overwhelmingly common account with no custom roles.
+  const [memberRows, groups, policyRows] = await Promise.all([
     db
       .select({
         isSuperAdmin: accountMembers.isSuperAdmin,
@@ -137,6 +153,33 @@ async function resolveActorV2Uncached(
       .select({ groupId: accountGroupMembers.groupId })
       .from(accountGroupMembers)
       .where(eq(accountGroupMembers.userId, userId)),
+    db
+      .select({
+        scopeType: iamPolicies.scopeType,
+        scopeId: iamPolicies.scopeId,
+        action: iamRoleActions.action,
+      })
+      .from(iamPolicies)
+      .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
+      .where(
+        and(
+          eq(iamPolicies.accountId, accountId),
+          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+          or(
+            and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
+            and(
+              eq(iamPolicies.principalType, 'group'),
+              inArray(
+                iamPolicies.principalId,
+                db
+                  .select({ gid: accountGroupMembers.groupId })
+                  .from(accountGroupMembers)
+                  .where(eq(accountGroupMembers.userId, userId)),
+              ),
+            ),
+          ),
+        ),
+      ),
   ]);
   const member = memberRows[0];
   if (!member) return null;
@@ -146,7 +189,35 @@ async function resolveActorV2Uncached(
     accountRole: (member.accountRole as AccountRole | null) ?? null,
     groupIds: groups.map((g) => g.groupId),
     accountMfaRequired: member.mfaRequired,
+    customActions: policyRows.map((r) => ({
+      scopeType: r.scopeType,
+      scopeId: r.scopeId,
+      action: r.action,
+    })),
   };
+}
+
+/**
+ * Does a DB custom policy grant `action` at this scope? Allow-only union with
+ * the built-in role: an account-scoped policy grants the action everywhere; a
+ * project-scoped policy grants it only on its own project. Pure (exported for
+ * unit tests) — operates on the actor's resolved customActions.
+ */
+export function customPolicyAllows(
+  customActions: CustomAction[],
+  scope: ActionScopeV2,
+  action: string,
+  target: AuthorizeTarget,
+): boolean {
+  if (customActions.length === 0) return false;
+  for (const ca of customActions) {
+    if (ca.action !== action) continue;
+    if (ca.scopeType === 'account') return true;
+    if (scope === 'project' && target.type === 'project' && ca.scopeType === 'project' && ca.scopeId === target.id) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const resolveActorV2 = ttlMemo({
@@ -325,9 +396,12 @@ export async function authorizeV2(
   const accountRole = actor.accountRole ?? 'member';
 
   if (scope === 'account') {
-    return accountRoleAllows(accountRole, action)
-      ? { allowed: true, reason: 'account_role' }
-      : { allowed: false, reason: 'account_role_insufficient' };
+    if (accountRoleAllows(accountRole, action)) return { allowed: true, reason: 'account_role' };
+    // Built-in role denied → fall through to DB custom roles (allow-only union).
+    if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) {
+      return { allowed: true, reason: 'custom_policy' };
+    }
+    return { allowed: false, reason: 'account_role_insufficient' };
   }
 
   // Project scope. The action requires a project target.
@@ -335,13 +409,21 @@ export async function authorizeV2(
     return { allowed: false, reason: 'project_target_required' };
   }
 
+  // A custom policy can grant access even with NO built-in project role (the
+  // department case: a member bound to a scoped custom role via iam_policies and
+  // no project_members/group GRANT row), so resolve the built-in role but treat
+  // it as one source in the union, not a gate.
   const effective = await loadEffectiveProjectRole(actor, userId, effectiveTarget.id);
+  if (effective && projectRoleAllows(effective, action)) {
+    return { allowed: true, reason: 'project_role' };
+  }
+  if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) {
+    return { allowed: true, reason: 'custom_policy' };
+  }
   if (!effective) {
     return { allowed: false, reason: 'no_project_membership' };
   }
-  return projectRoleAllows(effective, action)
-    ? { allowed: true, reason: 'project_role' }
-    : { allowed: false, reason: 'project_role_insufficient' };
+  return { allowed: false, reason: 'project_role_insufficient' };
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────
@@ -470,6 +552,14 @@ export async function listAccessibleProjectsV2(
   const allowed = new Set<string>();
   for (const [projectId, role] of byProject) {
     if (projectRoleAllows(role, action)) allowed.add(projectId);
+  }
+  // Fold in DB custom roles (union): an account-scoped policy granting this
+  // action covers every project; a project-scoped one adds just its project —
+  // so a department member sees the company project even with no built-in role.
+  for (const ca of actor.customActions) {
+    if (ca.action !== action) continue;
+    if (ca.scopeType === 'account') return { mode: 'all' };
+    if (ca.scopeType === 'project' && ca.scopeId) allowed.add(ca.scopeId);
   }
   return { mode: 'allow_only', allowed };
 }
