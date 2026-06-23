@@ -1,7 +1,7 @@
 'use client';
 
+import { type DiffLayout, DiffView } from '@/components/diff/diff-view';
 import { cn } from '@/lib/utils';
-import { DiffView, type DiffLayout } from '@/components/diff/diff-view';
 
 interface DiffRendererProps {
   patch: string;

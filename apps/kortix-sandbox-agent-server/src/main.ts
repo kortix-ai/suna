@@ -14,7 +14,7 @@ import {
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
+import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
@@ -313,8 +313,8 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
-  const onSessionError = (opencodeSessionId: string) => {
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg).catch((err) =>
+  const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
+    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
@@ -902,6 +902,7 @@ async function relayTurnEndToApi(
   status: 'idle' | 'error',
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
+  eventError?: OpencodeTurnError,
 ): Promise<void> {
   const ctx = slackRelayContext()
   if (!ctx) return
@@ -910,9 +911,31 @@ async function relayTurnEndToApi(
   // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
+  // Resolve the turn's error. session.error already hands us one; an idle end
+  // (e.g. retries exhausted, then idle) carries none, so read the root turn's
+  // last assistant message — exactly what the web UI shows — and upgrade idle→
+  // error when it failed. This is what turns a blank "ended without a reply" in
+  // Slack into "out of credits" / rate-limit / the real error.
+  const error = eventError ?? (await readRootTurnError(opencodeSessionId, opencode, cfg))
+  const effectiveStatus = error ? 'error' : status
+
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  const payload = JSON.stringify({ session_id: sessionId, kind: 'end', status, opencode_session_id: opencodeSessionId })
+  const payload = JSON.stringify({
+    session_id: sessionId,
+    kind: 'end',
+    status: effectiveStatus,
+    opencode_session_id: opencodeSessionId,
+    ...(error
+      ? {
+          error_name: error.name,
+          error_message: error.message,
+          error_status: error.statusCode,
+          error_retryable: error.isRetryable,
+          error_provider: error.providerID,
+        }
+      : {}),
+  })
   // This is the ONLY signal that finalizes a turn the agent ended without
   // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
   // best-effort: retry with backoff before giving up. A non-ok HTTP response is
@@ -928,7 +951,7 @@ async function relayTurnEndToApi(
       })
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
-        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId, attempt })
+        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
       logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
@@ -937,7 +960,50 @@ async function relayTurnEndToApi(
     }
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
-  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status })
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+}
+
+// Read the ROOT turn's failure, if any, from its last assistant message — the
+// same `AssistantMessage.error` the web UI renders. opencode's session.error
+// event already carries this for a hard failure, but a run that exhausts retries
+// (e.g. out of credits / rate-limited) can end on `session.idle` with the error
+// only on the message; this is what lets Slack still say *why* instead of going
+// silent. Best-effort: any miss/parse failure returns undefined (treated as a
+// clean end), so this never turns a healthy turn into a phantom failure.
+async function readRootTurnError(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<OpencodeTurnError | undefined> {
+  try {
+    const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return undefined
+    const rows = (await res.json()) as Array<{
+      info?: {
+        role?: string
+        error?: {
+          name?: string
+          data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+        }
+      }
+    }>
+    if (!Array.isArray(rows)) return undefined
+    // The most recent assistant message decides the turn's outcome. Crucially,
+    // stop at the turn boundary: if a USER message is the newest row (a pending or
+    // follow-up turn that hasn't produced an assistant reply yet), treat the run
+    // as clean — never walk back into a PRIOR turn's already-superseded error and
+    // relay it as this turn's failure.
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const info = rows[i]?.info
+      if (info?.role === 'user') return undefined
+      if (info?.role !== 'assistant') continue
+      return info.error ? flattenOpencodeError(info.error) : undefined
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
 }
 
 // Is this opencode session the ROOT turn session (not a subagent child)? A root

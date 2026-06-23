@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
+      - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
         with:
           tflint_version: v0.54.0
       - name: tflint
@@ -83,7 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Checkov
-        uses: bridgecrewio/checkov-action@0f121ac57605f6e7f8cb145ad2ea49722232ff73 # v12.2980.0
+        uses: bridgecrewio/checkov-action@fa9edf8f0a491c59a924ea6accd5bdcf07752cff # v12.3107.0
         with:
           directory: infra/terraform
           framework: terraform

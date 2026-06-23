@@ -1,6 +1,7 @@
 # environments/prod-eks
 
-Production EKS stack for `api-eks.kortix.com`, run in parallel with ECS prod.
+Production EKS stack for `api-eks.kortix.com`, the active prod API origin behind
+the Cloudflare Worker. ECS Fargate remains the warm standby origin.
 Two Terraform states, applied in order:
 
 1. **`cluster/`** — AWS-only: the isolated VPC, EKS control plane + managed node
@@ -12,8 +13,9 @@ Two Terraform states, applied in order:
    and the app namespace.
 
 The app workload itself is the Helm chart at `infra/k8s/charts/kortix-api`,
-deployed by `.github/workflows/deploy-prod-eks.yml` (Terraform owns infra, CI
-owns the app — same split as ECS).
+reconciled by Argo CD from `infra/k8s/argocd/applications/prod.yaml`. The reviewed
+promote PR bumps prod values, and `.github/workflows/deploy-prod.yml` applies
+database migrations and watches the EKS rollout.
 
 Full runbook, architecture, and switch-back/coexistence notes: **`infra/EKS.md`**.
 

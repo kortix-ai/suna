@@ -1,0 +1,37 @@
+---
+title: Computers
+description: Let the agent reach your own machine — files, shell, and desktop — over a permissioned tunnel, through the Executor.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **computer** is one of your own machines (laptop, desktop, server) connected to
+Kortix over the **Agent Computer Tunnel** — a permissioned reverse tunnel. Once
+connected, the agent can read/write files, run shell commands, and drive the
+desktop **on that machine**, with you granting access per capability.
+
+- **Connect a machine** from the project's Computers page in the dashboard
+  (device pairing), or with [`kortix tunnel`](/docs/reference/cli). It's an
+  experimental feature — enable **Agent Computer Tunnel** in Customize →
+  Experimental first.
+- **Grant access per capability** — filesystem / shell / desktop, scoped to
+  allowed paths, commands, and desktop features. The agent only gets what you
+  grant; a call to something ungranted raises a **permission request** you
+  approve in Computers.
+- **The agent reaches machines through the Executor.** Connecting a machine
+  auto-materializes a single **`computer`** [connector](/docs/concepts/connections)
+  that fronts **all** your connected machines. The agent calls
+  `computer.list_computers`, then `computer.fs.read` / `shell.exec` /
+  `desktop.cua.*` with a `computer` argument selecting the machine (optional when
+  only one is online). The `computer` connector also shows up in the project's
+  Connectors, where you control who can use it.
+- **There is no credential.** Unlike other connectors, `computer` has no token —
+  the live tunnel connection *is* the credential, and per-machine auth is the
+  tunnel permission layer. Nothing is exposed inside the sandbox.
+
+<Callout type="info" title="Note">
+Computers are configured through the dashboard (Computers) and `kortix tunnel` —
+**not** through `kortix.toml`. The `computer` connector auto-materializes when you
+connect a machine; you don't declare it. Calls run through the same tunnel
+permission, approval, and audit model as the dedicated Computers surface.
+</Callout>

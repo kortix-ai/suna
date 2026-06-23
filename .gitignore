@@ -113,13 +113,14 @@ core/kortix-master/opencode/.kortix/
 .vercel
 
 
-kortix
-kortix-darwin-arm64
-kortix-darwin-x64
-kortix-linux-x64
-kortix-linux-arm64
-# …but the bare `kortix` pattern above also matches the kortix-system skill's
-# `references/kortix/` doc dir — keep those committed (they ship to sandboxes).
+/kortix
+/kortix-darwin-arm64
+/kortix-darwin-x64
+/kortix-linux-x64
+/kortix-linux-arm64
+# Root-anchored so we don't ignore apps/mobile/ios/Kortix on case-insensitive FS.
+# The references/kortix doc dirs were previously un-ignored with ! rules; they
+# were never matched by /kortix anyway, but keep the exceptions for clarity.
 !**/references/kortix/
 !**/references/kortix/**
 

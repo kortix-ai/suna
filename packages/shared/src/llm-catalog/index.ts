@@ -29,42 +29,118 @@ export const CATALOG = catalogJson as Catalog;
 export interface ManagedModel {
   id: string;
   name: string;
-  bedrockModelId: string;
-  openRouterModelId: string;
+  // The upstream's own model id, interpreted per `transport`:
+  //   'bedrock' / 'bedrock-converse' → a Bedrock id (`us.anthropic.claude-opus-4-8`,
+  //                                    `moonshotai.kimi-k2.5`)
+  //   'openrouter'                   → an OpenRouter slug (`z-ai/glm-4.6`)
+  upstreamModelId: string;
+  // Which upstream + wire format carries it:
+  //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
+  //   'bedrock-converse' → model-agnostic Bedrock Converse API (Kimi, MiniMax, …)
+  //   'openrouter'       → OpenRouter (openai-compat) for models not on Bedrock
+  transport: 'bedrock' | 'bedrock-converse' | 'openrouter';
+  // models.dev id for live pricing — upstream ids don't always match the catalog.
+  pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
 // to opencode under the `kortix` provider, so opencode references them as
-// `kortix/<id>` (e.g. `kortix/kortix-power`) and sends `<id>` as the wire model.
-// A bare, slash-free id is what lets the gateway tell a managed request
-// (`kortix-power` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
-// the user's own key) without the two ever colliding.
+// `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
+// model. A bare, slash-free id is what lets the gateway tell a managed request
+// (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
+// (`anthropic/claude-...` → the user's own key) without the two ever colliding.
+//
+// Every managed model runs through OUR keys and is billed as Kortix credits with
+// markup, so the gateway enforces budgets/logging/spend on all of them. Bedrock
+// is preferred (consistent, no per-provider routing surprises): Anthropic via the
+// proven Anthropic-payload transport, Kimi/MiniMax via Converse. Models Bedrock
+// doesn't host (GLM, Qwen) go via OpenRouter. (Kimi is on Bedrock specifically
+// because its only OpenRouter provider, `novita`, is excluded by our data policy.)
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: 'kortix-power',
-    name: 'Kortix Power',
-    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
-    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    id: 'claude-opus-4.8',
+    name: 'Claude Opus 4.8',
+    upstreamModelId: 'us.anthropic.claude-opus-4-8',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
   },
   {
-    id: 'kortix-basic',
-    name: 'Kortix Basic',
-    bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    openRouterModelId: 'anthropic/claude-haiku-4.5',
-    tier: 'fast',
+    id: 'claude-sonnet-4.6',
+    name: 'Claude Sonnet 4.6',
+    upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-sonnet-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'kimi-k2',
+    name: 'Kimi K2',
+    upstreamModelId: 'moonshotai.kimi-k2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'moonshotai/kimi-k2',
+    tier: 'balanced',
+  },
+  {
+    id: 'kimi-k2-thinking',
+    name: 'Kimi K2 Thinking',
+    upstreamModelId: 'moonshot.kimi-k2-thinking',
+    transport: 'bedrock-converse',
+    pricingRef: 'moonshotai/kimi-k2-thinking',
+    tier: 'balanced',
+  },
+  {
+    id: 'minimax-m2.5',
+    name: 'MiniMax M2.5',
+    upstreamModelId: 'minimax.minimax-m2.5',
+    transport: 'bedrock-converse',
+    pricingRef: 'minimax/minimax-m2',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.6',
+    name: 'GLM-4.6',
+    upstreamModelId: 'z-ai/glm-4.6',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.6',
+    tier: 'balanced',
+  },
+  {
+    id: 'glm-4.7',
+    name: 'GLM-4.7',
+    upstreamModelId: 'z-ai/glm-4.7',
+    transport: 'openrouter',
+    pricingRef: 'z-ai/glm-4.7',
+    tier: 'balanced',
+  },
+  {
+    id: 'qwen3-max',
+    name: 'Qwen3 Max',
+    upstreamModelId: 'qwen/qwen3-max',
+    transport: 'openrouter',
+    pricingRef: 'qwen/qwen3-max',
+    tier: 'balanced',
   },
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
 
+// Back-compat: the gateway previously offered two branded ids. Stored agent
+// configs / in-flight requests may still send them, so they keep resolving (to
+// the nearest current model) even though they are no longer in the served
+// catalog. Not advertised — absent from DEFAULT_MANAGED_MODEL_IDS.
+const MANAGED_ALIASES: Record<string, string> = {
+  'kortix-power': 'claude-sonnet-4.6',
+  'kortix-basic': 'claude-sonnet-4.6',
+};
+
 export function getManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id);
+  return MANAGED_BY_ID.get(id) ?? MANAGED_BY_ID.get(MANAGED_ALIASES[id]);
 }
 
 export function isManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id);
+  return MANAGED_BY_ID.has(id) || id in MANAGED_ALIASES;
 }
 
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
