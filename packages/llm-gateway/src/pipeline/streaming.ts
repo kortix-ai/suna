@@ -4,7 +4,7 @@ export interface StreamRelayOptions {
   upstreamBody: ReadableStream<Uint8Array>;
   captureBodies: boolean;
   requestId: string;
-  logger: { warn: (...args: unknown[]) => void };
+  logger: { warn: (...args: unknown[]) => void; debug?: (...args: unknown[]) => void };
   settle: (usage: ExtractedUsage | null, response: unknown) => Promise<void>;
   /** Keep-alive interval in ms (overridable for tests). */
   heartbeatMs?: number;
@@ -27,12 +27,21 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
   const decoder = new TextDecoder();
   let sseBuffer = '';
 
+  const startMs = Date.now();
+  const debug = (event: string, fields?: Record<string, unknown>): void =>
+    logger.debug?.(`[gateway] · ${requestId} ${event}`, { requestId, event, ...fields });
+
   void (async () => {
     const reader = upstreamBody.getReader();
     let downstreamAlive = true;
+    let firstByteAt = 0;
+    let bytes = 0;
+    let chunks = 0;
+    let heartbeats = 0;
     // Keep exactly one read in flight; race it against a heartbeat timer so a
     // long token gap emits a keep-alive without ever issuing a second read.
     let pending = reader.read();
+    debug('stream_open');
     try {
       while (true) {
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -49,6 +58,8 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
           if (downstreamAlive && (sseBuffer === '' || sseBuffer.endsWith('\n\n'))) {
             try {
               await writer.write(HEARTBEAT_FRAME);
+              heartbeats += 1;
+              debug('stream_heartbeat', { sinceStartMs: Date.now() - startMs, heartbeats });
             } catch {
               downstreamAlive = false;
             }
@@ -60,6 +71,12 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         if (done) break;
         pending = reader.read();
         if (!value) continue;
+        if (!firstByteAt) {
+          firstByteAt = Date.now();
+          debug('stream_first_byte', { ttfbMs: firstByteAt - startMs });
+        }
+        chunks += 1;
+        bytes += value.byteLength;
         sseBuffer += decoder.decode(value, { stream: true });
         if (downstreamAlive) {
           try {
@@ -71,12 +88,21 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
       }
     } catch (err) {
       logger.warn(`[llm-gateway] stream read error ${requestId}:`, err);
+      debug('stream_error', { error: err instanceof Error ? err.message : String(err), bytes, chunks });
     } finally {
       try {
         await writer.close();
       } catch {
         // writer already closed / downstream gone — nothing to do here.
       }
+      debug('stream_end', {
+        totalMs: Date.now() - startMs,
+        ttfbMs: firstByteAt ? firstByteAt - startMs : null,
+        bytes,
+        chunks,
+        heartbeats,
+        downstreamAlive,
+      });
       await settle(extractUsageFromSseBuffer(sseBuffer), captureBodies ? sseBuffer : null);
     }
   })();
