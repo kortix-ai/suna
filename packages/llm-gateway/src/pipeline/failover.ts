@@ -4,6 +4,11 @@ import { callUpstream, type FetchImpl } from '../http';
 import type { GatewayConfig, UpstreamDescriptor } from '../domain';
 import type { TraceEmitter, TraceFields } from './trace';
 
+// 4xx statuses that mean "this upstream won't serve you right now" rather than
+// "your request is wrong" — rate limit, payment required, quota/forbidden. These
+// are the ones worth failing over (e.g. BYOK out of quota → managed fallback).
+const LIMIT_STATUSES = new Set([402, 403, 429]);
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -43,7 +48,9 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
   let chosen: UpstreamDescriptor | null = null;
   let lastError: unknown;
 
-  for (const descriptor of candidates) {
+  for (let i = 0; i < candidates.length; i += 1) {
+    const descriptor = candidates[i];
+    const hasFallback = i < candidates.length - 1;
     tried.push(descriptor.provider);
     attempts += 1;
     try {
@@ -57,6 +64,15 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     } catch (err) {
       lastError = err;
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
+        // A rate-limit / quota / billing error (429/402/403) on a candidate that
+        // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
+        // managed model queued next — falls over instead of failing the turn.
+        // (429 was already retried on this candidate by callUpstream, so reaching
+        // here means it's persistent, not a transient blip.) Other 4xx — bad
+        // request, auth, model-not-found — are the caller's to fix: return as-is.
+        if (LIMIT_STATUSES.has(err.status) && hasFallback) {
+          continue;
+        }
         emit({
           ...trace, resolvedModel: descriptor.resolvedModel, provider: descriptor.provider,
           billingMode: descriptor.billingMode, status: err.status, ok: false,

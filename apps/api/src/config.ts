@@ -208,6 +208,10 @@ const envSchema = z.object({
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
+  // billing error (429/402/403), fall over to THIS managed model (billed as
+  // Kortix credits) so the turn survives instead of erroring. Empty disables.
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT:      optInt(0),
@@ -599,6 +603,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,

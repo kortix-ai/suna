@@ -11,6 +11,18 @@ import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 
+// A managed model to fall over to when a BYOK key hits a limit (429/402/403).
+// Gated on the managed gateway being on + a configured, resolvable fallback
+// model. managedCandidates() is itself empty when no managed key is set, so a
+// self-host with no Bedrock/OpenRouter key naturally has no fallback.
+function byokFallbackCandidates(): UpstreamDescriptor[] {
+  if (!config.LLM_GATEWAY_ENABLED) return [];
+  const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
+  if (!fallbackId) return [];
+  const managed = getManagedModel(fallbackId);
+  return managed ? managedCandidates(managed) : [];
+}
+
 export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
@@ -28,18 +40,20 @@ export async function resolveCandidates(
   if (byok && principal.projectId) {
     const key = await getProjectSecretValue(principal.projectId, byok.envVar);
     if (key) {
-      return [
-        {
-          provider,
-          kind: byok.kind,
-          baseUrl: byok.baseUrl,
-          apiKey: key,
-          billingMode: config.KORTIX_BILLING_INTERNAL_ENABLED ? 'platform-fee' : 'none',
-          markup: PLATFORM_FEE_MARKUP,
-          resolvedModel: model.slice(provider.length + 1),
-          pricing: livePricing(model.slice(provider.length + 1)),
-        },
-      ];
+      const byokDescriptor: UpstreamDescriptor = {
+        provider,
+        kind: byok.kind,
+        baseUrl: byok.baseUrl,
+        apiKey: key,
+        billingMode: config.KORTIX_BILLING_INTERNAL_ENABLED ? 'platform-fee' : 'none',
+        markup: PLATFORM_FEE_MARKUP,
+        resolvedModel: model.slice(provider.length + 1),
+        pricing: livePricing(model.slice(provider.length + 1)),
+      };
+      // Queue a managed model behind the BYOK key: if the user's key hits a
+      // rate-limit / quota / billing error, the failover loop falls over to it
+      // (billed as Kortix credits) so the turn doesn't die.
+      return [byokDescriptor, ...byokFallbackCandidates()];
     }
   }
 
