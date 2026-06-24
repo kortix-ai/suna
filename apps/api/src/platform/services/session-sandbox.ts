@@ -173,7 +173,7 @@ export async function provisionSessionSandbox(opts: {
    * generic warm base when usable; verified against the provider before use,
    * so a stale pointer just falls back. See snapshots/warm-project.ts.
    */
-  projectWarmSnapshot?: string | null;
+  projectWarmSnapshot?: { name: string; provider: ProviderName } | null;
   /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
@@ -233,30 +233,42 @@ export async function provisionSessionSandbox(opts: {
   // degraded warm region (experimental "internal error" streaks) must not make
   // every session pay a doomed warm attempt before falling back to cold. The
   // generic base path already honors this; the per-project branch must too.
-  if (
-    providerName === 'daytona' &&
-    slug === DEFAULT_SANDBOX_SLUG &&
-    !warmPathPaused()
-  ) {
-    if (opts.projectWarmSnapshot) {
+  if (slug === DEFAULT_SANDBOX_SLUG && !warmPathPaused()) {
+    const ptr = opts.projectWarmSnapshot;
+    // Only consume a pointer baked for THIS session's provider (the pointer
+    // carries its provider; a daytona artifact can't be forked on platinum).
+    if (ptr && ptr.provider === providerName) {
       try {
-        const { warmSnapshotsEnabled } = await import('../../shared/daytona');
-        if (warmSnapshotsEnabled()) {
-          // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
-          // is a pure in-process check, and a degraded region times out in 4s AND
-          // pauses the warm path — so the generic-base lookup below short-circuits
-          // instead of paying a SECOND serial probe on the request-blocking path.
-          const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
-          if (await warmSnapshotUsableCached(opts.projectWarmSnapshot)) {
-            warmBase = opts.projectWarmSnapshot;
-            warmIsProjectSnapshot = true;
+        const { warmSnapshotsEnabledFor } = await import('../../shared/daytona');
+        if (warmSnapshotsEnabledFor(providerName)) {
+          if (providerName === 'platinum') {
+            // Platinum's per-project warm snapshot is a STATEFUL template; if it's
+            // ready on the host it CoW-forks on a normal create (no warm-base
+            // field). A pure provider state check — no extra round-trip class.
+            const { platinumProvider } = await import('../../snapshots/providers/platinum');
+            if ((await platinumProvider.getSnapshotState(ptr.name)) === 'active') {
+              warmBase = ptr.name;
+              warmIsProjectSnapshot = true;
+            }
+          } else if (providerName === 'daytona') {
+            // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
+            // is a pure in-process check, and a degraded region times out in 4s AND
+            // pauses the warm path — so the generic-base lookup below short-circuits
+            // instead of paying a SECOND serial probe on the request-blocking path.
+            const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
+            if (await warmSnapshotUsableCached(ptr.name)) {
+              warmBase = ptr.name;
+              warmIsProjectSnapshot = true;
+            }
           }
         }
       } catch {
-        // pointer is stale / lookup slow → fall through to the generic base
+        // pointer is stale / lookup slow → fall through to cold (or generic base)
       }
     }
-    if (!warmBase) warmBase = await ensureWarmBaseReady();
+    // The generic memory-state warm base is Daytona-only (Platinum has no
+    // equivalent; it cold-spawns when there's no per-project warm template).
+    if (!warmBase && providerName === 'daytona') warmBase = await ensureWarmBaseReady();
   }
   let firstImagePromise: Promise<FirstImage> | null = warmBase
     ? null
@@ -453,7 +465,11 @@ export async function provisionSessionSandbox(opts: {
       };
       tl.mark(warmBase ? 'warm-base' : image.built ? 'image-built' : 'image-cached');
       if (warmBase) {
-        providerCreateInput.warmBaseSnapshot = warmBase;
+        // Platinum: the warm artifact is a stateful TEMPLATE — boot it normally
+        // and the host CoW-forks it. Daytona: it's a memory snapshot restored via
+        // the dedicated warmBaseSnapshot field.
+        if (providerName === 'platinum') providerCreateInput.snapshot = warmBase;
+        else providerCreateInput.warmBaseSnapshot = warmBase;
       } else {
         providerCreateInput.snapshot = image.snapshotName;
       }

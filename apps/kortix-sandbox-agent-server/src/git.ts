@@ -783,6 +783,39 @@ export async function materializeScaffoldSeed(target: string, base: string): Pro
   }
 }
 
+/**
+ * Park-clone the PROJECT repo at base tip for a per-project warm seed (Platinum
+ * stateful capture / Stage-2 warm pool). Unlike materializeScaffoldSeed (the
+ * repo-LESS generic scaffold), this clones the real project at base into
+ * /workspace so the captured snapshot already has the repo — a fork then hits
+ * materializeRepo's "using baked repo checkout (warm)" fast path (no in-box
+ * clone). Leaves /workspace on `base` tip with NO session branch (none exists at
+ * park). Wipes any image-baked /workspace first so a scaffold is never mistaken
+ * for the seed. Returns false (→ caller degrades to the scaffold seed) on any
+ * failure, so a flaky clone never bricks the park. Reuses materializeRepo's
+ * battle-tested clone (retries, stall-abort, proxy auth) verbatim.
+ */
+export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
+  if (!cfg.repoUrl) return false
+  const t0 = Date.now()
+  try {
+    await rm(cfg.projectTarget, { recursive: true, force: true })
+    // No branchName at park (no session yet); baseSha=tip so a baked /workspace
+    // (if any) is treated as mismatched and re-materialized to the real repo.
+    await materializeRepo({ ...cfg, branchName: undefined, sessionFresh: true })
+    logger.info('[git] project seed materialized at base (warm park-clone)', {
+      ms: Date.now() - t0,
+      base: cfg.defaultBranch,
+    })
+    return true
+  } catch (err) {
+    logger.warn('[git] project seed materialize failed; warm seed will fall back to scaffold', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    return false
+  }
+}
+
 // Materialize `target` from the image-baked scaffold + a delta fetch from the
 // project origin. Returns true when target is ready on `base` tip; false →
 // caller runs the normal network clone (never leaves a partial target behind).
