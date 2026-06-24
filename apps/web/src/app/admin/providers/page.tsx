@@ -32,7 +32,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
@@ -54,6 +53,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { backendApi } from '@/lib/api-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -170,7 +170,7 @@ function StatStrip({
     warning: 'text-amber-500',
   };
   return (
-    <div className="border-border/60 divide-border/60 grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
+    <div className="border-border/60 divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
       {items.map((it, i) => (
         <div key={i} className="min-w-0 p-4">
           <div className="text-muted-foreground/70 truncate text-xs font-medium tracking-wider uppercase">

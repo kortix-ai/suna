@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import * as React from 'react';
 
 export type InputProps = Omit<React.ComponentProps<'input'>, 'size'> & {
-  variant?: 'default' | 'secondary' | 'transparent';
+  variant?: 'default' | 'secondary' | 'transparent' | 'popover';
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 };
 
@@ -20,7 +20,10 @@ function Input({ className, type, variant = 'default', size = 'sm', ...props }: 
         type === 'file' &&
           'text-muted-foreground/70 file:border-input file:text-foreground p-0 pr-3 italic file:me-3 file:h-full file:border-0 file:border-r file:border-solid file:bg-transparent file:px-3 file:text-sm file:font-medium file:not-italic',
         variant === 'secondary' && 'bg-input text-secondary-foreground border-none',
-        variant === 'transparent' && 'text-foreground bg-transparent border-border focus:border-kortix-blue focus:border focus:outline-none',
+        variant === 'transparent' &&
+          'text-foreground border-border focus:border-kortix-blue bg-transparent focus:border focus:outline-none',
+        variant === 'popover' &&
+          'bg-popover text-foreground border-border focus:border-kortix-blue focus:border focus:outline-none',
         size === 'xs' && 'h-8 text-xs',
         size === 'sm' && 'h-9 text-sm',
         size === 'md' && 'h-10 text-sm',

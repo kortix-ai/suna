@@ -220,6 +220,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               placeholder="Search secrets"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              variant="popover"
             />
             <InputGroupSearchClear onClick={() => setQuery('')} />
           </InputGroupSearch>

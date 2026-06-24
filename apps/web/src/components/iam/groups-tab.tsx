@@ -27,13 +27,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
 
 interface GroupsTabProps {
@@ -160,7 +160,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                 <th className="w-12 px-3 py-2.5" />
               </tr>
             </thead>
-            <tbody className="divide-border/60 divide-y">
+            <tbody className="divide-border divide-y">
               {filtered.map((g) => (
                 <tr
                   key={g.group_id}

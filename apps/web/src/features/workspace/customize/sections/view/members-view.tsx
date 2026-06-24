@@ -3,19 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import * as SelectPrimitive from '@radix-ui/react-select';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Check,
-  Clock,
-  Loader2,
-  Mail,
-  MessageSquare,
-  RefreshCw,
-  Shield,
-  Users,
-  X,
-} from 'lucide-react';
+import { Check, Clock, Mail, MessageSquare, RefreshCw, Shield, Users, X } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 
 import {
@@ -23,10 +12,6 @@ import {
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import {
-  PROJECT_ROLE_DESCRIPTORS,
-  PROJECT_ROLES_ASCENDING,
-} from '@/components/iam/project-role-descriptors';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,15 +22,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import {
-  InputGroupSearch,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -54,9 +35,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useCopy } from '@/hooks/use-copy';
 import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
 import {
   approveProjectAccessRequest,
@@ -80,19 +63,14 @@ import {
   type ProjectGroupGrant,
   type ProjectRole,
 } from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
+import { UsersSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 import { sortByRoleThenLabel } from '../member-sort';
 
+const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
+
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
-}
-
-function copyInviteLink(url: string) {
-  navigator.clipboard
-    .writeText(url)
-    .then(() => successToast('Invite link copied'))
-    .catch(() => errorToast('Could not copy link'));
 }
 
 function formatDate(input: string | null | undefined) {
@@ -103,8 +81,9 @@ function formatDate(input: string | null | undefined) {
 }
 
 export function MembersView({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const [tab, setTab] = useState<'people' | 'invite'>('people');
+
   const projectQuery = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),
@@ -120,27 +99,26 @@ export function MembersView({ projectId }: { projectId: string }) {
   const project = projectQuery.data;
   const canManage = project?.effective_project_role === 'manager' || accessQuery.data?.can_manage;
 
-  return (
-    <CustomizeSectionWrapper
-      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
-      description={tHardcodedUi.raw(
-        'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
-      )}
-      action={
-        <PermissionsHelpPopover
-          triggerLabel={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
-          )}
-          align="end"
-        />
-      }
-    >
-      {canManage && <InviteMemberCard projectId={projectId} />}
+  const pendingInvitesQuery = useQuery({
+    queryKey: ['project-pending-invites', projectId],
+    queryFn: () => listPendingProjectInvites(projectId),
+    staleTime: 5_000,
+    enabled: !!canManage,
+  });
 
-      {canManage && <PendingAccessRequestsCard projectId={projectId} />}
+  const accessRequestsQuery = useQuery({
+    queryKey: ['project-access-requests', projectId],
+    queryFn: () => listProjectAccessRequests(projectId),
+    staleTime: 10_000,
+    enabled: !!canManage,
+  });
 
-      {canManage && <PendingInvitesCard projectId={projectId} />}
+  const pendingInviteCount = pendingInvitesQuery.data?.pending?.length ?? 0;
+  const pendingRequestCount = accessRequestsQuery.data?.requests?.length ?? 0;
+  const inviteTabBadgeCount = pendingInviteCount + pendingRequestCount;
 
+  const peopleContent = (
+    <div className="space-y-6">
       <ProjectAccessCard
         projectId={projectId}
         accountId={project?.account_id ?? null}
@@ -150,6 +128,7 @@ export function MembersView({ projectId }: { projectId: string }) {
         isError={accessQuery.isError}
         error={accessQuery.error as Error | null}
         onRetry={() => accessQuery.refetch()}
+        setTab={setTab}
       />
 
       {project?.account_id && (
@@ -159,40 +138,67 @@ export function MembersView({ projectId }: { projectId: string }) {
           canManage={!!canManage}
         />
       )}
+    </div>
+  );
+
+  return (
+    <CustomizeSectionWrapper
+      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line92JsxTextProjectMembers')}
+      description={tHardcodedUi.raw(
+        'appProjectsIdCustomizeMembersPage.line94JsxTextControlWhoCanAccessThisProjectAccountOwners',
+      )}
+      action={
+        <PermissionsHelpPopover
+          triggerLabel={tHardcodedUi.raw(
+            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTriggerLabelRole9a6a4fdc',
+          )}
+          align="end"
+        />
+      }
+    >
+      {canManage ? (
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as 'people' | 'invite')}
+          className="space-y-6"
+        >
+          <TabsList type="underline" className="flex w-full items-center justify-start">
+            <TabsTrigger value="people" className="w-fit flex-none">
+              People
+            </TabsTrigger>
+            <TabsTrigger value="invite" className="w-fit flex-none gap-2">
+              Invite
+              {inviteTabBadgeCount > 0 ? (
+                <Badge variant="secondary" size="sm">
+                  {inviteTabBadgeCount}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="people" className="space-y-6">
+            {peopleContent}
+          </TabsContent>
+
+          <TabsContent value="invite" className="space-y-6">
+            <InviteMemberCard projectId={projectId} />
+            <PendingAccessRequestsCard projectId={projectId} />
+            <PendingInvitesCard projectId={projectId} />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        peopleContent
+      )}
     </CustomizeSectionWrapper>
   );
 }
 
-function RoleSelectOption({ role }: { role: ProjectRole }) {
-  const descriptor = PROJECT_ROLE_DESCRIPTORS[role];
-  return (
-    <SelectPrimitive.Item
-      data-slot="select-item"
-      value={role}
-      className={cn(
-        "focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-pointer items-start gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-      )}
-    >
-      <span className="absolute top-2 right-2 flex size-3.5 items-center justify-center">
-        <SelectPrimitive.ItemIndicator>
-          <Check className="size-4" />
-        </SelectPrimitive.ItemIndicator>
-      </span>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <SelectPrimitive.ItemText>
-          <span className="font-medium">{descriptor.label}</span>
-        </SelectPrimitive.ItemText>
-        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
-          {descriptor.blurb}
-        </span>
-      </div>
-    </SelectPrimitive.Item>
-  );
-}
-
 function InviteMemberCard({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const { copy } = useCopy({
+    successMessage: 'Invite link copied',
+    errorMessage: 'Could not copy link',
+  });
   const queryClient = useQueryClient();
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -240,7 +246,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               {
                 duration: 10_000,
                 button: (
-                  <Button size="sm" onClick={() => copyInviteLink(inviteUrl)}>
+                  <Button size="sm" onClick={() => copy(inviteUrl)}>
                     Copy link
                   </Button>
                 ),
@@ -366,26 +372,28 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const pendingCount = emails.length + (inputValue.trim() ? 1 : 0);
 
   return (
-    <SectionCard
-      title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
-    >
+    <section className="space-y-4">
+      <h3 className="text-sm font-medium">
+        {tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line140JsxAttrTitleInviteByEmail')}
+      </h3>
+
       <form onSubmit={handleSubmit}>
         <FieldGroup className="gap-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end sm:gap-x-3">
             <Field className="gap-1.5 p-0">
               <FieldLabel htmlFor="invite-email">Emails</FieldLabel>
-              <InputGroupSearch
-                className="border-border bg-popover focus-within:border-kortix-blue flex flex-wrap items-center gap-1.5 rounded-md border py-0 pr-2 pl-3 transition-[color] focus-within:outline-none"
+              <InputGroup
+                className="border-border bg-popover focus-within:border-kortix-blue flex h-auto min-h-9 flex-wrap items-center gap-1.5 rounded-md border py-0 pr-2 pl-0 transition-[color] focus-within:outline-none"
                 onClick={(e) => {
                   if ((e.target as HTMLElement).closest('button')) return;
                   e.currentTarget
-                    .querySelector<HTMLInputElement>('[data-slot=input-group-search-control]')
+                    .querySelector<HTMLInputElement>('[data-slot=input-group-control]')
                     ?.focus();
                 }}
               >
-                <InputGroupSearchIcon className="static top-auto left-auto shrink-0 translate-none">
+                <InputGroupAddon align="inline-start" className="pl-3">
                   <Mail />
-                </InputGroupSearchIcon>
+                </InputGroupAddon>
                 {emails.map((addr) => (
                   <Badge key={addr} variant="secondary" size="sm" className="gap-1 pr-1">
                     {addr}
@@ -403,7 +411,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                     </button>
                   </Badge>
                 ))}
-                <InputGroupSearchInput
+                <InputGroupInput
                   id="invite-email"
                   type="text"
                   value={inputValue}
@@ -423,9 +431,10 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   autoComplete="off"
                   disabled={inviteMutation.isPending}
                   aria-invalid={inlineError ? true : undefined}
-                  className="min-w-32 flex-1 border-0 bg-transparent px-0 pl-1 shadow-none focus:border-0 focus:ring-0 focus:outline-none"
+                  className="min-w-32 flex-1 px-0 pl-1"
+                  variant="popover"
                 />
-              </InputGroupSearch>
+              </InputGroup>
             </Field>
 
             <Field className="gap-1.5">
@@ -435,17 +444,13 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                 onValueChange={(next) => setRole(next as ProjectRole)}
                 disabled={inviteMutation.isPending}
               >
-                <SelectTrigger
-                  id="invite-role"
-                  size="lg"
-                  className="bg-popover hover:bg-popover/90 w-full"
-                >
+                <SelectTrigger id="invite-role" variant="popover">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PROJECT_ROLES_ASCENDING.map((r) => (
-                    <RoleSelectOption key={r} role={r} />
-                  ))}
+                  <ProjectRoleSelectItem role="viewer" />
+                  <ProjectRoleSelectItem role="editor" />
+                  <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
             </Field>
@@ -454,9 +459,9 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
               <Button
                 type="submit"
                 disabled={pendingCount === 0 || inviteMutation.isPending}
-                className="h-10 w-full sm:w-auto"
+                className="w-full sm:w-auto"
               >
-                {inviteMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {inviteMutation.isPending ? <Loading /> : null}
                 {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
               </Button>
             </Field>
@@ -466,14 +471,14 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             <FieldError className="text-xs">{inlineError}</FieldError>
           ) : (
             <FieldDescription className="text-xs">
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAddSeveralb131056b',
               )}
             </FieldDescription>
           )}
         </FieldGroup>
       </form>
-    </SectionCard>
+    </section>
   );
 }
 
@@ -486,6 +491,7 @@ function ProjectAccessCard({
   isError,
   error,
   onRetry,
+  setTab,
 }: {
   projectId: string;
   accountId: string | null;
@@ -495,8 +501,8 @@ function ProjectAccessCard({
   isError: boolean;
   error: Error | null;
   onRetry: () => void;
+  setTab: (tab: 'people' | 'invite') => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
@@ -585,27 +591,34 @@ function ProjectAccessCard({
 
   return (
     <>
-      <SectionCard
-        title={tHardcodedUi.raw(
-          'appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess',
-        )}
-        description={tHardcodedUi.raw(
-          'appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess',
-        )}
-        count={accessMembers.length}
-        flush
-      >
+      <section className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium">
+              {tHardcodedUi.raw(
+                'appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess',
+              )}
+              {accessMembers.length > 0 ? (
+                <span className="text-muted-foreground ml-1.5 font-normal">
+                  ({accessMembers.length})
+                </span>
+              ) : null}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {tHardcodedUi.raw(
+                'appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess',
+              )}
+            </p>
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setTab('invite')}>
+            Invite
+          </Button>
+        </div>
+
         {isLoading && (
-          <div className="divide-border/60 divide-y">
+          <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className="flex items-center gap-3 px-6 py-3">
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-3.5 w-48" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
-                <Skeleton className="h-8 w-32" />
-              </div>
+              <Skeleton key={index} className="h-14 w-full rounded-md" />
             ))}
           </div>
         )}
@@ -623,7 +636,7 @@ function ProjectAccessCard({
         )}
 
         {!isLoading && !isError && (
-          <List>
+          <ul className="space-y-2">
             {sortedMembers.map((member) => {
               const busy = pendingUserIds.has(member.user_id);
               const value =
@@ -632,13 +645,24 @@ function ProjectAccessCard({
               const inheritedSummary = inheritedFromGroupSummary(member);
 
               return (
-                <ListRow
-                  key={member.user_id}
-                  leading={<UserAvatar email={member.email ?? ''} size="md" />}
-                  title={userLabel(member)}
-                  badges={
-                    <>
-                      <AccountRoleBadge role={member.account_role} />
+                <li key={member.user_id} className={MEMBER_ROW}>
+                  <UserAvatar email={member.email ?? ''} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {userLabel(member)}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        className={
+                          member.account_role === 'owner'
+                            ? 'border-foreground/30 text-foreground capitalize'
+                            : 'capitalize'
+                        }
+                      >
+                        {member.account_role}
+                      </Badge>
                       {(member.group_sources ?? []).map((g) => (
                         <Badge
                           key={g.group_id}
@@ -651,9 +675,7 @@ function ProjectAccessCard({
                           {g.group_name}
                         </Badge>
                       ))}
-                    </>
-                  }
-                  subtitle={
+                    </div>
                     <span className="text-muted-foreground text-xs">
                       <InlineMeta>
                         <span>
@@ -667,152 +689,150 @@ function ProjectAccessCard({
                         </span>
                       </InlineMeta>
                     </span>
-                  }
-                  trailing={
-                    busy ? (
-                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
-                    ) : member.has_implicit_access ? (
-                      <Badge variant="outline" size="sm">
+                  </div>
+                  {busy ? (
+                    <Loading className="text-muted-foreground shrink-0" />
+                  ) : member.has_implicit_access ? (
+                    <Badge variant="outline" size="sm">
+                      <Shield className="mr-1 size-3.5" />
+                      Manager
+                    </Badge>
+                  ) : inheritedFromGroup ? (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Badge variant="outline" size="sm" className="capitalize">
                         <Shield className="mr-1 size-3.5" />
-                        Manager
+                        {member.effective_project_role}
                       </Badge>
-                    ) : inheritedFromGroup ? (
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" size="sm" className="capitalize">
-                          <Shield className="mr-1 size-3.5" />
-                          {member.effective_project_role}
-                        </Badge>
-                        {canManage && (member.group_sources ?? []).length > 0 && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="gap-1.5">
-                                {tI18nHardcoded.raw(
-                                  'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextManageAccess8bb5d74d',
-                                )}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-80">
-                              {(member.group_sources ?? []).flatMap((g) => {
-                                const items = [
+                      {canManage && (member.group_sources ?? []).length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="gap-1.5">
+                              {tHardcodedUi.raw(
+                                'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextManageAccess8bb5d74d',
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-80">
+                            {(member.group_sources ?? []).flatMap((g) => {
+                              const items = [
+                                <DropdownMenuItem
+                                  key={`${g.group_id}-detach`}
+                                  onSelect={() =>
+                                    setGroupAction({ type: 'detach', member, group: g })
+                                  }
+                                  className="flex-col items-start gap-0.5"
+                                >
+                                  <span>
+                                    {tHardcodedUi.raw(
+                                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextDetachab249756',
+                                    )}
+                                    {g.group_name}
+                                    {tHardcodedUi.raw(
+                                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextFromThisaff4c2b1',
+                                    )}
+                                  </span>
+                                  <span className="text-muted-foreground text-xs">
+                                    {tHardcodedUi.raw(
+                                      'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemovesAccess971d3e55',
+                                    )}
+                                  </span>
+                                </DropdownMenuItem>,
+                              ];
+                              if (accountId) {
+                                items.push(
                                   <DropdownMenuItem
-                                    key={`${g.group_id}-detach`}
+                                    key={`${g.group_id}-remove`}
                                     onSelect={() =>
-                                      setGroupAction({ type: 'detach', member, group: g })
+                                      setGroupAction({
+                                        type: 'removeFromGroup',
+                                        member,
+                                        group: g,
+                                      })
                                     }
                                     className="flex-col items-start gap-0.5"
                                   >
                                     <span>
-                                      {tI18nHardcoded.raw(
-                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextDetachab249756',
+                                      {tHardcodedUi.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemoveFrom9323f47c',
                                       )}
                                       {g.group_name}
-                                      {tI18nHardcoded.raw(
-                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextFromThisaff4c2b1',
+                                      {tHardcodedUi.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGroupdb1c1d43',
                                       )}
                                     </span>
                                     <span className="text-muted-foreground text-xs">
-                                      {tI18nHardcoded.raw(
-                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemovesAccess971d3e55',
+                                      {tHardcodedUi.raw(
+                                        'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAffectsEvery735d8dbc',
                                       )}
                                     </span>
                                   </DropdownMenuItem>,
-                                ];
-                                if (accountId) {
-                                  items.push(
-                                    <DropdownMenuItem
-                                      key={`${g.group_id}-remove`}
-                                      onSelect={() =>
-                                        setGroupAction({
-                                          type: 'removeFromGroup',
-                                          member,
-                                          group: g,
-                                        })
-                                      }
-                                      className="flex-col items-start gap-0.5"
-                                    >
-                                      <span>
-                                        {tI18nHardcoded.raw(
-                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextRemoveFrom9323f47c',
-                                        )}
-                                        {g.group_name}
-                                        {tI18nHardcoded.raw(
-                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGroupdb1c1d43',
-                                        )}
-                                      </span>
-                                      <span className="text-muted-foreground text-xs">
-                                        {tI18nHardcoded.raw(
-                                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAffectsEvery735d8dbc',
-                                        )}
-                                      </span>
-                                    </DropdownMenuItem>,
-                                  );
-                                }
-                                return items;
-                              })}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <Select
-                          value={value}
-                          onValueChange={(next) => setRole(member, next)}
-                          disabled={!canManage}
+                                );
+                              }
+                              return items;
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Select
+                        value={value}
+                        onValueChange={(next) => setRole(member, next)}
+                        disabled={!canManage}
+                      >
+                        <SelectTrigger className="h-8 w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
+                        </SelectContent>
+                      </Select>
+                      {canManage && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setRevokeTarget(member)}
+                          title={tHardcodedUi.raw(
+                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRemovec6407d5f',
+                          )}
+                          className="gap-1.5"
                         >
-                          <SelectTrigger className="h-8 w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <ProjectRoleSelectItem role="viewer" />
-                            <ProjectRoleSelectItem role="editor" />
-                            <ProjectRoleSelectItem role="manager" />
-                          </SelectContent>
-                        </Select>
-                        {canManage && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setRevokeTarget(member)}
-                            title={tI18nHardcoded.raw(
-                              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRemovec6407d5f',
-                            )}
-                            className="gap-1.5"
-                          >
-                            <X className="size-3.5" />
-                            Revoke
-                          </Button>
-                        )}
-                      </div>
-                    )
-                  }
-                />
+                          <X className="size-3.5" />
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </li>
               );
             })}
-          </List>
+          </ul>
         )}
-      </SectionCard>
+      </section>
 
       <ConfirmDialog
         open={revokeTarget !== null}
         onOpenChange={(open) => {
           if (!open) setRevokeTarget(null);
         }}
-        title={tI18nHardcoded.raw(
+        title={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRevoke0cd09fad',
         )}
         description={
           revokeTarget ? (
             <span>
               <strong>{userLabel(revokeTarget)}</strong>{' '}
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillLoseb378c86b',
               )}
             </span>
           ) : null
         }
-        confirmLabel={tI18nHardcoded.raw(
+        confirmLabel={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelRevokef1b3384e',
         )}
         confirmVariant="destructive"
@@ -836,30 +856,30 @@ function ProjectAccessCard({
             groupAction.type === 'detach' ? (
               <span>
                 <strong>{groupAction.group.group_name}</strong>{' '}
-                {tI18nHardcoded.raw(
+                {tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBeddf66ee4',
                 )}
                 <strong>{userLabel(groupAction.member)}</strong>{' '}
-                {tI18nHardcoded.raw(
+                {tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLosesIte94d42a4',
                 )}
               </span>
             ) : (
               <span>
                 <strong>{userLabel(groupAction.member)}</strong>{' '}
-                {tI18nHardcoded.raw(
+                {tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBe60764226',
                 )}
                 <strong>{groupAction.group.group_name}</strong>{' '}
-                {tI18nHardcoded.raw(
+                {tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGroupAcrossc2ff897e',
                 )}{' '}
                 <strong>
-                  {tI18nHardcoded.raw(
+                  {tHardcodedUi.raw(
                     'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextEveryProjecta802077b',
                   )}
                 </strong>{' '}
-                {tI18nHardcoded.raw(
+                {tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextThatGroup4e384269',
                 )}
               </span>
@@ -887,22 +907,8 @@ function ProjectAccessCard({
   );
 }
 
-function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] }) {
-  return (
-    <Badge
-      variant="outline"
-      size="sm"
-      className={
-        role === 'owner' ? 'border-foreground/30 text-foreground capitalize' : 'capitalize'
-      }
-    >
-      {role}
-    </Badge>
-  );
-}
-
 function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const queryKey = ['project-access-requests', projectId];
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
@@ -948,82 +954,92 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   if (!requestsQuery.isLoading && requests.length === 0) return null;
 
   return (
-    <SectionCard
-      title={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccess7a756f48',
-      )}
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeopleea85927a',
-      )}
-      count={requests.length}
-      flush
-    >
+    <section className="space-y-4">
+      <div>
+        <h3 className="text-sm font-medium">
+          {tHardcodedUi.raw(
+            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccess7a756f48',
+          )}
+          {requests.length > 0 ? (
+            <span className="text-muted-foreground ml-1.5 font-normal">({requests.length})</span>
+          ) : null}
+        </h3>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {tHardcodedUi.raw(
+            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeopleea85927a',
+          )}
+        </p>
+      </div>
+
       {requestsQuery.isLoading && (
-        <div className="px-6 py-3">
-          <Skeleton className="h-8 w-full" />
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <Skeleton key={index} className="h-14 w-full rounded-md" />
+          ))}
         </div>
       )}
 
       {!requestsQuery.isLoading && requests.length > 0 && (
-        <List>
+        <ul className="space-y-2">
           {requests.map((request) => {
             const busy = busyIds.has(request.request_id);
             return (
-              <ListRow
-                key={request.request_id}
-                leading={
-                  <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                    <MessageSquare className="size-4" />
+              <li key={request.request_id} className={MEMBER_ROW}>
+                <span className="bg-kortix-yellow/10 text-kortix-yellow inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                  <MessageSquare className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-foreground truncate text-sm font-medium">
+                    {request.requester_email}
                   </span>
-                }
-                title={request.requester_email}
-                subtitle={
                   <span className="text-muted-foreground text-xs">
                     <InlineMeta>
                       <span>Requested {formatDate(request.created_at)}</span>
                       {request.message ? <span>"{request.message}"</span> : null}
                     </InlineMeta>
                   </span>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="text-muted-foreground size-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => approveMutation.mutate(request.request_id)}
-                        className="gap-1.5"
-                      >
-                        <Check className="size-3.5" />
-                        Approve
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => rejectMutation.mutate(request.request_id)}
-                        className="gap-1.5"
-                      >
-                        <X className="size-3.5" />
-                        Decline
-                      </Button>
-                    </>
-                  )
-                }
-              />
+                </div>
+                {busy ? (
+                  <Loading className="text-muted-foreground shrink-0" />
+                ) : (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => approveMutation.mutate(request.request_id)}
+                      className="gap-1.5"
+                    >
+                      <Check className="size-3.5" />
+                      Approve
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => rejectMutation.mutate(request.request_id)}
+                      className="gap-1.5"
+                    >
+                      <X className="size-3.5" />
+                      Decline
+                    </Button>
+                  </div>
+                )}
+              </li>
             );
           })}
-        </List>
+        </ul>
       )}
-    </SectionCard>
+    </section>
   );
 }
 
 function PendingInvitesCard({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const { copy } = useCopy({
+    successMessage: 'Invite link copied',
+    errorMessage: 'Could not copy link',
+  });
   const queryClient = useQueryClient();
   const queryKey = ['project-pending-invites', projectId];
   const [pendingInviteIds, setPendingInviteIds] = useState<Set<string>>(() => new Set());
@@ -1070,7 +1086,7 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
         warningToast('Email skipped — copy the invite link to share manually', {
           duration: 8_000,
           button: (
-            <Button size="sm" onClick={() => copyInviteLink(result.invite_url)}>
+            <Button size="sm" onClick={() => copy(result.invite_url)}>
               Copy link
             </Button>
           ),
@@ -1087,55 +1103,63 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <SectionCard
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitlePendingbfbe9f8b',
-        )}
-        description={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeople552a0c43',
-        )}
-        count={pending.length}
-        flush
-      >
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium">
+            {tHardcodedUi.raw(
+              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitlePendingbfbe9f8b',
+            )}
+            {pending.length > 0 ? (
+              <span className="text-muted-foreground ml-1.5 font-normal">({pending.length})</span>
+            ) : null}
+          </h3>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {tHardcodedUi.raw(
+              'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionPeople552a0c43',
+            )}
+          </p>
+        </div>
+
         {invitesQuery.isLoading && (
-          <div className="px-6 py-3">
-            <Skeleton className="h-8 w-full" />
+          <div className="space-y-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <Skeleton key={index} className="h-14 w-full rounded-md" />
+            ))}
           </div>
         )}
 
         {!invitesQuery.isLoading && pending.length > 0 && (
-          <List>
+          <ul className="space-y-2">
             {pending.map((invite) => {
               const busy = pendingInviteIds.has(invite.invite_id);
               return (
-                <ListRow
-                  key={invite.invite_id}
-                  leading={
-                    <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <Mail className="size-4" />
-                    </span>
-                  }
-                  title={invite.email}
-                  badges={
-                    <Badge variant="outline" size="sm" className="capitalize">
-                      {invite.project_role}
-                    </Badge>
-                  }
-                  subtitle={
+                <li key={invite.invite_id} className={MEMBER_ROW}>
+                  <span className="bg-kortix-orange/10 text-kortix-orange inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
+                    <Mail className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {invite.email}
+                      </span>
+                      <Badge variant="outline" size="sm" className="capitalize">
+                        {invite.project_role}
+                      </Badge>
+                    </div>
                     <span className="text-muted-foreground text-xs">
                       <InlineMeta>
                         <span>Invited {formatDate(invite.created_at)}</span>
                         {invite.invited_by_email && <span>by {invite.invited_by_email}</span>}
                         {invite.invite_expired ? (
                           <span className="text-kortix-orange">
-                            {tI18nHardcoded.raw(
+                            {tHardcodedUi.raw(
                               'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextInviteLinkef92ef7c',
                             )}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1">
                             <Clock className="size-3" />
-                            {tI18nHardcoded.raw(
+                            {tHardcodedUi.raw(
                               'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextLinkExpires4566b25e',
                             )}
                             {formatDate(invite.invite_expires_at)}
@@ -1143,72 +1167,70 @@ function PendingInvitesCard({ projectId }: { projectId: string }) {
                         )}
                       </InlineMeta>
                     </span>
-                  }
-                  trailing={
-                    busy ? (
-                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => resendMutation.mutate(invite.invite_id)}
-                          title={tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleResendc80cacee',
-                          )}
-                          className="gap-1.5"
-                        >
-                          <RefreshCw className="size-3.5" />
-                          Resend
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })
-                          }
-                          title={tI18nHardcoded.raw(
-                            'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleCancel670de1c6',
-                          )}
-                          className="gap-1.5"
-                        >
-                          <X className="size-3.5" />
-                          Revoke
-                        </Button>
-                      </>
-                    )
-                  }
-                />
+                  </div>
+                  {busy ? (
+                    <Loading className="text-muted-foreground shrink-0" />
+                  ) : (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => resendMutation.mutate(invite.invite_id)}
+                        title={tHardcodedUi.raw(
+                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleResendc80cacee',
+                        )}
+                        className="gap-1.5"
+                      >
+                        <RefreshCw className="size-3.5" />
+                        Resend
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setRevokeTarget({ inviteId: invite.invite_id, email: invite.email })
+                        }
+                        title={tHardcodedUi.raw(
+                          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleCancel670de1c6',
+                        )}
+                        className="gap-1.5"
+                      >
+                        <X className="size-3.5" />
+                        Revoke
+                      </Button>
+                    </div>
+                  )}
+                </li>
               );
             })}
-          </List>
+          </ul>
         )}
-      </SectionCard>
+      </section>
 
       <ConfirmDialog
         open={revokeTarget !== null}
         onOpenChange={(open) => {
           if (!open) setRevokeTarget(null);
         }}
-        title={tI18nHardcoded.raw(
+        title={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleRevoke99f32c76',
         )}
         description={
           revokeTarget ? (
             <span>
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextTheInvitation06f8c62e',
               )}
               <strong>{revokeTarget.email}</strong>{' '}
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillBe5ec1d9e8',
               )}
             </span>
           ) : null
         }
-        confirmLabel={tI18nHardcoded.raw(
+        confirmLabel={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelRevoke3c3ea8b9',
         )}
         confirmVariant="destructive"
@@ -1233,7 +1255,7 @@ function ProjectGroupGrantsCard({
   accountId: string;
   canManage: boolean;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const grantsKey = ['project-group-grants', projectId];
 
@@ -1322,18 +1344,27 @@ function ProjectGroupGrantsCard({
 
   return (
     <>
-      <SectionCard
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleGroupfbf9c01c',
-        )}
-        description={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAttach372d6d3a',
-        )}
-        count={grants.length}
-        action={
-          canManage && available.length > 0 ? (
+      <section className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium">
+              {tHardcodedUi.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleGroupfbf9c01c',
+              )}
+              {grants.length > 0 ? (
+                <span className="text-muted-foreground ml-1.5 font-normal">({grants.length})</span>
+              ) : null}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {tHardcodedUi.raw(
+                'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrDescriptionAttach372d6d3a',
+              )}
+            </p>
+          </div>
+
+          {canManage && available.length > 0 ? (
             <form
-              className="flex items-center gap-1.5"
+              className="flex shrink-0 items-center gap-1.5"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!pickerGroupId || attachMutation.isPending) return;
@@ -1347,7 +1378,7 @@ function ProjectGroupGrantsCard({
               >
                 <SelectTrigger className="h-8 w-44 text-xs">
                   <SelectValue
-                    placeholder={tI18nHardcoded.raw(
+                    placeholder={tHardcodedUi.raw(
                       'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrPlaceholderPickf0432525',
                     )}
                   />
@@ -1383,13 +1414,14 @@ function ProjectGroupGrantsCard({
                 Attach
               </Button>
             </form>
-          ) : null
-        }
-        flush
-      >
+          ) : null}
+        </div>
+
         {grantsQuery.isLoading && (
-          <div className="px-6 py-3">
-            <Skeleton className="h-8 w-full" />
+          <div className="space-y-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <Skeleton key={index} className="h-14 w-full rounded-md" />
+            ))}
           </div>
         )}
 
@@ -1400,22 +1432,22 @@ function ProjectGroupGrantsCard({
             description={
               canManage && groups.length === 0 ? (
                 <>
-                  {tI18nHardcoded.raw(
+                  {tHardcodedUi.raw(
                     'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextCreateOne549d8748',
                   )}{' '}
                   <a href={`/accounts/${accountId}`} className="hover:text-foreground underline">
-                    {tI18nHardcoded.raw(
+                    {tHardcodedUi.raw(
                       'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccountPage432b8a72',
                     )}
                   </a>
                   .
                 </>
               ) : canManage && available.length === 0 && groups.length > 0 ? (
-                tI18nHardcoded.raw(
+                tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAllYour31c4dcb5',
                 )
               ) : (
-                tI18nHardcoded.raw(
+                tHardcodedUi.raw(
                   'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextNoGroups09e82ebd',
                 )
               )
@@ -1424,19 +1456,16 @@ function ProjectGroupGrantsCard({
         )}
 
         {!grantsQuery.isLoading && grants.length > 0 && (
-          <List>
+          <ul className="space-y-2">
             {grants.map((g: ProjectGroupGrant) => {
               const busy = pendingGroupIds.has(g.group_id);
               return (
-                <ListRow
-                  key={g.group_id}
-                  leading={
-                    <span className="text-muted-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-sm border">
-                      <Users className="size-4" />
+                <li key={g.group_id} className={MEMBER_ROW}>
+                  <EntityAvatar icon={UsersSolid} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-foreground truncate text-sm font-medium">
+                      {g.group_name}
                     </span>
-                  }
-                  title={g.group_name}
-                  subtitle={
                     <span className="text-muted-foreground text-xs">
                       <InlineMeta>
                         <span>Attached {formatDate(g.created_at)}</span>
@@ -1448,84 +1477,82 @@ function ProjectGroupGrantsCard({
                         {typeof g.override_count === 'number' && g.override_count > 0 && (
                           <span
                             className="text-kortix-orange"
-                            title={tI18nHardcoded.raw(
+                            title={tHardcodedUi.raw(
                               'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleAccount2914778b',
                             )}
                           >
                             {g.override_count} of {g.member_count}{' '}
-                            {tI18nHardcoded.raw(
+                            {tHardcodedUi.raw(
                               'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextGetManagera88e6fc4',
                             )}
                           </span>
                         )}
                       </InlineMeta>
                     </span>
-                  }
-                  trailing={
-                    busy ? (
-                      <Loader2 className="text-muted-foreground size-4 animate-spin" />
-                    ) : canManage ? (
-                      <div className="flex items-center gap-1.5">
-                        <Select
-                          value={g.role}
-                          onValueChange={(v) =>
-                            updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-28 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <ProjectRoleSelectItem role="viewer" />
-                            <ProjectRoleSelectItem role="editor" />
-                            <ProjectRoleSelectItem role="manager" />
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setDetachTarget(g)}
-                        >
-                          Detach
-                        </Button>
-                      </div>
-                    ) : (
-                      <Badge variant="outline" size="sm" className="capitalize">
-                        {g.role}
-                      </Badge>
-                    )
-                  }
-                />
+                  </div>
+                  {busy ? (
+                    <Loading className="text-muted-foreground shrink-0" />
+                  ) : canManage ? (
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Select
+                        value={g.role}
+                        onValueChange={(v) =>
+                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-28 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDetachTarget(g)}
+                      >
+                        Detach
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" size="sm" className="capitalize">
+                      {g.role}
+                    </Badge>
+                  )}
+                </li>
               );
             })}
-          </List>
+          </ul>
         )}
-      </SectionCard>
+      </section>
 
       <ConfirmDialog
         open={detachTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDetachTarget(null);
         }}
-        title={tI18nHardcoded.raw(
+        title={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrTitleDetach8e4cbc87',
         )}
         description={
           detachTarget ? (
             <span>
               <strong>{detachTarget.group_name}</strong>{' '}
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextWillNob7c4fd05',
               )}
               <strong>{detachTarget.role}</strong>{' '}
-              {tI18nHardcoded.raw(
+              {tHardcodedUi.raw(
                 'autoComponentsProjectsCustomizeSectionsMembersViewJsxTextAccessUnless520e90ca',
               )}
             </span>
           ) : null
         }
-        confirmLabel={tI18nHardcoded.raw(
+        confirmLabel={tHardcodedUi.raw(
           'autoComponentsProjectsCustomizeSectionsMembersViewJsxAttrConfirmLabelDetache64492d2',
         )}
         confirmVariant="destructive"

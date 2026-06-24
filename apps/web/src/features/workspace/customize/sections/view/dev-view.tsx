@@ -1,14 +1,14 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy, Loader2, UserPlus } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { FormEvent, type ReactNode, useState } from 'react';
+import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Stepper,
@@ -20,6 +20,9 @@ import {
   StepperTrigger,
 } from '@/components/ui/stepper';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useCopy } from '@/hooks/use-copy';
 import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import CustomizeSectionWrapper from '../component/section-wrapper';
@@ -51,12 +54,17 @@ export function DevView({ projectId }: { projectId: string }) {
       )}
 
       {projectQuery.isError && (
-        <SectionCard
-          tone="destructive"
+        <ErrorState
+          size="sm"
           title={tI18nHardcoded.raw(
             'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrTitleCouldnfd7978fb',
           )}
           description={(projectQuery.error as Error).message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
+              Retry
+            </Button>
+          }
         />
       )}
 
@@ -174,10 +182,10 @@ function DevSteps({ project }: { project: Awaited<ReturnType<typeof getProject>>
   );
 
   return (
-    <Stepper orientation="vertical" className="flex w-full flex-col">
+    <Stepper orientation="vertical" count={steps.length} className="flex w-full flex-col">
       {steps.map((step, index) => (
         <div key={step.title} className="flex gap-3.5">
-          <StepperItem step={index + 1} completed className="items-center justify-center">
+          <StepperItem step={index + 1} completed className="items-center">
             <StepperTrigger asChild>
               <span className="flex shrink-0">
                 <StepperIndicator className="size-7 text-sm font-semibold tabular-nums">
@@ -185,15 +193,13 @@ function DevSteps({ project }: { project: Awaited<ReturnType<typeof getProject>>
                 </StepperIndicator>
               </span>
             </StepperTrigger>
-            {index < steps.length - 1 && (
-              <StepperSeparator className="bg-secondary m-0 h-full group-data-[orientation=vertical]/stepper:h-full" />
-            )}
+            <StepperSeparator className="bg-secondary m-0" />
           </StepperItem>
-          <div className="min-w-0 flex-1 space-y-2 pt-0.5 pb-5">
-            <div className="space-y-1">
+          <div className="min-w-0 flex-1 space-y-4 pt-0.5 pb-10">
+            <div className="space-y-0">
               <StepperTitle className="text-foreground font-semibold">{step.title}</StepperTitle>
               {step.hint && (
-                <StepperDescription className="text-xs leading-relaxed">
+                <StepperDescription className="text-sm leading-relaxed">
                   {step.hint}
                 </StepperDescription>
               )}
@@ -221,14 +227,11 @@ function CommandBlock({ lines }: { lines: string[] }) {
   };
 
   return (
-    <div className="group border-border bg-muted/40 relative overflow-hidden rounded-md border">
-      <pre className="overflow-x-auto px-3.5 py-3 pr-12 text-xs leading-relaxed">
+    <div className="group border-border bg-muted relative overflow-hidden rounded-md border">
+      <pre className="scrollbar-hide overflow-x-auto px-3.5 py-3 pr-12 text-sm leading-relaxed">
         <code className="text-foreground font-mono">
           {lines.map((line, i) => (
             <div key={i} className="flex">
-              <span aria-hidden className="text-muted-foreground/50 pr-3 select-none">
-                $
-              </span>
               <span className="min-w-0 break-all">{line}</span>
             </div>
           ))}
@@ -250,50 +253,33 @@ function CommandBlock({ lines }: { lines: string[] }) {
   );
 }
 
-const LAUNCHERS: { label: string; command: string }[] = [
-  { label: 'Claude Code', command: 'claude' },
-  { label: 'Cursor', command: 'cursor .' },
-  { label: 'Codex', command: 'codex' },
-  { label: 'opencode', command: 'opencode' },
+type LauncherIcon = ComponentType<{ className?: string }>;
+
+const LAUNCHERS: { label: string; command: string; icon: LauncherIcon }[] = [
+  { label: 'Claude Code', command: 'claude', icon: Icon.Claude },
+  { label: 'Cursor', command: 'cursor .', icon: Icon.Cursor },
+  { label: 'Codex', command: 'codex', icon: Icon.Codex },
+  { label: 'opencode', command: 'opencode', icon: Icon.OpenCode },
 ];
 
 function Launchers() {
+  const { copy } = useCopy();
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {LAUNCHERS.map((l) => (
-        <LauncherChip key={l.label} label={l.label} command={l.command} />
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      {LAUNCHERS.map(({ label, command, icon: LauncherIcon }) => (
+        <button
+          key={command}
+          type="button"
+          onClick={() => copy(command)}
+          title={`Copy "${command}"`}
+          aria-label={label}
+          className="group border-border bg-popover hover:bg-muted flex aspect-square items-center justify-center rounded-md border transition-colors"
+        >
+          <LauncherIcon className="size-12 shrink-0" />
+        </button>
       ))}
     </div>
-  );
-}
-
-function LauncherChip({ label, command }: { label: string; command: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
-    navigator.clipboard.writeText(command).then(() => {
-      setCopied(true);
-      successToast('Copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={copy}
-      title={`Copy "${command}"`}
-      className="group border-border bg-muted/40 hover:bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors"
-    >
-      <span className="text-foreground text-sm font-medium">{label}</span>
-      <code className="text-muted-foreground font-mono text-xs">{command}</code>
-      {copied ? (
-        <Check className="text-primary size-3.5" />
-      ) : (
-        <Copy className="text-muted-foreground/60 group-hover:text-muted-foreground size-3.5 transition-colors" />
-      )}
-    </button>
   );
 }
 
@@ -321,7 +307,9 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
 
   return (
     <form className="space-y-2" onSubmit={submit}>
-      <Label htmlFor="dev-github-username">GitHub username</Label>
+      <Label htmlFor="dev-github-username" className="sr-only">
+        GitHub username
+      </Label>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 basis-48">
           <GithubMark className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
@@ -336,19 +324,11 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
             autoCorrect="off"
             spellCheck={false}
             className="pl-9"
+            variant="popover"
           />
         </div>
-        <Button
-          type="submit"
-          size="lg"
-          className="shrink-0 gap-1.5"
-          disabled={!username.trim() || invite.isPending}
-        >
-          {invite.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <UserPlus className="size-3.5" />
-          )}
+        <Button type="submit" className="shrink-0" disabled={!username.trim() || invite.isPending}>
+          {invite.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
           {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
         </Button>
       </div>

@@ -14,12 +14,21 @@ description: "Kortix brand + design system: the rules, tokens, and component lib
 - **Tokens are law.** `apps/web/src/app/globals.css` is the implementation source of truth for every visual property. If a value conflicts with anything else, `globals.css` wins.
 - **AI-native & self-documenting.** The living styleguide at `/design-system` renders every component. When you add a component, add it there too.
 
+## Strictly avoid — deprecated primitives
+
+**Do not use these in new work or when refactoring screens.** They are legacy wrappers; match the hand-composed patterns in the reference implementations instead.
+
+- **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) — use `Card` + explicit header markup (see `settings-view.tsx`, `agents-view.tsx`) instead.
+- **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) — compose entity rows inside a `Card` or flush container with `divide-border/60 divide-y` and the row layout from reference views. Never import `List` or `ListRow`.
+
+When editing a file that already uses them, prefer migrating to the reference pattern over adding more usage.
+
 ## Reference implementations — read these before building a new screen
 
 These files are the new source of truth for what good looks like. Match their patterns.
 
 - **Shell + responsive layout:** `apps/web/src/features/workspace/customize/customize-panel.tsx` + `sections/component/section-wrapper.tsx`
-- **List/card composition, flush rows, no nested rounding:** `apps/web/src/features/workspace/customize/sections/view/agents-view.tsx`
+- **List/card composition, flush rows, no nested rounding:** `apps/web/src/features/workspace/customize/sections/view/agents-view.tsx`, `apps/web/src/features/workspace/customize/sections/view/settings-view.tsx`
 - **Tinted-icon status pattern:** `apps/web/src/components/projects/schedule-view.tsx`
 - **Table + badges + header:** `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx`
 - **Sidebar chrome:** `apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx` + `apps/web/src/components/sidebar/sidebar-left.tsx`
@@ -87,7 +96,7 @@ Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind pa
 
 - `kortix-red` is allowed on _status icons_ (failed, error) — this is explicit and intentional.
 - The `destructive` token (deeper red) is reserved for the _single final confirm button_ inside a `ConfirmDialog`. Never on menu rows, trigger buttons, labels, or routine actions like Log out / Cancel.
-- A Danger Zone panel (`SectionCard tone="destructive"`) stays neutral — faint warm edge only, no red fill or red text on the panel itself.
+- A Danger Zone panel stays neutral — faint warm edge only (`border-kortix-orange/20` or similar), no red fill or red text on the panel itself. Do not use `SectionCard`; compose with `Card` like `settings-view.tsx`.
 
 ### Radius
 
@@ -158,13 +167,12 @@ Rules:
 ### Surfaces & layout
 
 - **`CustomizeSectionWrapper`** (`sections/component/section-wrapper.tsx`) — THE section shell for customize-panel views. Title left, action right, responsive.
-- **`SectionCard`** — panel with divided header (`title`, `count`, `description`, trailing `action`). `flush` seats a `List` edge-to-edge. `tone="destructive"` = calm danger zone (neutral panel, faint warm edge, neutral trigger button).
-- **`Card` / `CardHeader` / `CardContent`** — raw surface when `SectionCard` is too opinionated.
+- **`Card` / `CardHeader` / `CardContent`** — panels and grouped content. Compose headers with title, count, description, and trailing action inline (see `settings-view.tsx`). **Not** `SectionCard`.
 - **`PageShell` / `PageHeader`** — page width + intro.
 
 ### Lists & rows
 
-- **`List` + `ListRow`** — THE list. Prefer over tables for entity rows. `ListRow` has `leading` (avatar/icon), `title` + `badges`, `subtitle` (use `InlineMeta`), `trailing` (status + kebab). Clickable rows are `div role="button"`; wrap trailing menus in `stopPropagation`.
+- **Hand-composed rows in `Card`** — entity lists: `divide-border/60 divide-y` container, each row with `leading` (avatar/icon), `title` + `badges`, `subtitle` (`InlineMeta`), `trailing` (status + kebab). Clickable rows are `div role="button"`; wrap trailing menus in `stopPropagation`. Copy structure from `agents-view.tsx` / `settings-view.tsx`. **Not** `List` / `ListRow`.
 - **`Table` / `DataTable`** — only for genuinely multi-column tabular data.
 - **`DefinitionList` / `DefinitionRow`** — key/value detail panels.
 
@@ -209,13 +217,13 @@ Rules:
 ## Dos & Don'ts
 
 - ✅ Section shells → `CustomizeSectionWrapper`. ❌ a hand-rolled `<div className="flex flex-col px-… py-…">` with ad-hoc headers.
-- ✅ Panels → `SectionCard`. ❌ `<section className="rounded-xl border border-border/70 bg-card">`.
+- ✅ Panels → `Card` + composed header/body. ❌ `SectionCard`, or `<section className="rounded-xl border border-border/70 bg-card">`.
 - ✅ Danger zone trigger → neutral button that opens a confirm. ❌ a red trigger button, red menu row, or `text-destructive` on routine actions.
 - ✅ Status → tinted icon tile (`bg-kortix-{c}/10 text-kortix-{c} rounded-sm`). ❌ plain text labels or raw-color icon classes.
 - ✅ Color → `kortix-*` tokens only (`kortix-green`, `kortix-red`, `kortix-orange`, …). ❌ `text-emerald-600`, `bg-amber-500`, `dark:text-emerald-400`.
 - ✅ Container radius → `rounded-md`. Flush seam → `rounded-none`. ❌ `rounded-2xl` or `rounded-xl` on containers, nested rounding.
 - ✅ Padding on inner content div. ❌ padding directly on the Card/panel element.
-- ✅ Lists → `List` + `ListRow`. ❌ `<ul className="divide-y">` with custom `<li>` rows.
+- ✅ Entity rows → hand-composed rows in `Card` (`divide-y`, reference views). ❌ `List` / `ListRow`, or ad-hoc `<ul>` without matching reference spacing.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ `className="h-4 rounded-md px-1 text-[9px]"`.
 - ✅ People → `UserAvatar` (round); things → `EntityAvatar` (square). ❌ mixing shapes.
 - ✅ Meta → `InlineMeta`. ❌ manual `<span className="text-muted-foreground/40">·</span>`.
@@ -230,7 +238,7 @@ Rules:
 
 1. **Read a reference implementation** first (list above). Match its structure.
 2. Open `/design-system` and skim `src/components/ui/` before writing UI.
-3. Compose: `CustomizeSectionWrapper` / `SectionCard` → `List`/`ListRow` or `Table` → `Badge` + `InlineMeta` + `EmptyState`.
+3. Compose: `CustomizeSectionWrapper` → `Card` + hand-composed rows (or `Table`) → `Badge` + `InlineMeta` + `EmptyState`. Never `SectionCard` or `List`.
 4. Status → tinted icon tile. Color → `kortix-*` token. Radius → `rounded-md` (container), `rounded-none` (flush seam).
 5. If you must create a primitive: tokens only, tiny API, add a showcase block to `/design-system`.
 6. Verify: no raw palette colors, no nested rounding, no direct card padding, both light + dark themes work, `tsc` clean.

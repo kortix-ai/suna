@@ -269,11 +269,15 @@ export default async function ComparePage(props: PageProps) {
           </h2>
         </Reveal>
         <div className="w-full overflow-hidden">
-          <Stepper orientation="vertical" className="flex w-full flex-col">
+          <Stepper
+            orientation="vertical"
+            count={c.differentiators.length}
+            className="flex w-full flex-col"
+          >
             {c.differentiators.map((d, i) => (
               <Reveal key={d.title}>
                 <div className="flex gap-3 md:gap-10">
-                  <StepperItem step={i + 1} completed className="items-center justify-center">
+                  <StepperItem step={i + 1} completed className="items-center">
                     <StepperTrigger asChild>
                       <span className="flex shrink-0">
                         <StepperIndicator className="size-7 text-sm font-medium">
@@ -281,9 +285,7 @@ export default async function ComparePage(props: PageProps) {
                         </StepperIndicator>
                       </span>
                     </StepperTrigger>
-                    {i < c.differentiators.length && (
-                      <StepperSeparator className="bg-secondary m-0 h-full group-data-[orientation=vertical]/stepper:h-full" />
-                    )}
+                    <StepperSeparator className="bg-secondary m-0" />
                   </StepperItem>
                   <div className="min-w-0 flex-1 pb-14">
                     <StepperTitle className="text-foreground text-lg tracking-tight text-balance">

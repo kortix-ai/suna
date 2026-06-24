@@ -875,7 +875,7 @@ function ConnectorDetail({
             <Button
               size="sm"
               variant="outline"
-              className="shrink-0 gap-1.5"
+              className="shrink-0"
               onClick={() => reconnect.mutate()}
               disabled={reconnect.isPending}
             >
@@ -890,7 +890,7 @@ function ConnectorDetail({
             <Button
               size="sm"
               variant="outline"
-              className="shrink-0 gap-1.5"
+              className="shrink-0"
               onClick={() => setCredOpen(true)}
             >
               <KeyRound className="h-4 w-4" />
@@ -912,7 +912,7 @@ function ConnectorDetail({
               <Button
                 size="sm"
                 variant="outline"
-                className="shrink-0 gap-1.5"
+                className="shrink-0"
                 onClick={() => setSection('channels')}
               >
                 <MessageSquare className="h-4 w-4" />
@@ -936,7 +936,7 @@ function ConnectorDetail({
               <Button
                 size="sm"
                 variant="outline"
-                className="shrink-0 gap-1.5"
+                className="shrink-0"
                 onClick={() => setSection('computers')}
               >
                 <Monitor className="h-4 w-4" />

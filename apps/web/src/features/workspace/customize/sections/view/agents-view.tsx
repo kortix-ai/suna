@@ -111,6 +111,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
             )}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            variant="popover"
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
