@@ -6,7 +6,7 @@
  */
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 import {
   executorConnectorActions,
   executorConnectorPolicies,
@@ -73,6 +73,7 @@ import type {
   AdminConnectorView,
   CatalogConnector,
   ExecutorPrincipal,
+  ExecutorExecutionLogView,
   ExecutorRouterDeps,
 } from './router';
 
@@ -206,8 +207,12 @@ function makeDbGatewayDeps(): GatewayDeps {
         sessionId: rec.sessionId,
         status: rec.status,
         risk: rec.risk,
+        requestDigest: rec.requestDigest,
+        requestSummary: rec.requestSummary,
         resultSummary: rec.resultSummary,
-        resolvedAt: new Date(),
+        durationMs: rec.durationMs,
+        createdAt: rec.createdAt ?? new Date(),
+        resolvedAt: rec.resolvedAt ?? new Date(),
       });
     },
     executePipedream: ({ projectId, connectorSlug, app, actionKey, args, accountId, userId }) =>
@@ -411,6 +416,43 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
   return out;
 }
 
+async function listExecutionLogs(
+  projectId: string,
+  opts: { connectorSlug?: string; limit: number },
+): Promise<ExecutorExecutionLogView[]> {
+  const clauses = [eq(executorExecutions.projectId, projectId)];
+  const slug = opts.connectorSlug?.trim();
+  if (slug) clauses.push(like(executorExecutions.actionPath, `${slug}.%`));
+  const rows = await db
+    .select({
+      executionId: executorExecutions.executionId,
+      actionPath: executorExecutions.actionPath,
+      actingUserId: executorExecutions.actingUserId,
+      sessionId: executorExecutions.sessionId,
+      status: executorExecutions.status,
+      risk: executorExecutions.risk,
+      requestDigest: executorExecutions.requestDigest,
+      requestSummary: executorExecutions.requestSummary,
+      resultSummary: executorExecutions.resultSummary,
+      durationMs: executorExecutions.durationMs,
+      createdAt: executorExecutions.createdAt,
+      resolvedAt: executorExecutions.resolvedAt,
+    })
+    .from(executorExecutions)
+    .where(and(...clauses))
+    .orderBy(desc(executorExecutions.createdAt))
+    .limit(opts.limit);
+  return rows.map((row) => ({
+    ...row,
+    createdAt: toIso(row.createdAt),
+    resolvedAt: row.resolvedAt ? toIso(row.resolvedAt) : null,
+  }));
+}
+
+function toIso(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 async function setSharing(projectId: string, slug: string, intent: SharingIntent): Promise<boolean> {
   const [row] = await db
     .select({ connectorId: executorConnectors.connectorId })
@@ -429,6 +471,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   listCatalog,
   resolveAdmin,
   listConnectors,
+  listExecutionLogs,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
   syncConnectors: (projectId, accountId) => syncProjectConnectors(projectId, accountId, { force: true }),

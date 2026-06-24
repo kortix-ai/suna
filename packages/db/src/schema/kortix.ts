@@ -3011,9 +3011,12 @@ export const executorExecutions = kortixSchema.table(
     risk: executorRiskEnum('risk'),
     /** Hash of the inputs (never raw secrets). */
     requestDigest: varchar('request_digest', { length: 64 }),
+    /** Sanitized request envelope for the dedicated Executor audit-log view. */
+    requestSummary: jsonb('request_summary').$type<Record<string, unknown> | null>(),
     /** Redacted result summary / error. */
     resultSummary: jsonb('result_summary').$type<Record<string, unknown> | null>(),
     approvedBy: uuid('approved_by'),
+    durationMs: integer('duration_ms'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },

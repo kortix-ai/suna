@@ -69,6 +69,26 @@ const CallResponseSchema = z
   .passthrough()
   .openapi('ExecutorCallResult');
 
+const ExecutionLogEntrySchema = z
+  .object({
+    executionId: z.string(),
+    actionPath: z.string(),
+    actingUserId: z.string().nullable(),
+    sessionId: z.string().nullable(),
+    status: z.string(),
+    risk: z.string().nullable(),
+    requestDigest: z.string().nullable(),
+    requestSummary: z.any().nullable(),
+    resultSummary: z.any().nullable(),
+    durationMs: z.number().nullable(),
+    createdAt: z.string(),
+    resolvedAt: z.string().nullable(),
+  })
+  .openapi('ExecutorExecutionLogEntry');
+const ExecutionLogsResponseSchema = z
+  .object({ executions: z.array(ExecutionLogEntrySchema) })
+  .openapi('ExecutorExecutionLogs');
+
 const OkSchema = z.object({ ok: z.boolean() }).passthrough();
 const SyncResultSchema = z
   .object({
@@ -140,6 +160,21 @@ export interface ProjectPoliciesViewResponse {
   errors: Array<{ path: string; error: string }>;
 }
 
+export interface ExecutorExecutionLogView {
+  executionId: string;
+  actionPath: string;
+  actingUserId: string | null;
+  sessionId: string | null;
+  status: 'ok' | 'error' | 'denied' | 'pending_approval';
+  risk: string | null;
+  requestDigest: string | null;
+  requestSummary: Record<string, unknown> | null;
+  resultSummary: Record<string, unknown> | null;
+  durationMs: number | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 export interface ExecutorRouterDeps {
   /** Gateway auth: resolve the executor token → principal, or null for 401. */
   resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null>;
@@ -156,6 +191,8 @@ export interface ExecutorRouterDeps {
   /** Admin auth: resolve user + verify project access, or null for 401/403. */
   resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
+  /** Dedicated Executor audit log, separate from regular chat/conversation history. */
+  listExecutionLogs?(projectId: string, opts: { connectorSlug?: string; limit: number }): Promise<ExecutorExecutionLogView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Set sharing for a connector's bound secret. Returns false if the connector/secret is unknown. */
   setSharing(projectId: string, slug: string, intent: SharingIntent): Promise<boolean>;
@@ -399,6 +436,35 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return callResponse(c, p);
+    },
+  );
+
+  // ── Admin: dedicated Executor audit log ──────────────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/executions',
+      tags: ['executor'],
+      summary: 'List recent Executor execution audit entries',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({ connectorSlug: z.string().optional(), limit: z.string().optional() }),
+      },
+      responses: {
+        200: json(ExecutionLogsResponseSchema, 'Recent Executor audit entries'),
+        ...errors(403, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listExecutionLogs) return c.json({ error: 'not supported' }, 501);
+      const rawLimit = Number(c.req.query('limit') ?? 50);
+      const limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.trunc(rawLimit))) : 50;
+      const connectorSlug = c.req.query('connectorSlug') || undefined;
+      return c.json({ executions: await deps.listExecutionLogs(projectId, { connectorSlug, limit }) });
     },
   );
 

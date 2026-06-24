@@ -13,10 +13,12 @@ import { useTranslations } from 'next-intl';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Activity,
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
+  Clock3,
   Globe,
   KeyRound,
   Loader2,
@@ -83,6 +85,7 @@ import {
   getConnectorConfig,
   getConnectorPolicies,
   listConnectors,
+  listExecutorExecutionLogs,
   listPipedreamApps,
   getConnectStatus,
   pipedreamConnect,
@@ -97,6 +100,7 @@ import {
   type ConnectorAction,
   type ConnectorConfig,
   type ConnectorDraftInput,
+  type ExecutorExecutionLogEntry,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
   type ConnectorSharing,
@@ -120,12 +124,52 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
+const EXECUTION_STATUS_VARIANT: Record<
+  ExecutorExecutionLogEntry['status'],
+  'success' | 'destructive' | 'warning' | 'outline'
+> = {
+  ok: 'success',
+  error: 'destructive',
+  denied: 'outline',
+  pending_approval: 'warning',
+};
+
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
   if (p === 'computer') return 'Computer';
   return p.toUpperCase();
+}
+
+function formatExecutionTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function formatDuration(ms: number | null): string | null {
+  if (ms == null) return null;
+  if (ms < 1_000) return `${ms}ms`;
+  return `${(ms / 1_000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+}
+
+function prettyJson(value: unknown): string {
+  if (value == null) return '{}';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function shortId(value: string): string {
+  return value.length <= 14 ? value : `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
 // ─── Pipedream Connect overlay escape (used by the connect flow) ─────────────
@@ -976,6 +1020,7 @@ function ConnectorDetail({
           <TabsList>
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
           </TabsList>
           <TabsContent value="profile" className="space-y-5">
             {!isPipedream && !isManaged && (
@@ -989,6 +1034,9 @@ function ConnectorDetail({
           </TabsContent>
           <TabsContent value="permissions">
             <PermissionsSection projectId={projectId} connector={connector} />
+          </TabsContent>
+          <TabsContent value="audit">
+            <AuditLogSection projectId={projectId} connector={connector} />
           </TabsContent>
         </Tabs>
 
@@ -1208,6 +1256,146 @@ function ProfileSection({
         )}
       />
     </SectionCard>
+  );
+}
+
+// ─── Audit log section (dedicated Executor execution history) ───────────────
+
+function AuditLogSection({
+  projectId,
+  connector,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+}) {
+  const query = useQuery({
+    queryKey: ['executor-audit-log', projectId, connector.slug],
+    queryFn: () => listExecutorExecutionLogs(projectId, { connectorSlug: connector.slug, limit: 25 }),
+    staleTime: 5_000,
+  });
+  const entries = query.data?.executions ?? [];
+
+  return (
+    <SectionCard
+      title="Audit log"
+      count={entries.length || undefined}
+      description="Dedicated Executor history for this connector — separate from the chat transcript. Inputs and outputs are sanitized before storage."
+      action={
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => query.refetch()}
+          disabled={query.isFetching}
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', query.isFetching && 'animate-spin')} />
+          Refresh
+        </Button>
+      }
+    >
+      {query.isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-2xl" />
+          ))}
+        </div>
+      ) : query.isError ? (
+        <InfoBanner tone="destructive" title="Couldn’t load audit log">
+          {(query.error as Error)?.message || 'Try refreshing the connector audit log.'}
+        </InfoBanner>
+      ) : entries.length === 0 ? (
+        <EmptyState
+          icon={Activity}
+          size="sm"
+          title="No Executor calls yet"
+          description="Once an agent uses this connector, each call is written here with actor, session, policy, request, result, and timing details."
+          className="rounded-2xl border border-border/60 bg-muted/20"
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-border/60">
+          {entries.map((entry) => (
+            <AuditLogRow key={entry.executionId} entry={entry} connectorSlug={connector.slug} />
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function AuditLogRow({
+  entry,
+  connectorSlug,
+}: {
+  entry: ExecutorExecutionLogEntry;
+  connectorSlug: string;
+}) {
+  const action = entry.actionPath.startsWith(`${connectorSlug}.`)
+    ? entry.actionPath.slice(connectorSlug.length + 1)
+    : entry.actionPath;
+  const duration = formatDuration(entry.durationMs);
+  return (
+    <div className="border-border/60 border-t px-3 py-3 first:border-t-0">
+      <div className="flex items-start gap-3">
+        <div className="bg-muted text-muted-foreground mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg">
+          <Activity className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <code className="text-foreground truncate font-mono text-xs font-medium">{action}</code>
+                <Badge variant={EXECUTION_STATUS_VARIANT[entry.status]} size="sm">
+                  {entry.status.replace('_', ' ')}
+                </Badge>
+                {entry.risk && (
+                  <Badge variant={RISK_VARIANT[entry.risk]} size="sm">
+                    {entry.risk}
+                  </Badge>
+                )}
+              </div>
+              <InlineMeta>
+                <span className="inline-flex items-center gap-1">
+                  <Clock3 className="h-3 w-3" />
+                  {formatExecutionTime(entry.createdAt)}
+                </span>
+                {duration}
+                {entry.sessionId ? <code className="font-mono">session {shortId(entry.sessionId)}</code> : null}
+                {entry.actingUserId ? <code className="font-mono">actor {shortId(entry.actingUserId)}</code> : null}
+              </InlineMeta>
+            </div>
+            {entry.requestDigest && (
+              <code className="text-muted-foreground shrink-0 font-mono text-xs">
+                {entry.requestDigest.slice(0, 10)}
+              </code>
+            )}
+          </div>
+
+          <details className="group">
+            <summary className="text-muted-foreground hover:text-foreground cursor-pointer text-xs font-medium transition-colors">
+              Request / result details
+            </summary>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <p className="text-muted-foreground text-xs font-medium">Request</p>
+                <CodeSnippet
+                  language="json"
+                  code={prettyJson(entry.requestSummary)}
+                  className="max-h-60 overflow-auto"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-muted-foreground text-xs font-medium">Result</p>
+                <CodeSnippet
+                  language="json"
+                  code={prettyJson(entry.resultSummary)}
+                  className="max-h-60 overflow-auto"
+                />
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
   );
 }
 
