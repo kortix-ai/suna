@@ -256,13 +256,13 @@ const envSchema = z.object({
   DAYTONA_WEBHOOK_SECRET:      optStr,
 
   // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
-  // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
+  // The MASTER on/off switch is the DB-backed admin toggle (warm_snapshot,
+  // runtime-settings.ts, default ON) — NOT an env var. When it's on AND
   // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
   // sessions can boot from a snapshot baked with services already running in
   // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
   // The warm snapshot is baked imperatively off a stock base snapshot — the
   // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
-  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   DAYTONA_WARM_TARGET:         optStr,
   DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
   // Pool spawns default to warm snapshots (fast refills, but Daytona caps warm
@@ -630,7 +630,6 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,

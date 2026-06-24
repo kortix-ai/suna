@@ -1007,8 +1007,8 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
-  // + DAYTONA_WARM_TARGET are set; best-effort.
+  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
+  // is on + DAYTONA_WARM_TARGET is set; best-effort.
   kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
