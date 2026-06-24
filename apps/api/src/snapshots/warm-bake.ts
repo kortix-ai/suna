@@ -20,7 +20,7 @@
  * Validated on the experimental region (2026-06): apt+opencode+migration ~45s,
  * 75MB binary upload ~85s, snapshot ~40s (all one-time); warm create 1.3s.
  *
- * Toggle: warmSnapshotsEnabled() (KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET).
+ * Toggle: warmSnapshotsEnabled() (admin warm_snapshot toggle + DAYTONA_WARM_TARGET).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -251,7 +251,7 @@ export async function bakeWarmSnapshot(opts: {
   onLog?: (line: string) => void;
 }): Promise<WarmBakeResult> {
   if (!warmSnapshotsEnabled()) {
-    throw new WarmBakeError('warm snapshots are not enabled (KORTIX_WARM_SNAPSHOT_ENABLED / DAYTONA_WARM_TARGET)');
+    throw new WarmBakeError('warm snapshots are not enabled (admin warm_snapshot toggle / DAYTONA_WARM_TARGET)');
   }
   const onLog = opts.onLog;
   const baseSnapshot = opts.baseSnapshot || (await resolveBuilderBaseSnapshot(onLog));

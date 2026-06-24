@@ -223,8 +223,9 @@ export async function provisionSessionSandbox(opts: {
   //      fast-forwarded post-boot via /kortix/refresh).
   //   2. The generic warm runtime base (skips the cold create; clone still runs).
   //   3. null → the normal Dockerfile-snapshot path.
-  // Fully inert unless KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET are
-  // set. Restricted to the platform-default slug: warm snapshots carry only the
+  // Master gate is the warm_snapshot admin toggle (default ON); daytona also
+  // needs DAYTONA_WARM_TARGET, platinum a configured host (warmSnapshotsEnabledFor).
+  // Restricted to the platform-default slug: warm snapshots carry only the
   // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
   // must still boot its own per-project image.
   let warmBase: string | null = null;

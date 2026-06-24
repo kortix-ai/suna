@@ -1,6 +1,7 @@
 import { Daytona } from '@daytonaio/sdk';
 import { config, type SandboxProviderName } from '../config';
 import { isPlatinumConfigured } from './platinum';
+import { warmSnapshotSetting } from '../platform/services/runtime-settings';
 
 let daytonaClient: Daytona | null = null;
 
@@ -51,13 +52,14 @@ export function getDaytonaWarm(): Daytona {
 }
 
 /**
- * True when warm (memory-state) snapshots are turned on AND a warm target is
- * configured. The single gate every warm-snapshot code path checks first, so
- * the feature is fully inert on prod until both are set.
+ * True when warm (memory-state) snapshots are turned on AND a Daytona warm
+ * target is configured. The master switch is the DB-backed admin toggle
+ * (warmSnapshotSetting, default ON) — NOT an env var — so operators flip it from
+ * the admin Providers panel without a redeploy.
  */
 export function warmSnapshotsEnabled(): boolean {
   return (
-    config.KORTIX_WARM_SNAPSHOT_ENABLED &&
+    warmSnapshotSetting().enabled &&
     !!config.DAYTONA_API_KEY &&
     !!config.DAYTONA_WARM_TARGET
   );
@@ -65,18 +67,19 @@ export function warmSnapshotsEnabled(): boolean {
 
 /**
  * Provider-aware warm-snapshot gate. Every warm code path that can run on EITHER
- * provider checks this; Daytona keeps its own exact gate (warmSnapshotsEnabled()).
+ * provider checks this. The MASTER switch (warmSnapshotSetting, DB-backed admin
+ * toggle, default ON) gates both; each provider then adds its own sub-gate:
  *
- *   - daytona  → warmSnapshotsEnabled() (unchanged: needs DAYTONA_WARM_TARGET).
- *   - platinum → KORTIX_WARM_SNAPSHOT_ENABLED && Platinum configured. Platinum's
- *     warm snapshot is just a per-project STATEFUL template the host CoW-forks,
- *     so it needs no warm "target", only the master switch + a configured host.
+ *   - daytona  → warmSnapshotsEnabled() (also needs DAYTONA_WARM_TARGET).
+ *   - platinum → just a configured Platinum host. Platinum's warm snapshot is a
+ *     per-project STATEFUL template the host CoW-forks, so it needs no warm
+ *     "target", only the master toggle + a host.
  *
- * Fully inert unless KORTIX_WARM_SNAPSHOT_ENABLED — no behaviour change for
- * anyone not opting in.
+ * Default ON (warm-fork is pure upside — a failed bake degrades to a cold clone);
+ * operators turn it OFF from the admin Providers panel.
  */
 export function warmSnapshotsEnabledFor(provider: SandboxProviderName): boolean {
-  if (!config.KORTIX_WARM_SNAPSHOT_ENABLED) return false;
+  if (!warmSnapshotSetting().enabled) return false;
   if (provider === 'daytona') return warmSnapshotsEnabled();
   if (provider === 'platinum') return isPlatinumConfigured();
   return false;
