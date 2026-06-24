@@ -34,6 +34,8 @@ import { getProvider } from '../providers';
 import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
+import { resolveAgentGrant } from '../../projects/agents';
+import type { GitBackedProject } from '../../projects/git';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
@@ -506,6 +508,12 @@ export interface ClaimSpareForSessionInput {
   /** The exact env the cold path would inject (buildSessionSandboxEnvVars output). */
   builtEnvVars: Record<string, string>;
   sessionMetadata: Record<string, unknown>;
+  /** Agent the session runs as + the project's git context, so the warm path
+   *  resolves and stamps the SAME AgentGrant the cold path does. Without these
+   *  the minted executor token carried no grant → full bypass of kortix_cli +
+   *  connector scoping on every warm-served session. */
+  agentName: string;
+  gitProject: GitBackedProject;
 }
 
 /**
@@ -516,16 +524,25 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
   if (!warmPoolEnabled()) return null;
   const slug = (input.slug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   let spare: ClaimedSpare | null = null;
+  // Resolve the agent grant IN PARALLEL with the spare claim so it adds no
+  // latency to the warm fast-path. Failure → null (same posture as the cold path
+  // in session-sandbox.ts).
+  const grantPromise = resolveAgentGrant(input.agentName, input.gitProject).catch((err) => {
+    console.warn('[warm-pool] failed to resolve agent grant:', err instanceof Error ? err.message : err);
+    return null;
+  });
   try {
     spare = await claimSpare(input.projectId, slug);
     if (!spare) return null;
 
     // Per-session executor/LLM tokens — delivered via the claim env file and read
     // fresh by the daemon's loadConfig on reload (NOT the sandbox KORTIX_TOKEN,
-    // which stays the spare's park key).
+    // which stays the spare's park key). The token MUST carry the AgentGrant or
+    // the warm path silently bypasses all kortix_cli + connector scoping.
     let executorToken: string | null = null;
     try {
-      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}` })).secretKey;
+      const agentGrant = await grantPromise;
+      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}`, agentGrant })).secretKey;
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }

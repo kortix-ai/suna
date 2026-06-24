@@ -73,6 +73,17 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
           slug: input.sandboxSlug,
           builtEnvVars: extraEnvVars,
           sessionMetadata: input.sessionMetadata,
+          // Stamp the SAME agent grant the cold path resolves, or the warm token
+          // bypasses all kortix_cli/connector scoping (resolved off the mirror,
+          // gitAuthToken null — matching the cold provisionSessionSandbox call).
+          agentName: input.agentName,
+          gitProject: {
+            projectId: input.projectId,
+            repoUrl: input.project.repoUrl,
+            defaultBranch: input.project.defaultBranch,
+            manifestPath: input.project.manifestPath,
+            gitAuthToken: null,
+          },
         });
         if (claimed) {
           tl.mark('warm-claim');
