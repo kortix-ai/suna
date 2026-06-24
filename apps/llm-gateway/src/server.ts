@@ -3,6 +3,7 @@ import { createGateway } from '@kortix/llm-gateway';
 import { config } from './config';
 import { createApiClient } from './clients/api-client';
 import { createLangfuseSink, type TraceSink } from './observability/langfuse';
+import { createGatewayLogger } from './observability/logger';
 
 const STARTED_AT = Date.now();
 const SERVICE_VERSION = process.env.KORTIX_VERSION ?? 'dev';
@@ -20,6 +21,8 @@ export interface GatewayServer {
 
 export function buildServer(): GatewayServer {
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
+
+  const logger = createGatewayLogger();
 
   const traces =
     config.langfuse.publicKey && config.langfuse.secretKey
@@ -52,6 +55,7 @@ export function buildServer(): GatewayServer {
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
     },
+    { logger },
   );
 
   // Rolling per-second traffic buckets feeding the health endpoint's error-rate

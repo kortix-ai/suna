@@ -320,7 +320,7 @@ const envSchema = z.object({
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 

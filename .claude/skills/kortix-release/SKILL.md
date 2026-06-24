@@ -153,6 +153,34 @@ gh release delete vX.Y.Z --repo kortix-ai/suna           # only if a Release was
 Verify: tag gone, `prod` VERSION = prior, `main` VERSION = prior, api-prod unchanged,
 no `vX.Y.Z` Release.
 
+> Note: `prod` branch protection is `allow_force_pushes:false` + `enforce_admins:true`,
+> so the `git push -f …:refs/heads/prod` above only works if protection is temporarily
+> relaxed. For a release that's ALREADY LIVE, do NOT force-push — use §5.
+
+## 5. Roll back a LIVE release (prod is already serving it)
+
+When a shipped version is broken and you need prod on an OLDER already-released
+version NOW, **do not force-push prod and do not reverse migrations.** Use the
+`rollback-prod.yml` workflow — the inverse of promote (forward → back), reusing the
+target's prebuilt images (zero rebuild):
+```bash
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+  -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
+```
+It opens a review-gated PR into `prod` that re-points `infra/k8s/envs/prod/values.yaml`
++ `gateway-values.yaml` `image.tag` at `:X.Y.Z`. A reviewer merges it → Argo CD
+(auto-sync + selfHeal) rolls kortix-api + kortix-gateway to those images. Then:
+- **Frontend:** Vercel → kortix.com → Deployments → the `vX.Y.Z` prod deployment →
+  **Instant Rollback** (do this AFTER the merge so the Vercel rebuild can't clobber it).
+- **DB:** left as-is. Forward-only migrations are additive, so the live schema is a
+  superset of any older release — older code runs fine; reversing migrations is unsafe.
+- **VERSION** stays at the current prod number so deploy-prod's retag can't overwrite
+  the `:X.Y.Z` rollback image. The deploy-prod run on the merge goes partly red
+  (version-watch / release-create) — cosmetic; Argo does the real roll.
+
+The next promote of `main` supersedes the rollback cleanly (`merge -s ours`) and moves
+prod forward — i.e. "fix forward" just works again.
+
 ## Checklist
 
 1. `git log $PREV..origin/main` read in full — notes account for all of it.
