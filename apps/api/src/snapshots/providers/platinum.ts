@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
   stageBuildContext,
+  stageAgentBinaryGz,
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   DEFAULT_DISK_GB,
@@ -32,6 +33,31 @@ import type {
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
 const MB_PER_GB = 1024;
+const BUILD_ATTEMPTS = 3;
+// Platinum's POST /v1/templates/from-build hard-caps size_mb at this value (see
+// platinum apps/api/src/api/templates.ts ORG_MAX_SIZE_MB + the from-build zod).
+// The build ext4 is a FLOOR Platinum grows-to-fit, so clamping the build ceiling
+// does NOT shrink the runtime disk (default_disk_gb stays the full spec) — it only
+// stops oversize-disk templates from being rejected with a raw "size_mb too_big"
+// 400. Single source of truth for the build-size contract; keep in sync w/ Platinum.
+export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
+
+/**
+ * Retry only stale-context (staging disturbed before the S3 upload — API restart
+ * mid-build / tmp sweep) and transient transport (S3 PUT / gateway). A real build
+ * failure ('template … build failed') or activate timeout is NOT retried — that's
+ * a genuine error, not something a fresh stage would fix.
+ */
+function isRetryablePlatinumBuildError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes('does not exist') || m.includes('staging incomplete') || m.includes('scaffold') ||
+    m.includes('no such file') || m.includes('s3 upload') || m.includes('tar build context') ||
+    m.includes('timeout') || m.includes('timed out') || m.includes('econnreset') ||
+    m.includes('econnrefused') || m.includes('network') || m.includes('gateway') ||
+    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+  );
+}
 
 interface PlatinumTemplate {
   id: string;
@@ -66,6 +92,28 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       throw new Error('PlatinumAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      try {
+        await this.buildOnce(input, userDockerfile, tap);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryablePlatinumBuildError(err) || attempt === BUILD_ATTEMPTS) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[snapshots] platinum build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
+        );
+        await new Promise((r) => setTimeout(r, 2_000 * attempt));
+      }
+    }
+    throw lastErr;
+  }
+
+  /** One build attempt: stage a FRESH context, ship it, register, wait active.
+   *  Re-staged per attempt by buildSnapshot so a context disturbed between
+   *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
+  private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<void> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
     const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
@@ -92,10 +140,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Build-time ext4 ceiling must track the same disk spec we send as
-          // the runtime default. Platinum grows ext4 to fit, so the artifact
-          // still consumes only image+headroom rather than the whole ceiling.
-          size_mb: diskGb * MB_PER_GB,
+          // Build-time ext4 ceiling, clamped to Platinum's from-build hard cap.
+          // Platinum grows ext4 to fit, so the artifact consumes only image+headroom
+          // (a ~9.4 GiB kortix image builds fine into a 20 GiB ceiling). The runtime
+          // disk (default_disk_gb below) stays the FULL spec — build ceiling != runtime
+          // disk. Without this clamp a >20 GiB-disk template 400s ("size_mb too_big").
+          size_mb: Math.min(diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
@@ -119,6 +169,41 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});
+    }
+  }
+
+  /**
+   * Agent-only fast path: build NEW snapshot from a PREDECESSOR snapshot by
+   * swapping ONLY the kortix-agent binary inside its rootfs (no podman rebuild).
+   * Ships just the agent .gz via the same presign path; the host debugfs-swaps it
+   * into the predecessor's materialized rootfs + re-chunks (CAS delta). The caller
+   * uses this ONLY when the user image is unchanged AND the predecessor is active
+   * on Platinum — otherwise it falls back to a normal buildSnapshot.
+   */
+  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<void> {
+    const { gzPath, cleanup } = await stageAgentBinaryGz();
+    try {
+      const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
+        '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+      );
+      const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(gzPath)) });
+      if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
+      // Platinum's GENERAL file-patch primitive: patch our one changed file (the
+      // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest
+      // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortix-agent
+      // is where our runtime layer (dockerfile-layer.ts) installs it. mode 0100755 =
+      // executable (debugfs `write` lands 0644 otherwise).
+      await platinumJson<PlatinumTemplate>('/v1/templates/from-patch', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newSnapshotName,
+          source_template_name: sourceSnapshotName,
+          files: [{ s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 }],
+        }),
+      });
+      await this.waitForActive(newSnapshotName);
+    } finally {
+      await cleanup();
     }
   }
 
