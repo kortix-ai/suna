@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 
+import { useDebounce } from '@/hooks/use-debounce';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -48,8 +50,6 @@ import {
 import { TrashSolid } from '@mynaui/icons-react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
-const panelClass = 'bg-popover border-border overflow-hidden rounded-md border px-2 py-3';
-
 export function SettingsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -75,12 +75,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
   });
 
   return (
-    <CustomizeSectionWrapper
-      title="Settings"
-      description={tHardcodedUi.raw(
-        'appProjectsIdCustomizeSettingsPage.line111JsxAttrDescriptionIrreversibleAndDestructiveActions',
-      )}
-    >
+    <CustomizeSectionWrapper title="Settings" description="Manage your project settings">
       {projectQuery.isLoading && (
         <div className="space-y-5">
           <Skeleton className="h-56 rounded-md" />
@@ -104,11 +99,16 @@ export function SettingsView({ projectId }: { projectId: string }) {
       )}
 
       {project && (
-        <>
+        <div className="space-y-8">
           <GeneralProjectCard project={project} canManage={!!canManage} />
           <RepositoryCard project={project} canManage={!!canManage} />
+          {canManage && (
+            <section className="space-y-4">
+              <Label>Automation</Label>
+              <TriggersActivationCard projectId={projectId} canManage={!!canManage} />
+            </section>
+          )}
           <ExperimentalCard project={project} canManage={!!canManage} />
-          {canManage && <TriggersActivationCard projectId={projectId} canManage={!!canManage} />}
           {canManage && (
             <section className="space-y-4">
               <Label>
@@ -133,6 +133,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
                   <Button
                     variant="destructive"
                     className="shrink-0"
+                    size="sm"
                     onClick={() => setArchiveOpen(true)}
                   >
                     <TrashSolid className="size-4" />
@@ -142,7 +143,7 @@ export function SettingsView({ projectId }: { projectId: string }) {
               </div>
             </section>
           )}
-        </>
+        </div>
       )}
 
       <ConfirmDialog
@@ -170,6 +171,14 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
+  const { debouncedValue: debouncedBranch, isLoading: isDebouncingBranch } = useDebounce(
+    defaultBranch,
+    500,
+  );
+  const { debouncedValue: debouncedManifest, isLoading: isDebouncingManifest } = useDebounce(
+    manifestPath,
+    500,
+  );
 
   useEffect(() => {
     setDefaultBranch(project.default_branch);
@@ -177,84 +186,89 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   }, [project.default_branch, project.manifest_path]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      updateProject(project.project_id, {
-        default_branch: defaultBranch.trim(),
-        manifest_path: manifestPath.trim(),
-      }),
+    mutationFn: (patch: { default_branch: string; manifest_path: string }) =>
+      updateProject(project.project_id, patch),
     onSuccess: (updated) => {
-      successToast('Repository updated');
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
 
-  const dirty =
-    defaultBranch.trim() !== project.default_branch ||
-    manifestPath.trim() !== project.manifest_path;
+  const { mutate, isPending } = mutation;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!dirty || !canManage) return;
-    mutation.mutate();
-  }
+  useEffect(() => {
+    if (!canManage || isPending) return;
+
+    const branch = debouncedBranch.trim();
+    const manifest = debouncedManifest.trim();
+    if (!branch) return;
+    if (branch === project.default_branch && manifest === project.manifest_path) return;
+
+    mutate({ default_branch: branch, manifest_path: manifest });
+  }, [
+    debouncedBranch,
+    debouncedManifest,
+    canManage,
+    project.default_branch,
+    project.manifest_path,
+    isPending,
+    mutate,
+  ]);
+
+  const saving = isDebouncingBranch || isDebouncingManifest || isPending;
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label htmlFor="project-name">Repository</Label>
-
-        <Button asChild variant="transparent" size="sm">
-          <Link href={githubUrl ?? ''} target="_blank" rel="noopener noreferrer">
-            View on GitHub
-          </Link>
-        </Button>
+      <div className="flex items-center justify-between gap-4">
+        <Label>Repository</Label>
+        {githubUrl ? (
+          <Button asChild variant="transparent" size="sm">
+            <Link href={githubUrl} target="_blank" rel="noopener noreferrer">
+              View on GitHub
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
-      <div className="space-y-5">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <FieldGroup className="grid gap-3 sm:grid-cols-2">
-            <Field>
+      <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
+        <FieldGroup className="grid gap-3 sm:grid-cols-2">
+          <Field>
+            <div className="flex items-center justify-between gap-2">
               <FieldLabel htmlFor="default-branch">
                 {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}
               </FieldLabel>
-              <Input
-                id="default-branch"
-                value={defaultBranch}
-                onChange={(e) => setDefaultBranch(e.target.value)}
-                disabled={!canManage || mutation.isPending}
-                className="font-mono text-xs"
-                variant="popover"
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="manifest-path">
-                {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}
-              </FieldLabel>
-              <Input
-                id="manifest-path"
-                value={manifestPath}
-                onChange={(e) => setManifestPath(e.target.value)}
-                disabled={!canManage || mutation.isPending}
-                className="font-mono text-xs"
-                variant="popover"
-              />
-            </Field>
-          </FieldGroup>
-          <div className="flex justify-end">
-            <Button
-              type="submit"
-              disabled={!dirty || !canManage || mutation.isPending}
-              className="gap-1.5"
-            >
-              {mutation.isPending ? <Loading className="size-4 animate-spin" /> : null}
-              Save
-            </Button>
-          </div>
-        </form>
+              {saving ? <SaveStatus /> : null}
+            </div>
+            <Input
+              id="default-branch"
+              value={defaultBranch}
+              onChange={(e) => setDefaultBranch(e.target.value)}
+              disabled={!canManage || isPending}
+              className="font-mono text-xs"
+              variant="popover"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="manifest-path">
+              {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line280JsxTextManifestPath')}
+            </FieldLabel>
+            <Input
+              id="manifest-path"
+              value={manifestPath}
+              onChange={(e) => setManifestPath(e.target.value)}
+              disabled={!canManage || isPending}
+              className="font-mono text-xs"
+              variant="popover"
+            />
+          </Field>
+        </FieldGroup>
 
-        {managed && <RepoCollaboratorInvite projectId={project.project_id} />}
+        {managed ? (
+          <div className="border-border/60 border-t pt-5">
+            <RepoCollaboratorInvite projectId={project.project_id} />
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -268,34 +282,42 @@ function ExperimentalCard({ project, canManage }: { project: KortixProject; canM
   if (features.length === 0) return null;
 
   return (
-    <Disclosure
-      open={expanded}
-      onOpenChange={setExpanded}
-      variant="outline"
-      className="group bg-popover overflow-hidden"
-    >
-      <DisclosureTrigger className="px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-foreground text-sm font-medium">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextExperimentalWIPcb2304ee',
-            )}
-          </p>
-        </div>
-      </DisclosureTrigger>
-      <DisclosureContent contentClassName="border-border border-t">
-        <div className="divide-border divide-y">
-          {features.map((feature) => (
-            <ExperimentalFeatureRow
-              key={feature.key}
-              projectId={project.project_id}
-              feature={feature}
-              canManage={canManage}
-            />
-          ))}
-        </div>
-      </DisclosureContent>
-    </Disclosure>
+    <section className="space-y-4">
+      <Label>
+        {tI18nHardcoded.raw(
+          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextExperimentalWIPcb2304ee',
+        )}
+      </Label>
+      <Disclosure
+        open={expanded}
+        onOpenChange={setExpanded}
+        variant="outline"
+        className="group bg-popover overflow-hidden"
+      >
+        <DisclosureTrigger className="px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-foreground text-sm font-medium">
+              {features.length} feature{features.length === 1 ? '' : 's'}
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+              Early-access capabilities that may change or be removed.
+            </p>
+          </div>
+        </DisclosureTrigger>
+        <DisclosureContent contentClassName="border-border border-t">
+          <div className="divide-border divide-y">
+            {features.map((feature) => (
+              <ExperimentalFeatureRow
+                key={feature.key}
+                projectId={project.project_id}
+                feature={feature}
+                canManage={canManage}
+              />
+            ))}
+          </div>
+        </DisclosureContent>
+      </Disclosure>
+    </section>
   );
 }
 
@@ -412,12 +434,17 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section className="space-y-4">
-      <Label htmlFor="repo-collaborator-username">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextAddPeople18915e9b',
-        )}
-      </Label>
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-foreground text-sm font-medium">
+          {tI18nHardcoded.raw(
+            'autoComponentsProjectsCustomizeSectionsSettingsViewJsxTextAddPeople18915e9b',
+          )}
+        </p>
+        <p className="text-muted-foreground text-xs text-pretty">
+          Invite GitHub collaborators to this repository.
+        </p>
+      </div>
 
       <form onSubmit={submit}>
         <FieldGroup className="gap-3">
@@ -481,7 +508,7 @@ function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
           </div>
         </FieldGroup>
       </form>
-    </section>
+    </div>
   );
 }
 
@@ -515,58 +542,60 @@ function GeneralProjectCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
+  const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
 
   useEffect(() => {
     setName(project.name);
   }, [project.name]);
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (nextName: string) =>
       updateProject(project.project_id, {
-        name: name.trim(),
+        name: nextName,
       }),
     onSuccess: (updated) => {
-      successToast('Project updated');
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update project'),
   });
 
-  const dirty = name.trim() !== project.name;
+  const { mutate, isPending } = mutation;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!dirty || !canManage) return;
-    mutation.mutate();
-  }
+  useEffect(() => {
+    if (!canManage || isPending) return;
+
+    const trimmed = debouncedName.trim();
+    if (!trimmed || trimmed === project.name) return;
+
+    mutate(trimmed);
+  }, [debouncedName, canManage, project.name, isPending, mutate]);
+
+  const saving = isDebouncing || isPending;
 
   return (
     <section className="space-y-4">
       <Label htmlFor="project-name">General</Label>
-      <div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Field>
-            <FieldLabel htmlFor="project-name">
-              {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}
-            </FieldLabel>
-            <Input
-              id="project-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!canManage || mutation.isPending}
-              maxLength={120}
-              variant="popover"
-            />
-          </Field>
-          <div className="ml-auto flex w-full items-center justify-end sm:w-auto">
-            <Button type="submit" size="sm" disabled={!dirty || !canManage || mutation.isPending}>
-              {mutation.isPending ? <Loading className="size-4 animate-spin" /> : null}
-              Save
-            </Button>
-          </div>
-        </form>
-      </div>
+      <Field>
+        <div className="flex items-center justify-between gap-2">
+          <FieldLabel htmlFor="project-name">
+            {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line259JsxTextProjectName')}
+          </FieldLabel>
+          {saving ? <SaveStatus /> : null}
+        </div>
+        <Input
+          id="project-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          disabled={!canManage || isPending}
+          maxLength={120}
+          variant="popover"
+        />
+      </Field>
     </section>
   );
+}
+
+function SaveStatus() {
+  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">Saving…</span>;
 }

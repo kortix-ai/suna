@@ -136,16 +136,14 @@ export function DriveToolbar({
   };
 
   return (
-    <div className="border-border bg-background min-w-0 shrink-0 border-b">
-      <FadedScrollArea
-        orientation="horizontal"
-        fadeColor="from-background"
-        className="w-full overscroll-x-contain"
-      >
-        <div className="flex w-max min-w-full items-center gap-1.5 px-4 py-2">
+    <div className="border-border bg-background w-full min-w-0 shrink-0 border-b">
+      <div className="flex w-full flex-col md:flex-row md:items-center md:gap-1.5 md:px-4 md:py-2">
+        <div className="border-border/40 flex w-full min-w-0 items-center gap-1.5 border-b px-3 py-2 md:flex-1 md:border-b-0 md:px-0 md:py-0">
           {showVersionSelector && (
             <>
-              <VersionSelector />
+              <div className="max-w-36 shrink-0 md:max-w-none">
+                <VersionSelector />
+              </div>
               <Separator orientation="vertical" className="data-[orientation=vertical]:h-[70%]" />
             </>
           )}
@@ -164,12 +162,12 @@ export function DriveToolbar({
                 if (e.key === 'Escape') setIsEditing(false);
               }}
               onBlur={() => setIsEditing(false)}
-              className="bg-card focus:ring-primary/50 h-8 min-w-[min(100%,12rem)] shrink-0 rounded-2xl border px-3 font-mono text-sm outline-none focus:ring-2"
+              className="bg-card focus:ring-primary/50 h-8 min-w-0 flex-1 rounded-2xl border px-3 font-mono text-sm outline-none focus:ring-2"
               placeholder={homePath}
             />
           ) : (
-            <nav
-              className="flex shrink-0 items-center gap-0.5"
+            <div
+              className="flex min-w-0 flex-1 items-center gap-0.5"
               onDoubleClick={handleDoubleClick}
               title={tHardcodedUi.raw(
                 'featuresProjectFilesComponentsDriveToolbar.line191JsxAttrTitleDoubleClickToEditPath',
@@ -188,31 +186,47 @@ export function DriveToolbar({
                 <span className="text-xs">{rootPath ? homeLabel : 'workspace'}</span>
               </Button>
 
-              {segments.map((segment, index) => {
-                if (!rootPath && index === 0 && segment === 'workspace') return null;
-                const isLast = index === segments.length - 1;
+              {segments.length > 0 && (
+                <FadedScrollArea
+                  orientation="horizontal"
+                  fadeColor="from-background"
+                  className="min-w-0 flex-1 overscroll-x-contain"
+                >
+                  <nav className="flex w-max min-w-0 items-center gap-0.5">
+                    {segments.map((segment, index) => {
+                      if (!rootPath && index === 0 && segment === 'workspace') return null;
+                      const isLast = index === segments.length - 1;
 
-                return (
-                  <div key={index} className="flex shrink-0 items-center gap-0.5">
-                    <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
-                    <Button
-                      onClick={() => handleSegmentClick(index)}
-                      variant="ghost"
-                      size="xs"
-                      className={cn(
-                        'max-w-[200px] shrink-0 truncate',
-                        isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
-                      )}
-                    >
-                      {segment}
-                    </Button>
-                  </div>
-                );
-              })}
-            </nav>
+                      return (
+                        <div key={index} className="flex shrink-0 items-center gap-0.5">
+                          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
+                          <Button
+                            onClick={() => handleSegmentClick(index)}
+                            variant="ghost"
+                            size="xs"
+                            className={cn(
+                              'max-w-[140px] shrink-0 truncate sm:max-w-[200px]',
+                              isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                            )}
+                          >
+                            {segment}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </nav>
+                </FadedScrollArea>
+              )}
+            </div>
           )}
+        </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
+        <FadedScrollArea
+          orientation="horizontal"
+          fadeColor="from-background"
+          className="w-full shrink-0 overscroll-x-contain md:w-auto"
+        >
+          <div className="flex w-max min-w-full items-center gap-0.5 px-3 py-1.5 md:w-auto md:min-w-0 md:justify-end md:px-0 md:py-0">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -322,9 +336,10 @@ export function DriveToolbar({
                   title={tHardcodedUi.raw(
                     'featuresProjectFilesComponentsDriveToolbar.line348JsxAttrTitleOpenANewChangeRequest',
                   )}
+                  className="shrink-0"
                 >
                   <GitPullRequest className="size-4" />
-                  <span>
+                  <span className="hidden sm:inline">
                     {tHardcodedUi.raw(
                       'featuresProjectFilesComponentsDriveToolbar.line352JsxTextOpenCr',
                     )}
@@ -345,11 +360,12 @@ export function DriveToolbar({
                     'featuresProjectFilesComponentsDriveToolbar.line366JsxAttrTitleToggleCheckpointsPanel',
                   )}
                   className={cn(
+                    'shrink-0',
                     !checkpointsToggle.open && 'text-muted-foreground hover:text-foreground',
                   )}
                 >
                   <GitCommitHorizontal className="size-4" />
-                  <span>Checkpoints</span>
+                  <span className="hidden sm:inline">Checkpoints</span>
                 </Button>
               </>
             )}
@@ -370,6 +386,7 @@ export function DriveToolbar({
                         : 'Toggle Change Requests panel'
                     }
                     className={cn(
+                      'shrink-0',
                       !changeRequestsToggle.open &&
                         (hasOpen
                           ? 'text-foreground'
@@ -385,7 +402,7 @@ export function DriveToolbar({
                         />
                       )}
                     </span>
-                    <span>
+                    <span className="hidden sm:inline">
                       {tHardcodedUi.raw(
                         'featuresProjectFilesComponentsDriveToolbar.line412JsxTextChangeRequests',
                       )}
@@ -399,8 +416,8 @@ export function DriveToolbar({
                 );
               })()}
           </div>
-        </div>
-      </FadedScrollArea>
+        </FadedScrollArea>
+      </div>
     </div>
   );
 }
