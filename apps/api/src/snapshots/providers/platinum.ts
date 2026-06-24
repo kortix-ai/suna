@@ -188,12 +188,17 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       );
       const put = await fetch(upload_url, { method: 'PUT', body: new Uint8Array(await readFile(gzPath)) });
       if (!put.ok) throw new Error(`agent-swap upload -> ${put.status} ${(await put.text().catch(() => '')).slice(0, 200)}`);
-      await platinumJson<PlatinumTemplate>('/v1/templates/swap-agent', {
+      // Platinum's GENERAL file-patch primitive: patch our one changed file (the
+      // kortix-agent binary) into the predecessor's rootfs — no rebuild. The guest
+      // path is OURS to specify (Platinum is file-agnostic); /usr/local/bin/kortix-agent
+      // is where our runtime layer (dockerfile-layer.ts) installs it. mode 0100755 =
+      // executable (debugfs `write` lands 0644 otherwise).
+      await platinumJson<PlatinumTemplate>('/v1/templates/from-patch', {
         method: 'POST',
         body: JSON.stringify({
           name: newSnapshotName,
           source_template_name: sourceSnapshotName,
-          agent_s3_key: context_s3_key,
+          files: [{ s3_key: context_s3_key, guest_path: '/usr/local/bin/kortix-agent', mode: 0o100755 }],
         }),
       });
       await this.waitForActive(newSnapshotName);
