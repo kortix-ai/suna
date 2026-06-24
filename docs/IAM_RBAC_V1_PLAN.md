@@ -194,6 +194,16 @@ This is the single biggest correctness risk. A file-based resource (agents/skill
 
 **Decisions taken this round:** "User" tier = Viewer reads + `session.start/exec/stop` + `trigger.fire` (Q4); Phase 4 deferred (Q8); SA-token policy principal accepted by the schema but the engine union currently resolves member + group only (token/SA bridge = follow-up).
 
+### ✅ Agent-side IAM hardening (security pass — 23 findings, verified)
+
+An adversarial review (5 attack surfaces, each finding independently verified) found that agent-session token scoping was largely unenforced. Fixed the **CRITICAL + all HIGH** findings:
+- **Warm-pool token had NO agentGrant (CRITICAL).** Every warm-served session (the common fast path) ran fully unscoped. Now the warm claim resolves + stamps the grant in parallel with the spare claim (no added latency).
+- **Agent grant enforced centrally (root cause — closed ~9 per-route bypasses).** It was checked at only 2 routes (cr.open/merge); every other route (gitops, secrets, triggers, deploy, customize, members, sessions, snapshots, registry) was user-role-only. Folded into `authorizeV2`: `userRole ∩ agentGrant` now holds for every SPECIFIC project capability by construction (coarse read/write membership actions exempt). **Critical because automation sessions run AS AN ACCOUNT OWNER — the agent grant is their only containment.**
+- **Per-agent secret/env isolation.** Every agent got ALL the launching user's secrets as `$ENV`. Added an `env` allowlist dimension to `[[agents]]`/`AgentGrant`; `buildSessionSandboxEnvVars` injects only the granted secrets, and `GET /secrets` filters + leaf-gates by it. (`env` defaults to `'all'` when omitted — back-compat; `[]` for unlisted-adopted agents.)
+- Synced the manifest-schema grantable-action list (was missing gateway.* + the v1 leaves).
+
+**Deferred (LOW, non-escalating):** validate `agent_name` against declared `[[agents]]` (#20 — already neutralized: an undeclared agent resolves to a default-DENY empty grant, not full access); re-resolve the grant on the trigger-reuse path (#21); cr.open/cr.merge role-set cleanup (#22).
+
 **The headline use case works end-to-end at the API now:** create a Marketing custom role (omitting gitops/customize/etc.), `POST /iam/policies` binding the Marketing group → that role at the company-project scope, and the engine grants Marketing members exactly those actions, blocks the omitted capabilities, and busts caches on every change.
 
 ### ⏳ Next (best done together — needs the live ke2e suite, visual QA, or a product call)
