@@ -11,7 +11,7 @@ New users can start without a paid subscription. A signup receives a free accoun
 
 Ship one coherent launch flow:
 
-1. New accounts default to the `free` billing tier and receive an idempotent $5 expiring grant, displayed as 500 credits.
+1. New accounts default to the `free` billing tier and receive an idempotent $5 expiring grant, displayed as 500 credits; unused free credits expire and the grant resets every month.
 2. Free credits pay for sandbox compute only. Free users may use Zen/OpenCode models, their own API key, or a connected ChatGPT/Codex subscription. Managed premium inference is unavailable.
 3. The auth callback provisions one initial project and redirects directly to `/projects/{id}`.
 4. The public pricing page presents Free, Team ($40/seat/month), and Enterprise with concise model and compute explanations.
@@ -28,6 +28,7 @@ Use the existing unified wallet and meter categories; do not add a second credit
 - BYOK runs with `billingMode: 'none'` for free accounts, so the current BYOK fee is not charged. BYOK-to-managed fallback is disabled for those accounts.
 - Free Zen/OpenCode and connected ChatGPT/Codex-subscription paths remain non-debit paths to Kortix.
 - A free account must therefore only create `compute_debit` entries from its credited wallet. Paid and legacy account behavior remains unchanged.
+- A monthly, leader-elected free-tier rotation expires any unused free credits and grants a fresh $5 at each account's monthly billing anchor. The job is idempotent and is also exposed through an authenticated cron route for operational triggering.
 
 ### Direct onboarding
 
@@ -52,7 +53,7 @@ The app shell adds a clearly visible, minimum-40px-target Upgrade control only f
 - Account setup and initial-project provisioning must be safe to retry.
 - Premium-model denial explains the available paths: connect a key or subscription, use a free model, or upgrade. It must not show a generic subscription failure or mutate wallet balance.
 - Account-state presents free balance in credits, while paid tiers retain dollar display.
-- This launch deliberately does not add the monthly-reset cron, a new schema column, or an exact live sandbox-pricing endpoint. Those are fast-follow work; the first grant uses existing expiry fields.
+- This launch deliberately does not add a new schema column or an exact live sandbox-pricing endpoint. It reuses the existing expiry and billing-anchor fields for the monthly reset; those pricing and schema concerns remain fast-follow work.
 
 ## Test-first verification
 
@@ -62,12 +63,14 @@ Each behavior begins with a failing test before production code:
 2. Free routing permits free models/BYOK subscription paths and rejects managed premium without an LLM debit or fallback.
 3. Replayed onboarding provisions no duplicate project and redirects to the existing/new project correctly.
 4. Account-state shows 500 credits for free accounts.
-5. UI tests cover the pricing facts and Upgrade control; live E2E covers signup → direct project → model restrictions → modal.
+5. The monthly rotation expires unused balance and re-grants exactly $5 once, even when invoked repeatedly.
+6. UI tests cover the pricing facts and Upgrade control; live E2E covers signup → direct project → model restrictions → modal.
 
 ## Acceptance criteria
 
 - A fresh signup reaches `/projects/{id}` without seeing a project selector.
 - Its billing row is `free`, its first grant is $5 expiring balance, and UI shows 500 credits.
+- At the next monthly anchor, unused free credit is removed and exactly 500 fresh credits are available; retrying the rotation does not duplicate the grant.
 - Sandbox use can debit that balance; managed premium LLM requests cannot; free BYOK requests create no Kortix LLM debit.
 - `/pricing` accurately shows Free, Team, and Enterprise with the promised concise copy.
 - The Upgrade action is visible for a free user and opens the established modal.
