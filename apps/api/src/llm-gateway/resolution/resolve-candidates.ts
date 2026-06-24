@@ -6,6 +6,7 @@ import {
 import { getManagedModel } from '@kortix/shared/llm-catalog';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
+import { isFreeOpencodeZenModel } from '../../router/config/model-pricing';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
 
@@ -54,6 +55,29 @@ export async function resolveCandidates(
       // rate-limit / quota / billing error, the failover loop falls over to it
       // (billed as Kortix credits) so the turn doesn't die.
       return [byokDescriptor, ...byokFallbackCandidates()];
+    }
+  }
+
+  // Free OpenCode Zen models — served through a Kortix-owned Zen key at $0, so a
+  // user gets them without their own OPENCODE_API_KEY. Reachable bare
+  // (`deepseek-v4-flash-free`, how the dedicated `opencode` provider sends them)
+  // or prefixed (`opencode/…`). A user who set OPENCODE_API_KEY hits the BYOK
+  // branch above first, on their own key. Only the catalog's `-free` set,
+  // billingMode 'none' — no markup, no credits.
+  if (config.OPENCODE_ZEN_API_KEY) {
+    const zenModel = provider === 'opencode' ? model.slice(provider.length + 1) : model;
+    if (isFreeOpencodeZenModel(zenModel)) {
+      return [
+        {
+          provider: 'opencode',
+          kind: 'openai-compat',
+          baseUrl: config.OPENCODE_ZEN_BASE_URL,
+          apiKey: config.OPENCODE_ZEN_API_KEY,
+          billingMode: 'none',
+          markup: 0,
+          resolvedModel: zenModel,
+        },
+      ];
     }
   }
 

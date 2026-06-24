@@ -202,6 +202,12 @@ const envSchema = z.object({
   // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
   // — consolidated onto this one var.
   OPENROUTER_API_KEY:          optStr,
+  // OpenCode Zen — a single Kortix-owned key so the gateway can serve Zen's FREE
+  // models (the `-free` set) to everyone at $0, under a dedicated `opencode`
+  // provider, without each user bringing their own OPENCODE_API_KEY. Empty =
+  // free Zen models off (users can still BYOK their own `opencode/…`).
+  OPENCODE_ZEN_API_KEY:        optStr,
+  OPENCODE_ZEN_BASE_URL:       optUrl('https://opencode.ai/zen/v1'),
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
@@ -601,6 +607,8 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+  OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
+  OPENCODE_ZEN_BASE_URL: env.OPENCODE_ZEN_BASE_URL,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,

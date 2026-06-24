@@ -94,9 +94,11 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
         ? (out.provider as Record<string, unknown>)
         : {}
+    const { kortix, opencode } = await buildGatewayProviders(llmBaseUrl!, llmApiKey!)
     out.provider = {
       ...provider,
-      kortix: await buildKortixProvider(llmBaseUrl!, llmApiKey!),
+      kortix,
+      ...(opencode ? { opencode } : {}),
     }
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
@@ -113,7 +115,9 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     // by some path the deny-list didn't enumerate). We keep `kortix` plus any
     // providers the Codex/OpenCode subscription auth.json enables — those are the
     // user's own subscription (consumed into auth.json, intentionally not gated).
-    out.enabled_providers = gatewayEnabledProviders(env)
+    const allow = new Set(gatewayEnabledProviders(env))
+    if (opencode) allow.add('opencode') // the free OpenCode Zen provider, also gateway-routed
+    out.enabled_providers = [...allow]
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
@@ -154,16 +158,36 @@ function gatewayEnabledProviders(env: NodeJS.ProcessEnv): string[] {
   return [...allow]
 }
 
-async function buildKortixProvider(llmBaseUrl: string, llmApiKey: string): Promise<Record<string, unknown>> {
-  return {
-    npm: '@ai-sdk/openai-compatible',
-    name: 'Kortix',
-    options: {
-      baseURL: llmBaseUrl,
-      apiKey: llmApiKey,
-    },
-    models: withModelLimits(await fetchGatewayModels(llmBaseUrl, llmApiKey)),
+// Build the opencode provider blocks from the gateway catalog. Everything is
+// served by the SAME gateway (one baseURL/token); we just split the model list so
+// the free OpenCode Zen models surface under their own `opencode` ("OpenCode Zen")
+// provider in the picker instead of being lumped under `kortix`. The gateway keys
+// Zen models `opencode/<id>`; we strip the prefix so the wire model is the bare id.
+async function buildGatewayProviders(
+  llmBaseUrl: string,
+  llmApiKey: string,
+): Promise<{ kortix: Record<string, unknown>; opencode?: Record<string, unknown> }> {
+  const all = await fetchGatewayModels(llmBaseUrl, llmApiKey)
+  const kortixModels: Record<string, KortixGatewayModel> = {}
+  const zenModels: Record<string, KortixGatewayModel> = {}
+  for (const [id, model] of Object.entries(all)) {
+    if (id.startsWith('opencode/')) {
+      // The gateway only serves the FREE Zen models under `opencode/…` (paid Zen
+      // is excluded server-side), so take all of them. Strip the prefix so the
+      // wire model is the bare id the dedicated `opencode` provider sends.
+      zenModels[id.slice('opencode/'.length)] = model
+    } else {
+      kortixModels[id] = model
+    }
   }
+  const options = { baseURL: llmBaseUrl, apiKey: llmApiKey }
+  const out: { kortix: Record<string, unknown>; opencode?: Record<string, unknown> } = {
+    kortix: { npm: '@ai-sdk/openai-compatible', name: 'Kortix', options, models: withModelLimits(kortixModels) },
+  }
+  if (Object.keys(zenModels).length) {
+    out.opencode = { npm: '@ai-sdk/openai-compatible', name: 'OpenCode Zen', options, models: withModelLimits(zenModels) }
+  }
+  return out
 }
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent

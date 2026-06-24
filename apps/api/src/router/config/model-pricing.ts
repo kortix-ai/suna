@@ -67,6 +67,21 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let lastFetchedAt: Date | null = null;
 let modelCount = 0;
 
+// OpenCode Zen models whose models.dev cost is zero/absent — the free tier the
+// gateway serves at $0 (incl. codename models like `big-pickle`). Refreshed with
+// the pricing fetch. Empty until the first fetch lands.
+let freeOpencodeZen: Set<string> = new Set();
+
+/** True if `modelId` is a free OpenCode Zen model (models.dev cost 0). */
+export function isFreeOpencodeZenModel(modelId: string): boolean {
+  return freeOpencodeZen.has(modelId);
+}
+
+/** The current free OpenCode Zen model ids (live from models.dev). */
+export function freeOpencodeZenModelIds(): string[] {
+  return [...freeOpencodeZen];
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -147,12 +162,18 @@ async function refreshPricing(): Promise<void> {
     const data = (await res.json()) as ModelsDevApiResponse;
     const newMap = new Map<string, ModelPricingEntry>();
     const newNorm = new Map<string, ModelPricingEntry>();
+    const newFreeZen = new Set<string>();
 
-    for (const provider of Object.values(data)) {
+    for (const [providerId, provider] of Object.entries(data)) {
       if (!provider?.models) continue;
       for (const model of Object.values(provider.models)) {
         const input = model.cost?.input;
         const output = model.cost?.output;
+        // OpenCode Zen free models: zero/absent cost (this is how opencode itself
+        // marks the free tier — incl. codename models like `big-pickle`/`grok-code`
+        // that have no `-free` suffix). The gateway serves these at $0.
+        if (providerId === 'opencode' && (input ?? 0) <= 0 && (output ?? 0) <= 0)
+          newFreeZen.add(model.id);
         if (typeof input !== 'number' || typeof output !== 'number' || (input <= 0 && output <= 0))
           continue;
         const entry: ModelPricingEntry = { inputPer1M: input, outputPer1M: output };
@@ -167,6 +188,7 @@ async function refreshPricing(): Promise<void> {
     // Atomic swap — readers never see a partially-built map
     pricingMap = newMap;
     normIndex = newNorm;
+    freeOpencodeZen = newFreeZen;
     modelCount = newMap.size;
     lastFetchedAt = new Date();
 
