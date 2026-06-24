@@ -9,8 +9,12 @@
 -- agent binary is the sole delta. NULL for existing rows (and the platform default
 -- until first build) → those take the normal full-rebuild path, so the rollout is
 -- gradual and can never ship a stale image.
+--
+-- IF NOT EXISTS: the column may already be present on environments built off the
+-- pre-snapshot agent-swap branch (this replaces a hand-written migration that
+-- bypassed drizzle's snapshot — see drizzle/meta/20260624113021_snapshot.json).
 
-ALTER TABLE kortix.sandbox_templates ADD COLUMN IF NOT EXISTS swap_key text;
+ALTER TABLE "kortix"."sandbox_templates" ADD COLUMN IF NOT EXISTS "swap_key" text;
 
 -- Down Migration
-ALTER TABLE kortix.sandbox_templates DROP COLUMN IF EXISTS swap_key;
+ALTER TABLE "kortix"."sandbox_templates" DROP COLUMN IF EXISTS "swap_key";
