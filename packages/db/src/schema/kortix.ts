@@ -1359,6 +1359,12 @@ export interface AgentGrant {
   agent: string;
   kortixCli: string[] | 'all';
   connectors: string[] | 'all';
+  /** Project-secret names this agent may receive as sandbox env (and read via
+   *  the secrets API). 'all' = every secret the launching user can see (the
+   *  default for a listed agent when `env` is omitted, and for the catch-all
+   *  agent); an explicit list narrows it; [] = none. Optional for back-compat
+   *  with grants minted before this field existed (treated as 'all'). */
+  env?: string[] | 'all';
 }
 
 export const accountTokens = kortixSchema.table(

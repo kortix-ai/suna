@@ -259,6 +259,8 @@ export async function allocateRuntimeOnOpen(
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         opencodeModel,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
       }),
     resolveGitAuthToken: async () =>
       (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,

@@ -35,6 +35,16 @@ export function agentMayUseConnector(grant: AgentGrant | null, slug: string): bo
   return grant.connectors.includes(slug);
 }
 
+/** True if the agent may receive/read project secret `name` (or no grant).
+ *  `env` is optional on the grant for back-compat with tokens minted before the
+ *  field existed — those are treated as 'all' (unrestricted). */
+export function agentMayUseEnv(grant: AgentGrant | null, name: string): boolean {
+  if (!grant) return true; // no grant = no restriction
+  const env = grant.env ?? 'all';
+  if (env === 'all') return true;
+  return env.includes(name);
+}
+
 /**
  * Throw 403 if the request is an agent-session token whose grant does not
  * include `action`. No-op for non-agent tokens (null grant).

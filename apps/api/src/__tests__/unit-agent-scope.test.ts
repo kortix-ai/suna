@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { extractAgents, grantFromLoadedAgents } from '../projects/agents';
-import { agentMayPerform, agentMayUseConnector, assertAgentScope } from '../iam/agent-scope';
+import { agentMayPerform, agentMayUseConnector, agentMayUseEnv, assertAgentScope } from '../iam/agent-scope';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 
 function loadAgents(body: string) {
@@ -31,6 +31,7 @@ kortix_cli = ["project.deploy", "project.cr.open"]
       agent: 'release-bot',
       connectors: ['github'],
       kortixCli: ['project.deploy', 'project.cr.open'],
+      env: 'all', // env key omitted → defaults to 'all' (back-compat for the new dimension)
     });
   });
 
@@ -44,6 +45,7 @@ kortix_cli = ["project.deploy"]
       agent: 'some-other-agent',
       connectors: [],
       kortixCli: [],
+      env: [], // unlisted-but-adopted → default-deny everything, incl. secrets
     });
   });
 
@@ -58,6 +60,7 @@ kortix_cli = ["project.deploy"]
       agent: 'release-bot',
       connectors: [],
       kortixCli: [],
+      env: [],
     });
   });
 
@@ -72,7 +75,28 @@ kortix_cli = "all"
       agent: 'kortix',
       connectors: 'all',
       kortixCli: 'all',
+      env: 'all',
     });
+  });
+});
+
+describe('agentMayUseEnv — per-agent secret gate', () => {
+  test('null grant → allowed (no restriction)', () => {
+    expect(agentMayUseEnv(null, 'GITHUB_TOKEN')).toBe(true);
+  });
+  test('missing env (legacy grant) → treated as all', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: 'all', connectors: 'all' }, 'GITHUB_TOKEN')).toBe(true);
+  });
+  test('"all" → every secret allowed', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: 'all' }, 'STRIPE_KEY')).toBe(true);
+  });
+  test('explicit list → only listed secrets; others denied', () => {
+    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['BRAND_API'] };
+    expect(agentMayUseEnv(grant, 'BRAND_API')).toBe(true);
+    expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
+  });
+  test('empty list → no secrets', () => {
+    expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: [] }, 'ANY')).toBe(false);
   });
 });
 

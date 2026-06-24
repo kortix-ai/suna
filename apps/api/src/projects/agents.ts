@@ -65,6 +65,11 @@ export interface AgentSpec {
   connectors: GrantSet;
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
+  /** Project-secret names this agent receives as sandbox env + may read via the
+   *  secrets API. `'all'` = every secret the launching user can see (default when
+   *  the `env` key is omitted — a NEW dimension, so omitting it must not starve
+   *  existing agents); an explicit list narrows it; `[]` = none. */
+  env: GrantSet;
   /** Optional behavior-file path override (defaults to the conventional `.md` by name). */
   file: string | null;
 }
@@ -179,11 +184,12 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
 
   const spec = loaded.specs.find((s) => s.name === agentName && s.enabled);
   if (spec) {
-    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors };
+    return { agent: agentName, kortixCli: spec.kortixCli, connectors: spec.connectors, env: spec.env };
   }
 
-  // Governance adopted but this agent is unlisted → default-deny.
-  return { agent: agentName, kortixCli: [], connectors: [] };
+  // Governance adopted but this agent is unlisted → default-deny everything,
+  // including secrets/env (an unlisted agent receives no project secrets).
+  return { agent: agentName, kortixCli: [], connectors: [], env: [] };
 }
 
 /**
@@ -199,6 +205,8 @@ export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
   else if (spec.connectors.length > 0) entry.connectors = spec.connectors;
   if (spec.kortixCli === 'all') entry.kortix_cli = 'all';
   else if (spec.kortixCli.length > 0) entry.kortix_cli = spec.kortixCli;
+  // 'all' is the env default, so only emit when narrowed (a list or explicit none).
+  if (spec.env !== 'all') entry.env = spec.env;
   return entry;
 }
 
@@ -211,6 +219,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     enabled: spec.enabled,
     connectors: spec.connectors,
     kortixCli: spec.kortixCli,
+    env: spec.env,
     file: spec.file,
   });
   return createHash('sha256').update(canonical).digest('hex');
@@ -242,6 +251,15 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
   const kortixParsed = parseGrantSet(name, 'kortix_cli', row.kortix_cli, validateKortixAction);
   if (!kortixParsed.ok) return kortixParsed;
 
+  // `env` is a NEW dimension — default to 'all' when omitted so existing
+  // [[agents]] keep receiving the secrets they already got; an explicit list
+  // (or "none"/[]) opts into per-agent secret scoping.
+  const envParsed =
+    row.env === undefined || row.env === null
+      ? ({ ok: true as const, value: 'all' as const })
+      : parseGrantSet(name, 'env', row.env, null);
+  if (!envParsed.ok) return envParsed;
+
   return {
     ok: true,
     spec: {
@@ -250,6 +268,7 @@ function parseAgentEntry(entry: unknown, index: number): ParseOk | ParseErr {
       enabled,
       connectors: connectorsParsed.value,
       kortixCli: kortixParsed.value,
+      env: envParsed.value,
       file,
     },
   };

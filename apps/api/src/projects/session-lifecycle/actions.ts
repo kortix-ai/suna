@@ -182,6 +182,8 @@ export async function restartSession(input: {
           agentName: session.agentName ?? 'default',
           initialPrompt,
           opencodeModel,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
         }),
       resolveGitAuthToken: async () =>
         (await withProjectGitAuth(loaded.row as any)).gitAuthToken ?? null,

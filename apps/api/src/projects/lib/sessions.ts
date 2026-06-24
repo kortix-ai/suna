@@ -8,6 +8,8 @@ import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
+import { resolveAgentGrant } from '../agents';
+import { agentMayUseEnv } from '../../iam/agent-scope';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -183,6 +185,12 @@ export async function buildSessionSandboxEnvVars(input: {
    *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
    *  (2026-06-13). Omitted → daemon delta-fetches as before. */
   baseSha?: string;
+  /** Project git context, so the per-agent `env` allowlist in [[agents]] can be
+   *  resolved and applied — secrets the agent isn't granted are dropped from the
+   *  injected env (a prompt-injected agent then can't read another scope's keys
+   *  out of $ENV). Optional: when absent, no per-agent narrowing (back-compat). */
+  defaultBranch?: string;
+  manifestPath?: string;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -210,6 +218,29 @@ export async function buildSessionSandboxEnvVars(input: {
     console.warn(
       `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
     );
+  }
+  // Per-agent secret scoping: an agent declared in [[agents]] with an `env`
+  // allowlist receives ONLY those secrets — so a narrowly-scoped agent can't read
+  // another scope's API keys/payment creds straight out of $ENV. No-op for the
+  // 'all'/null grant (back-compat) and projects without [[agents]] or git context.
+  if (input.defaultBranch) {
+    const grant = await resolveAgentGrant(input.agentName, {
+      projectId: input.projectId,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath ?? 'kortix.toml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    if (grant && (grant.env ?? 'all') !== 'all') {
+      const droppedByAgent = Object.keys(runtimeSecrets.env).filter((n) => !agentMayUseEnv(grant, n));
+      for (const name of droppedByAgent) delete runtimeSecrets.env[name];
+      runtimeSecrets.names = runtimeSecrets.names.filter((n) => agentMayUseEnv(grant, n));
+      if (droppedByAgent.length > 0) {
+        console.log(
+          `[session ${input.sessionId}] agent '${input.agentName}' env-scoped out ${droppedByAgent.length} secret(s)`,
+        );
+      }
+    }
   }
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
@@ -540,6 +571,8 @@ export async function createProjectSession(input: {
           opencodeModel,
           freshSession: true,
           baseSha,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
         }),
       ).then((envVars) => {
         tl.mark('env-vars');
