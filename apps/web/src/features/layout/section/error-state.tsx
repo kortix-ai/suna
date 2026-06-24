@@ -22,8 +22,8 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType } from '@mynaui/icons-react';
-import { AlertCircle, LucideIcon } from 'lucide-react';
+import { DangerTriangleSolid, Icon as IconMynauiType } from '@mynaui/icons-react';
+import { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { IconType } from 'react-icons/lib';
 
@@ -38,7 +38,7 @@ export interface ErrorStateProps {
 }
 
 export function ErrorState({
-  icon: IconComponent = AlertCircle,
+  icon: IconComponent = DangerTriangleSolid,
   title,
   description,
   action,
@@ -46,29 +46,23 @@ export function ErrorState({
   size = 'default',
   className,
 }: ErrorStateProps) {
-  const mediaSize = size === 'sm' ? 'size-8' : 'size-10';
-  const iconSize = size === 'sm' ? 'size-4' : 'size-5';
   const maxW = size === 'sm' ? 'max-w-[240px]' : 'max-w-[320px]';
 
   return (
-    <Empty className={cn('border-none px-6 py-12', className)}>
+    <Empty className={cn('border-none', className)}>
       <EmptyHeader className={maxW}>
-        <EmptyMedia
-          className={cn(
-            'mb-4 flex items-center justify-center rounded-2xl bg-destructive/10',
-            mediaSize,
-          )}
-        >
-          <IconComponent className={cn(iconSize, 'text-destructive/60')} strokeWidth={1.75} />
+        <EmptyMedia className="mb-4">
+          <div
+            className={cn(
+              'inline-flex size-10 shrink-0 items-center justify-center rounded-sm border',
+              'bg-kortix-red/10 text-kortix-red',
+            )}
+          >
+            <IconComponent className="size-6 shrink-0" />
+          </div>
         </EmptyMedia>
-        <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">
-          {title}
-        </EmptyTitle>
-        {description && (
-          <EmptyDescription className="text-muted-foreground/80 mt-1.5">
-            {description}
-          </EmptyDescription>
-        )}
+        <EmptyTitle className="text-base font-semibold">{title}</EmptyTitle>
+        {description && <EmptyDescription className="mt-1.5">{description}</EmptyDescription>}
       </EmptyHeader>
       {(action || secondaryAction) && (
         <EmptyContent className="flex-row justify-center gap-2">

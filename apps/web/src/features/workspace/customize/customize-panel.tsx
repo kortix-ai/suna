@@ -23,7 +23,15 @@ import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { AlarmClock, ArrowLeft, ChatMessages, CogOne, Sparkles, Users } from '@mynaui/icons-react';
+import {
+  AlarmClock,
+  ArrowLeft,
+  ChatMessages,
+  CogOne,
+  Command,
+  Sparkles,
+  Users,
+} from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -38,7 +46,6 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useMemo } from 'react';
-import { HiMiniSlash } from 'react-icons/hi2';
 import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
 import { DevView } from './sections/view/dev-view';
@@ -50,7 +57,7 @@ const GROUPS: readonly RailGroup[] = [
     items: [
       { section: 'agents', label: 'Agents', icon: Bot },
       { section: 'skills', label: 'Skills', icon: Sparkles },
-      { section: 'commands', label: 'Commands', icon: HiMiniSlash },
+      { section: 'commands', label: 'Commands', icon: Command },
     ],
   },
   {

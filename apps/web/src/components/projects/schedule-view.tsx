@@ -92,7 +92,6 @@ import {
   Copy,
   MoreHorizontal,
   Play,
-  Plus,
   RefreshCw,
   Timer,
   Webhook,
@@ -400,15 +399,14 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
               icon={type === 'cron' ? Timer : Webhook}
               size="sm"
               title={meta.empty.title}
-              description={meta.empty.body}
               action={
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setCreateOpen(true)}
                   className="gap-1.5"
                 >
-                  <Plus className="size-3.5 shrink-0" />
+                  <Icon.Plus className="size-3.5 shrink-0" />
                   {meta.createButtonLabel}
                 </Button>
               }

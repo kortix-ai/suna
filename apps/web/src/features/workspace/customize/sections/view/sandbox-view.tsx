@@ -3,8 +3,13 @@
 import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Disclosure,
+  DisclosureBody,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { Item, ItemContent, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,10 +32,15 @@ import {
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { AlarmClockSolid, CheckCircleSolid, XCircleSolid } from '@mynaui/icons-react';
+import {
+  AlarmClockSolid,
+  CheckCircleSolid,
+  SparklesSolid,
+  XCircleSolid,
+} from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CheckCircle2,
+  ChevronDown,
   Container,
   Edit3,
   FileCode,
@@ -39,43 +49,15 @@ import {
   Package,
   Plus,
   RefreshCw,
-  Sparkles,
   Trash2,
-  XCircle,
   Zap,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 const MAX_WARM_SIZE = 25;
 
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
-
-const STATUS_STYLE: Record<
-  ProjectSnapshotStatus,
-  {
-    label: string;
-    badgeClass: string;
-    icon: typeof CheckCircle2;
-  }
-> = {
-  ready: {
-    label: 'Ready',
-    badgeClass:
-      'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
-    icon: CheckCircle2,
-  },
-  building: {
-    label: 'Building',
-    badgeClass: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
-    icon: Loader2,
-  },
-  failed: {
-    label: 'Failed',
-    badgeClass: 'bg-destructive/10 text-destructive border border-destructive/20',
-    icon: XCircle,
-  },
-};
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   dockerfile: 'Dockerfile build failed',
@@ -85,6 +67,50 @@ const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   timeout: 'Build timed out',
   runtime: 'Runtime artifact missing',
   unknown: 'Build failed',
+};
+
+const BUILD_SOURCE_LABEL: Record<NonNullable<ProjectSnapshotBuild['source']>, string> = {
+  'session-start': 'Session start',
+  'project-create': 'Project created',
+  'cr-merge': 'Code review merge',
+  manual: 'Manual rebuild',
+  background: 'Background sync',
+  startup: 'Startup',
+};
+
+const BUILD_STATUS_TILE: Record<
+  ProjectSnapshotStatus,
+  {
+    label: string;
+    badgeVariant: 'success' | 'warning' | 'destructive';
+    tileBg: string;
+    iconColor: string;
+    Icon: typeof CheckCircleSolid;
+    spin?: boolean;
+  }
+> = {
+  ready: {
+    label: 'ready',
+    badgeVariant: 'success',
+    tileBg: 'bg-kortix-green/15',
+    iconColor: 'text-kortix-green',
+    Icon: CheckCircleSolid,
+  },
+  building: {
+    label: 'building',
+    badgeVariant: 'warning',
+    tileBg: 'bg-kortix-yellow/15',
+    iconColor: 'text-kortix-yellow',
+    Icon: Loading,
+    spin: true,
+  },
+  failed: {
+    label: 'failed',
+    badgeVariant: 'destructive',
+    tileBg: 'bg-kortix-red/15',
+    iconColor: 'text-kortix-red',
+    Icon: XCircleSolid,
+  },
 };
 
 const DAYTONA_STATE_LABEL: Record<
@@ -118,19 +144,183 @@ function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'f
   return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
-function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
-  const style = STATUS_STYLE[status];
-  const Icon = style.icon;
+function formatBuildDuration(startedAt: string, finishedAt: string | null): string | null {
+  if (!finishedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = new Date(finishedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  const minutes = Math.round((end - start) / 60_000);
+  if (minutes < 1) return 'under 1m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h`;
+}
+
+function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
+  const status = BUILD_STATUS_TILE[build.status];
+  const { Icon } = status;
+  const duration = formatBuildDuration(build.started_at, build.finished_at);
+  const sourceLabel = build.source ? BUILD_SOURCE_LABEL[build.source] : null;
+  const timestamp = formatRelative(build.finished_at ?? build.started_at);
+  const hasErrorDetails = build.status === 'failed' && !!build.error;
+
+  const row = (
+    <>
+      <span
+        className={cn('flex size-9 shrink-0 items-center justify-center rounded-sm', status.tileBg)}
+      >
+        <Icon className={cn('size-5', status.iconColor, status.spin && 'animate-spin')} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-foreground truncate text-sm font-medium">{build.slug}</span>
+          <Badge variant={status.badgeVariant} size="xs">
+            {status.label}
+          </Badge>
+        </div>
+        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+          <span className="truncate font-mono">{build.snapshot_name}</span>
+          {sourceLabel ? (
+            <>
+              <span className="text-muted-foreground/40">&bull;</span>
+              <span className="shrink-0">{sourceLabel}</span>
+            </>
+          ) : null}
+          {timestamp ? (
+            <>
+              <span className="text-muted-foreground/40">&bull;</span>
+              <span className="shrink-0 tabular-nums">{timestamp}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {build.status === 'building' ? null : duration ? (
+        <span className="text-muted-foreground/70 shrink-0 font-mono text-xs tabular-nums">
+          {duration}
+        </span>
+      ) : null}
+      {hasErrorDetails ? (
+        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/build:rotate-180" />
+      ) : null}
+    </>
+  );
+
+  if (hasErrorDetails) {
+    return (
+      <li className="overflow-hidden transition-colors">
+        <Disclosure
+          className="group/build bg-popover overflow-hidden"
+          variant="outline"
+          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+        >
+          <DisclosureTrigger>
+            <div className="flex w-full items-center gap-3 px-4 py-2">{row}</div>
+          </DisclosureTrigger>
+          <DisclosureContent className="overflow-hidden">
+            <DisclosureBody className="bg-secondary space-y-2 rounded-t-lg px-4 py-3">
+              {build.error_category ? (
+                <Label className="text-foreground">{CATEGORY_LABEL[build.error_category]}</Label>
+              ) : null}
+              <pre className="bg-muted/50 text-muted-foreground max-h-28 overflow-auto rounded-sm text-xs wrap-break-word whitespace-pre-wrap">
+                {build.error}
+              </pre>
+            </DisclosureBody>
+          </DisclosureContent>
+        </Disclosure>
+      </li>
+    );
+  }
+
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-        style.badgeClass,
-      )}
-    >
-      <Icon className={cn('h-3 w-3', status === 'building' && 'animate-spin')} />
-      {style.label}
-    </span>
+    <li className="group bg-popover rounded-md border transition-colors">
+      <div className="flex items-center gap-3 px-4 py-2">{row}</div>
+    </li>
+  );
+}
+
+function InlinePanelEmpty({ message, action }: { message: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+      <p className="text-muted-foreground text-sm text-balance">{message}</p>
+      {action}
+    </div>
+  );
+}
+
+function LatestFailureBanner({
+  failure,
+  canManage,
+  canFixWithAgent,
+  isFixPending,
+  onFix,
+}: {
+  failure: ProjectSnapshotBuild;
+  canManage: boolean;
+  canFixWithAgent: boolean;
+  isFixPending: boolean;
+  onFix: () => void;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const showFixAction = canManage && canFixWithAgent;
+
+  return (
+    <div className="border-border bg-popover rounded-md border">
+      <div className="flex items-start gap-3 px-4 py-3">
+        <span className="border-border bg-kortix-red/10 text-kortix-red inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border">
+          <XCircleSolid className="size-6 shrink-0" />
+        </span>
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-foreground text-sm font-medium text-balance">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxTextLatestBuildFailedf1dd9030',
+                )}
+              </p>
+              <InlineMeta>
+                <code className="bg-muted rounded-sm px-1.5 py-0.5 font-mono text-xs">
+                  {failure.slug}
+                </code>
+                <span className="tabular-nums">
+                  {formatRelative(failure.finished_at ?? failure.started_at)}
+                </span>
+              </InlineMeta>
+            </div>
+            {(failure.error_category || showFixAction) && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {failure.error_category ? (
+                  <Badge size="sm" variant="warning">
+                    {CATEGORY_LABEL[failure.error_category] ?? failure.error_category}
+                  </Badge>
+                ) : null}
+                {showFixAction ? (
+                  <Button
+                    size="sm"
+                    className="gap-1.5 transition-transform active:scale-[0.96]"
+                    disabled={isFixPending}
+                    onClick={onFix}
+                  >
+                    {isFixPending ? (
+                      <Loading className="size-3.5 shrink-0 animate-spin" />
+                    ) : (
+                      <SparklesSolid className="size-3.5 shrink-0" />
+                    )}
+                    {tI18nHardcoded.raw(
+                      'autoComponentsProjectsSandboxSnapshotCardJsxTextFixWithAgent918e1083',
+                    )}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </div>
+          {failure.error ? (
+            <pre className="bg-muted/50 text-muted-foreground max-h-36 overflow-auto rounded-sm p-2.5 text-xs wrap-break-word whitespace-pre-wrap">
+              {failure.error}
+            </pre>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -323,7 +513,7 @@ function TemplateRow({
           : AlarmClockSolid;
 
   return (
-    <li className="flex flex-wrap items-center gap-4 px-4 py-3 text-sm">
+    <li className="bg-popover flex flex-wrap items-center gap-4 overflow-hidden px-4 py-3 text-sm">
       <div
         className={cn(
           'inline-flex size-11 shrink-0 items-center justify-center rounded-sm border',
@@ -459,6 +649,14 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && !!latestReady;
+  const isFullyEmpty = templates.length === 0 && builds.length === 0;
+
+  const newTemplateAction = canManage ? (
+    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setFormOpen(true)}>
+      <Plus className="size-3.5 shrink-0" />
+      {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextNewTemplate62cccf85')}
+    </Button>
+  ) : undefined;
 
   const openNewForm = () => {
     setEditingTemplate(null);
@@ -505,139 +703,82 @@ export function SandboxView({ projectId }: { projectId: string }) {
         />
       ) : !data ? null : (
         <section>
-          <div className="space-y-5">
-            {templates.length === 0 ? (
+          <div className="space-y-10">
+            {isFullyEmpty ? (
               <EmptyState
                 icon={Container}
                 size="sm"
                 title={tI18nHardcoded.raw(
                   'autoComponentsProjectsSandboxSnapshotCardJsxTextNoTemplatesResolved1e5654c6',
                 )}
-                action={
-                  canManage ? (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={openNewForm}>
-                      <Plus className="size-3.5" />
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsSandboxSnapshotCardJsxTextNewTemplate62cccf85',
-                      )}
-                    </Button>
-                  ) : undefined
-                }
+                description={tI18nHardcoded.raw(
+                  'autoComponentsProjectsSandboxSnapshotCardJsxTextNoBuildsRecordedfa95bbcb',
+                )}
+                action={newTemplateAction}
               />
             ) : (
-              <div className="border-border bg-popover rounded-md border">
-                {templates.map((t) => (
-                  <TemplateRow
-                    key={t.template_id ?? `tpl-${t.slug}`}
-                    projectId={projectId}
-                    template={t}
+              <>
+                {templates.length === 0 ? (
+                  <div className="border-border rounded-md border">
+                    <InlinePanelEmpty
+                      message={tI18nHardcoded.raw(
+                        'autoComponentsProjectsSandboxSnapshotCardJsxTextNoTemplatesResolved1e5654c6',
+                      )}
+                      action={newTemplateAction}
+                    />
+                  </div>
+                ) : (
+                  <div className="border-border divide-border divide-y overflow-hidden rounded-md border">
+                    <ul>
+                      {templates.map((t) => (
+                        <TemplateRow
+                          key={t.template_id ?? `tpl-${t.slug}`}
+                          projectId={projectId}
+                          template={t}
+                          canManage={canManage}
+                          warmAvailable={data.warm_pool_available ?? false}
+                          onEdit={openEditForm}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {latestFailure ? (
+                  <LatestFailureBanner
+                    failure={latestFailure}
                     canManage={canManage}
-                    warmAvailable={data.warm_pool_available ?? false}
-                    onEdit={openEditForm}
+                    canFixWithAgent={canFixWithAgent}
+                    isFixPending={fixWithAgent.isPending}
+                    onFix={() => fixWithAgent.mutate()}
                   />
-                ))}
-              </div>
-            )}
+                ) : null}
 
-            {latestFailure && (
-              <Item
-                variant="outline"
-                size="sm"
-                className="border-kortix-red/30 bg-kortix-red/5 items-start"
-              >
-                <ItemMedia
-                  variant="icon"
-                  className="border-border bg-kortix-red/10 text-kortix-red [&_svg:not([class*='size-'])]:size-5"
-                >
-                  <XCircleSolid />
-                </ItemMedia>
-                <ItemContent className="min-w-0 gap-2">
-                  <ItemTitle className="flex-wrap">
+                <div className="space-y-2">
+                  <Label>
                     {tI18nHardcoded.raw(
-                      'autoComponentsProjectsSandboxSnapshotCardJsxTextLatestBuildFailedf1dd9030',
+                      'autoComponentsProjectsSandboxSnapshotCardJsxTextRecentBuildscde18d4a',
                     )}
-                    {latestFailure.error_category && (
-                      <Badge size="sm" variant="warning">
-                        {CATEGORY_LABEL[latestFailure.error_category] ??
-                          latestFailure.error_category}
-                      </Badge>
-                    )}
-                  </ItemTitle>
-                  <InlineMeta>
-                    <code className="bg-muted rounded-sm px-1.5 py-0.5 font-mono">
-                      {latestFailure.slug}
-                    </code>
-                    {formatRelative(latestFailure.finished_at ?? latestFailure.started_at)}
-                  </InlineMeta>
-                  {latestFailure.error && (
-                    <pre className="bg-muted/50 text-muted-foreground max-h-36 overflow-auto rounded-sm p-2.5 text-xs break-words whitespace-pre-wrap">
-                      {latestFailure.error}
-                    </pre>
-                  )}
-                </ItemContent>
-                {canManage && canFixWithAgent && (
-                  <ItemFooter>
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      disabled={fixWithAgent.isPending}
-                      onClick={() => fixWithAgent.mutate()}
-                    >
-                      {fixWithAgent.isPending ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {tI18nHardcoded.raw(
-                        'autoComponentsProjectsSandboxSnapshotCardJsxTextFixWithAgent918e1083',
-                      )}
-                    </Button>
-                  </ItemFooter>
-                )}
-              </Item>
-            )}
+                  </Label>
 
-            <div className="space-y-3">
-              <Label>
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsSandboxSnapshotCardJsxTextRecentBuildscde18d4a',
-                )}
-              </Label>
-              {builds.length === 0 ? (
-                <EmptyState
-                  icon={Package}
-                  size="sm"
-                  title={tI18nHardcoded.raw(
-                    'autoComponentsProjectsSandboxSnapshotCardJsxTextNoBuildsRecordedfa95bbcb',
+                  {builds.length === 0 ? (
+                    <div className="border-border rounded-md border">
+                      <InlinePanelEmpty
+                        message={tI18nHardcoded.raw(
+                          'autoComponentsProjectsSandboxSnapshotCardJsxTextNoBuildsRecordedfa95bbcb',
+                        )}
+                      />
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {builds.slice(0, 10).map((b) => (
+                        <BuildRow key={b.build_id} build={b} />
+                      ))}
+                    </ul>
                   )}
-                />
-              ) : (
-                <div className="border-border divide-y rounded-md border">
-                  {builds.slice(0, 10).map((b: ProjectSnapshotBuild) => (
-                    <li
-                      key={b.build_id}
-                      className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm"
-                    >
-                      <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
-                        {b.slug}
-                      </code>
-                      <StatusPill status={b.status} />
-                      {b.source && (
-                        <span className="text-muted-foreground text-xs">via {b.source}</span>
-                      )}
-                      <span className="text-muted-foreground ml-auto text-xs">
-                        {formatRelative(b.finished_at ?? b.started_at)}
-                      </span>
-                      {b.status === 'failed' && b.error && (
-                        <pre className="bg-destructive/5 text-destructive basis-full overflow-auto rounded-lg p-2 text-xs break-words whitespace-pre-wrap">
-                          {b.error}
-                        </pre>
-                      )}
-                    </li>
-                  ))}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           <SandboxTemplateForm

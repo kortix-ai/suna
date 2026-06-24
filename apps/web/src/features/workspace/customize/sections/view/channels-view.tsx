@@ -447,7 +447,7 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
     <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
       <DisclosureTrigger variant="outline">
         <Button
-          variant="accent"
+          variant="ghost-input"
           className={cn('flex h-fit w-full items-center justify-between rounded-none py-2.5')}
         >
           <div className="min-w-0 text-left">

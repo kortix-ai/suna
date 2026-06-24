@@ -17,6 +17,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
@@ -33,10 +34,9 @@ import {
   type ProjectConfigSummary,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { DangerTriangleSolid, ExternalLinkSolid, Pencil, Search } from '@mynaui/icons-react';
+import { Command, DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Plus, TerminalSquare } from 'lucide-react';
-import Link from 'next/link';
+import { Copy, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 type Command = ProjectConfigSummary['commands'][number];
@@ -138,41 +138,28 @@ export function CommandsView({ projectId }: { projectId: string }) {
           />
         ) : commands.length === 0 ? (
           <EmptyState
-            icon={TerminalSquare}
+            icon={Command}
             size="sm"
             title={tHardcodedUi.raw(
               'appProjectsIdCustomizeCommandsPage.line415JsxAttrTitleNoCommandsYet',
             )}
-            description="Create a slash command to give agents reusable prompts."
             action={
-              <div className="flex flex-col items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => configure.start(newConfigPrompt('command'))}
-                  disabled={configure.pending}
-                >
-                  {configure.pending ? (
-                    <Loading className="size-3.5 shrink-0 animate-spin" />
-                  ) : (
-                    <Plus className="size-3.5 shrink-0" />
-                  )}
-                  {tHardcodedUi.raw(
-                    'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f',
-                  )}
-                </Button>
-                <Button asChild variant="ghost" size="sm" className="gap-1.5">
-                  <Link
-                    href="https://opencode.ai/docs/commands/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLinkSolid className="size-3.5 shrink-0" />
-                    Docs
-                  </Link>
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => configure.start(newConfigPrompt('command'))}
+                disabled={configure.pending}
+              >
+                {configure.pending ? (
+                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <Icon.Plus className="size-3.5 shrink-0" />
+                )}
+                {tHardcodedUi.raw(
+                  'autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f',
+                )}
+              </Button>
             }
           />
         ) : filtered.length === 0 ? (
