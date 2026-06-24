@@ -143,6 +143,7 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'deepseek-v4-pro': { inputPricePerMillion: 0.435, outputPricePerMillion: 0.87 },
   'deepseek-v3.2': { inputPricePerMillion: 0.28, outputPricePerMillion: 0.42 },
   'qwen3-max': { inputPricePerMillion: 1.2, outputPricePerMillion: 6 },
+  'qwen3.7-max': { inputPricePerMillion: 1.2, outputPricePerMillion: 6 },
   'glm-4.6': { inputPricePerMillion: 0.6, outputPricePerMillion: 2.2 },
   'kimi-k2': { inputPricePerMillion: 0.6, outputPricePerMillion: 2.5 },
   'minimax-m3': { inputPricePerMillion: 0.3, outputPricePerMillion: 1.2 },
