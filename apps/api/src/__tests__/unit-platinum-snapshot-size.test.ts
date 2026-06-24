@@ -65,7 +65,7 @@ globalThis.fetch = Object.assign(
   { preconnect: originalFetch.preconnect },
 ) as typeof fetch;
 
-const { platinumProvider } = await import('../snapshots/providers/platinum');
+const { platinumProvider, PLATINUM_MAX_BUILD_SIZE_MB } = await import('../snapshots/providers/platinum');
 
 beforeEach(() => {
   fromBuildPayloads = [];
@@ -78,7 +78,20 @@ afterAll(() => {
 });
 
 describe('Platinum snapshot build sizing', () => {
-  test('uses the declared template disk as both build ext4 ceiling and runtime disk', async () => {
+  test('a disk under the cap is sent verbatim as the build ceiling', async () => {
+    await platinumProvider.buildSnapshot({
+      snapshotName: 'kortix-small-template',
+      image: 'ubuntu:24.04',
+      spec: { diskGb: 10 },
+      slug: 'small',
+    });
+
+    expect(fromBuildPayloads).toHaveLength(1);
+    expect(fromBuildPayloads[0].size_mb).toBe(10 * 1024); // < cap → unclamped
+    expect(fromBuildPayloads[0].default_disk_gb).toBe(10);
+  });
+
+  test('clamps the build ext4 ceiling to Platinum\'s from-build cap, keeping the full runtime disk', async () => {
     await platinumProvider.buildSnapshot({
       snapshotName: 'kortix-large-template',
       image: 'ubuntu:24.04',
@@ -87,11 +100,13 @@ describe('Platinum snapshot build sizing', () => {
     });
 
     expect(fromBuildPayloads).toHaveLength(1);
-    expect(fromBuildPayloads[0].size_mb).toBe(40 * 1024);
+    // 40 GiB * 1024 = 40960 > cap → clamped so Platinum doesn't 400 "size_mb too_big".
+    expect(fromBuildPayloads[0].size_mb).toBe(PLATINUM_MAX_BUILD_SIZE_MB);
+    // Runtime disk is NOT clamped — build ceiling != runtime disk (ext4 grows to fit).
     expect(fromBuildPayloads[0].default_disk_gb).toBe(40);
   });
 
-  test('keeps the defensive build-size cap in sync with the canonical disk limit', async () => {
+  test('clamps even an extreme disk to the build cap', async () => {
     await platinumProvider.buildSnapshot({
       snapshotName: 'kortix-max-template',
       image: 'ubuntu:24.04',
@@ -100,7 +115,7 @@ describe('Platinum snapshot build sizing', () => {
     });
 
     expect(fromBuildPayloads).toHaveLength(1);
-    expect(fromBuildPayloads[0].size_mb).toBe(500 * 1024);
+    expect(fromBuildPayloads[0].size_mb).toBe(PLATINUM_MAX_BUILD_SIZE_MB);
     expect(fromBuildPayloads[0].default_disk_gb).toBe(500);
   });
 });

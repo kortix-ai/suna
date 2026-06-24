@@ -32,6 +32,13 @@ import type {
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
 const MB_PER_GB = 1024;
+// Platinum's POST /v1/templates/from-build hard-caps size_mb at this value (see
+// platinum apps/api/src/api/templates.ts ORG_MAX_SIZE_MB + the from-build zod).
+// The build ext4 is a FLOOR Platinum grows-to-fit, so clamping the build ceiling
+// does NOT shrink the runtime disk (default_disk_gb stays the full spec) — it only
+// stops oversize-disk templates from being rejected with a raw "size_mb too_big"
+// 400. Single source of truth for the build-size contract; keep in sync w/ Platinum.
+export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
 
 interface PlatinumTemplate {
   id: string;
@@ -92,10 +99,12 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Build-time ext4 ceiling must track the same disk spec we send as
-          // the runtime default. Platinum grows ext4 to fit, so the artifact
-          // still consumes only image+headroom rather than the whole ceiling.
-          size_mb: diskGb * MB_PER_GB,
+          // Build-time ext4 ceiling, clamped to Platinum's from-build hard cap.
+          // Platinum grows ext4 to fit, so the artifact consumes only image+headroom
+          // (a ~9.4 GiB kortix image builds fine into a 20 GiB ceiling). The runtime
+          // disk (default_disk_gb below) stays the FULL spec — build ceiling != runtime
+          // disk. Without this clamp a >20 GiB-disk template 400s ("size_mb too_big").
+          size_mb: Math.min(diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
