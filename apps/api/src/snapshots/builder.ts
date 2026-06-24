@@ -722,9 +722,19 @@ let startupPreBuildKicked = false;
 export function kickStartupPreBuild(): void {
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
-  const provider = getSandboxProvider('daytona');
+  // Gate on the ACTUAL default provider, not daytona specifically — a Platinum-only
+  // deploy has no daytona adapter configured, which used to skip the pre-build and
+  // leave the first project after a release to pay a lazy "Not built yet" build.
+  const providerId = config.getDefaultProvider();
+  let provider: SandboxProviderAdapter;
+  try {
+    provider = getSandboxProvider(providerId);
+  } catch {
+    console.log(`[snapshots] startup pre-build skipped — no adapter for default provider '${providerId}'`);
+    return;
+  }
   if (!provider.isConfigured()) {
-    console.log('[snapshots] startup pre-build skipped — sandbox provider not configured');
+    console.log(`[snapshots] startup pre-build skipped — default provider '${providerId}' not configured`);
     return;
   }
   void ensurePlatformDefaultImage({ source: 'startup' })

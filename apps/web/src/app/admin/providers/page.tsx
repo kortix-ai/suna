@@ -328,6 +328,32 @@ export default function ProvidersPage() {
     onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
   });
 
+  // ── Warm-fork snapshots (per-project ~2s session start; master gate) ──────
+  const wsQ = useQuery({
+    queryKey: ['admin', 'warm-snapshot-config'],
+    queryFn: async () => {
+      const r = await backendApi.get<{ enabled: boolean }>('/admin/api/warm-snapshot-config');
+      if (r.error) throw new Error(r.error.message);
+      return r.data!;
+    },
+  });
+  const [wsEnabled, setWsEnabled] = useState(true);
+  useEffect(() => {
+    if (wsQ.data) setWsEnabled(!!wsQ.data.enabled);
+  }, [wsQ.data]);
+  const saveWs = useMutation({
+    mutationFn: async () => {
+      const r = await backendApi.put('/admin/api/warm-snapshot-config', { enabled: wsEnabled });
+      if (r.error) throw new Error(r.error.message);
+      return r.data;
+    },
+    onSuccess: () => {
+      toast.success('Warm-fork saved');
+      qc.invalidateQueries({ queryKey: ['admin', 'warm-snapshot-config'] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
+  });
+
   const dist = distQ.data;
   const allowed = dist?.allowed ?? [];
   const totalW = allowed.reduce((s, p) => s + (Number(weights[p]) || 0), 0);
@@ -549,6 +575,38 @@ export default function ProvidersPage() {
                 {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveWarmPool72b9a69a')}
               </Button>
             </div>
+          </div>
+
+          {/* ── Warm-fork sessions ─────────────────────────────────────────── */}
+          <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold tracking-tight">
+                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextWarmForkSessionsf726dcdc')}
+                </h2>
+                <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextPerProjectWarmbd60f907')}
+                </p>
+              </div>
+              {wsQ.isLoading ? (
+                <Skeleton className="h-6 w-10 rounded-full" />
+              ) : (
+                <Switch
+                  checked={wsEnabled}
+                  onCheckedChange={setWsEnabled}
+                  aria-label={tI18nHardcoded.raw('autoAppAdminProvidersPageJsxAttrAriaLabelEnableWarmForkb78de78a')}
+                />
+              )}
+            </div>
+            <Button
+              size="sm"
+              onClick={() => saveWs.mutate()}
+              disabled={saveWs.isPending}
+              className="gap-1.5"
+            >
+              {saveWs.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveWarmFork8eeda5df')}
+            </Button>
           </div>
 
           {/* ── Provider failover ──────────────────────────────────────────── */}
