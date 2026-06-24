@@ -13,9 +13,13 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import { DEFAULT_MANAGED_MODEL_IDS, MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/shared/llm-catalog';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { safeSetItem } from '@/lib/storage/managed-storage';
+import {
+  AUTO_MODEL_ID,
+  DEFAULT_MANAGED_MODEL_IDS,
+  MANAGED_FLAGSHIP_MODEL_ID,
+} from '@kortix/shared/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 // ============================================================================
@@ -171,7 +175,8 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // or its underlying provider is connected (live, from project secrets). The
 // rest stay one search away. Single source for the managed set lives in
 // @kortix/shared (mirrors the gateway's managed-ids).
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// Includes the synthetic `auto` entry so it's always offered in the picker.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');
@@ -282,7 +287,8 @@ export function useModelStore(
         const sub = subProviderOf(model.modelID);
         // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
         // gate its display on the subscription being connected.
-        if (sub === SUBSCRIPTION_PROVIDER_ID) return connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false;
+        if (sub === SUBSCRIPTION_PROVIDER_ID)
+          return connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false;
         if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
         return connectedProviderIds?.has(sub) ?? false;
       }

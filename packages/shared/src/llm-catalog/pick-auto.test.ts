@@ -15,32 +15,15 @@ describe('pickAutoModel', () => {
     expect(pickAutoModel('kortix/auto', { messages: [msg('hi')] })).not.toBeNull();
   });
 
-  test('light (short, no tools) → cheap Chinese model', () => {
+  test('auto always resolves to GLM 5.2 for now (regardless of input)', () => {
     expect(pickAutoModel('auto', { messages: [msg('hello there')] })).toBe('glm-5.2');
+    expect(
+      pickAutoModel('auto', { messages: [msg('x'.repeat(250_000))], tools: [{ name: 'edit' }] }),
+    ).toBe('glm-5.2');
   });
 
-  test('any tool use → balanced Chinese model', () => {
-    const routed = pickAutoModel('auto', {
-      messages: [msg('fix this')],
-      tools: [{ name: 'edit' }],
-    });
-    expect(routed).toBe('deepseek-v4-pro');
-  });
-
-  test('huge context → flagship', () => {
-    const big = 'x'.repeat(250_000);
-    expect(pickAutoModel('auto', { messages: [msg(big)] })).toBe('claude-opus-4.8');
-  });
-
-  test('heavy tool use → flagship', () => {
-    const tools = Array.from({ length: 12 }, (_, i) => ({ name: `t${i}` }));
-    expect(pickAutoModel('auto', { messages: [msg('do a lot')], tools })).toBe('claude-opus-4.8');
-  });
-
-  test('every tier target is a real managed model', () => {
-    for (const id of ['glm-5.2', 'deepseek-v4-pro', 'claude-opus-4.8']) {
-      expect(getManagedModel(id), `${id} must exist in MANAGED_MODELS`).toBeDefined();
-    }
+  test('the auto target is a real managed model', () => {
+    expect(getManagedModel('glm-5.2'), 'glm-5.2 must exist in MANAGED_MODELS').toBeDefined();
   });
 
   test('AUTO_MODEL_ID is the bare synthetic id', () => {

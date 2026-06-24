@@ -14,16 +14,11 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-import { useQuery } from '@tanstack/react-query';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
-import { listProjectSecrets } from '@/lib/projects-client';
-import { LLM_PROVIDERS } from '@/lib/llm-providers';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
@@ -31,8 +26,13 @@ import {
 } from '@/features/providers/provider-branding';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { LLM_PROVIDERS } from '@/lib/llm-providers';
+import { listProjectSecrets } from '@/lib/projects-client';
+import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { useQuery } from '@tanstack/react-query';
 import type { FlatModel } from './session-chat-input';
 
 // Re-export for consumers
@@ -98,7 +98,9 @@ import { Tag } from '@/components/ui/tag';
 
 const SHOW_OPENCODE_ZEN = true;
 
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// `auto` is a synthetic managed entry (not a real upstream model): grouped under
+// Kortix and always shown, but rendered as a special "smart routing" affordance.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
@@ -146,7 +148,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
   );
-  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(undefined);
+  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(
+    undefined,
+  );
 
   // Track project secrets whenever we're in a project (not only while the picker
   // is open) so connecting/disconnecting a provider flips model visibility live —
@@ -402,6 +406,37 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       const isSelected =
                         selectedModel?.providerID === model.providerID &&
                         selectedModel?.modelID === model.modelID;
+
+                      // `auto` is not a real model — present it as a smart-routing
+                      // affordance, not a normal model row.
+                      if (model.providerID === 'kortix' && model.modelID === AUTO_MODEL_ID) {
+                        return (
+                          <CommandItem
+                            key={`${model.providerID}:${model.modelID}`}
+                            value={`model-${model.providerID}-${model.modelID}`}
+                            className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
+                            onSelect={() => handleSelect(model)}
+                          >
+                            <Sparkles className="text-foreground/70 size-4 shrink-0" />
+                            <div className="min-w-0 flex-1 py-0.5">
+                              <div
+                                className={cn(
+                                  'truncate text-sm leading-tight',
+                                  isSelected
+                                    ? 'text-foreground font-semibold'
+                                    : 'text-foreground/90 font-medium',
+                                )}
+                              >
+                                Auto
+                              </div>
+                              <p className="text-muted-foreground/55 mt-1 text-xs leading-snug">
+                                Automatically picks the cheapest, most efficient model for your task
+                              </p>
+                            </div>
+                            {isSelected && <Check className="text-foreground shrink-0" />}
+                          </CommandItem>
+                        );
+                      }
                       // Every opencode (Zen) model is free: it routes natively,
                       // never through the gateway, so kortix never bills it.
                       const isFree = model.providerID === 'opencode';

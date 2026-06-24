@@ -154,45 +154,29 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
-// ─── AUTO: smart per-task model routing ─────────────────────────────────────
-// The catalog advertises a synthetic `auto` model. When a request asks for it,
-// the gateway resolves it to a concrete managed model by a cheap, deterministic
-// heuristic — no extra LLM call — and bills it as the resolved model. Policy:
-// cheap+smart Chinese models by default, the flagship only for heavy work.
+// ─── AUTO: managed model selection ──────────────────────────────────────────
+// The catalog advertises a synthetic `auto` model presented to users as
+// "automatically picks the cheapest, most efficient model for the task." When a
+// request asks for it, the gateway resolves it to a concrete managed model and
+// bills it as the resolved model.
+//
+// For now AUTO always resolves to GLM 5.2 (cheap + smart). The `autoRouter` hook
+// and this single indirection point are the seam where a future, more
+// sophisticated handler will route per-task based on the actual input.
 export const AUTO_MODEL_ID = 'auto';
 
-const AUTO_LIGHT_MODEL = 'glm-5.2'; // short / tool-less chat — cheapest smart
-const AUTO_BALANCED_MODEL = 'deepseek-v4-pro'; // typical agentic turn — cheap + strong
-const AUTO_HEAVY_MODEL = 'claude-opus-4.8'; // huge context or heavy tool use — flagship
-
-// ~chars; tokens ≈ chars/4. Heavy ≈ >50k-token inputs; balanced ≈ >6k tokens.
-const AUTO_HEAVY_CHARS = 200_000;
-const AUTO_HEAVY_TOOLS = 12;
-const AUTO_BALANCED_CHARS = 24_000;
+const AUTO_TARGET_MODEL = 'glm-5.2';
 
 /**
  * Map a requested model to a concrete managed model when (and only when) it is
  * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
- * the caller should treat as "use the requested model as-is"). Pure + dependency-free
+ * the caller treats as "use the requested model as-is"). Pure + dependency-free
  * so both the in-process mount and the standalone gateway can call it locally.
+ * `body` is unused for now but kept on the signature for the future per-task router.
  */
-export function pickAutoModel(model: string, body: Record<string, unknown>): string | null {
+export function pickAutoModel(model: string, _body: Record<string, unknown>): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
-
-  const messages = Array.isArray(body.messages) ? body.messages : [];
-  let chars = 0;
-  for (const message of messages) {
-    try {
-      chars += JSON.stringify(message).length;
-    } catch {
-      // unserializable message part — ignore for sizing
-    }
-  }
-  const tools = Array.isArray(body.tools) ? body.tools.length : 0;
-
-  if (chars >= AUTO_HEAVY_CHARS || tools >= AUTO_HEAVY_TOOLS) return AUTO_HEAVY_MODEL;
-  if (chars >= AUTO_BALANCED_CHARS || tools >= 1) return AUTO_BALANCED_MODEL;
-  return AUTO_LIGHT_MODEL;
+  return AUTO_TARGET_MODEL;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [

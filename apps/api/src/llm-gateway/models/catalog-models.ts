@@ -24,9 +24,9 @@ function humanize(id: string): string {
 
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  // AUTO first so it surfaces at the top of the picker. Resolved per-request to a
-  // concrete managed model by the gateway's autoRouter (cheap Chinese by default,
-  // flagship for heavy work) — billed as whichever model it routes to.
+  // AUTO first so it surfaces at the top of the picker. Presented to users as
+  // "automatically picks the cheapest, most efficient model" — resolved by the
+  // gateway's autoRouter (GLM 5.2 for now) and billed as the model it routes to.
   out[AUTO_MODEL_ID] = {
     name: 'Auto',
     reasoning: true,
