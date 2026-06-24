@@ -1,15 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-/**
- * Connectors — a master/detail surface (no management dialogs). The left rail
- * lists every connected app + a pinned "Global rules" entry + "Add app"; the
- * right pane manages the SELECTED app entirely inline: its Profile (the account
- * it signs in with + who can use it), its Permissions (per-tool Allow/Ask/Block
- * + glob/regex rules with inline schema preview), and removal. One place per
- * app — the model is App → Profile → Tools → Permissions.
- */
-
 import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -34,6 +24,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -44,24 +35,28 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from '@/components/ui/field';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { SectionCard } from '@/components/ui/section-card';
 import {
@@ -76,7 +71,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
 import { ShareOption, SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import {
   createConnector,
@@ -120,7 +114,6 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
-/** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
   if (p === 'channel') return 'Channel';
@@ -128,16 +121,8 @@ function providerLabel(p: AdminConnector['provider']): string {
   return p.toUpperCase();
 }
 
-// ─── Pipedream Connect overlay escape (used by the connect flow) ─────────────
-
 const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
 
-/**
- * The Pipedream Connect SDK portals its overlay <iframe> onto <body>, outside
- * the Customize Radix Dialog. While that modal is open it (a) sets
- * `pointer-events: none` on <body> and (b) traps focus — both kill the popup.
- * Neutralize them for the lifetime of the connect flow; returns a cleanup fn.
- */
 function withPipedreamOverlayEscape(): () => void {
   if (typeof document === 'undefined') return () => {};
 
@@ -175,7 +160,6 @@ function withPipedreamOverlayEscape(): () => void {
   };
 }
 
-/** Pipedream 1-click connect, as a reusable mutation (in-page SDK overlay + finalize). */
 function usePipedreamConnect(projectId: string, slug: string, onConnected: () => void) {
   return useMutation({
     mutationFn: async () => {
@@ -214,15 +198,14 @@ function usePipedreamConnect(projectId: string, slug: string, onConnected: () =>
   });
 }
 
-// ─── Master / detail shell ──────────────────────────────────────────────────
-
 type Selection = { kind: 'connector'; slug: string } | { kind: 'global' } | { kind: 'add' };
 
-/** Connectors section — rendered inside the Customize overlay. */
 export function ConnectorsView({ projectId }: { projectId: string }) {
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Plug} title="Connectors" />
+      <header className="flex flex-col gap-2 space-y-2 border-b p-4 sm:flex-row sm:items-center sm:justify-between md:space-y-0">
+        <h2 className="text-foreground text-xl font-medium text-balance">Connectors</h2>
+      </header>
       <ConnectorsMasterDetail projectId={projectId} />
     </div>
   );
@@ -318,14 +301,16 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <ConnectorRail
-        projectId={projectId}
-        connectors={connectors}
-        selection={selection}
-        onSelect={select}
-        onSync={() => sync.mutate()}
-        syncing={sync.isPending}
-      />
+      {connectors.length > 0 && (
+        <ConnectorRail
+          projectId={projectId}
+          connectors={connectors}
+          selection={selection}
+          onSelect={select}
+          onSync={() => sync.mutate()}
+          syncing={sync.isPending}
+        />
+      )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         {selection.kind === 'add' ? (
           <AddAppPanel
@@ -366,15 +351,12 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
   );
 }
 
-// ─── Left rail ──────────────────────────────────────────────────────────────
-
 function statusDot(c: AdminConnector): string {
   if (c.status === 'error') return 'bg-destructive';
   if (c.authSecret && !c.secretSet) return 'bg-kortix-orange';
   return 'bg-kortix-green';
 }
 
-/** Forward-facing status as a calm badge (the detail header). */
 function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   if (connector.status === 'error')
@@ -406,12 +388,6 @@ function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   );
 }
 
-/**
- * The one save affordance for an editable section — a quiet footer that only
- * appears when there are unsaved changes, with an optional Reset. Keeps every
- * section (Connection / Profile / Permissions) consistent and avoids the
- * "button pops in at the bottom" layout jump being different each place.
- */
 function SaveBar({
   dirty,
   saving,
@@ -603,12 +579,6 @@ function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
 }
 
-/**
- * The connected app's real logo. For Pipedream connectors we resolve it from
- * the same catalogue the "Add app" grid uses (connector slug === app slug),
- * falling back to the provider glyph for custom (http/mcp/…) connectors or
- * while the logo loads.
- */
 function ConnectorAppIcon({
   projectId,
   connector,
@@ -653,7 +623,6 @@ function ConnectorAppIcon({
   );
 }
 
-/** A syntax-highlighted (Shiki) code block — replaces the old plain `<pre>`. */
 function CodeSnippet({
   code,
   language,
@@ -727,8 +696,6 @@ function RailItem({
     </button>
   );
 }
-
-// ─── Connector detail (profile + permissions + remove) ──────────────────────
 
 function ConnectorDetail({
   projectId,
@@ -1038,7 +1005,7 @@ function ConnectorDetail({
         isPending={remove.isPending}
         onConfirm={() => remove.mutate()}
       />
-      <SetCredentialDialog
+      <SetCredentialModal
         projectId={projectId}
         connector={credOpen ? connector : null}
         open={credOpen}
@@ -1048,8 +1015,6 @@ function ConnectorDetail({
     </div>
   );
 }
-
-// ─── Profile section (the account + who can use it) ─────────────────────────
 
 function sharingToAccess(s: ConnectorSharing | null | undefined): {
   mode: 'project' | 'private' | 'members';
@@ -1070,9 +1035,6 @@ function ProfileSection({
   onChanged: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Channel connectors (Slack) are always one shared install token, and computer
-  // connectors have no credential at all — the per-user credential mode doesn't
-  // apply to either, so we hide that choice and keep only "who can use it".
   const isChannel = connector.provider === 'channel' || connector.provider === 'computer';
   const [credential, setCredential] = useState<'shared' | 'per_user'>(connector.credentialMode);
   const initialAccess = sharingToAccess(connector.sharing);
@@ -1210,8 +1172,6 @@ function ProfileSection({
   );
 }
 
-// ─── Connection section (the connector definition: provider + url + auth) ────
-
 function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
   return {
     slug: cfg.slug,
@@ -1230,7 +1190,6 @@ function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
   };
 }
 
-/** Stable signature over the connection fields — drives the dirty/Save state. */
 function connectionSig(d: ConnectorDraftInput): string {
   return JSON.stringify({
     provider: d.provider,
@@ -1248,11 +1207,6 @@ function connectionSig(d: ConnectorDraftInput): string {
   });
 }
 
-/**
- * Edit an existing connector's definition (the same fields as "Add connector"),
- * written back to kortix.toml via the create-or-update path. Credential mode and
- * access are owned by Profile, so we resend the current mode to leave it intact.
- */
 function ConnectionSection({
   projectId,
   connector,
@@ -1346,8 +1300,6 @@ function ConnectionSection({
   );
 }
 
-// ─── Permissions section (per-tool + glob/regex rules + inline preview) ──────
-
 type PolicyChoice = 'default' | ConnectorPolicyAction;
 
 const POLICY_CHOICES: { value: PolicyChoice; label: string }[] = [
@@ -1363,7 +1315,6 @@ const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string 
   block: { label: 'Block', tint: 'text-destructive' },
 };
 
-/** Quiet per-row permission control: muted "Default", colored only when overridden. */
 function PermissionPicker({
   value,
   onChange,
@@ -1907,8 +1858,6 @@ function PermissionsSection({
   );
 }
 
-// ─── Global rules ────────────────────────────────────────────────────────────
-
 function GlobalRulesPanel({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
@@ -1933,8 +1882,6 @@ function GlobalRulesPanel({ projectId }: { projectId: string }) {
   );
 }
 
-// ─── Add app (inline panel: catalogue + custom) ──────────────────────────────
-
 interface ConnectorSetup {
   credential: 'shared' | 'per_user';
   access: 'project' | 'private' | 'members';
@@ -1953,10 +1900,6 @@ function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   return { mode: 'members', memberIds: s.memberIds };
 }
 
-/**
- * Profile + access asked when adding. "Who can use it" only applies to a shared
- * profile — for per-user there's no shared credential to gate.
- */
 function ConnectorSetupFields({
   projectId,
   value,
@@ -1969,14 +1912,10 @@ function ConnectorSetupFields({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isShared = value.credential === 'shared';
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <div className="space-y-0.5">
-          <Label>Profile</Label>
-          <p className="text-muted-foreground text-xs">
-            How this connection is set up for the project.
-          </p>
-        </div>
+    <FieldGroup className="gap-5">
+      <Field>
+        <FieldTitle>Profile</FieldTitle>
+        <FieldDescription>How this connection is set up for the project.</FieldDescription>
         <RadioGroup
           value={value.credential}
           onValueChange={(v) => {
@@ -2000,21 +1939,19 @@ function ConnectorSetupFields({
             desc="Every member connects their own account, and only ever uses their own. Pick this only when each person must act as themselves."
           />
         </RadioGroup>
-      </div>
+      </Field>
       {isShared && (
-        <div className="space-y-2">
-          <div className="space-y-0.5">
-            <Label>
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
-              )}
-            </Label>
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMembersAllowede220ec02',
-              )}
-            </p>
-          </div>
+        <Field>
+          <FieldTitle>
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextWhoCana896d6c5',
+            )}
+          </FieldTitle>
+          <FieldDescription>
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextMembersAllowede220ec02',
+            )}
+          </FieldDescription>
           <SharingPicker
             projectId={projectId}
             showHeading={false}
@@ -2029,9 +1966,9 @@ function ConnectorSetupFields({
               members: { label: 'Specific members', desc: 'A chosen list of members' },
             }}
           />
-        </div>
+        </Field>
       )}
-    </div>
+    </FieldGroup>
   );
 }
 
@@ -2043,11 +1980,6 @@ function AddAppPanel({
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Easy Connect only works when the deployment has the Pipedream connect
-  // provider configured. Ask the API up front so we can disable the tab (with a
-  // why-tooltip) instead of letting the user open it and hit a 501 — common on
-  // self-host without Pipedream credentials. Treat "unknown" (loading/offline)
-  // as enabled to avoid a disable→enable flicker.
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
     queryFn: getConnectStatus,
@@ -2058,37 +1990,22 @@ function AddAppPanel({
     'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnect19ca1c01',
   );
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-7">
-      <div className="mb-5">
-        <h2 className="text-foreground text-lg font-semibold">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddA02e6aec7',
-          )}
-        </h2>
-        <p className="text-muted-foreground mt-0.5 text-sm">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextOneClicke48f34c9',
-          )}
-        </p>
-      </div>
+    <div className="mx-auto w-full max-w-4xl space-y-6 px-6 py-7">
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-foreground text-xl font-medium">Add a connector</h2>
+      </header>
       <Tabs defaultValue={easyConnectDisabled ? 'custom' : 'apps'}>
-        <TabsList>
+        <TabsList type="underline">
           {easyConnectDisabled ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* span wrapper: a disabled trigger doesn't emit hover events */}
-                <span tabIndex={0}>
-                  <TabsTrigger value="apps" disabled>
-                    {easyConnectLabel}
-                  </TabsTrigger>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
-                )}
-              </TooltipContent>
-            </Tooltip>
+            <Hint
+              label={tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextEasyConnectc07266e0',
+              )}
+            >
+              <TabsTrigger value="apps" disabled>
+                {easyConnectLabel}
+              </TabsTrigger>
+            </Hint>
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
@@ -2107,7 +2024,6 @@ function AddAppPanel({
   );
 }
 
-/** Easy-connect app catalogue — searchable card grid with "Load more". */
 function AppCatalogue({
   projectId,
   onAdded,
@@ -2140,10 +2056,11 @@ function AppCatalogue({
           placeholder={tI18nHardcoded.raw(
             'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch9d26aaaa',
           )}
-          className="h-10 pl-9"
+          variant="popover"
+          className="pl-9"
         />
       </div>
-      <div className="max-h-[62vh] overflow-y-auto py-4">
+      <div className="overflow-y-auto py-4">
         {notConfigured ? (
           <InfoBanner
             tone="neutral"
@@ -2158,7 +2075,7 @@ function AppCatalogue({
         ) : appsQuery.isLoading ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-[104px] w-full rounded-2xl" />
+              <Skeleton key={i} className="h-[104px] w-full rounded-md" />
             ))}
           </div>
         ) : apps.length === 0 ? (
@@ -2177,23 +2094,21 @@ function AppCatalogue({
                   key={app.slug}
                   type="button"
                   onClick={() => setConfigApp({ slug: app.slug, name: app.name })}
-                  className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex flex-col rounded-md border p-3.5 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none"
                 >
                   <div className="flex items-center gap-3">
                     {app.imgSrc ? (
                       <img
                         src={app.imgSrc}
                         alt=""
-                        className="h-9 w-9 shrink-0 rounded-lg object-contain"
+                        className="size-8 shrink-0 rounded-md object-contain"
                         referrerPolicy="no-referrer"
                       />
                     ) : (
                       <EntityAvatar icon={Zap} size="sm" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-foreground truncate text-sm font-semibold">
-                        {app.name}
-                      </div>
+                      <div className="text-foreground truncate text-sm font-medium">{app.name}</div>
                       {app.categories?.[0] && (
                         <div className="text-muted-foreground truncate text-xs">
                           {app.categories[0]}
@@ -2219,7 +2134,7 @@ function AppCatalogue({
                 >
                   {appsQuery.isFetchingNextPage ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loading className="size-4 animate-spin" />
                       {tI18nHardcoded.raw(
                         'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextLoading7131cc18',
                       )}
@@ -2233,7 +2148,7 @@ function AppCatalogue({
           </>
         )}
       </div>
-      <ConfigureAppDialog
+      <ConfigureAppModal
         projectId={projectId}
         app={configApp}
         open={!!configApp}
@@ -2247,8 +2162,7 @@ function AppCatalogue({
   );
 }
 
-/** The pick-an-app → choose profile/access step. Small focused modal. */
-function ConfigureAppDialog({
+function ConfigureAppModal({
   projectId,
   app,
   open,
@@ -2262,11 +2176,6 @@ function ConfigureAppDialog({
   onAdded: (slug: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  // Default to ONE SHARED profile for the whole project. It's the right choice
-  // for the overwhelming majority of cases (the agent + crons just use it, no
-  // per-member setup), and it makes triggers work without each member having to
-  // connect their own account. "Each member brings their own" stays a one-click
-  // opt-in for the genuine BYO case.
   const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
   useEffect(() => {
     if (open && app?.slug) setSetup(DEFAULT_CONNECTOR_SETUP);
@@ -2288,29 +2197,35 @@ function ConfigureAppDialog({
     onError: (err: Error) => errorToast(err.message || 'Failed to add'),
   });
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(o) => {
         if (!save.isPending) onOpenChange(o);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle>Add {app?.name}</DialogTitle>
-          <DialogDescription>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Add {app?.name}</ModalTitle>
+          <ModalDescription>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextChooseThe068cf710',
             )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[58vh] overflow-y-auto px-6 py-5">
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="max-h-[58vh] overflow-y-auto">
           <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
-        </div>
-        <DialogFooter className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button
+            variant="outline-ghost"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+            disabled={save.isPending}
+          >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => save.mutate()}
             disabled={
               save.isPending || (setup.access === 'members' && setup.memberIds.length === 0)
@@ -2319,17 +2234,12 @@ function ConfigureAppDialog({
           >
             {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Add
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
-/**
- * The connection definition — provider + provider-specific fields + auth. Shared
- * by the "Add connector" custom form and the per-connector "Connection" editor.
- * The slug is the connector's identity, so it's locked once created.
- */
 function ConnectorConfigFields({
   draft,
   onChange,
@@ -2347,27 +2257,30 @@ function ConnectorConfigFields({
   const needsAuth = p !== 'pipedream';
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Slug">
+    <FieldGroup className="gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="connector-slug">Slug</FieldLabel>
           <Input
+            id="connector-slug"
             value={draft.slug}
             onChange={(e) =>
               set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })
             }
             placeholder="my-api"
-            className="font-mono"
+            className="font-mono text-xs"
+            variant="popover"
             disabled={!slugEditable}
             required
           />
         </Field>
-        <div className="space-y-1.5">
-          <Label>Provider</Label>
+        <Field>
+          <FieldLabel htmlFor="connector-provider">Provider</FieldLabel>
           <Select
             value={p}
             onValueChange={(v) => set({ provider: v as ConnectorDraftInput['provider'] })}
           >
-            <SelectTrigger>
+            <SelectTrigger id="connector-provider" className="w-full" variant="popover">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -2377,62 +2290,74 @@ function ConnectorConfigFields({
               <SelectItem value="http">HTTP</SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       </div>
       {p === 'openapi' && (
-        <Field
-          label={tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
-          )}
-        >
+        <Field>
+          <FieldLabel htmlFor="connector-spec">
+            {tI18nHardcoded.raw(
+              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSpec4235864d',
+            )}
+          </FieldLabel>
           <Input
+            id="connector-spec"
             value={draft.spec ?? ''}
             onChange={(e) => set({ spec: e.target.value })}
             placeholder="https://…/openapi.json"
+            variant="popover"
             required
           />
         </Field>
       )}
       {p === 'graphql' && (
         <>
-          <Field label="Endpoint">
+          <Field>
+            <FieldLabel htmlFor="connector-endpoint">Endpoint</FieldLabel>
             <Input
+              id="connector-endpoint"
               value={draft.endpoint ?? ''}
               onChange={(e) => set({ endpoint: e.target.value })}
               placeholder="https://api/graphql"
+              variant="popover"
               required
             />
           </Field>
-          <Field
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSDL2325b707',
-            )}
-          >
+          <Field>
+            <FieldLabel htmlFor="connector-sdl">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelSDL2325b707',
+              )}
+            </FieldLabel>
             <Input
+              id="connector-sdl"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/schema.graphql"
+              variant="popover"
             />
           </Field>
         </>
       )}
       {p === 'mcp' && (
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="URL">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="connector-url">URL</FieldLabel>
             <Input
+              id="connector-url"
               value={draft.url ?? ''}
               onChange={(e) => set({ url: e.target.value })}
               placeholder="https://mcp…/mcp"
+              variant="popover"
               required
             />
           </Field>
-          <div className="space-y-1.5">
-            <Label>Transport</Label>
+          <Field>
+            <FieldLabel htmlFor="connector-transport">Transport</FieldLabel>
             <Select
               value={draft.transport ?? 'http'}
               onValueChange={(v) => set({ transport: v as 'http' | 'sse' })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="connector-transport" className="w-full" variant="popover">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2440,45 +2365,51 @@ function ConnectorConfigFields({
                 <SelectItem value="sse">sse</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </Field>
         </div>
       )}
       {p === 'http' && (
         <>
-          <Field
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelBase744ecef9',
-            )}
-          >
+          <Field>
+            <FieldLabel htmlFor="connector-base-url">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelBase744ecef9',
+              )}
+            </FieldLabel>
             <Input
+              id="connector-base-url"
               value={draft.baseUrl ?? ''}
               onChange={(e) => set({ baseUrl: e.target.value })}
               placeholder="https://api.internal"
+              variant="popover"
               required
             />
           </Field>
-          <Field
-            label={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelRoutes38b14436',
-            )}
-          >
+          <Field>
+            <FieldLabel htmlFor="connector-routes">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelRoutes38b14436',
+              )}
+            </FieldLabel>
             <Input
+              id="connector-routes"
               value={draft.spec ?? ''}
               onChange={(e) => set({ spec: e.target.value })}
               placeholder=".kortix/executor/routes.toml"
+              variant="popover"
             />
           </Field>
         </>
       )}
       {needsAuth && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Auth</Label>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="connector-auth">Auth</FieldLabel>
             <Select
               value={draft.auth?.type ?? 'none'}
               onValueChange={(v) => setAuth({ type: v as 'none' | 'bearer' | 'basic' | 'custom' })}
             >
-              <SelectTrigger>
+              <SelectTrigger id="connector-auth" className="w-full" variant="popover">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2492,28 +2423,30 @@ function ConnectorConfigFields({
                 </SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </Field>
           {draft.auth?.type === 'custom' && (
-            <Field
-              label={tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelHeader9b2e0143',
-              )}
-            >
+            <Field>
+              <FieldLabel htmlFor="connector-auth-header">
+                {tI18nHardcoded.raw(
+                  'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrLabelHeader9b2e0143',
+                )}
+              </FieldLabel>
               <Input
+                id="connector-auth-header"
                 value={draft.auth?.name ?? ''}
                 onChange={(e) => setAuth({ name: e.target.value })}
                 placeholder="X-API-Key"
+                variant="popover"
                 required
               />
             </Field>
           )}
         </div>
       )}
-    </div>
+    </FieldGroup>
   );
 }
 
-/** Required connection fields per provider — gates the save button (server re-validates). */
 function connectionValid(d: ConnectorDraftInput): boolean {
   if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
   if (d.provider === 'mcp') return !!d.url?.trim();
@@ -2553,66 +2486,50 @@ function CustomConnectorForm({
   const authActive = !!draft.auth?.type && draft.auth.type !== 'none';
 
   return (
-    <SectionCard
-      title={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleCustom9bbc53a1',
-      )}
-      description={tI18nHardcoded.raw(
-        'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionConnect813a46e7',
-      )}
-    >
+    <section className="space-y-4">
       <form
         onSubmit={(e) => {
           e.preventDefault();
           save.mutate();
         }}
-        className="space-y-4"
       >
-        <ConnectorConfigFields draft={draft} onChange={setDraft} slugEditable />
-        {authActive && (
-          <InfoBanner tone="info">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626',
-            )}
-          </InfoBanner>
-        )}
-        <div className="border-border/60 border-t pt-4">
-          <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
-        </div>
-        <div className="border-border/60 flex justify-end border-t pt-4">
-          <Button
-            type="submit"
-            disabled={
-              !draft.slug ||
-              save.isPending ||
-              !connectionValid(draft) ||
-              (setup.access === 'members' && setup.memberIds.length === 0)
-            }
-            className="gap-1.5"
-          >
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddConnectore01e22fc',
-            )}
-          </Button>
+        <div className="space-y-5">
+          <ConnectorConfigFields draft={draft} onChange={setDraft} slugEditable />
+          {authActive && (
+            <InfoBanner tone="info">
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextYouLle5def626',
+              )}
+            </InfoBanner>
+          )}
+          <div className="border-border/60 border-t pt-5">
+            <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
+          </div>
+          <div className="border-border/60 flex justify-end border-t pt-5">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={
+                !draft.slug ||
+                save.isPending ||
+                !connectionValid(draft) ||
+                (setup.access === 'members' && setup.memberIds.length === 0)
+              }
+              className="gap-1.5"
+            >
+              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {tI18nHardcoded.raw(
+                'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddConnectore01e22fc',
+              )}
+            </Button>
+          </div>
         </div>
       </form>
-    </SectionCard>
+    </section>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-// ─── Set credential (custom connectors) ──────────────────────────────────────
-
-function SetCredentialDialog({
+function SetCredentialModal({
   projectId,
   connector,
   open,
@@ -2638,21 +2555,21 @@ function SetCredentialDialog({
     onError: (err: Error) => errorToast(err.message || 'Failed to save'),
   });
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(o) => {
         if (!save.isPending) onOpenChange(o);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
             )}
             {connector?.slug}
-          </DialogTitle>
-          <DialogDescription>
+          </ModalTitle>
+          <ModalDescription>
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextStoredEncryptedc3eb374b',
             )}
@@ -2660,45 +2577,46 @@ function SetCredentialDialog({
             {tI18nHardcoded.raw(
               'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAndResolved8293aa3e',
             )}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (value) save.mutate();
           }}
         >
-          <div className="space-y-1.5 px-6 py-5">
-            <Label>Value</Label>
-            <Input
-              type="password"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="••••••••"
-              className="font-mono"
-              autoFocus
-            />
-          </div>
-          <DialogFooter className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
+          <ModalBody>
+            <div className="space-y-1.5">
+              <Label>Value</Label>
+              <Input
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="••••••••"
+                className="font-mono"
+                autoFocus
+              />
+            </div>
+          </ModalBody>
+          <ModalFooter className="sm:justify-between">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline-ghost"
+              size="sm"
               onClick={() => onOpenChange(false)}
               disabled={save.isPending}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!value || save.isPending} className="gap-1.5">
+            <Button type="submit" size="sm" disabled={!value || save.isPending} className="gap-1.5">
               {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save
             </Button>
-          </DialogFooter>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }
-
-// ─── Skeleton ────────────────────────────────────────────────────────────────
 
 function MasterDetailSkeleton() {
   return (

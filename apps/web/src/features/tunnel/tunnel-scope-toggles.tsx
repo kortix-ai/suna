@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useMemo } from 'react';
-import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -11,14 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 import {
-  useTunnelPermissions,
   useGrantTunnelPermission,
   useRevokeTunnelPermission,
+  useTunnelPermissions,
 } from '@/hooks/tunnel/use-tunnel';
-import { SCOPE_REGISTRY, EXPIRY_OPTIONS, getExpiresAt } from './types';
+import { cn } from '@/lib/utils';
+import { Fragment, useMemo, useState } from 'react';
 import type { ScopeInfo } from './types';
+import { EXPIRY_OPTIONS, getExpiresAt, SCOPE_REGISTRY } from './types';
 
 interface TunnelScopeTogglesProps {
   tunnelId: string;
@@ -62,7 +64,9 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
         await revokeMutation.mutateAsync({ tunnelId, permissionId });
       }
     } else {
-      const expiryOption = EXPIRY_OPTIONS.find((o) => o.value === expiryValue) || EXPIRY_OPTIONS[EXPIRY_OPTIONS.length - 1];
+      const expiryOption =
+        EXPIRY_OPTIONS.find((o) => o.value === expiryValue) ||
+        EXPIRY_OPTIONS[EXPIRY_OPTIONS.length - 1];
       await grantMutation.mutateAsync({
         tunnelId,
         capability: scope.capability,
@@ -76,15 +80,21 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
   };
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line73JsxTextLoadingPermissions')}</div>;
+    return (
+      <div className="text-muted-foreground text-sm">
+        {tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line73JsxTextLoadingPermissions')}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">{tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line79JsxTextNewGrantsExpireIn')}</span>
+      <div className="flex w-full items-center justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">
+          {tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line79JsxTextNewGrantsExpireIn')}
+        </span>
         <Select value={expiryValue} onValueChange={setExpiryValue}>
-          <SelectTrigger className="w-[120px] h-8 text-xs cursor-pointer hover:bg-muted/50 transition-colors">
+          <SelectTrigger variant="popover">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -92,7 +102,7 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
               <SelectItem
                 key={opt.value}
                 value={opt.value}
-                className="cursor-pointer transition-colors data-[highlighted]:bg-muted/70"
+                // className="data-[highlighted]:bg-muted/70 cursor-pointer transition-colors"
               >
                 {opt.label}
               </SelectItem>
@@ -101,26 +111,27 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
         </Select>
       </div>
 
-      {Object.entries(groups).map(([category, scopes]) => (
-        <div key={category}>
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-            {category}
-          </h4>
-          <div className="space-y-1">
-            {scopes.map((scope) => {
-              const isActive = activeScopeMap.has(scope.key);
-              return (
-                <ScopeToggleRow
-                  key={scope.key}
-                  scope={scope}
-                  isActive={isActive}
-                  isPending={grantMutation.isPending || revokeMutation.isPending}
-                  onToggle={() => handleToggle(scope, isActive)}
-                />
-              );
-            })}
+      {Object.entries(groups).map(([category, scopes], index) => (
+        <Fragment key={category}>
+          {index > 0 && <Separator className='opacity-50'/>}
+          <div>
+            <Label>{category}</Label>
+            <div className="space-y-2">
+              {scopes.map((scope) => {
+                const isActive = activeScopeMap.has(scope.key);
+                return (
+                  <ScopeToggleRow
+                    key={scope.key}
+                    scope={scope}
+                    isActive={isActive}
+                    isPending={grantMutation.isPending || revokeMutation.isPending}
+                    onToggle={() => handleToggle(scope, isActive)}
+                  />
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </Fragment>
       ))}
     </div>
   );
@@ -139,27 +150,18 @@ function ScopeToggleRow({
 }) {
   return (
     <label
-      className={cn(
-        'flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors',
-        'hover:bg-muted/50',
-        isActive && 'bg-primary/5',
-      )}
+      className={cn('flex cursor-pointer items-center gap-3 rounded-md py-2 transition-colors')}
     >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <code className="text-foreground font-mono text-xs">{scope.key}</code>
+        <span className="text-muted-foreground truncate text-xs">— {scope.description}</span>
+      </div>
       <Switch
         checked={isActive}
         onCheckedChange={onToggle}
         disabled={isPending}
         className="shrink-0"
       />
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        {isActive && (
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-        )}
-        <code className="text-xs font-mono text-foreground">{scope.key}</code>
-        <span className="text-xs text-muted-foreground truncate">
-          — {scope.description}
-        </span>
-      </div>
     </label>
   );
 }
