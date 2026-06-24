@@ -28,9 +28,11 @@ import {
   projectGroupGrants,
   projectMembers,
   projects,
+  type AgentGrant,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
+import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import type {
   AuthorizeResult,
@@ -317,16 +319,35 @@ async function loadEffectiveProjectRole(
 const loadTokenProjectBinding = ttlMemo({
   ttlMs: IAM_CACHE_TTL_MS,
   keyFn: (tokenId: string) => tokenId,
-  loader: async (tokenId: string): Promise<{ projectId: string | null } | null> => {
+  loader: async (
+    tokenId: string,
+  ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null } | null> => {
     const [row] = await db
-      .select({ projectId: accountTokens.projectId })
+      .select({ projectId: accountTokens.projectId, agentGrant: accountTokens.agentGrant })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
       .limit(1);
-    return row ?? null;
+    return row ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null } : null;
   },
   shouldCache: (row) => row !== null,
 });
+
+// A project action that an agent grant SHOULD gate. The coarse membership
+// actions (read/write, what loadProjectForUser maps onto) are exempt: a route
+// that does loadProjectForUser('write') is just checking membership tier, and a
+// leaf-scoped agent (e.g. kortixCli=['project.gitops.push']) must still pass it —
+// the route's own leaf assertAuthorized is what the grant gates. Every OTHER
+// project action (gitops.*, secret.*, trigger.*, deploy, members.manage, …) is a
+// specific capability the agent must hold in its grant.
+const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
+  'project.read',
+  'project.write',
+]);
+
+/** Should the agent grant gate this action? Pure — exported for unit tests. */
+export function agentGrantGates(scope: ActionScopeV2, action: string): boolean {
+  return scope === 'project' && !AGENT_GRANT_EXEMPT_ACTIONS.has(action);
+}
 
 async function tokenInScope(
   actingTokenId: string,
@@ -414,16 +435,30 @@ export async function authorizeV2(
   // no project_members/group GRANT row), so resolve the built-in role but treat
   // it as one source in the union, not a gate.
   const effective = await loadEffectiveProjectRole(actor, userId, effectiveTarget.id);
-  if (effective && projectRoleAllows(effective, action)) {
-    return { allowed: true, reason: 'project_role' };
+  let reason: string | null = null;
+  if (effective && projectRoleAllows(effective, action)) reason = 'project_role';
+  else if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) reason = 'custom_policy';
+
+  if (!reason) {
+    if (!effective) return { allowed: false, reason: 'no_project_membership' };
+    return { allowed: false, reason: 'project_role_insufficient' };
   }
-  if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) {
-    return { allowed: true, reason: 'custom_policy' };
+
+  // userRole ∩ agentGrant — the central enforcement. A scoped agent session
+  // token can never exceed its kortix.toml kortixCli on a specific capability,
+  // EVEN when the launching user would be allowed. This matters most because
+  // automation sessions (Slack/cron/trigger) run AS AN ACCOUNT OWNER, so the
+  // role half grants everything — the agent grant is the only real containment
+  // for exactly those sessions. Enforced here (not per-route) so it can't be
+  // forgotten on a new route. No-op for non-agent tokens (null grant) and
+  // 'all' grants; exempt for the coarse membership actions (read/write).
+  if (actingTokenId && agentGrantGates(scope, action)) {
+    const binding = await loadTokenProjectBinding(actingTokenId); // memoized — same entry as tokenInScope
+    if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
+      return { allowed: false, reason: 'agent_scope_insufficient' };
+    }
   }
-  if (!effective) {
-    return { allowed: false, reason: 'no_project_membership' };
-  }
-  return { allowed: false, reason: 'project_role_insufficient' };
+  return { allowed: true, reason };
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────

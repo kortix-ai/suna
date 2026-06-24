@@ -7,8 +7,10 @@ import {
   scopeForActionV2,
   deriveEffectiveProjectRole,
   customPolicyAllows,
+  agentGrantGates,
   type CustomAction,
 } from '../iam/engine-v2';
+import { agentMayPerform } from '../iam/agent-scope';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 
 describe('scopeForActionV2', () => {
@@ -121,5 +123,35 @@ describe('customPolicyAllows (DB custom-role union)', () => {
     expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_AGENT_WRITE, proj('company'))).toBe(true);
     // gitops.merge omitted → not granted (Git Ops deactivated for this dept role)
     expect(customPolicyAllows(marketing, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('company'))).toBe(false);
+  });
+});
+
+describe('agent grant central fold (userRole ∩ agentGrant)', () => {
+  test('gates every specific project capability, EXEMPTs the coarse read/write membership actions', () => {
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true);
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(true);
+    // exempt — these are membership-tier gates a leaf-scoped agent must still pass
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_READ)).toBe(false);
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
+    // account scope is never gated by the agent grant (project-bound token already denied account scope)
+    expect(agentGrantGates('account', ACCOUNT_ACTIONS.MEMBER_INVITE)).toBe(false);
+  });
+
+  test('a scoped agent is denied a gated capability it does not hold, but passes exempt + held ones', () => {
+    const grant = { agent: 'marketing', kortixCli: [PROJECT_ACTIONS.PROJECT_CR_OPEN], connectors: 'all' as const };
+    const denied = (action: string) => agentGrantGates('project', action) && !agentMayPerform(grant, action);
+    expect(denied(PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true); // not in kortixCli + gated → denied
+    expect(denied(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true);
+    expect(denied(PROJECT_ACTIONS.PROJECT_CR_OPEN)).toBe(false); // held → allowed
+    expect(denied(PROJECT_ACTIONS.PROJECT_READ)).toBe(false); // exempt → allowed
+  });
+
+  test('all-grant and null-grant impose no restriction', () => {
+    const all = { agent: 'kortix', kortixCli: 'all' as const, connectors: 'all' as const };
+    expect(agentMayPerform(all, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
+    expect(agentMayPerform(null, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
   });
 });
