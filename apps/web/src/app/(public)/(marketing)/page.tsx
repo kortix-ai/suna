@@ -5,10 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { Separator } from '@/components/ui/separator';
+import { CompanyAsRepo } from '@/features/marketing/company-as-repo';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import Security from '@/features/marketing/security/security';
 import { OutcomeCardsSection, SurfacesSection } from '@/features/marketing/story-sections';
+import { UseCasesShowcase } from '@/features/marketing/use-cases-showcase';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
@@ -52,6 +54,18 @@ export default function Home() {
         </div>
 
         <OutcomeCardsSection />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <UseCasesShowcase />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <CompanyAsRepo />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
