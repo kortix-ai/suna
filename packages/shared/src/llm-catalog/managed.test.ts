@@ -14,10 +14,10 @@ describe('managed catalog', () => {
       'claude-sonnet-4.6',
       'kimi-k2',
       'kimi-k2-thinking',
-      'minimax-m2.5',
-      'glm-4.6',
-      'glm-4.7',
-      'qwen3-max',
+      'glm-5.1',
+      'qwen3.7-max',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
     ]);
   });
 
@@ -58,8 +58,10 @@ describe('managed resolution + back-compat aliases', () => {
     expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
     expect(getManagedModel('kimi-k2')?.upstreamModelId).toBe('moonshotai.kimi-k2.5');
     expect(getManagedModel('kimi-k2')?.transport).toBe('bedrock-converse');
-    expect(getManagedModel('glm-4.6')?.transport).toBe('openrouter');
-    expect(getManagedModel('glm-4.6')?.upstreamModelId).toBe('z-ai/glm-4.6');
+    expect(getManagedModel('glm-5.1')?.transport).toBe('openrouter');
+    expect(getManagedModel('glm-5.1')?.upstreamModelId).toBe('z-ai/glm-5.1');
+    expect(getManagedModel('qwen3.7-max')?.upstreamModelId).toBe('qwen/qwen3.7-max');
+    expect(getManagedModel('deepseek-v4-pro')?.upstreamModelId).toBe('deepseek/deepseek-v4-pro');
   });
 
   test('retired branded ids still resolve (to the nearest current model) so stored configs do not break', () => {
@@ -67,6 +69,15 @@ describe('managed resolution + back-compat aliases', () => {
     expect(getManagedModel('kortix-basic')?.id).toBe('claude-sonnet-4.6');
     expect(isManagedModelId('kortix-power')).toBe(true);
     expect(isManagedModelId('kortix-basic')).toBe(true);
+  });
+
+  test('superseded model ids resolve to their successor so stored configs do not break', () => {
+    expect(getManagedModel('glm-4.6')?.id).toBe('glm-5.1');
+    expect(getManagedModel('glm-4.7')?.id).toBe('glm-5.1');
+    expect(getManagedModel('qwen3-max')?.id).toBe('qwen3.7-max');
+    expect(getManagedModel('minimax-m2.5')?.id).toBe('claude-sonnet-4.6');
+    expect(isManagedModelId('glm-4.6')).toBe(true);
+    expect(isManagedModelId('qwen3-max')).toBe(true);
   });
 
   test('a BYOK provider/model string is never treated as managed', () => {

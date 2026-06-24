@@ -46,7 +46,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
   // request/response shape — the kind selects the transport.
   return {
     provider: 'bedrock',
-    kind: managed.transport,
+    kind: managed.transport === 'bedrock-converse' ? 'bedrock-converse' : 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
     billingMode: 'credits',
