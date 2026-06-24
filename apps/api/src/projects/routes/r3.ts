@@ -1,5 +1,6 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -372,6 +373,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
+  // the central agent-grant fold, an agent token must hold it in its kortixCli.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_SECRET_READ, { type: 'project', id: projectId });
 
   const subject = await resolveShareSubject(loaded.userId);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
@@ -398,8 +402,13 @@ projectsApp.openapi(
     });
   }
 
+  // Per-agent env scoping: a scoped agent token only sees the secret NAMES it's
+  // granted (mirrors the env-injection narrowing), so it can't enumerate keys
+  // outside its allowlist. No-op for non-agent tokens / 'all' / null grants.
+  const agentGrant = getAgentGrant(c);
   const items = (await loadSecretViewsForUser(projectId, subject, canManageShared))
-    .filter((item) => !item.system);
+    .filter((item) => !item.system)
+    .filter((item) => agentMayUseEnv(agentGrant, item.name));
 
   return c.json({
     items,
