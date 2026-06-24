@@ -1,5 +1,6 @@
 import { Daytona } from '@daytonaio/sdk';
-import { config } from '../config';
+import { config, type SandboxProviderName } from '../config';
+import { isPlatinumConfigured } from './platinum';
 
 let daytonaClient: Daytona | null = null;
 
@@ -60,6 +61,25 @@ export function warmSnapshotsEnabled(): boolean {
     !!config.DAYTONA_API_KEY &&
     !!config.DAYTONA_WARM_TARGET
   );
+}
+
+/**
+ * Provider-aware warm-snapshot gate. Every warm code path that can run on EITHER
+ * provider checks this; Daytona keeps its own exact gate (warmSnapshotsEnabled()).
+ *
+ *   - daytona  → warmSnapshotsEnabled() (unchanged: needs DAYTONA_WARM_TARGET).
+ *   - platinum → KORTIX_WARM_SNAPSHOT_ENABLED && Platinum configured. Platinum's
+ *     warm snapshot is just a per-project STATEFUL template the host CoW-forks,
+ *     so it needs no warm "target", only the master switch + a configured host.
+ *
+ * Fully inert unless KORTIX_WARM_SNAPSHOT_ENABLED — no behaviour change for
+ * anyone not opting in.
+ */
+export function warmSnapshotsEnabledFor(provider: SandboxProviderName): boolean {
+  if (!config.KORTIX_WARM_SNAPSHOT_ENABLED) return false;
+  if (provider === 'daytona') return warmSnapshotsEnabled();
+  if (provider === 'platinum') return isPlatinumConfigured();
+  return false;
 }
 
 /**

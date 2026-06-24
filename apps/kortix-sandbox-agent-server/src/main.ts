@@ -9,6 +9,7 @@ import {
   configureRepoCredentialHelper,
   materializeRepo,
   materializeScaffoldSeed,
+  materializeProjectSeed,
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
@@ -404,9 +405,18 @@ async function runPoolMode(
   // every fork paid that ~3.2s init on its own hot path (the runtime-ready
   // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
   // seed (and every fork) runs the real agents/plugins, not the baked default.
-  const scaffolded = await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
-  bootMark('pool-scaffold-materialized')
-  const opencodeConfigDir = scaffolded
+  // Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1 on a project-scoped seed that
+  // carries KORTIX_REPO_URL but no session): clone the REAL project repo at base
+  // so the captured snapshot already has /workspace — a fork then hits
+  // materializeRepo's baked-checkout fast path (no in-box clone). Otherwise the
+  // generic repo-less scaffold seed (Stage-1 / the shared default). A failed
+  // project clone returns false → degrades to the repo-less spare, never bricks.
+  const projectSeed = !!cfg.repoUrl && (process.env.KORTIX_WARM_POOL_CLONE_AT_PARK ?? '').trim() === '1'
+  const materialized = projectSeed
+    ? await materializeProjectSeed(cfg)
+    : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
+  bootMark(projectSeed ? 'pool-project-seed-materialized' : 'pool-scaffold-materialized')
+  const opencodeConfigDir = materialized
     ? await resolveOpencodeConfigDir(cfg)
     : cfg.defaultOpencodeConfigDir
   await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
@@ -422,9 +432,9 @@ async function runPoolMode(
   // genuinely 'ok' for /workspace AND a listed root session. The platinum
   // capture condition gates on the pin file existing, so the snapshot is taken
   // only AFTER this — making forks resume with runtime-ready instant and the
-  // backend ensure resolving 'healed' (no first-session init). Only when the
-  // scaffold materialized; otherwise the seed stays the old repo-less spare.
-  if (scaffolded) {
+  // backend ensure resolving 'healed' (no first-session init). Only when a seed
+  // (scaffold OR real project repo) materialized; else the old repo-less spare.
+  if (materialized) {
     void (async () => {
       const deadline = Date.now() + 5 * 60_000
       let ok = false

@@ -32,7 +32,8 @@ import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
+import { config, type SandboxProviderName } from '../config';
+import { getDaytonaWarm, warmSnapshotsEnabled, warmSnapshotsEnabledFor } from '../shared/daytona';
 import {
   createHealthyBuilder,
   OPENCODE_PORT,
@@ -45,7 +46,11 @@ import {
 } from './warm-bake';
 import type { GitBackedProject } from '../projects/git';
 
-const WPROJ_PREFIX = 'kortix-wproj-';
+const WPROJ_PREFIX = 'kortix-wproj-';       // daytona warm-project snapshots
+const WPROJ_PREFIX_PT = 'kortix-wprojpt-';  // platinum warm-project templates
+/** Either provider's warm-project name (the two prefixes are disjoint: a
+ * platinum name "kortix-wprojpt-…" does NOT startWith the daytona prefix). */
+const isWprojName = (n: string) => n.startsWith(WPROJ_PREFIX) || n.startsWith(WPROJ_PREFIX_PT);
 /** Single-quote a value for safe embedding in a bash script. */
 const sh = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 
@@ -53,6 +58,9 @@ export interface ProjectWarmPointer {
   name: string;
   commit: string;
   baked_at: string;
+  /** Which provider this warm artifact lives on. Legacy rows (no field) are
+   * daytona. The session gate only consumes a pointer matching its provider. */
+  provider: SandboxProviderName;
 }
 
 /** Minimal project shape the baker needs (subset of the projects row). */
@@ -79,7 +87,19 @@ function proj8(projectId: string): string {
   return projectId.replace(/-/g, '').slice(0, 8);
 }
 
-export function projectWarmSnapshotName(projectId: string, commitSha: string, warmBaseName: string): string {
+export function projectWarmSnapshotName(
+  projectId: string,
+  commitSha: string,
+  warmBaseName: string,
+  provider: SandboxProviderName = 'daytona',
+): string {
+  // Daytona's name input is left UNCHANGED (no provider in the hash, daytona
+  // prefix) so existing daytona pointers compute byte-identically. Platinum gets
+  // a distinct prefix + provider-salted hash so the two never collide/cross-consume.
+  if (provider === 'platinum') {
+    const hash = createHash('sha256').update(`${projectId}|${commitSha}|${warmBaseName}|platinum`).digest('hex').slice(0, 12);
+    return `${WPROJ_PREFIX_PT}${proj8(projectId)}-${hash}`;
+  }
   const hash = createHash('sha256').update(`${projectId}|${commitSha}|${warmBaseName}`).digest('hex').slice(0, 12);
   return `${WPROJ_PREFIX}${proj8(projectId)}-${hash}`;
 }
@@ -89,11 +109,14 @@ export function readProjectWarmPointer(metadata: unknown): ProjectWarmPointer | 
   const ws = (metadata as Record<string, unknown> | null | undefined)?.warm_snapshot;
   if (!ws || typeof ws !== 'object' || Array.isArray(ws)) return null;
   const raw = ws as Record<string, unknown>;
-  if (typeof raw.name !== 'string' || !raw.name.startsWith(WPROJ_PREFIX)) return null;
+  if (typeof raw.name !== 'string' || !isWprojName(raw.name)) return null;
   return {
     name: raw.name,
     commit: typeof raw.commit === 'string' ? raw.commit : '',
     baked_at: typeof raw.baked_at === 'string' ? raw.baked_at : '',
+    // Legacy rows predate the field → daytona. A platinum name implies platinum
+    // even if the field is somehow absent.
+    provider: raw.provider === 'platinum' || raw.name.startsWith(WPROJ_PREFIX_PT) ? 'platinum' : 'daytona',
   };
 }
 
@@ -133,10 +156,13 @@ async function reapOldProjectWarm(projectId: string, currentName: string, log: (
  */
 export async function bakeProjectWarmSnapshot(
   project: WarmableProject,
-  opts: { onLog?: (line: string) => void } = {},
+  opts: { onLog?: (line: string) => void; provider?: SandboxProviderName } = {},
 ): Promise<ProjectWarmPointer> {
-  if (!warmSnapshotsEnabled()) throw new WarmBakeError('warm snapshots are not enabled');
+  const provider: SandboxProviderName = opts.provider ?? config.getDefaultProvider();
+  if (!warmSnapshotsEnabledFor(provider)) throw new WarmBakeError('warm snapshots are not enabled');
   if (!project.repoUrl) throw new WarmBakeError('project has no repo url');
+  if (provider === 'platinum') return bakeProjectWarmSnapshotPlatinum(project, opts);
+  if (provider !== 'daytona') throw new WarmBakeError(`warm snapshots unsupported for provider ${provider}`);
   const log = opts.onLog ?? ((l: string) => console.log(l));
   const daytona = getDaytonaWarm();
 
@@ -167,7 +193,7 @@ export async function bakeProjectWarmSnapshot(
   const name = projectWarmSnapshotName(project.projectId, tip, baseName);
   const existing = await daytona.snapshot.get(name).catch(() => null);
   if (warmBaseUsable(existing)) {
-    const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString() };
+    const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString(), provider: 'daytona' };
     await writeProjectWarmPointer(project.projectId, ptr).catch(() => {});
     return ptr;
   }
@@ -229,12 +255,162 @@ tail -2 /tmp/oc-prewarm.log; rm -f /tmp/oc-prewarm.log'`,
     await sb.delete().catch(() => {});
   }
 
-  const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString() };
+  const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString(), provider: 'daytona' };
   await writeProjectWarmPointer(project.projectId, ptr).catch((err) =>
     log(`[warm-project] pointer write failed: ${err instanceof Error ? err.message : String(err)}`),
   );
   await reapOldProjectWarm(project.projectId, name, log);
   return ptr;
+}
+
+/**
+ * Platinum per-project warm bake. Platinum has no live-snapshot-a-builder API
+ * like Daytona; instead we build a per-project STATEFUL template (via the same
+ * from-build adapter the shared default uses) whose runtime == the default's,
+ * and have the daemon clone the project repo AT CAPTURE ("park") — driven by the
+ * capture_env below (KORTIX_WARM_POOL_CLONE_AT_PARK). The host snapshots the VM
+ * once opencode is warm + a root session is pinned, then CoW-forks it per
+ * session (~1-2s, no in-box clone). Stale-tip is self-healing at the daemon
+ * (git.ts re-clones when baked HEAD != session base), so this is pure upside.
+ *
+ * No new Platinum API: from-build already accepts capture/capture_condition/
+ * capture_env. The only genuinely new behaviour is the daemon park-clone.
+ */
+async function bakeProjectWarmSnapshotPlatinum(
+  project: WarmableProject,
+  opts: { onLog?: (line: string) => void } = {},
+): Promise<ProjectWarmPointer> {
+  if (!project.repoUrl) throw new WarmBakeError('project has no repo url');
+  const log = opts.onLog ?? ((l: string) => console.log(l));
+  const { platinumProvider } = await import('./providers/platinum');
+  const { proxyGitUrl } = await import('../projects/lib/sessions');
+  const { resolveCommitSha } = await import('../projects/git');
+  const { resolveProjectGitAuth } = await import('../projects/lib/git');
+  const { resolveTemplateBySlug, computeTemplateIdentity } = await import('./templates');
+  const { createApiKey } = await import('../repositories/api-keys');
+
+  // accountId — needed to mint the short-TTL park-clone credential. The bake is
+  // called with a project subset that may omit it, so read it from the row.
+  const [acct] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, project.projectId))
+    .limit(1);
+  if (!acct?.accountId) throw new WarmBakeError('project has no account');
+  const accountId = acct.accountId;
+
+  const gitAuth = await resolveProjectGitAuth(project as never).catch(() => null);
+  const gitProject: GitBackedProject = {
+    projectId: project.projectId,
+    repoUrl: project.repoUrl,
+    defaultBranch: project.defaultBranch,
+    manifestPath: project.manifestPath ?? '',
+    gitAuthToken: gitAuth?.auth?.token ?? null,
+  };
+  const tip = await resolveCommitSha(gitProject, project.defaultBranch);
+  if (!tip) throw new WarmBakeError(`could not resolve ${project.defaultBranch} tip`);
+
+  // Tip-keyed name (the template name itself is tip-independent, so staleness
+  // would be invisible without this).
+  const name = projectWarmSnapshotName(project.projectId, tip, 'platinum-default', 'platinum');
+
+  // Idempotency: a ready warm template under this name → just (re)write pointer.
+  if ((await platinumProvider.getSnapshotState(name)) === 'active') {
+    const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString(), provider: 'platinum' };
+    await writeProjectWarmPointer(project.projectId, ptr).catch(() => {});
+    return ptr;
+  }
+
+  // Mirror the DEFAULT runtime exactly (same opencode/agent/CLI a cold session
+  // gets) — the repo is NOT baked via Dockerfile; it is cloned at park.
+  const template = await resolveTemplateBySlug(gitProject, 'default');
+  const identity = await computeTemplateIdentity(gitProject, template);
+
+  // Short-TTL ACCOUNT credential for the park clone. The daemon clones the repo
+  // via the Kortix git proxy using this token; the proxy accepts an account-
+  // scoped (type='user') key for the project's account (a sandbox-type token
+  // would require a live sandbox row, which doesn't exist at park).
+  //
+  // We deliberately do NOT revoke it synchronously: buildSnapshot returns at
+  // rootfs-`ready`, but the stateful CAPTURE that actually runs the park-clone
+  // happens AFTER that, asynchronously, on the CP seed-baker loop. Revoking here
+  // would kill the token before the clone uses it (→ park-clone auth-fails → the
+  // warm snapshot bakes WITHOUT the repo). The 30m TTL bounds exposure (the
+  // capture completes within minutes), the token is overridden in every fork by
+  // its own per-session token, and a capture that somehow outlives the TTL just
+  // degrades to a cold snapshot (seed-baker keeps the template READY).
+  const cloneCred = await createApiKey({
+    accountId,
+    // sandbox_id is a uuid NOT NULL column; the warm template name is NOT a uuid,
+    // so binding it here fails the insert (invalid input syntax for type uuid) and
+    // the whole bake throws before building. This is a type='user' (account-scoped)
+    // key: authorizeGitProxy only checks accountId ownership for it, never the
+    // sandbox scope, so the value is irrelevant to auth — use the projectId uuid.
+    sandboxId: project.projectId,
+    title: 'warm-bake park-clone (short-TTL)',
+    type: 'user',
+    expiresAt: new Date(Date.now() + 30 * 60_000),
+  });
+
+  log(`[warm-project] baking platinum ${name} (project ${project.projectId.slice(0, 8)}, tip ${tip.slice(0, 8)})`);
+  await platinumProvider.buildSnapshot({
+    snapshotName: name,
+    image: template.image ?? undefined,
+    userDockerfile: identity.userDockerfile,
+    entrypoint: template.entrypoint ? [template.entrypoint] : undefined,
+    spec: { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb },
+    slug: 'default',
+    isShared: false,
+    // Per-project warm = stateful capture (CoW-forked per session). The capture
+    // gates on the daemon's root-session pin file, same as the shared default,
+    // so the snapshot freezes a genuinely-warm opencode + the cloned repo.
+    capture: 'stateful',
+    captureCondition: { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 },
+    captureEnv: {
+      // Same warm-seed knobs the shared default uses…
+      KORTIX_WARM_POOL: '1',
+      KORTIX_ENABLE_INNER_DOCKER: '0',
+      PUID: '911',
+      PGID: '911',
+      TZ: 'UTC',
+      // …plus the repo identity so the daemon clones the PROJECT at park.
+      KORTIX_WARM_POOL_CLONE_AT_PARK: '1',
+      KORTIX_PROJECT_AUTO_CLONE: '1',
+      KORTIX_PROJECT_ID: project.projectId,
+      KORTIX_REPO_URL: proxyGitUrl(project.projectId),
+      KORTIX_DEFAULT_BRANCH: project.defaultBranch,
+      KORTIX_BASE_SHA: tip,
+      KORTIX_API_URL: config.KORTIX_URL.replace(/\/+$/, ''),
+      KORTIX_SANDBOX_TOKEN: cloneCred.secretKey,
+      KORTIX_TOKEN: cloneCred.secretKey,
+    },
+  });
+
+  const ptr: ProjectWarmPointer = { name, commit: tip, baked_at: new Date().toISOString(), provider: 'platinum' };
+  await writeProjectWarmPointer(project.projectId, ptr).catch((err) =>
+    log(`[warm-project] pointer write failed: ${err instanceof Error ? err.message : String(err)}`),
+  );
+  await reapOldProjectWarmPlatinum(project.projectId, name, log);
+  return ptr;
+}
+
+/** Platinum equivalent of reapOldProjectWarm: delete this project's older warm
+ * templates (different tip) so quota isn't burned on superseded generations. */
+async function reapOldProjectWarmPlatinum(projectId: string, currentName: string, log: (l: string) => void): Promise<void> {
+  try {
+    const { platinumJson } = await import('../shared/platinum');
+    const { platinumProvider } = await import('./providers/platinum');
+    const prefix = `${WPROJ_PREFIX_PT}${proj8(projectId)}-`;
+    const list = await platinumJson<Array<{ name?: string }>>('/v1/templates');
+    for (const t of list) {
+      if (t.name && t.name.startsWith(prefix) && t.name !== currentName) {
+        await platinumProvider.deleteSnapshot(t.name);
+        log(`[warm-project] reaped superseded ${t.name}`);
+      }
+    }
+  } catch (err) {
+    log(`[warm-project] platinum supersession reap skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // In-flight project bakes, deduped by projectId (a CR-merge burst must not
@@ -246,13 +422,14 @@ const inflightProjectBakes = new Map<string, Promise<void>>();
  * hooks and session boots — gated, deduped, never throws.
  */
 export function kickProjectWarmBake(project: WarmableProject, onLog?: (l: string) => void): void {
-  if (!warmSnapshotsEnabled() || !project.repoUrl) return;
+  const provider = config.getDefaultProvider();
+  if (!warmSnapshotsEnabledFor(provider) || !project.repoUrl) return;
   if (usesCustomDefaultTemplate(project)) return;
   if (inflightProjectBakes.has(project.projectId)) return;
   const log = onLog ?? ((l: string) => console.log(l));
   const run = (async () => {
     try {
-      await bakeProjectWarmSnapshot(project, { onLog: log });
+      await bakeProjectWarmSnapshot(project, { onLog: log, provider });
     } catch (err) {
       log(`[warm-project] bake failed for ${project.projectId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
