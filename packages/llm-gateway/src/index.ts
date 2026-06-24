@@ -43,6 +43,7 @@ export type { CatalogUpstream } from './catalog';
 
 export type {
   AuthedPrincipal,
+  AuthorizeResult,
   BillingMode,
   GatewayConfig,
   GatewayHooks,

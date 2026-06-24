@@ -373,3 +373,74 @@ describe('gateway.chatCompletions', () => {
     expect(second.status).toBe(503);
   });
 });
+
+// The combined `authorize` hook folds authenticate + billing + budget into one
+// call (the standalone gateway uses it to cut three cross-process RPCs to one).
+// When present it fully replaces the three granular hooks; behavior + traces are
+// identical to the granular path.
+describe('gateway.chatCompletions — combined authorize hook', () => {
+  test('authorize ok → proceeds to dispatch and records usage', async () => {
+    const { hooks, usage } = makeHooks({
+      authorize: async () => ({ ok: true, principal }),
+      // authenticate/assertBillingActive must NOT be consulted when authorize is set.
+      authenticate: async () => {
+        throw new Error('authenticate should not be called');
+      },
+      assertBillingActive: async () => {
+        throw new Error('assertBillingActive should not be called');
+      },
+    });
+    const fetchImpl = okFetch({
+      model: 'kortix/x',
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"kortix/x"}',
+    });
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+  });
+
+  test('authorize denies with 401 invalid_token', async () => {
+    const { hooks } = makeHooks({
+      authorize: async () => ({
+        ok: false,
+        status: 401,
+        errorCode: 'invalid_token',
+        message: 'Invalid token',
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer nope',
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('invalid_token');
+  });
+
+  test('authorize denies with 402 and the trace stays attributed to the principal', async () => {
+    const { hooks, traces } = makeHooks({
+      authorize: async () => ({
+        ok: false,
+        status: 402,
+        errorCode: 'budget_exceeded',
+        message: 'budget exhausted',
+        principal,
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.code).toBe('budget_exceeded');
+    expect(body.message).toBe('budget exhausted');
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe('budget_exceeded');
+    expect(traces[0].accountId).toBe('a1'); // attributed even on denial
+  });
+});

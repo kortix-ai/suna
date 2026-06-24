@@ -1,4 +1,10 @@
-import type { AuthedPrincipal, GatewayHooks, GatewayTrace, UsageEvent } from '@kortix/llm-gateway';
+import type {
+  AuthedPrincipal,
+  AuthorizeResult,
+  GatewayHooks,
+  GatewayTrace,
+  UsageEvent,
+} from '@kortix/llm-gateway';
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage } from '../billing/services/credits';
 import { llmPriceMarkup } from '../billing/services/tiers';
@@ -54,6 +60,40 @@ export async function authenticatePrincipal(token: string): Promise<AuthedPrinci
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
   const { exceeded, message } = await checkBudget(principal);
   if (exceeded) throw new Error(message ?? 'Budget exceeded');
+}
+
+/**
+ * The combined pre-dispatch gate — authenticate + billing + budget in one call.
+ * Backs the /internal/gateway/authorize RPC so the standalone gateway folds three
+ * sequential round-trips into one. Returns a principal or a typed 401/402 denial.
+ */
+export async function authorizeRequest(token: string): Promise<AuthorizeResult> {
+  const principal = await authenticatePrincipal(token);
+  if (!principal) {
+    return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
+  }
+  try {
+    await assertBillingActive(principal.accountId);
+  } catch (err) {
+    return {
+      ok: false,
+      status: 402,
+      errorCode: 'subscription_required',
+      message: err instanceof Error ? err.message : 'Billing inactive',
+      principal,
+    };
+  }
+  const { exceeded, message } = await checkBudget(principal);
+  if (exceeded) {
+    return {
+      ok: false,
+      status: 402,
+      errorCode: 'budget_exceeded',
+      message: message ?? 'Budget exceeded',
+      principal,
+    };
+  }
+  return { ok: true, principal };
 }
 
 /**

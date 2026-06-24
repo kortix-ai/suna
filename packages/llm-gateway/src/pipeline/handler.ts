@@ -1,4 +1,6 @@
 import type {
+  AuthedPrincipal,
+  AuthorizeResult,
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
@@ -53,6 +55,74 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function idOf(principal: AuthedPrincipal) {
+  return {
+    accountId: principal.accountId,
+    actorUserId: principal.userId,
+    projectId: principal.projectId,
+    sessionId: principal.sessionId,
+    keyId: principal.keyId,
+  };
+}
+
+// The pre-dispatch gate: token → authenticated + billing-active + within-budget.
+// Uses the host's combined `authorize` hook when present (one call), else the
+// granular authenticate + assertBillingActive + assertBudget hooks. Returns a
+// uniform AuthorizeResult so the handler renders one response/trace either way.
+async function admit(
+  hooks: GatewayHooks,
+  token: string,
+  lap: () => number,
+  step: (event: string, fields?: Record<string, unknown>) => void,
+): Promise<AuthorizeResult> {
+  if (hooks.authorize) {
+    const outcome = await hooks.authorize(token);
+    if (!outcome.ok) step('authorize_denied', { ms: lap(), code: outcome.errorCode });
+    else step('authorized', { ms: lap() });
+    return outcome;
+  }
+
+  const principal = await hooks.authenticate(token);
+  if (!principal) {
+    step('auth_failed', { ms: lap() });
+    return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
+  }
+
+  try {
+    await hooks.assertBillingActive(principal.accountId);
+    step('billing_ok', { ms: lap() });
+  } catch (err) {
+    step('billing_inactive', { ms: lap(), reason: errorMessage(err) });
+    return {
+      ok: false,
+      status: 402,
+      errorCode: 'subscription_required',
+      message: err instanceof Error ? err.message : 'Billing inactive',
+      principal,
+    };
+  }
+
+  if (hooks.assertBudget) {
+    try {
+      await hooks.assertBudget(principal);
+      step('budget_ok', { ms: lap() });
+    } catch (err) {
+      step('budget_exceeded', { ms: lap(), reason: errorMessage(err) });
+      // 402, not 429: a budget cap is terminal (it won't clear by waiting), so it
+      // must NOT be retried like a transient rate limit. Mirrors the billing gate.
+      return {
+        ok: false,
+        status: 402,
+        errorCode: 'budget_exceeded',
+        message: err instanceof Error ? err.message : 'Budget exceeded',
+        principal,
+      };
+    }
+  }
+
+  return { ok: true, principal };
+}
+
 export async function handleChatCompletions(
   runtime: HandlerRuntime,
   req: ChatCompletionRequest,
@@ -89,12 +159,25 @@ export async function handleChatCompletions(
     return json({ error: 'Missing bearer token' }, 401);
   }
 
-  const principal = await hooks.authenticate(token);
-  if (!principal) {
-    step('auth_failed', { ms: lap() });
-    emit({ status: 401, ok: false, errorCode: 'invalid_token' });
-    return json({ error: 'Invalid token' }, 401);
+  // Pre-dispatch gate: authenticate + billing + budget. When the host provides a
+  // combined `authorize` hook (the standalone gateway, folding three sequential
+  // cross-process RPCs into one), use it; otherwise run the granular hooks (the
+  // in-process mount, where the three direct calls are free). Both yield the same
+  // outcome: a principal, or a 401/402 denial with the same response + trace.
+  const gate = await admit(hooks, token, lap, step);
+  if (!gate.ok) {
+    const denyId = gate.principal ? idOf(gate.principal) : {};
+    emit({
+      ...denyId,
+      status: gate.status,
+      ok: false,
+      errorCode: gate.errorCode,
+      errorMessage: gate.message,
+    });
+    const message = gate.message ?? 'Unauthorized';
+    return json({ error: message, message, code: gate.errorCode }, gate.status);
   }
+  const principal = gate.principal;
   step('authenticated', {
     ms: lap(),
     accountId: principal.accountId,
@@ -103,50 +186,7 @@ export async function handleChatCompletions(
     keyId: principal.keyId,
   });
 
-  const id = {
-    accountId: principal.accountId,
-    actorUserId: principal.userId,
-    projectId: principal.projectId,
-    sessionId: principal.sessionId,
-    keyId: principal.keyId,
-  };
-
-  try {
-    await hooks.assertBillingActive(principal.accountId);
-    step('billing_ok', { ms: lap() });
-  } catch (err) {
-    step('billing_inactive', { ms: lap(), reason: errorMessage(err) });
-    emit({
-      ...id,
-      status: 402,
-      ok: false,
-      errorCode: 'subscription_required',
-      errorMessage: errorMessage(err),
-    });
-    const message = err instanceof Error ? err.message : 'Billing inactive';
-    return json({ error: message, message, code: 'subscription_required' }, 402);
-  }
-
-  if (hooks.assertBudget) {
-    try {
-      await hooks.assertBudget(principal);
-      step('budget_ok', { ms: lap() });
-    } catch (err) {
-      step('budget_exceeded', { ms: lap(), reason: errorMessage(err) });
-      // 402, not 429: a budget cap is a terminal condition (it won't clear by
-      // waiting), so it must NOT be retried like a transient rate limit. Mirrors
-      // the billing-inactive gate above.
-      emit({
-        ...id,
-        status: 402,
-        ok: false,
-        errorCode: 'budget_exceeded',
-        errorMessage: errorMessage(err),
-      });
-      const message = err instanceof Error ? err.message : 'Budget exceeded';
-      return json({ error: message, message, code: 'budget_exceeded' }, 402);
-    }
-  }
+  const id = idOf(principal);
 
   let body: Record<string, unknown>;
   try {

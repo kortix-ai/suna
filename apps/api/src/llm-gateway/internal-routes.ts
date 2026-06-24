@@ -2,7 +2,12 @@ import type { AuthedPrincipal, GatewayTrace, UsageEvent } from '@kortix/llm-gate
 import { Hono } from 'hono';
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { checkBudget } from './budgets';
-import { authenticatePrincipal, persistGatewayTrace, recordGatewayUsage } from './hooks';
+import {
+  authenticatePrincipal,
+  authorizeRequest,
+  persistGatewayTrace,
+  recordGatewayUsage,
+} from './hooks';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
@@ -26,6 +31,21 @@ export function createInternalGatewayRoutes() {
     const { token } = await c.req.json();
     if (typeof token !== 'string' || !token) return c.json({ principal: null });
     return c.json({ principal: await authenticatePrincipal(token) });
+  });
+
+  // Combined gate (auth + billing + budget) — lets the standalone gateway fold
+  // three sequential RPCs into one on the chat-completions hot path.
+  app.post('/authorize', async (c) => {
+    const { token } = await c.req.json();
+    if (typeof token !== 'string' || !token) {
+      return c.json({
+        ok: false,
+        status: 401,
+        errorCode: 'invalid_token',
+        message: 'Invalid token',
+      });
+    }
+    return c.json(await authorizeRequest(token));
   });
 
   app.post('/resolve-upstream', async (c) => {
