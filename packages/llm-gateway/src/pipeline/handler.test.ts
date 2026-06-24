@@ -420,6 +420,43 @@ describe('gateway.chatCompletions — combined authorize hook', () => {
     expect((await res.json()).code).toBe('invalid_token');
   });
 
+  test('autoRouter resolves a synthetic model before resolveUpstream; trace keeps the requested id', async () => {
+    let resolvedWith = '';
+    const { hooks, traces } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedWith = model;
+        return [managed];
+      },
+    });
+    const fetchImpl = okFetch({ model: 'glm', usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { fetchImpl },
+    ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"auto"}' });
+    expect(res.status).toBe(200);
+    expect(resolvedWith).toBe('glm-5.2'); // resolution saw the routed model, not "auto"
+    await flush();
+    expect(traces[0].requestedModel).toBe('auto'); // trace records what the client asked for
+  });
+
+  test('autoRouter is a no-op for a concrete model', async () => {
+    let resolvedWith = '';
+    const { hooks } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedWith = model;
+        return [managed];
+      },
+    });
+    const fetchImpl = okFetch({ usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    await createGateway(
+      hooks,
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { fetchImpl },
+    ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"claude-x"}' });
+    expect(resolvedWith).toBe('claude-x');
+  });
+
   test('authorize denies with 402 and the trace stays attributed to the principal', async () => {
     const { hooks, traces } = makeHooks({
       authorize: async () => ({

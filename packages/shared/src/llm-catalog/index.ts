@@ -91,11 +91,11 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: 'balanced',
   },
   {
-    id: 'glm-5.1',
-    name: 'GLM-5.1',
-    upstreamModelId: 'z-ai/glm-5.1',
+    id: 'glm-5.2',
+    name: 'GLM 5.2',
+    upstreamModelId: 'z-ai/glm-5.2',
     transport: 'openrouter',
-    pricingRef: 'z-ai/glm-5.1',
+    pricingRef: 'z-ai/glm-5.2',
     tier: 'balanced',
   },
   {
@@ -133,8 +133,9 @@ const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
 const MANAGED_ALIASES: Record<string, string> = {
   'kortix-power': 'claude-sonnet-4.6',
   'kortix-basic': 'claude-sonnet-4.6',
-  'glm-4.6': 'glm-5.1',
-  'glm-4.7': 'glm-5.1',
+  'glm-4.6': 'glm-5.2',
+  'glm-4.7': 'glm-5.2',
+  'glm-5.1': 'glm-5.2',
   'qwen3-max': 'qwen3.7-max',
   'minimax-m2.5': 'claude-sonnet-4.6',
 };
@@ -152,6 +153,47 @@ export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
 export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
+
+// ─── AUTO: smart per-task model routing ─────────────────────────────────────
+// The catalog advertises a synthetic `auto` model. When a request asks for it,
+// the gateway resolves it to a concrete managed model by a cheap, deterministic
+// heuristic — no extra LLM call — and bills it as the resolved model. Policy:
+// cheap+smart Chinese models by default, the flagship only for heavy work.
+export const AUTO_MODEL_ID = 'auto';
+
+const AUTO_LIGHT_MODEL = 'glm-5.2'; // short / tool-less chat — cheapest smart
+const AUTO_BALANCED_MODEL = 'deepseek-v4-pro'; // typical agentic turn — cheap + strong
+const AUTO_HEAVY_MODEL = 'claude-opus-4.8'; // huge context or heavy tool use — flagship
+
+// ~chars; tokens ≈ chars/4. Heavy ≈ >50k-token inputs; balanced ≈ >6k tokens.
+const AUTO_HEAVY_CHARS = 200_000;
+const AUTO_HEAVY_TOOLS = 12;
+const AUTO_BALANCED_CHARS = 24_000;
+
+/**
+ * Map a requested model to a concrete managed model when (and only when) it is
+ * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
+ * the caller should treat as "use the requested model as-is"). Pure + dependency-free
+ * so both the in-process mount and the standalone gateway can call it locally.
+ */
+export function pickAutoModel(model: string, body: Record<string, unknown>): string | null {
+  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
+
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  let chars = 0;
+  for (const message of messages) {
+    try {
+      chars += JSON.stringify(message).length;
+    } catch {
+      // unserializable message part — ignore for sizing
+    }
+  }
+  const tools = Array.isArray(body.tools) ? body.tools.length : 0;
+
+  if (chars >= AUTO_HEAVY_CHARS || tools >= AUTO_HEAVY_TOOLS) return AUTO_HEAVY_MODEL;
+  if (chars >= AUTO_BALANCED_CHARS || tools >= 1) return AUTO_BALANCED_MODEL;
+  return AUTO_LIGHT_MODEL;
+}
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',

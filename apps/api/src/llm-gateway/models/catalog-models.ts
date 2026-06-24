@@ -1,5 +1,5 @@
-import { CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
 import { resolveCatalogUpstream } from '@kortix/llm-gateway';
+import { AUTO_MODEL_ID, CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
 import { codexModelIds } from './codex-models';
 
 interface GatewayModel {
@@ -24,6 +24,16 @@ function humanize(id: string): string {
 
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
+  // AUTO first so it surfaces at the top of the picker. Resolved per-request to a
+  // concrete managed model by the gateway's autoRouter (cheap Chinese by default,
+  // flagship for heavy work) — billed as whichever model it routes to.
+  out[AUTO_MODEL_ID] = {
+    name: 'Auto',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+  };
   for (const m of MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,

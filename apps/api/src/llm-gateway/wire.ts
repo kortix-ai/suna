@@ -1,5 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
 import { createGateway } from '@kortix/llm-gateway';
+import { pickAutoModel } from '@kortix/shared/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
 import { createInProcessGatewayHooks } from './hooks';
@@ -20,7 +21,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     app.all('/v1/llm/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));
   } else {
     // One gateway instance per process — its circuit breakers are long-lived.
-    const gateway = createGateway(createInProcessGatewayHooks(), { captureBodies: true });
+    const gateway = createGateway(createInProcessGatewayHooks(), {
+      captureBodies: true,
+      autoRouter: pickAutoModel,
+    });
     const llm = new Hono();
     llm.get('/health', (c) =>
       c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),

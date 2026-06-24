@@ -198,8 +198,15 @@ export async function handleChatCompletions(
   }
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
+  // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
+  // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
+  const routedModel = config.autoRouter?.(requestedModel, body) ?? requestedModel;
+  if (routedModel !== requestedModel) {
+    body.model = routedModel;
+  }
   step('body_parsed', {
     model: requestedModel,
+    routedModel,
     stream: body.stream === true,
     messages: Array.isArray(body.messages) ? body.messages.length : 0,
     tools: Array.isArray(body.tools) ? body.tools.length : 0,
@@ -210,10 +217,10 @@ export async function handleChatCompletions(
       : {};
 
   logger.info(
-    `[gateway] → ${requestId} ${requestedModel || '(no model)'}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
+    `[gateway] → ${requestId} ${requestedModel || '(no model)'}${routedModel !== requestedModel ? ` →${routedModel}` : ''}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
   );
 
-  const candidates = await hooks.resolveUpstream(principal, requestedModel);
+  const candidates = await hooks.resolveUpstream(principal, routedModel);
   step('resolved_candidates', {
     ms: lap(),
     count: candidates.length,
@@ -225,10 +232,11 @@ export async function handleChatCompletions(
     })),
   });
   if (!candidates.length) {
-    step('model_unavailable', { model: requestedModel });
+    step('model_unavailable', { model: requestedModel, routedModel });
     emit({
       ...id,
       requestedModel,
+      resolvedModel: routedModel,
       status: 400,
       ok: false,
       errorCode: 'model_unavailable',
@@ -236,7 +244,7 @@ export async function handleChatCompletions(
       metadata,
     });
     return json(
-      { error: `No upstream configured for model "${requestedModel}"`, code: 'model_unavailable' },
+      { error: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable' },
       400,
     );
   }

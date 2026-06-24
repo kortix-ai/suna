@@ -1,4 +1,5 @@
 import { createGateway } from '@kortix/llm-gateway';
+import { pickAutoModel } from '@kortix/shared/llm-catalog';
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -61,6 +62,7 @@ export function buildServer(): GatewayServer {
       breaker: config.breaker,
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
+      autoRouter: pickAutoModel,
     },
     { logger },
   );
