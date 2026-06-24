@@ -1,20 +1,10 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-/**
- * Installed view — the "WordPress for AI" plugins screen. Reads the project's
- * `registry-lock.json` (what's installed), cross-references the catalog for
- * titles + capabilities, and overlays the update-check (re-resolve source,
- * re-hash, compare). Each row: one-button Update when outdated, Remove always.
- */
-
-import { KeyRound, PackageOpen, Plug, RefreshCw, Trash2, Wrench } from 'lucide-react';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   useInstalledItems,
   useMarketplaceItems,
@@ -23,18 +13,11 @@ import {
   useUpdateMarketplaceItem,
 } from '@/hooks/marketplace';
 import type { InstalledItem } from '@/lib/marketplace-client';
+import { formatRelative } from '@kortix/shared';
+import { TrashSolid } from '@mynaui/icons-react';
+import { KeyRound, PackageOpen, Plug, RefreshCw, Wrench } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { TypeTile, typeMeta } from './marketplace-meta';
-
-function relativeDate(iso: string | null): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const days = Math.floor((Date.now() - then) / 86_400_000);
-  if (days <= 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
 
 export function MarketplaceInstalledPanel({
   projectId,
@@ -82,7 +65,7 @@ export function MarketplaceInstalledPanel({
     return (
       <div className="space-y-2.5">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-[68px] rounded-2xl" />
+          <Skeleton key={i} className="h-[68px] rounded-md" />
         ))}
       </div>
     );
@@ -143,7 +126,7 @@ export function MarketplaceInstalledPanel({
           return (
             <div
               key={it.name}
-              className="border-border/60 bg-card flex items-center gap-3 rounded-2xl border p-3"
+              className="bg-popover hover:bg-muted/80 flex items-center gap-3 rounded-md border p-3.5 transition-colors"
             >
               <TypeTile type={it.type} size="md" />
               <div className="min-w-0 flex-1">
@@ -168,7 +151,7 @@ export function MarketplaceInstalledPanel({
                 </div>
                 <div className="text-muted-foreground mt-0.5 truncate text-xs">
                   {meta.label} · {it.source} · {it.file_count} file{it.file_count === 1 ? '' : 's'}
-                  {it.installed_at ? ` · added ${relativeDate(it.installed_at)}` : ''}
+                  {it.installed_at ? ` · added ${formatRelative(it.installed_at) ?? ''}` : ''}
                 </div>
                 {capCount > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
@@ -210,14 +193,13 @@ export function MarketplaceInstalledPanel({
                   </Button>
                 )}
                 <Button
-                  size="icon-sm"
+                  size="icon"
                   variant="ghost"
                   disabled={busy}
                   aria-label={`Remove ${it.name}`}
                   onClick={() => onRemove(it)}
-                  className="text-muted-foreground hover:text-foreground"
                 >
-                  <Trash2 className="size-4" />
+                  <TrashSolid className="size-4" />
                 </Button>
               </div>
             </div>

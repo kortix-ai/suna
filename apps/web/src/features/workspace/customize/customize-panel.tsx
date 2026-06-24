@@ -1,12 +1,12 @@
 'use client';
 
-import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { ScheduleView } from '@/components/projects/schedule-view';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Label } from '@/components/ui/label';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { Icon } from '@/features/icon/icon';
+import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';

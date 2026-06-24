@@ -10,28 +10,20 @@ import { useTranslations } from 'next-intl';
  * It fills its container edge-to-edge so it matches the rest of the surface.
  */
 
-import {
-  ArrowLeft,
-  Check,
-  ExternalLink,
-  FileText,
-  KeyRound,
-  Plug,
-  Plus,
-  Trash2,
-  Wrench,
-} from 'lucide-react';
+import { ArrowLeft, Check, ExternalLink, FileText, KeyRound, Plug, Wrench } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useMarketplaceItem, useMarketplaceItemFile } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
+import { TrashSolid } from '@mynaui/icons-react';
+import { Icon } from '../icon/icon';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import { typeMeta } from './marketplace-meta';
@@ -174,13 +166,8 @@ export function MarketplaceItemDetail({
   const actions = !data ? null : isInstalled ? (
     <div className="flex shrink-0 items-center gap-1.5">
       {onRemove && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onRemove(data)}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Trash2 className="size-4" />
+        <Button variant="ghost" size="sm" onClick={() => onRemove(data)}>
+          <TrashSolid className="size-4" />
           Remove
         </Button>
       )}
@@ -191,22 +178,15 @@ export function MarketplaceItemDetail({
     </div>
   ) : (
     <Button size="sm" className="shrink-0" onClick={() => onAdd(data)}>
-      <Plus className="size-4" />
+      <Icon.Plus className="size-4" />
       {addLabel}
     </Button>
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Fixed top bar — flush to the top, no scroll gap. */}
-      <div className="border-border/60 flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onBack}
-          aria-label="Back"
-          className="text-muted-foreground hover:text-foreground"
-        >
+      <div className="border-border flex h-12 shrink-0 items-center gap-2.5 border-b pr-3 pl-2">
+        <Button variant="secondary" size="icon" onClick={onBack} aria-label="Back">
           <ArrowLeft className="size-4" />
         </Button>
         {data && tm ? (
@@ -229,7 +209,7 @@ export function MarketplaceItemDetail({
 
       {/* Body: meta + tree (left) · content (right). */}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <aside className="border-border/60 bg-muted/10 flex max-h-[38vh] w-full shrink-0 flex-col overflow-y-auto border-b md:max-h-none md:w-[320px] md:border-r md:border-b-0">
+        <aside className="border-border bg-muted/10 flex max-h-[38vh] w-full shrink-0 flex-col overflow-y-auto border-b md:max-h-none md:w-[320px] md:border-r md:border-b-0">
           {isLoading || !data || !tm ? (
             <div className="space-y-2 p-3">
               {Array.from({ length: 5 }).map((_, i) => (

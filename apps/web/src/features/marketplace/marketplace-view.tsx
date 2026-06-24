@@ -1,19 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Store } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
-import { AddToProjectDialog } from '@/components/marketplace/add-to-project-dialog';
-import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
-import { MarketplaceDiscover } from '@/components/marketplace/marketplace-discover';
-import { MarketplaceInstalledPanel } from '@/components/marketplace/marketplace-installed-panel';
-import { MarketplaceItemDetail } from '@/components/marketplace/marketplace-item-detail';
-import { Badge } from '@/components/ui/badge';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { CustomizeSectionHeader } from '@/features/workspace/customize/customize-section-header';
+import { AddToProjectModal } from '@/features/marketplace/add-to-project-modal';
+import { MarketplaceBrowser } from '@/features/marketplace/marketplace-browser';
+import { MarketplaceDiscover } from '@/features/marketplace/marketplace-discover';
+import { MarketplaceInstalledPanel } from '@/features/marketplace/marketplace-installed-panel';
+import { MarketplaceItemDetail } from '@/features/marketplace/marketplace-item-detail';
 import {
   useInstalledItems,
   useRegistryUpdates,
@@ -25,7 +22,6 @@ import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 
 type Tab = 'explore' | 'marketplaces' | 'installed';
 
-/** Inline Marketplace — browse the registry and install skills into this project. */
 export function MarketplaceView({ projectId }: { projectId: string }) {
   const t = useTranslations('hardcodedUi');
   const openId = useMarketplaceDetailStore((s) => s.openId);
@@ -65,7 +61,7 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
   };
 
   const addDialog = (
-    <AddToProjectDialog
+    <AddToProjectModal
       item={addItem}
       open={!!addItem}
       onOpenChange={(open) => !open && setAddItem(null)}
@@ -92,63 +88,45 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader
-        icon={Store}
-        title="Marketplace"
-        actions={
-          <FilterBar>
-            <FilterBarItem
-              data-state={tab === 'explore' ? 'active' : 'inactive'}
-              onClick={() => setTab('explore')}
-            >
-              Explore
-            </FilterBarItem>
-            <FilterBarItem
-              data-state={tab === 'marketplaces' ? 'active' : 'inactive'}
-              onClick={() => setTab('marketplaces')}
-            >
-              Sources
-            </FilterBarItem>
-            <FilterBarItem
-              data-state={tab === 'installed' ? 'active' : 'inactive'}
-              onClick={() => setTab('installed')}
-            >
-              Installed
-              {installedCount > 0 && (
-                <span className="text-muted-foreground/60 ml-1 tabular-nums">{installedCount}</span>
-              )}
-              {updateCount > 0 && (
-                <Badge variant="warning" size="sm" className="ml-1.5 min-w-4 px-1">
-                  {updateCount}
-                </Badge>
-              )}
-            </FilterBarItem>
-          </FilterBar>
-        }
-      />
+    <Tabs
+      value={tab}
+      onValueChange={(value) => setTab(value as Tab)}
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
+      <header className="flex flex-col gap-2 space-y-2 border-b p-4 sm:flex-row sm:items-center sm:justify-between md:space-y-0">
+        <h2 className="text-foreground text-xl font-medium text-balance">Marketplace</h2>
+        <div className="shrink-0">
+          <TabsList>
+            <TabsTrigger value="explore">Explore</TabsTrigger>
+            <TabsTrigger value="marketplaces">Sources</TabsTrigger>
+            <TabsTrigger value="installed">Installed</TabsTrigger>
+          </TabsList>
+        </div>
+      </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        {tab === 'explore' ? (
+        <TabsContent value="explore" className="mt-0">
           <MarketplaceBrowser
             installedNames={installedNames}
             source={source}
             onSourceChange={setSource}
             onAdd={setAddItem}
           />
-        ) : tab === 'marketplaces' ? (
+        </TabsContent>
+        <TabsContent value="marketplaces" className="mt-0">
           <MarketplaceDiscover
             onBrowse={(id) => {
               setSource(id);
               setTab('explore');
             }}
           />
-        ) : (
+        </TabsContent>
+        <TabsContent value="installed" className="mt-0">
           <MarketplaceInstalledPanel projectId={projectId} onBrowse={() => setTab('explore')} />
-        )}
+        </TabsContent>
       </div>
 
       {addDialog}
-    </div>
+    </Tabs>
   );
 }

@@ -4,12 +4,12 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { AddToProjectDialog } from '@/components/marketplace/add-to-project-dialog';
-import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
-import { MarketplaceDiscover } from '@/components/marketplace/marketplace-discover';
-import { MarketplaceItemDetail } from '@/components/marketplace/marketplace-item-detail';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { AppHeader } from '@/features/layout/app-header';
+import { AddToProjectModal } from '@/features/marketplace/add-to-project-modal';
+import { MarketplaceBrowser } from '@/features/marketplace/marketplace-browser';
+import { MarketplaceDiscover } from '@/features/marketplace/marketplace-discover';
+import { MarketplaceItemDetail } from '@/features/marketplace/marketplace-item-detail';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
@@ -39,7 +39,7 @@ export default function MarketplacePage() {
         <main className="ring-input bg-background min-h-0 flex-1 overflow-hidden rounded-t-3xl ring-1">
           <MarketplaceItemDetail onBack={closeSheet} onAdd={(it) => setAddItem(it)} />
         </main>
-        <AddToProjectDialog
+        <AddToProjectModal
           item={addItem}
           open={!!addItem}
           onOpenChange={(o) => {
@@ -100,7 +100,7 @@ export default function MarketplacePage() {
         </div>
       </main>
 
-      <AddToProjectDialog
+      <AddToProjectModal
         item={addItem}
         open={!!addItem}
         onOpenChange={(o) => {

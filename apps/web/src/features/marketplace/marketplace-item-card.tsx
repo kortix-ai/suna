@@ -18,10 +18,8 @@ export function MarketplaceItemCard({
 }: {
   item: MarketplaceItem;
   installed?: boolean;
-  /** Show the source label in the meta line (used in the "All sources" view). */
   showSource?: boolean;
   onOpen: (item: MarketplaceItem) => void;
-  /** When provided, renders an inline quick-add (+ / ✓) affordance. */
   onAdd?: (item: MarketplaceItem) => void;
 }) {
   const { label } = typeMeta(item.type);
@@ -41,8 +39,7 @@ export function MarketplaceItemCard({
         }
       }}
       className={cn(
-        'group bg-card flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition-colors',
-        'hover:border-foreground/20 focus-visible:ring-primary/50 outline-none focus-visible:ring-2',
+        'group bg-popover flex cursor-pointer items-start gap-3 rounded-md hover:bg-muted/80 border p-3.5 transition-colors',
       )}
     >
       <MarketplaceItemAvatar item={item} size="md" showSource={showSource} />

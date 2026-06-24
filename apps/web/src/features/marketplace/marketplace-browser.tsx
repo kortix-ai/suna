@@ -1,10 +1,12 @@
 'use client';
 
-import { ExternalLink, Loader2, PackageSearch, Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, PackageSearch, Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
@@ -12,7 +14,7 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
@@ -22,19 +24,23 @@ import {
   useRemoveMarketplaceSource,
 } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
-import { Search } from '@mynaui/icons-react';
-import { AddMarketplaceDialog } from './add-marketplace-dialog';
+import { Search, TrashSolid } from '@mynaui/icons-react';
+import Link from 'next/link';
+import { Label } from '../../components/ui/label';
+import Loading from '../../components/ui/loading';
+import { AddMarketplaceModal } from './add-marketplace-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemCard } from './marketplace-item-card';
 import { TYPE_FILTERS, TYPE_SECTIONS } from './marketplace-meta';
 
-/** Search + adaptive type filters + a source switcher + a card grid (grouped by
- *  type when browsing everything). Selecting a card opens its detail as a full
- *  in-place page (not a slide-out). Shared by the top-level /marketplace page
- *  and the in-project surface. Type filters/sections are adaptive — only types
- *  that actually have items show up, so a skills-only catalog stays clean. */
+const TYPE_ORDER = ['skill', 'agent', 'command', 'tool'];
+function typeBreakdown(types: Record<string, number>): string {
+  return TYPE_ORDER.filter((t) => types[t])
+    .map((t) => `${types[t]} ${types[t] === 1 ? t : `${t}s`}`)
+    .join(' · ');
+}
+
 export function MarketplaceBrowser({
   onAdd,
   installedNames,
@@ -43,7 +49,6 @@ export function MarketplaceBrowser({
 }: {
   onAdd: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
-  /** Controlled source filter (defaults to internal state). */
   source?: string;
   onSourceChange?: (source: string) => void;
 }) {
@@ -55,6 +60,7 @@ export function MarketplaceBrowser({
   const source = sourceProp ?? sourceInternal;
   const setSource = onSourceChange ?? setSourceInternal;
   const [addOpen, setAddOpen] = useState(false);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
 
   const marketplacesQuery = useMarketplaces();
@@ -62,8 +68,7 @@ export function MarketplaceBrowser({
     () => marketplacesQuery.data?.marketplaces ?? [],
     [marketplacesQuery.data],
   );
-  // Sources still resolving (cold load) that aren't yet a ready facet — shown as
-  // spinner pills next to the real source pills.
+
   const pendingSources = useMemo(() => {
     const readyIds = new Set(marketplaces.map((m) => m.id));
     return (marketplacesQuery.data?.sources ?? []).filter((s) => !readyIds.has(s.id));
@@ -78,8 +83,6 @@ export function MarketplaceBrowser({
     return () => clearTimeout(t);
   }, [query]);
 
-  // Adaptive type tabs — derive the per-type counts from the source facets so we
-  // only ever show filters that resolve to real items (in the current source).
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     const list = source === 'all' ? marketplaces : marketplaces.filter((m) => m.id === source);
@@ -127,7 +130,10 @@ export function MarketplaceBrowser({
     if (!removableId) return;
     removeSource
       .mutateAsync(removableId)
-      .then(() => setSource('all'))
+      .then(() => {
+        setRemoveConfirmOpen(false);
+        setSource('all');
+      })
       .catch((e) => errorToast('Could not remove', { description: (e as Error).message }));
   };
 
@@ -149,7 +155,6 @@ export function MarketplaceBrowser({
 
   return (
     <div className="space-y-4">
-      {/* Search + type filters + add */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <InputGroupSearch className="w-full sm:max-w-xs">
           <InputGroupSearchIcon>
@@ -161,27 +166,21 @@ export function MarketplaceBrowser({
             placeholder={tI18nHardcoded.raw(
               'autoComponentsMarketplaceMarketplaceBrowserJsxAttrPlaceholderSearchTheMarketplace188bc1ee',
             )}
+            variant="popover"
           />
           <InputGroupSearchClear onClick={() => setQuery('')} />
         </InputGroupSearch>
         <div className="flex items-center gap-2">
           {showTypeTabs && (
-            <FilterBar className="overflow-x-auto">
-              {typeTabs.map((f) => (
-                <FilterBarItem
-                  key={f.value}
-                  data-state={effectiveType === f.value ? 'active' : 'inactive'}
-                  onClick={() => setType(f.value)}
-                >
-                  {f.label}
-                  {f.value !== 'all' && (
-                    <span className="text-muted-foreground/50 ml-1 tabular-nums">
-                      {typeCounts[f.value]}
-                    </span>
-                  )}
-                </FilterBarItem>
-              ))}
-            </FilterBar>
+            <Tabs value={effectiveType} onValueChange={setType} className="gap-0">
+              <TabsListCompact className="max-w-full overflow-x-auto">
+                {typeTabs.map((f) => (
+                  <TabsTriggerCompact key={f.value} value={f.value}>
+                    {f.label}
+                  </TabsTriggerCompact>
+                ))}
+              </TabsListCompact>
+            </Tabs>
           )}
           <Button variant="outline" size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
@@ -192,104 +191,110 @@ export function MarketplaceBrowser({
         </div>
       </div>
 
-      {/* Source switcher — browse by source */}
-      <div className="-mx-0.5 flex items-center gap-1.5 overflow-x-auto px-0.5 pb-1">
-        {pills.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            aria-pressed={source === m.id}
-            onClick={() => setSource(m.id)}
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors',
-              source === m.id
-                ? 'border-foreground/20 bg-foreground/[0.06] text-foreground font-medium'
-                : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-foreground/20',
-            )}
-          >
-            {m.id !== 'all' && (
+      <Tabs value={source} onValueChange={setSource} className="gap-0">
+        <div className="flex items-center gap-2">
+          <TabsListCompact className="w-fit shrink-0">
+            {pills.map((m) => (
+              <TabsTriggerCompact key={m.id} value={m.id}>
+                {/* {m.id !== 'all' && (
+                  <MarketplaceAvatar
+                    id={m.id}
+                    owner={m.owner}
+                    sourceUrl={m.sourceUrl}
+                    label={m.label}
+                    size="xs"
+                  />
+                )} */}
+
+                {m.label}
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+
+          {pendingSources.map((s) => (
+            <span
+              key={`pending-${s.id}`}
+              title={`Loading ${s.label}…`}
+              className="border-border/60 text-muted-foreground/70 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-xs"
+            >
               <MarketplaceAvatar
-                id={m.id}
-                owner={m.owner}
-                sourceUrl={m.sourceUrl}
-                label={m.label}
+                id={s.id}
+                owner={s.owner}
+                sourceUrl={s.sourceUrl}
+                label={s.label}
                 size="xs"
               />
-            )}
-            {m.label}
-            <span className="text-muted-foreground/50 tabular-nums">{m.count}</span>
-          </button>
-        ))}
-        {/* Sources still resolving on a cold load — a spinner pill each, until it
-            lands and flips into a real (clickable, counted) source pill above. */}
-        {pendingSources.map((s) => (
-          <span
-            key={`pending-${s.id}`}
-            title={`Loading ${s.label}…`}
-            className="border-border/60 text-muted-foreground/70 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-xs"
-          >
-            <MarketplaceAvatar
-              id={s.id}
-              owner={s.owner}
-              sourceUrl={s.sourceUrl}
-              label={s.label}
-              size="xs"
-            />
-            {s.label}
-            <Loader2 className="size-3 animate-spin" />
-          </span>
-        ))}
-      </div>
-
-      {/* Selected external source — provenance + remove */}
-      {selected?.external && (
-        <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            <MarketplaceAvatar
-              id={selected.id}
-              owner={selected.owner}
-              sourceUrl={selected.sourceUrl}
-              label={selected.label}
-              size="sm"
-              className="shrink-0"
-            />
-            <span className="text-foreground truncate font-medium">{selected.label}</span>
-            <span className="text-muted-foreground/60 shrink-0 text-xs">
-              {selected.count} items
+              {s.label}
+              <Loading className="size-3 animate-spin" />
             </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {ghUrl && (
-              <a
-                href={ghUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors"
-              >
-                GitHub
-                <ExternalLink className="size-3" />
-              </a>
-            )}
-            {removableId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
-                disabled={removeSource.isPending}
-                onClick={onRemoveSource}
-              >
-                <Trash2 className="size-3.5" />
-                Remove
-              </Button>
-            )}
-          </div>
+          ))}
         </div>
+      </Tabs>
+
+      {selected?.external && (
+        <>
+          <div className="border-border bg-primary/5 flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <MarketplaceAvatar
+                id={selected.id}
+                owner={selected.owner}
+                sourceUrl={selected.sourceUrl}
+                label={selected.label}
+                size="md"
+                className="shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-foreground truncate text-sm font-medium">{selected.label}</p>
+                <InlineMeta>
+                  {selected.owner && <span>{selected.owner}</span>}
+                  <span className="tabular-nums">
+                    {selected.count} {selected.count === 1 ? 'item' : 'items'}
+                  </span>
+                  {typeBreakdown(selected.types) && <span>{typeBreakdown(selected.types)}</span>}
+                </InlineMeta>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-1.5">
+              {ghUrl && (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={ghUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="size-3.5" />
+                    GitHub
+                  </Link>
+                </Button>
+              )}
+              {removableId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={removeSource.isPending}
+                  onClick={() => setRemoveConfirmOpen(true)}
+                >
+                  <TrashSolid className="size-3.5" />
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+          {removableId && (
+            <ConfirmDialog
+              open={removeConfirmOpen}
+              onOpenChange={setRemoveConfirmOpen}
+              title={`Remove ${selected.label}?`}
+              description="Items from this source will no longer appear in the catalog."
+              confirmLabel="Remove"
+              confirmVariant="destructive"
+              onConfirm={onRemoveSource}
+              isPending={removeSource.isPending}
+            />
+          )}
+        </>
       )}
 
       {itemsQuery.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[92px] rounded-2xl" />
+            <Skeleton key={i} className="h-[92px] rounded-md" />
           ))}
         </div>
       ) : itemsQuery.isError ? (
@@ -309,7 +314,7 @@ export function MarketplaceBrowser({
         streaming ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[92px] rounded-2xl" />
+              <Skeleton key={i} className="h-[92px] rounded-md" />
             ))}
           </div>
         ) : (
@@ -326,11 +331,15 @@ export function MarketplaceBrowser({
       ) : grouped && sections.length > 1 ? (
         <div className="space-y-6">
           {sections.map((section) => (
-            <div key={section.label}>
-              <h2 className="text-foreground mb-2.5 text-sm font-semibold">
-                {section.label}{' '}
-                <span className="text-muted-foreground/60 font-normal">{section.items.length}</span>
-              </h2>
+            <div key={section.label} className="space-y-3">
+              <div className="flex w-fit items-center justify-between gap-2 px-1">
+                <Label className="text-foreground/90 flex items-center gap-2 text-sm font-medium">
+                  {section.label}
+                </Label>
+                <span className="text-muted-foreground text-[12px] tabular-nums">
+                  {section.items.length}
+                </span>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">{section.items.map(renderCard)}</div>
             </div>
           ))}
@@ -341,14 +350,14 @@ export function MarketplaceBrowser({
 
       {streaming && items.length > 0 && (
         <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-1 text-xs">
-          <Loader2 className="size-3.5 animate-spin" />
+          <Loading className="size-3.5 animate-spin" />
           {tI18nHardcoded.raw(
             'autoComponentsMarketplaceMarketplaceBrowserJsxTextLoadingMoreSourcese06aa650',
           )}
         </div>
       )}
 
-      <AddMarketplaceDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddMarketplaceModal open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
 }

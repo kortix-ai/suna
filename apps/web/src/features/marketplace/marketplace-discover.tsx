@@ -24,7 +24,7 @@ import {
 } from '@/hooks/marketplace';
 import type { MarketplaceSummary } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
-import { AddMarketplaceDialog } from './add-marketplace-dialog';
+import { AddMarketplaceModal } from './add-marketplace-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 
 const TYPE_ORDER = ['skill', 'agent', 'command', 'tool'];
@@ -52,7 +52,7 @@ function dedupeBy<T>(arr: readonly T[], key: (t: T) => string): T[] {
 
 function SourceCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-border/60 bg-card hover:border-foreground/15 flex items-start gap-3 rounded-2xl border p-3.5 transition-colors">
+    <div className="bg-popover hover:bg-muted/80 flex items-start gap-3 rounded-md border p-3.5 transition-colors">
       {children}
     </div>
   );
@@ -104,7 +104,6 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
 
   return (
     <div className="space-y-7">
-      {/* Your sources */}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -127,7 +126,7 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
         {mineQ.isLoading ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <Skeleton key={i} className="h-[84px] rounded-2xl" />
+              <Skeleton key={i} className="h-[84px] rounded-md" />
             ))}
           </div>
         ) : (
@@ -293,7 +292,7 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
         </section>
       )}
 
-      <AddMarketplaceDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddMarketplaceModal open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );
 }
