@@ -202,13 +202,11 @@ export async function handleChatCompletions(
   }
 
   const streaming = body.stream === true;
-  const hasReasoning =
-    body.reasoning !== undefined ||
-    body.reasoning_effort !== undefined ||
-    body.thinking !== undefined;
-  if (!hasReasoning && config.injectReasoningFor?.(requestedModel)) {
-    body.reasoning = { effort: 'medium' };
-  }
+  // Client-supplied reasoning/thinking passes through verbatim (honored by the
+  // openai-compat and openai-responses transports). The gateway does NOT force a
+  // default reasoning effort: it's the client's (opencode's) decision, it costs
+  // reasoning tokens, and the Bedrock/Anthropic transports build their own
+  // payloads and would silently ignore a top-level `reasoning` field anyway.
   const payload = streaming
     ? { ...body, stream: true, stream_options: { include_usage: true } }
     : body;
@@ -268,6 +266,8 @@ export async function handleChatCompletions(
         ...counts,
         accountId: principal.accountId,
         actorUserId: principal.userId,
+        projectId: principal.projectId,
+        sessionId: principal.sessionId,
         provider: descriptor.provider,
         model: usedModel,
         upstreamCost,

@@ -1,5 +1,5 @@
-import { CircuitOpenError, defaultIsRetryable } from '../errors';
-import { withRetry, type RetryOptions } from './retry';
+import { CircuitOpenError, indicatesUpstreamDown } from '../errors';
+import { type RetryOptions, withRetry } from './retry';
 
 export type BreakerState = 'closed' | 'open' | 'half-open';
 
@@ -72,7 +72,10 @@ export async function withResilience<T>(
     binding?.breaker.onSuccess();
     return result;
   } catch (error) {
-    if (defaultIsRetryable(error)) binding?.breaker.onFailure();
+    // Only genuine upstream-down signals (5xx/network/timeout) trip the shared
+    // provider breaker — never a 429/402/403, which is this caller's quota, not
+    // the host being unhealthy. See indicatesUpstreamDown.
+    if (indicatesUpstreamDown(error)) binding?.breaker.onFailure();
     throw error;
   }
 }

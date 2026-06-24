@@ -262,7 +262,10 @@ describe('gateway.chatCompletions', () => {
     const fetchImpl: FetchImpl = async (url) =>
       String(url).includes('byok.test')
         ? new Response('{"error":"rate_limit"}', { status: 429 })
-        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+        : new Response(completion, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -279,7 +282,10 @@ describe('gateway.chatCompletions', () => {
     const fetchImpl: FetchImpl = async (url) =>
       String(url).includes('byok.test')
         ? new Response('{"error":"insufficient_quota"}', { status: 402 })
-        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+        : new Response(completion, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -289,7 +295,8 @@ describe('gateway.chatCompletions', () => {
 
   test('a non-limit BYOK 4xx (400 bad request) returns as-is — no fallback', async () => {
     const { hooks } = makeHooks({ resolveUpstream: async () => [byok, managed] });
-    const fetchImpl: FetchImpl = async () => new Response('{"error":"bad_request"}', { status: 400 });
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"bad_request"}', { status: 400 });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -299,11 +306,70 @@ describe('gateway.chatCompletions', () => {
 
   test('a 429 with no fallback candidate is returned, not swallowed', async () => {
     const { hooks } = makeHooks({ resolveUpstream: async () => [byok] });
-    const fetchImpl: FetchImpl = async () => new Response('{"error":"rate_limit"}', { status: 429 });
-    const res = await createGateway(hooks, { retry: { ...fastRetry, maxAttempts: 1 } }, { fetchImpl }).chatCompletions({
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"rate_limit"}', { status: 429 });
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl },
+    ).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
     });
     expect(res.status).toBe(429);
+  });
+
+  // Regression guard for the cross-tenant breaker bug: a persistent 429 on a
+  // BYOK key is this caller's quota, not the provider being down. With the
+  // breaker keyed by provider and shared across tenants, repeated 429s must NOT
+  // open it — otherwise one tenant's exhausted key 503s everyone else's healthy
+  // key on the same provider.
+  test('a persistent 429 never opens the shared provider breaker', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [byok] });
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"rate_limit"}', { status: 429 });
+    const gateway = createGateway(
+      hooks,
+      {
+        retry: { ...fastRetry, maxAttempts: 1 },
+        breaker: { failureThreshold: 1, cooldownMs: 10_000 },
+      },
+      { fetchImpl },
+    );
+    // First request: 429 passes straight through (would have tripped a threshold=1 breaker under the old logic).
+    const first = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(first.status).toBe(429);
+    // Second request still reaches upstream and gets the upstream 429 — NOT a 503 circuit-open.
+    const second = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(second.status).toBe(429);
+  });
+
+  test('a persistent 5xx still opens the breaker (502 → 503)', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => new Response('boom', { status: 500 });
+    const gateway = createGateway(
+      hooks,
+      {
+        retry: { ...fastRetry, maxAttempts: 1 },
+        breaker: { failureThreshold: 1, cooldownMs: 10_000 },
+      },
+      { fetchImpl },
+    );
+    const first = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(first.status).toBe(502);
+    const second = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(second.status).toBe(503);
   });
 });

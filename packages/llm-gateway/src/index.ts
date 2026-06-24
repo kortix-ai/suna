@@ -25,6 +25,7 @@ export {
   TimeoutError,
   UpstreamHttpError,
   defaultIsRetryable,
+  indicatesUpstreamDown,
 } from './errors';
 export type { UpstreamErrorKind } from './errors';
 
