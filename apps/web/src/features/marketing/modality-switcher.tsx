@@ -1,13 +1,21 @@
 'use client';
 
-import { InteractiveDemo } from '@/components/home/interactive-demo';
+import { CliDemo } from '@/components/home/cli-demo';
+import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
 import { Reveal } from '@/components/home/reveal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Check, Download, MonitorSmartphone, SendHorizontal, Smartphone } from 'lucide-react';
+import {
+  Check,
+  Download,
+  MonitorSmartphone,
+  SendHorizontal,
+  Smartphone,
+  Terminal,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
@@ -199,10 +207,9 @@ function reportLines(name: string): ChatLine[] {
 }
 
 function WebDesktopSurface() {
-  // The full Kortix web/desktop app: the product-UI rail (Projects · Chat ·
-  // Agents · Skills · Integrations · Models · Channels) lives here ONLY, so the
-  // 3,000+ apps grid is reachable inside the Integrations page, and the product
-  // UI appears exactly once on the page.
+  // The full Kortix web/desktop app — the rich tabbed product UI (Projects ·
+  // Chat · Agents · Skills · Integrations · Models · Channels). The CLI lives in
+  // its own tab now, so this is the app surface only (embedded = no CLI window).
   return (
     <div className="border-card bg-background relative flex h-full w-full flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
       <div className="border-border/60 bg-muted/40 flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
@@ -210,16 +217,23 @@ function WebDesktopSurface() {
         <span className="bg-foreground/20 size-2.5 rounded-full" />
         <span className="bg-foreground/20 size-2.5 rounded-full" />
       </div>
-      <div className="min-h-0 flex-1">
-        <InteractiveDemo
+      <div className="min-h-0 flex-1 p-2 sm:p-3">
+        <InteractiveDemoSection
           gradientbg={false}
-          tab={false}
           embedded
-          aside
-          activePage="projects"
-          className="h-full w-full max-w-full"
+          className="h-full"
+          contentClassName="h-full"
         />
       </div>
+    </div>
+  );
+}
+
+function CliSurface() {
+  // The terminal experience: kortix init -> kortix ship, in its own window.
+  return (
+    <div className="h-full w-full">
+      <CliDemo />
     </div>
   );
 }
@@ -246,6 +260,7 @@ const TABS = [
   { key: 'slack', label: 'Slack', icon: <Icon.Slack className="size-3.5" /> },
   { key: 'teams', label: 'Teams', icon: <Icon.MicrosoftTeams className="size-3.5" /> },
   { key: 'mobile', label: 'Mobile', icon: <Smartphone className="size-3.5" /> },
+  { key: 'cli', label: 'CLI', icon: <Terminal className="size-3.5" /> },
 ] as const;
 
 const CONTENT_CLASS = 'mt-0 h-full data-[state=inactive]:hidden';
@@ -262,8 +277,8 @@ export function ModalitySwitcher() {
             Meet Kortix where you already work.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            The same agents, the same repo — reachable from the web and desktop app, Slack, Teams,
-            or your phone. Ask in a message; get the work back.
+            The same agents, the same repo — reachable from the web/desktop app, Slack, Teams, your
+            phone, or the CLI. Ask in a message; get the work back.
           </p>
         </div>
       </Reveal>
@@ -315,6 +330,10 @@ export function ModalitySwitcher() {
               <div className="from-kortix-blue/10 h-full rounded-2xl bg-linear-180 to-transparent p-4">
                 <PhoneSurface />
               </div>
+            </TabsContent>
+
+            <TabsContent value="cli" className={CONTENT_CLASS}>
+              <CliSurface />
             </TabsContent>
           </div>
         </Tabs>

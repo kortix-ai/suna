@@ -12,6 +12,7 @@ import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
 import { RuntimeArchitecture } from '@/features/marketing/runtime-architecture';
 import Security from '@/features/marketing/security/security';
+import { SkillsMemory } from '@/features/marketing/skills-memory';
 import { UseCasesByDepartment } from '@/features/marketing/use-cases-by-department';
 import { WhyItsAHire } from '@/features/marketing/why-its-a-hire';
 import WhyKortix from '@/features/marketing/why-kortix';
@@ -63,6 +64,12 @@ export default function Home() {
         </div>
 
         <CompanyAsRepo />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <SkillsMemory />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
