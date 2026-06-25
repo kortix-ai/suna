@@ -56,6 +56,9 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: resuming a session provisions compute. A scoped agent
+    // token must hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     const visible = await loadVisibleSession(loaded, sessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
@@ -153,6 +156,9 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: restart re-provisions compute. A scoped agent token must
+    // hold project.session.start (no-op for human/PAT tokens).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or a project manager.
     const visible = await loadVisibleSession(loaded, sessionId);

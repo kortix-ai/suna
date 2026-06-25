@@ -395,6 +395,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Connecting a Slack workspace is a connector-write capability — gated so a
+  // custom role can withhold it and a scoped agent must hold it (central fold).
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   let body: { bot_token?: string; signing_secret?: string };
   try {
@@ -462,6 +465,8 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Disconnecting Slack tears down the connector — same connector-write gate.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
   await deleteSlackInstall(projectId);
   // Tear down the auto-materialized Slack connector now that the install is gone.
   void reconcileChannelConnectors(projectId);

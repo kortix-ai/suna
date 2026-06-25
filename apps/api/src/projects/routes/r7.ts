@@ -1,5 +1,6 @@
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -338,6 +339,9 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: starting a session provisions compute. A scoped agent token
+  // must hold project.session.start (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
@@ -735,6 +739,9 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: tearing down a session. A scoped agent token must hold
+  // project.session.stop (no-op for human/PAT tokens).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
   const visible = await loadVisibleSession(loaded, sessionId);

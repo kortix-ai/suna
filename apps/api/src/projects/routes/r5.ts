@@ -682,6 +682,11 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Editing project config (name / default_branch / manifest_path) is a
+  // customize-write capability. manifest_path is especially sensitive: it
+  // selects which kortix.toml drives per-agent env scoping, so a custom role
+  // can withhold it and a scoped agent must hold it (central fold).
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
   const name = normalizeString(body.name);
