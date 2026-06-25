@@ -160,8 +160,9 @@ slackOauthApp.openapi(
 
   // Seed the installer's identity so the admin who just connected is linked
   // immediately and never hits the `/login` block on their own messages. Slack
-  // returns the authorizing user as `authed_user.id`. Best-effort.
-  if (tokenJson.authed_user?.id) {
+  // returns the authorizing user as `authed_user.id`. Best-effort, and only when
+  // the per-user identity feature is enabled (the whole feature is flag-gated).
+  if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
     try {
       await linkSlackIdentity({
         teamId: tokenJson.team.id,

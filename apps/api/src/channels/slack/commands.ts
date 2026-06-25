@@ -56,10 +56,11 @@ export async function handleSlashCommand(
       return slashSession(ctx);
     case 'login':
     case 'connect':
-      return slashLogin(ctx);
+      // Whole feature is flag-gated: when off, `/login` doesn't exist.
+      return config.SLACK_REQUIRE_USER_IDENTITY ? slashLogin(ctx) : unknownSub(sub, ctx.command);
     case 'logout':
     case 'disconnect':
-      return slashLogout(ctx);
+      return config.SLACK_REQUIRE_USER_IDENTITY ? slashLogout(ctx) : unknownSub(sub, ctx.command);
     case 'whoami':
     case 'who':
       return slashWhoami(ctx);
@@ -79,11 +80,15 @@ export async function handleSlashCommand(
     case '':
       return slashHelp(ctx.command);
     default:
-      return {
-        response_type: 'ephemeral',
-        text: `Unknown subcommand \`${sub}\`. Try \`${ctx.command} help\`.`,
-      };
+      return unknownSub(sub, ctx.command);
   }
+}
+
+function unknownSub(sub: string, command: string): SlashResponse {
+  return {
+    response_type: 'ephemeral',
+    text: `Unknown subcommand \`${sub}\`. Try \`${command} help\`.`,
+  };
 }
 
 function slashHelp(command: string): SlashResponse {
@@ -110,11 +115,16 @@ function slashHelp(command: string): SlashResponse {
         { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
         { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
         { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
-        { cmd: `${command} login`,    desc: 'Connect your own Kortix account so the agent runs as you.' },
-        { cmd: `${command} logout`,   desc: 'Disconnect your Kortix account from this Slack workspace.' },
+        // Only advertised when per-user identity is enabled.
+        ...(config.SLACK_REQUIRE_USER_IDENTITY
+          ? [
+              { cmd: `${command} login`,  desc: 'Connect your own Kortix account so the agent runs as you.' },
+              { cmd: `${command} logout`, desc: 'Disconnect your Kortix account from this Slack workspace.' },
+            ]
+          : []),
         { cmd: `${command} session`,  desc: 'Show this channel\'s most recent session + open it on the web.' },
         { cmd: `${command} sessions`, desc: 'Show the last 5 sessions started in this workspace.' },
-        { cmd: `${command} whoami`,   desc: 'Your linked Kortix account + this channel\'s project, agent, and model.' },
+        { cmd: `${command} whoami`,   desc: 'This channel\'s project, agent, and model' + (config.SLACK_REQUIRE_USER_IDENTITY ? ' + your linked Kortix account.' : '.') },
         { cmd: `${command} help`,     desc: 'This message.' },
       ].map((r) => ({
         type: 'section',
@@ -380,7 +390,8 @@ async function buildIdentityContext(ctx: SlashCtx): Promise<Record<string, unkno
 }
 
 async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
-  const identityBlock = await buildIdentityContext(ctx);
+  // Identity line only when the per-user feature is on.
+  const identityBlocks = config.SLACK_REQUIRE_USER_IDENTITY ? [await buildIdentityContext(ctx)] : [];
   const selection = await currentChannelSelection(ctx);
   const currentId = selection?.projectId ?? null;
   const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
@@ -388,7 +399,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
     return {
       response_type: 'ephemeral',
       blocks: [
-        identityBlock,
+        ...identityBlocks,
         {
           type: 'section',
           text: {
@@ -429,7 +440,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
   return {
     response_type: 'ephemeral',
     blocks: [
-      identityBlock,
+      ...identityBlocks,
       section,
       {
         type: 'context',

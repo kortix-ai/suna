@@ -91,6 +91,24 @@ describe('unknown subcommand', () => {
   });
 });
 
+// Per-user identity is OFF by default (SLACK_REQUIRE_USER_IDENTITY unset in the
+// test env), so the whole feature is dark: login/logout are not real subcommands
+// and help never advertises them.
+describe('identity feature gated OFF', () => {
+  test('/login is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('login', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('/logout is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('logout', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('help does not list login/logout', async () => {
+    const resp = await handleSlashCommand('help', '', ctx);
+    expect(allText(resp)).not.toContain('runs as you');
+  });
+});
+
 describe('/kortix models', () => {
   test('renders a picker of recommended models + a project-default reset', async () => {
     selection = { projectId: 'p1', agentName: null, opencodeModel: 'anthropic/claude-opus-4-8' };

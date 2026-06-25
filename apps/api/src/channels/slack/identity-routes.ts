@@ -14,6 +14,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { inArray } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
 import { listProjectsForWorkspace, loadSlackTeamNameForProject } from '../install-store';
@@ -36,10 +37,12 @@ slackIdentityApp.openapi(
     request: { body: { content: { 'application/json': { schema: BindBody } } } },
     responses: {
       200: json(BindResult, 'Identity linked'),
-      ...errors(400, 403, 410),
+      ...errors(400, 403, 404, 410),
     },
   }),
   async (c: any) => {
+    // Whole feature is flag-gated — the bind endpoint is inert when off.
+    if (!config.SLACK_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
     const userId = c.get('userId') as string;
     const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
     if (!token) return c.json({ error: 'Missing token' }, 400);
