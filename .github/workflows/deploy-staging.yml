@@ -60,7 +60,7 @@ jobs:
           INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
-          git fetch origin staging --quiet
+          git fetch origin staging:refs/remotes/origin/staging --quiet
           sha="${INPUT_SHA:-${WORKFLOW_SHA:-}}"
           [ -n "$sha" ] || sha="$(git rev-parse origin/staging)"
           sha="$(git rev-parse "$sha")"
@@ -238,7 +238,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git fetch origin staging --quiet
+          git fetch origin staging:refs/remotes/origin/staging --quiet
           git checkout -B staging origin/staging
           yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
           yq -i '.image.tag = strenv(TAG)' "$GATEWAY_VALUES"

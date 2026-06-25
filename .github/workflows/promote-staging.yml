@@ -35,12 +35,13 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
       - name: Push exact commit to staging
+        id: promote
         env:
           PROMOTE_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
-          git fetch origin staging --quiet || true
+          git fetch origin staging:refs/remotes/origin/staging --quiet || true
           staging_sha="$(git rev-parse origin/staging 2>/dev/null || true)"
           echo "Promoting ${PROMOTE_REF} @ ${source_sha} to staging"
 
@@ -53,14 +54,16 @@ jobs:
               | git commit-tree "$tree" -p "$staging_sha" -p "$source_sha")"
             git push origin "$promote_sha:refs/heads/staging"
             echo "staging now points at promotion commit ${promote_sha}"
+            echo "staging_sha=${promote_sha}" >> "$GITHUB_OUTPUT"
           else
             git push origin "$source_sha:refs/heads/staging"
             echo "staging now points at ${source_sha}"
+            echo "staging_sha=${source_sha}" >> "$GITHUB_OUTPUT"
           fi
       - name: Start staging artifact build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run build-staging.yml --ref staging
-          echo "Build Staging Artifacts dispatched for staging."
+          gh workflow run build-staging.yml --ref main -f sha="${{ steps.promote.outputs.staging_sha }}"
+          echo "Build Staging Artifacts dispatched for ${{ steps.promote.outputs.staging_sha }}."
