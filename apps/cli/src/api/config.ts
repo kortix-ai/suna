@@ -182,15 +182,16 @@ export function deleteConfig(): void {
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
+function sandboxCliToken(): string | undefined {
+  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+}
+
 export function hasEnvTokenHost(): boolean {
-  return Boolean(
-    sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN'),
-  );
+  return Boolean(sandboxCliToken());
 }
 
 export function activeHost(): Host | null {
-  const envToken =
-    sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+  const envToken = sandboxCliToken();
   if (envToken) {
     return {
       url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
@@ -219,6 +220,8 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
 }
 
 export function activeHostEntry(): { name: string; host: Host } {
+  const envHost = activeHost();
+  if (sandboxCliToken() && envHost) return { name: 'sandbox', host: envHost };
   const config = loadConfig();
   const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
   return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
