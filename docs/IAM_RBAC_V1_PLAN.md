@@ -206,6 +206,23 @@ An adversarial review (5 attack surfaces, each finding independently verified) f
 
 **The headline use case works end-to-end at the API now:** create a Marketing custom role (omitting gitops/customize/etc.), `POST /iam/policies` binding the Marketing group → that role at the company-project scope, and the engine grants Marketing members exactly those actions, blocks the omitted capabilities, and busts caches on every change.
 
+### ✅ Exhaustive edge-case audit (security pass #2 — 32 findings + a route-surface sweep, all verified)
+
+A second adversarial review hunted every edge case in the now-live model. Fixed all 4 CRITICALs, every HIGH, and the meaningful MEDIUMs (committed `c018afd0`, `4aa9eb72`, `2c21d055`, `9a678c32`, `7cd120b6`):
+
+- **The fold was DEAD at every leaf route (CRITICAL #29).** Routes called bare `assertAuthorized` without the acting token, so `authorizeV2`'s agent fold silently no-op'd — the whole agent-side pass above was inert in practice. Added `assertProjectCapability(c,…)` (threads `c.get('iamTokenId')`) and converted all 24 leaf gates + the membership/credential routes to it. **This is what actually turns the agent grant on.**
+- **Agent mints/revokes its own escape hatch (CRITICAL #30).** A scoped agent token could `POST /cli-token` to mint an *unscoped* sibling (and `DELETE` to DoS siblings). Now both are blocked for agent tokens.
+- **Registry install/update/delete pushed to the default branch ungated (CRITICAL #31).** Now gated on `project.gitops.push`.
+- **Admin self-escalates via a custom role (CRITICAL #32).** A custom role could carry owner-only / IAM-management actions; an admin could mint it, bind themselves, and become owner. Added `NON_DELEGABLE_ACTIONS` + account/project namespace integrity to `validateActions`.
+- **`loadProjectForUser('manage')` is really only `project.write` (editor).** So membership/credential routes gated only by it leaked to *editors* and (fold-exempt) scoped agents: access-request approve/reject + member-invite + group-grant CRUD now require `project.members.manage`; the raw-push-token endpoint requires `project.gitops.push`; git collaborator-invite requires `members.manage`.
+- **Coverage gates** added across the surface: git-credential PUT, Slack connect/disconnect, `PATCH /:projectId` (default_branch/**manifest_path**), session start/restart/create/delete, CR edit/close/reopen, snapshot/template build·rebuild, warm-pool + experimental config — each on the right leaf (or agent-only `assertAgentScope` where a human-tier change would be a regression).
+- **`readManifest` honored a custom `manifest_path` (HIGH #9).** It hardcoded `kortix.toml`, so a custom path silently turned OFF *all* per-agent env/connector scoping (grant resolved to null = unrestricted).
+- **Policy integrity:** reject token-principal policies (the engine never loads them → silent no-op), enforce role↔policy scope-type match (an account-scoped policy smears a project role over every project), reject already-expired policies, validate `scopeId` belongs to the account.
+- **Cache revoke-immediacy:** group delete (before the cascade), member add, and member remove now bust the IAM cache — revocations were lingering up to the 15s TTL.
+- **`agentMayUseEnv` is case-insensitive** (secrets are UPPERCASE; a hand-written allowlist may not be) and **cr.open ≡ gitops.push / cr.merge ≡ gitops.merge** are aliased so the now-live fold doesn't double-gate CR open/merge.
+
+**Verification:** `bunx tsc --noEmit` clean; 89/90 unit-test files green (the 1 — `unit-slack-oauth` — fails identically at the branch base on an unrelated `mock.module` gap); IAM/scope/role/engine/contract suites all green; new unit tests for the escalation ceiling, namespace integrity, the cr/gitops alias, and env case-folding. **Deferred with rationale:** `iam_policies` unique constraint (#13 — duplicate policies are harmless under union semantics; a migration risks failing on existing dup data) and bulk-import atomicity (#11 — per-entry error reporting is the better UX).
+
 ### ⏳ Next (best done together — needs the live ke2e suite, visual QA, or a product call)
 
 1. **Frontend (Phase 3 UI).** The backend + SDK are ready; build the UI: a Roles tab (wire `iam-client` `createRole`/`updateRolePermissions`/`listActions` → the capability checkbox matrix) and a policy-assignment surface (bind a group/member → role @ scope), then `useProjectCan(projectId, action)` batch section-gating in `customize-overlay.tsx` (map each `CustomizeSection` → leaf action; hide rail item + block deep-link; default-hide on load/error). Visual QA needed → do interactively.
