@@ -22,3 +22,17 @@ describe('Slack channel connector catalogue', () => {
     expect(source).toContain('Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.');
   });
 });
+
+describe('Email channel connector catalogue', () => {
+  test('keeps Email profiles behind the experimental flag', () => {
+    expect(source).toContain('{emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}');
+  });
+
+  test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {
+    expect(source).toContain('Create managed Email inbox');
+    expect(source).toContain('Use custom AgentMail key');
+    expect(source).toContain('Attach existing AgentMail inbox');
+    expect(source).toContain('Existing inbox ID');
+    expect(source).toContain('Existing inbox email');
+  });
+});

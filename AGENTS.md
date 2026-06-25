@@ -104,6 +104,9 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   **Promote Dev to Staging**, or open a targeted PR directly into `staging`.
   Staging deploys to `staging.kortix.com` / `staging-api.kortix.com` and must
   use the staging data plane, not dev or prod.
+- Staging deploys must apply pending DB migrations against `STAGING_DATABASE_URL`
+  before the staging EKS rollout. If that secret is missing or points at dev/prod,
+  treat the deploy as broken; staging must never fall back to dev, KE2E, or prod DBs.
 - **`prod` = production.** Production moves only through **Promote to Production**,
   which uses `staging` as the source, opens a reviewed release PR into `prod`,
   publishes the release artifacts, and rolls production after merge.

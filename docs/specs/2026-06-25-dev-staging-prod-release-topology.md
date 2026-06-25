@@ -92,7 +92,13 @@ This keeps failover identical everywhere:
 
 Staging should be isolated from both dev and prod:
 
-- AWS region: `us-west-2`
+- AWS runtime region target: `eu-west-2`
+- Current first implementation: `kortix-dev-eks` / `us-west-2` with isolated
+  namespace, IAM role, hosts, and secret bundle until a dedicated staging EKS is
+  provisioned
+- Supabase/Postgres data plane: `Kortix STAGING` project
+  `ujzsbwvurfyeuerxxeaz` in `eu-west-2`; staging must not use the dev or prod
+  Supabase/Postgres projects
 - ECS VPC CIDR: `10.50.0.0/16`
 - EKS VPC CIDR: `10.60.0.0/16`
 - EKS cluster: `kortix-staging-eks`
@@ -165,9 +171,11 @@ Never place Cloudflare keys in:
 - tag `staging-latest` for manual inspection.
 
 `deploy-staging.yml` deploys the staging release candidate after staging images
-are built. The first implementation isolates staging on the existing dev EKS
-control plane by namespace, IAM role, secret bundle, hostnames, Worker route, and
-Vercel alias:
+are built. It must first sync `kortix-staging-env` from staging secrets and run
+node-pg-migrate against `STAGING_DATABASE_URL`; if that secret is missing or
+points at dev/prod, the deploy must fail instead of falling back. The first
+implementation isolates staging on the existing dev EKS control plane by
+namespace, IAM role, secret bundle, hostnames, Worker route, and Vercel alias:
 
 - `kortix-staging`
 - `infra/k8s/envs/staging/*.yaml`

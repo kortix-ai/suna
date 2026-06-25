@@ -712,6 +712,9 @@ projectsApp.openapi(
       profile_slug?: string;
       username?: string;
       domain?: string;
+      inbox_id?: string;
+      inboxId?: string;
+      email?: string;
       display_name?: string;
       displayName?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
@@ -739,6 +742,18 @@ projectsApp.openapi(
     const username = normalizeAgentMailUsername(
       body.username ?? loaded.row.name,
     );
+    const existingInboxId =
+      typeof (body.inbox_id ?? body.inboxId) === "string"
+        ? (body.inbox_id ?? body.inboxId)!.trim()
+        : "";
+    const existingEmail =
+      typeof body.email === "string" ? body.email.trim() : "";
+    if ((existingInboxId && !existingEmail) || (!existingInboxId && existingEmail)) {
+      return c.json(
+        { error: "Existing AgentMail inbox requires both inbox_id and email" },
+        400,
+      );
+    }
     const domain =
       typeof body.domain === "string" && body.domain.trim()
         ? body.domain.trim()
@@ -752,24 +767,32 @@ projectsApp.openapi(
     const clientId = `kortix-project-${projectId}`;
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
-    try {
-      inbox = await createAgentMailInbox({
-        apiKey,
-        username,
-        domain,
-        displayName,
-        clientId,
-        metadata: {
-          provider: "kortix",
-          project_id: projectId,
-          account_id: loaded.row.accountId,
-        },
-      });
-    } catch (err) {
-      return c.json(
-        { error: `AgentMail inbox create failed: ${(err as Error).message}` },
-        502,
-      );
+    if (existingInboxId && existingEmail) {
+      inbox = {
+        inbox_id: existingInboxId,
+        email: existingEmail,
+        display_name: displayName,
+      };
+    } else {
+      try {
+        inbox = await createAgentMailInbox({
+          apiKey,
+          username,
+          domain,
+          displayName,
+          clientId,
+          metadata: {
+            provider: "kortix",
+            project_id: projectId,
+            account_id: loaded.row.accountId,
+          },
+        });
+      } catch (err) {
+        return c.json(
+          { error: `AgentMail inbox create failed: ${(err as Error).message}` },
+          502,
+        );
+      }
     }
 
     let webhookId: string;
@@ -1187,12 +1210,11 @@ projectsApp.openapi(
 );
 
 // GET /v1/projects/:projectId/llm-catalog
-// The seed daemon fetches the org model catalog at PARK with its sandbox token
-// (no per-session LLM key yet) so the no-restart warm-fork bakes the FULL model
-// picker into the session-independent opencode config. Returns the same { models }
-// shape the internal gateway route serves. Sandbox-token only, scoped to a sandbox
-// that belongs to this project (same guard as turn-stream). The catalog is the
-// non-secret model list, so a sandbox token is sufficient.
+// Server-side source of truth for the gateway model catalog. The seed daemon
+// fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
+// full picker into opencode config. The web UI also reads it with normal project
+// auth so the model picker is available before the sandbox runtime answers.
+// The catalog is non-secret; access is still scoped to this project.
 projectsApp.openapi(
   createRoute({
     method: "get",
@@ -1213,33 +1235,32 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    if (
-      !(c.get("authType") === "apiKey" && c.get("apiKeyType") === "sandbox")
-    ) {
-      return c.json({ error: "llm-catalog requires a sandbox token" }, 403);
-    }
+    const authType = c.get("authType") as string | undefined;
+    const apiKeyType = c.get("apiKeyType") as string | undefined;
     const accountId = c.get("accountId") as string | undefined;
     const sandboxId = c.get("sandboxId") as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: "llm-catalog requires a sandbox token" }, 403);
-    }
-    const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
-      .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, sandboxId),
-          eq(sessionSandboxes.projectId, projectId),
-          eq(sessionSandboxes.accountId, accountId),
-          inArray(sessionSandboxes.status, ["provisioning", "active"]),
-        ),
-      )
-      .limit(1);
-    if (!sandbox) {
-      return c.json(
-        { error: "sandbox token is not scoped to this project" },
-        403,
-      );
+    if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
     }
     const models = gatewayModelCatalog(projectId);
     return c.json({ models });
