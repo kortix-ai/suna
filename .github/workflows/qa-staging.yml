@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       web_base_url:
-        description: "Frontend URL for e2e/visual/a11y, for example https://dev.kortix.com"
+        description: "Frontend URL for e2e/visual/a11y, for example https://staging.kortix.com"
         required: false
         type: string
 
@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 45
     env:
       E2E_BASE_URL: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      QA_API_BASE_URL: ${{ vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
       A11Y_CONTRAST_MAX: ${{ vars.A11Y_CONTRAST_MAX || '560' }}
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +49,14 @@ jobs:
             echo "::notice::QA_WEB_BASE_URL/E2E_BASE_URL is not set; skipping browser regression."
             exit 0
           fi
+          case "$E2E_BASE_URL" in
+            https://staging.kortix.com*) ;;
+            *) echo "::error::qa-staging must target staging.kortix.com, got ${E2E_BASE_URL}"; exit 1 ;;
+          esac
+          case "${QA_API_BASE_URL:-}" in
+            ""|https://staging-api.kortix.com*) ;;
+            *) echo "::error::qa-staging API target must be staging-api.kortix.com, got ${QA_API_BASE_URL}"; exit 1 ;;
+          esac
           make e2e a11y
           # Visual is advisory: it snapshots the live target (no deterministic
           # per-platform baselines), so a pixel diff shouldn't red-gate qa-staging.

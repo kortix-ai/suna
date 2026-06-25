@@ -82,7 +82,7 @@ prod boundary:
 | Workflow | Role |
 | --- | --- |
 | `deploy-dev.yml` | On `main`, build/push `dev-<sha8>`, apply dev node-pg-migrate migrations, bump `infra/k8s/envs/dev/values.yaml`, and watch Argo CD roll `kortix-dev`. |
-| `build-staging.yml` / `qa-staging.yml` | On `staging`, build exact `staging-<sha8>` images and run the staging e2e lane. Add `deploy-staging.yml` once staging EKS/ECS exists. |
+| `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` | On `staging`, build exact `staging-<sha8>` images, deploy the staging runtime, and run the staging e2e lane against staging URLs. |
 | `promote.yml` | Manual dispatch that promotes `staging` by default and opens a reviewed `release/vX.Y.Z` PR into `prod`; it does not tag, release, retag, or deploy. |
 | `deploy-prod.yml` | On the `prod` merge, retag the tested staging image, apply prod node-pg-migrate migrations, cut the GitHub Release, and watch Argo CD roll `kortix-prod`. |
 
@@ -120,7 +120,11 @@ Watch a canary: `kubectl argo rollouts get rollout kortix-api -n kortix-prod --w
 
 ```
 PRs merge to main  ─►  DEV only        (dev Argo app tracks `main`)
-                       prod untouched
+                       staging/prod untouched
+
+Promote Dev to Staging or PR to staging
+                    └─►  STAGING only  (staging Argo app tracks `staging`)
+                         production untouched
 
 Actions → Promote to Production ─► opens reviewed release PR into `prod`
    └─ release PR already bumps image.tag in prod's envs/prod/values.yaml
@@ -129,9 +133,10 @@ Actions → Promote to Production ─► opens reviewed release PR into `prod`
 ```
 
 The **prod Application tracks the `prod` branch** — so nothing on `main` or
-`staging` can touch prod directly. Prod moves *only* when someone runs **Promote
-to Production** and the reviewed release PR merges into `prod` with the
-image/value bump.
+`staging` can touch prod directly. `staging` is the only normal source for a
+production release, but prod moves *only* when someone runs **Promote to
+Production** and the reviewed release PR merges into `prod` with the image/value
+bump.
 
 ## GitHub-org SSO + retiring admin
 

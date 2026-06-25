@@ -9,7 +9,7 @@ Kortix should have three clear environments:
 | Environment | Git branch | Frontend | API router | Primary API backend | Fallback API backend | Purpose |
 | --- | --- | --- | --- | --- | --- | --- |
 | dev | `main` | `dev.kortix.com` | `dev-api.kortix.com` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` | fast development trunk, direct pushes allowed |
-| staging | `staging` | `staging.kortix.com` | `staging-api.kortix.com` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` | pre-prod, e2e, release candidate validation |
+| staging | `staging` | `staging.kortix.com` | `staging-api.kortix.com` | `staging-api-eks.kortix.com` | future `staging-api-ecs-fargate.kortix.com` | pre-prod, e2e, release candidate validation |
 | prod | `prod` | `kortix.com` | `api.kortix.com` | `api-eks.kortix.com` | `api-ecs-fargate.kortix.com` | production |
 
 The branch flow is:
@@ -41,7 +41,8 @@ This gives the team a free development lane where CI still reports failures but 
 
 ### `staging`
 
-`staging` is the pre-prod source of truth. It can move in two ways:
+`staging` is the pre-prod source of truth. Treat anything on staging as
+production-ready unless QA proves otherwise. It can move in two ways:
 
 1. **Promote Dev to Staging**: a manual workflow moves `staging` to a chosen dev ref, usually `main`.
 2. **PR to Staging**: a release candidate, rollback candidate, or one-off selective patch can target `staging` directly.
@@ -163,14 +164,20 @@ Never place Cloudflare keys in:
 - tag them `staging-<sha8>`;
 - tag `staging-latest` for manual inspection.
 
-Once the staging EKS/ECS infrastructure exists, add a `deploy-staging.yml` lane mirroring `deploy-dev.yml` but targeting:
+`deploy-staging.yml` deploys the staging release candidate after staging images
+are built. The first implementation isolates staging on the existing dev EKS
+control plane by namespace, IAM role, secret bundle, hostnames, Worker route, and
+Vercel alias:
 
-- `kortix-staging-eks`
 - `kortix-staging`
 - `infra/k8s/envs/staging/*.yaml`
 - `STAGING_DATABASE_URL`
 - `staging-api-eks.kortix.com`
 - `gateway-staging.kortix.com`
+
+A separate physical `kortix-staging-eks` cluster remains the target upgrade when
+cost and provisioning time justify it; the branch/release contract does not
+change.
 
 `qa-staging.yml` runs the heavier browser/e2e/migration checks after staging moves.
 

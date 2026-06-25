@@ -12,7 +12,7 @@ branches, one version number, four artifacts.
 - **`prod`** = PROD. Only advanced by the **Promote to Production** button + reviewed release PR; deploys EKS by GitOps.
 - **`VERSION`** file (repo root) = one number for the whole platform.
 - A release = one `vX.Y.Z` GitHub Release bundling **API + Frontend + CLI + Desktop**.
-- **Retag, don't rebuild**: prod ships the exact image bytes tested on dev.
+- **Retag, don't rebuild**: prod ships the exact image bytes deployed and tested on staging.
 
 ```
 PR ─► ci · codeql · secret-scan
@@ -83,6 +83,7 @@ There is no per-component version.
 | `secret-scan.yml` | PR → main/staging/prod               | gitleaks                                                            |
 | `deploy-dev.yml`  | push → `main`                        | build+push dev API/frontend images, run dev DB migrations, bump EKS GitOps values, publish CLI `dev-latest` |
 | `build-staging.yml` | push → `staging`                   | build exact staging API/gateway/frontend images tagged `staging-<sha8>` |
+| `deploy-staging.yml` | build-staging success / manual    | deploy staging API/gateway, wire staging Cloudflare/Vercel, and verify staging runtime config |
 | `qa-staging.yml`  | push → `staging`                     | e2e · visual · a11y · migration report against staging target        |
 | `desktop.yml`     | push → main (`apps/desktop/**`) / dispatch | signed desktop installers → `desktop-dev-latest`              |
 | `promote-staging.yml` | manual dispatch                  | move `staging` to a chosen dev ref, usually `main`                  |
@@ -144,8 +145,9 @@ release; `KORTIX_CHANNEL=dev` → `dev-latest` prerelease.
 
 | Env  | Branch | Frontend                | Public API                         |
 | ---- | ------ | ----------------------- | ---------------------------------- |
-| DEV  | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → EKS `kortix-dev` |
-| PROD | `prod` | kortix.com (Vercel)     | api.kortix.com → Worker → EKS `kortix-prod` |
+| DEV | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → EKS `kortix-dev` |
+| STAGING | `staging` | staging.kortix.com (Vercel) | staging-api.kortix.com → Worker → EKS namespace `kortix-staging` |
+| PROD | `prod` | kortix.com (Vercel) | api.kortix.com → Worker → EKS `kortix-prod` |
 
 AWS: account `935064898258`; dev EKS runs in `us-west-2`, prod EKS in
 `eu-west-2`. Terraform state lives in S3 (`kortix-terraform-state` + DynamoDB
@@ -173,7 +175,7 @@ header on `/v1/health`. ECS stays available as standby; EKS is the primary path.
 
 - **`SANDBOX_VERSION` ≠ app version.** It hashes sandbox snapshots; changing it
   rebuilds every project's image. App version uses `KORTIX_VERSION`.
-- **Retag, never rebuild** between dev and prod — what you tested is what ships.
+- **Retag, never rebuild** between staging and prod — what you tested on staging is what ships.
 - **OIDC role perms**: the EKS deploy roles (`kortix-gha-eks-deploy-dev` /
   `kortix-gha-eks-deploy`) need cluster read/watch access plus contents write
   where the workflow pushes GitOps value changes.

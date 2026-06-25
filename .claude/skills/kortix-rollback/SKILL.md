@@ -8,7 +8,8 @@ description: "How to roll Kortix PRODUCTION back to an older already-released ve
 The inverse of **kortix-release**. A release moves prod FORWARD onto new code; a
 rollback re-points prod at an OLDER already-released `vX.Y.Z`, reusing that
 release's prebuilt artifacts (zero rebuild). Use it when a shipped version is
-breaking and the move is "go back now, fix forward later."
+breaking and the move is "go back now, fix forward later." The next forward
+release still comes from `staging`, not directly from dev/`main`.
 
 > A rollback is **temporary, never sticky.** It only flips image tags + re-promotes
 > an old frontend build; it never touches `VERSION` or the trunk. The next promote
@@ -113,11 +114,11 @@ overwrite the `:vX.Y.Z` rollback image.
 
 ## 6. Resuming — a later promote returns prod to LATEST automatically
 
-You do NOT manually undo a rollback. To resume, just **promote** (see
-kortix-release): the promote PR carries latest `main` into prod (`merge -s ours`),
-which changes `apps/web` → Vercel builds the latest FE, and bumps `image.tag` →
-Argo rolls the latest image. The rollback evaporates. No manual Vercel step to
-resume.
+You do NOT manually undo a rollback. To resume, get the fix onto `staging`, wait
+for staging deploy + QA, then **Promote to Production** (see kortix-release).
+The release PR carries the staging candidate into prod, Vercel builds the latest
+FE, and Argo rolls the latest API/gateway images. The rollback evaporates. No
+manual Vercel step to resume.
 
 ## 7. Gotchas
 

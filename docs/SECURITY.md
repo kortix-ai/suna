@@ -19,8 +19,9 @@ Releases off the `prod` branch.
 | Older / pre-release / `dev-latest` | No |
 
 Security fixes are delivered through the normal release flow: patched on `main`
-(dev), promoted to `prod`, and rolled out by Argo CD. Retag-don't-rebuild means
-the exact bytes validated on dev are what ship to prod.
+(dev), promoted or PR'd to `staging`, then promoted to `prod` through the
+reviewed release PR. Retag-don't-rebuild means the exact bytes validated on
+staging are what ship to prod.
 
 ## Reporting a Vulnerability
 
@@ -43,8 +44,9 @@ Please include affected version/commit, reproduction steps, impact, and any PoC.
 
 1. Report received at the security contact and acknowledged.
 2. Triaged and severity-rated (CVSS); a private tracking issue is opened.
-3. Fix developed and merged to `main`, exercised on dev.
-4. Promoted to `prod` (`promote` opens the release PR; merge triggers
+3. Fix developed and merged to `main`, exercised on dev, then promoted or PR'd to
+   `staging` for release-candidate validation.
+4. Promoted to `prod` (`promote` opens the release PR from staging; merge triggers
    `deploy-prod`), Argo CD rolls EKS. Affected secrets are rotated (see ADR-004)
    if exposure is suspected.
 5. A `vX.Y.Z` release and advisory are published; reporter credited.
