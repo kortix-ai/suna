@@ -106,26 +106,12 @@ export const MANAGED_MODELS: ManagedModel[] = [
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
 
-// Back-compat: the gateway previously offered two branded ids. Stored agent
-// configs / in-flight requests may still send them, so they keep resolving (to
-// the nearest current model) even though they are no longer in the served
-// catalog. Not advertised — absent from DEFAULT_MANAGED_MODEL_IDS.
-const MANAGED_ALIASES: Record<string, string> = {
-  'kortix-power': 'claude-sonnet-4.6',
-  'kortix-basic': 'claude-sonnet-4.6',
-  'glm-4.6': 'glm-5.2',
-  'glm-4.7': 'glm-5.2',
-  'glm-5.1': 'glm-5.2',
-  'qwen3-max': 'qwen3.7-max',
-  'minimax-m2.5': 'claude-sonnet-4.6',
-};
-
 export function getManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id) ?? MANAGED_BY_ID.get(MANAGED_ALIASES[id]);
+  return MANAGED_BY_ID.get(id);
 }
 
 export function isManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id) || id in MANAGED_ALIASES;
+  return MANAGED_BY_ID.has(id);
 }
 
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
@@ -160,7 +146,6 @@ export function pickAutoModel(model: string, _body: Record<string, unknown>): st
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
-  'kortix-yolo',
   'kortix',
   'anthropic',
   'openai',
@@ -179,7 +164,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   moonshotai: 'Moonshot',
   'moonshotai-cn': 'Moonshot',
   opencode: 'OpenCode Zen',
-  'kortix-yolo': 'Kortix Yolo',
   kortix: 'Kortix',
   firmware: 'Firmware',
   bedrock: 'AWS Bedrock',

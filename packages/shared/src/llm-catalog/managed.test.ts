@@ -61,22 +61,19 @@ describe('managed resolution + back-compat aliases', () => {
     expect(getManagedModel('deepseek-v4-pro')?.upstreamModelId).toBe('deepseek/deepseek-v4-pro');
   });
 
-  test('retired branded ids still resolve (to the nearest current model) so stored configs do not break', () => {
-    expect(getManagedModel('kortix-power')?.id).toBe('claude-sonnet-4.6');
-    expect(getManagedModel('kortix-basic')?.id).toBe('claude-sonnet-4.6');
-    expect(isManagedModelId('kortix-power')).toBe(true);
-    expect(isManagedModelId('kortix-basic')).toBe(true);
-  });
-
-  test('superseded model ids resolve to their successor so stored configs do not break', () => {
-    expect(getManagedModel('glm-4.6')?.id).toBe('glm-5.2');
-    expect(getManagedModel('glm-4.7')?.id).toBe('glm-5.2');
-    expect(getManagedModel('glm-5.1')?.id).toBe('glm-5.2'); // superseded — alias kept so stored configs don't break
-    expect(getManagedModel('qwen3-max')?.id).toBe('qwen3.7-max');
-    expect(getManagedModel('minimax-m2.5')?.id).toBe('claude-sonnet-4.6');
-    expect(isManagedModelId('glm-4.6')).toBe(true);
-    expect(isManagedModelId('glm-5.1')).toBe(true);
-    expect(isManagedModelId('qwen3-max')).toBe(true);
+  test('retired / superseded model ids no longer resolve (aliases removed)', () => {
+    for (const old of [
+      'kortix-power',
+      'kortix-basic',
+      'glm-4.6',
+      'glm-5.1',
+      'qwen3-max',
+      'minimax-m2.5',
+      'kimi-k2',
+    ]) {
+      expect(getManagedModel(old), `${old} should be gone`).toBeUndefined();
+      expect(isManagedModelId(old), `${old} should be gone`).toBe(false);
+    }
   });
 
   test('a BYOK provider/model string is never treated as managed', () => {
