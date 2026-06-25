@@ -6,8 +6,8 @@ name: Deploy Prod
 # the EKS deploy, and the frontend all happen here, never before the prod merge.
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
-#   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
-#      (multi-arch manifest copy, zero rebuilds).
+#   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
+#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds).
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
@@ -85,7 +85,7 @@ jobs:
             echo "Release source commit: $SRC"
           else
             echo "source_sha=" >> "$GITHUB_OUTPUT"
-            echo "No RELEASE_SOURCE_SHA (legacy release) — will retag :dev-latest"
+            echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
   # ── Retag staged images → versioned + latest (no rebuild) ───────────────────
@@ -146,7 +146,7 @@ jobs:
             echo "- \`kortix/kortix-api:${VERSION}\` (multi-arch)"
             echo "- \`kortix/kortix-frontend:${VERSION}\` (multi-arch)"
             echo ""
-            echo "_Zero rebuilds — re-tagged from dev-latest manifests._"
+            echo "_Zero rebuilds — re-tagged from the promoted staging manifests._"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build prod CLI (4 targets on one Linux runner via Bun cross-compile) ────
