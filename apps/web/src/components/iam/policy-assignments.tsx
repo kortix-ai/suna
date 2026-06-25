@@ -266,7 +266,7 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
 
 // ─── Create dialog ────────────────────────────────────────────────────────
 
-type PrincipalType = 'member' | 'group';
+type PrincipalType = 'member' | 'group' | 'token';
 type ScopeType = 'account' | 'project';
 
 function CreateAssignmentDialog({
@@ -383,7 +383,19 @@ function CreateAssignmentDialog({
             <Label>{principalType === 'member' ? 'Member' : principalType === 'group' ? 'Group' : 'Agent'}</Label>
             <Select
               value={principalId}
-              onValueChange={setPrincipalId}
+              onValueChange={(id) => {
+                setPrincipalId(id);
+                // An agent's standing role is almost always scoped to its own
+                // project — prefill it so the admin doesn't paste a UUID. They
+                // can still switch to account scope or another project.
+                if (principalType === 'token') {
+                  const agent = agents.find((a) => a.service_account_id === id);
+                  if (agent?.project_id) {
+                    setScopeType('project');
+                    setProjectId(agent.project_id);
+                  }
+                }
+              }}
               disabled={mutation.isPending}
             >
               <SelectTrigger>
