@@ -15,15 +15,31 @@ describe('pickAutoModel', () => {
     expect(pickAutoModel('kortix/auto', { messages: [msg('hi')] })).not.toBeNull();
   });
 
-  test('auto always resolves to GLM 5.2 for now (regardless of input)', () => {
+  test('text requests resolve to GLM 5.2 (regardless of size / tools)', () => {
     expect(pickAutoModel('auto', { messages: [msg('hello there')] })).toBe('glm-5.2');
     expect(
       pickAutoModel('auto', { messages: [msg('x'.repeat(250_000))], tools: [{ name: 'edit' }] }),
     ).toBe('glm-5.2');
   });
 
-  test('the auto target is a real managed model', () => {
-    expect(getManagedModel('glm-5.2'), 'glm-5.2 must exist in MANAGED_MODELS').toBeDefined();
+  test('image requests route to a vision model (not blind GLM)', () => {
+    const withImage = {
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is this?' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+          ],
+        },
+      ],
+    };
+    expect(pickAutoModel('auto', withImage)).toBe('claude-sonnet-4.6');
+  });
+
+  test('both auto targets are real managed models', () => {
+    expect(getManagedModel('glm-5.2'), 'glm-5.2 must exist').toBeDefined();
+    expect(getManagedModel('claude-sonnet-4.6'), 'claude-sonnet-4.6 must exist').toBeDefined();
   });
 
   test('AUTO_MODEL_ID is the bare synthetic id', () => {

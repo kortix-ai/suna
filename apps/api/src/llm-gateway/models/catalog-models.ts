@@ -31,6 +31,7 @@ export function managedModels(): Record<string, GatewayModel> {
     name: 'Auto',
     reasoning: true,
     tool_call: true,
+    // AUTO accepts images — pickAutoModel routes image requests to a vision model.
     attachment: true,
     temperature: true,
   };
@@ -39,7 +40,9 @@ export function managedModels(): Record<string, GatewayModel> {
       name: m.name,
       reasoning: true,
       tool_call: true,
-      attachment: true,
+      // Only Claude is vision-capable in the managed set; GLM/Qwen/DeepSeek are
+      // text-only, so don't advertise attachments for them.
+      attachment: m.id.startsWith('claude'),
       temperature: true,
     };
   }
@@ -55,6 +58,9 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
         name: model.name,
         reasoning: true,
         tool_call: true,
+        // Conservative: the generated catalog carries no per-model modality, so
+        // BYOK models don't advertise attachments. (Closing this for vision-capable
+        // BYOK models needs input-modality data added to catalog.generated.json.)
         attachment: false,
         temperature: false,
       };
@@ -70,7 +76,9 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
       name: `${catalogNameById.get(`openai/${id}`) ?? humanize(id)} (ChatGPT)`,
       reasoning: true,
       tool_call: true,
-      attachment: false,
+      // GPT-5.x is vision-capable and the openai-responses transport now forwards
+      // images (input_image), so Codex accepts attachments.
+      attachment: true,
       temperature: false,
     };
   }

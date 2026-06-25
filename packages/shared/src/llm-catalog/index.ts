@@ -126,23 +126,41 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // request asks for it, the gateway resolves it to a concrete managed model and
 // bills it as the resolved model.
 //
-// For now AUTO always resolves to GLM 5.2 (cheap + smart). The `autoRouter` hook
-// and this single indirection point are the seam where a future, more
-// sophisticated handler will route per-task based on the actual input.
+// For now AUTO is GLM 5.2 (cheap + smart) — except a request that carries images
+// is routed to a vision-capable model so attachments aren't silently ignored
+// (GLM 5.2 is text-only). The `autoRouter` hook and this single indirection point
+// are the seam where a future, more sophisticated per-task handler plugs in.
 export const AUTO_MODEL_ID = 'auto';
 
-const AUTO_TARGET_MODEL = 'glm-5.2';
+const AUTO_TARGET_MODEL = 'glm-5.2'; // text-only default
+const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
+
+function requestHasImage(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  for (const message of messages) {
+    const content = (message as { content?: unknown }).content;
+    if (
+      Array.isArray(content) &&
+      content.some(
+        (part) =>
+          !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'image_url',
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Map a requested model to a concrete managed model when (and only when) it is
  * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
  * the caller treats as "use the requested model as-is"). Pure + dependency-free
  * so both the in-process mount and the standalone gateway can call it locally.
- * `body` is unused for now but kept on the signature for the future per-task router.
  */
-export function pickAutoModel(model: string, _body: Record<string, unknown>): string | null {
+export function pickAutoModel(model: string, body: Record<string, unknown>): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
-  return AUTO_TARGET_MODEL;
+  return requestHasImage(body) ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
