@@ -131,6 +131,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // Reveal models the "latest" filter hides by default (older releases /
   // superseded models in a family). Off by default to keep the picker tidy.
   const [showHidden, setShowHidden] = useState(false);
+  // When AUTO is on, the manual provider list is hidden by default. This reveals
+  // it (so the user can switch to a specific model) without turning AUTO off yet.
+  const [expandManual, setExpandManual] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openGateway = useGatewayOverlayStore((s) => s.openGateway);
   const baseModels = useMemo(
@@ -200,6 +203,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     if (!open) {
       setSearch('');
       setShowHidden(false);
+      setExpandManual(false);
     }
   }, [open]);
 
@@ -217,6 +221,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     const q = search.toLowerCase();
     return models
       .filter((m) => {
+        // AUTO is rendered as a standalone toggle above the providers — never
+        // inside a provider group.
+        if (m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID) return false;
         // A search query reveals everything; otherwise respect visibility
         // unless the user expanded the "older models" section.
         if (
@@ -264,6 +271,16 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     });
     return entries;
   }, [visibleModels]);
+
+  // AUTO lives outside the provider groups — a standalone toggle. When it's on,
+  // the manual model list is hidden unless the user expands it.
+  const autoModel = useMemo(
+    () => baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID),
+    [baseModels],
+  );
+  const isAutoSelected =
+    selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
+  const showManual = !isAutoSelected || expandManual;
 
   // ── Handlers ──
 
@@ -336,179 +353,218 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         </Tooltip>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-          <CommandInput
-            compact
-            placeholder={tHardcodedUi.raw(
-              'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-            )}
-            value={search}
-            onValueChange={setSearch}
-            rightElement={
-              <div className="-mr-1 flex shrink-0 items-center gap-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenProviderModal('providers')}
-                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenProviderModal('models')}
-                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            }
-          />
-
-          <CommandList className="max-h-[380px]">
-            {grouped.length > 0 ? (
-              <>
-                {grouped.map((group) => (
-                  <CommandGroup
-                    key={group.providerID}
-                    heading={
-                      <div className="flex items-center gap-2">
-                        <ProviderLogo
-                          providerID={group.providerID}
-                          name={group.providerName}
-                          size="small"
-                        />
-                        <span className="flex-1">
-                          {PROVIDER_LABELS[group.providerID] || group.providerName}
-                        </span>
-                        <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
-                          {group.models.length}
-                        </span>
-                      </div>
-                    }
-                    forceMount
-                  >
-                    {group.models.map((model) => {
-                      const isSelected =
-                        selectedModel?.providerID === model.providerID &&
-                        selectedModel?.modelID === model.modelID;
-
-                      // `auto` is not a real model — present it as a smart-routing
-                      // affordance, not a normal model row.
-                      if (model.providerID === 'kortix' && model.modelID === AUTO_MODEL_ID) {
-                        return (
-                          <CommandItem
-                            key={`${model.providerID}:${model.modelID}`}
-                            value={`model-${model.providerID}-${model.modelID}`}
-                            className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
-                            onSelect={() => handleSelect(model)}
-                          >
-                            <Sparkles className="text-foreground/70 size-4 shrink-0" />
-                            <div className="min-w-0 flex-1 py-0.5">
-                              <div
-                                className={cn(
-                                  'truncate text-sm leading-tight',
-                                  isSelected
-                                    ? 'text-foreground font-semibold'
-                                    : 'text-foreground/90 font-medium',
-                                )}
-                              >
-                                Auto
-                              </div>
-                              <p className="text-muted-foreground/55 mt-1 text-xs leading-snug">
-                                Automatically picks the cheapest, most efficient model for your task
-                              </p>
-                            </div>
-                            {isSelected && <Check className="text-foreground shrink-0" />}
-                          </CommandItem>
-                        );
-                      }
-                      // Every opencode (Zen) model is free: it routes natively,
-                      // never through the gateway, so kortix never bills it.
-                      const isFree = model.providerID === 'opencode';
-                      const modelKey = { providerID: model.providerID, modelID: model.modelID };
-                      // "Latest" models are always shown; older ones get an
-                      // activation switch so they can be pinned into the picker.
-                      const isLatestModel = modelStore.isLatest(modelKey);
-                      const isModelVisible = modelStore.isVisible(modelKey);
-                      // Under a BYOK provider group the `<provider>/` prefix is
-                      // redundant — show just the bare model id.
-                      const displayModelID =
-                        group.providerID !== model.providerID && model.modelID.includes('/')
-                          ? model.modelID.slice(model.modelID.indexOf('/') + 1)
-                          : model.modelID;
-
-                      return (
-                        <CommandItem
-                          key={`${model.providerID}:${model.modelID}`}
-                          value={`model-${model.providerID}-${model.modelID}`}
-                          className={cn(
-                            '!pl-3',
-                            isSelected && 'bg-foreground/[0.06]',
-                            !isLatestModel && !isModelVisible && 'opacity-60',
-                          )}
-                          onSelect={() => handleSelect(model)}
-                        >
-                          <div className="min-w-0 flex-1 py-0.5">
-                            <div
-                              className={cn(
-                                'truncate text-sm leading-tight',
-                                isSelected
-                                  ? 'text-foreground font-semibold'
-                                  : 'text-foreground/90 font-medium',
-                              )}
-                            >
-                              {model.modelName}
-                            </div>
-                            <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                              {displayModelID}
-                            </p>
-                          </div>
-                          {isFree && <Tag variant="free">Free</Tag>}
-                          {isSelected && <Check className="text-foreground shrink-0" />}
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                ))}
-              </>
-            ) : (
-              <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
-              </div>
-            )}
-          </CommandList>
-
-          {hasHidden && !search && (
-            <CommandFooter
-              role="button"
-              tabIndex={0}
-              onClick={() => setShowHidden((v) => !v)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setShowHidden((v) => !v);
-                }
+          {/* AUTO — standalone, above every provider. A distinct on/off toggle. */}
+          {autoModel && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!autoModel) return;
+                if (isAutoSelected) setExpandManual((v) => !v);
+                else handleSelect(autoModel);
               }}
-              className="hover:bg-foreground/[0.04] hover:text-foreground cursor-pointer transition-colors select-none"
+              className={cn(
+                'flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors',
+                isAutoSelected ? 'bg-primary/10' : 'hover:bg-foreground/[0.04]',
+              )}
             >
-              {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
-            </CommandFooter>
+              <Sparkles
+                className={cn(
+                  'size-4 shrink-0',
+                  isAutoSelected ? 'text-primary' : 'text-foreground/70',
+                )}
+              />
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    'text-sm leading-tight font-semibold',
+                    isAutoSelected ? 'text-primary' : 'text-foreground',
+                  )}
+                >
+                  Auto
+                </div>
+                <p className="text-muted-foreground/60 mt-0.5 text-xs leading-snug">
+                  Automatically picks the best model for each task
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase',
+                  isAutoSelected
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
+                {isAutoSelected ? 'On' : 'Off'}
+              </span>
+            </button>
+          )}
+
+          {showManual ? (
+            <>
+              <CommandInput
+                compact
+                placeholder={tHardcodedUi.raw(
+                  'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
+                )}
+                value={search}
+                onValueChange={setSearch}
+                rightElement={
+                  <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProviderModal('providers')}
+                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsSessionModelSelector.line239JsxTextConnectProvider',
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProviderModal('models')}
+                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsSessionModelSelector.line251JsxTextManageModels',
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                }
+              />
+
+              <CommandList className="max-h-[380px]">
+                {grouped.length > 0 ? (
+                  <>
+                    {grouped.map((group) => (
+                      <CommandGroup
+                        key={group.providerID}
+                        heading={
+                          <div className="flex items-center gap-2">
+                            <ProviderLogo
+                              providerID={group.providerID}
+                              name={group.providerName}
+                              size="small"
+                            />
+                            <span className="flex-1">
+                              {PROVIDER_LABELS[group.providerID] || group.providerName}
+                            </span>
+                            <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                              {group.models.length}
+                            </span>
+                          </div>
+                        }
+                        forceMount
+                      >
+                        {group.models.map((model) => {
+                          const isSelected =
+                            selectedModel?.providerID === model.providerID &&
+                            selectedModel?.modelID === model.modelID;
+
+                          // Every opencode (Zen) model is free: it routes natively,
+                          // never through the gateway, so kortix never bills it.
+                          const isFree = model.providerID === 'opencode';
+                          const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                          // "Latest" models are always shown; older ones get an
+                          // activation switch so they can be pinned into the picker.
+                          const isLatestModel = modelStore.isLatest(modelKey);
+                          const isModelVisible = modelStore.isVisible(modelKey);
+                          // Under a BYOK provider group the `<provider>/` prefix is
+                          // redundant — show just the bare model id.
+                          const displayModelID =
+                            group.providerID !== model.providerID && model.modelID.includes('/')
+                              ? model.modelID.slice(model.modelID.indexOf('/') + 1)
+                              : model.modelID;
+
+                          return (
+                            <CommandItem
+                              key={`${model.providerID}:${model.modelID}`}
+                              value={`model-${model.providerID}-${model.modelID}`}
+                              className={cn(
+                                '!pl-3',
+                                isSelected && 'bg-foreground/[0.06]',
+                                !isLatestModel && !isModelVisible && 'opacity-60',
+                              )}
+                              onSelect={() => handleSelect(model)}
+                            >
+                              <div className="min-w-0 flex-1 py-0.5">
+                                <div
+                                  className={cn(
+                                    'truncate text-sm leading-tight',
+                                    isSelected
+                                      ? 'text-foreground font-semibold'
+                                      : 'text-foreground/90 font-medium',
+                                  )}
+                                >
+                                  {model.modelName}
+                                </div>
+                                <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                                  {displayModelID}
+                                </p>
+                              </div>
+                              {isFree && <Tag variant="free">Free</Tag>}
+                              {isSelected && <Check className="text-foreground shrink-0" />}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    ))}
+                  </>
+                ) : (
+                  <div className="text-muted-foreground/50 py-8 text-center text-xs">
+                    {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
+                  </div>
+                )}
+              </CommandList>
+
+              {hasHidden && !search && (
+                <CommandFooter
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setShowHidden((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setShowHidden((v) => !v);
+                    }
+                  }}
+                  className="hover:bg-foreground/[0.04] hover:text-foreground cursor-pointer transition-colors select-none"
+                >
+                  {showHidden ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                  <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
+                </CommandFooter>
+              )}
+            </>
+          ) : (
+            <div className="px-3 py-5 text-center">
+              <p className="text-muted-foreground/70 text-xs leading-relaxed">
+                Kortix is automatically selecting the best model for each task.
+              </p>
+              <button
+                type="button"
+                onClick={() => setExpandManual(true)}
+                className="text-foreground/70 hover:text-foreground mt-2.5 text-xs font-medium underline-offset-2 hover:underline"
+              >
+                Choose a specific model instead
+              </button>
+            </div>
           )}
         </CommandPopoverContent>
       </CommandPopover>
