@@ -22,6 +22,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   promote:
@@ -56,3 +57,10 @@ jobs:
             git push origin "$source_sha:refs/heads/staging"
             echo "staging now points at ${source_sha}"
           fi
+      - name: Start staging artifact build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run build-staging.yml --ref staging
+          echo "Build Staging Artifacts dispatched for staging."
