@@ -34,6 +34,13 @@ function mockUpstream() {
   return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
 }
 
+// Typed read of the mock's echo body — global fetch().json() is `unknown` under
+// strict tsc, which the daemon CI's `tsc --noEmit` (not just `bun test`) enforces.
+async function fetchJson(url: string): Promise<{ auth: string | null; path: string }> {
+  const res = await fetch(url)
+  return (await res.json()) as { auth: string | null; path: string }
+}
+
 describe('credential proxy — live token swap (the no-restart mechanism)', () => {
   afterEach(() => {
     stopLlmProxy()
@@ -62,13 +69,13 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       expect(llmProxyReady()).toBe(true)
 
       // request 1 → upstream sees token-A, path preserved
-      const r1 = await (await fetch(`${base}/v1/llm/models`)).json()
+      const r1 = await fetchJson(`${base}/v1/llm/models`)
       expect(r1.auth).toBe('Bearer token-A')
       expect(r1.path).toBe('/v1/llm/models')
 
       // swap the token LIVE — same proxy process, no restart
       setLlmProxyToken('token-B')
-      const r2 = await (await fetch(`${base}/v1/llm/chat/completions`)).json()
+      const r2 = await fetchJson(`${base}/v1/llm/chat/completions`)
       expect(r2.auth).toBe('Bearer token-B')
       expect(r2.path).toBe('/v1/llm/chat/completions')
     } finally {
@@ -84,11 +91,11 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
       expect(base).toBe('http://127.0.0.1:14320')
       expect(executorProxyReady()).toBe(true)
 
-      const r1 = await (await fetch(`${base}/v1/projects/p/exec`)).json()
+      const r1 = await fetchJson(`${base}/v1/projects/p/exec`)
       expect(r1.auth).toBe('Bearer exec-A')
 
       setExecutorProxyToken('exec-B')
-      const r2 = await (await fetch(`${base}/v1/projects/p/exec`)).json()
+      const r2 = await fetchJson(`${base}/v1/projects/p/exec`)
       expect(r2.auth).toBe('Bearer exec-B')
     } finally {
       up.stop()
