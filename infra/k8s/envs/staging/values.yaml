@@ -5,8 +5,8 @@
 # deployed here must be considered ready to promote to production after QA.
 
 image:
-  tag: "staging-c6caddc7"
-kortixVersion: "0.9.78-staging.c6caddc7"
+  tag: "staging-343a4613"
+kortixVersion: "0.9.78-staging.343a4613"
 env:
   internalKortixEnv: staging
 extraEnv:
