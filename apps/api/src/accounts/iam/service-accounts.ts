@@ -16,6 +16,7 @@ import {
 } from '../../repositories/service-accounts';
 import { iamRouter, AccountIdParam, ServiceAccountSchema } from './app';
 import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 
 iamRouter.openapi(
   createRoute({
@@ -147,6 +148,11 @@ iamRouter.openapi(
   });
   if (!ok) return c.json({ error: 'service account is already disabled' }, 409);
 
+  // Revoke immediately: the engine resolves an SA actor (keyed on its id) with a
+  // 15s positive cache, so without this bust a disabled SA keeps authorizing for
+  // up to the TTL. Same id space as a user, so the user-keyed bust applies.
+  invalidateIamCacheForUser(saId);
+
   await auditIam(c, {
     accountId,
     action: 'iam.service_account.disable',
@@ -181,6 +187,9 @@ iamRouter.openapi(
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
   await deleteServiceAccount(accountId, saId);
+  // Same immediate-revoke bust as disable (a deleted SA must stop authorizing now,
+  // not after the 15s cache TTL).
+  invalidateIamCacheForUser(saId);
 
   await auditIam(c, {
     accountId,

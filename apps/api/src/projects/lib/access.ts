@@ -326,11 +326,16 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     ),
   ]);
 
-  if (!membership) {
+  // A service account has NO account_members row — its access is purely its own
+  // iam_policies, already evaluated by the engine `verdict` above. Don't apply
+  // the human membership hard-gate to it (that would 403 every SA before its
+  // standing role is ever consulted); fall through to the verdict check.
+  const isServiceAccount = ((c as unknown as { get(k: string): unknown }).get('authType') as string | undefined) === 'service_account';
+  if (!membership && !isServiceAccount) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
 
-  const accountRole = membership.accountRole as AccountRole;
+  const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed) {
     // Distinguish "no access at all" from "has access but not for this
     // action" so the UI can show a meaningful message. A Viewer can see
@@ -363,8 +368,11 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // labels: owner/admin → manager, explicit project_members row →
   // that role, otherwise → 'viewer' (the engine permitted read but
   // we don't know the exact tier).
+  // For a service account there's no account role; capabilities come purely from
+  // its policies (already enforced by `verdict`). Use the safe-minimum 'viewer'
+  // label, exactly as for a member granted access via a policy with no role tier.
   const effectiveRole =
-    effectiveProjectRole(accountRole, projectRole) ?? 'viewer';
+    (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'viewer';
   (c as any).set('accountId', row.accountId);
 
   // Presence signal for the warm pool: an authenticated user touching the
@@ -386,7 +394,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   return {
     row,
     userId,
-    accountRole,
+    accountRole: accountRole ?? null,
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
   };

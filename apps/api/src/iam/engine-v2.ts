@@ -28,6 +28,7 @@ import {
   projectGroupGrants,
   projectMembers,
   projects,
+  serviceAccounts,
   type AgentGrant,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -124,12 +125,17 @@ const IAM_CACHE_TTL_MS = (() => {
 export type CustomAction = { scopeType: string; scopeId: string | null; action: string };
 
 type ResolvedActorV2 = {
+  /** 'member' = a human (account_members row). 'service_account' = a machine
+   *  identity (service_accounts row) whose ONLY authority is its own iam_policies
+   *  (principal_type='token') — no built-in role, no membership baseline. */
+  kind: 'member' | 'service_account';
   isSuperAdmin: boolean;
   accountRole: AccountRole | null;
   groupIds: string[];
   accountMfaRequired: boolean;
   /** Actions granted by DB custom roles via iam_policies (member + group
-   *  principals). Empty for the common no-custom-roles account. */
+   *  principals for a human; the token principal for a service account). Empty
+   *  for the common no-custom-roles account. */
   customActions: CustomAction[];
 };
 
@@ -179,24 +185,60 @@ async function resolveActorV2Uncached(
                   .where(eq(accountGroupMembers.userId, userId)),
               ),
             ),
+            // Service-account principal: a token policy keyed on this id. Harmless
+            // for a human request (SA ids and user ids are disjoint uuids, so this
+            // matches nothing), load-bearing for an SA request (its standing role).
+            and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
           ),
         ),
       ),
   ]);
-  const member = memberRows[0];
-  if (!member) return null;
+  const customActions: CustomAction[] = policyRows.map((r) => ({
+    scopeType: r.scopeType,
+    scopeId: r.scopeId,
+    action: r.action,
+  }));
 
-  return {
-    isSuperAdmin: member.isSuperAdmin,
-    accountRole: (member.accountRole as AccountRole | null) ?? null,
-    groupIds: groups.map((g) => g.groupId),
-    accountMfaRequired: member.mfaRequired,
-    customActions: policyRows.map((r) => ({
-      scopeType: r.scopeType,
-      scopeId: r.scopeId,
-      action: r.action,
-    })),
-  };
+  const member = memberRows[0];
+  if (member) {
+    return {
+      kind: 'member',
+      isSuperAdmin: member.isSuperAdmin,
+      accountRole: (member.accountRole as AccountRole | null) ?? null,
+      groupIds: groups.map((g) => g.groupId),
+      accountMfaRequired: member.mfaRequired,
+      customActions,
+    };
+  }
+
+  // Not a human member — is this id a service account in this account? (Rare
+  // path: only SA-authenticated requests and genuinely-unknown ids reach here,
+  // so the extra query never touches the hot human/PAT path.) A service account
+  // has NO membership baseline and NO built-in role: its entire authority is its
+  // own iam_policies (principal_type='token'), already loaded into customActions.
+  const saRows = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.serviceAccountId, userId),
+        eq(serviceAccounts.accountId, accountId),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .limit(1);
+  if (saRows[0]) {
+    return {
+      kind: 'service_account',
+      isSuperAdmin: false,
+      accountRole: null,
+      groupIds: [],
+      accountMfaRequired: false,
+      customActions,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -393,8 +435,11 @@ export async function authorizeV2(
   if (!actor) return { allowed: false, reason: 'not_a_member' };
 
   // PAT scope short-circuit. If the token is project-bound and this
-  // request isn't on that project, deny before we even look at perms.
-  if (!patInScope) {
+  // request isn't on that project, deny before we even look at perms. Applies
+  // only to human/PAT principals — a service account is not a project-bound PAT
+  // (its acting id is its own principal id, absent from account_tokens), so the
+  // PAT scope verdict is meaningless for it.
+  if (actor.kind === 'member' && !patInScope) {
     return { allowed: false, reason: 'token_out_of_scope' };
   }
 
@@ -414,11 +459,13 @@ export async function authorizeV2(
     return { allowed: false, reason: 'account_mfa_required' };
   }
 
-  const accountRole = actor.accountRole ?? 'member';
-
   if (scope === 'account') {
-    if (accountRoleAllows(accountRole, action)) return { allowed: true, reason: 'account_role' };
-    // Built-in role denied → fall through to DB custom roles (allow-only union).
+    // A service account has NO membership baseline — its entire authority is its
+    // own policies. Only a human member gets the built-in account-role check.
+    if (actor.kind === 'member' && accountRoleAllows(actor.accountRole ?? 'member', action)) {
+      return { allowed: true, reason: 'account_role' };
+    }
+    // Built-in role denied (or SA) → DB custom roles (allow-only union).
     if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) {
       return { allowed: true, reason: 'custom_policy' };
     }
@@ -434,12 +481,19 @@ export async function authorizeV2(
   // department case: a member bound to a scoped custom role via iam_policies and
   // no project_members/group GRANT row), so resolve the built-in role but treat
   // it as one source in the union, not a gate.
-  const effective = await loadEffectiveProjectRole(actor, userId, effectiveTarget.id);
+  // A service account has no project membership — its project access comes only
+  // from its own project-scoped (or account-scoped) policies, so skip the
+  // member-role resolution entirely for it.
+  const effective =
+    actor.kind === 'member'
+      ? await loadEffectiveProjectRole(actor, userId, effectiveTarget.id)
+      : null;
   let reason: string | null = null;
   if (effective && projectRoleAllows(effective, action)) reason = 'project_role';
   else if (customPolicyAllows(actor.customActions, scope, action, effectiveTarget)) reason = 'custom_policy';
 
   if (!reason) {
+    if (actor.kind === 'service_account') return { allowed: false, reason: 'service_account_scope_insufficient' };
     if (!effective) return { allowed: false, reason: 'no_project_membership' };
     return { allowed: false, reason: 'project_role_insufficient' };
   }
@@ -486,7 +540,11 @@ export async function listAccessibleProjectsV2(
   if (!actor) return { mode: 'none' };
 
   // PAT bound to a single project narrows the listing to just that project.
-  if (actingTokenId) {
+  // Human/PAT principals only — a service account's acting id is its own
+  // principal id (not an account_tokens row), so skip this and let its own
+  // policies drive the listing (folded in below), or it would wrongly resolve
+  // to mode:'none'.
+  if (actingTokenId && actor.kind === 'member') {
     const [row] = await db
       .select({ projectId: accountTokens.projectId })
       .from(accountTokens)

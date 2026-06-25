@@ -8,7 +8,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { iamPolicies, iamRoleActions, iamRoles, projects } from '@kortix/db';
+import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -629,15 +629,26 @@ async function parsePolicyInput(
   | { ok: false; status: 400 | 404; error: string }
 > {
   const principalType = String(body.principalType ?? '');
-  // 'token' is intentionally rejected: the engine's policy loader only resolves
-  // member + group principals (see engine-v2 resolveActorV2), so a token policy
-  // would be stored but NEVER enforced — a silent no-op that reads as a granted
-  // restriction. Re-enable here only once the engine reads token principals.
-  if (!['member', 'group'].includes(principalType)) {
-    return { ok: false, status: 400, error: 'principalType must be member or group (token policies are not enforced yet)' };
+  // 'token' = a service-account (machine identity) principal. The engine now
+  // resolves these (engine-v2 resolveActorV2 → service_accounts branch), so an
+  // SA's own iam_policies are its STANDING role. member/group bind humans.
+  if (!['member', 'group', 'token'].includes(principalType)) {
+    return { ok: false, status: 400, error: 'principalType must be member, group, or token' };
   }
   const principalId = typeof body.principalId === 'string' ? body.principalId : '';
   if (!principalId) return { ok: false, status: 400, error: 'principalId is required' };
+
+  // A token principal must be an active service account in THIS account — else
+  // the policy is a dangling no-op (or a cross-account reference). Mirrors the
+  // project scopeId ownership check below.
+  if (principalType === 'token') {
+    const [sa] = await db
+      .select({ id: serviceAccounts.serviceAccountId })
+      .from(serviceAccounts)
+      .where(and(eq(serviceAccounts.serviceAccountId, principalId), eq(serviceAccounts.accountId, accountId)))
+      .limit(1);
+    if (!sa) return { ok: false, status: 404, error: 'principalId does not match a service account in this account' };
+  }
 
   const scopeType = String(body.scopeType ?? '');
   if (!['account', 'project'].includes(scopeType)) {

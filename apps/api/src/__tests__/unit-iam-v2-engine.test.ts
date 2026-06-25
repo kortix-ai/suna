@@ -126,6 +126,38 @@ describe('customPolicyAllows (DB custom-role union)', () => {
   });
 });
 
+describe('service-account standing identity — authority is policy-ONLY', () => {
+  const proj = (id: string) => ({ type: 'project' as const, id });
+  const acct = { type: 'account' as const };
+  // A service-account actor (kind:'service_account') has NO membership baseline
+  // and NO built-in role: authorizeV2 routes EVERY decision for it straight to
+  // customPolicyAllows over its own iam_policies (principal_type='token'). These
+  // lock the standing-role semantics the engine relies on for an SA.
+  test('an SA with NO policies is denied everything (no member baseline leaks in)', () => {
+    const none: CustomAction[] = [];
+    expect(customPolicyAllows(none, 'account', ACCOUNT_ACTIONS.MEMBER_READ, acct)).toBe(false);
+    expect(customPolicyAllows(none, 'project', PROJECT_ACTIONS.PROJECT_READ, proj('p1'))).toBe(false);
+  });
+
+  test('an SA bound to a project-scoped role acts on THAT project only', () => {
+    const releaseBot: CustomAction[] = [
+      { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
+      { scopeType: 'project', scopeId: 'company', action: PROJECT_ACTIONS.PROJECT_CR_OPEN },
+    ];
+    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, proj('company'))).toBe(true);
+    // another project → no standing access (the SA is scoped to 'company')
+    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH, proj('other'))).toBe(false);
+    // a capability the SA's role omits → denied even on its own project
+    expect(customPolicyAllows(releaseBot, 'project', PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, proj('company'))).toBe(false);
+  });
+
+  test('an account-scoped SA role grants the action across every project', () => {
+    const ciBot: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_DEPLOY }];
+    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('a'))).toBe(true);
+    expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('b'))).toBe(true);
+  });
+});
+
 describe('agent grant central fold (userRole ∩ agentGrant)', () => {
   test('gates every specific project capability, EXEMPTs the coarse read/write membership actions', () => {
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true);
