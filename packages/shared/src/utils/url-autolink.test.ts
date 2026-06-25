@@ -49,8 +49,21 @@ describe('autoLinkUrls', () => {
     expect(autoLinkUrls(input)).toBe(input);
   });
 
+  test('linkifies domains between escaped currency amounts (post-preprocess)', () => {
+    const input =
+      'raised \\$4M). Earlier from example.com. Built SoftGen (\\$50K MRR).';
+    expect(autoLinkUrls(input)).toBe(
+      'raised \\$4M). Earlier from [example.com](https://example.com). Built SoftGen (\\$50K MRR).',
+    );
+  });
+
   test('does not linkify urls inside inline math', () => {
     const input = 'value $a.com$ end';
+    expect(autoLinkUrls(input)).toBe(input);
+  });
+
+  test('still protects urls inside block math', () => {
+    const input = 'equation $$x = \\text{see example.com}$$ end';
     expect(autoLinkUrls(input)).toBe(input);
   });
 
