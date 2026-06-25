@@ -1,5 +1,7 @@
 export type PricingPlanId = 'free' | 'team' | 'enterprise';
 
+export type UpgradeModalPlanId = Exclude<PricingPlanId, 'enterprise'>;
+
 export type PricingPlan = {
   id: PricingPlanId;
   name: string;
@@ -59,4 +61,6 @@ export const PRICING_PLANS: PricingPlan[] = [
 ];
 
 /** Plans shown in the in-app upgrade modal — action-focused, no Enterprise card. */
-export const UPGRADE_MODAL_PLANS = PRICING_PLANS.filter((plan) => plan.id !== 'enterprise');
+export const UPGRADE_MODAL_PLANS = PRICING_PLANS.filter(
+  (plan): plan is PricingPlan & { id: UpgradeModalPlanId } => plan.id !== 'enterprise',
+);

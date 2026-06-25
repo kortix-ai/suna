@@ -13,7 +13,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
-import { UPGRADE_MODAL_PLANS } from '@/features/billing/pricing-plans';
+import { UPGRADE_MODAL_PLANS, type UpgradeModalPlanId } from '@/features/billing/pricing-plans';
 import { useAccountState, useCreatePerSeatCheckout } from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -46,9 +46,14 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
     });
   };
 
-  const planActions: Record<'free' | 'team', React.ReactNode> = {
+  const planActions: Record<UpgradeModalPlanId, React.ReactNode> = {
     free: (
-      <Button type="button" variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => onOpenChange(false)}
+      >
         Continue on Free
       </Button>
     ),
@@ -69,17 +74,23 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
           {createPerSeat.isPending ? (
             <>
               <Loading />
-              {tI18nHardcoded.raw('autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f')}
+              {tI18nHardcoded.raw(
+                'autoFeaturesBillingTeamPlanCheckoutJsxTextStartingCheckout282edf7f',
+              )}
             </>
           ) : (
             <>
-              {hasSeatMath ? `Subscribe — $${monthlyTotal}/mo` : `Subscribe — $${pricePerSeat}/seat`}
+              {hasSeatMath
+                ? `Subscribe — $${monthlyTotal}/mo`
+                : `Subscribe — $${pricePerSeat}/seat`}
               <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </>
           )}
         </Button>
         <p className="text-muted-foreground text-center text-xs">
-          {tI18nHardcoded.raw('autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962')}
+          {tI18nHardcoded.raw(
+            'autoFeaturesBillingTeamPlanCheckoutJsxTextAutoProratedCancelfa091962',
+          )}
         </p>
       </div>
     ) : (
@@ -89,7 +100,7 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
     ),
   };
 
-  const planBadges: Partial<Record<'free' | 'team', string>> = {
+  const planBadges: Partial<Record<UpgradeModalPlanId, string>> = {
     free: 'Current plan',
   };
 
@@ -98,7 +109,9 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
       <ModalContent className="gap-0 space-y-0 p-0 lg:max-w-3xl">
         <ModalHeader className="space-y-2 px-6 pt-6 pb-4">
           <ModalTitle className="text-2xl font-medium tracking-tight">
-            {tI18nHardcoded.raw('autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d')}
+            {tI18nHardcoded.raw(
+              'autoFeaturesBillingTeamPlanCheckoutJsxTextSubscribeToKortix28a9093d',
+            )}
           </ModalTitle>
           <ModalDescription className="text-base">
             Simple per-seat pricing. Free for sandbox compute; upgrade when you want managed models
