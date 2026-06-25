@@ -13,6 +13,43 @@ flow("BILL-1", { domain: "billing", tags: ["smoke"], routes: ["GET /v1/billing/a
 });
 
 flow(
+  "BILL-12",
+  {
+    domain: "billing",
+    routes: ["GET /v1/billing/account-state"],
+  },
+  async (ctx) => {
+    await ctx.step("fresh personal account is repaired to free tier with usable credits", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/billing/account-state");
+      r.status(200)
+        .body()
+        .has("$.subscription.tier_key", "free")
+        .has("$.tier.name", "free")
+        .has("$.tier.monthly_credits", 5)
+        .has("$.credits.total", 5)
+        .has("$.credits.monthly", 5)
+        .has("$.credits.can_run", true);
+    });
+  },
+);
+
+flow(
+  "BILL-13",
+  {
+    domain: "billing",
+    serial: true,
+    global: true,
+    routes: ["POST /v1/billing/cron/free-tier-rotation"],
+  },
+  async (ctx) => {
+    await ctx.step("free-tier rotation cron route is wired to the reset service", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/billing/cron/free-tier-rotation", {});
+      r.status(200).body().exists("$.processed").exists("$.skipped").exists("$.errors");
+    });
+  },
+);
+
+flow(
   "BILL-3",
   {
     domain: "billing",

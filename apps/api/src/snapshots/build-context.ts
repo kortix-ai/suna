@@ -18,6 +18,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
@@ -130,6 +131,16 @@ export async function stageBuildContext(
     opencodeConfigPath = 'kortix-opencode-config';
   }
 
+  // Bake the FULL gateway model catalog into the image. The no-restart warm seed
+  // has no sandbox token / projectId to fetch the catalog at PARK, so without this
+  // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
+  // server-side at build time → full picker, no token, no runtime fetch. The shared
+  // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
+  await writeFileFs(
+    join(contextDir, 'kortix-llm-catalog.json'),
+    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
+  );
+
   // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
   // DEFAULT starter with the SAME pinned commit metadata the project seeder
   // uses (git-backends/seed.ts), so its root SHA equals every seeded project's
@@ -151,6 +162,7 @@ export async function stageBuildContext(
     slackCliPath: 'kortix-slack-cli',
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
+    catalogPath: 'kortix-llm-catalog.json',
   });
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);

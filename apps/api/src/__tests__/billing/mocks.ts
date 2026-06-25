@@ -17,6 +17,7 @@ export const mockRegistry = {
   updateCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   upsertCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   getYearlyAccountsDueForRotation: null as (() => Promise<any[]>) | null,
+  getFreeAccountsDueForRotation: null as (() => Promise<any[]>) | null,
 
   insertLedgerEntry: null as ((data: any) => Promise<any>) | null,
   getPurchaseByPaymentIntent: null as ((id: string) => Promise<any>) | null,
@@ -97,6 +98,8 @@ export function registerGlobalMocks() {
     getSubscriptionInfo: async () => null,
     getYearlyAccountsDueForRotation: async () =>
       mockRegistry.getYearlyAccountsDueForRotation ? mockRegistry.getYearlyAccountsDueForRotation() : [],
+    getFreeAccountsDueForRotation: async () =>
+      mockRegistry.getFreeAccountsDueForRotation ? mockRegistry.getFreeAccountsDueForRotation() : [],
   }));
 
   mock.module('../../billing/repositories/transactions', () => ({

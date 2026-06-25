@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
+import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { Activity, Bot, Cpu, Layers, Play, Plug, Sparkles, Wallet } from 'lucide-react';
 
 type LimitRow = {
@@ -59,6 +60,11 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
       : state.tier?.display_name || state.tier?.name || 'No plan';
   const subStatus = state.subscription?.status || null;
   const wallet = state.credits?.total ?? 0;
+  const tierKey = (state.subscription?.tier_key || state.tier?.name || '').toLowerCase();
+  const isFreeTier = state.billing_model !== 'per_seat' && tierKey === 'free';
+  const walletValue = isFreeTier
+    ? `${formatCredits(dollarsToCredits(wallet))} credits`
+    : formatUsd(wallet);
   const usage = state.usage_this_period;
   const limits = buildLimitRows(state.limits);
 
@@ -86,7 +92,7 @@ export function AccountOverviewTab({ accountId }: AccountOverviewTabProps = {}) 
           >
             <ValueLine
               icon={<Wallet className="text-muted-foreground size-4" />}
-              value={formatUsd(wallet)}
+              value={walletValue}
             />
           </Field>
           <Field label="Status">
