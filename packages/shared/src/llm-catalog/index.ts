@@ -30,15 +30,13 @@ export interface ManagedModel {
   id: string;
   name: string;
   // The upstream's own model id, interpreted per `transport`:
-  //   'bedrock' / 'bedrock-converse' → a Bedrock id (`us.anthropic.claude-opus-4-8`,
-  //                                    `moonshotai.kimi-k2.5`)
-  //   'openrouter'                   → an OpenRouter slug (`z-ai/glm-4.6`)
+  //   'bedrock'    → a Bedrock id (`us.anthropic.claude-opus-4-8`)
+  //   'openrouter' → an OpenRouter slug (`z-ai/glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
-  //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
-  //   'bedrock-converse' → model-agnostic Bedrock Converse API (Kimi, MiniMax, …)
-  //   'openrouter'       → OpenRouter (openai-compat) for models not on Bedrock
-  transport: 'bedrock' | 'bedrock-converse' | 'openrouter';
+  //   'bedrock'    → Anthropic-on-Bedrock InvokeModel payload (Claude only)
+  //   'openrouter' → OpenRouter (openai-compat) for everything else
+  transport: 'bedrock' | 'openrouter';
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
@@ -52,11 +50,9 @@ export interface ManagedModel {
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
-// markup, so the gateway enforces budgets/logging/spend on all of them. Bedrock
-// is preferred (consistent, no per-provider routing surprises): Anthropic via the
-// proven Anthropic-payload transport, Kimi/MiniMax via Converse. Models Bedrock
-// doesn't host (GLM, Qwen) go via OpenRouter. (Kimi is on Bedrock specifically
-// because its only OpenRouter provider, `novita`, is excluded by our data policy.)
+// markup, so the gateway enforces budgets/logging/spend on all of them. Claude
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport); everything
+// else (GLM, Qwen, DeepSeek) goes via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
@@ -72,22 +68,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4.6',
-    tier: 'balanced',
-  },
-  {
-    id: 'kimi-k2',
-    name: 'Kimi K2',
-    upstreamModelId: 'moonshotai.kimi-k2.5',
-    transport: 'bedrock-converse',
-    pricingRef: 'moonshotai/kimi-k2',
-    tier: 'balanced',
-  },
-  {
-    id: 'kimi-k2-thinking',
-    name: 'Kimi K2 Thinking',
-    upstreamModelId: 'moonshot.kimi-k2-thinking',
-    transport: 'bedrock-converse',
-    pricingRef: 'moonshotai/kimi-k2-thinking',
     tier: 'balanced',
   },
   {

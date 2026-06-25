@@ -12,8 +12,6 @@ describe('managed catalog', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'claude-opus-4.8',
       'claude-sonnet-4.6',
-      'kimi-k2',
-      'kimi-k2-thinking',
       'glm-5.2',
       'qwen3.7-max',
       'deepseek-v4-pro',
@@ -35,19 +33,19 @@ describe('managed catalog', () => {
     for (const m of MANAGED_MODELS) {
       expect(m.upstreamModelId.length, `${m.id} needs an upstream id`).toBeGreaterThan(0);
       expect(m.pricingRef.length, `${m.id} needs a pricing ref`).toBeGreaterThan(0);
-      expect(['bedrock', 'bedrock-converse', 'openrouter']).toContain(m.transport);
+      expect(['bedrock', 'openrouter']).toContain(m.transport);
     }
   });
 
   test('transport matches the upstream id shape', () => {
     for (const m of MANAGED_MODELS) {
-      if (m.upstreamModelId.includes('anthropic.claude')) {
-        expect(m.transport, `${m.id} (Anthropic) → invoke`).toBe('bedrock');
-      } else if (m.transport === 'openrouter') {
-        // OpenRouter slugs are provider/model.
-        expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
+      if (m.transport === 'bedrock') {
+        // Bedrock managed models are Claude via the Anthropic InvokeModel transport.
+        expect(m.upstreamModelId, `${m.id} (Bedrock) → Anthropic`).toContain('anthropic.claude');
       } else {
-        expect(m.transport, `${m.id} (non-Anthropic Bedrock) → Converse`).toBe('bedrock-converse');
+        // OpenRouter slugs are provider/model.
+        expect(m.transport, `${m.id} transport`).toBe('openrouter');
+        expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
       }
     }
   });
@@ -56,8 +54,7 @@ describe('managed catalog', () => {
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
     expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('kimi-k2')?.upstreamModelId).toBe('moonshotai.kimi-k2.5');
-    expect(getManagedModel('kimi-k2')?.transport).toBe('bedrock-converse');
+    expect(getManagedModel('claude-opus-4.8')?.transport).toBe('bedrock');
     expect(getManagedModel('glm-5.2')?.transport).toBe('openrouter');
     expect(getManagedModel('glm-5.2')?.upstreamModelId).toBe('z-ai/glm-5.2');
     expect(getManagedModel('qwen3.7-max')?.upstreamModelId).toBe('qwen/qwen3.7-max');
