@@ -1,9 +1,9 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import type { PricingPlan } from '@/features/billing/pricing-plans';
 import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
-import type { PricingPlan } from '@/features/billing/pricing-plans';
 
 interface PricingPlanCardProps {
   plan: PricingPlan;
@@ -25,10 +25,9 @@ export function PricingPlanCard({
   return (
     <div
       className={cn(
-        'flex h-full flex-col gap-5 rounded-xl border p-6',
+        'flex h-full flex-col gap-5 rounded-md border p-6',
         compact && 'gap-4 p-5',
-        plan.highlight &&
-          'ring-border bg-border/60 dark:bg-card relative shadow-xl ring-1 shadow-black/6.5 backdrop-blur',
+        plan.highlight && 'bg-card dark:bg-card relative border shadow-xs',
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -37,7 +36,7 @@ export function PricingPlanCard({
           <div className="text-muted-foreground mt-1 text-sm text-balance">{plan.note}</div>
         </div>
         {badge && (
-          <Badge variant="update" className="rounded-full">
+          <Badge variant="update" className="rounded">
             {badge}
           </Badge>
         )}

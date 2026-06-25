@@ -32,7 +32,6 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { UpgradeButton } from '@/features/billing/upgrade-button';
 import {
   ProjectAppsNavItem,
   ProjectAppsRailItem,
@@ -82,6 +81,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
+import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -266,6 +266,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectChatGptConnectRailItem projectId={projectId} />
             <ProjectGatewayRailItem />
             <ProjectCustomizeRailItem />
+            <SidebarUpgradeRailItem accountId={accountId} />
           </div>
         </div>
 
@@ -379,13 +380,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectGatewayNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>
       </SidebarContent>
 
       <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
-        <UpgradeButton accountId={accountId} variant="sidebar" />
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 

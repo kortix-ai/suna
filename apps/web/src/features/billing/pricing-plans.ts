@@ -21,7 +21,8 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Start with real sandbox credits.',
     features: [
       '500 credits / month for sandbox compute only',
-      'Free OpenCode models included',
+      '1 project',
+      'Free LLM models included',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
       'Credits reset monthly',
@@ -36,7 +37,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     highlight: true,
     badge: 'Most popular',
     features: [
-      '$20 of usage credits per seat, pooled',
+      '2,000 usage credits per seat, pooled',
       'Managed frontier models included',
       'BYOK and ChatGPT subscription still supported',
       'Up to 200 projects, up to 100 seats',

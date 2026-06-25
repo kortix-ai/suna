@@ -2,9 +2,9 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
+import KortixGrid from '@/components/ui/marketing/gridder';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import KortixGrid from '@/components/ui/marketing/gridder';
 import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -21,11 +21,11 @@ const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; hre
 const CREDIT_POINTS: { title: string; body: string }[] = [
   {
     title: 'Free credits are for sandboxes',
-    body: 'Free includes 500 credits for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
+    body: 'Free includes 500 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
   },
   {
     title: 'Use the models you already pay for',
-    body: 'Run free OpenCode models, bring your own API key, or connect your ChatGPT subscription for premium model access.',
+    body: 'Free LLM models are included. Bring your own API key or connect your ChatGPT subscription for premium model access.',
   },
   {
     title: 'Compute by the second',
@@ -48,11 +48,11 @@ const CREDIT_EXAMPLES: { label: string; body: string }[] = [
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 500 credits each month for sandbox compute. You can run free OpenCode models, bring your own API key, or connect your ChatGPT subscription. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 500 credits each month for sandbox compute and 1 project. Free LLM models are included; bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',
-    '$40/seat/month includes $20 of pooled usage credits, managed frontier models, and seats for the people on your team. Add seats anytime; credits scale with them.',
+    '$40/seat/month includes 2,000 pooled usage credits per seat, managed frontier models, and seats for the people on your team. Add seats anytime; credits scale with them.',
   ],
   [
     'How are models and compute priced?',
