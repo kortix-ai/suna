@@ -123,9 +123,6 @@ const Security = () => {
 
           <div className="mt-auto flex flex-wrap items-center gap-2 px-4 pb-7">
             <Button size="sm" className="w-fit" asChild>
-              <Link href="/enterprise">Explore security</Link>
-            </Button>
-            <Button size="sm" variant="outline" className="w-fit" asChild>
               <Link href="/enterprise">{tHome('enterpriseLearnMore')}</Link>
             </Button>
           </div>
