@@ -109,6 +109,7 @@ data "aws_iam_policy_document" "qa_publisher_assume" {
       variable = "token.actions.githubusercontent.com:sub"
       values = [
         "repo:kortix-ai/suna:ref:refs/heads/main",
+        "repo:kortix-ai/suna:ref:refs/heads/staging",
         "repo:kortix-ai/suna:ref:refs/heads/prod",
         "repo:kortix-ai/suna:pull_request",
       ]
