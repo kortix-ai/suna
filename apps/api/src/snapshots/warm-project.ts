@@ -383,6 +383,14 @@ async function bakeProjectWarmSnapshotPlatinum(
       KORTIX_API_URL: config.KORTIX_URL.replace(/\/+$/, ''),
       KORTIX_SANDBOX_TOKEN: cloneCred.secretKey,
       KORTIX_TOKEN: cloneCred.secretKey,
+      // No-restart warm-fork (stateful ONLY — never cold/Daytona): bake proxy-mode
+      // opencode at PARK so a claim hot-swaps the per-session token into the live
+      // proxy instead of restarting opencode (~8s). Fast path stays untouched.
+      KORTIX_LLM_HOTSWAP: '1',
+      // Bake the FULL org catalog at PARK via the sandbox-token-authed endpoint, so
+      // the picker isn't degraded to the daemon's minimal fallback. Best-effort:
+      // if unreachable the daemon falls back, no boot impact.
+      KORTIX_LLM_CATALOG_URL: `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/projects/${project.projectId}/llm-catalog`,
     },
   });
 
