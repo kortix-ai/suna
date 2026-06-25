@@ -28,6 +28,7 @@ env:
   AWS_REGION: us-west-2
   CLUSTER: kortix-dev-eks
   NAMESPACE: kortix-staging
+  STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
   GATEWAY_APP: kortix-gateway
   API_HOST: staging-api-eks.kortix.com
@@ -128,6 +129,14 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$database" != *"$STAGING_SUPABASE_REF"* ]]; then
+            echo "::error::STAGING_DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to sync a dev/prod DB into staging."
+            exit 1
+          fi
+          if [ "$supabase" != "https://${STAGING_SUPABASE_REF}.supabase.co" ]; then
+            echo "::error::STAGING_SUPABASE_URL must be https://${STAGING_SUPABASE_REF}.supabase.co."
+            exit 1
+          fi
 
           base="$(aws secretsmanager get-secret-value \
             --secret-id kortix-dev-env \
@@ -199,6 +208,10 @@ jobs:
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ] || [ "$DATABASE_URL" = "-" ]; then
             echo "::error::STAGING_DATABASE_URL secret is not set — refusing to deploy staging without a migration check."
+            exit 1
+          fi
+          if [[ "$DATABASE_URL" != *"$STAGING_SUPABASE_REF"* ]]; then
+            echo "::error::STAGING_DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to migrate dev/prod from staging."
             exit 1
           fi
           pnpm --filter @kortix/db migrate
