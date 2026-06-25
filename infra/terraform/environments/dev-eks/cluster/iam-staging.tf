@@ -31,7 +31,12 @@ data "aws_iam_policy_document" "staging_ci_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/staging"]
+      values = [
+        # workflow_run executes from the default branch workflow context even
+        # though it deploys the successful staging branch build.
+        "repo:${var.github_repo}:ref:refs/heads/main",
+        "repo:${var.github_repo}:ref:refs/heads/staging",
+      ]
     }
   }
 }
