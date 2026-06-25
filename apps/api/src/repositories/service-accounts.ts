@@ -3,7 +3,7 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { serviceAccounts, iamPolicies } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -58,7 +58,12 @@ export async function listServiceAccounts(accountId: string): Promise<ServiceAcc
   const rows = await db
     .select()
     .from(serviceAccounts)
-    .where(eq(serviceAccounts.accountId, accountId))
+    // Only human-managed bearer SAs. Auto-provisioned AGENT identities
+    // (agent_name set) are system-managed — they carry no usable bearer and are
+    // governed via the Roles UI, so they must not appear in (or be deletable
+    // from) the bearer-SA management card (deleting one CASCADE-kills live agent
+    // sessions). isNull keeps them out.
+    .where(and(eq(serviceAccounts.accountId, accountId), isNull(serviceAccounts.agentName)))
     .orderBy(asc(serviceAccounts.name));
   return rows.map(mapRow);
 }

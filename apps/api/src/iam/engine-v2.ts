@@ -422,6 +422,38 @@ export function agentGrantGates(scope: ActionScopeV2, action: string): boolean {
   return scope === 'project' && !AGENT_GRANT_EXEMPT_ACTIONS.has(action);
 }
 
+/**
+ * Resolve the principal a request authorizes as.
+ *
+ * Standing agent identity is OPT-IN per agent: an agent-session token names its
+ * agent's auto-provisioned service account, but we authorize AS that SA only
+ * once an admin has actually assigned it a role (its iam_policies are non-empty).
+ * Until then — and on any resolve miss — we fall back to the LAUNCHING USER
+ * (legacy: userRole ∩ agentGrant), so a freshly provisioned, role-less agent
+ * keeps working exactly as before instead of collapsing to deny-all. Assigning
+ * the agent a role "promotes" it to a true standing teammate on the next authz.
+ *
+ * This fallback applies ONLY to agent SESSIONS (binding.serviceAccountId). A
+ * DIRECT service-account bearer (no account_tokens row → binding null; auth set
+ * userId = serviceAccountId) is an explicit SA principal and stays fail-closed:
+ * no role assigned → denied.
+ */
+async function resolveActingActor(
+  binding: TokenBinding | null,
+  userId: string,
+  accountId: string,
+): Promise<{ actor: ResolvedActorV2 | null; principalId: string }> {
+  if (binding?.serviceAccountId) {
+    const sa = await resolveActorV2(binding.serviceAccountId, accountId);
+    if (sa && sa.kind === 'service_account' && sa.customActions.length > 0) {
+      return { actor: sa, principalId: binding.serviceAccountId };
+    }
+    // Agent SA not activated (no role) or unresolved → authorize as the launcher.
+    return { actor: await resolveActorV2(userId, accountId), principalId: userId };
+  }
+  return { actor: await resolveActorV2(userId, accountId), principalId: userId };
+}
+
 
 // ─── Public surface ────────────────────────────────────────────────────────
 
@@ -448,14 +480,12 @@ export async function authorizeV2(
   // common dashboard path resolves the actor directly, unchanged).
   const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
 
-  // STANDING IDENTITY: an agent-session token bound to a service account
-  // authorizes AS that SA (its own policies), not the launching human — the
-  // user_id stays only for provenance. effective = SA role ∩ agentGrant (∩ the
-  // token's project scope). A token WITHOUT a service_account_id is unchanged
-  // (authorize as the user) — the default-safe path. A direct SA bearer already
-  // arrives with userId = serviceAccountId (set by auth), binding null.
-  const principalId = binding?.serviceAccountId ?? userId;
-  const actor = await resolveActorV2(principalId, accountId);
+  // STANDING IDENTITY (opt-in): an agent-session token bound to a service account
+  // authorizes AS that SA — but ONLY once it has a role; otherwise it falls back
+  // to the launching user (see resolveActingActor). effective = (SA role | user
+  // role) ∩ agentGrant ∩ the token's project scope. A token WITHOUT a
+  // service_account_id is unchanged (authorize as the user) — default-safe.
+  const { actor } = await resolveActingActor(binding, userId, accountId);
   if (!actor) return { allowed: false, reason: 'not_a_member' };
 
   // Token project-scope short-circuit (computed from the binding, no extra query).
@@ -554,11 +584,11 @@ export async function listAccessibleProjectsV2(
   actingTokenId?: string,
   _requestCtx: RequestContext = {},
 ): Promise<AccessibleResourcesV2> {
-  // Standing identity: an agent-session token bound to a service account lists
-  // the SA's accessible projects, not the launching human's. (Mirror authorizeV2.)
+  // Standing identity (opt-in): an activated agent-session SA lists the SA's
+  // accessible projects; a role-less agent SA falls back to the launching user.
+  // (Mirror authorizeV2 via the shared resolver.)
   const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
-  const principalId = binding?.serviceAccountId ?? userId;
-  const actor = await resolveActorV2(principalId, accountId);
+  const { actor, principalId } = await resolveActingActor(binding, userId, accountId);
   if (!actor) return { mode: 'none' };
 
   // A token bound to a single project narrows the listing to that project — for
