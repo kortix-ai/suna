@@ -11,6 +11,7 @@ import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
 import Security from '@/features/marketing/security/security';
 import { UseCasesByDepartment } from '@/features/marketing/use-cases-by-department';
+import { WhyItsAHire } from '@/features/marketing/why-its-a-hire';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
@@ -42,6 +43,12 @@ export default function Home() {
         </div>
 
         <UseCasesByDepartment />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <WhyItsAHire />
 
         <div className="mx-auto max-w-6xl">
           <Separator />

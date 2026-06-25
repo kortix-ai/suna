@@ -7,57 +7,101 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Check, FileText, MonitorSmartphone, PanelTop, SendHorizontal } from 'lucide-react';
+import {
+  Check,
+  Download,
+  MonitorSmartphone,
+  PanelTop,
+  SendHorizontal,
+  Smartphone,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
 
 const MARKO_AVATAR = 'https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png';
 
+type Deliverable = { name: string; meta: string };
+
 type ChatLine =
   | { from: 'user'; name: string; text: string }
-  | { from: 'kortix'; text: ReactNode; steps?: string[]; deliverables?: string[] };
+  | { from: 'kortix'; text: ReactNode; steps?: string[]; deliverable?: Deliverable };
 
-function KortixAvatar() {
+function KortixAvatar({ size = 8 }: { size?: number }) {
   return (
-    <span className="bg-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
-      <KortixLogo size={15} className="text-background" />
+    <span
+      className="bg-foreground flex shrink-0 items-center justify-center rounded-md"
+      style={{ width: `${size * 0.25}rem`, height: `${size * 0.25}rem` }}
+    >
+      <KortixLogo size={size * 1.85} className="text-background" />
     </span>
   );
 }
 
-function UserAvatar() {
+function UserAvatar({ size = 8 }: { size?: number }) {
   return (
-    <span className="bg-muted relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
+    <span
+      className="bg-muted relative flex shrink-0 items-center justify-center overflow-hidden rounded-md"
+      style={{ width: `${size * 0.25}rem`, height: `${size * 0.25}rem` }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={MARKO_AVATAR} alt="Marko" className="size-full object-cover" />
     </span>
   );
 }
 
+function DeliverableCard({
+  deliverable,
+  compact,
+}: {
+  deliverable: Deliverable;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'border-border bg-background mt-3 flex items-center gap-3 rounded-xl border p-3',
+        compact && 'p-2.5',
+      )}
+    >
+      <span className="bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold">
+        PDF
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-foreground truncate text-sm font-medium">{deliverable.name}</p>
+        <p className="text-muted-foreground truncate text-xs">{deliverable.meta}</p>
+      </div>
+      <span className="text-muted-foreground hover:text-foreground flex size-7 shrink-0 items-center justify-center transition-colors">
+        <Download className="size-4" />
+      </span>
+    </div>
+  );
+}
+
 function ChatBody({
   lines,
   composerPlaceholder,
+  dense,
 }: {
   lines: ChatLine[];
   composerPlaceholder: string;
+  dense?: boolean;
 }) {
+  const avatarSize = dense ? 7 : 8;
   return (
-    <div className="flex flex-1 flex-col justify-start gap-4 p-5 md:p-6">
+    <div className={cn('flex flex-1 flex-col justify-start gap-4', dense ? 'p-4' : 'p-5 md:p-6')}>
       {lines.map((line, i) =>
         line.from === 'user' ? (
           <div key={i} className="flex items-start gap-2.5">
-            <UserAvatar />
+            <UserAvatar size={avatarSize} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-foreground text-sm font-semibold">{line.name}</span>
-              </div>
+              <span className="text-foreground text-sm font-semibold">{line.name}</span>
               <p className="text-foreground mt-0.5 text-sm leading-relaxed">{line.text}</p>
             </div>
           </div>
         ) : (
           <div key={i} className="flex items-start gap-2.5">
-            <KortixAvatar />
+            <KortixAvatar size={avatarSize} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-foreground text-sm font-semibold">Kortix</span>
@@ -81,25 +125,20 @@ function ChatBody({
               <div className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
                 {line.text}
               </div>
-              {line.deliverables ? (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {line.deliverables.map((d) => (
-                    <span
-                      key={d}
-                      className="border-border bg-background text-foreground inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs"
-                    >
-                      <FileText className="text-muted-foreground size-3" />
-                      {d}
-                    </span>
-                  ))}
-                </div>
+              {line.deliverable ? (
+                <DeliverableCard deliverable={line.deliverable} compact={dense} />
               ) : null}
             </div>
           </div>
         ),
       )}
 
-      <div className="border-border bg-card mt-auto flex items-center gap-2 rounded-xl border px-3.5 py-2.5">
+      <div
+        className={cn(
+          'border-border bg-card mt-auto flex items-center gap-2 rounded-xl border px-3.5',
+          dense ? 'py-2' : 'py-2.5',
+        )}
+      >
         <span className="text-muted-foreground/70 flex-1 truncate text-sm">
           {composerPlaceholder}
         </span>
@@ -133,62 +172,51 @@ function SurfaceFrame({
   );
 }
 
-const SLACK_LINES: ChatLine[] = [
-  {
-    from: 'user',
-    name: 'Marko',
-    text: "what's going on with john@acme.com? he says the app won't load",
-  },
-  {
-    from: 'kortix',
-    steps: [
-      'read prod logs · 14:02 UTC',
-      'cross-checked Stripe + auth',
-      'shipped fix + opened PR #4218',
-    ],
-    text: (
-      <>
-        A stale auth token was 401ing every request. Forced a refresh — he&apos;s back in — and
-        opened <span className="text-foreground font-medium">PR #4218</span> so it self-heals next
-        time. Replied to John and filed the ticket.
-      </>
-    ),
-    deliverables: ['PR #4218', 'SUP-1043', 'reply sent'],
-  },
-];
+// The same idea across every surface: ask for the weekly report, watch the
+// steps, get the natural-language reply + a generated PDF deliverable.
+const REPORT_DELIVERABLE: Deliverable = {
+  name: 'Weekly-Performance.pdf',
+  meta: 'Revenue, signups, churn · 12 pages · just now',
+};
 
-const TEAMS_LINES: ChatLine[] = [
-  {
-    from: 'user',
-    name: 'Alex',
-    text: 'close the month: reconcile QuickBooks vs Stripe and post the P&L',
-  },
-  {
-    from: 'kortix',
-    steps: [
-      'pulled QuickBooks + Stripe',
-      'reconciled 1,284 transactions',
-      'flagged 2 gaps for review',
-    ],
-    text: (
-      <>
-        Reconciled — <span className="text-foreground font-medium">2 gaps</span> flagged ($412 in
-        fees, one duplicate payout). Posted the P&amp;L narrative and dropped the close packet here.
-      </>
-    ),
-    deliverables: ['close-packet.xlsx', 'P&L narrative'],
-  },
-];
+function reportLines(name: string): ChatLine[] {
+  return [
+    {
+      from: 'user',
+      name,
+      text: 'pull this week’s performance report and post it here',
+    },
+    {
+      from: 'kortix',
+      steps: [
+        'pulled Stripe + PostHog + ad accounts',
+        'built the summary + charts',
+        'rendered the PDF',
+      ],
+      text: (
+        <>
+          Revenue is up <span className="text-foreground font-medium">+18%</span> w/w, signups{' '}
+          <span className="text-foreground font-medium">+9%</span>, churn flat. Here&apos;s the full
+          report.
+        </>
+      ),
+      deliverable: REPORT_DELIVERABLE,
+    },
+  ];
+}
 
 function WebSurface() {
+  // The full Kortix web app: the product-UI rail (Projects · Chat · Agents ·
+  // Skills · Integrations · Models · Channels) lives here, so the 3,000+ apps
+  // grid is reachable inside the Integrations page rather than as its own band.
   return (
-    <div className="border-card bg-background relative aspect-video h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+    <div className="border-card bg-background relative h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
       <InteractiveDemo
         gradientbg={false}
         tab={false}
         embedded
         aside
-        activePage="home"
+        activePage="projects"
         className="h-full w-full max-w-full"
       />
     </div>
@@ -197,7 +225,7 @@ function WebSurface() {
 
 function DesktopSurface() {
   return (
-    <div className="border-card bg-background relative aspect-video h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+    <div className="border-card bg-background relative h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
       <div className="border-border/60 bg-muted/40 flex items-center gap-1.5 border-b px-3 py-2">
         <span className="bg-foreground/20 size-2.5 rounded-full" />
         <span className="bg-foreground/20 size-2.5 rounded-full" />
@@ -215,12 +243,32 @@ function DesktopSurface() {
   );
 }
 
+function PhoneSurface() {
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="border-foreground/15 bg-background flex h-full max-h-[520px] w-full max-w-[300px] flex-col overflow-hidden rounded-3xl border-4 shadow-xl">
+        <div className="bg-muted/30 flex items-center justify-center py-2">
+          <span className="bg-foreground/20 h-1.5 w-16 rounded-full" />
+        </div>
+        <div className="border-border/60 flex items-center gap-2.5 border-b px-4 py-3">
+          <Icon.Slack className="size-4" />
+          <span className="text-foreground text-sm font-semibold">#leadership</span>
+        </div>
+        <ChatBody lines={reportLines('Marko')} composerPlaceholder="Message" dense />
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { key: 'web', label: 'Web', icon: <PanelTop className="size-3.5" /> },
   { key: 'slack', label: 'Slack', icon: <Icon.Slack className="size-3.5" /> },
   { key: 'teams', label: 'Teams', icon: <Icon.MicrosoftTeams className="size-3.5" /> },
   { key: 'desktop', label: 'Desktop', icon: <MonitorSmartphone className="size-3.5" /> },
+  { key: 'mobile', label: 'Mobile', icon: <Smartphone className="size-3.5" /> },
 ] as const;
+
+const CONTENT_CLASS = 'mt-0 h-full data-[state=inactive]:hidden';
 
 export function ModalitySwitcher() {
   return (
@@ -234,65 +282,65 @@ export function ModalitySwitcher() {
             Meet Kortix where you already work.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            The same agents, the same repo — reachable from the web workspace, Slack, Teams, or your
-            desktop. Ask in a message; get the work back.
+            The same agents, the same repo — reachable from the web workspace, Slack, Teams, your
+            desktop, or your phone. Ask in a message; get the work back.
           </p>
         </div>
       </Reveal>
 
       <Reveal delay={0.05}>
-        <Tabs defaultValue="web" className="gap-0">
-          <TabsList variant="secondary" className="h-auto gap-1 rounded-full p-1">
-            {TABS.map((tab) => (
-              <TabsTrigger
-                key={tab.key}
-                value={tab.key}
-                variant="a_accent-i_outline"
-                className="h-9 rounded-full px-4"
-              >
-                {tab.icon}
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <Tabs defaultValue="web" className="gap-6">
+          <div className="-mx-6 overflow-x-auto px-6 lg:mx-0 lg:px-0">
+            <TabsList variant="secondary" className="h-auto w-max gap-1 rounded-full p-1">
+              {TABS.map((tab) => (
+                <TabsTrigger
+                  key={tab.key}
+                  value={tab.key}
+                  variant="a_accent-i_outline"
+                  className="h-9 shrink-0 rounded-full px-4"
+                >
+                  {tab.icon}
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
-          <TabsContent value="web" className="mt-6">
-            <div className="aspect-video h-[min(70vh,560px)] w-full">
+          {/* Fixed-height stage — switching tabs never changes the size. */}
+          <div className="h-[34rem] w-full sm:h-[36rem]">
+            <TabsContent value="web" className={CONTENT_CLASS}>
               <WebSurface />
-            </div>
-          </TabsContent>
+            </TabsContent>
 
-          <TabsContent value="slack" className="mt-6">
-            <div
-              className={cn(
-                'min-h-[26rem] w-full',
-                'rounded-2xl bg-[linear-gradient(in_oklch_180deg,oklch(from_var(--kortix-blue)_l_c_h/0.18)_0%,oklch(from_var(--kortix-green)_l_c_h/0.14)_50%,transparent_100%)] p-5 md:p-6',
-              )}
-            >
-              <SurfaceFrame icon={<Icon.Slack className="size-5" />} title="#support">
-                <ChatBody lines={SLACK_LINES} composerPlaceholder="Message #support" />
-              </SurfaceFrame>
-            </div>
-          </TabsContent>
+            <TabsContent value="slack" className={CONTENT_CLASS}>
+              <div className="h-full rounded-2xl bg-[linear-gradient(in_oklch_180deg,oklch(from_var(--kortix-blue)_l_c_h/0.18)_0%,oklch(from_var(--kortix-green)_l_c_h/0.14)_50%,transparent_100%)] p-4 md:p-6">
+                <SurfaceFrame icon={<Icon.Slack className="size-5" />} title="#leadership">
+                  <ChatBody
+                    lines={reportLines('Marko')}
+                    composerPlaceholder="Message #leadership"
+                  />
+                </SurfaceFrame>
+              </div>
+            </TabsContent>
 
-          <TabsContent value="teams" className="mt-6">
-            <div
-              className={cn(
-                'min-h-[26rem] w-full',
-                'from-kortix-purple/15 via-kortix-blue/10 rounded-2xl bg-linear-180 to-transparent p-5 md:p-6',
-              )}
-            >
-              <SurfaceFrame icon={<Icon.MicrosoftTeams className="size-5" />} title="Finance">
-                <ChatBody lines={TEAMS_LINES} composerPlaceholder="Type a message" />
-              </SurfaceFrame>
-            </div>
-          </TabsContent>
+            <TabsContent value="teams" className={CONTENT_CLASS}>
+              <div className="from-kortix-purple/15 via-kortix-blue/10 h-full rounded-2xl bg-linear-180 to-transparent p-4 md:p-6">
+                <SurfaceFrame icon={<Icon.MicrosoftTeams className="size-5" />} title="Leadership">
+                  <ChatBody lines={reportLines('Alex')} composerPlaceholder="Type a message" />
+                </SurfaceFrame>
+              </div>
+            </TabsContent>
 
-          <TabsContent value="desktop" className="mt-6">
-            <div className="aspect-video h-[min(70vh,560px)] w-full">
+            <TabsContent value="desktop" className={CONTENT_CLASS}>
               <DesktopSurface />
-            </div>
-          </TabsContent>
+            </TabsContent>
+
+            <TabsContent value="mobile" className={CONTENT_CLASS}>
+              <div className="from-kortix-blue/10 h-full rounded-2xl bg-linear-180 to-transparent p-4">
+                <PhoneSurface />
+              </div>
+            </TabsContent>
+          </div>
         </Tabs>
       </Reveal>
     </section>
