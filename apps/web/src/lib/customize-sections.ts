@@ -9,6 +9,7 @@
  */
 
 export type CustomizeSection =
+  | 'activity'
   | 'changes'
   | 'files'
   | 'skills'
@@ -29,6 +30,7 @@ export type CustomizeSection =
 export const DEFAULT_CUSTOMIZE_SECTION: CustomizeSection = 'files';
 
 export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
+  'activity',
   'changes',
   'files',
   'skills',
@@ -49,7 +51,5 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
 
 export function parseCustomizeSection(raw: string | null | undefined): CustomizeSection | null {
   if (!raw) return null;
-  return (CUSTOMIZE_SECTIONS as readonly string[]).includes(raw)
-    ? (raw as CustomizeSection)
-    : null;
+  return (CUSTOMIZE_SECTIONS as readonly string[]).includes(raw) ? (raw as CustomizeSection) : null;
 }
