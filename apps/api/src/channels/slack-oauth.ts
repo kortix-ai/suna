@@ -7,6 +7,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
+import { linkSlackIdentity } from './slack/identity';
 import { reconcileChannelConnectors } from '../executor/sync';
 import { makeOpenApiApp, errors } from '../openapi';
 
@@ -157,6 +158,25 @@ slackOauthApp.openapi(
     return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
   }
 
+  // Seed the installer's identity so the admin who just connected is linked
+  // immediately and never hits the `/login` block on their own messages. Slack
+  // returns the authorizing user as `authed_user.id`. Best-effort, and only when
+  // the per-user identity feature is enabled (the whole feature is flag-gated).
+  if (config.SLACK_REQUIRE_USER_IDENTITY && tokenJson.authed_user?.id) {
+    try {
+      await linkSlackIdentity({
+        teamId: tokenJson.team.id,
+        slackUserId: tokenJson.authed_user.id,
+        userId: payload.userId,
+      });
+    } catch (err) {
+      console.warn('[slack-oauth] installer identity seed failed', {
+        projectId: payload.projectId,
+        error: (err as Error).message,
+      });
+    }
+  }
+
   // Materialize the Slack channel connector so it appears in the Executor right
   // after connecting (best-effort; never blocks the redirect).
   void reconcileChannelConnectors(payload.projectId);
@@ -195,4 +215,5 @@ interface SlackOauthResponse {
   bot_user_id?: string;
   scope?: string;
   team?: { id: string; name?: string };
+  authed_user?: { id?: string };
 }
