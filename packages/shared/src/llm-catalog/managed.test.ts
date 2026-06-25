@@ -12,7 +12,7 @@ describe('managed catalog', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'claude-opus-4.8',
       'claude-sonnet-4.6',
-      'glm-5.2',
+      'owl-alpha',
       'qwen3.7-max',
       'deepseek-v4-pro',
       'deepseek-v4-flash',
@@ -55,8 +55,8 @@ describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
     expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
     expect(getManagedModel('claude-opus-4.8')?.transport).toBe('bedrock');
-    expect(getManagedModel('glm-5.2')?.transport).toBe('openrouter');
-    expect(getManagedModel('glm-5.2')?.upstreamModelId).toBe('z-ai/glm-5.2');
+    expect(getManagedModel('owl-alpha')?.transport).toBe('openrouter');
+    expect(getManagedModel('owl-alpha')?.upstreamModelId).toBe('openrouter/owl-alpha');
     expect(getManagedModel('qwen3.7-max')?.upstreamModelId).toBe('qwen/qwen3.7-max');
     expect(getManagedModel('deepseek-v4-pro')?.upstreamModelId).toBe('deepseek/deepseek-v4-pro');
   });
@@ -67,6 +67,7 @@ describe('managed resolution + back-compat aliases', () => {
       'kortix-basic',
       'glm-4.6',
       'glm-5.1',
+      'glm-5.2',
       'qwen3-max',
       'minimax-m2.5',
       'kimi-k2',

@@ -428,14 +428,17 @@ describe('gateway.chatCompletions — combined authorize hook', () => {
         return [managed];
       },
     });
-    const fetchImpl = okFetch({ model: 'glm', usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const fetchImpl = okFetch({
+      model: 'openrouter/owl-alpha',
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
     const res = await createGateway(
       hooks,
-      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'owl-alpha' : null) },
       { fetchImpl },
     ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"auto"}' });
     expect(res.status).toBe(200);
-    expect(resolvedWith).toBe('glm-5.2'); // resolution saw the routed model, not "auto"
+    expect(resolvedWith).toBe('owl-alpha'); // resolution saw the routed model, not "auto"
     await flush();
     expect(traces[0].requestedModel).toBe('auto'); // trace records what the client asked for
   });
@@ -451,7 +454,7 @@ describe('gateway.chatCompletions — combined authorize hook', () => {
     const fetchImpl = okFetch({ usage: { prompt_tokens: 1, completion_tokens: 1 } });
     await createGateway(
       hooks,
-      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'owl-alpha' : null) },
       { fetchImpl },
     ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"claude-x"}' });
     expect(resolvedWith).toBe('claude-x');

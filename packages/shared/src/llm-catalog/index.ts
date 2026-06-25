@@ -39,7 +39,7 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'    → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter' → an OpenRouter slug (`z-ai/glm-5.2`)
+  //   'openrouter' → an OpenRouter slug (`openrouter/owl-alpha`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'    → Anthropic-on-Bedrock InvokeModel payload (Claude only)
@@ -92,14 +92,14 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: 'glm-5.2',
-    name: 'GLM 5.2',
-    upstreamModelId: 'z-ai/glm-5.2',
+    id: 'owl-alpha',
+    name: 'Owl Alpha',
+    upstreamModelId: 'openrouter/owl-alpha',
     transport: 'openrouter',
-    pricingRef: 'z-ai/glm-5.2',
+    pricingRef: 'openrouter/owl-alpha',
     tier: 'balanced',
     vision: false,
-    limit: { context: 1_048_576, output: 64_000 },
+    limit: { context: 1_048_756, output: 262_144 },
   },
   {
     id: 'qwen3.7-max',
@@ -155,13 +155,13 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // request asks for it, the gateway resolves it to a concrete managed model and
 // bills it as the resolved model.
 //
-// For now AUTO is GLM 5.2 (cheap + smart) — except a request that carries images
-// is routed to a vision-capable model so attachments aren't silently ignored
-// (GLM 5.2 is text-only). The `autoRouter` hook and this single indirection point
+// For now AUTO is Owl Alpha (OpenRouter's agentic default) — except a request
+// that carries images is routed to a vision-capable model so attachments aren't
+// silently ignored (Owl Alpha is text-only). The `autoRouter` hook and this single indirection point
 // are the seam where a future, more sophisticated per-task handler plugs in.
 export const AUTO_MODEL_ID = 'auto';
 
-const AUTO_TARGET_MODEL = 'glm-5.2'; // text-only default
+const AUTO_TARGET_MODEL = 'owl-alpha'; // text-only default
 const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
 
 function requestHasImage(body: Record<string, unknown>): boolean {

@@ -16,8 +16,11 @@ mock.module('@kortix/llm-gateway', () => ({
 }));
 
 mock.module('@kortix/shared/llm-catalog', () => ({
+  pickAutoModel: (model: string) => (model === 'auto' || model === 'kortix/auto' ? 'owl-alpha' : null),
   getManagedModel: (model: string) =>
-    model === 'claude-sonnet-4.6' ? { id: model, transport: 'openrouter' } : null,
+    model === 'claude-sonnet-4.6' || model === 'owl-alpha'
+      ? { id: model, transport: 'openrouter' }
+      : null,
 }));
 
 mock.module('../config', () => ({
@@ -102,6 +105,15 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
+    expect(accountTierCalls).toBe(1);
+  });
+
+  test('resolves raw auto to a concrete managed upstream for stale gateway callers', async () => {
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(principal('team-auto'), 'auto');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.provider).toBe('openrouter');
+    expect(candidates[0]?.resolvedModel).toBe('owl-alpha');
     expect(accountTierCalls).toBe(1);
   });
 

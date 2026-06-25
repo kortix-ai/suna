@@ -15,11 +15,11 @@ describe('pickAutoModel', () => {
     expect(pickAutoModel('kortix/auto', { messages: [msg('hi')] })).not.toBeNull();
   });
 
-  test('text requests resolve to GLM 5.2 (regardless of size / tools)', () => {
-    expect(pickAutoModel('auto', { messages: [msg('hello there')] })).toBe('glm-5.2');
+  test('text requests resolve to Owl Alpha (regardless of size / tools)', () => {
+    expect(pickAutoModel('auto', { messages: [msg('hello there')] })).toBe('owl-alpha');
     expect(
       pickAutoModel('auto', { messages: [msg('x'.repeat(250_000))], tools: [{ name: 'edit' }] }),
-    ).toBe('glm-5.2');
+    ).toBe('owl-alpha');
   });
 
   test('image requests route to a vision model (not blind GLM)', () => {
@@ -38,7 +38,7 @@ describe('pickAutoModel', () => {
   });
 
   test('both auto targets are real managed models', () => {
-    expect(getManagedModel('glm-5.2'), 'glm-5.2 must exist').toBeDefined();
+    expect(getManagedModel('owl-alpha'), 'owl-alpha must exist').toBeDefined();
     expect(getManagedModel('claude-sonnet-4.6'), 'claude-sonnet-4.6 must exist').toBeDefined();
   });
 

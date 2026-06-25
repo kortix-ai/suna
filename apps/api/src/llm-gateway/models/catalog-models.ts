@@ -76,14 +76,14 @@ export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (GLM 5.2) so OpenCode sizes conversations the same.
+  // its default target (Owl Alpha) so OpenCode sizes conversations the same.
   out[AUTO_MODEL_ID] = {
     name: 'Auto',
-    reasoning: true,
+    reasoning: false,
     tool_call: true,
     attachment: true,
     temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
+    limit: { context: 1_048_756, output: 262_144 },
   };
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
