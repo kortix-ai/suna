@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { Separator } from '@/components/ui/separator';
 import { CompanyAsRepo } from '@/features/marketing/company-as-repo';
-import { Compare } from '@/features/marketing/compare';
+// import { Compare } from '@/features/marketing/compare'; // hidden for now — restore to re-enable
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
@@ -57,11 +57,12 @@ export default function Home() {
           <Separator />
         </div>
 
-        <Compare />
+        {/* hidden for now — Compare section disabled; restore <Compare /> to re-enable. */}
+        {/* <Compare />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
-        </div>
+        </div> */}
 
         <CompanyAsRepo />
 
