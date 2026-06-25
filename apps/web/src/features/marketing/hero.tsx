@@ -4,7 +4,7 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { MessageSquare, PanelTop, Terminal } from 'lucide-react';
+import { Cpu, KeyRound, MessageSquare, PanelTop, Terminal, Unlock, UserCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
@@ -14,6 +14,13 @@ const SURFACES = [
   { label: 'Slack', icon: MessageSquare },
   { label: 'Web workspace', icon: PanelTop },
   { label: 'CLI', icon: Terminal },
+] as const;
+
+const OWNERSHIP = [
+  { label: 'Open source', icon: Unlock },
+  { label: 'You own everything', icon: UserCheck },
+  { label: 'Bring your own API key', icon: KeyRound },
+  { label: 'Run it on any model', icon: Cpu },
 ] as const;
 
 const Hero = () => {
@@ -57,6 +64,18 @@ const Hero = () => {
             <Button size="xl" variant="secondary" asChild>
               <Link href={'/enterprise'}>{tHome('line149JsxTextTalkToSales')}</Link>
             </Button>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            {OWNERSHIP.map(({ label, icon: Icon }) => (
+              <span
+                key={label}
+                className="border-border bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
+              >
+                <Icon className="text-foreground/70 size-3.5" />
+                {label}
+              </span>
+            ))}
           </div>
         </section>
 

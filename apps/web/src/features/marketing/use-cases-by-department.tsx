@@ -169,7 +169,7 @@ export function UseCasesByDepartment() {
             What can Kortix do?
           </Badge>
           <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-            One coworker for every department.
+            AI Workforce for every department.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
             Real, one-off asks you&apos;d send Kortix in chat — each handled by an agent that runs

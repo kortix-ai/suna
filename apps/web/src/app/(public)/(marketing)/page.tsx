@@ -9,6 +9,7 @@ import { CompanyAsRepo } from '@/features/marketing/company-as-repo';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
+import { RuntimeArchitecture } from '@/features/marketing/runtime-architecture';
 import Security from '@/features/marketing/security/security';
 import { UseCasesByDepartment } from '@/features/marketing/use-cases-by-department';
 import { WhyItsAHire } from '@/features/marketing/why-its-a-hire';
@@ -55,6 +56,12 @@ export default function Home() {
         </div>
 
         <CompanyAsRepo />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <RuntimeArchitecture />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
