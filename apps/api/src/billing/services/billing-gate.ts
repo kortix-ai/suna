@@ -1,12 +1,13 @@
-import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
-import { getCreditAccount } from '../repositories/credit-accounts';
-import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from './tiers';
+import { HTTPException } from "hono/http-exception";
+import { config } from "../../config";
+import { getCreditAccount } from "../repositories/credit-accounts";
+import { ensureFreeTierAccountReady } from "./free-tier";
+import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from "./tiers";
 
 type BillingGateReason =
-  | 'subscription_required'
-  | 'insufficient_credits'
-  | 'no_account';
+  | "subscription_required"
+  | "insufficient_credits"
+  | "no_account";
 
 export interface BillingGateOk {
   ok: true;
@@ -19,7 +20,9 @@ export interface BillingGateBlocked {
   message: string;
 }
 
-export async function checkBillingActive(accountId: string): Promise<BillingGateOk | BillingGateBlocked> {
+export async function checkBillingActive(
+  accountId: string,
+): Promise<BillingGateOk | BillingGateBlocked> {
   // Self-hosted / billing-disabled deploys treat every account as billing-active.
   // No subscription, no credit balance, no 402 — the entire wallet pipeline is
   // dormant on this deploy.
@@ -27,40 +30,42 @@ export async function checkBillingActive(accountId: string): Promise<BillingGate
     return { ok: true };
   }
 
+  await ensureFreeTierAccountReady(accountId);
+
   const account = await getCreditAccount(accountId);
   if (!account) {
     return {
       ok: false,
-      reason: 'no_account',
+      reason: "no_account",
       balance: 0,
-      message: 'No credit account found. Complete account setup first.',
+      message: "No credit account found. Complete account setup first.",
     };
   }
 
   const balance = Number(account.balance ?? 0);
   const hasActiveSub =
     !!account.stripeSubscriptionId &&
-    account.stripeSubscriptionStatus !== 'canceled' &&
-    account.stripeSubscriptionStatus !== 'unpaid';
+    account.stripeSubscriptionStatus !== "canceled" &&
+    account.stripeSubscriptionStatus !== "unpaid";
 
   if (isPerSeatAccount(account.billingModel)) {
     if (hasActiveSub) return { ok: true };
     if (balance >= MINIMUM_CREDIT_FOR_RUN) return { ok: true };
     return {
       ok: false,
-      reason: 'subscription_required',
+      reason: "subscription_required",
       balance,
       message:
-        'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+        "Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.",
     };
   }
 
   if (balance >= MINIMUM_CREDIT_FOR_RUN) return { ok: true };
   return {
     ok: false,
-    reason: 'insufficient_credits',
+    reason: "insufficient_credits",
     balance,
-    message: 'Out of credits. Top up to continue.',
+    message: "Out of credits. Top up to continue.",
   };
 }
 
@@ -78,7 +83,7 @@ export async function assertBillingActive(accountId: string): Promise<void> {
         // the caller's primary account (see web error-handler → openUpgradeDialog).
         account_id: accountId,
       }),
-      { status: 402, headers: { 'content-type': 'application/json' } },
+      { status: 402, headers: { "content-type": "application/json" } },
     ),
   });
 }

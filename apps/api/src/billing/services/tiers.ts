@@ -1,5 +1,5 @@
-import type { TierConfig, DailyCreditConfig, TierEntitlements } from '../../types';
 import { config } from '../../config';
+import type { DailyCreditConfig, TierConfig, TierEntitlements } from '../../types';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
 export const MINIMUM_CREDIT_FOR_RUN = 0.01;
@@ -27,16 +27,16 @@ export function llmPriceMarkup(): number {
 }
 
 // ─── Billing v2 — per-seat model ─────────────────────────────────────────────
-// Every new account is born on the per-seat plan — there is no free tier
-// for new signups. Existing 'free' / 'legacy' tier accounts are preserved
-// (billing_model='legacy') but new accounts get billing_model='per_seat'
-// from the setup flow.
+// Every new account starts on the free tier with $5 of expiring sandbox-only
+// credits. Upgrading to Team moves them onto the per-seat model.
 //
-// Each account is billed $20/month × number of accepted account_members.
+// Team accounts are billed $40/month × number of accepted account_members.
 // $20 grants $20 of fungible wallet credits — there's NO separate compute/
 // LLM bucket in the wallet. Spend is debited from the unified balance; the
 // credit_ledger.type tag (`compute_debit` / `llm_debit`) drives the UI
-// usage breakdown.
+// usage breakdown. The free tier keeps its $5 wallet sandbox-only by blocking
+// managed premium LLM access while leaving OpenCode, BYOK, and ChatGPT
+// subscription paths intact.
 //
 // The two TYPICAL_* constants below are display-only — surfaced on the
 // pricing page as "roughly N hours of compute or M tokens" rough guidance,
@@ -69,15 +69,15 @@ export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
 // We bill the full reserved spec — Daytona's first-5-GiB-free RAM/disk allowance
 // is an ORG-level promo to us, not a per-sandbox grant, so passing it per sandbox
 // would under-bill.
-export const COMPUTE_CPU_PRICE_PER_CORE_SECOND   = 0.000014;
-export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND  = 0.0000045;
-export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.00000003;
+export const COMPUTE_CPU_PRICE_PER_CORE_SECOND = 0.000014;
+export const COMPUTE_MEMORY_PRICE_PER_GB_SECOND = 0.0000045;
+export const COMPUTE_DISK_PRICE_PER_GB_SECOND = 0.00000003;
 /** Volume discount Daytona gives us off list (≈50%) → our real cost = list ×
  *  this. Applied before the markup so users are billed on our actual (discounted)
  *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
 export const DAYTONA_DISCOUNT = 0.5;
 /** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
-export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
+export const COMPUTE_ARCHIVE_DISK_MULTIPLIER = 0.25;
 
 // Auto-topup defaults for per-seat accounts scale with seat count.
 // effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
@@ -86,12 +86,12 @@ export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 //   amount    = 1 seat-month (refill the equivalent of one seat)
 // Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
 export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
-export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
+export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
-export const MAX_PROJECTS_PER_ACCOUNT       = 200;
+export const MAX_PROJECTS_PER_ACCOUNT = 200;
 export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
-export const MAX_SEATS_PER_ACCOUNT          = 100;
+export const MAX_SEATS_PER_ACCOUNT = 100;
 
 export type BillingModel = 'legacy' | 'per_seat';
 
@@ -128,7 +128,7 @@ interface ComputeTier {
 }
 
 export const COMPUTE_TIERS: Record<string, ComputeTier> = {
-  pro:   { label: 'Pro',   cores: 8,  memoryGb: 16, diskGb: 320, priceUsd: 40 },
+  pro: { label: 'Pro', cores: 8, memoryGb: 16, diskGb: 320, priceUsd: 40 },
   power: { label: 'Power', cores: 12, memoryGb: 24, diskGb: 480, priceUsd: 60 },
   ultra: { label: 'Ultra', cores: 16, memoryGb: 32, diskGb: 640, priceUsd: 80 },
 };
@@ -177,14 +177,11 @@ const TIERS: Record<string, TierConfig> = {
     displayName: 'Free',
     monthlyPrice: 0,
     yearlyPrice: 0,
-    monthlyCredits: 0,
+    monthlyCredits: 5,
     canPurchaseCredits: false,
-    models: ['haiku'],
-    dailyCreditConfig: null,   // No daily credits — BYOC only
-    // Hidden from new signup flows. Managed cloud is paid-only — new accounts
-    // resolve to tier 'none' and hit the subscribe wall. Existing rows with
-    // tier='free' (legacy / backwards-compat) continue to be honored.
-    hidden: true,
+    models: [],
+    dailyCreditConfig: null,
+    hidden: false,
     concurrentSessionLimit: 50,
     entitlements: NO_ENTERPRISE,
   },
@@ -193,8 +190,8 @@ const TIERS: Record<string, TierConfig> = {
     name: 'pro',
     displayName: 'Pro',
     monthlyPrice: 20,
-    yearlyPrice: 0,            // No yearly billing
-    monthlyCredits: 0,         // No monthly credits — $5 one-time per machine only
+    yearlyPrice: 0, // No yearly billing
+    monthlyCredits: 0, // No monthly credits — $5 one-time per machine only
     canPurchaseCredits: true,
     models: ['all'],
     dailyCreditConfig: null,
@@ -244,14 +241,110 @@ const TIERS: Record<string, TierConfig> = {
   // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
   // All hidden, resolve to their closest equivalent for display.
   // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
-  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200,  entitlements: NO_ENTERPRISE },
-  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300,  entitlements: NO_ENTERPRISE },
-  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400,  entitlements: NO_ENTERPRISE },
-  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500,  entitlements: NO_ENTERPRISE },
-  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750,  entitlements: NO_ENTERPRISE },
-  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000, entitlements: NO_ENTERPRISE },
-  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500, entitlements: NO_ENTERPRISE },
-  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000, entitlements: NO_ENTERPRISE },
+  tier_2_20: {
+    name: 'tier_2_20',
+    displayName: 'Plus (Legacy)',
+    monthlyPrice: 20,
+    yearlyPrice: 204,
+    monthlyCredits: 20,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 200,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_6_50: {
+    name: 'tier_6_50',
+    displayName: 'Pro (Legacy)',
+    monthlyPrice: 50,
+    yearlyPrice: 510,
+    monthlyCredits: 50,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 300,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_12_100: {
+    name: 'tier_12_100',
+    displayName: 'Business (Legacy)',
+    monthlyPrice: 100,
+    yearlyPrice: 1020,
+    monthlyCredits: 100,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 400,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_25_200: {
+    name: 'tier_25_200',
+    displayName: 'Ultra (Legacy)',
+    monthlyPrice: 200,
+    yearlyPrice: 2040,
+    monthlyCredits: 200,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 500,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_50_400: {
+    name: 'tier_50_400',
+    displayName: 'Enterprise (Legacy)',
+    monthlyPrice: 400,
+    yearlyPrice: 4080,
+    monthlyCredits: 400,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 750,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_125_800: {
+    name: 'tier_125_800',
+    displayName: 'Scale (Legacy)',
+    monthlyPrice: 800,
+    yearlyPrice: 8160,
+    monthlyCredits: 800,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 1000,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_200_1000: {
+    name: 'tier_200_1000',
+    displayName: 'Max (Legacy)',
+    monthlyPrice: 1000,
+    yearlyPrice: 10200,
+    monthlyCredits: 1000,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 1500,
+    entitlements: NO_ENTERPRISE,
+  },
+  tier_150_1200: {
+    name: 'tier_150_1200',
+    displayName: 'Enterprise Max (Legacy)',
+    monthlyPrice: 1200,
+    yearlyPrice: 12240,
+    monthlyCredits: 1200,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 2000,
+    entitlements: NO_ENTERPRISE,
+  },
 };
 
 // ─── Stripe Price IDs ────────────────────────────────────────────────────────
@@ -277,21 +370,45 @@ interface StripePriceConfig {
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
+    pro: { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
     per_seat: { monthly: 'price_1TdyruG6l1KZGqIrMzPVmQSO' }, // live "Kortix seat" $40/mo
     // Legacy price → tier mappings (for webhook resolution of existing subs)
-    tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
-    tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
-    tier_12_100:   { monthly: 'price_1RILb4G6l1KZGqIr5Y20ZLHm', yearly: 'price_1ReHAWG6l1KZGqIrBHer2PQc' },
-    tier_25_200:   { monthly: 'price_1RILb4G6l1KZGqIrGAD8rNjb', yearly: 'price_1ReH9uG6l1KZGqIrsvMLHViC', yearlyCommitment: 'price_1RqtrUG6l1KZGqIrEb8hLsk3' },
-    tier_50_400:   { monthly: 'price_1RILb4G6l1KZGqIruNBUMTF1', yearly: 'price_1ReH9fG6l1KZGqIrsPtu5KIA' },
-    tier_125_800:  { monthly: 'price_1RILb3G6l1KZGqIrbJA766tN', yearly: 'price_1ReH9GG6l1KZGqIrfgqaJyat' },
-    tier_200_1000: { monthly: 'price_1RILb3G6l1KZGqIrmauYPOiN', yearly: 'price_1ReH8qG6l1KZGqIrK1akY90q' },
+    tier_2_20: {
+      monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO',
+      yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM',
+      yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s',
+    },
+    tier_6_50: {
+      monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn',
+      yearly: 'price_1ReHAsG6l1KZGqIrlAog487C',
+      yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi',
+    },
+    tier_12_100: {
+      monthly: 'price_1RILb4G6l1KZGqIr5Y20ZLHm',
+      yearly: 'price_1ReHAWG6l1KZGqIrBHer2PQc',
+    },
+    tier_25_200: {
+      monthly: 'price_1RILb4G6l1KZGqIrGAD8rNjb',
+      yearly: 'price_1ReH9uG6l1KZGqIrsvMLHViC',
+      yearlyCommitment: 'price_1RqtrUG6l1KZGqIrEb8hLsk3',
+    },
+    tier_50_400: {
+      monthly: 'price_1RILb4G6l1KZGqIruNBUMTF1',
+      yearly: 'price_1ReH9fG6l1KZGqIrsPtu5KIA',
+    },
+    tier_125_800: {
+      monthly: 'price_1RILb3G6l1KZGqIrbJA766tN',
+      yearly: 'price_1ReH9GG6l1KZGqIrfgqaJyat',
+    },
+    tier_200_1000: {
+      monthly: 'price_1RILb3G6l1KZGqIrmauYPOiN',
+      yearly: 'price_1ReH8qG6l1KZGqIrK1akY90q',
+    },
   },
   credits: {
-    10:  'price_1RxmQUG6l1KZGqIru453O1zW',
-    25:  'price_1RxmQlG6l1KZGqIr3hS5WtGg',
-    50:  'price_1RxmQvG6l1KZGqIrLbMZ3D6r',
+    10: 'price_1RxmQUG6l1KZGqIru453O1zW',
+    25: 'price_1RxmQlG6l1KZGqIr3hS5WtGg',
+    50: 'price_1RxmQvG6l1KZGqIrLbMZ3D6r',
     100: 'price_1RxmR3G6l1KZGqIrpLwFCGac',
     250: 'price_1RxmRAG6l1KZGqIrtBIMsZAj',
     500: 'price_1RxmRGG6l1KZGqIrSyvl6w1G',
@@ -303,7 +420,7 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
 const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
+    pro: { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
     // Billing v2 — $40/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
     // the same account the staging customers + their legacy subs live in (so the
     // migration can actually find/cancel them). The old …G6l1KZGqIr price was in a
@@ -311,9 +428,9 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
     per_seat: { monthly: 'price_1TdyscG6CaZppiKcilrApKgB' },
   },
   credits: {
-    10:  'price_1RxXOvG6l1KZGqIrMqsiYQvk',
-    25:  'price_1RxXPNG6l1KZGqIrQprPgDme',
-    50:  'price_1RxmNhG6l1KZGqIrTq2zPtgi',
+    10: 'price_1RxXOvG6l1KZGqIrMqsiYQvk',
+    25: 'price_1RxXPNG6l1KZGqIrQprPgDme',
+    50: 'price_1RxmNhG6l1KZGqIrTq2zPtgi',
     100: 'price_1RxmNwG6l1KZGqIrnliwPDM6',
     250: 'price_1RxmO6G6l1KZGqIrBF8Kx87G',
     500: 'price_1RxmOFG6l1KZGqIrn4wgORnH',
@@ -332,13 +449,13 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
 const STRIPE_PRICES_DEV: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro:  { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
+    pro: { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
     per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
   },
   credits: {
-    10:  'price_1TeyA8G6l1KZGqIrWYDbPN0O',
-    25:  'price_1TeyA9G6l1KZGqIrbdZNyyDn',
-    50:  'price_1TeyA9G6l1KZGqIrNbj3otrU',
+    10: 'price_1TeyA8G6l1KZGqIrWYDbPN0O',
+    25: 'price_1TeyA9G6l1KZGqIrbdZNyyDn',
+    50: 'price_1TeyA9G6l1KZGqIrNbj3otrU',
     100: 'price_1TeyA9G6l1KZGqIrqSwPsznA',
     250: 'price_1TeyAAG6l1KZGqIrZavIxtSE',
     500: 'price_1TeyAAG6l1KZGqIrm5HnnDaT',
@@ -349,9 +466,12 @@ const STRIPE_PRICES_DEV: StripePriceConfig = {
 
 function getStripePrices(): StripePriceConfig {
   switch (config.INTERNAL_KORTIX_ENV) {
-    case 'prod':    return STRIPE_PRICES_PROD;
-    case 'staging': return STRIPE_PRICES_STAGING;
-    default:        return STRIPE_PRICES_DEV; // 'dev' / unset → local test sandbox
+    case 'prod':
+      return STRIPE_PRICES_PROD;
+    case 'staging':
+      return STRIPE_PRICES_STAGING;
+    default:
+      return STRIPE_PRICES_DEV; // 'dev' / unset → local test sandbox
   }
 }
 
@@ -379,7 +499,9 @@ export function resolveCreditPriceId(amountDollars: number): string | null {
 }
 
 export function getCreditPackageAmounts(): number[] {
-  return Object.keys(getStripePrices().credits).map(Number).sort((a, b) => a - b);
+  return Object.keys(getStripePrices().credits)
+    .map(Number)
+    .sort((a, b) => a - b);
 }
 
 // ─── Price ID ↔ Tier reverse lookup ─────────────────────────────────────────
@@ -409,10 +531,12 @@ export function getTier(name: string): TierConfig {
 
 export function getTierByPriceId(priceId: string): TierConfig | null {
   const name = priceIdToTier.get(priceId);
-  return name ? TIERS[name] ?? null : null;
+  return name ? (TIERS[name] ?? null) : null;
 }
 
-export function getBillingPeriodByPriceId(priceId: string): 'monthly' | 'yearly' | 'yearly_commitment' | null {
+export function getBillingPeriodByPriceId(
+  priceId: string,
+): 'monthly' | 'yearly' | 'yearly_commitment' | null {
   for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING]) {
     for (const tierPrices of Object.values(priceConfig.subscriptions)) {
       if (tierPrices.monthly === priceId) return 'monthly';
@@ -529,7 +653,16 @@ export function canClaimPerSeat(args: {
 }
 
 /** Legacy paid tiers eligible for the "claim computer" flow. */
-export const LEGACY_PAID_TIERS = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_125_800', 'tier_200_1000', 'tier_150_1200'] as const;
+export const LEGACY_PAID_TIERS = [
+  'tier_2_20',
+  'tier_6_50',
+  'tier_12_100',
+  'tier_25_200',
+  'tier_50_400',
+  'tier_125_800',
+  'tier_200_1000',
+  'tier_150_1200',
+] as const;
 
 export function isLegacyPaidTier(tierName: string): boolean {
   return (LEGACY_PAID_TIERS as readonly string[]).includes(tierName);
@@ -571,16 +704,16 @@ export function isDowngrade(fromTier: string, toTier: string): boolean {
 // ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────
 
 const REVENUECAT_PRODUCT_MAPPING: Record<string, string> = {
-  'kortix_plus_monthly': 'tier_2_20',
-  'kortix_plus_yearly': 'tier_2_20',
+  kortix_plus_monthly: 'tier_2_20',
+  kortix_plus_yearly: 'tier_2_20',
   'plus:plus-monthly': 'tier_2_20',
 
-  'kortix_pro_monthly': 'pro',
-  'kortix_pro_yearly': 'pro',
+  kortix_pro_monthly: 'pro',
+  kortix_pro_yearly: 'pro',
   'pro:pro-monthly': 'pro',
 
-  'kortix_ultra_monthly': 'tier_25_200',
-  'kortix_ultra_yearly': 'tier_25_200',
+  kortix_ultra_monthly: 'tier_25_200',
+  kortix_ultra_yearly: 'tier_25_200',
   'ultra:ultra-monthly': 'tier_25_200',
 };
 
@@ -588,7 +721,9 @@ export function mapRevenueCatProductToTier(productId: string): string | null {
   return REVENUECAT_PRODUCT_MAPPING[productId.toLowerCase()] ?? null;
 }
 
-export function getRevenueCatPeriodType(productId: string): 'monthly' | 'yearly' | 'yearly_commitment' {
+export function getRevenueCatPeriodType(
+  productId: string,
+): 'monthly' | 'yearly' | 'yearly_commitment' {
   if (!productId) return 'monthly';
   const lower = productId.toLowerCase();
   if (lower.includes('commitment')) return 'yearly_commitment';

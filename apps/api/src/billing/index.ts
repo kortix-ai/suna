@@ -1,16 +1,17 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { supabaseAuth } from '../middleware/auth';
+import type { Context } from 'hono';
 import { config } from '../config';
+import { supabaseAuth } from '../middleware/auth';
+import { json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
-import { makeOpenApiApp, json } from '../openapi';
 
-import { accountStateRouter } from './routes/account-state';
-import { subscriptionsRouter } from './routes/subscriptions';
-import { paymentsRouter } from './routes/payments';
-import { creditsRouter } from './routes/credits';
-import { webhooksRouter } from './routes/webhooks';
 import { accountDeletionRouter } from './routes/account-deletion';
+import { accountStateRouter } from './routes/account-state';
+import { creditsRouter } from './routes/credits';
+import { paymentsRouter } from './routes/payments';
+import { subscriptionsRouter } from './routes/subscriptions';
+import { webhooksRouter } from './routes/webhooks';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -74,12 +75,33 @@ billingApp.openapi(
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
     const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
     const result = await processYearlyCreditRotation();
+    return c.json(result);
+  },
+);
+
+// Free-tier monthly credit rotation cron endpoint
+billingApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/cron/free-tier-rotation',
+    tags: ['billing'],
+    summary: 'Run the free-tier monthly credit rotation (cron)',
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Rotation result'),
+    },
+  }),
+  async (c: Context<AppEnv>) => {
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return c.json({ skipped: true, reason: 'billing disabled' });
+    }
+    const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+    const result = await processFreeTierCreditRotation();
     return c.json(result);
   },
 );
@@ -94,6 +116,16 @@ if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       console.error('[BillingApp] Yearly rotation interval error:', err);
     }
   }, YEARLY_ROTATION_INTERVAL_MS);
+
+  const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+      await processFreeTierCreditRotation();
+    } catch (err) {
+      console.error('[BillingApp] Free-tier rotation interval error:', err);
+    }
+  }, FREE_TIER_ROTATION_INTERVAL_MS);
 }
 
 export { billingApp, accountDeletionApp };

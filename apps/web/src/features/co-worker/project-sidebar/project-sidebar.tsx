@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  ProjectGatewayNavItem,
+  ProjectGatewayRailItem,
+} from '@/components/projects/gateway/gateway-nav';
+import {
   matchesSessionFilter,
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
@@ -32,16 +36,16 @@ import {
   ProjectAppsNavItem,
   ProjectAppsRailItem,
 } from '@/features/co-worker/project-sidebar/footer/project-apps-nav';
-import { ProjectGatewayNavItem, ProjectGatewayRailItem } from '@/components/projects/gateway/gateway-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/co-worker/project-sidebar/footer/project-change-requests-nav';
+import {
+  ProjectChatGptConnectNavItem,
+  ProjectChatGptConnectRailItem,
+} from '@/features/co-worker/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
   ProjectCustomizeNavItem,
   ProjectCustomizeRailItem,
+  useCustomizeKeyboardShortcut,
 } from '@/features/co-worker/project-sidebar/footer/project-customize-nav';
-import {
-  OnboardingSetupNavItem,
-  ProjectSetupRailItem,
-} from '@/features/co-worker/project-sidebar/footer/project-onboarding-setup';
 import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
@@ -57,6 +61,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
+import { useBillingAccountId } from '@/stores/billing-account-context';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -76,6 +81,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
+import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
@@ -122,6 +128,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
+  const accountId = useBillingAccountId();
+
   const { user: authUser } = useAuth();
   const user = useMemo(
     () => ({
@@ -146,6 +154,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       },
     });
   }, [newSession, isMobile, setOpenMobile]);
+
+  useCustomizeKeyboardShortcut();
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -253,9 +263,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <div className="mt-auto flex w-full flex-col items-center gap-1">
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
+            <ProjectChatGptConnectRailItem projectId={projectId} />
             <ProjectGatewayRailItem />
-            <ProjectSetupRailItem projectId={projectId} />
             <ProjectCustomizeRailItem />
+            <SidebarUpgradeRailItem accountId={accountId} />
           </div>
         </div>
 
@@ -367,14 +378,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
               <ProjectGatewayNavItem />
-              <OnboardingSetupNavItem projectId={projectId} />
               <ProjectCustomizeNavItem />
+              <ProjectChatGptConnectNavItem projectId={projectId} />
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
+      <SidebarFooter className="space-y-0.5 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
