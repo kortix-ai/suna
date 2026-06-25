@@ -18,6 +18,8 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
+  ExternalLink,
   Globe,
   KeyRound,
   Loader2,
@@ -88,6 +90,7 @@ import {
   useEmailInstall,
   useEmailMode,
   useSlackInstall,
+  useSlackManifest,
   useSlackMode,
   type EmailInstallation,
   type SlackInstallation,
@@ -1406,10 +1409,12 @@ function ConnectedSlackProfile({
 
 function SlackConnectForm({ projectId, onConnected }: { projectId: string; onConnected: () => void }) {
   const mode = useSlackMode(projectId);
+  const manifest = useSlackManifest(projectId);
   const connect = useConnectSlack();
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
+  const [copiedManifest, setCopiedManifest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const installUrl = mode.data?.oauth_available ? mode.data.install_url : null;
   const showCustom = customOpen || (!mode.isLoading && !installUrl);
@@ -1425,23 +1430,37 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
     );
   };
 
+  const copyManifest = async () => {
+    if (!manifest.data) return;
+    try {
+      await navigator.clipboard.writeText(manifest.data);
+      setCopiedManifest(true);
+      toast.success('Slack manifest copied');
+      setTimeout(() => setCopiedManifest(false), 1500);
+    } catch {
+      toast.error('Copy failed - select and copy manually');
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {installUrl ? (
+      {mode.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : installUrl ? (
         <InfoBanner
           tone="info"
           icon={Slack}
-          title="Add Kortix to Slack"
+          title="Add Kortix to your Slack workspace"
           action={
             <Button size="sm" className="shrink-0 gap-1.5" asChild>
               <a href={installUrl}>
-                Install Slack
+                Add to Slack
                 <ChevronRight className="h-4 w-4" />
               </a>
             </Button>
           }
         >
-          Authorize the managed Kortix Slack app for this project.
+          One-click install - authorize Kortix in your workspace, no setup required.
         </InfoBanner>
       ) : (
         <InfoBanner tone="warning" icon={Slack} title="Managed Slack install is not configured">
@@ -1459,48 +1478,107 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
           <ChevronDown
             className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
           />
-          Use custom Slack app
+          Bring your own Slack app
         </Button>
         {showCustom ? (
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Bot token">
-                <Input
-                  id="slack-channel-bot-token"
-                  name="slack-channel-bot-token"
-                  aria-label="Slack bot token"
-                  type="password"
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  placeholder="xoxb-..."
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </Field>
-              <Field label="Signing secret">
-                <Input
-                  id="slack-channel-signing-secret"
-                  name="slack-channel-signing-secret"
-                  aria-label="Slack signing secret"
-                  type="password"
-                  value={signingSecret}
-                  onChange={(e) => setSigningSecret(e.target.value)}
-                  placeholder="Slack signing secret"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </Field>
+            <p className="text-muted-foreground text-sm">
+              For self-hosted setups or custom-scoped installs.
+            </p>
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-foreground text-sm font-medium">
+                    Step 1 of 2 - paste the manifest into Slack and install the app.
+                  </div>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    Click Open Slack, choose "From a manifest", paste the JSON, then approve the app.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={copyManifest}
+                    disabled={!manifest.data}
+                  >
+                    {copiedManifest ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {copiedManifest ? 'Copied' : 'Copy'}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
+                    <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">
+                      Open Slack
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+              {manifest.isLoading ? (
+                <Skeleton className="h-52 w-full rounded-2xl" />
+              ) : manifest.isError ? (
+                <InfoBanner tone="destructive">
+                  {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
+                </InfoBanner>
+              ) : manifest.data ? (
+                <div className="max-h-72 overflow-auto rounded-2xl">
+                  <CodeSnippet code={manifest.data} language="json" />
+                </div>
+              ) : null}
             </div>
-            {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={submit}
-                disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
-              >
-                {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                Connect custom Slack app
-              </Button>
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+              <div>
+                <div className="text-foreground text-sm font-medium">
+                  Step 2 of 2 - paste tokens from Slack.
+                </div>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Bot token">
+                  <Input
+                    id="slack-channel-bot-token"
+                    name="slack-channel-bot-token"
+                    aria-label="Slack bot token"
+                    type="password"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    placeholder="xoxb-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+                <Field label="Signing secret">
+                  <Input
+                    id="slack-channel-signing-secret"
+                    name="slack-channel-signing-secret"
+                    aria-label="Slack signing secret"
+                    type="password"
+                    value={signingSecret}
+                    onChange={(e) => setSigningSecret(e.target.value)}
+                    placeholder="Slack signing secret"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+              </div>
+              {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
+                >
+                  {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                  Connect custom Slack app
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}
@@ -2598,15 +2676,7 @@ function ChannelCatalogue({
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
-      <ChannelProfileCard
-        projectId={projectId}
-        slug="kortix_slack"
-        platform="slack"
-        name="Slack"
-        icon={Slack}
-        description="Connect a Slack workspace profile. Mentions and threaded replies route into Kortix agent sessions."
-        onAdded={onAdded}
-      />
+      <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
     </div>
   );
 }
@@ -2719,63 +2789,54 @@ function AddEmailProfileCard({
   );
 }
 
-function ChannelProfileCard({
+function AddSlackProfileCard({
   projectId,
-  slug,
-  platform,
-  name,
-  icon: Icon,
-  description,
   onAdded,
 }: {
   projectId: string;
-  slug: string;
-  platform: ChannelPlatform;
-  name: string;
-  icon: LucideIcon;
-  description: string;
   onAdded: (slug?: string) => void;
 }) {
-  const add = useMutation({
-    mutationFn: () =>
-      createConnector(projectId, {
-        slug,
-        name,
-        provider: 'channel',
-        platform,
-        credential: 'shared',
-        sharing: { mode: 'project' },
-      }),
-    onSuccess: () => {
-      toast.success(`Added ${name}`);
-      onAdded(slug);
-    },
-    onError: (err: Error) => toast.error(err.message || `Failed to add ${name}`),
-  });
+  const [open, setOpen] = useState(false);
+  const handleConnected = () => {
+    toast.success('Slack connected');
+    setOpen(false);
+    onAdded('kortix_slack');
+  };
 
   return (
-    <button
-      type="button"
-      onClick={() => add.mutate()}
-      disabled={add.isPending}
-      className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      <div className="flex items-center gap-3">
-        <EntityAvatar icon={Icon} size="sm" />
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground truncate text-sm font-semibold">{name}</div>
-          <div className="text-muted-foreground truncate text-xs">Channel profile</div>
-        </div>
-        {add.isPending ? (
-          <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
-        ) : (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-3">
+          <EntityAvatar icon={Slack} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-semibold">Slack</div>
+            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+          </div>
           <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
-        )}
-      </div>
-      <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
-        {description}
-      </p>
-    </button>
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+          Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
+        </p>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+            <DialogTitle>Add Kortix to Slack</DialogTitle>
+            <DialogDescription>
+              Connect the built-in Slack channel. The connector profile appears automatically after
+              installation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+            <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
