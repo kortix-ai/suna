@@ -8,7 +8,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { iamPolicies, iamRoleActions, iamRoles } from '@kortix/db';
+import { iamPolicies, iamRoleActions, iamRoles, projects } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -646,6 +646,18 @@ async function parsePolicyInput(
   const scopeId = typeof body.scopeId === 'string' && body.scopeId ? body.scopeId : null;
   if (scopeType === 'project' && !scopeId) {
     return { ok: false, status: 400, error: 'scopeId (project id) is required for project scope' };
+  }
+  // A project-scoped policy must target a project that actually belongs to this
+  // account — otherwise a typo'd or cross-account scopeId creates a dangling
+  // policy that silently grants nothing (or, worse, hints at cross-tenant
+  // intent). Validate existence + ownership up front.
+  if (scopeType === 'project' && scopeId) {
+    const [proj] = await db
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(and(eq(projects.projectId, scopeId), eq(projects.accountId, accountId)))
+      .limit(1);
+    if (!proj) return { ok: false, status: 404, error: 'scopeId does not match a project in this account' };
   }
 
   if (body.effect !== undefined && body.effect !== 'allow') {
