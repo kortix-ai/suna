@@ -1,5 +1,5 @@
 import { logger } from '../lib/logger';
-import { SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
+import { EMAIL_CHANNEL_CONNECTOR_SLUG, SLACK_CHANNEL_CONNECTOR_SLUG, channelCatalog } from './channels';
 import {
   type ExecResult,
   type ExecutorAuth,
@@ -146,6 +146,7 @@ export type CallResult =
   | { status: 'error'; reason: string };
 
 const SLACK_CHANNEL_ACTIONS = new Set(channelCatalog('slack').map((a) => a.path));
+const EMAIL_CHANNEL_ACTIONS = new Set(channelCatalog('email').map((a) => a.path));
 
 async function resolveConnectorForCall(
   deps: GatewayDeps,
@@ -163,6 +164,16 @@ async function resolveConnectorForCall(
     );
     if (channelConnector?.enabled && channelConnector.provider === 'channel') {
       return { slug: SLACK_CHANNEL_CONNECTOR_SLUG, connector: channelConnector };
+    }
+  }
+
+  if (input.connectorSlug === 'email' && EMAIL_CHANNEL_ACTIONS.has(input.actionPath)) {
+    const channelConnector = await deps.loadConnectorBySlug(
+      input.projectId,
+      EMAIL_CHANNEL_CONNECTOR_SLUG,
+    );
+    if (channelConnector?.enabled && channelConnector.provider === 'channel') {
+      return { slug: EMAIL_CHANNEL_CONNECTOR_SLUG, connector: channelConnector };
     }
   }
 
