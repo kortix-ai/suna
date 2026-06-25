@@ -19,6 +19,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   version:
@@ -156,3 +157,17 @@ jobs:
           docker buildx imagetools create \
             --tag "kortix/kortix-frontend:staging-${GITHUB_SHA::8}" \
             "kortix/kortix-frontend:staging-${GITHUB_SHA}"
+
+  dispatch-deploy:
+    name: Dispatch staging deploy
+    needs: [build-api, build-gateway, build-frontend]
+    if: github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Deploy Staging for bot-dispatched build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-staging.yml --ref main -f sha="${GITHUB_SHA}"
+          echo "Deploy Staging dispatched for ${GITHUB_SHA}."
