@@ -24,7 +24,7 @@
 import { config } from '../config';
 
 /** Stable identifiers for experimental features. */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -83,6 +83,16 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // The backend service must be running platform-wide for the surface to work.
     available: () => config.TUNNEL_ENABLED,
     // Explicit opt-in: off by default even where the service is available.
+    platformDefault: () => false,
+  },
+  {
+    key: 'agentmail_email',
+    name: 'AgentMail Email',
+    description:
+      'Assign AgentMail inbox profiles to the agent so inbound email threads can start and continue Kortix sessions. Native email channels are still experimental.',
+    stability: 'experimental',
+    available: () => true,
+    // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
 ];

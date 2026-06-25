@@ -1,11 +1,12 @@
-name: QA - main
+name: QA - staging
 
-# Heavier regression after merge to main. Browser tests run only when a deployed
-# web target is configured; DB migration tests always run against throwaway Docker.
+# Heavier regression after code reaches staging. Browser tests run only when a
+# deployed web target is configured; DB migration tests always run against
+# throwaway Docker.
 
 on:
   push:
-    branches: [main]
+    branches: [staging]
   workflow_dispatch:
     inputs:
       web_base_url:
@@ -14,7 +15,7 @@ on:
         type: string
 
 concurrency:
-  group: qa-main
+  group: qa-staging
   cancel-in-progress: false
 
 permissions:
@@ -49,13 +50,13 @@ jobs:
           fi
           make e2e a11y
           # Visual is advisory: it snapshots the live target (no deterministic
-          # per-platform baselines), so a pixel diff shouldn't red-gate qa-main.
+          # per-platform baselines), so a pixel diff shouldn't red-gate qa-staging.
           # It still runs and its results land in the report.
           make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: qa-main-ui
+          name: qa-staging-ui
           path: tests/test-results/**
           retention-days: 30
 
@@ -78,7 +79,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: qa-main-migration
+          name: qa-staging-migration
           path: tests/test-results/migration/**
           retention-days: 30
 

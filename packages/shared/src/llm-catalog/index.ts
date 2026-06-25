@@ -1,9 +1,17 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
 
-interface CatalogModel {
+export interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
+  // Capabilities mirrored from models.dev by
+  // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
+  // Single source of truth — consumers derive flags from these, never hardcode.
+  attachment?: boolean; // image / file input (vision)
+  reasoning?: boolean;
+  tool_call?: boolean;
+  temperature?: boolean;
+  limit?: { context?: number; output?: number };
 }
 
 interface CatalogProvider {
@@ -30,18 +38,25 @@ export interface ManagedModel {
   id: string;
   name: string;
   // The upstream's own model id, interpreted per `transport`:
-  //   'bedrock' / 'bedrock-converse' → a Bedrock id (`us.anthropic.claude-opus-4-8`,
-  //                                    `moonshotai.kimi-k2.5`)
-  //   'openrouter'                   → an OpenRouter slug (`z-ai/glm-4.6`)
+  //   'bedrock'    → a Bedrock id (`us.anthropic.claude-opus-4-8`)
+  //   'openrouter' → an OpenRouter slug (`z-ai/glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
-  //   'bedrock'          → Anthropic-on-Bedrock InvokeModel payload (Claude only)
-  //   'bedrock-converse' → model-agnostic Bedrock Converse API (Kimi, MiniMax, …)
-  //   'openrouter'       → OpenRouter (openai-compat) for models not on Bedrock
-  transport: 'bedrock' | 'bedrock-converse' | 'openrouter';
+  //   'bedrock'    → Anthropic-on-Bedrock InvokeModel payload (Claude only)
+  //   'openrouter' → OpenRouter (openai-compat) for everything else
+  transport: 'bedrock' | 'openrouter';
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
+  // Vision (image input). Curated explicitly: managed slugs don't all exist on
+  // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
+  // unlike BYOK models these can't derive it from the generated catalog.
+  vision: boolean;
+  // Context/output token window. Lives here (same reason as `vision`: managed
+  // slugs aren't reliably on models.dev) and is served verbatim so OpenCode can
+  // size the conversation and fire auto-compaction. This is the CANONICAL home —
+  // it used to be backfilled from a hardcoded table in the sandbox agent server.
+  limit: { context: number; output: number };
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
@@ -52,11 +67,9 @@ export interface ManagedModel {
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
-// markup, so the gateway enforces budgets/logging/spend on all of them. Bedrock
-// is preferred (consistent, no per-provider routing surprises): Anthropic via the
-// proven Anthropic-payload transport, Kimi/MiniMax via Converse. Models Bedrock
-// doesn't host (GLM, Qwen) go via OpenRouter. (Kimi is on Bedrock specifically
-// because its only OpenRouter provider, `novita`, is excluded by our data policy.)
+// markup, so the gateway enforces budgets/logging/spend on all of them. Claude
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport); everything
+// else (GLM, Qwen, DeepSeek) goes via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: 'claude-opus-4.8',
@@ -65,6 +78,8 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
+    vision: true,
+    limit: { context: 1_000_000, output: 64_000 },
   },
   {
     id: 'claude-sonnet-4.6',
@@ -73,30 +88,18 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
+    vision: true,
+    limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: 'kimi-k2',
-    name: 'Kimi K2',
-    upstreamModelId: 'moonshotai.kimi-k2.5',
-    transport: 'bedrock-converse',
-    pricingRef: 'moonshotai/kimi-k2',
-    tier: 'balanced',
-  },
-  {
-    id: 'kimi-k2-thinking',
-    name: 'Kimi K2 Thinking',
-    upstreamModelId: 'moonshot.kimi-k2-thinking',
-    transport: 'bedrock-converse',
-    pricingRef: 'moonshotai/kimi-k2-thinking',
-    tier: 'balanced',
-  },
-  {
-    id: 'glm-5.1',
-    name: 'GLM-5.1',
-    upstreamModelId: 'z-ai/glm-5.1',
+    id: 'glm-5.2',
+    name: 'GLM 5.2',
+    upstreamModelId: 'z-ai/glm-5.2',
     transport: 'openrouter',
-    pricingRef: 'z-ai/glm-5.1',
+    pricingRef: 'z-ai/glm-5.2',
     tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'qwen3.7-max',
@@ -105,6 +108,8 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'qwen/qwen3.7-max',
     tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-pro',
@@ -113,6 +118,8 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'deepseek/deepseek-v4-pro',
     tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-flash',
@@ -121,30 +128,19 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'deepseek/deepseek-v4-flash',
     tier: 'balanced',
+    vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
 
-// Back-compat: the gateway previously offered two branded ids. Stored agent
-// configs / in-flight requests may still send them, so they keep resolving (to
-// the nearest current model) even though they are no longer in the served
-// catalog. Not advertised — absent from DEFAULT_MANAGED_MODEL_IDS.
-const MANAGED_ALIASES: Record<string, string> = {
-  'kortix-power': 'claude-sonnet-4.6',
-  'kortix-basic': 'claude-sonnet-4.6',
-  'glm-4.6': 'glm-5.1',
-  'glm-4.7': 'glm-5.1',
-  'qwen3-max': 'qwen3.7-max',
-  'minimax-m2.5': 'claude-sonnet-4.6',
-};
-
 export function getManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id) ?? MANAGED_BY_ID.get(MANAGED_ALIASES[id]);
+  return MANAGED_BY_ID.get(id);
 }
 
 export function isManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id) || id in MANAGED_ALIASES;
+  return MANAGED_BY_ID.has(id);
 }
 
 export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
@@ -153,8 +149,50 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
   MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]
 ).id;
 
+// ─── AUTO: managed model selection ──────────────────────────────────────────
+// The catalog advertises a synthetic `auto` model presented to users as
+// "automatically picks the cheapest, most efficient model for the task." When a
+// request asks for it, the gateway resolves it to a concrete managed model and
+// bills it as the resolved model.
+//
+// For now AUTO is GLM 5.2 (cheap + smart) — except a request that carries images
+// is routed to a vision-capable model so attachments aren't silently ignored
+// (GLM 5.2 is text-only). The `autoRouter` hook and this single indirection point
+// are the seam where a future, more sophisticated per-task handler plugs in.
+export const AUTO_MODEL_ID = 'auto';
+
+const AUTO_TARGET_MODEL = 'glm-5.2'; // text-only default
+const AUTO_VISION_MODEL = 'claude-sonnet-4.6'; // when the request has image content
+
+function requestHasImage(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  for (const message of messages) {
+    const content = (message as { content?: unknown }).content;
+    if (
+      Array.isArray(content) &&
+      content.some(
+        (part) =>
+          !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'image_url',
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Map a requested model to a concrete managed model when (and only when) it is
+ * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
+ * the caller treats as "use the requested model as-is"). Pure + dependency-free
+ * so both the in-process mount and the standalone gateway can call it locally.
+ */
+export function pickAutoModel(model: string, body: Record<string, unknown>): string | null {
+  if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`) return null;
+  return requestHasImage(body) ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
+}
+
 export const MODEL_SELECTOR_PROVIDER_IDS = [
-  'kortix-yolo',
   'kortix',
   'anthropic',
   'openai',
@@ -173,7 +211,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   moonshotai: 'Moonshot',
   'moonshotai-cn': 'Moonshot',
   opencode: 'OpenCode Zen',
-  'kortix-yolo': 'Kortix Yolo',
   kortix: 'Kortix',
   firmware: 'Firmware',
   bedrock: 'AWS Bedrock',

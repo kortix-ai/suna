@@ -12,14 +12,18 @@ import { useTranslations } from 'next-intl';
 
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Image from 'next/image';
 import {
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
+  ExternalLink,
   Globe,
   KeyRound,
   Loader2,
+  Mail,
   MessageSquare,
   Monitor,
   Pencil,
@@ -29,6 +33,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Slack,
   Trash2,
   Zap,
   type LucideIcon,
@@ -78,8 +83,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ShareOption, SharingPicker } from '@/features/co-worker/shared/sharing-picker';
 import {
+  useConnectEmail,
+  useConnectSlack,
+  useDisconnectEmail,
+  useDisconnectSlack,
+  useEmailInstall,
+  useEmailMode,
+  useSlackInstall,
+  useSlackManifest,
+  useSlackMode,
+  type EmailInstallation,
+  type SlackInstallation,
+} from '@/hooks/channels/use-channels-installations';
+import {
   createConnector,
   deleteConnector,
+  getProject,
   getConnectorConfig,
   getConnectorPolicies,
   listConnectors,
@@ -239,7 +258,13 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
     queryFn: () => listConnectors(projectId),
     staleTime: 10_000,
   });
+  const projectQuery = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId),
+    staleTime: 10_000,
+  });
   const connectors = useMemo(() => query.data?.connectors ?? [], [query.data]);
+  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
   const isForbidden = query.isError && /403|forbidden/i.test((query.error as Error)?.message ?? '');
 
   // Selection persists in ?c= (slug | "global" | "add") for deep links.
@@ -331,6 +356,7 @@ function ConnectorsMasterDetail({ projectId }: { projectId: string }) {
         {selection.kind === 'add' ? (
           <AddAppPanel
             projectId={projectId}
+            emailChannelEnabled={emailChannelEnabled}
             onAdded={(slug) => {
               invalidate();
               if (slug) select({ kind: 'connector', slug });
@@ -633,14 +659,18 @@ function ConnectorAppIcon({
       <span
         className={cn(
           'border-border/60 bg-card flex shrink-0 items-center justify-center overflow-hidden border',
+          'relative',
           appIconTileClass(size),
         )}
       >
-        <img
+        <Image
           src={imgSrc}
           alt=""
           referrerPolicy="no-referrer"
-          className="size-full object-contain p-1"
+          fill
+          sizes={size === 'lg' ? '40px' : '28px'}
+          className="object-contain p-1"
+          unoptimized
         />
       </span>
     );
@@ -744,13 +774,11 @@ function ConnectorDetail({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const isPipedream = connector.provider === 'pipedream';
-  // Channel connectors (Slack) are credentialed + connected/removed via their
-  // platform install in the Channels tab — not the generic credential UI here.
   const isChannel = connector.provider === 'channel';
   // Computer (Agent Computer Tunnel) connectors, like channels, are managed from
   // a dedicated tab (Computers): no generic credential / connect / remove UI.
   const isComputer = connector.provider === 'computer';
-  const isManaged = isChannel || isComputer;
+  const isManaged = isComputer;
   const setSection = useCustomizeStore((s) => s.setSection);
   const connected = connector.secretSet;
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
@@ -901,30 +929,6 @@ function ConnectorDetail({
       </div>
 
       <div className="mt-7 space-y-5">
-        {/* Channel connectors (Slack) are credentialed + connected via their
-            platform install — point management at the Channels tab instead of
-            the generic credential / connection / remove controls. */}
-        {isChannel && (
-          <InfoBanner
-            tone="info"
-            icon={MessageSquare}
-            title={`${displayName} is managed in Channels`}
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 gap-1.5"
-                onClick={() => setSection('channels')}
-              >
-                <MessageSquare className="h-4 w-4" />
-                Open Channels
-              </Button>
-            }
-          >
-            Connecting or disconnecting the workspace, and the bot token, live in the Channels
-            tab. Here you control who can use it and review its tools.
-          </InfoBanner>
-        )}
         {/* Computer connectors are connected + permissioned in the Computers tab
             (device pairing, per-capability grants, audit) — point management
             there instead of the generic credential / connection / remove UI. */}
@@ -979,11 +983,20 @@ function ConnectorDetail({
           </TabsList>
           <TabsContent value="profile" className="space-y-5">
             {!isPipedream && !isManaged && (
-              <ConnectionSection
-                projectId={projectId}
-                connector={connector}
-                onChanged={onChanged}
-              />
+              isChannel ? (
+                <ChannelConnectionSection
+                  projectId={projectId}
+                  connector={connector}
+                  onChanged={onChanged}
+                  onRemoved={onRemoved}
+                />
+              ) : (
+                <ConnectionSection
+                  projectId={projectId}
+                  connector={connector}
+                  onChanged={onChanged}
+                />
+              )
             )}
             <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
           </TabsContent>
@@ -992,7 +1005,7 @@ function ConnectorDetail({
           </TabsContent>
         </Tabs>
 
-        {!isManaged && (
+        {!isManaged && !isChannel && (
           <SectionCard
             tone="destructive"
             title={tI18nHardcoded.raw(
@@ -1046,6 +1059,530 @@ function ConnectorDetail({
         onOpenChange={setCredOpen}
         onSaved={onChanged}
       />
+    </div>
+  );
+}
+
+// ─── Channel connection profile (Email / Slack install state) ───────────────
+
+type ChannelPlatform = 'slack' | 'email';
+
+function connectorPlatform(connector: AdminConnector): ChannelPlatform | null {
+  if (connector.platform === 'slack' || connector.platform === 'email') return connector.platform;
+  if (connector.slug === 'kortix_slack') return 'slack';
+  if (connector.slug === 'kortix_email') return 'email';
+  if (connector.slug.startsWith('email_')) return 'email';
+  return null;
+}
+
+function ChannelConnectionSection({
+  projectId,
+  connector,
+  onChanged,
+  onRemoved,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  onChanged: () => void;
+  onRemoved: () => void;
+}) {
+  const platform = connectorPlatform(connector);
+  if (platform === 'email') {
+    return (
+      <EmailChannelProfile
+        projectId={projectId}
+        connector={connector}
+        onChanged={onChanged}
+        onRemoved={onRemoved}
+      />
+    );
+  }
+  if (platform === 'slack') {
+    return <SlackChannelProfile projectId={projectId} onChanged={onChanged} onRemoved={onRemoved} />;
+  }
+  return (
+    <SectionCard title="Connection">
+      <InfoBanner tone="warning">This channel profile is missing its platform setting.</InfoBanner>
+    </SectionCard>
+  );
+}
+
+function EmailChannelProfile({
+  projectId,
+  connector,
+  onChanged,
+  onRemoved,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  onChanged: () => void;
+  onRemoved: () => void;
+}) {
+  const install = useEmailInstall(projectId, connector.slug);
+
+  return (
+    <SectionCard
+      title="Email connection"
+      description="AgentMail inbox assigned to this connector profile."
+    >
+      {install.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : install.data ? (
+        <ConnectedEmailProfile
+          projectId={projectId}
+          connectorSlug={connector.slug}
+          installation={install.data}
+          onRemoved={onRemoved}
+        />
+      ) : (
+        <EmailConnectForm projectId={projectId} connectorSlug={connector.slug} onConnected={onChanged} />
+      )}
+    </SectionCard>
+  );
+}
+
+function ConnectedEmailProfile({
+  projectId,
+  connectorSlug,
+  installation,
+  onRemoved,
+}: {
+  projectId: string;
+  connectorSlug: string;
+  installation: EmailInstallation;
+  onRemoved: () => void;
+}) {
+  const disconnect = useDisconnectEmail();
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <InfoBanner tone="success" icon={Check} title="Email connected">
+        Address <code className="font-mono">{installation.email}</code>
+        {' · '}Inbox <code className="font-mono">{installation.inboxId}</code>
+      </InfoBanner>
+      <div className="flex items-center justify-end gap-2">
+        {confirming ? (
+          <>
+            <span className="text-muted-foreground mr-auto text-xs">
+              Removes the Email channel profile from this project.
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={disconnect.isPending}
+              onClick={() =>
+                disconnect.mutate({ projectId, connectorSlug }, {
+                  onSuccess: () => {
+                    setConfirming(false);
+                    onRemoved();
+                  },
+                })
+              }
+            >
+              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              Disconnect
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+            Disconnect
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EmailConnectForm({
+  projectId,
+  connectorSlug,
+  onConnected,
+}: {
+  projectId: string;
+  connectorSlug: string;
+  onConnected: () => void;
+}) {
+  const mode = useEmailMode(projectId);
+  const connect = useConnectEmail();
+  const [displayName, setDisplayName] = useState('Kortix Agent');
+  const [username, setUsername] = useState(() =>
+    connectorSlug
+      .replace(/^email_/, '')
+      .replace(/_[a-z0-9]{4}$/i, '')
+      .replace(/_/g, '-'),
+  );
+  const [apiKey, setApiKey] = useState('');
+  const [customKeyOpen, setCustomKeyOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const managedAvailable = mode.data?.managed_available === true;
+  const useCustomKey = customKeyOpen && apiKey.trim();
+  const canCreate = managedAvailable || Boolean(useCustomKey);
+
+  const submit = () => {
+    setError(null);
+    if (!canCreate) {
+      setCustomKeyOpen(true);
+      setError('Managed Email is not configured on this deployment. Use a custom AgentMail key to continue.');
+      return;
+    }
+    connect.mutate(
+      {
+        projectId,
+        connector_slug: connectorSlug,
+        api_key: useCustomKey ? apiKey.trim() : undefined,
+        display_name: displayName.trim() || undefined,
+        username: username.trim() || undefined,
+      },
+      {
+        onSuccess: onConnected,
+        onError: (e) => setError((e as Error).message),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <InfoBanner
+        tone={managedAvailable ? 'info' : 'warning'}
+        icon={Mail}
+        title={managedAvailable ? 'Create managed Email inbox' : 'Managed Email is not configured'}
+      >
+        {managedAvailable
+          ? 'Kortix will create and manage the AgentMail inbox for this profile.'
+          : 'This deployment needs a project-specific AgentMail key before it can create an inbox.'}
+      </InfoBanner>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Display name">
+          <Input
+            id="email-channel-display-name"
+            name="email-channel-display-name"
+            aria-label="Email display name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Kortix Agent"
+          />
+        </Field>
+        <Field label="Address prefix">
+          <Input
+            id="email-channel-username"
+            name="email-channel-username"
+            aria-label="Email address prefix"
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
+            placeholder="support"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <p className="text-muted-foreground text-xs">
+            AgentMail will create this prefix when available, for example {username || 'support'}@agentmail.
+          </p>
+        </Field>
+      </div>
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 px-0"
+          onClick={() => setCustomKeyOpen((open) => !open)}
+        >
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', customKeyOpen && 'rotate-180')}
+          />
+          Use custom AgentMail key
+        </Button>
+        {customKeyOpen ? (
+          <Field label="AgentMail API key">
+            <Input
+              id="email-channel-agentmail-api-key"
+              name="email-channel-agentmail-api-key"
+              aria-label="AgentMail API key"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="am_..."
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="text-muted-foreground text-xs">
+              Optional when managed Email is configured. Stored as an encrypted project secret.
+            </p>
+          </Field>
+        ) : null}
+      </div>
+      {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+      <div className="flex justify-end">
+        <Button size="sm" onClick={submit} disabled={connect.isPending || mode.isLoading}>
+          {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+          Create inbox
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SlackChannelProfile({
+  projectId,
+  onChanged,
+  onRemoved,
+}: {
+  projectId: string;
+  onChanged: () => void;
+  onRemoved: () => void;
+}) {
+  const install = useSlackInstall(projectId);
+  return (
+    <SectionCard
+      title="Slack connection"
+      description="Slack workspace assigned to this connector profile."
+    >
+      {install.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : install.data ? (
+        <ConnectedSlackProfile
+          projectId={projectId}
+          installation={install.data}
+          onRemoved={onRemoved}
+        />
+      ) : (
+        <SlackConnectForm projectId={projectId} onConnected={onChanged} />
+      )}
+    </SectionCard>
+  );
+}
+
+function ConnectedSlackProfile({
+  projectId,
+  installation,
+  onRemoved,
+}: {
+  projectId: string;
+  installation: SlackInstallation;
+  onRemoved: () => void;
+}) {
+  const disconnect = useDisconnectSlack();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="space-y-4">
+      <InfoBanner tone="success" icon={Check} title="Slack connected">
+        Workspace <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
+      </InfoBanner>
+      <div className="flex items-center justify-end gap-2">
+        {confirming ? (
+          <>
+            <span className="text-muted-foreground mr-auto text-xs">
+              Removes the Slack channel profile from this project.
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={disconnect.isPending}
+              onClick={() =>
+                disconnect.mutate(projectId, {
+                  onSuccess: () => {
+                    setConfirming(false);
+                    onRemoved();
+                  },
+                })
+              }
+            >
+              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              Disconnect
+            </Button>
+          </>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
+            Disconnect
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SlackConnectForm({ projectId, onConnected }: { projectId: string; onConnected: () => void }) {
+  const mode = useSlackMode(projectId);
+  const manifest = useSlackManifest(projectId);
+  const connect = useConnectSlack();
+  const [botToken, setBotToken] = useState('');
+  const [signingSecret, setSigningSecret] = useState('');
+  const [customOpen, setCustomOpen] = useState(false);
+  const [copiedManifest, setCopiedManifest] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const installUrl = mode.data?.oauth_available ? mode.data.install_url : null;
+  const showCustom = customOpen || (!mode.isLoading && !installUrl);
+
+  const submit = () => {
+    setError(null);
+    connect.mutate(
+      { projectId, bot_token: botToken.trim(), signing_secret: signingSecret.trim() },
+      {
+        onSuccess: onConnected,
+        onError: (e) => setError((e as Error).message),
+      },
+    );
+  };
+
+  const copyManifest = async () => {
+    if (!manifest.data) return;
+    try {
+      await navigator.clipboard.writeText(manifest.data);
+      setCopiedManifest(true);
+      toast.success('Slack manifest copied');
+      setTimeout(() => setCopiedManifest(false), 1500);
+    } catch {
+      toast.error('Copy failed - select and copy manually');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {mode.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : installUrl ? (
+        <InfoBanner
+          tone="info"
+          icon={Slack}
+          title="Add Kortix to your Slack workspace"
+          action={
+            <Button size="sm" className="shrink-0 gap-1.5" asChild>
+              <a href={installUrl}>
+                Add to Slack
+                <ChevronRight className="h-4 w-4" />
+              </a>
+            </Button>
+          }
+        >
+          One-click install - authorize Kortix in your workspace, no setup required.
+        </InfoBanner>
+      ) : (
+        <InfoBanner tone="warning" icon={Slack} title="Managed Slack install is not configured">
+          Use a custom Slack app for this deployment.
+        </InfoBanner>
+      )}
+      <div className="space-y-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1.5 px-0"
+          onClick={() => setCustomOpen((open) => !open)}
+        >
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
+          />
+          Bring your own Slack app
+        </Button>
+        {showCustom ? (
+          <div className="space-y-4">
+            <p className="text-muted-foreground text-sm">
+              For self-hosted setups or custom-scoped installs.
+            </p>
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-foreground text-sm font-medium">
+                    Step 1 of 2 - paste the manifest into Slack and install the app.
+                  </div>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    Click Open Slack, choose "From a manifest", paste the JSON, then approve the app.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={copyManifest}
+                    disabled={!manifest.data}
+                  >
+                    {copiedManifest ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {copiedManifest ? 'Copied' : 'Copy'}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
+                    <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">
+                      Open Slack
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+              {manifest.isLoading ? (
+                <Skeleton className="h-52 w-full rounded-2xl" />
+              ) : manifest.isError ? (
+                <InfoBanner tone="destructive">
+                  {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
+                </InfoBanner>
+              ) : manifest.data ? (
+                <div className="max-h-72 overflow-auto rounded-2xl">
+                  <CodeSnippet code={manifest.data} language="json" />
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+              <div>
+                <div className="text-foreground text-sm font-medium">
+                  Step 2 of 2 - paste tokens from Slack.
+                </div>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Bot token">
+                  <Input
+                    id="slack-channel-bot-token"
+                    name="slack-channel-bot-token"
+                    aria-label="Slack bot token"
+                    type="password"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    placeholder="xoxb-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+                <Field label="Signing secret">
+                  <Input
+                    id="slack-channel-signing-secret"
+                    name="slack-channel-signing-secret"
+                    aria-label="Slack signing secret"
+                    type="password"
+                    value={signingSecret}
+                    onChange={(e) => setSigningSecret(e.target.value)}
+                    placeholder="Slack signing secret"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+              </div>
+              {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
+                >
+                  {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                  Connect custom Slack app
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1217,6 +1754,7 @@ function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
   return {
     slug: cfg.slug,
     provider: cfg.provider,
+    platform: cfg.platform ?? undefined,
     url: cfg.url ?? undefined,
     transport: cfg.transport ?? undefined,
     endpoint: cfg.endpoint ?? undefined,
@@ -1235,6 +1773,7 @@ function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
 function connectionSig(d: ConnectorDraftInput): string {
   return JSON.stringify({
     provider: d.provider,
+    platform: d.platform ?? '',
     url: d.url ?? '',
     transport: d.transport ?? '',
     endpoint: d.endpoint ?? '',
@@ -2041,9 +2580,11 @@ function ConnectorSetupFields({
 
 function AddAppPanel({
   projectId,
+  emailChannelEnabled,
   onAdded,
 }: {
   projectId: string;
+  emailChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -2075,7 +2616,7 @@ function AddAppPanel({
           )}
         </p>
       </div>
-      <Tabs defaultValue={easyConnectDisabled ? 'custom' : 'apps'}>
+      <Tabs defaultValue={easyConnectDisabled ? 'channels' : 'apps'}>
         <TabsList>
           {easyConnectDisabled ? (
             <Tooltip>
@@ -2096,6 +2637,7 @@ function AddAppPanel({
           ) : (
             <TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>
           )}
+          <TabsTrigger value="channels">Channels</TabsTrigger>
           <TabsTrigger value="custom">Custom</TabsTrigger>
         </TabsList>
         {!easyConnectDisabled && (
@@ -2103,11 +2645,198 @@ function AddAppPanel({
             <AppCatalogue projectId={projectId} onAdded={onAdded} />
           </TabsContent>
         )}
+        <TabsContent value="channels" className="mt-4">
+          <ChannelCatalogue
+            projectId={projectId}
+            emailChannelEnabled={emailChannelEnabled}
+            onAdded={onAdded}
+          />
+        </TabsContent>
         <TabsContent value="custom" className="mt-4">
-          <CustomConnectorForm projectId={projectId} onAdded={onAdded} />
+          <CustomConnectorForm
+            projectId={projectId}
+            emailChannelEnabled={emailChannelEnabled}
+            onAdded={onAdded}
+          />
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function ChannelCatalogue({
+  projectId,
+  emailChannelEnabled,
+  onAdded,
+}: {
+  projectId: string;
+  emailChannelEnabled: boolean;
+  onAdded: (slug?: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
+      <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
+    </div>
+  );
+}
+
+function slugifyConnector(input: string): string {
+  const slug = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  return slug || 'inbox';
+}
+
+function AddEmailProfileCard({
+  projectId,
+  onAdded,
+}: {
+  projectId: string;
+  onAdded: (slug?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('Email inbox');
+  const [username, setUsername] = useState('');
+  const add = useMutation({
+    mutationFn: () => {
+      const base = slugifyConnector(username || name);
+      const slug = `email_${base}_${Date.now().toString(36).slice(-4)}`;
+      return createConnector(projectId, {
+        slug,
+        name: name.trim() || 'Email inbox',
+        provider: 'channel',
+        platform: 'email',
+        credential: 'shared',
+        sharing: { mode: 'project' },
+      }).then(() => slug);
+    },
+    onSuccess: (slug) => {
+      toast.success('Added Email inbox');
+      setOpen(false);
+      onAdded(slug);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to add Email inbox'),
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-3">
+          <EntityAvatar icon={Mail} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-semibold">Email inbox</div>
+            <div className="text-muted-foreground truncate text-xs">Channel profile</div>
+          </div>
+          <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+          Add a separate AgentMail inbox profile for support, sales, founders, or any mailbox the agent should run.
+        </p>
+      </button>
+      <Dialog open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+            <DialogTitle>Add Email inbox</DialogTitle>
+            <DialogDescription>
+              Create a separate connector profile. You choose the AgentMail address when connecting it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <Field label="Profile name">
+              <Input
+                id="email-profile-name"
+                name="email-profile-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Support inbox"
+              />
+            </Field>
+            <Field label="Preferred address prefix">
+              <Input
+                id="email-profile-prefix"
+                name="email-profile-prefix"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
+                placeholder="support"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-muted-foreground text-xs">
+                Used as the first choice for the AgentMail address, for example support@agentmail.
+              </p>
+            </Field>
+          </div>
+          <DialogFooter className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={add.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => add.mutate()} disabled={add.isPending} className="gap-1.5">
+              {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Add inbox
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function AddSlackProfileCard({
+  projectId,
+  onAdded,
+}: {
+  projectId: string;
+  onAdded: (slug?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const handleConnected = () => {
+    toast.success('Slack connected');
+    setOpen(false);
+    onAdded('kortix_slack');
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-3">
+          <EntityAvatar icon={Slack} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-semibold">Slack</div>
+            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+          </div>
+          <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+          Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
+        </p>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+            <DialogTitle>Add Kortix to Slack</DialogTitle>
+            <DialogDescription>
+              Connect the built-in Slack channel. The connector profile appears automatically after
+              installation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+            <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -2185,11 +2914,14 @@ function AppCatalogue({
                 >
                   <div className="flex items-center gap-3">
                     {app.imgSrc ? (
-                      <img
+                      <Image
                         src={app.imgSrc}
                         alt=""
+                        width={36}
+                        height={36}
                         className="h-9 w-9 shrink-0 rounded-lg object-contain"
                         referrerPolicy="no-referrer"
+                        unoptimized
                       />
                     ) : (
                       <EntityAvatar icon={Zap} size="sm" />
@@ -2338,17 +3070,19 @@ function ConnectorConfigFields({
   draft,
   onChange,
   slugEditable,
+  emailChannelEnabled = true,
 }: {
   draft: ConnectorDraftInput;
   onChange: (d: ConnectorDraftInput) => void;
   slugEditable?: boolean;
+  emailChannelEnabled?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
   const setAuth = (patch: Partial<NonNullable<ConnectorDraftInput['auth']>>) =>
     onChange({ ...draft, auth: { ...draft.auth, ...patch } });
   const p = draft.provider;
-  const needsAuth = p !== 'pipedream';
+  const needsAuth = p !== 'pipedream' && p !== 'channel' && p !== 'computer';
 
   return (
     <div className="space-y-4">
@@ -2369,7 +3103,17 @@ function ConnectorConfigFields({
           <Label>Provider</Label>
           <Select
             value={p}
-            onValueChange={(v) => set({ provider: v as ConnectorDraftInput['provider'] })}
+            onValueChange={(v) => {
+              const provider = v as ConnectorDraftInput['provider'];
+              set({
+                provider,
+                platform:
+                  provider === 'channel'
+                    ? (draft.platform === 'email' && !emailChannelEnabled ? 'slack' : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack')))
+                    : undefined,
+                auth: provider === 'channel' ? { type: 'none' } : draft.auth,
+              });
+            }}
           >
             <SelectTrigger>
               <SelectValue />
@@ -2379,10 +3123,28 @@ function ConnectorConfigFields({
               <SelectItem value="graphql">GraphQL</SelectItem>
               <SelectItem value="mcp">MCP</SelectItem>
               <SelectItem value="http">HTTP</SelectItem>
+              <SelectItem value="channel">Channel</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
+      {p === 'channel' && (
+        <div className="space-y-1.5">
+          <Label>Channel</Label>
+          <Select
+            value={draft.platform === 'email' && !emailChannelEnabled ? 'slack' : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))}
+            onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {emailChannelEnabled && <SelectItem value="email">Email</SelectItem>}
+              <SelectItem value="slack">Slack</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       {p === 'openapi' && (
         <Field
           label={tI18nHardcoded.raw(
@@ -2518,20 +3280,25 @@ function ConnectorConfigFields({
 }
 
 /** Required connection fields per provider — gates the save button (server re-validates). */
-function connectionValid(d: ConnectorDraftInput): boolean {
+function connectionValid(d: ConnectorDraftInput, emailChannelEnabled = true): boolean {
   if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
   if (d.provider === 'mcp') return !!d.url?.trim();
   if (d.provider === 'openapi') return !!d.spec?.trim();
   if (d.provider === 'graphql') return !!d.endpoint?.trim();
   if (d.provider === 'http') return !!d.baseUrl?.trim();
+  if (d.provider === 'channel') {
+    return d.platform === 'slack' || (emailChannelEnabled && d.platform === 'email');
+  }
   return true;
 }
 
 function CustomConnectorForm({
   projectId,
+  emailChannelEnabled,
   onAdded,
 }: {
   projectId: string;
+  emailChannelEnabled: boolean;
   onAdded: (slug?: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -2541,6 +3308,12 @@ function CustomConnectorForm({
     auth: { type: 'none' },
   });
   const [setup, setSetup] = useState<ConnectorSetup>(DEFAULT_CONNECTOR_SETUP);
+  useEffect(() => {
+    if (!emailChannelEnabled && draft.provider === 'channel' && draft.platform === 'email') {
+      setDraft((current) => ({ ...current, platform: 'slack' }));
+    }
+  }, [draft.platform, draft.provider, emailChannelEnabled]);
+
   const save = useMutation({
     mutationFn: () =>
       createConnector(projectId, {
@@ -2572,7 +3345,12 @@ function CustomConnectorForm({
         }}
         className="space-y-4"
       >
-        <ConnectorConfigFields draft={draft} onChange={setDraft} slugEditable />
+        <ConnectorConfigFields
+          draft={draft}
+          onChange={setDraft}
+          slugEditable
+          emailChannelEnabled={emailChannelEnabled}
+        />
         {authActive && (
           <InfoBanner tone="info">
             {tI18nHardcoded.raw(
@@ -2589,7 +3367,7 @@ function CustomConnectorForm({
             disabled={
               !draft.slug ||
               save.isPending ||
-              !connectionValid(draft) ||
+              !connectionValid(draft, emailChannelEnabled) ||
               (setup.access === 'members' && setup.memberIds.length === 0)
             }
             className="gap-1.5"

@@ -1,7 +1,8 @@
 // Kortix API router — the blue/green cutover switch in front of the public API.
 //
-//   api.kortix.com      → this worker (env "prod") → EKS | ECS-Fargate
-//   dev-api.kortix.com  → this worker (env "dev")  → EKS | ECS-Fargate
+//   api.kortix.com          → this worker (env "prod")    → EKS | ECS-Fargate
+//   staging-api.kortix.com  → this worker (env "staging") → EKS | ECS-Fargate
+//   dev-api.kortix.com      → this worker (env "dev")     → EKS | ECS-Fargate
 //
 // The active backend is chosen by the `ACTIVE_BACKEND` plain-text var; the two
 // concrete origins are `BACKEND_EKS` / `BACKEND_ECS_FARGATE` (per-env vars in

@@ -2,7 +2,13 @@ export {
   saveSlackInstall,
   deleteSlackInstall,
   loadSlackInstall,
+  saveAgentMailInstall,
+  deleteAgentMailInstall,
+  listAgentMailInstalls,
+  loadAgentMailInstall,
   loadSlackTokenForProject,
+  loadAgentMailApiKeyForProject,
+  loadAgentMailWebhookSecretForProject,
   loadSlackSigningSecretForProject,
   loadSlackBotUserIdForProject,
   loadSlackTeamNameForProject,
@@ -11,8 +17,16 @@ export {
   SLACK_TEAM_ID,
   SLACK_BOT_USER_ID,
   SLACK_TEAM_NAME,
+  AGENTMAIL_API_KEY,
+  AGENTMAIL_INBOX_ID,
+  AGENTMAIL_INBOX_EMAIL,
+  AGENTMAIL_INBOX_DISPLAY_NAME,
+  AGENTMAIL_WEBHOOK_ID,
+  AGENTMAIL_WEBHOOK_SECRET,
   type SlackInstallSummary,
   type SlackInstallInput,
+  type AgentMailInstallSummary,
+  type AgentMailInstallInput,
 } from './install-store';
 export {
   buildSlackManifest,
@@ -26,6 +40,7 @@ export {
   type BuildManifestConfig,
 } from './slack-manifest';
 export { slackWebhookApp, relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack-webhook';
+export { emailWebhookApp } from './email-webhook';
 export { telegramWebhookApp } from './telegram-webhook';
 export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
 export { slackIdentityApp } from './slack/identity-routes';

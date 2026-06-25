@@ -203,6 +203,11 @@ const envSchema = z.object({
   // before the flag is flipped on.
   SLACK_REQUIRE_USER_IDENTITY: optBoolFalse,
 
+  // ── Channels — AgentMail email adapter (optional) ────────────────────────
+  AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
+  AGENTMAIL_API_KEY:           optStr,
+  AGENTMAIL_WEBHOOK_SECRET:    optStr,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -605,6 +610,11 @@ export const config = {
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
+
+  // ─── Channels (AgentMail email) ──────────────────────────────────────────
+  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
+  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
+  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

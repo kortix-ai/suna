@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
@@ -15,6 +15,7 @@ import {
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
+import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
@@ -237,6 +238,10 @@ async function main() {
         )
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
           bootMark('seed-opencode-session')
@@ -529,6 +534,10 @@ async function runPoolMode(
         const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
           bootMark('pool-seed-session')
@@ -674,7 +683,19 @@ async function maybeCreateInitialOpencodeSession(
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
-  const existing = await resolveExistingRoot(baseUrl, workspace)
+  let existing = await resolveExistingRoot(baseUrl, workspace)
+  // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
+  // pinned root, so `existing` here is the SHARED seed root — every fork would
+  // otherwise resolve the same opencode session id and their chats bleed together
+  // (the client keys all message state by that id). Rotate onto a fresh
+  // per-session root EXACTLY ONCE by ignoring the seed root here; the marker is
+  // retired below so later restarts reuse THIS fork's own root via the path above.
+  const seedBakedId = readSeedBakedSessionId()
+  const rotateOffSeedRoot = isSharedSeedBakedRoot(existing?.id, seedBakedId)
+  if (rotateOffSeedRoot) {
+    logger.info('[boot] fork is on the shared seed-baked root; rotating to its own', { seedBakedId })
+    existing = null
+  }
   let sessionId: string
   let alreadyDelivered = false
   if (existing) {
@@ -701,6 +722,15 @@ async function maybeCreateInitialOpencodeSession(
   }
 
   pinOpencodeSessionFile(sessionId)
+  if (rotateOffSeedRoot) {
+    // This fork now owns `sessionId` (pinned above): retire the one-shot marker
+    // and drop the orphaned shared seed root (best-effort — the pin is
+    // authoritative, so cleanup failing never reintroduces the collision).
+    clearSeedBakedMarker()
+    if (seedBakedId && seedBakedId !== sessionId) {
+      void deleteOpencodeSession(baseUrl, workspace, seedBakedId)
+    }
+  }
   bootState.initialOpenCodeSessionId = sessionId
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
@@ -741,6 +771,52 @@ function pinOpencodeSessionFile(sessionId: string): void {
     writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
+  }
+}
+
+/** Record (at seed time) that the pinned root is the SEED's pre-baked one, so the
+ *  first claiming fork rotates off it instead of sharing it. Captured into the
+ *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
+function markSeedBakedSession(sessionId: string): void {
+  try {
+    mkdirSync(dirname(OPENCODE_SEED_BAKED_PIN_PATH), { recursive: true })
+    writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, sessionId, 'utf8')
+  } catch (err) {
+    logger.warn('[seed] failed to write seed-baked session marker', err)
+  }
+}
+
+function readSeedBakedSessionId(): string | null {
+  try {
+    if (!existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) return null
+    const id = readFileSync(OPENCODE_SEED_BAKED_PIN_PATH, 'utf8').trim()
+    return id.length > 0 ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
+ *  restarts then reuse the fork's root via the normal idempotent reuse path. */
+function clearSeedBakedMarker(): void {
+  try {
+    if (existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) unlinkSync(OPENCODE_SEED_BAKED_PIN_PATH)
+  } catch (err) {
+    logger.warn('[boot] failed to clear seed-baked marker', err)
+  }
+}
+
+/** Best-effort delete of the orphaned shared seed root after a fork rotates onto
+ *  its own. Correctness does NOT depend on this (the fork pins + relays its own
+ *  id); it just stops the empty shared root from lingering in the session list. */
+async function deleteOpencodeSession(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  try {
+    await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(workspace)}`,
+      { method: 'DELETE', signal: AbortSignal.timeout(3_000) },
+    )
+  } catch {
+    /* orphan is harmless — the fork's own pinned root is authoritative */
   }
 }
 

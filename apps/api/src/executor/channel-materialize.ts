@@ -1,4 +1,4 @@
-import { loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -14,12 +14,16 @@ import { loadSlackInstall } from '../channels/install-store';
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 import { channelDefaultSlug, channelLabel } from './channels';
+import { db } from '../shared/db';
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { resolveExperimentalFeature } from '../experimental/features';
 
-function channelSpec(platform: ChannelPlatform, slug: string): ConnectorSpec {
+function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabel(platform)): ConnectorSpec {
   return {
     slug,
     path: `${MANIFEST_FILENAME}#connectors.${slug} (auto: ${platform} install)`,
-    name: channelLabel(platform),
+    name,
     enabled: true,
     provider: 'channel',
     credentialMode: 'shared',
@@ -42,6 +46,7 @@ function channelAlreadyDeclared(
   platform: ChannelPlatform,
   slug: string,
 ): boolean {
+  if (platform === 'email') return declared.some((s) => s.slug === slug);
   return declared.some(
     (s) => s.slug === slug || (s.provider === 'channel' && s.platform === platform),
   );
@@ -57,6 +62,8 @@ export async function synthesizeChannelConnectors(
   projectId: string,
   declared: ConnectorSpec[],
 ): Promise<ConnectorSpec[]> {
+  const specs: ConnectorSpec[] = [];
+
   // Slack (Telegram/Teams slot in here the same way — see KORTIX-206 Phase D).
   // Use the reserved platform-owned slug so user-defined connectors like
   // `[[connectors]] slug="slack" provider="pipedream" app="slack"` cannot
@@ -64,7 +71,25 @@ export async function synthesizeChannelConnectors(
   const slackSlug = channelDefaultSlug('slack');
   if (!channelAlreadyDeclared(declared, 'slack', slackSlug)) {
     const install = await loadSlackInstall(projectId).catch(() => null);
-    if (install) return [channelSpec('slack', slackSlug)];
+    if (install) specs.push(channelSpec('slack', slackSlug));
   }
-  return [];
+
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project || !resolveExperimentalFeature(project.metadata, 'agentmail_email')) {
+    return specs;
+  }
+
+  const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+  for (const install of emailInstalls) {
+    const slug = install.profileSlug || channelDefaultSlug('email');
+    if (!channelAlreadyDeclared(declared, 'email', slug)) {
+      specs.push(channelSpec('email', slug, install.displayName || install.email || channelLabel('email')));
+    }
+  }
+
+  return specs;
 }
