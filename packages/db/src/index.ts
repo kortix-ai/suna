@@ -50,6 +50,7 @@ export {
   chatThreads,
   chatTurnStreams,
   chatEventDedup,
+  chatUserIdentities,
   projectSessions,
   projectSessionGrants,
   projectSessionPublicShares,

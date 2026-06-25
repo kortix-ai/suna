@@ -791,9 +791,10 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
