@@ -34,22 +34,26 @@ export function ComposerChatInput({
   onSend,
   onCommand,
   sessionId,
+  projectId,
   isBusy,
   disabled,
   autoFocus,
   placeholder,
+  prefill,
   inputSlot,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
+  projectId?: string;
   isBusy?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
 }) {
-  const { data: agents } = useOpenCodeAgents();
+  const { data: agents } = useOpenCodeAgents({ projectId });
   const { data: providers } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
@@ -72,6 +76,7 @@ export function ComposerChatInput({
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
+      prefill={prefill}
       inputSlot={inputSlot}
       sessionId={sessionId}
       providers={providers}

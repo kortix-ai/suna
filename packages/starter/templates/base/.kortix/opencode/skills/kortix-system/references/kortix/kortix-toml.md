@@ -35,7 +35,9 @@ context = "."                       # build context
 
 # OpenCode runtime config dir. Defaults to ".kortix/opencode" when
 # omitted. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here.
+# OPENCODE_CONFIG_DIR pointed here. OpenCode-native runtime config
+# remains in this directory; Kortix-side launchability and grants live
+# in [[agents]] when a project opts into declarative agents.
 [opencode]
 config_dir = ".kortix/opencode"
 
@@ -96,14 +98,15 @@ domains = ["marketing.example.com"]    # required, must be non-empty
 
 ## `[[agents]]`
 
-Per-agent **authorization overlay** — the only Kortix-owned facet of an agent.
-Everything else about an agent (prompt, model, tools, `permission`, which skills
-it loads) lives in its OpenCode `.md`; this block adds the two things that `.md`
-can't express. Keyed by the agent's `name`.
+Per-agent **governance overlay**. OpenCode-native behavior (prompt, mode,
+model, tools, permissions, skills) stays in `.kortix/opencode/` and
+`opencode.jsonc`; `[[agents]]` declares which agents Kortix should treat as
+platform-launchable and what server-side authority each one receives. Keyed by
+the agent's `name`.
 
 | Key          | Notes                                                                                           |
 | ------------ | ----------------------------------------------------------------------------------------------- |
-| `name`       | Agent name; matches the `.md` (e.g. `.kortix/opencode/agents/<name>.md`).                       |
+| `name`       | Agent name. In legacy OpenCode mode this usually matches `.kortix/opencode/agents/<name>.md`; declarative mode treats the manifest entry as the platform registry key. |
 | `connectors` | Connector profiles the agent may call. `["slug", …]` \| `"all"` \| `"none"` (default: none).    |
 | `kortix_cli` | What it may do to Kortix via the CLI/API (project-scoped iam actions). Same shape (default: none). |
 
@@ -120,11 +123,23 @@ actions can never be granted to an agent; run `kortix validate --scopes`):
 `project.session.read|start|exec|stop`, `project.members.read|manage`,
 `project.trigger.read|create|update|delete|fire`, `channel.read|connect|send|disconnect`.
 
-**Resolution at session start:** no `[[agents]]` section → no restriction (full
-access, backward-compatible); agent listed → its grant; section present but agent
-unlisted → default-deny (it still runs its `.md`, just with no connectors / Kortix
-powers). The grant is always intersected with the launching user's role (agent ≤
-user) and takes effect only once a CR is merged (read from the default branch).
+**Resolution at session start:** no `[[agents]]` section → legacy mode: no
+agent-grant restriction and older paths may discover agents directly from
+OpenCode (backward-compatible); agent listed → its grant; section present but
+agent unlisted → default-deny for Kortix grants. The grant is always
+intersected with the launching user's role (agent ≤ user) and takes effect only
+once a CR is merged (read from the default branch).
+
+**Discovery direction:** `[[agents]]` is an opt-in to declarative, server-side
+agent discovery. It is not a rule that every native OpenCode agent file must be
+registered. Unregistered files can exist for local experiments or runtime
+internals, but once a project adopts declarative agents, Kortix product UI
+(chat input, triggers, channels) should fetch the server-side registered list
+rather than querying sandbox OpenCode directly. Model pickers should similarly
+come from the server/LLM-gateway catalog rather than a sandbox-local provider
+list. Future manifest versions / new project templates may default to this
+declarative mode; old projects remain in legacy discovery until they opt in or
+are migrated.
 
 ## Schema versioning
 
@@ -147,7 +162,8 @@ self-describing at a glance.
 | Sandbox runtime        | `[opencode]` (where to launch opencode with its config)             |
 | Session bootstrap      | `[env]` (advisory — surfaced to dashboard, not enforced)            |
 | Apps deploy sweep      | `[[apps]]` (when `KORTIX_APPS_EXPERIMENTAL=true`)                   |
-| Session token mint     | `[[agents]]` (per-agent connectors + kortix_cli scope)            |
+| Session token mint     | `[[agents]]` (per-agent connectors + kortix_cli scope)              |
+| Agent/model UI         | Legacy: OpenCode discovery; declarative projects: server-side registry + LLM-gateway catalog |
 | Dashboard UI           | All of the above + `[project]` + the raw manifest                   |
 
 Unknown top-level tables are ignored — safe to add your own metadata,
@@ -229,6 +245,11 @@ The agent daemon launches `opencode serve` with
 becomes the OpenCode runtime: agents, skills, commands, tools, plugins,
 `opencode.jsonc`.
 
+`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Do not duplicate those details in `kortix.toml`; use `[[agents]]` only for the
+Kortix-side decision of which agents are launchable/authorized by the platform.
+
 ## `[[triggers]]`
 
 Array of tables. Each entry is a trigger that spawns a fresh session
@@ -243,7 +264,7 @@ output — UI ordering is stable, not authoring-order.
 | `type`       | yes      | string  | —           | `"cron"` or `"webhook"`.                                       |
 | `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
-| `agent`      | no       | string  | `"default"` | OpenCode agent name.                                           |
+| `agent`      | no       | string  | `"default"` | Agent name. Legacy projects resolve through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 
 The parser accepts only the canonical trigger field names shown here.

@@ -130,10 +130,10 @@ export interface ProjectAgent {
 }
 
 /**
- * The project's named agents, parsed from `.kortix/opencode/agents/*.md` in the
- * repo. Touches git (lists repo files), so callers must use the async slash
- * response path (response_url) to stay inside Slack's 3s window. The implicit
- * 'default' agent is always available and is NOT in this list.
+ * The project's launchable agents from the server-side config summary:
+ * declarative `kortix.toml [[agents]]` for adopted projects, OpenCode markdown
+ * discovery for legacy projects. Touches git, so callers must use the async
+ * slash response path (response_url) to stay inside Slack's 3s window.
  */
 export async function listProjectAgents(projectId: string): Promise<ProjectAgent[]> {
   const [row] = await db

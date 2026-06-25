@@ -3595,6 +3595,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Project id lets agent pickers use the server-side project manifest/catalog. */
+  projectId?: string;
   /** Optional element rendered at the leading (left) edge of the session header */
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
@@ -3607,6 +3609,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  projectId,
   headerLeadingAction,
   hideHeader,
   readOnly,
@@ -3736,10 +3739,9 @@ export function SessionChat({
   const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
-  // Scope agents to the session's directory so project-local agents
-  // (.opencode/agent/*.md under the project folder) are returned alongside
-  // the globals. First render has no session yet — fall back to globals.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory });
+  // Project sessions use the server-side project agent roster. Non-project
+  // sessions fall back to OpenCode's directory-scoped runtime discovery.
+  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
