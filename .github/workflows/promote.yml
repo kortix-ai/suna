@@ -4,7 +4,7 @@ name: Promote to Production
 #
 # This workflow never publishes anything. It:
 #   1. computes the NEXT version from what's currently live on `prod`,
-#   2. freezes the promoted code (the source ref, default `main`) on an
+#   2. freezes the promoted code (the source ref, default `staging`) on an
 #      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
 #   3. opens a PR into the protected `prod` branch.
 #
@@ -13,7 +13,7 @@ name: Promote to Production
 # advances `prod`, and its push event triggers deploy-prod.yml, which is what
 # actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
 # only ever comes into existence when code lands on `prod`. `main` (dev) stays
-# push-friendly; the review gate lives entirely at the prod boundary.
+# push-friendly; staging is the pre-prod source of truth.
 #
 # The release branch does a `merge -s ours origin/prod` so `prod` is always an
 # ancestor of the PR head → the promote PR merges cleanly every time (no VERSION
@@ -41,9 +41,9 @@ on:
         required: false
         type: string
       ref:
-        description: 'Source ref to promote (default main)'
+        description: 'Source ref to promote (default staging)'
         required: false
-        default: main
+        default: staging
         type: string
 
 concurrency:
