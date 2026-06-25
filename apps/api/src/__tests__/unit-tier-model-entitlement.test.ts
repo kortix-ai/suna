@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CREDITS_PER_DOLLAR,
+  getTier,
   isPaidTier,
   tierGrantsAllModels,
 } from '../billing/services/tiers';
@@ -34,6 +36,13 @@ describe('tierGrantsAllModels', () => {
   test('free and none tiers do NOT unlock the premium gateway', () => {
     expect(tierGrantsAllModels('free')).toBe(false);
     expect(tierGrantsAllModels('none')).toBe(false);
+  });
+
+  test('free tier exposes 500 display credits without premium gateway entitlement', () => {
+    const free = getTier('free');
+    expect(free.hidden).toBe(false);
+    expect(free.monthlyCredits * CREDITS_PER_DOLLAR).toBe(500);
+    expect(free.models).not.toContain('all');
   });
 
   test('per-seat and the legacy pro/tier_* plans are all entitled', () => {

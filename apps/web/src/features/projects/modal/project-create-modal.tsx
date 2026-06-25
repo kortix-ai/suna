@@ -42,10 +42,12 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
+import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
   linkRepository,
   listGitHubInstallations,
   listGitHubRepositories,
+  listProjectsForAccount,
   provisionProject,
   type GitHubRepository,
   type KortixProject,
@@ -162,7 +164,20 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
       resetAndClose();
       router.replace(`/projects/${project.project_id}`);
     },
-    onError: (error: Error) => {
+    onError: async (error: Error) => {
+      if (accountId && isProjectLimitError(error)) {
+        try {
+          const existing = await listProjectsForAccount(accountId);
+          const project = existing[0];
+          if (project) {
+            resetAndClose();
+            router.replace(`/projects/${project.project_id}`);
+            return;
+          }
+        } catch {
+          // Fall through to the generic toast below.
+        }
+      }
       errorToast(error.message || 'Failed to create project');
     },
   });
