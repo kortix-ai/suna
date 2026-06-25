@@ -8,9 +8,9 @@ import { Separator } from '@/components/ui/separator';
 import { CompanyAsRepo } from '@/features/marketing/company-as-repo';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
+import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
 import Security from '@/features/marketing/security/security';
-import { OutcomeCardsSection, SurfacesSection } from '@/features/marketing/story-sections';
-import { UseCasesShowcase } from '@/features/marketing/use-cases-showcase';
+import { UseCasesByDepartment } from '@/features/marketing/use-cases-by-department';
 import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
@@ -41,31 +41,25 @@ export default function Home() {
           <Separator />
         </div>
 
-        <HowItWorks />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <SurfacesSection />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <OutcomeCardsSection />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <UseCasesShowcase />
+        <UseCasesByDepartment />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
         </div>
 
         <CompanyAsRepo />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <ModalitySwitcher />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <HowItWorks />
 
         <div className="mx-auto max-w-6xl">
           <Separator />

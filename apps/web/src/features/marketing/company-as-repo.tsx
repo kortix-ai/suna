@@ -3,83 +3,111 @@
 import { CodeWindow } from '@/components/home/code-window';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
-import type { LucideIcon } from 'lucide-react';
-import { FolderGit2, GitBranch, Plug, Unlock } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { FileCode2, FolderClosed, GitBranch } from 'lucide-react';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
 
-type Point = {
-  title: string;
-  body: string;
-  icon: LucideIcon;
-};
-
-const POINTS: Point[] = [
-  {
-    icon: FolderGit2,
-    title: 'Your company, as files',
-    body: 'Context, docs, agents, and memory live as plain files in one repo. Versioned, reviewable, yours.',
-  },
-  {
-    icon: Plug,
-    title: 'One manifest wires it up',
-    body: 'A single kortix.toml connects 3,000+ tools via the Executor, plus triggers and permissions.',
-  },
-  {
-    icon: GitBranch,
-    title: 'Every task is isolated',
-    body: 'Each run gets its own sandbox on its own branch — so work is reproducible and safe to ship.',
-  },
-  {
-    icon: Unlock,
-    title: 'Open-source & self-hostable',
-    body: 'No lock-in. Run it on your own infrastructure, with your own keys, on your own terms.',
-  },
+// [name, depth, kind] — mirrors the developers-page hero file-tree pattern.
+const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
+  ['acme', 0, 'dir'],
+  ['kortix.toml', 1, 'accent'],
+  ['AGENTS.md', 1, 'file'],
+  ['.kortix', 1, 'dir'],
+  ['agents', 2, 'dir'],
+  ['support.md', 3, 'file'],
+  ['outbound.md', 3, 'file'],
+  ['finance.md', 3, 'file'],
+  ['skills', 2, 'dir'],
+  ['close-month', 3, 'dir'],
+  ['ticket-triage', 3, 'dir'],
+  ['memory', 2, 'dir'],
+  ['company.md', 3, 'file'],
+  ['decisions.md', 3, 'file'],
+  ['connectors', 2, 'dir'],
 ];
+
+const FACTS = ['1 git repo', '1 kortix.toml', '1 OpenCode runtime'];
+
+function RepoTree() {
+  return (
+    <div className="border-card bg-background overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+      <div className="border-border/60 bg-muted/30 text-muted-foreground flex items-center gap-2 border-b px-4 py-2.5 font-mono text-xs">
+        <GitBranch className="size-3.5" />
+        your-company / main
+      </div>
+      <div className="text-foreground px-4 py-3 font-mono text-sm">
+        {REPO_TREE.map(([name, depth, kind], i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 py-0.5"
+            style={{ paddingLeft: `${depth * 14}px` }}
+          >
+            {kind === 'dir' ? (
+              <FolderClosed className="text-muted-foreground/60 size-3.5 shrink-0" />
+            ) : (
+              <FileCode2
+                className={cn(
+                  'size-3.5 shrink-0',
+                  kind === 'accent' ? 'text-kortix-green' : 'text-muted-foreground/60',
+                )}
+              />
+            )}
+            <span
+              className={cn(
+                'tracking-normal',
+                kind === 'accent'
+                  ? 'text-foreground font-medium'
+                  : kind === 'dir'
+                    ? 'text-foreground/80'
+                    : 'text-muted-foreground',
+              )}
+            >
+              {name}
+              {kind === 'dir' ? '/' : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function CompanyAsRepo() {
   return (
     <section id="company-as-repo" className={sectionShell}>
       <Reveal>
-        <div className="grid gap-10 lg:grid-cols-12 lg:items-center">
-          <div className="lg:col-span-5">
-            <div className="max-w-md space-y-3">
-              <Badge variant="kortix" className="rounded">
-                The core idea
-              </Badge>
-              <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-                Kortix turns your company into a Git repo
-              </h2>
-              <p className="text-muted-foreground text-base leading-relaxed">
-                Not a black box. Your whole operation is files in one repository — and every agent
-                runs against them.
-              </p>
-            </div>
+        <div className="mx-auto mb-12 max-w-3xl space-y-3 text-center">
+          <Badge variant="kortix" className="rounded">
+            The core idea
+          </Badge>
+          <h2 className="text-foreground text-3xl font-medium tracking-tight text-balance sm:text-4xl">
+            Kortix treats your whole company as a code repository
+          </h2>
+          <p className="text-muted-foreground text-base leading-relaxed text-balance">
+            Because all your agents, skills, and context are just files. Your context in one place,
+            your integrations in one place — saved and versioned in a Git repo.
+          </p>
+        </div>
+      </Reveal>
 
-            <div className="border-border bg-card mt-8 grid overflow-hidden rounded-sm border sm:grid-cols-2">
-              {POINTS.map((point) => {
-                const Icon = point.icon;
-                return (
-                  <div
-                    key={point.title}
-                    className="border-border p-5 not-first:border-t sm:p-6 sm:[&:nth-child(-n+2)]:border-t-0 sm:[&:nth-child(2n)]:border-l"
-                  >
-                    <Icon className="text-muted-foreground size-5" />
-                    <h3 className="text-foreground mt-4 text-base font-medium tracking-tight">
-                      {point.title}
-                    </h3>
-                    <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                      {point.body}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+      <Reveal delay={0.05}>
+        <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+          {FACTS.map((fact) => (
+            <span
+              key={fact}
+              className="border-border text-foreground inline-flex items-center rounded-full border px-4 py-1.5 font-mono text-sm"
+            >
+              {fact}
+            </span>
+          ))}
+        </div>
+      </Reveal>
 
-          <div className="lg:col-span-7">
-            <CodeWindow />
-          </div>
+      <Reveal delay={0.1}>
+        <div className="grid items-stretch gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+          <RepoTree />
+          <CodeWindow className="h-full" />
         </div>
       </Reveal>
     </section>
