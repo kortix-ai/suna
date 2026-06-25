@@ -65,7 +65,9 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // instead of paid on the session hot path (6–60s → ~2–4s cold start).
 // v11: bake a real Chromium (Playwright, cross-arch) for agent-browser so the
 // browser-automation skill works out of the box with no runtime download.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v11';
+// v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
+// no-restart warm seed serves the full picker without a PARK-time fetch.
+const RUNTIME_LAYER_VERSION = 'baked-chromium-v12-llm-catalog';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

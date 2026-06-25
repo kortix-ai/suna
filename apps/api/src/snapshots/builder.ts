@@ -324,7 +324,17 @@ async function runInlineBuild(
         ? { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 }
         : undefined,
       captureEnv: template.isShared
-        ? { KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
+        ? {
+            KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC',
+            // No-restart warm-fork: bake proxy-mode opencode at PARK so a claim
+            // hot-swaps the per-session token into the live proxy instead of
+            // restarting opencode (~8s). Best-effort: a hot-swap failure falls
+            // back to the restart. The full model catalog is baked into the image
+            // at build time (build-context.ts → /opt/kortix/llm-catalog.json), so
+            // the token-less shared seed still serves the FULL picker (no fallback).
+            KORTIX_LLM_HOTSWAP: '1',
+            KORTIX_LLM_CATALOG_FILE: '/opt/kortix/llm-catalog.json',
+          }
         : undefined,
     });
     if (buildId) await closeBuildLogReady(buildId);
