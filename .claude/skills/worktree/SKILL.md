@@ -28,6 +28,12 @@ Carve-outs (a worktree is *not* required):
 When in doubt, spin a worktree. They're cheap to create and `nuke` cleans up
 everything (containers, volumes, the git worktree, and the branch).
 
+> **Session start:** `AGENTS.md` ("First, at session start: where do you work?")
+> has you *ask the user* which environment to use before non-trivial work — a
+> new worktree (this skill, the recommended default), straight in the primary
+> `pnpm dev` checkout, or an existing worktree. A fresh worktree is the default
+> answer, but honour the user's choice.
+
 ## Agent quick start (non-interactive, non-blocking)
 
 ```sh
