@@ -38,7 +38,7 @@ const Hero = () => {
         </h1>
         <p className="text-muted-foreground mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance">
           Kortix is the open-source platform for AI agents that do real work across every team —
-          connected to your tools, running everywhere you work, and governed from one repo you own.
+          connected to your tools, teachable and self-improving, and governed from one repo you own.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
