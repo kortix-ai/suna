@@ -1,13 +1,13 @@
-import { getSupabase } from '../../shared/supabase';
+import { InsufficientCreditsError } from '../../errors';
 import { db } from '../../shared/db';
+import { getSupabase } from '../../shared/supabase';
 import {
   getCreditAccount,
   getCreditBalance,
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
-import { InsufficientCreditsError } from '../../errors';
-import { TOKEN_PRICE_MULTIPLIER, MINIMUM_CREDIT_FOR_RUN } from './tiers';
+import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 
 export async function getBalance(accountId: string) {
   const row = await getCreditBalance(accountId);
@@ -41,7 +41,12 @@ export async function getCreditSummary(accountId: string) {
   };
 }
 
-export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
+export type LedgerDebitType =
+  | 'usage'
+  | 'compute_debit'
+  | 'llm_debit'
+  | 'token_deduction'
+  | 'token_overage';
 
 export async function deductCredits(
   accountId: string,
@@ -103,7 +108,11 @@ export async function deductForLlmUsage(opts: {
   if (opts.costUsd <= 0) return { success: true, cost: 0, newBalance: 0, transactionId: null };
   const description = `LLM · ${opts.provider ? `${opts.provider}/` : ''}${opts.model}`;
   const result = await deductCredits(opts.accountId, opts.costUsd, description, 'llm_debit');
-  if (result.success && result.transactionId && (opts.usageEventId || opts.upstreamCostUsd != null)) {
+  if (
+    result.success &&
+    result.transactionId &&
+    (opts.usageEventId || opts.upstreamCostUsd != null)
+  ) {
     const { creditLedger } = await import('@kortix/db');
     const { eq, sql } = await import('drizzle-orm');
     const auditPatch: Record<string, unknown> = {};
@@ -131,9 +140,10 @@ interface ModelPricing {
   cachedInputPricePerMillion?: number;
 }
 
+// Fallback pricing keyed by model id (models.dev live pricing is the primary
+// source; this is the backstop). Current models only — superseded versions are
+// not listed and resolve via models.dev or the default below.
 const MODEL_PRICING: Record<string, ModelPricing> = {
-  'kortix-power': { inputPricePerMillion: 3, outputPricePerMillion: 15, cachedInputPricePerMillion: 0.3 },
-  'kortix-basic': { inputPricePerMillion: 1, outputPricePerMillion: 5, cachedInputPricePerMillion: 0.1 },
   'claude-opus-4.8': { inputPricePerMillion: 5, outputPricePerMillion: 25 },
   'claude-sonnet-4.6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
   'gpt-5.5': { inputPricePerMillion: 5, outputPricePerMillion: 30 },
@@ -141,14 +151,9 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'gemini-3.1-pro': { inputPricePerMillion: 2, outputPricePerMillion: 12 },
   'deepseek-v4-flash': { inputPricePerMillion: 0.0983, outputPricePerMillion: 0.1966 },
   'deepseek-v4-pro': { inputPricePerMillion: 0.435, outputPricePerMillion: 0.87 },
-  'deepseek-v3.2': { inputPricePerMillion: 0.28, outputPricePerMillion: 0.42 },
-  'qwen3-max': { inputPricePerMillion: 1.2, outputPricePerMillion: 6 },
   'qwen3.7-max': { inputPricePerMillion: 1.2, outputPricePerMillion: 6 },
-  'glm-4.6': { inputPricePerMillion: 0.6, outputPricePerMillion: 2.2 },
-  'kimi-k2': { inputPricePerMillion: 0.6, outputPricePerMillion: 2.5 },
+  'glm-5.2': { inputPricePerMillion: 0.98, outputPricePerMillion: 3.08 },
   'minimax-m3': { inputPricePerMillion: 0.3, outputPricePerMillion: 1.2 },
-  'kimi-k2.6': { inputPricePerMillion: 0.684, outputPricePerMillion: 3.42 },
-  'glm-5.1': { inputPricePerMillion: 0.98, outputPricePerMillion: 3.08 },
   'grok-4.3': { inputPricePerMillion: 1.25, outputPricePerMillion: 2.5 },
 };
 
@@ -178,7 +183,7 @@ export async function grantCredits(
   amount: number,
   type: string,
   description: string,
-  isExpiring: boolean = true,
+  isExpiring = true,
   stripeEventId?: string,
 ) {
   const supabase = getSupabase();
@@ -217,12 +222,14 @@ export async function grantCredits(
       const message = insertErr instanceof Error ? insertErr.message : String(insertErr);
       const isDuplicate =
         message.includes('duplicate key') &&
-        (message.includes('kortix_unique_stripe_event') || message.includes('idx_kortix_credit_ledger_idempotency'));
+        (message.includes('kortix_unique_stripe_event') ||
+          message.includes('idx_kortix_credit_ledger_idempotency'));
       if (isDuplicate) {
         return { success: true, duplicate_prevented: true };
       }
 
-      const missingIdempotencyColumn = message.includes('idempotency_key') && message.includes('does not exist');
+      const missingIdempotencyColumn =
+        message.includes('idempotency_key') && message.includes('does not exist');
       if (missingIdempotencyColumn) {
         await insertLedgerEntry({
           accountId,

@@ -1,5 +1,14 @@
-import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
+import {
+  deleteAgentMailInstall,
+  deleteSlackInstall,
+  loadAgentMailInstall,
+  loadSlackInstall,
+  saveAgentMailInstall,
+  saveSlackInstall,
+} from '../../channels/install-store';
 import { reconcileChannelConnectors } from '../../executor/sync';
+import { createAgentMailInbox, createAgentMailWebhook, resolveAgentMailApiKey } from '../../channels/agentmail-api';
+import { config } from '../../config';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
@@ -7,6 +16,7 @@ import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type Questi
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { resolveExperimentalFeature } from '../../experimental/features';
 import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
@@ -442,7 +452,7 @@ projectsApp.openapi(
     teamName: authTest.team ?? null,
     botUserId: authTest.user_id,
   });
-  void reconcileChannelConnectors(projectId);
+  await reconcileChannelConnectors(projectId);
   return c.json(summary);
 },
 );
@@ -456,24 +466,221 @@ projectsApp.openapi(
     tags: ['channels'],
     summary: 'DELETE /:projectId/channels/slack/installation',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      200: json(z.any(), 'OK'),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await deleteSlackInstall(projectId);
-  // Tear down the auto-materialized Slack connector now that the install is gone.
-  void reconcileChannelConnectors(projectId);
-  return c.json({ status: 'disconnected' });
-},
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await deleteSlackInstall(projectId);
+    // Tear down the auto-materialized Slack connector now that the install is gone.
+    await reconcileChannelConnectors(projectId);
+    return c.json({ status: 'disconnected' });
+  },
 );
+
+// ─── Email install — AgentMail-backed inbox per project ─────────────────────
+
+function emailChannelEnabled(metadata: unknown): boolean {
+  return resolveExperimentalFeature(metadata, 'agentmail_email');
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/email/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/email/installation',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
+    const connectorSlug = c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    const install = await loadAgentMailInstall(projectId, connectorSlug);
+    return c.json(install ?? null);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/email/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/email/mode',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const enabled = emailChannelEnabled(loaded.row.metadata);
+    return c.json({
+      provider: 'agentmail',
+      enabled,
+      managed_available: enabled && Boolean(config.AGENTMAIL_API_KEY),
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/email/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/email/connect',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!emailChannelEnabled(loaded.row.metadata)) {
+      return c.json({ error: 'AgentMail Email is experimental and must be enabled for this project' }, 403);
+    }
+
+    let body: {
+      api_key?: string;
+      connector_slug?: string;
+      profile_slug?: string;
+      username?: string;
+      domain?: string;
+      display_name?: string;
+      displayName?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+
+    const apiKey = resolveAgentMailApiKey(body.api_key?.trim());
+    if (!apiKey) {
+      return c.json({ error: 'AgentMail API key is not configured' }, 503);
+    }
+
+    const connectorSlug = (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const displayName = (body.display_name ?? body.displayName ?? loaded.row.name ?? 'Kortix Agent').trim();
+    const username = normalizeAgentMailUsername(body.username ?? loaded.row.name);
+    const domain = typeof body.domain === 'string' && body.domain.trim() ? body.domain.trim() : undefined;
+    const clientId = `kortix-project-${projectId}`;
+
+    let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
+    try {
+      inbox = await createAgentMailInbox({
+        apiKey,
+        username,
+        domain,
+        displayName,
+        clientId,
+        metadata: {
+          provider: 'kortix',
+          project_id: projectId,
+          account_id: loaded.row.accountId,
+        },
+      });
+    } catch (err) {
+      return c.json({ error: `AgentMail inbox create failed: ${(err as Error).message}` }, 502);
+    }
+
+    let webhookId: string | null = null;
+    let webhookSecret: string | null = null;
+    try {
+      const webhook = await createAgentMailWebhook({
+        apiKey,
+        inboxId: inbox.inbox_id,
+        url: `${agentMailWebhookBaseUrl(c.req.url)}/v1/webhooks/email/agentmail`,
+        clientId: `kortix-email-${projectId}`,
+      });
+      webhookId = webhook.webhook_id;
+      webhookSecret = webhook.secret;
+    } catch (err) {
+      console.warn('[email-channel] AgentMail webhook create failed', {
+        projectId,
+        error: (err as Error).message,
+      });
+    }
+
+    const summary = await saveAgentMailInstall({
+      projectId,
+      profileSlug: connectorSlug,
+      apiKey: body.api_key?.trim() || null,
+      inboxId: inbox.inbox_id,
+      email: inbox.email,
+      displayName: inbox.display_name ?? displayName,
+      webhookId,
+      webhookSecret,
+    });
+    await reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/email/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/email/installation',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const connectorSlug = c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    await deleteAgentMailInstall(projectId, connectorSlug);
+    await reconcileChannelConnectors(projectId, { platform: 'email', slug: connectorSlug });
+    return c.json({ status: 'disconnected' });
+  },
+);
+
+function agentMailWebhookBaseUrl(requestUrl: string): string {
+  return (config.KORTIX_URL || new URL(requestUrl).origin).replace(/\/+$/, '');
+}
+
+function normalizeAgentMailUsername(input: string | null | undefined): string | null {
+  const raw = (input ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const trimmed = raw.slice(0, 48).replace(/-+$/g, '');
+  return trimmed || null;
+}
 
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
@@ -727,7 +934,7 @@ projectsApp.openapi(
   if (!sandbox) {
     return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
   }
-  const models = await gatewayModelCatalog(projectId, undefined);
+  const models = gatewayModelCatalog(projectId);
   return c.json({ models });
   },
 );

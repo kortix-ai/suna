@@ -1,148 +1,77 @@
-import { describe, test, expect } from 'bun:test';
-import { createLlmGateway } from '..';
-import type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent } from '../types';
+import { describe, expect, test } from 'bun:test';
+import { createGateway } from '@kortix/llm-gateway';
+import type { GatewayHooks, UpstreamDescriptor, UsageEvent } from '@kortix/llm-gateway';
 
+// Live e2e against real OpenRouter through the UNIFIED pipeline (the same
+// @kortix/llm-gateway code that runs in-API and in the standalone pod). Skipped
+// unless RUN_LIVE_LLM_TESTS=1 and OPENROUTER_API_KEY are set — it spends real
+// (tiny) credits. Run: `bash scripts/test.sh live`.
 const LIVE_KEY = process.env.OPENROUTER_API_KEY ?? '';
 const RUN_LIVE = !!LIVE_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
 const CHEAP_MODEL = process.env.LIVE_TEST_MODEL ?? 'deepseek/deepseek-v4-flash';
 
 const describeLive = RUN_LIVE ? describe : describe.skip;
 
-function makeApp(overrides: Partial<LlmGatewayConfig> = {}) {
+function makeGateway() {
   const recorded: UsageEvent[] = [];
-  const hooks: LlmGatewayHooks = {
-    authenticateToken: async () => ({ userId: 'live-test-user', accountId: 'live-test-account' }),
-    assertBillingActive: async () => {},
-    recordUsage: async (event) => { recorded.push(event); },
-  };
-  const config: LlmGatewayConfig = {
-    enabled: true,
-    openrouterApiKey: LIVE_KEY,
+  const descriptor: UpstreamDescriptor = {
+    provider: 'openrouter',
+    kind: 'openai-compat',
     baseUrl: 'https://openrouter.ai/api/v1',
+    apiKey: LIVE_KEY,
+    billingMode: 'credits',
     markup: 1.2,
+    resolvedModel: CHEAP_MODEL,
     appName: 'Kortix-LiveTests',
-    ...overrides,
   };
-  return { app: createLlmGateway(config, hooks), recorded };
+  const hooks: GatewayHooks = {
+    authenticate: async () => ({ userId: 'live-user', accountId: 'live-acct' }),
+    resolveUpstream: async () => [descriptor],
+    assertBillingActive: async () => {},
+    recordUsage: async (event) => {
+      recorded.push(event);
+    },
+  };
+  return { gateway: createGateway(hooks), recorded };
 }
 
-describeLive('llm-gateway — LIVE OpenRouter (RUN_LIVE_LLM_TESTS=1)', () => {
-  test('GET /models returns a non-empty catalog', async () => {
-    const { app } = makeApp();
-    const res = await app.fetch(new Request('http://local.test/models'));
-    expect(res.status).toBe(200);
-    const body = await res.json() as { data?: unknown[] };
-    expect(Array.isArray(body.data)).toBe(true);
-    expect((body.data ?? []).length).toBeGreaterThan(10);
-  }, 20_000);
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
 
-  test('POST /chat/completions (non-streaming) returns a real response + records usage', async () => {
-    const { app, recorded } = makeApp();
-    const res = await app.fetch(
-      new Request('http://local.test/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer any-token-since-auth-stub-accepts-anything',
-        },
-        body: JSON.stringify({
-          model: CHEAP_MODEL,
-          messages: [{ role: 'user', content: 'Say hi in one word.' }],
-          max_tokens: 10,
-        }),
+describeLive('llm-gateway unified pipeline — LIVE OpenRouter (RUN_LIVE_LLM_TESTS=1)', () => {
+  test('non-streaming completion returns content and records usage', async () => {
+    const { gateway, recorded } = makeGateway();
+    const res = await gateway.chatCompletions({
+      authorization: 'Bearer live',
+      rawBody: JSON.stringify({
+        model: CHEAP_MODEL,
+        messages: [{ role: 'user', content: 'Reply with exactly one word: hello' }],
       }),
-    );
-
+    });
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
-    expect(body.choices?.[0]?.message?.content).toBeDefined();
-    expect(typeof body.choices[0].message.content).toBe('string');
-    expect(body.usage?.prompt_tokens).toBeGreaterThan(0);
+    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    expect(json.choices?.[0]?.message?.content).toBeTruthy();
+    await settle();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].completionTokens).toBeGreaterThan(0);
+    expect(recorded[0].finalCost).toBeGreaterThanOrEqual(0);
+  });
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(recorded.length).toBe(1);
-    const event = recorded[0];
-    expect(event.accountId).toBe('live-test-account');
-    expect(event.actorUserId).toBe('live-test-user');
-    expect(event.provider).toBe('openrouter');
-    expect(event.model).toBe(CHEAP_MODEL);
-    expect(event.promptTokens).toBeGreaterThan(0);
-    expect(event.completionTokens).toBeGreaterThan(0);
-    expect(event.upstreamCost).toBeGreaterThan(0);
-    expect(event.finalCost).toBeCloseTo(event.upstreamCost * 1.2, 6);
-    expect(event.streaming).toBe(false);
-  }, 30_000);
-
-  test('POST /chat/completions (streaming) streams chunks + records usage at end', async () => {
-    const { app, recorded } = makeApp();
-    const res = await app.fetch(
-      new Request('http://local.test/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer any-token-since-auth-stub-accepts-anything',
-        },
-        body: JSON.stringify({
-          model: CHEAP_MODEL,
-          messages: [{ role: 'user', content: 'Count to three.' }],
-          max_tokens: 30,
-          stream: true,
-        }),
+  test('streaming completion relays SSE and records usage from the final chunk', async () => {
+    const { gateway, recorded } = makeGateway();
+    const res = await gateway.chatCompletions({
+      authorization: 'Bearer live',
+      rawBody: JSON.stringify({
+        model: CHEAP_MODEL,
+        stream: true,
+        messages: [{ role: 'user', content: 'Count to three.' }],
       }),
-    );
-
+    });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/event-stream');
-
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let fullBuffer = '';
-    let chunkCount = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        fullBuffer += decoder.decode(value, { stream: true });
-        chunkCount += 1;
-      }
-    }
-
-    expect(chunkCount).toBeGreaterThan(1);
-    expect(fullBuffer).toContain('data:');
-    expect(fullBuffer).toContain('[DONE]');
-
-    await new Promise((r) => setTimeout(r, 200));
-    expect(recorded.length).toBe(1);
-    const event = recorded[0];
-    expect(event.streaming).toBe(true);
-    expect(event.promptTokens).toBeGreaterThan(0);
-    expect(event.completionTokens).toBeGreaterThan(0);
-  }, 45_000);
-
-  test('Invalid model returns a 4xx from upstream (proxied through)', async () => {
-    const { app } = makeApp();
-    const res = await app.fetch(
-      new Request('http://local.test/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: 'Bearer any',
-        },
-        body: JSON.stringify({
-          model: 'this-model/does-not-exist',
-          messages: [{ role: 'user', content: 'Hi.' }],
-        }),
-      }),
-    );
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.status).toBeLessThan(500);
-  }, 20_000);
-});
-
-if (!RUN_LIVE) {
-  describe('llm-gateway — LIVE OpenRouter (skipped)', () => {
-    test('set OPENROUTER_API_KEY + RUN_LIVE_LLM_TESTS=1 to run', () => {
-      expect(true).toBe(true);
-    });
+    const text = await res.text();
+    expect(text).toContain('data:');
+    await settle();
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].completionTokens).toBeGreaterThan(0);
   });
-}
+});

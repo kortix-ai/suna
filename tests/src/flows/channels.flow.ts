@@ -1,5 +1,5 @@
 /**
- * Channels — Slack integration + public, signature-gated webhooks. Maps to
+ * Channels — Slack + AgentMail email integration + public, signature-gated webhooks. Maps to
  * spec §CHN.
  *
  * Behavior confirmed against apps/api/src/channels + apps/api/src/projects/index.ts:
@@ -16,6 +16,9 @@
  * - BYO per-project webhook (/webhooks/slack/:projectId) returns 404 when the
  *   project has no install configured; a configured-but-bad-signature would be
  *   401.
+ * - Email connect is AgentMail-native. The negative path uses an intentionally
+ *   bogus API key so live suites do not create real inboxes unless a specific
+ *   positive flow opts in.
  */
 import { flow } from "../core/flow";
 
@@ -47,6 +50,122 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status(401);
+    });
+  },
+);
+
+// CHN-14 — Email installation status (read ACL).
+flow(
+  "CHN-14",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/email/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads email install status → 200 (null when not connected)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-17 — Email mode/capabilities (managed AgentMail availability).
+flow(
+  "CHN-17",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/email/mode"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads email mode → 200 (disabled unless experimental flag is enabled)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status(200).body().has("$.provider", "agentmail").has("$.enabled", false);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-13 — Email connect (manage ACL); creates AgentMail inbox + webhook.
+flow(
+  "CHN-13",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/email/connect"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("disabled by default → 403 before AgentMail key validation", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/channels/email/connect",
+          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
+          { params: { projectId: p.id } },
+        );
+      r.status(403);
+    });
+    await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/channels/email/connect",
+          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
+
+// CHN-15 — Email disconnect (manage ACL); idempotent.
+flow(
+  "CHN-15",
+  {
+    domain: "channels",
+    routes: ["DELETE /v1/projects/:projectId/channels/email/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(200).body().has("$.status", "disconnected");
+    });
+    await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
     });
   },
 );
@@ -237,6 +356,52 @@ flow(
     await ctx.step("ANON unsigned interaction → 503 (unconfigured) or 401 (bad sig)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/webhooks/slack/interactivity", { payload: "{}" });
       r.status([401, 503]);
+    });
+  },
+);
+
+// CHN-16 — AgentMail inbound email webhook. Public, Svix signature-gated when configured.
+flow(
+  "CHN-16",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/email/agentmail"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON unsigned AgentMail event → accepted locally or rejected by signing gate", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/email/agentmail", {
+          type: "event",
+          event_type: "message.received",
+          event_id: "evt_ke2e_unsigned",
+          message: {
+            inbox_id: "inb_ke2e_missing",
+            thread_id: "thr_ke2e",
+            message_id: "msg_ke2e",
+            from: "sender@example.com",
+            to: ["agent@example.com"],
+            labels: [],
+            timestamp: new Date().toISOString(),
+            size: 1,
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+          thread: {
+            inbox_id: "inb_ke2e_missing",
+            thread_id: "thr_ke2e",
+            labels: [],
+            timestamp: new Date().toISOString(),
+            senders: ["sender@example.com"],
+            recipients: ["agent@example.com"],
+            last_message_id: "msg_ke2e",
+            message_count: 1,
+            size: 1,
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        });
+      r.status([200, 401, 503]);
     });
   },
 );

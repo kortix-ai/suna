@@ -196,6 +196,11 @@ const envSchema = z.object({
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
 
+  // ── Channels — AgentMail email adapter (optional) ────────────────────────
+  AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
+  AGENTMAIL_API_KEY:           optStr,
+  AGENTMAIL_WEBHOOK_SECRET:    optStr,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -597,6 +602,11 @@ export const config = {
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
+
+  // ─── Channels (AgentMail email) ──────────────────────────────────────────
+  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
+  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
+  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

@@ -41,7 +41,13 @@ import {
 } from './policy';
 import { syncProjectConnectors } from './sync';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
-import { loadSlackInstall, loadSlackTokenForProject } from '../channels/install-store';
+import {
+  loadAgentMailApiKeyForProject,
+  loadAgentMailInstall,
+  loadSlackInstall,
+  loadSlackTokenForProject,
+} from '../channels/install-store';
+import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import { hideSupersededSlack } from './channel-rules';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import {
@@ -112,13 +118,17 @@ function channelPlatform(config: ConnectorRow['config'] | null): string | null {
   return (config as Record<string, any> | null)?.platform ?? null;
 }
 
-async function channelToken(projectId: string, platform: string | null): Promise<string | null> {
-  return platform === 'slack' ? loadSlackTokenForProject(projectId) : null;
+async function channelToken(projectId: string, platform: string | null, slug?: string | null): Promise<string | null> {
+  if (platform === 'slack') return loadSlackTokenForProject(projectId);
+  if (platform === 'email') return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  return null;
 }
 
 /** Cheap "is it connected?" — the install exists (no decrypt). */
-async function channelInstalled(projectId: string, platform: string | null): Promise<boolean> {
-  return platform === 'slack' ? (await loadSlackInstall(projectId).catch(() => null)) != null : false;
+async function channelInstalled(projectId: string, platform: string | null, slug?: string | null): Promise<boolean> {
+  if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
+  if (platform === 'email') return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+  return false;
 }
 
 /**
@@ -128,7 +138,7 @@ async function channelInstalled(projectId: string, platform: string | null): Pro
  */
 async function connectorConnected(row: ConnectorRow, userId: string | null): Promise<boolean> {
   return row.providerType === 'channel'
-    ? channelInstalled(row.projectId, channelPlatform(row.config))
+    ? channelInstalled(row.projectId, channelPlatform(row.config), row.slug)
     : credentialExists(row.connectorId, userId);
 }
 
@@ -185,11 +195,11 @@ function makeDbGatewayDeps(): GatewayDeps {
       // every other connector takes the original executor_credentials path.
       if (connector.provider === 'channel') {
         const [row] = await db
-          .select({ projectId: executorConnectors.projectId, config: executorConnectors.config })
+          .select({ projectId: executorConnectors.projectId, slug: executorConnectors.slug, config: executorConnectors.config })
           .from(executorConnectors)
           .where(eq(executorConnectors.connectorId, connector.connectorId))
           .limit(1);
-        return row ? channelToken(row.projectId, channelPlatform(row.config)) : null;
+        return row ? channelToken(row.projectId, channelPlatform(row.config), row.slug) : null;
       }
       return resolveCredentialValue(connector.connectorId, userId);
     },
@@ -354,6 +364,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
+      platform: channelPlatform(row.config),
       status: row.status,
       actions: actions
         .filter((a) => resolveEffectiveAction({
@@ -382,9 +393,19 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
 
 /** Admin list — sharing + credential mode + whether the viewer's credential is set. */
 async function listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]> {
-  const conns = hideSupersededSlack(
-    await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId)),
-  );
+  let rows = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+  if (rows.length === 0) {
+    const [project] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (project) {
+      await syncProjectConnectors(projectId, project.accountId);
+      rows = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+    }
+  }
+  const conns = hideSupersededSlack(rows);
   const grantsByConnector = await loadGrantsForMany(conns.map((c) => c.connectorId));
   const out: AdminConnectorView[] = [];
   for (const row of conns) {
@@ -400,6 +421,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
+      platform: channelPlatform(row.config),
       status: row.status,
       credentialMode: mode,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
