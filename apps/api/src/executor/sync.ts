@@ -33,7 +33,7 @@ import {
 import { channelApiBase, channelCatalog } from './channels';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
-import { loadSlackInstall } from '../channels/install-store';
+import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { computerCatalog } from './computers';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { parseSpecDocument } from './spec-doc';
@@ -41,6 +41,7 @@ import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 export interface SyncResult {
   synced: number;
@@ -56,19 +57,37 @@ export interface SyncResult {
  * materializes the connector from the install, so a read-only / unreachable repo
  * keeps working. Never throws: a hiccup must not fail the install/uninstall.
  */
-export async function reconcileChannelConnectors(projectId: string): Promise<void> {
+export async function reconcileChannelConnectors(
+  projectId: string,
+  removed?: { platform: 'email'; slug: string },
+): Promise<void> {
   try {
     const [row] = await db
-      .select({ accountId: projects.accountId })
+      .select({ accountId: projects.accountId, metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!row) return;
-    // Connect vs disconnect is derived from install presence, so the same path
-    // serves the OAuth callback, the BYO connect, and the delete route.
-    const installed = (await loadSlackInstall(projectId).catch(() => null)) != null;
-    if (installed) await ensureChannelConnectorDeclared(projectId, 'slack');
+    const slackInstalled = (await loadSlackInstall(projectId).catch(() => null)) != null;
+    if (slackInstalled) await ensureChannelConnectorDeclared(projectId, 'slack');
     else await removeChannelConnectorDeclared(projectId, 'slack');
+
+    const emailEnabled = resolveExperimentalFeature(row.metadata, 'agentmail_email');
+    if (removed?.platform === 'email' || !emailEnabled) {
+      await removeChannelConnectorDeclared(projectId, 'email', removed?.slug);
+    }
+    if (emailEnabled) {
+      const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+      for (const install of emailInstalls) {
+        await ensureChannelConnectorDeclared(
+          projectId,
+          'email',
+          install.profileSlug,
+          install.displayName || install.email || 'Email',
+        );
+      }
+      if (emailInstalls.length === 0) await removeChannelConnectorDeclared(projectId, 'email');
+    }
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
     console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });

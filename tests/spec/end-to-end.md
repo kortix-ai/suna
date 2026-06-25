@@ -264,7 +264,7 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 
 ---
 
-## 13. Channels (Slack / Telegram)
+## 13. Channels (Slack / Telegram / Email)
 
 Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 
@@ -277,6 +277,11 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
 `CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner, `visibility:'project'`).
 `CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
+`CHN-13` `POST /projects/:id/channels/email/connect {connector_slug?}` → `manage` + project experimental `agentmail_email` enabled → creates an AgentMail inbox + `message.received` webhook, stores inbox/webhook metadata as encrypted per-profile project secrets, and marks that Email connector profile connected. Disabled projects return 403 before AgentMail key validation. Omit `connector_slug` for legacy `kortix_email`; provide an Email connector slug for multiple inboxes.
+`CHN-14` `GET /projects/:id/channels/email/installation?connector_slug=...` → `read` → AgentMail inbox id/email/webhook id for that profile or null; disabled projects return null.
+`CHN-15` `DELETE /projects/:id/channels/email/installation?connector_slug=...` → `manage` → removes that profile's inbox binding.
+`CHN-16` AgentMail inbound — `POST /webhooks/email/agentmail`: Svix `svix-*` signature verified against the per-project webhook secret when configured; `message.received` routes by `message.inbox_id` → project, maps `thread_id` 1:1 to a Kortix session, and follow-up emails continue that session.
+`CHN-17` `GET /projects/:id/channels/email/mode` → `read` → `{provider:"agentmail",enabled:boolean,managed_available:boolean}` so the UI can hide Email until `agentmail_email` is enabled and require a project AgentMail key when no managed server key exists.
 
 ---
 
@@ -531,6 +536,11 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
 `CHN-11` `POST /webhooks/slack/commands` → public, OAuth-gated → 503/401.
 `CHN-12` `POST /webhooks/slack/interactivity` → public, OAuth-gated → 503/401.
+`CHN-13` `POST /projects/:id/channels/email/connect` → manage; requires project experimental `agentmail_email`; optional `connector_slug` scopes the inbox to one Email connector profile; disabled → 403, invalid AgentMail key → 502 or no configured key → 503; non-member 403/404.
+`CHN-14` `GET /projects/:id/channels/email/installation` → read → 200 null/summary for default or requested `connector_slug`; non-member 403/404.
+`CHN-15` `DELETE /projects/:id/channels/email/installation` → manage → 200 for default or requested `connector_slug`; non-member 403/404.
+`CHN-16` `POST /webhooks/email/agentmail` → public; unsigned local/unconfigured may 200, configured bad sig → 401, production without signing → 503.
+`CHN-17` `GET /projects/:id/channels/email/mode` → read → 200 mode with enabled flag; non-member 403/404.
 `Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
 `Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
 `SRV-2` `POST /servers` 201 · `GET/PUT/DELETE /servers/:id` CRUD → read-after-delete 404.

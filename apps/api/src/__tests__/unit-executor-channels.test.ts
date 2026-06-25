@@ -1,15 +1,16 @@
 /**
- * Channel connectors (Slack as a first-class Executor connector).
- *   • catalog — the fixed Slack action set normalizes to http bindings against
- *     the Slack Web API, with native param names + correct verbs/risks.
- *   • parse   — `provider="channel" platform="slack"` round-trips; bad platform
+ * Channel connectors (Slack + Email as first-class Executor connectors).
+ *   • catalog — fixed channel action sets normalize to http bindings against
+ *     provider APIs, with native param names + correct verbs/risks.
+ *   • parse   — `provider="channel" platform="..."` round-trips; bad platform
  *     and a declared auth table are rejected.
- *   • gateway — a channel call builds the right slack.com/api request with the
- *     install token as a bearer, and Slack's HTTP-200 `{ok:false}` envelope is
- *     surfaced as a real error (parity with the in-sandbox CLI's throw).
+ *   • gateway — channel calls build the right provider request with the install
+ *     token as a bearer, and Slack's HTTP-200 `{ok:false}` envelope is surfaced
+ *     as a real error (parity with the in-sandbox CLI's throw).
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelCatalog,
@@ -91,6 +92,49 @@ describe('channelCatalog(slack)', () => {
   });
 });
 
+describe('channelCatalog(email)', () => {
+  const actions = channelCatalog('email');
+  const byPath = new Map(actions.map((a) => [a.path, a]));
+  const action = (path: string) => expectDefined(byPath.get(path));
+
+  test('exposes the AgentMail inbox/thread surface as http bindings', () => {
+    expect(actions.map((a) => a.path).sort()).toEqual([
+      'get_message',
+      'get_message_attachment',
+      'get_thread',
+      'list_messages',
+      'list_threads',
+      'reply_all_message',
+      'reply_message',
+      'search_messages',
+      'send_message',
+    ]);
+    for (const a of actions) {
+      expect(a.binding.kind).toBe('http');
+      if (a.binding.kind === 'http') expect(a.binding.path.startsWith('/')).toBe(true);
+    }
+  });
+
+  test('reply_message path params are marked for URL substitution', () => {
+    const a = action('reply_message');
+    expect(a.binding).toEqual({
+      kind: 'http',
+      method: 'POST',
+      path: '/inboxes/{inbox_id}/messages/{message_id}/reply',
+    });
+    const props = objectSchema(a.inputSchema).properties as Record<string, any>;
+    expect(props.inbox_id['x-in']).toBe('path');
+    expect(props.message_id['x-in']).toBe('path');
+    expect(a.risk).toBe('write');
+  });
+
+  test('api base + default slug', () => {
+    expect(channelApiBase('email')).toBe('https://api.agentmail.to/v0');
+    expect(channelDefaultSlug('email')).toBe(EMAIL_CHANNEL_CONNECTOR_SLUG);
+    expect(EMAIL_CHANNEL_CONNECTOR_SLUG).toBe('kortix_email');
+  });
+});
+
 /* ─── parse ───────────────────────────────────────────────────────────────── */
 
 function parse(body: string) {
@@ -113,6 +157,21 @@ platform = "slack"
     expect(connectorSpecToTomlEntry(expectDefined(specs[0]))).toMatchObject({
       provider: 'channel',
       platform: 'slack',
+    });
+  });
+
+  test('email platform parses + round-trips through TOML', () => {
+    const { specs, errors } = parse(`
+[[connectors]]
+slug = "kortix_email"
+provider = "channel"
+platform = "email"
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({ slug: 'kortix_email', provider: 'channel', platform: 'email' });
+    expect(connectorSpecToTomlEntry(expectDefined(specs[0]))).toMatchObject({
+      provider: 'channel',
+      platform: 'email',
     });
   });
 
@@ -167,12 +226,41 @@ const SLACK: GatewayConnector = {
   enabled: true,
 };
 
+const EMAIL: GatewayConnector = {
+  connectorId: 'conn-email',
+  slug: EMAIL_CHANNEL_CONNECTOR_SLUG,
+  provider: 'channel',
+  baseUrl: 'https://api.agentmail.to/v0',
+  auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+  hasAuth: true,
+  shareScope: 'project',
+  grants: [],
+  credentialMode: 'shared',
+  enabled: true,
+};
+
 const SEND: GatewayAction = {
   path: 'slack.send_message',
   relPath: 'send_message',
   inputSchema: { type: 'object', properties: { channel: {}, text: {} }, required: ['channel'] },
   risk: 'write',
   binding: { kind: 'http', method: 'POST', path: '/chat.postMessage' },
+};
+
+const EMAIL_REPLY: GatewayAction = {
+  path: 'email.reply_message',
+  relPath: 'reply_message',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      inbox_id: { 'x-in': 'path' },
+      message_id: { 'x-in': 'path' },
+      text: {},
+    },
+    required: ['inbox_id', 'message_id'],
+  },
+  risk: 'write',
+  binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/messages/{message_id}/reply' },
 };
 
 function makeDeps(body: string, status = 200) {
@@ -289,5 +377,46 @@ describe('handleCall — channel (slack)', () => {
     const [call] = fetchCalls;
     expect(call?.url).toBe('https://slack.com/api/conversations.replies?channel=C123&ts=111.222');
     expect(call?.headers.Authorization).toBe('Bearer xoxb-install-token');
+  });
+});
+
+describe('handleCall — channel (email)', () => {
+  test('legacy connector="email" calls use kortix_email and build AgentMail requests', async () => {
+    const fetchCalls: Array<{
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async (_projectId, slug) =>
+        slug === EMAIL_CHANNEL_CONNECTOR_SLUG ? EMAIL : null,
+      loadAction: async (connectorId, relPath) =>
+        connectorId === EMAIL.connectorId && relPath === 'reply_message' ? EMAIL_REPLY : null,
+      resolveCredential: async () => 'am_project_token',
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => {},
+      fetchImpl: async (url, init) => {
+        fetchCalls.push({ url, ...init });
+        return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'email',
+      actionPath: 'reply_message',
+      args: { inbox_id: 'inb_1', message_id: 'msg_1', text: 'Thanks' },
+    });
+
+    expect(res.status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+    const call = expectDefined(fetchCalls[0]);
+    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_1/messages/msg_1/reply');
+    expect(call.method).toBe('POST');
+    expect(call.headers.Authorization).toBe('Bearer am_project_token');
+    expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
   });
 });
