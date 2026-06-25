@@ -12,8 +12,10 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
     await expect(page.getByText('500 credits / month for sandbox compute only')).toBeVisible();
-    await expect(page.getByText('Free OpenCode models included')).toBeVisible();
+    await expect(page.getByText('1 project', { exact: true })).toBeVisible();
+    await expect(page.getByText('Free LLM models included')).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
+    await expect(page.getByText('2,000 usage credits per seat, pooled')).toBeVisible();
     await expect(
       page.getByText('Connect your ChatGPT subscription', { exact: true }),
     ).toBeVisible();
