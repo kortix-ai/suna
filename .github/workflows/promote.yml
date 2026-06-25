@@ -124,13 +124,16 @@ jobs:
           #        visibility but are SLOW (~15m) and a security scan shouldn't gate
           #        a release. The gate still waits for the staging artifact build
           #        + QA checks, which guarantee the staging image exists to retag.
+          #      - "compliance-as-code-action" — Drata IaC visibility. It has a
+          #        separate compliance remediation track and must not block the
+          #        staging → prod release lane until the baseline is clean.
           #      - "Open review-gated release PR" — a PRIOR promote attempt's own
           #        check (the current run is already excluded via run_id, but an
           #        earlier failed attempt would otherwise self-block the retry).
           NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
             --jq '[ .check_runs[]
                     | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
-                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "Open review-gated release PR")) | not) ]
+                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not) ]
                   | group_by(.name) | map(max_by(.started_at // ""))
                   | .[]
                   | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
