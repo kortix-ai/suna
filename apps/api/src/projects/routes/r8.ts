@@ -72,7 +72,12 @@ projectsApp.openapi(
       );
     }
 
-    const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId });
+    // Optional server-side long-poll: the web client passes ?wait_ms so the
+    // server holds the request until readiness flips (or a bounded deadline),
+    // killing the ~800ms client poll-tick latency. Clamped; omitted = one-shot.
+    const waitMsRaw = Number(c.req.query('wait_ms'));
+    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
+    const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId, waitMs });
     return c.json(result.start, 200);
   },
 );
