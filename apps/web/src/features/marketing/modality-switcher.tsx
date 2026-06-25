@@ -7,14 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import {
-  Check,
-  Download,
-  MonitorSmartphone,
-  PanelTop,
-  SendHorizontal,
-  Smartphone,
-} from 'lucide-react';
+import { Check, Download, MonitorSmartphone, SendHorizontal, Smartphone } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
@@ -205,40 +198,28 @@ function reportLines(name: string): ChatLine[] {
   ];
 }
 
-function WebSurface() {
-  // The full Kortix web app: the product-UI rail (Projects · Chat · Agents ·
-  // Skills · Integrations · Models · Channels) lives here, so the 3,000+ apps
-  // grid is reachable inside the Integrations page rather than as its own band.
+function WebDesktopSurface() {
+  // The full Kortix web/desktop app: the product-UI rail (Projects · Chat ·
+  // Agents · Skills · Integrations · Models · Channels) lives here ONLY, so the
+  // 3,000+ apps grid is reachable inside the Integrations page, and the product
+  // UI appears exactly once on the page.
   return (
-    <div className="border-card bg-background relative h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
-      <InteractiveDemo
-        gradientbg={false}
-        tab={false}
-        embedded
-        aside
-        activePage="projects"
-        className="h-full w-full max-w-full"
-      />
-    </div>
-  );
-}
-
-function DesktopSurface() {
-  return (
-    <div className="border-card bg-background relative h-full w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
-      <div className="border-border/60 bg-muted/40 flex items-center gap-1.5 border-b px-3 py-2">
+    <div className="border-card bg-background relative flex h-full w-full flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+      <div className="border-border/60 bg-muted/40 flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
         <span className="bg-foreground/20 size-2.5 rounded-full" />
         <span className="bg-foreground/20 size-2.5 rounded-full" />
         <span className="bg-foreground/20 size-2.5 rounded-full" />
       </div>
-      <InteractiveDemo
-        gradientbg={false}
-        tab={false}
-        embedded
-        aside
-        activePage="chat"
-        className="h-[calc(100%-2.25rem)] w-full max-w-full"
-      />
+      <div className="min-h-0 flex-1">
+        <InteractiveDemo
+          gradientbg={false}
+          tab={false}
+          embedded
+          aside
+          activePage="projects"
+          className="h-full w-full max-w-full"
+        />
+      </div>
     </div>
   );
 }
@@ -261,10 +242,9 @@ function PhoneSurface() {
 }
 
 const TABS = [
-  { key: 'web', label: 'Web', icon: <PanelTop className="size-3.5" /> },
+  { key: 'webdesktop', label: 'Web/Desktop', icon: <MonitorSmartphone className="size-3.5" /> },
   { key: 'slack', label: 'Slack', icon: <Icon.Slack className="size-3.5" /> },
   { key: 'teams', label: 'Teams', icon: <Icon.MicrosoftTeams className="size-3.5" /> },
-  { key: 'desktop', label: 'Desktop', icon: <MonitorSmartphone className="size-3.5" /> },
   { key: 'mobile', label: 'Mobile', icon: <Smartphone className="size-3.5" /> },
 ] as const;
 
@@ -282,14 +262,14 @@ export function ModalitySwitcher() {
             Meet Kortix where you already work.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            The same agents, the same repo — reachable from the web workspace, Slack, Teams, your
-            desktop, or your phone. Ask in a message; get the work back.
+            The same agents, the same repo — reachable from the web and desktop app, Slack, Teams,
+            or your phone. Ask in a message; get the work back.
           </p>
         </div>
       </Reveal>
 
       <Reveal delay={0.05}>
-        <Tabs defaultValue="web" className="gap-6">
+        <Tabs defaultValue="webdesktop" className="gap-6">
           <div className="-mx-6 overflow-x-auto px-6 lg:mx-0 lg:px-0">
             <TabsList variant="secondary" className="h-auto w-max gap-1 rounded-full p-1">
               {TABS.map((tab) => (
@@ -308,8 +288,8 @@ export function ModalitySwitcher() {
 
           {/* Fixed-height stage — switching tabs never changes the size. */}
           <div className="h-[34rem] w-full sm:h-[36rem]">
-            <TabsContent value="web" className={CONTENT_CLASS}>
-              <WebSurface />
+            <TabsContent value="webdesktop" className={CONTENT_CLASS}>
+              <WebDesktopSurface />
             </TabsContent>
 
             <TabsContent value="slack" className={CONTENT_CLASS}>
@@ -329,10 +309,6 @@ export function ModalitySwitcher() {
                   <ChatBody lines={reportLines('Alex')} composerPlaceholder="Type a message" />
                 </SurfaceFrame>
               </div>
-            </TabsContent>
-
-            <TabsContent value="desktop" className={CONTENT_CLASS}>
-              <DesktopSurface />
             </TabsContent>
 
             <TabsContent value="mobile" className={CONTENT_CLASS}>

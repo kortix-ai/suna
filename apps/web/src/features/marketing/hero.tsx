@@ -1,20 +1,16 @@
-import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
+'use client';
+
+import { Reveal } from '@/components/home/reveal';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/marketing/button';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { Cpu, KeyRound, MessageSquare, PanelTop, Terminal, Unlock, UserCheck } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { Check, Cpu, Download, KeyRound, Unlock, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
-
-const SURFACES = [
-  { label: 'Slack', icon: MessageSquare },
-  { label: 'Web workspace', icon: PanelTop },
-  { label: 'CLI', icon: Terminal },
-] as const;
 
 const OWNERSHIP = [
   { label: 'Open source', icon: Unlock },
@@ -23,13 +19,66 @@ const OWNERSHIP = [
   { label: 'Run it on any model', icon: Cpu },
 ] as const;
 
+const STEPS = ['pulled Stripe + PostHog', 'built the summary + charts', 'rendered the PDF'];
+
+// A single, centered "@Kortix [ask] → finished work" micro-moment.
+function HeroMoment() {
+  return (
+    <div className="border-border bg-card/80 mx-auto w-full max-w-xl overflow-hidden rounded-2xl border text-left shadow-2xs backdrop-blur-md">
+      <div className="space-y-4 p-5 sm:p-6">
+        {/* The ask */}
+        <div className="flex items-center justify-end">
+          <p className="bg-foreground text-background max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed">
+            <span className="opacity-70">@Kortix</span> pull this week&apos;s performance report and
+            post it here
+          </p>
+        </div>
+
+        {/* The work */}
+        <div className="flex items-start gap-2.5">
+          <span className="bg-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
+            <KortixLogo size={13} className="text-background" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-2.5">
+            <div className="space-y-1">
+              {STEPS.map((step) => (
+                <div
+                  key={step}
+                  className="text-muted-foreground flex items-center gap-2 font-mono text-xs"
+                >
+                  <Check className="text-kortix-green size-3 shrink-0" />
+                  <span>{step}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-foreground text-sm leading-relaxed">
+              Revenue is up <span className="font-medium">+18%</span> w/w, signups{' '}
+              <span className="font-medium">+9%</span>, churn flat. Here&apos;s the full report.
+            </p>
+            {/* The deliverable */}
+            <div className="border-border bg-background flex items-center gap-3 rounded-xl border p-3">
+              <span className="bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold">
+                PDF
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-foreground truncate text-sm font-medium">
+                  Weekly-Performance.pdf
+                </p>
+                <p className="text-muted-foreground truncate text-xs">
+                  Revenue, signups, churn · 12 pages · just now
+                </p>
+              </div>
+              <Download className="text-muted-foreground size-4 shrink-0" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Hero = () => {
   const { user } = useAuth();
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const tHome = useCallback(
-    (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
-    [tHardcodedUi],
-  );
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
@@ -37,51 +86,54 @@ const Hero = () => {
   }, [user]);
 
   return (
-    <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:py-36">
+    <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-16 sm:pt-40 sm:pb-24">
       <div className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%" aria-hidden>
         <KortixLetterField seed={3382} />
       </div>
-      <div className="inset-0 z-0 hidden mask-t-from-70% lg:absolute">
+      <div
+        className="pointer-events-none absolute inset-0 z-0 mask-b-from-50% opacity-80"
+        aria-hidden
+      >
         <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
-      <div className="z-20">
-        <section className="mx-auto w-full max-w-6xl">
-          <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
-            {tHome('heroCommandCenter')}
-            <br />
-            <span className="text-muted-foreground">{tHome('heroAiWorkforce')}</span>
-          </h1>
-          <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-            {tHome('heroDescription')}
-          </p>
+      <div className="relative z-20 mx-auto flex w-full max-w-3xl flex-col items-center text-center">
+        <h1 className="text-foreground text-4xl leading-[1.08] font-medium tracking-tight text-balance md:text-6xl">
+          Hire an AI coworker
+          <br />
+          <span className="text-muted-foreground">that gets real work done.</span>
+        </h1>
+        <p className="text-muted-foreground mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance">
+          Connect your tools and add Kortix to Slack. It learns how you work, remembers context over
+          time, and delivers finished work across your stack — from Slack, the web workspace, or the
+          CLI.
+        </p>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="xl" onClick={handleLaunch}>
-              {tHome('startBuildingCta')}
-              <HiArrowRight className="size-4" />
-            </Button>
-            <Button size="xl" variant="secondary" asChild>
-              <Link href={'/enterprise'}>{tHome('line149JsxTextTalkToSales')}</Link>
-            </Button>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-2">
-            {OWNERSHIP.map(({ label, icon: Icon }) => (
-              <span
-                key={label}
-                className="border-border bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
-              >
-                <Icon className="text-foreground/70 size-3.5" />
-                {label}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <div id="demo" className="relative z-10 mx-auto mt-14 max-w-6xl scroll-mt-24 sm:mt-20">
-          <InteractiveDemoSection />
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Button size="xl" onClick={handleLaunch}>
+            Create your first coworker
+            <HiArrowRight className="size-4" />
+          </Button>
+          <Button size="xl" variant="secondary" asChild>
+            <Link href={'/enterprise'}>Talk to sales</Link>
+          </Button>
         </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          {OWNERSHIP.map(({ label, icon: Icon }) => (
+            <span
+              key={label}
+              className="border-border bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur-sm"
+            >
+              <Icon className="text-foreground/70 size-3.5" />
+              {label}
+            </span>
+          ))}
+        </div>
+
+        <Reveal delay={0.15} className="mt-14 w-full sm:mt-16">
+          <HeroMoment />
+        </Reveal>
       </div>
     </section>
   );
