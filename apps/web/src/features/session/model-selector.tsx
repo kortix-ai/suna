@@ -12,6 +12,7 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
@@ -280,7 +281,19 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   );
   const isAutoSelected =
     selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
-  const showManual = !isAutoSelected || expandManual;
+  // "On" is the collapsed active view; expanding the manual list to pick a
+  // specific model reads as off and reveals the providers. So the switch is on
+  // exactly when the manual list is hidden.
+  const autoOn = isAutoSelected && !expandManual;
+  const showManual = !autoOn;
+  const toggleAuto = () => {
+    if (!autoModel) return;
+    if (autoOn) setExpandManual(true);
+    else {
+      onSelect({ providerID: autoModel.providerID, modelID: autoModel.modelID });
+      setExpandManual(false);
+    }
+  };
 
   // ── Handlers ──
 
@@ -353,51 +366,51 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         </Tooltip>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-          {/* AUTO — standalone, above every provider. A distinct on/off toggle. */}
+          {/* AUTO — standalone, above every provider. An elegant on/off control. */}
           {autoModel && (
-            <button
-              type="button"
-              onClick={() => {
-                if (!autoModel) return;
-                if (isAutoSelected) setExpandManual((v) => !v);
-                else handleSelect(autoModel);
-              }}
-              className={cn(
-                'flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors',
-                isAutoSelected ? 'bg-primary/10' : 'hover:bg-foreground/[0.04]',
-              )}
-            >
-              <Sparkles
+            <div className="p-1.5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={toggleAuto}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleAuto();
+                  }
+                }}
                 className={cn(
-                  'size-4 shrink-0',
-                  isAutoSelected ? 'text-primary' : 'text-foreground/70',
-                )}
-              />
-              <div className="min-w-0 flex-1">
-                <div
-                  className={cn(
-                    'text-sm leading-tight font-semibold',
-                    isAutoSelected ? 'text-primary' : 'text-foreground',
-                  )}
-                >
-                  Auto
-                </div>
-                <p className="text-muted-foreground/60 mt-0.5 text-xs leading-snug">
-                  Automatically picks the best model for each task
-                </p>
-              </div>
-              <span
-                className={cn(
-                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase',
-                  isAutoSelected
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground',
+                  'group flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors duration-200 select-none',
+                  autoOn ? 'bg-primary/[0.07]' : 'hover:bg-foreground/[0.04]',
                 )}
               >
-                {isAutoSelected ? 'On' : 'Off'}
-              </span>
-            </button>
+                <span
+                  className={cn(
+                    'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-200',
+                    autoOn
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-foreground/[0.06] text-foreground/70 group-hover:text-foreground',
+                  )}
+                >
+                  <Sparkles className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-foreground text-[13px] leading-tight font-medium">Auto</div>
+                  <p className="text-muted-foreground/70 mt-0.5 text-xs leading-tight">
+                    Best model, chosen for each task
+                  </p>
+                </div>
+                <Switch
+                  checked={autoOn}
+                  onCheckedChange={toggleAuto}
+                  tabIndex={-1}
+                  className="pointer-events-none shrink-0"
+                />
+              </div>
+            </div>
           )}
+
+          {showManual && <div className="bg-border/60 h-px" />}
 
           {showManual ? (
             <>
@@ -553,16 +566,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
               )}
             </>
           ) : (
-            <div className="px-3 py-5 text-center">
-              <p className="text-muted-foreground/70 text-xs leading-relaxed">
-                Kortix is automatically selecting the best model for each task.
-              </p>
+            <div className="p-1.5 pt-0">
               <button
                 type="button"
                 onClick={() => setExpandManual(true)}
-                className="text-foreground/70 hover:text-foreground mt-2.5 text-xs font-medium underline-offset-2 hover:underline"
+                className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center justify-center rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
               >
-                Choose a specific model instead
+                Pick a specific model
               </button>
             </div>
           )}
