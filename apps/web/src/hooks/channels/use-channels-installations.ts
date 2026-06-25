@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export interface SlackInstallation {
   workspaceId: string;
@@ -129,7 +129,15 @@ export interface EmailInstallation {
   email: string;
   displayName: string | null;
   webhookId: string | null;
+  senderPolicy: EmailSenderPolicy;
   installedAt: string;
+}
+
+export interface EmailSenderPolicy {
+  mode: 'allow_all' | 'restricted';
+  allowedEmails: string[];
+  allowedDomains: string[];
+  allowedRegex: string | null;
 }
 
 export interface EmailMode {
@@ -189,6 +197,7 @@ interface ConnectEmailInput {
   display_name?: string;
   username?: string;
   domain?: string;
+  sender_policy?: EmailSenderPolicy;
 }
 
 export function useConnectEmail() {
@@ -228,6 +237,34 @@ export function useDisconnectEmail() {
       return { projectId, connectorSlug };
     },
     onSuccess: ({ projectId, connectorSlug }) => {
+      qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
+      qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    },
+  });
+}
+
+export function useUpdateEmailPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      projectId,
+      connectorSlug,
+      sender_policy,
+    }: {
+      projectId: string;
+      connectorSlug?: string | null;
+      sender_policy: EmailSenderPolicy;
+    }) => {
+      const res = await backendApi.patch<EmailInstallation>(
+        `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,
+        { connector_slug: connectorSlug ?? 'kortix_email', sender_policy },
+        { showErrors: false },
+      );
+      if (!res.success || !res.data)
+        throw new Error(res.error?.message ?? 'Failed to update email policy');
+      return res.data;
+    },
+    onSuccess: (_data, { projectId, connectorSlug }) => {
       qc.invalidateQueries({ queryKey: emailKey(projectId, connectorSlug) });
       qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
     },

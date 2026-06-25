@@ -25,12 +25,13 @@ export function directSubsessions(session: ProjectSession): ProjectOpenCodeSessi
 
 /**
  * Where a session came from, derived from the creation metadata stamped by
- * the API: channel sessions carry `metadata.source` ('slack' | 'telegram'),
+ * the API: channel sessions carry `metadata.source` ('slack' | 'telegram' |
+ * 'email'),
  * trigger fires carry `metadata.trigger_source` ('cron' | 'webhook' |
  * 'manual') + `trigger_type`/`trigger_slug`. Everything else is a regular
  * chat the user started.
  */
-export type SessionSourceKind = 'chat' | 'slack' | 'telegram' | 'schedule' | 'webhook';
+export type SessionSourceKind = 'chat' | 'slack' | 'telegram' | 'email' | 'schedule' | 'webhook';
 
 export interface SessionSource {
   kind: SessionSourceKind;
@@ -45,6 +46,7 @@ export function sessionSource(session: ProjectSession): SessionSource {
   const source = typeof meta.source === 'string' ? meta.source : null;
   if (source === 'slack') return { kind: 'slack', label: 'Slack', triggerSlug: null };
   if (source === 'telegram') return { kind: 'telegram', label: 'Telegram', triggerSlug: null };
+  if (source === 'email') return { kind: 'email', label: 'Email', triggerSlug: null };
   if (typeof meta.trigger_source === 'string') {
     const triggerSlug = typeof meta.trigger_slug === 'string' ? meta.trigger_slug : null;
     // Classify by the trigger's kind (cron|webhook) when present so a manual
@@ -67,6 +69,7 @@ export type SessionFilterValue =
   | 'mine'
   | 'shared'
   | 'slack'
+  | 'email'
   | 'schedule'
   | 'webhook';
 
@@ -75,6 +78,7 @@ export const SESSION_FILTER_OPTIONS: Array<{ value: SessionFilterValue; label: s
   { value: 'mine', label: 'My Chats' },
   { value: 'shared', label: 'Shared' },
   { value: 'slack', label: 'Slack' },
+  { value: 'email', label: 'Email' },
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },
 ];
@@ -103,10 +107,5 @@ export function sessionDisplayLabel(session: ProjectSession): string {
   const fallback = session.branch_name
     ? session.branch_name.slice(0, 14)
     : session.session_id.slice(0, 8);
-  return (
-    session.custom_name?.trim() ||
-    session.name?.trim() ||
-    metadataName?.trim() ||
-    fallback
-  );
+  return session.custom_name?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
 }

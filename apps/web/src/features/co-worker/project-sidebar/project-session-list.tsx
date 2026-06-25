@@ -34,7 +34,14 @@ import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { CalendarClock, MoreHorizontal, RotateCcw, Webhook, type LucideIcon } from 'lucide-react';
+import {
+  CalendarClock,
+  Mail,
+  MoreHorizontal,
+  RotateCcw,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -56,6 +63,7 @@ const SOURCE_ICONS: Record<
 > = {
   slack: Icon.Slack,
   telegram: Icon.Telegram,
+  email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
 };
@@ -461,9 +469,7 @@ function getSessionDisplayTitle(session: ProjectSession): string {
       ? (session.metadata.session_name as string)
       : null;
   const titleCandidate =
-    session.custom_name?.trim() ||
-    session.name?.trim() ||
-    legacyMetadataName?.trim();
+    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim();
 
   if (titleCandidate) return titleCandidate;
   return session.branch_name ? session.branch_name.slice(0, 14) : 'session';
