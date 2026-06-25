@@ -143,10 +143,16 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
   test('a scoped agent is denied a gated capability it does not hold, but passes exempt + held ones', () => {
     const grant = { agent: 'marketing', kortixCli: [PROJECT_ACTIONS.PROJECT_CR_OPEN], connectors: 'all' as const };
     const denied = (action: string) => agentGrantGates('project', action) && !agentMayPerform(grant, action);
-    expect(denied(PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(true); // not in kortixCli + gated → denied
-    expect(denied(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true);
+    expect(denied(PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true); // not in kortixCli + gated → denied
+    expect(denied(PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(denied(PROJECT_ACTIONS.PROJECT_CR_OPEN)).toBe(false); // held → allowed
     expect(denied(PROJECT_ACTIONS.PROJECT_READ)).toBe(false); // exempt → allowed
+    // cr.open ≡ gitops.push: the central fold gates CR-create commits as
+    // gitops.push, so holding cr.open must satisfy it (no silent double-gate).
+    expect(denied(PROJECT_ACTIONS.PROJECT_GITOPS_PUSH)).toBe(false);
+    // but the merge half of the pair is NOT thereby granted.
+    expect(denied(PROJECT_ACTIONS.PROJECT_GITOPS_MERGE)).toBe(true);
+    expect(denied(PROJECT_ACTIONS.PROJECT_CR_MERGE)).toBe(true);
   });
 
   test('all-grant and null-grant impose no restriction', () => {

@@ -150,7 +150,7 @@ iamRouter.openapi(
     }
     if (!name || name.length > 128) return c.json({ error: 'name is required (≤128 chars)' }, 400);
     const resourceType = body.resourceType === 'account' ? 'account' : 'project';
-    const v = validateActions(body.actions ?? []);
+    const v = validateActions(body.actions ?? [], resourceType);
     if (!v.ok) return c.json({ error: v.error }, 400);
 
     try {
@@ -300,7 +300,7 @@ iamRouter.openapi(
     if (!role) return c.json({ error: 'role not found' }, 404);
 
     const body = await readBody(c);
-    const v = validateActions(body.actions ?? []);
+    const v = validateActions(body.actions ?? [], role.scopeType === 'account' ? 'account' : 'project');
     if (!v.ok) return c.json({ error: v.error }, 400);
 
     // Replace the set atomically, then bust everyone holding the role so the new

@@ -120,6 +120,15 @@ projectsApp.openapi(
   // Authorization is enforced by loadProjectForUser(... 'manage') above,
   // which routes through the IAM engine (project.write).
 
+  // Privilege-escalation guard: an agent-session token is itself a project
+  // account token carrying a (possibly narrow) AgentGrant. If it could mint a
+  // fresh project token, the new token would carry NO grant — letting a scoped
+  // agent issue an unscoped sibling and escape its own ceiling. Token minting
+  // is a human/manage operation; agents are denied outright.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot mint project tokens' }, 403);
+  }
+
   // One body field: `name`. Defaults to "cli · <project name>".
   let body: { name?: unknown } = {};
   try {
@@ -301,6 +310,10 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Storing a git credential is a connector-write capability — a custom role can
+  // omit project.connector.write to take credential management away from a
+  // department, and an agent grant must include it (central fold) to write one.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
   if (await hasServerManagedGitAuth(loaded.row)) {
     return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);

@@ -21,11 +21,28 @@ export function getAgentGrant(c: Context): AgentGrant | null {
   return (c.get('agentGrant') as AgentGrant | null | undefined) ?? null;
 }
 
+/**
+ * Synonym pairs for the change-request capability. A route gates CR creation as
+ * `project.cr.open` but the central agent-grant fold (via assertProjectCapability)
+ * gates the underlying commit as `project.gitops.push`; likewise CR merge is
+ * `project.cr.merge` ≡ `project.gitops.merge`. Without aliasing an agent would
+ * need BOTH spellings in its kortix_cli to open/merge a CR — a silent
+ * double-gate. Granting EITHER member of a pair satisfies both checks.
+ */
+const AGENT_ACTION_ALIASES: Readonly<Record<string, string>> = {
+  'project.cr.open': 'project.gitops.push',
+  'project.gitops.push': 'project.cr.open',
+  'project.cr.merge': 'project.gitops.merge',
+  'project.gitops.merge': 'project.cr.merge',
+};
+
 /** True if the agent-session grant permits `action` (or there is no grant). */
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
   if (grant.kortixCli === 'all') return true;
-  return grant.kortixCli.includes(action);
+  if (grant.kortixCli.includes(action)) return true;
+  const alias = AGENT_ACTION_ALIASES[action];
+  return alias ? grant.kortixCli.includes(alias) : false;
 }
 
 /** True if the agent-session grant permits calling connector `slug` (or no grant). */

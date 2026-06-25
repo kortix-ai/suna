@@ -18,7 +18,8 @@ import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/cata
 import { buildInstall, catalogIdForName, resolveItemFiles } from '../../marketplace/install-service';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { readRepoFile } from '../git/files';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import { PROJECT_ACTIONS } from '../../iam';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
 import { readBody } from '../lib/serializers';
@@ -51,6 +52,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const body = await readBody(c);
     const id = typeof body?.id === 'string' ? body.id.trim() : '';
@@ -206,6 +208,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const body = await readBody(c);
     const name = typeof body?.name === 'string' ? body.name.trim() : '';
@@ -268,6 +271,7 @@ projectsApp.openapi(
     const name = c.req.param('name');
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const project = await loadGitProject(loaded);
     const lock = parseLockContent(

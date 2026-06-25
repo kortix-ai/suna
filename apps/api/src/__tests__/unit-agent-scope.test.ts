@@ -117,6 +117,19 @@ describe('agentMayPerform — kortix_cli gate', () => {
   test('empty grant → everything denied', () => {
     expect(agentMayPerform({ agent: 'a', kortixCli: [], connectors: [] }, 'project.deploy')).toBe(false);
   });
+  test('cr.open ≡ gitops.push alias: holding either satisfies the other (no double-gate)', () => {
+    const crOnly = { agent: 'a', kortixCli: ['project.cr.open'], connectors: [] };
+    expect(agentMayPerform(crOnly, 'project.gitops.push')).toBe(true); // fold gates the commit as gitops.push
+    const pushOnly = { agent: 'a', kortixCli: ['project.gitops.push'], connectors: [] };
+    expect(agentMayPerform(pushOnly, 'project.cr.open')).toBe(true); // route gates CR-create as cr.open
+    // merge pair is independent — cr.open does NOT unlock merge
+    expect(agentMayPerform(crOnly, 'project.gitops.merge')).toBe(false);
+    expect(agentMayPerform(crOnly, 'project.cr.merge')).toBe(false);
+  });
+  test('cr.merge ≡ gitops.merge alias', () => {
+    const mergeOnly = { agent: 'a', kortixCli: ['project.cr.merge'], connectors: [] };
+    expect(agentMayPerform(mergeOnly, 'project.gitops.merge')).toBe(true);
+  });
 });
 
 describe('agentMayUseConnector — connector gate', () => {
