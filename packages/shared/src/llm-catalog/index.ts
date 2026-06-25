@@ -4,7 +4,8 @@ export interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
-  // Capabilities mirrored from models.dev by scripts/refresh-llm-catalog.ts.
+  // Capabilities mirrored from models.dev by
+  // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
   attachment?: boolean; // image / file input (vision)
   reasoning?: boolean;
@@ -51,6 +52,11 @@ export interface ManagedModel {
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
   // unlike BYOK models these can't derive it from the generated catalog.
   vision: boolean;
+  // Context/output token window. Lives here (same reason as `vision`: managed
+  // slugs aren't reliably on models.dev) and is served verbatim so OpenCode can
+  // size the conversation and fire auto-compaction. This is the CANONICAL home —
+  // it used to be backfilled from a hardcoded table in the sandbox agent server.
+  limit: { context: number; output: number };
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
@@ -73,6 +79,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
     vision: true,
+    limit: { context: 1_000_000, output: 64_000 },
   },
   {
     id: 'claude-sonnet-4.6',
@@ -82,6 +89,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
     vision: true,
+    limit: { context: 1_000_000, output: 64_000 },
   },
   {
     id: 'glm-5.2',
@@ -91,6 +99,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'z-ai/glm-5.2',
     tier: 'balanced',
     vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'qwen3.7-max',
@@ -100,6 +109,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'qwen/qwen3.7-max',
     tier: 'balanced',
     vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-pro',
@@ -109,6 +119,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'deepseek/deepseek-v4-pro',
     tier: 'balanced',
     vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
   {
     id: 'deepseek-v4-flash',
@@ -118,6 +129,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'deepseek/deepseek-v4-flash',
     tier: 'balanced',
     vision: false,
+    limit: { context: 1_048_576, output: 64_000 },
   },
 ];
 

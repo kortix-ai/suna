@@ -178,6 +178,6 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     assertBudget: assertGatewayBudget,
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
-    listModels: (principal) => gatewayModelCatalog(principal.projectId, principal.userId),
+    listModels: async (principal) => gatewayModelCatalog(principal.projectId),
   };
 }

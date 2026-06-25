@@ -65,7 +65,7 @@ export function createInternalGatewayRoutes() {
   app.post('/models', async (c) => {
     const { principal } = await c.req.json();
     const p = principal as AuthedPrincipal;
-    return c.json({ models: await gatewayModelCatalog(p.projectId, p.userId) });
+    return c.json({ models: gatewayModelCatalog(p.projectId) });
   });
 
   app.post('/billing', async (c) => {

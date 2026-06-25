@@ -12,10 +12,9 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
-import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -34,6 +33,7 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
+import { AutoModelToggle } from './auto-model-toggle';
 import type { FlatModel } from './session-chat-input';
 
 // Re-export for consumers
@@ -55,34 +55,6 @@ export function ConnectProviderDialog({
 
   useEffect(() => {
     if (open) openProviderModal('providers');
-    else closeProviderModal();
-  }, [open, openProviderModal, closeProviderModal]);
-
-  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
-  useEffect(() => {
-    if (!isStoreOpen && open) onOpenChange(false);
-  }, [isStoreOpen, open, onOpenChange]);
-
-  return null;
-}
-
-export function ManageModelsDialog({
-  open,
-  onOpenChange,
-  models: _models,
-  modelStore: _modelStore,
-  onConnectProvider: _onConnectProvider,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  models: FlatModel[];
-  modelStore: ReturnType<typeof useModelStore>;
-  onConnectProvider: () => void;
-}) {
-  const { openProviderModal, closeProviderModal } = useProviderModalStore();
-
-  useEffect(() => {
-    if (open) openProviderModal('models');
     else closeProviderModal();
   }, [open, openProviderModal, closeProviderModal]);
 
@@ -367,48 +339,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
           {/* AUTO — standalone, above every provider. An elegant on/off control. */}
-          {autoModel && (
-            <div className="p-1.5">
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={toggleAuto}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    toggleAuto();
-                  }
-                }}
-                className={cn(
-                  'group flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors duration-200 select-none',
-                  autoOn ? 'bg-primary/[0.07]' : 'hover:bg-foreground/[0.04]',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors duration-200',
-                    autoOn
-                      ? 'bg-primary/15 text-primary'
-                      : 'bg-foreground/[0.06] text-foreground/70 group-hover:text-foreground',
-                  )}
-                >
-                  <Sparkles className="size-3.5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-foreground text-[13px] leading-tight font-medium">Auto</div>
-                  <p className="text-muted-foreground/70 mt-0.5 text-xs leading-tight">
-                    Best model, chosen for each task
-                  </p>
-                </div>
-                <Switch
-                  checked={autoOn}
-                  onCheckedChange={toggleAuto}
-                  tabIndex={-1}
-                  className="pointer-events-none shrink-0"
-                />
-              </div>
-            </div>
-          )}
+          {autoModel && <AutoModelToggle autoOn={autoOn} onToggle={toggleAuto} />}
 
           {showManual && <div className="bg-border/60 h-px" />}
 

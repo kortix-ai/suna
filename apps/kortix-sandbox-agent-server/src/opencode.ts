@@ -165,7 +165,9 @@ async function buildKortixProvider(
       baseURL: llmBaseUrl,
       apiKey: llmApiKey,
     },
-    models: withModelLimits(await fetchGatewayModels(llmBaseUrl, llmApiKey)),
+    // The gateway owns the catalog (every model carries a server-guaranteed
+    // `limit`); inject it verbatim — no client-side massaging.
+    models: await fetchGatewayModels(llmBaseUrl, llmApiKey),
   };
 }
 
@@ -203,10 +205,14 @@ async function fetchGatewayModels(
   logger.error(
     `[opencode] gateway models unavailable after ${attempts} attempts (${url}); using minimal fallback`,
   );
-  return MINIMAL_FALLBACK_MODELS;
+  return BOOTSTRAP_FALLBACK_MODELS;
 }
 
-const DEFAULT_KORTIX_MODEL = 'kortix/claude-sonnet-4.6';
+// New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
+// images → a vision model) — not a single pinned model. Used for both the main
+// model and the cheap `small_model` (AUTO resolves to GLM 5.2 for text, which is
+// the intended cheap-and-smart default).
+const DEFAULT_KORTIX_MODEL = 'kortix/auto';
 
 type KortixGatewayModel = {
   name: string;
@@ -217,126 +223,21 @@ type KortixGatewayModel = {
   limit?: { context?: number; output?: number };
 };
 
-const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'claude-opus-4.8': {
-    name: 'Claude Opus 4.8',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-  'claude-sonnet-4.6': {
-    name: 'Claude Sonnet 4.6',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-  'openai/gpt-5.5': {
-    name: 'GPT-5.5',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_050_000, output: 64_000 },
-  },
-  'google/gemini-3.5-flash': {
-    name: 'Gemini 3.5 Flash',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'google/gemini-3.1-pro-preview': {
-    name: 'Gemini 3.1 Pro',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'deepseek/deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
+// Used ONLY if the gateway's /models endpoint is unreachable at boot (after
+// retries). The server owns the catalog (gateway /models — every model carries a
+// guaranteed `limit`) and the daemon injects it verbatim; this is the bare minimum
+// so OpenCode can still boot on its default model — just AUTO, which the gateway
+// resolves server-side once it's reachable. No hardcoded model lineup (that drifts).
+const BOOTSTRAP_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
+  auto: {
+    name: 'Auto',
     reasoning: true,
     tool_call: true,
     attachment: true,
     temperature: true,
     limit: { context: 1_048_576, output: 64_000 },
-  },
-  'deepseek/deepseek-v4-pro': {
-    name: 'DeepSeek V4 Pro',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'minimax/minimax-m3': {
-    name: 'MiniMax M3',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'z-ai/glm-5.2': {
-    name: 'GLM 5.2',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'x-ai/grok-4.3': {
-    name: 'Grok 4.3',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
   },
 };
-
-// Conservative window for a model we have no declared limit for. Better to
-// compact a little early than to never compact and get stuck at the wall.
-const DEFAULT_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const;
-
-// Known limits indexed by bare model id (the tail after the last "/"), so a
-// catalog model offered under any provider prefix (e.g.
-// "alibaba-cn/deepseek-v4-flash") still resolves to the right window.
-const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }> = (() => {
-  const out: Record<string, { context?: number; output?: number }> = {};
-  for (const [id, model] of Object.entries(MINIMAL_FALLBACK_MODELS)) {
-    if (!model.limit) continue;
-    out[id.split('/').pop() ?? id] = model.limit;
-  }
-  return out;
-})();
-
-// Guarantee every model carries a context window. The gateway /models endpoint
-// returns NO per-model limits, so without this OpenCode sees models with no
-// context limit, can't size the conversation, and auto-compaction never fires —
-// long sessions then blow past the window and get stuck (session pinned at 100%
-// context). Backfill from the known-model table (exact id, then bare id), else a
-// conservative default. Models that already declare a usable limit are untouched.
-export function withModelLimits(
-  models: Record<string, KortixGatewayModel>,
-): Record<string, KortixGatewayModel> {
-  const out: Record<string, KortixGatewayModel> = {};
-  for (const [id, model] of Object.entries(models)) {
-    if (typeof model.limit?.context === 'number' && model.limit.context > 0) {
-      out[id] = model;
-      continue;
-    }
-    const known =
-      MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id];
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } };
-  }
-  return out;
-}
 
 function materializeOpencodeAuth(env: NodeJS.ProcessEnv) {
   const authJson = env[CODEX_AUTH_JSON_SECRET] ?? env[OPENCODE_AUTH_JSON_SECRET];

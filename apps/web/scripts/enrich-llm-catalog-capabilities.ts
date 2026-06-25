@@ -1,15 +1,17 @@
 #!/usr/bin/env bun
 /**
- * Refresh per-model capability flags in the committed LLM catalog snapshot
+ * Enrich per-model capability flags in the committed LLM catalog snapshot
  * (`packages/shared/src/llm-catalog/catalog.generated.json`) from models.dev.
  *
+ * This ENRICHES existing entries IN PLACE — it is NOT a full catalog generator.
  * The snapshot is intentionally slim (id/name/released per model + provider
- * routing fields). models.dev publishes per-model capabilities — attachment
- * (vision/files), reasoning, tool_call, temperature — which this enriches IN
- * PLACE, keyed by provider+model id. It does NOT change the provider set or any
- * routing field (env/api/npm/doc), so resolveCatalogUpstream is unaffected.
+ * routing fields); models.dev publishes per-model capabilities — attachment
+ * (vision/files), reasoning, tool_call, temperature, limit — which this overlays,
+ * keyed by provider+model id. It does NOT add/remove models or providers, nor
+ * touch any routing field (env/api/npm/doc), so resolveCatalogUpstream is
+ * unaffected. (The slim model SET is produced by a separate snapshot generator.)
  *
- *   bun apps/web/scripts/refresh-llm-catalog.ts
+ *   bun apps/web/scripts/enrich-llm-catalog-capabilities.ts
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
