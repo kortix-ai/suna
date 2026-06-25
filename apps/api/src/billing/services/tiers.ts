@@ -417,15 +417,18 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
   computeProductId: 'prod_SCl7AQ2C8kK1CD', // TODO: create prod compute product
 };
 
+// Staging shares the MAIN Kortix Stripe account TEST mode (acct_1R5BVvG6l1KZGqIr)
+// — the same test sandbox as STRIPE_PRICES_DEV, which is the account staging's
+// deployed STRIPE_SECRET_KEY (sk_test_…) actually points at. The subscription
+// price + product ids therefore mirror the dev test catalog. The older
+// …G6CaZppiKc ids lived in a different account and 404 ("No such price") under
+// the staging key, which broke Pro/per-seat checkout creation. The credit ids
+// below are main-account test ids and already resolve.
 const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro: { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
-    // Billing v2 — $40/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
-    // the same account the staging customers + their legacy subs live in (so the
-    // migration can actually find/cancel them). The old …G6l1KZGqIr price was in a
-    // different account and is being deprecated.
-    per_seat: { monthly: 'price_1TdyscG6CaZppiKcilrApKgB' },
+    pro: { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
+    per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
   },
   credits: {
     10: 'price_1RxXOvG6l1KZGqIrMqsiYQvk',
@@ -435,8 +438,8 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
     250: 'price_1RxmO6G6l1KZGqIrBF8Kx87G',
     500: 'price_1RxmOFG6l1KZGqIrn4wgORnH',
   },
-  productId: 'prod_U3CxqRenahYVvj',
-  computeProductId: 'prod_U6B5Gh1aMPdnLO',
+  productId: 'prod_UeGhOr4r0v9gna',
+  computeProductId: 'prod_UeGh9sa2UA2wRR',
 };
 
 // Local-dev Stripe TEST-mode sandbox. Every id here lives in the test mode of
@@ -513,7 +516,7 @@ function registerPriceId(priceId: string, tierName: string) {
 }
 
 function initPriceIdMap() {
-  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING]) {
+  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
     for (const [tierName, tierPrices] of Object.entries(priceConfig.subscriptions)) {
       if (tierPrices.monthly) registerPriceId(tierPrices.monthly, tierName);
       if (tierPrices.yearly) registerPriceId(tierPrices.yearly, tierName);
@@ -537,7 +540,7 @@ export function getTierByPriceId(priceId: string): TierConfig | null {
 export function getBillingPeriodByPriceId(
   priceId: string,
 ): 'monthly' | 'yearly' | 'yearly_commitment' | null {
-  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING]) {
+  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING, STRIPE_PRICES_DEV]) {
     for (const tierPrices of Object.values(priceConfig.subscriptions)) {
       if (tierPrices.monthly === priceId) return 'monthly';
       if (tierPrices.yearly === priceId) return 'yearly';
