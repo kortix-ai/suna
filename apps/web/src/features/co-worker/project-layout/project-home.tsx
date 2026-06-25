@@ -157,7 +157,7 @@ export function ProjectHome({
             'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
           )}
           prefill={prefill}
-          inputSlot={
+          toolbarSlot={
             showSandboxPicker ? (
               <SandboxPicker
                 items={sandboxItems}
@@ -322,18 +322,17 @@ function SandboxPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
+        <button
           type="button"
           aria-label={tI18nHardcoded.raw(
             'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
           )}
-          variant="secondary"
-          size="sm"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
         >
-          <ActiveIcon className="size-3.5" />
-          <span className="max-w-[10rem] truncate">{active.name}</span>
-          <span className={cn('size-1.5 rounded-full', activeStateTone)} />
-        </Button>
+          <ActiveIcon className="size-3.5 shrink-0" />
+          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
         <DropdownMenuLabel>

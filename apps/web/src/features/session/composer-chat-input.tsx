@@ -41,6 +41,7 @@ export function ComposerChatInput({
   placeholder,
   prefill,
   inputSlot,
+  toolbarSlot,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -52,6 +53,7 @@ export function ComposerChatInput({
   placeholder?: string;
   prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
+  toolbarSlot?: ReactNode;
 }) {
   const { data: agents } = useOpenCodeAgents({ projectId });
   const { data: providers } = useOpenCodeProviders();
@@ -78,6 +80,7 @@ export function ComposerChatInput({
       placeholder={placeholder}
       prefill={prefill}
       inputSlot={inputSlot}
+      toolbarSlot={toolbarSlot}
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}
