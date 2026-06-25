@@ -32,14 +32,13 @@ const Hero = () => {
 
       <div className="relative z-20 mx-auto flex w-full max-w-3xl flex-col items-center text-center">
         <h1 className="text-foreground text-4xl leading-[1.08] font-medium tracking-tight text-balance md:text-6xl">
-          Hire an AI coworker
+          Build the AI workforce
           <br />
-          <span className="text-muted-foreground">that gets real work done.</span>
+          <span className="text-muted-foreground">that runs your company.</span>
         </h1>
         <p className="text-muted-foreground mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-balance">
-          Connect your tools and add Kortix to Slack. It learns how you work, remembers context over
-          time, and delivers finished work across your stack — from Slack, the web workspace, or the
-          CLI.
+          Kortix is the open-source platform for AI agents that do real work across every team —
+          connected to your tools, running everywhere you work, and governed from one repo you own.
         </p>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
