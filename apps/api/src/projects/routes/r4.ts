@@ -727,7 +727,7 @@ projectsApp.openapi(
   if (!sandbox) {
     return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
   }
-  const models = await gatewayModelCatalog(projectId, undefined);
+  const models = gatewayModelCatalog(projectId);
   return c.json({ models });
   },
 );

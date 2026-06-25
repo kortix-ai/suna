@@ -262,7 +262,10 @@ describe('gateway.chatCompletions', () => {
     const fetchImpl: FetchImpl = async (url) =>
       String(url).includes('byok.test')
         ? new Response('{"error":"rate_limit"}', { status: 429 })
-        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+        : new Response(completion, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -279,7 +282,10 @@ describe('gateway.chatCompletions', () => {
     const fetchImpl: FetchImpl = async (url) =>
       String(url).includes('byok.test')
         ? new Response('{"error":"insufficient_quota"}', { status: 402 })
-        : new Response(completion, { status: 200, headers: { 'content-type': 'application/json' } });
+        : new Response(completion, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -289,7 +295,8 @@ describe('gateway.chatCompletions', () => {
 
   test('a non-limit BYOK 4xx (400 bad request) returns as-is — no fallback', async () => {
     const { hooks } = makeHooks({ resolveUpstream: async () => [byok, managed] });
-    const fetchImpl: FetchImpl = async () => new Response('{"error":"bad_request"}', { status: 400 });
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"bad_request"}', { status: 400 });
     const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
@@ -299,11 +306,178 @@ describe('gateway.chatCompletions', () => {
 
   test('a 429 with no fallback candidate is returned, not swallowed', async () => {
     const { hooks } = makeHooks({ resolveUpstream: async () => [byok] });
-    const fetchImpl: FetchImpl = async () => new Response('{"error":"rate_limit"}', { status: 429 });
-    const res = await createGateway(hooks, { retry: { ...fastRetry, maxAttempts: 1 } }, { fetchImpl }).chatCompletions({
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"rate_limit"}', { status: 429 });
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl },
+    ).chatCompletions({
       authorization: 'Bearer good',
       rawBody: byokBody,
     });
     expect(res.status).toBe(429);
+  });
+
+  // Regression guard for the cross-tenant breaker bug: a persistent 429 on a
+  // BYOK key is this caller's quota, not the provider being down. With the
+  // breaker keyed by provider and shared across tenants, repeated 429s must NOT
+  // open it — otherwise one tenant's exhausted key 503s everyone else's healthy
+  // key on the same provider.
+  test('a persistent 429 never opens the shared provider breaker', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [byok] });
+    const fetchImpl: FetchImpl = async () =>
+      new Response('{"error":"rate_limit"}', { status: 429 });
+    const gateway = createGateway(
+      hooks,
+      {
+        retry: { ...fastRetry, maxAttempts: 1 },
+        breaker: { failureThreshold: 1, cooldownMs: 10_000 },
+      },
+      { fetchImpl },
+    );
+    // First request: 429 passes straight through (would have tripped a threshold=1 breaker under the old logic).
+    const first = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(first.status).toBe(429);
+    // Second request still reaches upstream and gets the upstream 429 — NOT a 503 circuit-open.
+    const second = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: byokBody,
+    });
+    expect(second.status).toBe(429);
+  });
+
+  test('a persistent 5xx still opens the breaker (502 → 503)', async () => {
+    const { hooks } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => new Response('boom', { status: 500 });
+    const gateway = createGateway(
+      hooks,
+      {
+        retry: { ...fastRetry, maxAttempts: 1 },
+        breaker: { failureThreshold: 1, cooldownMs: 10_000 },
+      },
+      { fetchImpl },
+    );
+    const first = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(first.status).toBe(502);
+    const second = await gateway.chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(second.status).toBe(503);
+  });
+});
+
+// The combined `authorize` hook folds authenticate + billing + budget into one
+// call (the standalone gateway uses it to cut three cross-process RPCs to one).
+// When present it fully replaces the three granular hooks; behavior + traces are
+// identical to the granular path.
+describe('gateway.chatCompletions — combined authorize hook', () => {
+  test('authorize ok → proceeds to dispatch and records usage', async () => {
+    const { hooks, usage } = makeHooks({
+      authorize: async () => ({ ok: true, principal }),
+      // authenticate/assertBillingActive must NOT be consulted when authorize is set.
+      authenticate: async () => {
+        throw new Error('authenticate should not be called');
+      },
+      assertBillingActive: async () => {
+        throw new Error('assertBillingActive should not be called');
+      },
+    });
+    const fetchImpl = okFetch({
+      model: 'kortix/x',
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"kortix/x"}',
+    });
+    expect(res.status).toBe(200);
+    await flush();
+    expect(usage).toHaveLength(1);
+  });
+
+  test('authorize denies with 401 invalid_token', async () => {
+    const { hooks } = makeHooks({
+      authorize: async () => ({
+        ok: false,
+        status: 401,
+        errorCode: 'invalid_token',
+        message: 'Invalid token',
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer nope',
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(401);
+    expect((await res.json()).code).toBe('invalid_token');
+  });
+
+  test('autoRouter resolves a synthetic model before resolveUpstream; trace keeps the requested id', async () => {
+    let resolvedWith = '';
+    const { hooks, traces } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedWith = model;
+        return [managed];
+      },
+    });
+    const fetchImpl = okFetch({ model: 'glm', usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { fetchImpl },
+    ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"auto"}' });
+    expect(res.status).toBe(200);
+    expect(resolvedWith).toBe('glm-5.2'); // resolution saw the routed model, not "auto"
+    await flush();
+    expect(traces[0].requestedModel).toBe('auto'); // trace records what the client asked for
+  });
+
+  test('autoRouter is a no-op for a concrete model', async () => {
+    let resolvedWith = '';
+    const { hooks } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedWith = model;
+        return [managed];
+      },
+    });
+    const fetchImpl = okFetch({ usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    await createGateway(
+      hooks,
+      { retry: fastRetry, autoRouter: (model) => (model === 'auto' ? 'glm-5.2' : null) },
+      { fetchImpl },
+    ).chatCompletions({ authorization: 'Bearer good', rawBody: '{"model":"claude-x"}' });
+    expect(resolvedWith).toBe('claude-x');
+  });
+
+  test('authorize denies with 402 and the trace stays attributed to the principal', async () => {
+    const { hooks, traces } = makeHooks({
+      authorize: async () => ({
+        ok: false,
+        status: 402,
+        errorCode: 'budget_exceeded',
+        message: 'budget exhausted',
+        principal,
+      }),
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody: '{"model":"x"}',
+    });
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.code).toBe('budget_exceeded');
+    expect(body.message).toBe('budget exhausted');
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].errorCode).toBe('budget_exceeded');
+    expect(traces[0].accountId).toBe('a1'); // attributed even on denial
   });
 });

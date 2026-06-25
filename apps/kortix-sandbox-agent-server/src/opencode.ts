@@ -294,7 +294,10 @@ async function fetchGatewayModels(
   return MINIMAL_FALLBACK_MODELS
 }
 
-const DEFAULT_KORTIX_MODEL = 'kortix/claude-sonnet-4.6'
+// New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
+// images → a vision model) — not a single pinned model. Used for both the main
+// model and the cheap `small_model`.
+const DEFAULT_KORTIX_MODEL = 'kortix/auto'
 
 type KortixGatewayModel = {
   name: string
@@ -306,6 +309,16 @@ type KortixGatewayModel = {
 }
 
 const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
+  // AUTO — the default model; present so the baked default never dangles when this
+  // fallback is used (gateway + baked catalog both unreachable at boot).
+  auto: {
+    name: 'Auto',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 64_000 },
+  },
   'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
     reasoning: true,

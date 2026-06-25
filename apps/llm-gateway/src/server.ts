@@ -1,8 +1,9 @@
-import { Hono } from 'hono';
 import { createGateway } from '@kortix/llm-gateway';
-import { config } from './config';
+import { pickAutoModel } from '@kortix/shared/llm-catalog';
+import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
-import { createLangfuseSink, type TraceSink } from './observability/langfuse';
+import { config } from './config';
+import { type TraceSink, createLangfuseSink } from './observability/langfuse';
 import { createGatewayLogger } from './observability/logger';
 
 const STARTED_AT = Date.now();
@@ -33,11 +34,18 @@ export function buildServer(): GatewayServer {
         })
       : null;
 
-  if (!traces) console.warn('[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)');
+  if (!traces)
+    console.warn(
+      '[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)',
+    );
 
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
+      // Combined gate: one RPC for auth + billing + budget on the chat hot path
+      // (vs three sequential round-trips). authenticate/assertBillingActive/
+      // assertBudget remain for the /models path and the interface contract.
+      authorize: api.authorize,
       resolveUpstream: api.resolveUpstream,
       assertBillingActive: api.assertBillingActive,
       assertBudget: api.assertBudget,
@@ -54,6 +62,7 @@ export function buildServer(): GatewayServer {
       breaker: config.breaker,
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
+      autoRouter: pickAutoModel,
     },
     { logger },
   );
@@ -94,7 +103,9 @@ export function buildServer(): GatewayServer {
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
   // Includes version/commit so a rollout can be confirmed with one cheap probe
   // (no deep dependency checks) — `curl /health/live` shows which build is live.
-  app.get('/health/live', (c) => c.json({ ok: true, version: SERVICE_VERSION, commit: SERVICE_COMMIT }));
+  app.get('/health/live', (c) =>
+    c.json({ ok: true, version: SERVICE_VERSION, commit: SERVICE_COMMIT }),
+  );
 
   // Deep health/readiness, built for an external monitor: an overall status, the
   // specific incidents, dependency checks, and a rolling error rate. Returns HTTP
@@ -109,9 +120,14 @@ export function buildServer(): GatewayServer {
       traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
 
     const incidents: string[] = [];
-    if (!apiCheck.ok) incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
-    if (openBreakers.length) incidents.push(`upstream circuit open: ${openBreakers.map((b) => b.provider).join(', ')}`);
-    if (errorSpike) incidents.push(`error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`);
+    if (!apiCheck.ok)
+      incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
+    if (openBreakers.length)
+      incidents.push(`upstream circuit open: ${openBreakers.map((b) => b.provider).join(', ')}`);
+    if (errorSpike)
+      incidents.push(
+        `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
+      );
 
     const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
 
@@ -145,7 +161,9 @@ export function buildServer(): GatewayServer {
     );
   });
 
-  const chatCompletions = async (c: { req: { header: (k: string) => string | undefined; text: () => Promise<string> } }) => {
+  const chatCompletions = async (c: {
+    req: { header: (k: string) => string | undefined; text: () => Promise<string> };
+  }) => {
     try {
       const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),

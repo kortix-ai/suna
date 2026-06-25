@@ -5,7 +5,6 @@ export type ProviderKind =
   | 'openai-responses'
   | 'anthropic'
   | 'bedrock'
-  | 'bedrock-converse'
   | 'custom';
 
 export interface UpstreamPricing {

@@ -138,7 +138,7 @@ export async function stageBuildContext(
   // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
   await writeFileFs(
     join(contextDir, 'kortix-llm-catalog.json'),
-    JSON.stringify({ models: await gatewayModelCatalog('shared-seed', undefined) }),
+    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
   );
 
   // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
