@@ -81,6 +81,11 @@ export interface StartSessionCommand {
   };
   projectId: string;
   sessionId: string;
+  /** Optional server-side long-poll budget (ms). When set, startSession keeps
+   *  re-resolving readiness until ready/terminal or this deadline, so the client
+   *  learns `ready` the instant it flips instead of on its own poll tick.
+   *  Bounded server-side (START_AWAIT_MAX_MS); omit/0 = original one-shot. */
+  waitMs?: number;
 }
 
 export type SessionDeliveryOutcome = 'delivered' | 'pending' | 'no-session' | 'failed';

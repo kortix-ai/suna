@@ -112,13 +112,15 @@ export default function ProjectSessionPage() {
     },
     enabled: !!user && !!sessionId && !!projectId && !billingGatePending && !noPlan,
     staleTime: 0,
-    // Poll until the runtime is ready or a terminal stage. `retriable` is the
-    // backend's authoritative "still making progress" signal; null = a transient
+    // RE-ARM promptly while still provisioning (the long-poll already absorbed the
+    // wait server-side), so steady state is one in-flight long-poll, not a 2/sec
+    // poll. `retriable` is the backend's authoritative "still making progress"
+    // signal (false ⇒ ready/terminal ⇒ stop); null (no data) = a transient
     // failure, so retry shortly.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 500;
-      return data.retriable ? 800 : false;
+      return data.retriable ? 100 : false;
     },
   });
   const sandbox = start?.sandbox ?? null;

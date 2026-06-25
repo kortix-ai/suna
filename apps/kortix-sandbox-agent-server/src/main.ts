@@ -18,6 +18,16 @@ import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
+import {
+  startLlmProxy,
+  setLlmProxyToken,
+  llmProxyReady,
+  llmProxyBaseUrl,
+  startExecutorProxy,
+  setExecutorProxyToken,
+  executorProxyReady,
+  executorProxyBaseUrl,
+} from './llm-proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
@@ -389,6 +399,40 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): voi
 //     warmed by a readiness PROBE (a /session read that resolves the /workspace
 //     Instance + loads pty-tools.ts) — never a bootstrap session, since there is
 //     no KORTIX_SESSION_ID to relay at park.
+
+// Fetch the FULL org model catalog at PARK and write it to KORTIX_LLM_CATALOG_FILE
+// so the (tokenless) seed's opencode config bakes the full picker instead of the
+// ~11-model fallback. The seed can't reach the gateway /models (no per-session
+// gateway key), so it asks an apps/api endpoint authed by the sandbox token.
+// Best-effort + idempotent: a no-op unless KORTIX_LLM_CATALOG_URL is set, and any
+// failure just leaves the fallback catalog (LLM + tools still work via proxies).
+//
+// ENDPOINT CONTRACT (apps/api, to be added deliberately — NOT done here because
+// the PARK auth path is subtle): GET KORTIX_LLM_CATALOG_URL with
+// `Authorization: Bearer <KORTIX_SANDBOX_TOKEN>` → `{ models: {...} }` ==
+// gatewayModelCatalog(projectId, userId). At PARK there is NO live sessionSandboxes
+// row (it's a template build), and the token is a type='user' account key, so the
+// route must authorize by validateAccountToken→accountId/projectId (like the git
+// proxy at park), NOT by the sandbox-row check clone-credential uses.
+async function prefetchSeedCatalog(cfg: Config): Promise<void> {
+  const url = process.env.KORTIX_LLM_CATALOG_URL
+  if (!url || !cfg.sandboxToken) return
+  const file = process.env.KORTIX_LLM_CATALOG_FILE || `${OPENCODE_HOME}/.config/kortix-llm-catalog.json`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${cfg.sandboxToken}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!res.ok) throw new Error(`catalog http ${res.status}`)
+  const body = await res.text()
+  const parsed = JSON.parse(body) as { models?: Record<string, unknown> }
+  const count = parsed.models ? Object.keys(parsed.models).length : 0
+  if (count === 0) throw new Error('empty catalog')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, body, { mode: 0o600 })
+  process.env.KORTIX_LLM_CATALOG_FILE = file
+  logger.info('[pool] baked full model catalog for seed', { file, models: count })
+}
+
 async function runPoolMode(
   cfg: Config,
   bootTime: number,
@@ -420,6 +464,46 @@ async function runPoolMode(
     ? await resolveOpencodeConfigDir(cfg)
     : cfg.defaultOpencodeConfigDir
   await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+
+  // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful/warm-pool
+  // only — this whole function is the warm path; cold + Daytona never run it).
+  // Start TWO localhost credential proxies (LLM gateway + executor MCP) and point
+  // opencode's baked config at them, so the SEED bakes a SESSION-INDEPENDENT
+  // config (placeholder tokens + proxied URLs) and CLAIM can inject the real
+  // per-session tokens live, skipping the ~8s opencode restart. Best-effort: a
+  // bind failure leaves the *_PROXY_URL unset → that contributor bakes nothing
+  // session-independent and claim falls back to the restart path.
+  const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
+  if (llmHotswap) {
+    const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
+    const llmUrl = startLlmProxy(llmPort)
+    if (llmUrl) {
+      // Seen by buildOpencodeConfigContent (via process.env) at the seed spawn
+      // below → provider.kortix routes through the proxy.
+      process.env.KORTIX_LLM_PROXY_URL = llmUrl
+      bootMark('pool-llm-proxy-started')
+      logger.info('[pool] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
+    }
+    const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
+    const exUrl = startExecutorProxy(exPort)
+    if (exUrl) {
+      // Seen by buildOpencodeConfigContent → mcp.kortix-executor.KORTIX_API_URL
+      // routes through the proxy, so the tokenless seed bakes a working MCP.
+      process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
+      bootMark('pool-executor-proxy-started')
+      logger.info('[pool] executor hot-swap proxy up; seed bakes proxied executor MCP', { exUrl })
+    }
+    // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
+    // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
+    // authed by the sandbox token and write it to KORTIX_LLM_CATALOG_FILE BEFORE
+    // opencode spawns → the seed bakes the FULL model picker, not the ~11-model
+    // fallback. No-op unless KORTIX_LLM_CATALOG_URL is wired (see report for the
+    // endpoint contract); any failure → fallback models (LLM + tools still work).
+    await prefetchSeedCatalog(cfg).catch((err) =>
+      logger.warn('[pool] catalog prefetch failed; seed uses fallback models', { err: (err as Error).message }),
+    )
+  }
+
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
   await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('pool-opencode-spawned')
@@ -501,13 +585,52 @@ async function runPoolMode(
       await ensureOpencodeConfigDeps(claimOpencodeConfigDir).catch((err) =>
         logger.warn('[pool] claim config deps failed', { err: (err as Error).message }),
       )
-      opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
-      await opencode.restart().catch((err) =>
-        logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
-      )
-      bootMark('claim-opencode-restarted')
+      // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
+      // session-independent opencode config routed through the localhost LLM +
+      // executor proxies, so inject the per-session tokens LIVE and reuse the
+      // already-warm opencode — skipping the ~8s restart. Engages only when
+      // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
+      // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
+      // materialized cleanly (Stage-2 baked-checkout → projectTarget unchanged, so
+      // reconfigure is unnecessary). Anything missing → fall through to restart.
+      let hotSwapped = false
+      if (
+        llmHotswap &&
+        !!process.env.KORTIX_LLM_PROXY_URL &&
+        llmProxyBaseUrl() != null &&
+        opencode.getState() === 'ok' &&
+        !bootState.repoMaterializationError
+      ) {
+        // LLM gateway: required for the session to function.
+        setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
+        // Executor MCP: the seed baked the MCP pointing at the executor proxy, so
+        // the running MCP already exposes the tools; injecting the real token here
+        // makes the first tool call work — no restart. Best-effort: a session with
+        // no executor token leaves the proxy un-tokened (the MCP stays exposed but
+        // 503s a tool call, exactly like a no-executor session).
+        if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
+          setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
+        }
+        if (llmProxyReady()) {
+          hotSwapped = true
+          bootMark('claim-opencode-hotswapped')
+          // Observability: confirms the executor proxy has a live token, i.e.
+          // tools are callable on this hot-swapped claim (not just exposed).
+          if (executorProxyReady()) bootMark('claim-executor-tools-ready')
+          logger.info('[pool] claim hot-swap: per-session tokens injected via proxies, opencode NOT restarted', {
+            executorReady: executorProxyReady(),
+          })
+        }
+      }
+      if (!hotSwapped) {
+        opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
+        await opencode.restart().catch((err) =>
+          logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
+        )
+        bootMark('claim-opencode-restarted')
+      }
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
-      logger.info('[pool] claim complete', { claimMs: Date.now() - t0, timeline: bootState.timeline })
+      logger.info('[pool] claim complete', { claimMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
     })()
   }
   process.on('SIGHUP', () => claim('sighup'))
