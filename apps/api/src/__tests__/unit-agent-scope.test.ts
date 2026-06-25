@@ -98,6 +98,12 @@ describe('agentMayUseEnv — per-agent secret gate', () => {
   test('empty list → no secrets', () => {
     expect(agentMayUseEnv({ agent: 'a', kortixCli: [], connectors: [], env: [] }, 'ANY')).toBe(false);
   });
+  test('case-insensitive: a lowercase allowlist still admits the UPPERCASE secret', () => {
+    // Secrets are canonically UPPERCASE; a hand-written kortix.toml allowlist may not be.
+    const grant = { agent: 'mkt', kortixCli: [], connectors: [], env: ['openai_api_key'] };
+    expect(agentMayUseEnv(grant, 'OPENAI_API_KEY')).toBe(true);
+    expect(agentMayUseEnv(grant, 'STRIPE_KEY')).toBe(false);
+  });
 });
 
 describe('agentMayPerform — kortix_cli gate', () => {

@@ -59,7 +59,12 @@ export function agentMayUseEnv(grant: AgentGrant | null, name: string): boolean 
   if (!grant) return true; // no grant = no restriction
   const env = grant.env ?? 'all';
   if (env === 'all') return true;
-  return env.includes(name);
+  // Secret names are canonically UPPERCASE (SECRET_NAME_REGEX = /^[A-Z_]…/), but
+  // a kortix.toml `env = [...]` allowlist is hand-written and may use any case.
+  // Match case-insensitively so `env = ["openai_api_key"]` still admits the
+  // OPENAI_API_KEY secret instead of silently (and confusingly) withholding it.
+  const target = name.toUpperCase();
+  return env.some((e) => e.toUpperCase() === target);
 }
 
 /**

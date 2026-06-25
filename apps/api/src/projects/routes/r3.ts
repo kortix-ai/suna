@@ -1,6 +1,6 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
+import { agentMayUseEnv, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -40,6 +40,9 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: building a sandbox template provisions infra. A scoped
+  // agent token must hold project.customize.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);

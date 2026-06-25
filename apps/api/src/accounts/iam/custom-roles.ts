@@ -629,8 +629,12 @@ async function parsePolicyInput(
   | { ok: false; status: 400 | 404; error: string }
 > {
   const principalType = String(body.principalType ?? '');
-  if (!['member', 'group', 'token'].includes(principalType)) {
-    return { ok: false, status: 400, error: 'principalType must be member, group, or token' };
+  // 'token' is intentionally rejected: the engine's policy loader only resolves
+  // member + group principals (see engine-v2 resolveActorV2), so a token policy
+  // would be stored but NEVER enforced — a silent no-op that reads as a granted
+  // restriction. Re-enable here only once the engine reads token principals.
+  if (!['member', 'group'].includes(principalType)) {
+    return { ok: false, status: 400, error: 'principalType must be member or group (token policies are not enforced yet)' };
   }
   const principalId = typeof body.principalId === 'string' ? body.principalId : '';
   if (!principalId) return { ok: false, status: 400, error: 'principalId is required' };
@@ -656,10 +660,30 @@ async function parsePolicyInput(
   const role = await loadCustomRole(accountId, roleId);
   if (!role) return { ok: false, status: 404, error: 'role not found in this account' };
 
+  // Scope integrity: a policy must bind a role at the role's own scope. An
+  // account-scoped policy grants its role's actions across the WHOLE account
+  // (engine-v2 customPolicyAllows returns true for any target when
+  // scopeType==='account'), so binding a project "department" role at account
+  // scope would silently smear it over every project — a broadening the role's
+  // author never intended. Project roles bind at project scope, account roles
+  // at account scope.
+  if (role.scopeType !== scopeType) {
+    return {
+      ok: false,
+      status: 400,
+      error: `scopeType must be "${role.scopeType}" to match this role's scope`,
+    };
+  }
+
   let expiresAt: Date | null = null;
   if (typeof body.expires_at === 'string' && body.expires_at) {
     const d = new Date(body.expires_at);
     if (Number.isNaN(d.getTime())) return { ok: false, status: 400, error: 'expires_at must be ISO-8601' };
+    // A policy that's already expired is a no-op the engine filters out
+    // (expiresAt > now()); accepting one masks intent — reject it loudly.
+    if (d.getTime() <= Date.now()) {
+      return { ok: false, status: 400, error: 'expires_at is in the past' };
+    }
     expiresAt = d;
   }
 
