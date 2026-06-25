@@ -1,13 +1,10 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/marketing/button';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { Check, Cpu, Download, KeyRound, Unlock, UserCheck } from 'lucide-react';
+import { Cpu, KeyRound, Unlock, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
@@ -19,64 +16,6 @@ const OWNERSHIP = [
   { label: 'Run it on any model', icon: Cpu },
 ] as const;
 
-const STEPS = ['pulled Stripe + PostHog', 'built the summary + charts', 'rendered the PDF'];
-
-// A single, centered "@Kortix [ask] → finished work" micro-moment.
-function HeroMoment() {
-  return (
-    <div className="border-border bg-card/80 mx-auto w-full max-w-xl overflow-hidden rounded-2xl border text-left shadow-2xs backdrop-blur-md">
-      <div className="space-y-4 p-5 sm:p-6">
-        {/* The ask */}
-        <div className="flex items-center justify-end">
-          <p className="bg-foreground text-background max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed">
-            <span className="opacity-70">@Kortix</span> pull this week&apos;s performance report and
-            post it here
-          </p>
-        </div>
-
-        {/* The work */}
-        <div className="flex items-start gap-2.5">
-          <span className="bg-foreground flex size-7 shrink-0 items-center justify-center rounded-md">
-            <KortixLogo size={13} className="text-background" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-2.5">
-            <div className="space-y-1">
-              {STEPS.map((step) => (
-                <div
-                  key={step}
-                  className="text-muted-foreground flex items-center gap-2 font-mono text-xs"
-                >
-                  <Check className="text-kortix-green size-3 shrink-0" />
-                  <span>{step}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-foreground text-sm leading-relaxed">
-              Revenue is up <span className="font-medium">+18%</span> w/w, signups{' '}
-              <span className="font-medium">+9%</span>, churn flat. Here&apos;s the full report.
-            </p>
-            {/* The deliverable */}
-            <div className="border-border bg-background flex items-center gap-3 rounded-xl border p-3">
-              <span className="bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold">
-                PDF
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-foreground truncate text-sm font-medium">
-                  Weekly-Performance.pdf
-                </p>
-                <p className="text-muted-foreground truncate text-xs">
-                  Revenue, signups, churn · 12 pages · just now
-                </p>
-              </div>
-              <Download className="text-muted-foreground size-4 shrink-0" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const Hero = () => {
   const { user } = useAuth();
 
@@ -86,15 +25,9 @@ const Hero = () => {
   }, [user]);
 
   return (
-    <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-16 sm:pt-40 sm:pb-24">
+    <section id="hero" className="relative overflow-hidden px-6 pt-36 pb-20 sm:pt-44 sm:pb-28">
       <div className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%" aria-hidden>
         <KortixLetterField seed={3382} />
-      </div>
-      <div
-        className="pointer-events-none absolute inset-0 z-0 mask-b-from-50% opacity-80"
-        aria-hidden
-      >
-        <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
       <div className="relative z-20 mx-auto flex w-full max-w-3xl flex-col items-center text-center">
@@ -111,7 +44,7 @@ const Hero = () => {
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <Button size="xl" onClick={handleLaunch}>
-            Create your first coworker
+            Launch Kortix
             <HiArrowRight className="size-4" />
           </Button>
           <Button size="xl" variant="secondary" asChild>
@@ -130,10 +63,6 @@ const Hero = () => {
             </span>
           ))}
         </div>
-
-        <Reveal delay={0.15} className="mt-14 w-full sm:mt-16">
-          <HeroMoment />
-        </Reveal>
       </div>
     </section>
   );
