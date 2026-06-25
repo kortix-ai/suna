@@ -4,10 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import {
-  Coins,
-  MessageCircle,
-} from 'lucide-react';
+import { Dollar as Coins, Chat as MessageCircle } from '@mynaui/icons-react';
 import Link from 'next/link';
 
 export default function HelpCenterPage() {

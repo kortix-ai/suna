@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/lib/toast';
-import { Lock, Unlock, TrendingUp, Trash2, X } from 'lucide-react';
+import { Lock, LockOpen as Unlock, TrendingUp, TrashSolid as Trash2, X } from '@mynaui/icons-react';
 import {
   LineChart,
   Line,

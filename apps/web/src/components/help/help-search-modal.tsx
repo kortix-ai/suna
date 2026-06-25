@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Coins, HelpCircle } from 'lucide-react';
+import { Dollar as Coins, QuestionCircle as HelpCircle } from '@mynaui/icons-react';
 import {
     Command,
     CommandEmpty,

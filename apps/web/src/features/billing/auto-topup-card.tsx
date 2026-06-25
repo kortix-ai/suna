@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
+import { DangerCircle as AlertCircle, CheckCircle as CheckCircle2, Spinner as Loader2, ShieldCheck } from '@mynaui/icons-react';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { toast } from '@/lib/toast';

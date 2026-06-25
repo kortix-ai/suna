@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
 // SPEND attribution is split.
 
 import type { AccountState } from '@/lib/api/billing';
-import { Cpu, Sparkles, Users } from 'lucide-react';
+import { Microchip as Cpu, Sparkles, UsersSolid as Users } from '@mynaui/icons-react';
 
 export interface SeatManagementCardProps {
   accountState: AccountState;

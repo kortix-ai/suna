@@ -2,7 +2,7 @@ import { useTranslations } from 'next-intl';
 import { ToolViewProps } from '../types';
 import { getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, Download, RefreshCw } from 'lucide-react';
+import { Table, Download, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useMemo, useState, useCallback } from 'react';
 import { SpreadsheetSimulation } from './SpreadsheetSimulation';

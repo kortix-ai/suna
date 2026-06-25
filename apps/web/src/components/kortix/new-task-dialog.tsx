@@ -12,12 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import {
-  Loader2,
-  X,
-  Play,
-  Paperclip,
-} from 'lucide-react';
+import { Spinner as Loader2, X, Play, Paperclip } from '@mynaui/icons-react';
 import { useCreateKortixTask, useStartKortixTask } from '@/hooks/kortix/use-kortix-tasks';
 import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';
 import { uploadFile } from '@/features/files/api/opencode-files';

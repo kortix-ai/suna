@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Zap, Clock, Sparkles, Info, RotateCcw, Infinity, X, DollarSign } from 'lucide-react';
+import { Zap, ClockCircle as Clock, Sparkles, Info, Refresh as RotateCcw, Infinity, X, Dollar as DollarSign } from '@mynaui/icons-react';
 import {
   Dialog,
   DialogContent,

@@ -3,24 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertCircle,
-  Calendar,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Copy,
-  FileEdit,
-  FilePlus2,
-  FileSymlink,
-  FileX2,
-  GitBranch,
-  GitCommitHorizontal,
-  Loader2,
-  Search,
-  X,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, Calendar, Check, ChevronLeft, ChevronRight, ClockCircle as Clock, Copy, File as FileEdit, FilePlus as FilePlus2, File as FileSymlink, FileX as FileX2, GitBranch, GitCommit as GitCommitHorizontal, Spinner as Loader2, Search, X } from '@mynaui/icons-react';
 import {
   Dialog,
   DialogContent,

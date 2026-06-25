@@ -4,11 +4,10 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { MessageSquare, PanelTop, Terminal } from 'lucide-react';
+import { Message as MessageSquare, PanelTop, Terminal, ArrowRight as HiArrowRight } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
 
 const SURFACES = [
   { label: 'Slack', icon: MessageSquare },

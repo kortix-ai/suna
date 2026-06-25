@@ -7,13 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Papa from 'papaparse';
 import { cn } from '@/lib/utils';
-import {
-  Search,
-  FileSpreadsheet,
-  Filter,
-  Download,
-  X,
-} from 'lucide-react';
+import { Search, File as FileSpreadsheet, Filter, Download, X } from '@mynaui/icons-react';
 import {
   DropdownMenu,
   DropdownMenuContent,

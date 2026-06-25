@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Check, Loader2, Minus } from 'lucide-react';
+import { DangerCircle as AlertCircle, Check, Spinner as Loader2, Minus } from '@mynaui/icons-react';
 import { InfoBanner } from '@/components/ui/info-banner';
 import type { VersionDiffPreview } from '../api/change-requests';
 

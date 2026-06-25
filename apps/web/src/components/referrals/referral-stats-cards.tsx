@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, Coins } from 'lucide-react';
+import { UsersSolid as Users, Dollar as Coins } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';

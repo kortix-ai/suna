@@ -1,7 +1,7 @@
 'use client';
 
 import { cva, type VariantProps } from 'class-variance-authority';
-import { PanelLeftIcon } from 'lucide-react';
+import { PanelLeft as PanelLeftIcon } from '@mynaui/icons-react';
 import { Slot } from 'radix-ui';
 import * as React from 'react';
 

@@ -72,7 +72,7 @@ import {
   SiWebassembly,
 } from '@icons-pack/react-simple-icons';
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
-import { CheckIcon, CopyIcon } from 'lucide-react';
+import { Check as CheckIcon, Copy as CopyIcon } from '@mynaui/icons-react';
 import type {
   ComponentProps,
   HTMLAttributes,

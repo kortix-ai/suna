@@ -11,26 +11,10 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { Icon } from '@/features/icon/icon';
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
-import {
-  ArrowRight,
-  Boxes,
-  Check,
-  Copy,
-  Cpu,
-  FileCode2,
-  GitBranch,
-  GitPullRequest,
-  KeyRound,
-  Plug,
-  Server,
-  Terminal as TerminalIcon,
-  Workflow,
-} from 'lucide-react';
+import { ArrowRight, Package as Boxes, Check, Copy, Microchip as Cpu, File as FileCode2, GitBranch, GitPullRequest, Key as KeyRound, Power as Plug, Servers as Server, Terminal as TerminalIcon, Share as Workflow, Check as AiOutlineCheck, ArrowRight as HiArrowRight } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { AiOutlineCheck } from 'react-icons/ai';
-import { HiArrowRight } from 'react-icons/hi';
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';

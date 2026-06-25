@@ -8,26 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, useScroll } from 'motion/react';
 import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
-import {
-  Download,
-  Share2,
-  Sparkles,
-  Calendar,
-  User,
-  Tag,
-  Wrench,
-  Plug,
-  Code,
-  Globe,
-  Terminal,
-  GitBranch,
-  ArrowLeft,
-  Moon,
-  Sun,
-  FileText,
-  ChevronDown,
-  ChevronUp
-} from 'lucide-react';
+import { Download, Share as Share2, Sparkles, Calendar, User, Tag, Wrench, Power as Plug, Code, Globe, Terminal, GitBranch, ArrowLeft, Moon, Sun, FileText, ChevronDown, ChevronUp } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

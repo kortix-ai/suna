@@ -13,16 +13,8 @@
  * `.kortix/memory/` (eventually as a change request for review).
  */
 
-import {
-  BarChart3,
-  Building2,
-  FileText,
-  Globe,
-  Presentation,
-  Scale,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
+import { ChartBar as BarChart3, Building as Building2, FileText, Globe, Presentation, Activity as Scale, Search } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 export interface StarterPrompt {
   id: string;

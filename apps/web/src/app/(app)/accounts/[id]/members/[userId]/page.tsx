@@ -2,7 +2,7 @@
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Eye, FolderOpen, Users, X } from 'lucide-react';
+import { Check, Eye, Folder as FolderOpen, UsersSolid as Users, X } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';

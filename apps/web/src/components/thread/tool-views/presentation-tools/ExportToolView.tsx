@@ -8,7 +8,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { toast } from '@/lib/toast';
-import { Download, FileText, Presentation } from 'lucide-react';
+import { Download, FileText, Presentation } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 import { LoadingState } from '../shared/LoadingState';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';

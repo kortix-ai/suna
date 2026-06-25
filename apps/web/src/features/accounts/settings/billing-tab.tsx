@@ -25,7 +25,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { formatCredits } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Zap } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Zap } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 

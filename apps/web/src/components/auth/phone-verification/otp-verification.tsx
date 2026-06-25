@@ -13,12 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Shield,
-  RotateCcw,
-  Trash2,
-  MessageSquare,
-} from 'lucide-react';
+import { Shield, Refresh as RotateCcw, TrashSolid as Trash2, Message as MessageSquare } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface OtpVerificationProps {

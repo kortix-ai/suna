@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, Copy, Loader2, Plus, Trash2 } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Check, Copy, Spinner as Loader2, Plus, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';

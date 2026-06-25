@@ -25,26 +25,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { buildDiagnosticCountsMap, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  CircleAlert,
-  Clipboard,
-  ClipboardCopy,
-  Copy,
-  Download,
-  FilePlus,
-  FolderOpen,
-  FolderPlus,
-  History,
-  Home,
-  Pencil,
-  RefreshCw,
-  Scissors,
-  Trash2,
-  Upload,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ChevronDown, ChevronRight, DangerCircle as CircleAlert, Clipboard, Clipboard as ClipboardCopy, Copy, Download, FilePlus, Folder as FolderOpen, FolderPlus, Undo as History, Home, Pencil, Refresh as RefreshCw, Scissors, TrashSolid as Trash2, Upload } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/opencode-files';
 import { buildGitStatusMap, useFileList, useGitStatus, useServerHealth } from '../hooks';

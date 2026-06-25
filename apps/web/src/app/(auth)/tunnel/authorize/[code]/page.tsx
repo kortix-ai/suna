@@ -15,7 +15,7 @@ import {
   useDeviceAuthInfo,
 } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
-import { Check, Clock, Monitor, X } from 'lucide-react';
+import { Check, ClockCircle as Clock, Monitor, X } from '@mynaui/icons-react';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 

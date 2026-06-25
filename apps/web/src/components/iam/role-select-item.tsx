@@ -15,7 +15,7 @@
 // role does, without having to hunt for a help link.
 
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { CheckIcon } from 'lucide-react';
+import { Check as CheckIcon } from '@mynaui/icons-react';
 
 import { cn } from '@/lib/utils';
 import type { ProjectRole } from '@/lib/projects-client';

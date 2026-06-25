@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
 
 import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { GitBranch, GitMerge, GitPullRequest, Loader2, XCircle } from 'lucide-react';
+import { GitBranch, GitMerge, GitPullRequest, Spinner as Loader2, XCircle } from '@mynaui/icons-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

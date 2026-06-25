@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, KeyRound, Plus } from 'lucide-react';
+import { Check, Key as KeyRound, Plus } from '@mynaui/icons-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

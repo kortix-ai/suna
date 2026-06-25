@@ -27,18 +27,7 @@
  */
 
 import React, { useCallback, useMemo, useState, lazy, Suspense } from 'react';
-import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  FileIcon,
-  FileText,
-  FileWarning,
-  Globe,
-  Loader2,
-  Music,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, File as FileIcon, FileText, File as FileWarning, Globe, Spinner as Loader2, Music } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';

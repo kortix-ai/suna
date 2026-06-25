@@ -16,17 +16,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bot,
-  Copy,
-  ExternalLink,
-  Loader2,
-  Pencil,
-  Plus,
-  Search,
-  ShieldAlert,
-  Star,
-} from 'lucide-react';
+import { Sparkles as Bot, Copy, ExternalLink, Spinner as Loader2, Pencil, Plus, Search, Shield as ShieldAlert, Star } from '@mynaui/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { UnifiedMarkdown } from '@/components/markdown';

@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, KeyRound } from 'lucide-react';
+import { ArrowLeft, Key as KeyRound } from '@mynaui/icons-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo } from 'react';
 

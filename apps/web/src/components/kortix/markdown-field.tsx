@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Pencil, Check, Loader2, X } from 'lucide-react';
+import { Pencil, Check, Spinner as Loader2, X } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { MentionMarkdown } from '@/components/kortix/mention-markdown';

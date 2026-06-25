@@ -15,12 +15,8 @@
 
 import { useMemo } from 'react';
 import Image from 'next/image';
-import {
-  Bot, Wrench, Sparkles, Zap, Bug, Shield, Code2, Palette,
-  Search, BookOpen, Brain, Cpu, Database, GitBranch, Hammer, Key,
-  Rocket, Target, Users, Lightbulb, Compass, Feather, Flame,
-  Stethoscope, ClipboardCheck, Activity, type LucideIcon,
-} from 'lucide-react';
+import { Sparkles as Bot, Wrench, Sparkles, Zap, Danger as Bug, Shield, Code as Code2, Paint as Palette, Search, BookOpen, Sparkles as Brain, Microchip as Cpu, Database, GitBranch, Tool as Hammer, Key, Rocket, Target, UsersSolid as Users, Sparkles as Lightbulb, Compass, Pen as Feather, Flame, Activity as Stethoscope, Clipboard as ClipboardCheck, Activity } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getUserHandle } from '@/lib/kortix/user-handle';

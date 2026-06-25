@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, Users, User, ChevronDown, Sparkles } from "lucide-react";
+import { Send, UsersSolid as Users, User, ChevronDown, Sparkles } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Collapsible,

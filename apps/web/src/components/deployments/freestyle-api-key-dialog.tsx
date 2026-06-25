@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, KeyRound, ExternalLink } from 'lucide-react';
+import { Spinner as Loader2, Key as KeyRound, ExternalLink } from '@mynaui/icons-react';
 import { useSetSecret } from '@/hooks/secrets/use-secrets';
 import { deploymentKeys } from '@/hooks/deployments/use-deployments';
 import { toast } from '@/lib/toast';

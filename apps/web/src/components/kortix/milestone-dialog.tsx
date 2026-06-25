@@ -37,7 +37,7 @@ import {
   type Milestone,
 } from '@/hooks/kortix/use-milestones';
 import { cn } from '@/lib/utils';
-import { CheckCircle2, XCircle, RotateCcw, Trash2, Loader2 } from 'lucide-react';
+import { CheckCircle as CheckCircle2, XCircle, Refresh as RotateCcw, TrashSolid as Trash2, Spinner as Loader2 } from '@mynaui/icons-react';
 
 const HUE_OPTIONS = [0, 30, 50, 120, 170, 210, 260, 290, 330];
 

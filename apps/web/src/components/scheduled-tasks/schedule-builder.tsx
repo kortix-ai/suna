@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, Clock, CalendarClock } from 'lucide-react';
+import { ChevronDown, ClockCircle as Clock, Calendar as CalendarClock } from '@mynaui/icons-react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

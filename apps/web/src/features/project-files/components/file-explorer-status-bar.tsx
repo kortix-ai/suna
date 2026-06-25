@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { GitBranch, AlertTriangle, CircleAlert } from 'lucide-react';
+import { GitBranch, DangerTriangle as AlertTriangle, DangerCircle as CircleAlert } from '@mynaui/icons-react';
 import { useFilesStore } from '../store/files-store';
 import { useGitStatus, useServerHealth, useCurrentProject } from '../hooks';
 import { useDiagnosticsStore } from '@/stores/diagnostics-store';

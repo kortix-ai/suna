@@ -25,7 +25,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
-import { Loader2, Plus } from 'lucide-react';
+import { Spinner as Loader2, Plus } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { featureFlags } from '@/lib/feature-flags';

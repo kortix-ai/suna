@@ -30,7 +30,7 @@ import {
   getTranscriptFilename,
   type TranscriptOptions,
 } from '@/lib/transcript';
-import { Check, Copy, Download } from 'lucide-react';
+import { Check, Copy, Download } from '@mynaui/icons-react';
 import { useCallback, useMemo, useState } from 'react';
 
 // ============================================================================

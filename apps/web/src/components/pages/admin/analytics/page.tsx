@@ -44,20 +44,7 @@ import {
   startOfYear,
   subDays,
 } from 'date-fns';
-import {
-  ArrowRight,
-  BarChart3,
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  CreditCard,
-  DollarSign,
-  MessageSquare,
-  TrendingUp,
-  UserCheck,
-  Users,
-  Zap,
-} from 'lucide-react';
+import { ArrowRight, ChartBar as BarChart3, Calendar as CalendarIcon, ChevronLeft, ChevronRight, CreditCard, Dollar as DollarSign, Message as MessageSquare, TrendingUp, UserCheck, UsersSolid as Users, Zap } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 

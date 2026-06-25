@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { X, ExternalLink, Info, AlertTriangle, AlertCircle, Clock } from 'lucide-react';
+import { X, ExternalLink, Info, DangerTriangle as AlertTriangle, DangerCircle as AlertCircle, ClockCircle as Clock } from '@mynaui/icons-react';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';

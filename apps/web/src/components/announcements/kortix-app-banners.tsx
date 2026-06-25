@@ -3,7 +3,7 @@
 import { APP_DOWNLOAD_URL, AppDownloadQR } from '@/components/common/app-download-qr';
 import { desktopDownloadUrl, isDesktop, startDownload } from '@/lib/desktop';
 import { featureFlags } from '@/lib/feature-flags';
-import { Monitor, Smartphone, X } from 'lucide-react';
+import { Monitor, Mobile as Smartphone, X } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import * as React from 'react';

@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { Key as KeyRound, Spinner as Loader2 } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Button } from '@/components/ui/button';

@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';

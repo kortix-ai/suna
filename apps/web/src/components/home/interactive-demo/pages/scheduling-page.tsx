@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import { Clock, Plus } from 'lucide-react';
+import { ClockCircle as Clock, Plus } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 import { INITIAL_JOBS, type ScheduleJob } from '../data';

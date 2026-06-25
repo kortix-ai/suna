@@ -1,10 +1,9 @@
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { VariantProps } from 'class-variance-authority';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Github as SiGithub } from '@mynaui/icons-react';
 import Link from 'next/link';
 import * as React from 'react';
-import { SiGithub } from 'react-icons/si';
 
 export interface GithubButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {

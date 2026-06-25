@@ -1,5 +1,5 @@
-import { Check, type LucideIcon } from 'lucide-react';
-import { PiCheckCircleFill } from 'react-icons/pi';
+import { Check, CheckCircle as PiCheckCircleFill } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 export function FileResult({
   name,

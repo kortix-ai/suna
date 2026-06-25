@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, Search, Unplug } from 'lucide-react';
+import { Spinner as Loader2, Search, Power as Unplug } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export type { ProviderModalTab };

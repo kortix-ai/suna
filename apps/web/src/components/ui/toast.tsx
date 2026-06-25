@@ -3,8 +3,7 @@ import Loading from '@/components/ui/loading';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
-import { GoCheckCircleFill } from 'react-icons/go';
-import { HiOutlineExclamationCircle, HiOutlineXCircle } from 'react-icons/hi';
+import { CheckCircle as GoCheckCircleFill, DangerCircle as HiOutlineExclamationCircle, XCircle as HiOutlineXCircle } from '@mynaui/icons-react';
 import { toast } from 'sonner';
 
 type ToastOptions = {

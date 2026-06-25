@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useEffect } from 'react';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { motion, AnimatePresence } from 'motion/react';

@@ -17,7 +17,7 @@ import {
   getBuiltInFileIconColor,
   getBuiltInSpriteSheet,
 } from '@pierre/trees';
-import { ChevronRight, Folder, FolderOpen } from 'lucide-react';
+import { ChevronRight, Folder, Folder as FolderOpen } from '@mynaui/icons-react';
 
 import { cn } from '@/lib/utils';
 

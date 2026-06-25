@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp } from '@mynaui/icons-react';
 import * as React from 'react';
 import { ButtonProps } from './button';
 

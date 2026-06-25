@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, MessageSquare, TrendingUp, TrendingDown, Users } from 'lucide-react';
+import { Star, Message as MessageSquare, TrendingUp, TrendingDown, UsersSolid as Users } from '@mynaui/icons-react';
 import { useAdminFeedbackStats, useAdminSentimentSummary } from '@/hooks/admin/use-admin-feedback';
 
 export function FeedbackStatsCards() {

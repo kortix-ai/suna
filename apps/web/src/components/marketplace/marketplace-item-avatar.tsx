@@ -1,27 +1,7 @@
 'use client';
 
-import {
-  BookOpen,
-  Boxes,
-  Brain,
-  Code,
-  Compass,
-  Database,
-  FileCode2,
-  FlaskConical,
-  Globe,
-  Layers,
-  Lightbulb,
-  PenTool,
-  Puzzle,
-  Rocket,
-  Sparkles,
-  Terminal,
-  Wand2,
-  Wrench,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react';
+import { BookOpen, Package as Boxes, Sparkles as Brain, Code, Compass, Database, File as FileCode2, FlaskConical, Globe, LayersOne as Layers, Sparkles as Lightbulb, Pen as PenTool, Puzzle, Rocket, Sparkles, Terminal, Sparkles as Wand2, Wrench, Zap } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import { cn } from '@/lib/utils';
 import type { MarketplaceItem } from '@/lib/marketplace-client';

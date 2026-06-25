@@ -8,16 +8,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bot,
-  Check,
-  Copy,
-  ExternalLink,
-  Loader2,
-  PauseCircle,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { Sparkles as Bot, Check, Copy, ExternalLink, Spinner as Loader2, PauseCircle, Plus, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { toast } from '@/lib/toast';
 

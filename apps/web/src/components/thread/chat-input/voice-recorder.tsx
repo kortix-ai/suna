@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import React, { useState, useRef, useEffect, memo } from 'react';
-import { Mic, Square } from 'lucide-react';
+import { Microphone as Mic, Square } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {

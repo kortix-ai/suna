@@ -7,7 +7,7 @@ import { useCreatePty, useOpenCodePtyList, useRemovePty } from '@/hooks/opencode
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import { CircleDashed, Plus, Terminal } from '@mynaui/icons-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef } from 'react';
 

@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Copy, Share2, Check } from 'lucide-react';
+import { Copy, Share as Share2, Check } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';

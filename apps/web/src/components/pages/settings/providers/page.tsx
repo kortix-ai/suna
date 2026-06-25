@@ -8,7 +8,7 @@ import { ProviderList } from '@/features/providers/provider-list';
 import { GlobalProviderModal } from '@/features/providers/provider-modal';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { Plus } from 'lucide-react';
+import { Plus } from '@mynaui/icons-react';
 import { useMemo } from 'react';
 
 export default function ProvidersPage() {

@@ -27,7 +27,7 @@ import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-session
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Loader2, Plus, Unplug } from 'lucide-react';
+import { ChevronDown, ChevronRight, Spinner as Loader2, Plus, Power as Unplug } from '@mynaui/icons-react';
 import { useCallback, useState } from 'react';
 
 type Provider = NonNullable<ProviderListResponse['all']>[number];

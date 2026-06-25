@@ -29,18 +29,7 @@ import {
 } from '@/features/providers/provider-branding';
 import { ProviderCard } from '@/features/providers/provider-card';
 import { cn } from '@/lib/utils';
-import {
-  AlertCircle,
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  Globe,
-  Key,
-  Loader2,
-  Plus,
-  Search,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Globe, Key, Spinner as Loader2, Plus, Search } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { successToast } from '@/components/ui/toast';

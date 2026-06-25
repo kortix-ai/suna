@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Spinner as Loader2, Plus, ShieldCheck, TrashSolid as Trash2, X } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 
 import { Badge } from '@/components/ui/badge';

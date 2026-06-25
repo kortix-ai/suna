@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from '@mynaui/icons-react';
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';

@@ -9,7 +9,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { Store } from 'lucide-react';
+import { Store } from '@mynaui/icons-react';
 import { useEffect, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';

@@ -1,5 +1,5 @@
 import { useTranslations } from 'next-intl';
-import { Cloud, CloudOff, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { Cloud, CloudOff, Check, DangerCircle as AlertCircle, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';

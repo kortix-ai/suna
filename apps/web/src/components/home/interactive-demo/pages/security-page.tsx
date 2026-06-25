@@ -4,9 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Plus } from 'lucide-react';
+import { Plus, Shield as MdShield } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
-import { MdShield } from 'react-icons/md';
 import { MEMBERS, POLICIES, SECRETS, type Policy } from '../data';
 import { BrandLogo, PageHead, Panel, Row } from '../primitives';
 

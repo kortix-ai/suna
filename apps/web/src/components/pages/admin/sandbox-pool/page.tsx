@@ -3,21 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useMemo } from "react";
-import {
-  Box,
-  RefreshCw,
-  Plus,
-  Trash2,
-  Play,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  Clock,
-  Zap,
-  Server,
-  Settings,
-} from "lucide-react";
+import { Box, Refresh as RefreshCw, Plus, TrashSolid as Trash2, Play, DangerTriangle as AlertTriangle, CheckCircle, XCircle, Spinner as Loader2, ClockCircle as Clock, Zap, Servers as Server, CogOneSolid as Settings } from '@mynaui/icons-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

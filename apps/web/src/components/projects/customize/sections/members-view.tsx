@@ -5,18 +5,7 @@ import { useTranslations } from 'next-intl';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Check,
-  Clock,
-  Loader2,
-  Mail,
-  MessageSquare,
-  RefreshCw,
-  Shield,
-  UserPlus,
-  Users,
-  X,
-} from 'lucide-react';
+import { Check, ClockCircle as Clock, Spinner as Loader2, Mail, Message as MessageSquare, Refresh as RefreshCw, Shield, UserPlus, UsersSolid as Users, X } from '@mynaui/icons-react';
 import { FormEvent, useMemo, useRef, useState } from 'react';
 
 import {

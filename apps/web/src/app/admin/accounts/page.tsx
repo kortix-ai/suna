@@ -2,27 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  ArrowDown,
-  ArrowDownRight,
-  ArrowUp,
-  ArrowUpRight,
-  Ban,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  CreditCard,
-  ExternalLink,
-  Filter,
-  History,
-  Loader2,
-  Mail,
-  RefreshCw,
-  Shield,
-  SlidersHorizontal,
-  Users,
-  X,
-} from 'lucide-react';
+import { ArrowDown, ArrowDownRight, ArrowUp, ArrowUpRight, Ban, CheckCircle as CheckCircle2, ChevronLeft, ChevronRight, CreditCard, ExternalLink, Filter, Undo as History, Spinner as Loader2, Mail, Refresh as RefreshCw, Shield, Filter as SlidersHorizontal, UsersSolid as Users, X } from '@mynaui/icons-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

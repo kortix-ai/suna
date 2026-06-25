@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react';
-import { Wrench } from 'lucide-react';
+import { Wrench } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 
 interface AppIconProps {

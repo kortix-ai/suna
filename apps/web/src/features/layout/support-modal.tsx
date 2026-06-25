@@ -1,7 +1,6 @@
 'use client';
 
-import { ArrowUpRight } from '@mynaui/icons-react';
-import { BookOpen } from 'lucide-react';
+import { ArrowUpRight, BookOpen } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo } from 'react';

@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, Loader2, PackageSearch, Plus, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, Spinner as Loader2, Package as PackageSearch, Plus, Search, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 

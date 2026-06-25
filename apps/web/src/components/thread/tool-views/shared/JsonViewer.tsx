@@ -1,7 +1,7 @@
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Check } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 

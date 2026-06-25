@@ -23,7 +23,7 @@ import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { Menu } from 'lucide-react';
+import { Menu } from '@mynaui/icons-react';
 import { useCallback, useEffect, useState } from 'react';
 
 // ============================================================================

@@ -5,7 +5,8 @@ import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, ArrowRight, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowRight, Grid as LayoutDashboard, Wrench } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';

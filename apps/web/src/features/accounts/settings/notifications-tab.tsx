@@ -5,19 +5,10 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
-import {
-  BellSolid,
-  CheckCircleSolid,
-  DangerTriangleSolid,
-  EyeOffSolid,
-  Icon as MynaIcon,
-  QuestionCircleSolid,
-  ShieldCheckSolid,
-} from '@mynaui/icons-react';
-import { Volume2, type LucideIcon } from 'lucide-react';
+import { BellSolid, CheckCircleSolid, DangerTriangleSolid, EyeOffSolid, Icon as MynaIcon, QuestionCircleSolid, ShieldCheckSolid, VolumeHigh as Volume2 } from '@mynaui/icons-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
-import { IconType } from 'react-icons/lib';
 
 interface NotificationToggleProps {
   icon: LucideIcon | MynaIcon | IconType;

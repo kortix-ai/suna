@@ -57,25 +57,14 @@ import { useIsMobile } from '@/hooks/utils';
 import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { Icon as IconMynauiType, UsersSolid, Calendar as CalendarClock, ChevronRight, List, ChatMessages as MessagesSquare, PanelLeft, Plus, Share as Webhook, Dots as HiDotsHorizontal } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CalendarClock,
-  ChevronRight,
-  List,
-  MessagesSquare,
-  PanelLeft,
-  Plus,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HiDotsHorizontal } from 'react-icons/hi';
-import { IconType } from 'react-icons/lib';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';

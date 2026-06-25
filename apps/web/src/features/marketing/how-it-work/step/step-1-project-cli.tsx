@@ -4,7 +4,7 @@ import { DraggableCliPanel } from '@/components/home/interactive-demo/cli/dragga
 import { Badge } from '@/components/ui/badge';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import { FolderGit2, GitBranch } from 'lucide-react';
+import { Folder as FolderGit2, GitBranch } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';

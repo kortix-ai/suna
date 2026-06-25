@@ -17,7 +17,7 @@ import { useTranslations } from 'next-intl';
  *     (allow_all, legacy).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Spinner as Loader2, Plus, ShieldCheck, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

@@ -6,7 +6,7 @@ import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions'
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import { CircleDashed, Plus, Terminal } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useRef } from 'react';

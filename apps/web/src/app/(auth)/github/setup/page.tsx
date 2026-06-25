@@ -8,8 +8,7 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { saveGitHubInstallation } from '@/lib/projects-client';
-import { CheckCircleSolid, InfoCircleSolid } from '@mynaui/icons-react';
-import { AlertCircle } from 'lucide-react';
+import { CheckCircleSolid, InfoCircleSolid, DangerCircle as AlertCircle } from '@mynaui/icons-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 

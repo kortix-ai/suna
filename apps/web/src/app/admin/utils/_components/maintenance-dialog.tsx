@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
+import { Spinner as Loader2 } from '@mynaui/icons-react';
 import { DateTimePicker } from "./date-time-picker";
 import { AVAILABLE_SERVICES, MAINTENANCE_LEVELS } from "./constants";
 import type { MaintenanceLevel } from "@/lib/maintenance-store";

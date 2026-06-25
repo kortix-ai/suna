@@ -9,7 +9,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { FileX, Maximize2, Minimize2 } from 'lucide-react';
+import { FileX, Maximize as Maximize2, Minimize as Minimize2 } from '@mynaui/icons-react';
 import { useCallback, useEffect, useState } from 'react';
 
 /**

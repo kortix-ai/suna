@@ -3,14 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
-import {
-  Search,
-  PanelLeftClose,
-  PanelLeft,
-  RefreshCw,
-  Eye,
-  EyeOff,
-} from 'lucide-react';
+import { Search, PanelLeftClose, PanelLeft, Refresh as RefreshCw, Eye, EyeOff } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { useFilesStore } from '../store/files-store';
 import { useCurrentProject } from '../hooks';

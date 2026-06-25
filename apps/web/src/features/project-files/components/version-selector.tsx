@@ -3,15 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState } from 'react';
-import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  Check,
-  ChevronsUpDown,
-  GitBranch,
-  Loader2,
-  Search,
-} from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Check, ChevronsUpDown, GitBranch, Spinner as Loader2, Search } from '@mynaui/icons-react';
 import {
   Popover,
   PopoverContent,

@@ -1,6 +1,6 @@
 'use client';
 
-import { Handshake } from 'lucide-react';
+import { Hand as Handshake } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';

@@ -15,24 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  GitBranch,
-  FileCode2,
-  Files,
-  Archive,
-  FolderOpen,
-  Folder,
-  File,
-  ChevronRight,
-  Check,
-  Plus,
-  Trash2,
-  ChevronDown,
-  Loader2,
-  Rocket,
-  Wand2,
-  Pencil,
-} from 'lucide-react';
+import { GitBranch, File as FileCode2, File as Files, Archive, Folder as FolderOpen, Folder, File, ChevronRight, Check, Plus, TrashSolid as Trash2, ChevronDown, Spinner as Loader2, Rocket, Sparkles as Wand2, Pencil } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { useCreateDeployment, type Deployment, type DeploymentSource, type CreateDeploymentData } from '@/hooks/deployments/use-deployments';
 import { useFileList } from '@/features/files/hooks/use-file-list';

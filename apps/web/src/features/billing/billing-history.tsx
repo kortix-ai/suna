@@ -14,19 +14,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import {
-  RefreshCw,
-  CreditCard,
-  Zap,
-  ArrowDownCircle,
-  RotateCcw,
-  CalendarSync,
-  Clock,
-  ChevronLeft,
-  ChevronRight,
-  Receipt,
-  Loader2,
-} from 'lucide-react';
+import { Refresh as RefreshCw, CreditCard, Zap, ArrowDownCircle, Refresh as RotateCcw, Calendar as CalendarSync, ClockCircle as Clock, ChevronLeft, ChevronRight, FileText as Receipt, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useTransactions } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
 import { creditsToDollars } from '@kortix/shared';

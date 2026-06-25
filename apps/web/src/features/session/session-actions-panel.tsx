@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from '@mynaui/icons-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

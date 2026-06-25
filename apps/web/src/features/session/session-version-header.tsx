@@ -13,7 +13,7 @@ import { useTranslations } from 'next-intl';
  * style): **All files** (default) and **Changes** (the real diff viewer).
  */
 
-import { GitBranch, GitPullRequestArrow, Info, Loader2 } from 'lucide-react';
+import { GitBranch, GitPullRequest as GitPullRequestArrow, Info, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useParams } from 'next/navigation';
 
 import { useGitStatus } from '@/features/files/hooks/use-git-status';

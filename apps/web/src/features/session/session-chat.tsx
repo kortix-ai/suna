@@ -3,30 +3,7 @@
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
-import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  GitFork,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  MessageSquare,
-  Pencil,
-  Reply,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ArrowDown, Sparkles as Brain, Check, CheckCircle, ChevronDown, ChevronRight, Copy, ExternalLink, FileText, GitBranch as GitFork, Globe, Image as ImageIcon, LayersOne as Layers, Spinner as Loader2, Message as MessageSquare, Pencil, MessageReply as Reply, Scissors, Search, Terminal, ClockCircle as Timer } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

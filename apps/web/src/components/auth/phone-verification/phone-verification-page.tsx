@@ -18,7 +18,7 @@ import { signOut } from '@/app/(auth)/auth/actions';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { LogOut, Shield } from 'lucide-react';
+import { Logout as LogOut, Shield } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useMutation } from '@tanstack/react-query';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';

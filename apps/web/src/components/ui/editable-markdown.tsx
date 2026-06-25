@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Textarea } from './textarea';
 import { cn } from '@/lib/utils';
-import { Edit2 } from 'lucide-react';
+import { Edit as Edit2 } from '@mynaui/icons-react';
 import { UnifiedMarkdown } from '@/components/markdown';
 
 interface EditableMarkdownProps {

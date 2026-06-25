@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Download, ExternalLink, FileText } from 'lucide-react';
+import { Download, ExternalLink, FileText } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo } from 'react';
 

@@ -6,7 +6,7 @@ import { SlidingTabIndicator } from '@/components/ui/sliding-tab-indicator';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import { useState } from 'react';
-import { AiOutlineCheck } from 'react-icons/ai';
+import { Check as AiOutlineCheck } from '@mynaui/icons-react';
 import { HyperText } from '../ui/hyper-text';
 import { Loader } from '../ui/loader';
 

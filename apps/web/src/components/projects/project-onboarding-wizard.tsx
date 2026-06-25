@@ -29,14 +29,9 @@ import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { chalkColors } from '@kortix/shared';
-import {
-  Icon as IconMynauiType,
-  LayersTwoSolid,
-  SparklesSolid,
-  UsersSolid,
-} from '@mynaui/icons-react';
+import { Icon as IconMynauiType, LayersTwoSolid, SparklesSolid, UsersSolid, ArrowRight, Check, Message as MessageSquare, Power as Plug } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Check, MessageSquare, Plug, type LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

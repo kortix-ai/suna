@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, FileText, Globe, Loader2, LogIn, Play, ShieldAlert } from 'lucide-react';
+import { ExternalLink, FileText, Globe, Spinner as Loader2, Login as LogIn, Play, Shield as ShieldAlert } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';

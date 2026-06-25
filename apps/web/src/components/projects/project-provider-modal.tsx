@@ -14,19 +14,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  Info,
-  Loader2,
-  Plug,
-  Plus,
-  Search,
-  Unplug,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ChevronLeft, ChevronRight, Copy, ExternalLink, Info, Spinner as Loader2, Power as Plug, Plus, Search, Power as Unplug } from '@mynaui/icons-react';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {

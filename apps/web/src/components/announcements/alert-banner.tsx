@@ -2,7 +2,8 @@
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { X, ExternalLink, LucideIcon } from 'lucide-react';
+import { X, ExternalLink } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';

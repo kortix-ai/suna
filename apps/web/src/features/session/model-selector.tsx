@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, Eye, EyeOff, Plus, Filter as SlidersHorizontal } from '@mynaui/icons-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 

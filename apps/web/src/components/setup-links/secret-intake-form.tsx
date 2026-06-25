@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Check, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { Check, Key as KeyRound, Spinner as Loader2, ShieldCheck } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { setupLinkApiBase } from './util';

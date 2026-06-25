@@ -9,7 +9,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { registerLicense } from '@syncfusion/ej2-base';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
-import { AlertCircle, Cloud, CloudOff, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { DangerCircle as AlertCircle, Cloud, CloudOff, File as FileSpreadsheet, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SpreadsheetLoader } from './SpreadsheetLoader';
 import { useSpreadsheetSync } from './useSpreadsheetSync';

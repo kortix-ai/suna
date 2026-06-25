@@ -21,31 +21,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Copy,
-  Loader2,
-  MessageSquare,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  RefreshCw,
-  ShieldAlert,
-  Sparkles,
-  Terminal,
-  Timer,
-  Trash2,
-  UserCircle,
-  Webhook,
-  Zap,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, DangerTriangle as AlertTriangle, ArrowLeft, ArrowRight, Calendar, CheckCircle as CheckCircle2, ClockCircle as Clock, Copy, Spinner as Loader2, Message as MessageSquare, Pause, Pencil, Play, Plus, Refresh as RefreshCw, Shield as ShieldAlert, Sparkles, Terminal, ClockCircle as Timer, TrashSolid as Trash2, UserCircle, Share as Webhook, Zap } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';

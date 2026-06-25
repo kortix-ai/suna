@@ -33,7 +33,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound, Plug, SquarePen, Wand2, type LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { CustomizeSection } from '@/lib/customize-sections';
@@ -44,9 +44,7 @@ import {
   listProjectSecrets,
   listProjectSessions,
 } from '@/lib/projects-client';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
-import { IconType } from 'react-icons/lib';
-import { RiRobot2Fill } from 'react-icons/ri';
+import { Icon as IconMynauiType, UsersSolid, Key as KeyRound, Power as Plug, Edit as SquarePen, Sparkles as Wand2, Sparkles as RiRobot2Fill } from '@mynaui/icons-react';
 
 export type ProjectSetupStepId = 'secrets' | 'session' | 'connector' | 'team' | 'agent' | 'skill';
 

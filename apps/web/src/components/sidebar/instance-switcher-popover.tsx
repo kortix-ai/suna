@@ -24,7 +24,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Box, Check, ChevronsUpDown, Loader2, Plus, Settings2 } from 'lucide-react';
+import { ArrowUpRight, Box, Check, ChevronsUpDown, Spinner as Loader2, Plus, CogOneSolid as Settings2 } from '@mynaui/icons-react';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 

@@ -40,24 +40,7 @@ import {
 } from '@/stores/server-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowDownToLine,
-  Box,
-  CalendarX2,
-  Check,
-  Cloud,
-  Container,
-  Copy,
-  Globe,
-  KeyRound,
-  Loader2,
-  Pencil,
-  Plus,
-  Power,
-  Search,
-  Server,
-  Settings2,
-} from 'lucide-react';
+import { ArrowDown as ArrowDownToLine, Box, CalendarX as CalendarX2, Check, Cloud, Package as Container, Copy, Globe, Key as KeyRound, Spinner as Loader2, Pencil, Plus, Power, Search, Servers as Server, CogOneSolid as Settings2 } from '@mynaui/icons-react';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 

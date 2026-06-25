@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from '@mynaui/icons-react';
 import { DEFAULT_MANAGED_MODEL_IDS, getManagedModel } from '@kortix/shared/llm-catalog';
 
 import { cn } from '@/lib/utils';

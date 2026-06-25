@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
+import { CheckCircle as CheckCircle2, Key as KeyRound, Spinner as Loader2, Terminal as TerminalSquare, XCircle } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';

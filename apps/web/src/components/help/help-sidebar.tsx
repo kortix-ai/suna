@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Search, Coins, MessageCircle, HelpCircle } from "lucide-react"
+import { Search, Dollar as Coins, Chat as MessageCircle, QuestionCircle as HelpCircle } from '@mynaui/icons-react';
 
 import { Badge } from "@/components/ui/badge"
 import { SpotlightCard } from "@/components/ui/spotlight-card"

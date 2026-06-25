@@ -1,22 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  CheckCircle2,
-  Clock,
-  Container,
-  Edit3,
-  FileCode,
-  Loader2,
-  Minus,
-  Package,
-  Plus,
-  RefreshCw,
-  Sparkles,
-  Trash2,
-  XCircle,
-  Zap,
-} from 'lucide-react';
+import { CheckCircle as CheckCircle2, ClockCircle as Clock, Package as Container, Edit as Edit3, File as FileCode, Spinner as Loader2, Minus, Package, Plus, Refresh as RefreshCw, Sparkles, TrashSolid as Trash2, XCircle, Zap } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 

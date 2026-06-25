@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle, DangerCircle as AlertCircle } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDeleteOperation } from '@/stores/delete-operation-store';
 

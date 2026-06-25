@@ -8,7 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { previewSound } from '@/lib/sounds';
 import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
-import { Volume2 } from 'lucide-react';
+import { VolumeHigh as Volume2 } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 
 export function SoundsTab() {

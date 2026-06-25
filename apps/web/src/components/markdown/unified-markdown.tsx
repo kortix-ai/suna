@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Streamdown, defaultRemarkPlugins, defaultRehypePlugins } from 'streamdown';
 type PluggableList = any[];
 import { defaultSchema } from 'rehype-sanitize';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from '@mynaui/icons-react';
 import { codeToHtml, getSingletonHighlighter, type Highlighter, type ShikiTransformer } from 'shiki';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';

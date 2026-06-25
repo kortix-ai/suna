@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
+import { DangerCircle as AlertCircle, Spinner as Loader2, CreditCard, Zap } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';

@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
-import { Plus } from 'lucide-react';
+import { Plus } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { AGENTS, favicon, type AgentDef } from '../data';
 import { PageHead, StatusDot } from '../primitives';

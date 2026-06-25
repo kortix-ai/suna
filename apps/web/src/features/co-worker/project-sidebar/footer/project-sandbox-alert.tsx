@@ -1,7 +1,6 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
@@ -22,7 +21,7 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';
+import { DangerTriangleSolid, SparklesSolid, Refresh as RefreshCw } from '@mynaui/icons-react';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 

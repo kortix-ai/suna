@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Spinner as Loader2 } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 

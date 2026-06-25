@@ -3,30 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
-import {
-  AlertCircle,
-  AlertTriangle,
-  ArrowRight,
-  Bold,
-  Check,
-  ChevronsUpDown,
-  Copy,
-  Download,
-  FolderGit2,
-  HelpCircle,
-  Info,
-  Loader2,
-  Mail,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Settings,
-  Star,
-  Trash2,
-  TriangleAlert,
-  Users,
-  X,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, DangerTriangle as AlertTriangle, ArrowRight, TypeBold as Bold, Check, ChevronsUpDown, Copy, Download, Folder as FolderGit2, QuestionCircle as HelpCircle, Info, Spinner as Loader2, Mail, Dots as MoreHorizontal, Plus, Search, CogOneSolid as Settings, Star, TrashSolid as Trash2, DangerTriangle as TriangleAlert, UsersSolid as Users, X, Share as Cable, Power as Plug, Radio, Zap } from '@mynaui/icons-react';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -168,7 +145,6 @@ import {
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Cable, Plug, Radio, Zap } from 'lucide-react';
 
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },

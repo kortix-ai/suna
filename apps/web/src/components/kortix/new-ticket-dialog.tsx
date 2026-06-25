@@ -31,26 +31,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import {
-  ArrowLeft,
-  FileText,
-  FileStack,
-  Sparkles,
-  Bug,
-  Zap,
-  Wrench,
-  X,
-  UserPlus,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  CircleDot,
-  Loader2,
-  CheckCircle2,
-  UserCircle2,
-  Bot,
-} from 'lucide-react';
+import { ArrowLeft, FileText, File as FileStack, Sparkles, Danger as Bug, Zap, Wrench, X, UserPlus, Check, ChevronDown, ChevronRight, Circle, Record as CircleDot, Spinner as Loader2, CheckCircle as CheckCircle2, UserCircle as UserCircle2, Sparkles as Bot } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import { MentionTextarea } from '@/components/kortix/mention-textarea';

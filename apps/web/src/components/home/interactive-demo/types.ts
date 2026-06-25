@@ -1,7 +1,6 @@
-import type { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import type { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import type { IconType } from 'react-icons/lib';
 
 export type PageId =
   | 'home'

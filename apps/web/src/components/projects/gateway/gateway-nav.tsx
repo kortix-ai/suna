@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity } from 'lucide-react';
+import { Activity } from '@mynaui/icons-react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';

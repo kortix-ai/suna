@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, RefreshCw, Loader2, Monitor, AlertTriangle } from 'lucide-react';
+import { ExternalLink, Refresh as RefreshCw, Spinner as Loader2, Monitor, DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';

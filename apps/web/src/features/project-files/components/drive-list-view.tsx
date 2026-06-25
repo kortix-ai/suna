@@ -4,22 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Folder,
-  FolderCog,
-  MoreVertical,
-  Download,
-  History,
-  Pencil,
-  Trash2,
-  Copy,
-  Scissors,
-  ClipboardCopy,
-  RefreshCw,
-  ArrowUp,
-  ArrowDown,
-  FolderOpen,
-} from 'lucide-react';
+import { Folder, Folder as FolderCog, DotsVertical as MoreVertical, Download, Undo as History, Pencil, TrashSolid as Trash2, Copy, Scissors, Clipboard as ClipboardCopy, Refresh as RefreshCw, ArrowUp, ArrowDown, Folder as FolderOpen } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import type { FileNode } from '../types';
 import { getFileIcon } from './file-icon';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound, Plug, Wrench } from 'lucide-react';
+import { Key as KeyRound, Power as Plug, Wrench } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 

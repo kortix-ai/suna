@@ -14,7 +14,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronRight, Plus } from 'lucide-react';
+import { Check, ChevronRight, Plus } from '@mynaui/icons-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 

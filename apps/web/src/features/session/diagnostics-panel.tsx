@@ -3,15 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useMemo, useState, useCallback } from 'react';
-import {
-  CircleAlert,
-  AlertTriangle,
-  Info,
-  HelpCircle,
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-} from 'lucide-react';
+import { DangerCircle as CircleAlert, DangerTriangle as AlertTriangle, Info, QuestionCircle as HelpCircle, ChevronDown, ChevronRight, File as FileCode2 } from '@mynaui/icons-react';
 import {
   Popover,
   PopoverContent,

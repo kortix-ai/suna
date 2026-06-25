@@ -36,9 +36,8 @@ import {
 } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useProjectsViewStore, type ProjectsViewMode } from '@/stores/projects-view-store';
-import { Search } from '@mynaui/icons-react';
+import { Search, DangerCircle as AlertCircle, FolderPlus } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

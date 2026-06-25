@@ -1,6 +1,5 @@
 import { Icon } from '@/features/icon/icon';
-import { Monitor, Terminal } from 'lucide-react';
-import { LuMonitorSmartphone } from 'react-icons/lu';
+import { Monitor, Terminal, Monitor as LuMonitorSmartphone } from '@mynaui/icons-react';
 
 export type PlatformTabId = 'CLI' | 'Desktop' | 'Web-Mobile' | 'Slack';
 

@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertTriangle } from 'lucide-react';
+import { DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 import { AlertBanner } from './alert-banner';
 
 interface TechnicalIssueBannerProps {

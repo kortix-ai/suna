@@ -1,4 +1,4 @@
-import { Info, AlertTriangle, AlertCircle, ShieldOff, Zap, Globe, Database, Shield } from 'lucide-react';
+import { Info, DangerTriangle as AlertTriangle, DangerCircle as AlertCircle, ShieldOff, Zap, Globe, Database, Shield } from '@mynaui/icons-react';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 
 export const MAINTENANCE_LEVELS: {

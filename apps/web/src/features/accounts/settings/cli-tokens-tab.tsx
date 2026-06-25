@@ -18,9 +18,8 @@ import {
 } from '@/lib/api/account-tokens';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
+import { ShieldSolid, TrashSolid, Check, Copy, Key as KeyRound, Spinner as Loader2, X } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Loader2, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';

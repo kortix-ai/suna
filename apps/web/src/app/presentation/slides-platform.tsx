@@ -15,29 +15,7 @@ import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { cn } from '@/lib/utils';
-import {
-  ArrowRight,
-  Bot,
-  Box,
-  Boxes,
-  Brain,
-  Building2,
-  Clock,
-  Code2,
-  Copy,
-  FileCode2,
-  GitBranch,
-  KeyRound,
-  Layers,
-  MessagesSquare,
-  Plug,
-  Server,
-  Shield,
-  Sparkles,
-  Store,
-  Users,
-  Webhook,
-} from 'lucide-react';
+import { ArrowRight, Sparkles as Bot, Box, Package as Boxes, Sparkles as Brain, Building as Building2, ClockCircle as Clock, Code as Code2, Copy, File as FileCode2, GitBranch, Key as KeyRound, LayersOne as Layers, ChatMessages as MessagesSquare, Power as Plug, Servers as Server, Shield, Sparkles, Store, UsersSolid as Users, Share as Webhook } from '@mynaui/icons-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import {

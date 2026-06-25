@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 

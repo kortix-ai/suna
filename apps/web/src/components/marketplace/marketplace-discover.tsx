@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
  * flow into the catalog; Browse → jumps to Explore filtered to that source.
  */
 
-import { Check, ExternalLink, Plus, Search, Trash2 } from 'lucide-react';
+import { Check, ExternalLink, Plus, Search, TrashSolid as Trash2 } from '@mynaui/icons-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';

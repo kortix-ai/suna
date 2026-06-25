@@ -1,13 +1,5 @@
-import {
-  Bot,
-  FileText,
-  Package,
-  ScrollText,
-  Sparkles,
-  SquareTerminal,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { Sparkles as Bot, FileText, Package, FileText as ScrollText, Sparkles, Terminal as SquareTerminal, Wrench } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 import { cn } from '@/lib/utils';
 

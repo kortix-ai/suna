@@ -18,56 +18,8 @@
  */
 
 import { Icon } from '@/features/icon/icon';
-import {
-  CogOne,
-  CogOneSolid,
-  CreditCardSolid,
-  Icon as IconMynauiType,
-  UsersSolid,
-} from '@mynaui/icons-react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Activity,
-  Blocks,
-  Bot,
-  Cable,
-  Calendar,
-  Coins,
-  Compass,
-  // Projects / app navigation (new project shell)
-  FolderGit2,
-  FolderOpen,
-  GitCompareArrows,
-  Globe,
-  Hash,
-  Key,
-  Keyboard,
-  // Settings pages
-  KeyRound,
-  Layers,
-  // Navigation
-  LayoutDashboard,
-  LayoutTemplate,
-  LogOut,
-  MessagesSquare,
-  // Preferences
-  Palette,
-  // View / Misc
-  PanelLeftClose,
-  Plug,
-  // Actions
-  Plus,
-  Receipt,
-  RefreshCw,
-  Rocket,
-  ScrollText,
-  Search,
-  SlidersHorizontal,
-  TerminalSquare,
-  Volume2,
-  Webhook,
-} from 'lucide-react';
-import { IconType } from 'react-icons/lib';
+import { CogOne, CogOneSolid, CreditCardSolid, Icon as IconMynauiType, UsersSolid, Activity, Component as Blocks, Sparkles as Bot, Share as Cable, Calendar, Dollar as Coins, Compass, Folder as FolderGit2, Folder as FolderOpen, GitDiff as GitCompareArrows, Globe, Hash, Key, Keyboard, Key as KeyRound, LayersOne as Layers, Grid as LayoutDashboard, Layout as LayoutTemplate, Logout as LogOut, ChatMessages as MessagesSquare, Paint as Palette, PanelLeftClose, Power as Plug, Plus, FileText as Receipt, Refresh as RefreshCw, Rocket, FileText as ScrollText, Search, Filter as SlidersHorizontal, Terminal as TerminalSquare, VolumeHigh as Volume2, Share as Webhook } from '@mynaui/icons-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 

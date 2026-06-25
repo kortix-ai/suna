@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Play, CheckCircle2, Plus, Trash2, Copy, Loader2, ExternalLink } from 'lucide-react';
+import { Play, CheckCircle as CheckCircle2, Plus, TrashSolid as Trash2, Copy, Spinner as Loader2, ExternalLink } from '@mynaui/icons-react';
 import {
   STATUS_META,
   shortTaskId,

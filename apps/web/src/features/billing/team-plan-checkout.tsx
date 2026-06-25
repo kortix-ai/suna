@@ -11,7 +11,7 @@ import { useCreatePerSeatCheckout } from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
 import { cn } from '@/lib/utils';
 import { Heatmap } from '@paper-design/shaders-react';
-import { ArrowRight, UserPlus } from 'lucide-react';
+import { ArrowRight, UserPlus } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 
 const TEAM_PLAN_HEATMAP = {

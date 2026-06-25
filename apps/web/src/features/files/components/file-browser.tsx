@@ -25,17 +25,7 @@ import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { buildDiagnosticCountsMap, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { useServerStore } from '@/stores/server-store';
-import {
-  Clipboard,
-  Download,
-  FilePlus,
-  FolderPlus,
-  FolderUp,
-  RefreshCw,
-  Search,
-  ServerOff,
-  Upload,
-} from 'lucide-react';
+import { Clipboard, Download, FilePlus, FolderPlus, Folder as FolderUp, Refresh as RefreshCw, Search, Servers as ServerOff, Upload } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/opencode-files';
 import { buildGitStatusMap, useFileList, useGitStatus, useServerHealth } from '../hooks';

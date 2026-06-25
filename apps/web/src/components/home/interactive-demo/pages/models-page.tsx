@@ -2,10 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { KeyRound, Plus } from 'lucide-react';
+import { Key as KeyRound, Plus, Sparkles as HiMiniSparkles, Microchip as RiCpuLine } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { RiCpuLine } from 'react-icons/ri';
 import { PROVIDERS } from '../data';
 import { BrandLogo, ConnectBadge, PageHead } from '../primitives';
 

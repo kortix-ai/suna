@@ -22,9 +22,8 @@ import { ExportTranscriptModal } from '@/features/session/header/export-transcri
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { Pencil, Share, TrashSolid, File as FileDown, LayersOne as Layers, Dots as MoreHorizontal, PanelRight, Refresh as RotateCcw } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 

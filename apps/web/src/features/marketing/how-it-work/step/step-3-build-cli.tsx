@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import { HiMiniSparkles } from 'react-icons/hi2';
+import { Sparkles as HiMiniSparkles } from '@mynaui/icons-react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
 type Skill = {

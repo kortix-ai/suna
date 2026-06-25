@@ -11,12 +11,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Blocks, KeyRound } from 'lucide-react';
+import { Component as Blocks, Key as KeyRound, Sparkles as HiMiniSparkles, Microchip as RiCpuLine } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { RiCpuLine } from 'react-icons/ri';
 import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
 import { useStep2Director, type Step2View } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';

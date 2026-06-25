@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Paperclip, ArrowUp } from 'lucide-react';
+import { Paperclip, ArrowUp } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Skeleton } from '@/components/ui/skeleton';
 

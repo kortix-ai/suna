@@ -12,7 +12,7 @@ import { useTranslations } from 'next-intl';
 
 import { motion } from 'motion/react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from '@mynaui/icons-react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 

@@ -2,21 +2,9 @@
 
 import React from 'react';
 import { motion } from 'motion/react';
-import {
-  Check,
-  Plus,
-  Download,
-  CheckCircle,
-  Globe,
-  GlobeLock,
-  GitBranch,
-  Trash2,
-  MoreVertical,
-  User,
-  ArrowRight,
-} from 'lucide-react';
+import { Check, Plus, Download, CheckCircle, Globe, Globe as GlobeLock, GitBranch, TrashSolid as Trash2, DotsVertical as MoreVertical, User, ArrowRight } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';

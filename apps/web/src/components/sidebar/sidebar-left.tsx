@@ -2,27 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import {
-  AlertTriangle,
-  ArrowDownToLine,
-  ArrowRightLeft,
-  Bug,
-  CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  FolderOpen,
-  History,
-  ListTree,
-  Loader2,
-  Search,
-  ShieldAlert,
-  Sparkles,
-  SquarePen,
-  X,
-  Zap,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, ArrowDown as ArrowDownToLine, ArrowLeftRight as ArrowRightLeft, Danger as Bug, CheckCircle as CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Copy, Folder as FolderOpen, Undo as History, List as ListTree, Spinner as Loader2, Search, Shield as ShieldAlert, Sparkles, Edit as SquarePen, X, Zap } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';

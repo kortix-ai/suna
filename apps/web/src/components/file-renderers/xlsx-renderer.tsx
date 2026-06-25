@@ -22,7 +22,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
 import { cn } from '@/lib/utils';
-import { FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { File as FileSpreadsheet, Refresh as RefreshCw } from '@mynaui/icons-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@univerjs/preset-sheets-core/lib/index.css';

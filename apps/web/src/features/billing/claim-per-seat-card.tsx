@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
 import type { AccountState } from '@/lib/api/billing';
-import { ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, Spinner as Loader2, Sparkles } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {

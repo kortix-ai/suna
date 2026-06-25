@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import Link from 'next/link';
-import { Globe, Mail } from 'lucide-react';
+import { Globe, Mail } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnimatedBg } from '@/components/ui/animated-bg';

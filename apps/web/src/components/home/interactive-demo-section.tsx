@@ -7,33 +7,11 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import {
-  ArrowRight,
-  Blocks,
-  Bot,
-  Brain,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Database,
-  FileText,
-  GitPullRequest,
-  KeyRound,
-  MessageSquare,
-  Plus,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowRight, Component as Blocks, Sparkles as Bot, Sparkles as Brain, ChevronDown, ChevronRight, ClockCircle as Clock, Database, FileText, GitPullRequest, Key as KeyRound, Message as MessageSquare, Plus, Search, UsersSolid as FaUsers, Home as GoHomeFill, Sparkles as HiMiniSparkles, Shield as MdShield, ChatDots as PiChatCircleDotsFill, ClockCircle as PiClockCountdownFill, Microchip as RiCpuLine, Folder as RiFolder3Fill, Sparkles as RiRobot3Fill } from '@mynaui/icons-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { GoHomeFill } from 'react-icons/go';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { IconType } from 'react-icons/lib';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
 import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';

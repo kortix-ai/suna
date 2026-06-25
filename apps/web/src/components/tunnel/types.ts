@@ -1,9 +1,5 @@
-import {
-  HardDrive,
-  Terminal,
-  Monitor,
-  type LucideIcon,
-} from 'lucide-react';
+import { HardDrive, Terminal, Monitor } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 
 export interface FilesystemScope {
   paths: string[];

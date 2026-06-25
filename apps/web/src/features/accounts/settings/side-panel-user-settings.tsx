@@ -23,7 +23,7 @@ import {
 import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
+import { Key as KeyRound } from '@mynaui/icons-react';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';

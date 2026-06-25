@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Mail, ExternalLink } from 'lucide-react';
+import { Star, Mail, ExternalLink } from '@mynaui/icons-react';
 import { useAdminFeedbackList } from '@/hooks/admin/use-admin-feedback';
 import type { FeedbackWithUser } from '@/hooks/admin/use-admin-feedback';
 

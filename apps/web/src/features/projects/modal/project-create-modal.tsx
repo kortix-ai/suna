@@ -52,7 +52,7 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
+import { ChevronsUpDown, ExternalLink, Github } from '@mynaui/icons-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 

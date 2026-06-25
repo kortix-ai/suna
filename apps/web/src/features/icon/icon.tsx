@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
-import { CgClose } from 'react-icons/cg';
-import { PiSmileyMeltingFill } from 'react-icons/pi';
+import { X as CgClose, Sad as PiSmileyMeltingFill } from '@mynaui/icons-react';
 
 export const Icon = {
   Kortix: ({ className }: { className?: string }) => {

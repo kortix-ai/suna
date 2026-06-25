@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Container, FileCode, Loader2, Package } from 'lucide-react';
+import { Package as Container, File as FileCode, Spinner as Loader2, Package } from '@mynaui/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';

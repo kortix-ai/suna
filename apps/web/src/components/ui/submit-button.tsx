@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import { type ComponentProps } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from './alert';
-import { AlertTriangle } from 'lucide-react';
+import { DangerTriangle as AlertTriangle } from '@mynaui/icons-react';
 
 type Props = Omit<ComponentProps<typeof Button>, 'formAction'> & {
   pendingText?: string;

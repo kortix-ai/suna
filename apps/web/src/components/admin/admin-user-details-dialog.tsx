@@ -27,21 +27,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/lib/toast';
-import {
-  User,
-  CreditCard,
-  History,
-  DollarSign,
-  Calendar,
-  Activity,
-  AlertCircle,
-  CheckCircle,
-  RefreshCw,
-  Clock,
-  Infinity,
-  MessageSquare,
-  ExternalLink,
-} from 'lucide-react';
+import { User, CreditCard, Undo as History, Dollar as DollarSign, Calendar, Activity, DangerCircle as AlertCircle, CheckCircle, Refresh as RefreshCw, ClockCircle as Clock, Infinity, Message as MessageSquare, ExternalLink } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAdminUserDetails, useAdminUserThreads, useAdminUserActivity } from '@/hooks/admin/use-admin-users';
 import {

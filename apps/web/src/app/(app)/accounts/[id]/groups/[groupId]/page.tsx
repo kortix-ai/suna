@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { Folder as FolderOpen, Spinner as Loader2, Plus, TrashSolid as Trash2, UsersSolid as Users } from '@mynaui/icons-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 

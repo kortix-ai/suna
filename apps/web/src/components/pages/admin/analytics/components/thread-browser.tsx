@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Pagination } from '@/components/ui/pagination';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
 import { toast } from '@/lib/toast';
-import { ExternalLink, Languages, Search } from 'lucide-react';
+import { ExternalLink, Globe as Languages, Search } from '@mynaui/icons-react';
 import {
   useThreadBrowser,
   useTranslate,

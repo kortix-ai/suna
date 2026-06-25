@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  MoreHorizontal,
-  ChevronsLeft,
-  ChevronsRight,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Dots as MoreHorizontal, ChevronsLeft, ChevronsRight } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {

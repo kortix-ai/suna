@@ -17,9 +17,8 @@
 
 import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType } from '@mynaui/icons-react';
-import { LucideIcon } from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import type { ReactNode } from 'react';
-import { IconType } from 'react-icons/lib';
 
 export interface EmptyStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;

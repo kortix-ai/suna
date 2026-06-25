@@ -12,27 +12,8 @@ import { useTranslations } from 'next-intl';
 
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Boxes,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Globe,
-  KeyRound,
-  Loader2,
-  MessageSquare,
-  Monitor,
-  Pencil,
-  Plug,
-  Plus,
-  RefreshCw,
-  Search,
-  ShieldAlert,
-  ShieldCheck,
-  Trash2,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react';
+import { Package as Boxes, Check, ChevronDown, ChevronRight, Globe, Key as KeyRound, Spinner as Loader2, Message as MessageSquare, Monitor, Pencil, Power as Plug, Plus, Refresh as RefreshCw, Search, Shield as ShieldAlert, ShieldCheck, TrashSolid as Trash2, Zap } from '@mynaui/icons-react';
+import type { Icon as LucideIcon } from '@mynaui/icons-react';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';

@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Coins, DollarSign, Zap } from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Dollar as Coins, Dollar as DollarSign, Zap } from '@mynaui/icons-react';
 
 import { useGatewayOverview, useGatewaySeries } from '@/hooks/projects/use-project-gateway';
 

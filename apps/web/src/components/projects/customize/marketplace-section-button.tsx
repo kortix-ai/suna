@@ -8,7 +8,7 @@
  * it's WIP.
  */
 
-import { Store } from 'lucide-react';
+import { Store } from '@mynaui/icons-react';
 
 import { Button } from '@/components/ui/button';
 import { useMarketplaceEnabled } from '@/components/projects/marketplace/marketplace-nav';

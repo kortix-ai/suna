@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { downloadFile } from '@/features/files/api/opencode-files';
 

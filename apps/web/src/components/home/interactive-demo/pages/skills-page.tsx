@@ -3,10 +3,9 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Sparkles as HiMiniSparkles } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
 import { CORE_SKILLS, GKW_SKILLS } from '../data';
 import { PageHead } from '../primitives';
 

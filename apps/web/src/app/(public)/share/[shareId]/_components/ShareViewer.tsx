@@ -8,16 +8,7 @@ import { getEnv } from '@/lib/env-config';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { partToText } from './share-message-text';
-import {
-  AlertTriangle,
-  Copy,
-  Check,
-  ThumbsUp,
-  ThumbsDown,
-  PanelRightOpen,
-  PanelRightClose,
-  Menu,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Copy, Check, Like as ThumbsUp, Dislike as ThumbsDown, PanelRightOpen, PanelRightClose, Menu } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {

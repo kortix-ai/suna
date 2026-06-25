@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import React, { useState, useCallback } from 'react';
-import { Download, FileType, FileText, FileCode } from 'lucide-react';
+import { Download, FileText as FileType, FileText, File as FileCode } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {

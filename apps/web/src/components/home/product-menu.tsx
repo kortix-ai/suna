@@ -18,12 +18,10 @@ import {
 } from '@/components/ui/navigation-menu';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Monitor, type LucideIcon } from 'lucide-react';
+import { Monitor, Monitor as LuMonitorSmartphone, Terminal as TbTerminal } from '@mynaui/icons-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { IconType } from 'react-icons/lib';
-import { LuMonitorSmartphone } from 'react-icons/lu';
-import { TbTerminal } from 'react-icons/tb';
 import { marketingButtonVariants } from '../ui/marketing/button';
 
 export {

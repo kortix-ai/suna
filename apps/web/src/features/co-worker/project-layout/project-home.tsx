@@ -1,20 +1,10 @@
 'use client';
 
-import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
+import { Icon as IconMynauiType, SparklesSolid, UsersSolid, ArrowUp, Calendar as CalendarClock, ChevronLeft, ChevronRight, Package as Container, File as FileCode, Package, Grid as HiOutlineViewGrid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ArrowUp,
-  CalendarClock,
-  ChevronLeft,
-  ChevronRight,
-  Container,
-  FileCode,
-  Package,
-  type LucideIcon,
-} from 'lucide-react';
+import type { Icon as LucideIcon, Icon as IconType } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { IconType } from 'react-icons/lib';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -43,7 +33,6 @@ import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { chalkColors } from '@kortix/shared';
-import { HiOutlineViewGrid } from 'react-icons/hi';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
@@ -492,7 +481,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
       docs: '/docs/concepts/channels',
     },
     {
-      icon: UsersGroupSolid,
+      icon: UsersSolid,
       title: 'Your team',
       desc: 'Invite people to run and review work.',
       count: memberCount > 1 ? memberCount : 0,

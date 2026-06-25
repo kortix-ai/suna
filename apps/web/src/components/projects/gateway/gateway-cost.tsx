@@ -1,6 +1,6 @@
 'use client';
 
-import { Cpu, Sparkles } from 'lucide-react';
+import { Microchip as Cpu, Sparkles } from '@mynaui/icons-react';
 
 import { SectionCard } from '@/components/ui/section-card';
 import {

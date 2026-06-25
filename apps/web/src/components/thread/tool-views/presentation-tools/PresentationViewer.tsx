@@ -16,18 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Presentation,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  FileText,
-  Hash,
-  Maximize2,
-  Download,
-  ExternalLink,
-  ChevronDown,
-} from 'lucide-react';
+import { Presentation, ClockCircle as Clock, CheckCircle, DangerTriangle as AlertTriangle, FileText, Hash, Maximize as Maximize2, Download, ExternalLink, ChevronDown } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';

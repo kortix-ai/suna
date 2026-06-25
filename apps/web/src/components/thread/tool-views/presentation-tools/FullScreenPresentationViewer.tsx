@@ -3,18 +3,7 @@ import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  ExternalLink,
-  FileText,
-  Presentation,
-  SkipBack,
-  SkipForward,
-  Edit,
-} from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Presentation, SkipBack, SkipForward, Edit } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   DropdownMenu,

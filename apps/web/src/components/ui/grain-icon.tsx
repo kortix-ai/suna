@@ -2,8 +2,8 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { Sparkles } from 'lucide-react';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
+import { Sparkles } from '@mynaui/icons-react';
 import { normalizeIconName } from '@/lib/utils/icon-utils';
 
 interface GrainIconProps {

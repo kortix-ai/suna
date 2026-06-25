@@ -3,11 +3,10 @@
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { ArrowUp, Paperclip } from 'lucide-react';
+import { ArrowUp, Paperclip, Microphone as RiMicAiFill } from '@mynaui/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
-import { RiMicAiFill } from 'react-icons/ri';
 import { SCENARIOS } from './scenarios';
 
 /** Clickable demo prompts — each maps to a scripted scenario. */

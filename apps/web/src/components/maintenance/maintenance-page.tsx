@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Refresh as RefreshCw } from '@mynaui/icons-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { Button } from '@/components/ui/button';

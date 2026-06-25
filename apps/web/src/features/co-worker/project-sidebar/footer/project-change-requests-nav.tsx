@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
+import { ArrowRight, GitBranch, GitPullRequest } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 

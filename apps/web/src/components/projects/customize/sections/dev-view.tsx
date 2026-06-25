@@ -12,7 +12,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Terminal, UserPlus } from 'lucide-react';
+import { Check, Copy, Spinner as Loader2, Terminal, UserPlus } from '@mynaui/icons-react';
 import { FormEvent, useState } from 'react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';

@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/modal';
 import { loadingToast } from '@/components/ui/toast';
 import { useSummarizeOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { Layers } from 'lucide-react';
+import { LayersThreeSolid as Layers } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 

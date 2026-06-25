@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useServerStore } from '@/stores/server-store';
-import { Clipboard, FilePlus, FolderPlus, RefreshCw, ServerOff, Upload } from 'lucide-react';
+import { Clipboard, FilePlus, FolderPlus, Refresh as RefreshCw, Servers as ServerOff, Upload } from '@mynaui/icons-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/opencode-files';
 import {

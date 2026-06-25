@@ -3,23 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import {
-  LayoutGrid,
-  List,
-  Search,
-  Upload,
-  FolderPlus,
-  FilePlus,
-  Plus,
-  ArrowUpDown,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  ChevronRight,
-  ChevronDown,
-  Home,
-  Download,
-} from 'lucide-react';
+import { Grid as LayoutGrid, List, Search, Upload, FolderPlus, FilePlus, Plus, ArrowUpDown, Eye, EyeOff, Refresh as RefreshCw, ChevronRight, ChevronDown, Home, Download } from '@mynaui/icons-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,

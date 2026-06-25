@@ -1,16 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  Loader2,
-  LockKeyhole,
-  RefreshCw,
-  Send,
-  UserRound,
-} from 'lucide-react';
+import { DangerCircle as AlertCircle, ArrowLeft, CheckCircle as CheckCircle2, Spinner as Loader2, LockKeyhole, Refresh as RefreshCw, Send, User as UserRound } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';

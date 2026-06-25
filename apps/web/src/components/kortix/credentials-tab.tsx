@@ -18,7 +18,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMemo, useState } from 'react';
-import { KeyRound, Plus, Eye, EyeOff, Copy, Trash2, Loader2, ShieldCheck } from 'lucide-react';
+import { Key as KeyRound, Plus, Eye, EyeOff, Copy, TrashSolid as Trash2, Spinner as Loader2, ShieldCheck } from '@mynaui/icons-react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';

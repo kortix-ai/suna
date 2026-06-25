@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { cn } from '@/lib/utils';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 

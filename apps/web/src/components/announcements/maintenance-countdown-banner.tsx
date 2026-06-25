@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Wrench, Clock } from 'lucide-react';
+import { Wrench, ClockCircle as Clock } from '@mynaui/icons-react';
 import { useEffect, useState } from 'react';
 import { AlertBanner } from './alert-banner';
 

@@ -3,7 +3,7 @@
 import { FileContentRenderer, FileSourceProvider, type FileSource } from '@/features/file-viewer';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import { cn } from '@/lib/utils';
-import { ChevronRight, GitBranch } from 'lucide-react';
+import { ChevronRight, GitBranch } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 

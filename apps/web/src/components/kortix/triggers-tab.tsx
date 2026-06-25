@@ -18,7 +18,7 @@ import { TaskDetailPanel } from '@/components/scheduled-tasks/task-detail-panel'
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Timer, Webhook, Clock, CheckCircle2, Trash2, MessageSquare, Terminal, Globe, Calendar, Ticket as TicketIcon } from 'lucide-react';
+import { Plus, ClockCircle as Timer, Share as Webhook, ClockCircle as Clock, CheckCircle as CheckCircle2, TrashSolid as Trash2, Message as MessageSquare, Terminal, Globe, Calendar, Ticket as TicketIcon } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { useTickets, type Ticket } from '@/hooks/kortix/use-kortix-tickets';

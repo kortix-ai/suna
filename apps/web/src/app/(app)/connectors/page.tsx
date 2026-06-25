@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, CheckCircle2, Plug } from 'lucide-react';
+import { DangerCircle as AlertCircle, CheckCircle as CheckCircle2, Power as Plug } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';

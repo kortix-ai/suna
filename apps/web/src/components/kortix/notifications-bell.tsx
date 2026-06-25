@@ -12,7 +12,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { useMemo, useState } from 'react';
-import { Bell, AtSign, UserPlus, Inbox, CheckCheck } from 'lucide-react';
+import { Bell, At as AtSign, UserPlus, Inbox, Check as CheckCheck } from '@mynaui/icons-react';
 import {
   Popover,
   PopoverContent,

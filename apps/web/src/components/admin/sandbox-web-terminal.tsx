@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { RotateCw, Maximize2, Minimize2, ExternalLink, Loader2 } from 'lucide-react';
+import { Refresh as RotateCw, Maximize as Maximize2, Minimize as Minimize2, ExternalLink, Spinner as Loader2 } from '@mynaui/icons-react';
 import { cn } from '@/lib/utils';
 import { fetchAdminSandboxProxyToken } from '@/hooks/admin/use-admin-sandboxes';
 import { CLIPBOARD_IFRAME_ALLOW, TERMINAL_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';

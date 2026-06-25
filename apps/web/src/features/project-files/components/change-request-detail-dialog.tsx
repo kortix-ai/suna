@@ -25,22 +25,7 @@ import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  Columns2,
-  FileEdit,
-  FilePlus2,
-  FileX2,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
-  RefreshCcw,
-  RotateCcw,
-  Rows3,
-} from 'lucide-react';
+import { DangerTriangle as AlertTriangle, Check, ChevronDown, Columns as Columns2, File as FileEdit, FilePlus as FilePlus2, FileX as FileX2, GitBranch, GitMerge, GitPullRequest, GitPullRequest as GitPullRequestClosed, Refresh as RefreshCcw, Refresh as RotateCcw, Rows as Rows3 } from '@mynaui/icons-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestStatus } from '../api/change-requests';
