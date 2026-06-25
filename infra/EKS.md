@@ -1,9 +1,14 @@
-# Kortix API on EKS — `api-eks.kortix.com` / `dev-api-eks.kortix.com`
+# Kortix API on EKS — prod, staging, and dev
 
-EKS is the active API runtime for prod and dev (`X-Backend: eks` on
-`api.kortix.com/v1/health` and `dev-api.kortix.com/v1/health`, verified
-2026-06-21). ECS Fargate remains available as the Cloudflare Worker warm standby;
-do not delete it as "legacy" while it is still the failover origin.
+EKS is the active API runtime for prod, staging, and dev. Public API hosts route
+through the Cloudflare Worker:
+
+- `api.kortix.com` → `api-eks.kortix.com`
+- `staging-api.kortix.com` → `staging-api-eks.kortix.com`
+- `dev-api.kortix.com` → `dev-api-eks.kortix.com`
+
+ECS Fargate remains available as the Cloudflare Worker warm standby; do not
+delete it as "legacy" while it is still the failover origin.
 
 ## Why EKS, and why it auto-heals better
 
@@ -52,7 +57,7 @@ infra/terraform/
     cluster/                 # state 1: AWS-only (VPC, EKS, ACM, IAM/IRSA, access)
     platform/                # state 2: in-cluster controllers + app namespace
 infra/k8s/charts/kortix-api/ # the app workload (reconciled by Argo CD)
-.github/workflows/deploy-dev.yml / deploy-prod.yml
+.github/workflows/deploy-dev.yml / deploy-staging.yml / deploy-prod.yml
 ```
 
 Two Terraform states on purpose: the kubernetes/helm providers can't be
@@ -107,12 +112,14 @@ helm upgrade --install kortix-api ../../../k8s/charts/kortix-api \
 curl -fsS https://api-eks.kortix.com/v1/health
 ```
 
-After bring-up, a reviewed promote PR merged to `prod` deploys to EKS via
-`deploy-prod.yml`; a push to `main` deploys dev via `deploy-dev.yml`.
+After bring-up, a push to `main` deploys dev via `deploy-dev.yml`; a promotion
+or PR into `staging` deploys staging via `deploy-staging.yml`; a reviewed promote
+PR merged to `prod` deploys prod via `deploy-prod.yml`.
 
 ## Switch-back / coexistence
 
-- **EKS** → `api-eks.kortix.com` / `dev-api-eks.kortix.com` (active).
+- **EKS** → `api-eks.kortix.com` / `staging-api-eks.kortix.com` /
+  `dev-api-eks.kortix.com` (active).
 - **ECS** → keep it permanently reachable at `api-ecs-fargate.kortix.com` /
   `dev-api-ecs-fargate.kortix.com` as standby (the module supports extra hostnames):
 
@@ -122,7 +129,7 @@ After bring-up, a reviewed promote PR merged to `prod` deploys to EKS via
   ```
   then `terraform apply` in `environments/prod` (adds an ACM SAN + proxied CNAME;
   does not disturb anything else).
-- **`api.kortix.com` / `dev-api.kortix.com`** flip via the Cloudflare Worker
+- **`api.kortix.com` / `staging-api.kortix.com` / `dev-api.kortix.com`** flip via the Cloudflare Worker
   `ACTIVE_BACKEND` var (see `infra/CICD.md` and
   `infra/cloudflare/workers/api-router`): `eks` is active, `ecs-fargate` is
   rollback/standby — sub-second, no DNS surgery.

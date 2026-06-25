@@ -56,8 +56,13 @@ export async function createOrJoinThreadSession(input: {
   envelope: SlackEnvelope;
   event: SlackEvent;
   revived: boolean;
+  // The Kortix user this Slack sender linked via `/login`, already verified by
+  // the gate in spawnAgentTurn to be a member of the project's account. The
+  // session runs AS this user, so their credentials/secrets/connectors apply —
+  // never the account owner's.
+  actorUserId: string;
 }): Promise<void> {
-  const { projectId, teamId, threadId, envelope, event, revived } = input;
+  const { projectId, teamId, threadId, envelope, event, revived, actorUserId } = input;
 
   const [project] = await db
     .select()
@@ -66,11 +71,7 @@ export async function createOrJoinThreadSession(input: {
     .limit(1);
   if (!project) return;
 
-  const userId = await slackSessionLifecycle.resolveProjectAutomationActor(project.accountId);
-  if (!userId) {
-    console.warn('[slack-webhook] no actor for project', projectId);
-    return;
-  }
+  const userId = actorUserId;
 
   // Claim the thread-create. Loser → wait for the winner's mapping and follow up.
   const claimKey = teamId && threadId ? `slack:threadcreate:${teamId}:${threadId}` : null;

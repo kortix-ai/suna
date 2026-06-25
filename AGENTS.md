@@ -77,7 +77,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 
 ### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
+  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
   `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
   authoritative route manifest (`tests/spec/routes.generated.json`).
@@ -94,6 +94,22 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   `bun run apps/api/scripts/dump-routes.ts`.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
   flows that boot sandboxes have generous timeouts; run long checks in the background.
+
+### Release topology — dev, staging, prod
+- **`main` = dev trunk.** It is the repo default branch and deploys to
+  `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
+  incomplete development can live here while it is being shaken out.
+- **`staging` = release-candidate branch.** Nothing should land on staging unless
+  it is intended to be production-ready: either promote a known dev ref with
+  **Promote Dev to Staging**, or open a targeted PR directly into `staging`.
+  Staging deploys to `staging.kortix.com` / `staging-api.kortix.com` and must
+  use the staging data plane, not dev or prod.
+- **`prod` = production.** Production moves only through **Promote to Production**,
+  which uses `staging` as the source, opens a reviewed release PR into `prod`,
+  publishes the release artifacts, and rolls production after merge.
+- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+  `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
+  staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`

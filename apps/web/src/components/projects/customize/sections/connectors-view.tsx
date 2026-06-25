@@ -10,14 +10,16 @@ import { useTranslations } from 'next-intl';
  * app — the model is App → Profile → Tools → Permissions.
  */
 
+import { useCustomizeStore } from '@/stores/customize-store';
 import { createFrontendClient } from '@pipedream/sdk/browser';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Image from 'next/image';
 import {
   Boxes,
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
+  ExternalLink,
   Globe,
   KeyRound,
   Loader2,
@@ -36,7 +38,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import { useCustomizeStore } from '@/stores/customize-store';
+import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -45,6 +47,7 @@ import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { CodeBlockCode } from '@/components/ui/code-block';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -62,7 +65,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -88,19 +90,22 @@ import {
   useEmailInstall,
   useEmailMode,
   useSlackInstall,
+  useSlackManifest,
   useSlackMode,
+  useUpdateEmailPolicy,
   type EmailInstallation,
+  type EmailSenderPolicy,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
 import {
   createConnector,
   deleteConnector,
-  getProject,
   getConnectorConfig,
   getConnectorPolicies,
+  getConnectStatus,
+  getProject,
   listConnectors,
   listPipedreamApps,
-  getConnectStatus,
   pipedreamConnect,
   pipedreamFinalize,
   setConnectorCredential,
@@ -946,8 +951,8 @@ function ConnectorDetail({
               </Button>
             }
           >
-            Connect a machine, and grant or revoke per-capability access, in the Computers
-            tab. Here you control who can use it and review its tools.
+            Connect a machine, and grant or revoke per-capability access, in the Computers tab. Here
+            you control who can use it and review its tools.
           </InfoBanner>
         )}
         {/* Prominent connect CTA — the first thing you see on an unconnected connector. */}
@@ -979,8 +984,9 @@ function ConnectorDetail({
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
           </TabsList>
           <TabsContent value="profile" className="space-y-5">
-            {!isPipedream && !isManaged && (
-              isChannel ? (
+            {!isPipedream &&
+              !isManaged &&
+              (isChannel ? (
                 <ChannelConnectionSection
                   projectId={projectId}
                   connector={connector}
@@ -993,8 +999,7 @@ function ConnectorDetail({
                   connector={connector}
                   onChanged={onChanged}
                 />
-              )
-            )}
+              ))}
             <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
           </TabsContent>
           <TabsContent value="permissions">
@@ -1095,7 +1100,9 @@ function ChannelConnectionSection({
     );
   }
   if (platform === 'slack') {
-    return <SlackChannelProfile projectId={projectId} onChanged={onChanged} onRemoved={onRemoved} />;
+    return (
+      <SlackChannelProfile projectId={projectId} onChanged={onChanged} onRemoved={onRemoved} />
+    );
   }
   return (
     <SectionCard title="Connection">
@@ -1132,7 +1139,11 @@ function EmailChannelProfile({
           onRemoved={onRemoved}
         />
       ) : (
-        <EmailConnectForm projectId={projectId} connectorSlug={connector.slug} onConnected={onChanged} />
+        <EmailConnectForm
+          projectId={projectId}
+          connectorSlug={connector.slug}
+          onConnected={onChanged}
+        />
       )}
     </SectionCard>
   );
@@ -1157,7 +1168,17 @@ function ConnectedEmailProfile({
       <InfoBanner tone="success" icon={Check} title="Email connected">
         Address <code className="font-mono">{installation.email}</code>
         {' · '}Inbox <code className="font-mono">{installation.inboxId}</code>
+        {installation.webhookId ? (
+          <>
+            {' · '}Webhook <code className="font-mono">{installation.webhookId}</code>
+          </>
+        ) : null}
       </InfoBanner>
+      <EmailSenderPolicyEditor
+        projectId={projectId}
+        connectorSlug={connectorSlug}
+        policy={installation.senderPolicy}
+      />
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
           <>
@@ -1172,12 +1193,15 @@ function ConnectedEmailProfile({
               size="sm"
               disabled={disconnect.isPending}
               onClick={() =>
-                disconnect.mutate({ projectId, connectorSlug }, {
-                  onSuccess: () => {
-                    setConfirming(false);
-                    onRemoved();
+                disconnect.mutate(
+                  { projectId, connectorSlug },
+                  {
+                    onSuccess: () => {
+                      setConfirming(false);
+                      onRemoved();
+                    },
                   },
-                })
+                )
               }
             >
               {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
@@ -1189,6 +1213,148 @@ function ConnectedEmailProfile({
             Disconnect
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function splitPolicyList(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]+/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function normalizeEmailSenderPolicy(
+  policy: EmailSenderPolicy | null | undefined,
+): EmailSenderPolicy {
+  return {
+    mode: policy?.mode === 'restricted' ? 'restricted' : 'allow_all',
+    allowedEmails: policy?.allowedEmails ?? [],
+    allowedDomains: policy?.allowedDomains ?? [],
+    allowedRegex: policy?.allowedRegex ?? null,
+  };
+}
+
+function EmailSenderPolicyEditor({
+  projectId,
+  connectorSlug,
+  policy,
+}: {
+  projectId: string;
+  connectorSlug: string;
+  policy: EmailSenderPolicy | null | undefined;
+}) {
+  const update = useUpdateEmailPolicy();
+  const initial = normalizeEmailSenderPolicy(policy);
+  const [restricted, setRestricted] = useState(initial.mode === 'restricted');
+  const [emails, setEmails] = useState(initial.allowedEmails.join('\n'));
+  const [domains, setDomains] = useState(initial.allowedDomains.join('\n'));
+  const [regex, setRegex] = useState(initial.allowedRegex ?? '');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = normalizeEmailSenderPolicy(policy);
+    setRestricted(next.mode === 'restricted');
+    setEmails(next.allowedEmails.join('\n'));
+    setDomains(next.allowedDomains.join('\n'));
+    setRegex(next.allowedRegex ?? '');
+    setError(null);
+  }, [policy]);
+
+  const nextPolicy = (): EmailSenderPolicy => ({
+    mode: restricted ? 'restricted' : 'allow_all',
+    allowedEmails: splitPolicyList(emails),
+    allowedDomains: splitPolicyList(domains).map((domain) => domain.replace(/^@+/, '')),
+    allowedRegex: regex.trim() || null,
+  });
+
+  const save = () => {
+    setError(null);
+    const sender_policy = nextPolicy();
+    if (sender_policy.allowedRegex) {
+      try {
+        new RegExp(sender_policy.allowedRegex);
+      } catch {
+        setError('Regex is invalid');
+        return;
+      }
+    }
+    update.mutate(
+      { projectId, connectorSlug, sender_policy },
+      { onError: (e) => setError((e as Error).message) },
+    );
+  };
+
+  const dirty =
+    restricted !== (initial.mode === 'restricted') ||
+    emails !== initial.allowedEmails.join('\n') ||
+    domains !== initial.allowedDomains.join('\n') ||
+    regex !== (initial.allowedRegex ?? '');
+
+  return (
+    <div className="border-border/60 bg-card rounded-2xl border p-4">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="email-sender-restricted"
+          checked={restricted}
+          onCheckedChange={(checked) => setRestricted(Boolean(checked))}
+          className="mt-0.5"
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div>
+            <Label htmlFor="email-sender-restricted">Restrict who can start email sessions</Label>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Leave off to accept every inbound sender. Turn on to allow exact emails, domains, or a
+              regex.
+            </p>
+          </div>
+          {restricted ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Allowed emails">
+                <Input
+                  value={emails}
+                  onChange={(e) => setEmails(e.target.value)}
+                  placeholder="person@example.com"
+                />
+              </Field>
+              <Field label="Allowed domains">
+                <Input
+                  value={domains}
+                  onChange={(e) => setDomains(e.target.value)}
+                  placeholder="example.com"
+                />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Allowed sender regex">
+                  <Input
+                    value={regex}
+                    onChange={(e) => setRegex(e.target.value)}
+                    placeholder=".*@customer-[0-9]+\\.com$"
+                    spellCheck={false}
+                  />
+                </Field>
+              </div>
+            </div>
+          ) : null}
+          {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+          <SaveBar
+            dirty={dirty}
+            saving={update.isPending}
+            onSave={save}
+            onReset={() => {
+              setRestricted(initial.mode === 'restricted');
+              setEmails(initial.allowedEmails.join('\n'));
+              setDomains(initial.allowedDomains.join('\n'));
+              setRegex(initial.allowedRegex ?? '');
+            }}
+            label="Save policy"
+          />
+        </div>
       </div>
     </div>
   );
@@ -1214,6 +1380,10 @@ function EmailConnectForm({
   );
   const [apiKey, setApiKey] = useState('');
   const [customKeyOpen, setCustomKeyOpen] = useState(false);
+  const [restricted, setRestricted] = useState(false);
+  const [emails, setEmails] = useState('');
+  const [domains, setDomains] = useState('');
+  const [regex, setRegex] = useState('');
   const [error, setError] = useState<string | null>(null);
   const managedAvailable = mode.data?.managed_available === true;
   const useCustomKey = customKeyOpen && apiKey.trim();
@@ -1223,8 +1393,24 @@ function EmailConnectForm({
     setError(null);
     if (!canCreate) {
       setCustomKeyOpen(true);
-      setError('Managed Email is not configured on this deployment. Use a custom AgentMail key to continue.');
+      setError(
+        'Managed Email is not configured on this deployment. Use a custom AgentMail key to continue.',
+      );
       return;
+    }
+    const sender_policy: EmailSenderPolicy = {
+      mode: restricted ? 'restricted' : 'allow_all',
+      allowedEmails: splitPolicyList(emails),
+      allowedDomains: splitPolicyList(domains).map((domain) => domain.replace(/^@+/, '')),
+      allowedRegex: regex.trim() || null,
+    };
+    if (sender_policy.allowedRegex) {
+      try {
+        new RegExp(sender_policy.allowedRegex);
+      } catch {
+        setError('Regex is invalid');
+        return;
+      }
     }
     connect.mutate(
       {
@@ -1233,6 +1419,7 @@ function EmailConnectForm({
         api_key: useCustomKey ? apiKey.trim() : undefined,
         display_name: displayName.trim() || undefined,
         username: username.trim() || undefined,
+        sender_policy,
       },
       {
         onSuccess: onConnected,
@@ -1275,7 +1462,8 @@ function EmailConnectForm({
             spellCheck={false}
           />
           <p className="text-muted-foreground text-xs">
-            AgentMail will create this prefix when available, for example {username || 'support'}@agentmail.
+            AgentMail will create this prefix when available, for example {username || 'support'}
+            @agentmail.
           </p>
         </Field>
       </div>
@@ -1310,6 +1498,57 @@ function EmailConnectForm({
             </p>
           </Field>
         ) : null}
+      </div>
+      <div className="border-border/60 bg-card rounded-2xl border p-4">
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="email-channel-restrict-senders"
+            checked={restricted}
+            onCheckedChange={(checked) => setRestricted(Boolean(checked))}
+            className="mt-0.5"
+          />
+          <div className="min-w-0 flex-1 space-y-3">
+            <div>
+              <Label htmlFor="email-channel-restrict-senders">
+                Restrict who can start sessions
+              </Label>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Optional. Allow exact emails, domains, or a regex before inbound mail can trigger
+                the agent.
+              </p>
+            </div>
+            {restricted ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Allowed emails">
+                  <Input
+                    value={emails}
+                    onChange={(e) => setEmails(e.target.value)}
+                    placeholder="person@example.com"
+                    spellCheck={false}
+                  />
+                </Field>
+                <Field label="Allowed domains">
+                  <Input
+                    value={domains}
+                    onChange={(e) => setDomains(e.target.value)}
+                    placeholder="example.com"
+                    spellCheck={false}
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Allowed sender regex">
+                    <Input
+                      value={regex}
+                      onChange={(e) => setRegex(e.target.value)}
+                      placeholder=".*@customer-[0-9]+\\.com$"
+                      spellCheck={false}
+                    />
+                  </Field>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
       {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
       <div className="flex justify-end">
@@ -1366,7 +1605,8 @@ function ConnectedSlackProfile({
   return (
     <div className="space-y-4">
       <InfoBanner tone="success" icon={Check} title="Slack connected">
-        Workspace <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
+        Workspace{' '}
+        <code className="font-mono">{installation.workspaceName || installation.workspaceId}</code>
       </InfoBanner>
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
@@ -1404,12 +1644,20 @@ function ConnectedSlackProfile({
   );
 }
 
-function SlackConnectForm({ projectId, onConnected }: { projectId: string; onConnected: () => void }) {
+function SlackConnectForm({
+  projectId,
+  onConnected,
+}: {
+  projectId: string;
+  onConnected: () => void;
+}) {
   const mode = useSlackMode(projectId);
+  const manifest = useSlackManifest(projectId);
   const connect = useConnectSlack();
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
+  const [copiedManifest, setCopiedManifest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const installUrl = mode.data?.oauth_available ? mode.data.install_url : null;
   const showCustom = customOpen || (!mode.isLoading && !installUrl);
@@ -1425,23 +1673,37 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
     );
   };
 
+  const copyManifest = async () => {
+    if (!manifest.data) return;
+    try {
+      await navigator.clipboard.writeText(manifest.data);
+      setCopiedManifest(true);
+      toast.success('Slack manifest copied');
+      setTimeout(() => setCopiedManifest(false), 1500);
+    } catch {
+      toast.error('Copy failed - select and copy manually');
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {installUrl ? (
+      {mode.isLoading ? (
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      ) : installUrl ? (
         <InfoBanner
           tone="info"
           icon={Slack}
-          title="Add Kortix to Slack"
+          title="Add Kortix to your Slack workspace"
           action={
             <Button size="sm" className="shrink-0 gap-1.5" asChild>
               <a href={installUrl}>
-                Install Slack
+                Add to Slack
                 <ChevronRight className="h-4 w-4" />
               </a>
             </Button>
           }
         >
-          Authorize the managed Kortix Slack app for this project.
+          One-click install - authorize Kortix in your workspace, no setup required.
         </InfoBanner>
       ) : (
         <InfoBanner tone="warning" icon={Slack} title="Managed Slack install is not configured">
@@ -1462,45 +1724,123 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
           Use custom Slack app
         </Button>
         {showCustom ? (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Bot token">
-                <Input
-                  id="slack-channel-bot-token"
-                  name="slack-channel-bot-token"
-                  aria-label="Slack bot token"
-                  type="password"
-                  value={botToken}
-                  onChange={(e) => setBotToken(e.target.value)}
-                  placeholder="xoxb-..."
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </Field>
-              <Field label="Signing secret">
-                <Input
-                  id="slack-channel-signing-secret"
-                  name="slack-channel-signing-secret"
-                  aria-label="Slack signing secret"
-                  type="password"
-                  value={signingSecret}
-                  onChange={(e) => setSigningSecret(e.target.value)}
-                  placeholder="Slack signing secret"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </Field>
+          <div className="border-border/60 bg-card space-y-5 rounded-2xl border p-4">
+            <div className="space-y-1">
+              <h3 className="text-foreground text-base font-semibold">Bring your own Slack app</h3>
+              <p className="text-muted-foreground text-sm">
+                For self-hosted setups or custom-scoped installs.
+              </p>
             </div>
-            {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={submit}
-                disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
-              >
-                {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-                Connect custom Slack app
-              </Button>
+
+            <div className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                  <div className="text-foreground text-sm font-medium">
+                    Step 1 of 2 - paste the manifest into Slack and install the app.
+                  </div>
+                  <div className="text-muted-foreground text-xs font-medium">App manifest</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={copyManifest}
+                    disabled={!manifest.data}
+                  >
+                    {copiedManifest ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {copiedManifest ? 'Copied' : 'Copy'}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
+                    <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">
+                      Open Slack
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+
+              {manifest.isLoading ? (
+                <Skeleton className="h-52 w-full rounded-2xl" />
+              ) : manifest.isError ? (
+                <InfoBanner tone="destructive">
+                  {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
+                </InfoBanner>
+              ) : manifest.data ? (
+                <div className="max-h-[26rem] overflow-auto rounded-2xl">
+                  <CodeSnippet code={manifest.data} language="json" />
+                </div>
+              ) : null}
+
+              <ol className="space-y-2">
+                {[
+                  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+                  'On the next screen, click Install to Workspace and approve.',
+                  'Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.',
+                ].map((step, index) => (
+                  <li key={step} className="text-muted-foreground flex gap-2 text-xs">
+                    <span className="border-border/60 bg-muted/40 text-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-foreground text-sm font-medium">
+                  Step 2 of 2 - paste tokens from Slack.
+                </div>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Copy the Bot User OAuth Token and Signing Secret from the installed Slack app.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Bot token">
+                  <Input
+                    id="slack-channel-bot-token"
+                    name="slack-channel-bot-token"
+                    aria-label="Slack bot token"
+                    type="password"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    placeholder="xoxb-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+                <Field label="Signing secret">
+                  <Input
+                    id="slack-channel-signing-secret"
+                    name="slack-channel-signing-secret"
+                    aria-label="Slack signing secret"
+                    type="password"
+                    value={signingSecret}
+                    onChange={(e) => setSigningSecret(e.target.value)}
+                    placeholder="Slack signing secret"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+              </div>
+              {error ? <InfoBanner tone="destructive">{error}</InfoBanner> : null}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
+                >
+                  {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                  Connect custom Slack app
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}
@@ -2206,10 +2546,7 @@ function PermissionsSection({
                             <span className="text-muted-foreground text-xs">{t.description}</span>
                           )}
                         </div>
-                        <CodeSnippet
-                          code={tsSignature(connector.slug, t)}
-                          language="typescript"
-                        />
+                        <CodeSnippet code={tsSignature(connector.slug, t)} language="typescript" />
                         <CodeSnippet
                           code={JSON.stringify(
                             t.inputSchema ?? { type: 'object', properties: {} },
@@ -2598,15 +2935,7 @@ function ChannelCatalogue({
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {emailChannelEnabled && <AddEmailProfileCard projectId={projectId} onAdded={onAdded} />}
-      <ChannelProfileCard
-        projectId={projectId}
-        slug="kortix_slack"
-        platform="slack"
-        name="Slack"
-        icon={Slack}
-        description="Connect a Slack workspace profile. Mentions and threaded replies route into Kortix agent sessions."
-        onAdded={onAdded}
-      />
+      <AddSlackProfileCard projectId={projectId} onAdded={onAdded} />
     </div>
   );
 }
@@ -2668,7 +2997,8 @@ function AddEmailProfileCard({
           <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
         </div>
         <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
-          Add a separate AgentMail inbox profile for support, sales, founders, or any mailbox the agent should run.
+          Add a separate AgentMail inbox profile for support, sales, founders, or any mailbox the
+          agent should run.
         </p>
       </button>
       <Dialog open={open} onOpenChange={(next) => !add.isPending && setOpen(next)}>
@@ -2676,7 +3006,8 @@ function AddEmailProfileCard({
           <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
             <DialogTitle>Add Email inbox</DialogTitle>
             <DialogDescription>
-              Create a separate connector profile. You choose the AgentMail address when connecting it.
+              Create a separate connector profile. You choose the AgentMail address when connecting
+              it.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 px-6 py-5">
@@ -2694,7 +3025,9 @@ function AddEmailProfileCard({
                 id="email-profile-prefix"
                 name="email-profile-prefix"
                 value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
+                onChange={(e) =>
+                  setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
+                }
                 placeholder="support"
                 autoComplete="off"
                 spellCheck={false}
@@ -2719,63 +3052,54 @@ function AddEmailProfileCard({
   );
 }
 
-function ChannelProfileCard({
+function AddSlackProfileCard({
   projectId,
-  slug,
-  platform,
-  name,
-  icon: Icon,
-  description,
   onAdded,
 }: {
   projectId: string;
-  slug: string;
-  platform: ChannelPlatform;
-  name: string;
-  icon: LucideIcon;
-  description: string;
   onAdded: (slug?: string) => void;
 }) {
-  const add = useMutation({
-    mutationFn: () =>
-      createConnector(projectId, {
-        slug,
-        name,
-        provider: 'channel',
-        platform,
-        credential: 'shared',
-        sharing: { mode: 'project' },
-      }),
-    onSuccess: () => {
-      toast.success(`Added ${name}`);
-      onAdded(slug);
-    },
-    onError: (err: Error) => toast.error(err.message || `Failed to add ${name}`),
-  });
+  const [open, setOpen] = useState(false);
+  const handleConnected = () => {
+    toast.success('Slack connected');
+    setOpen(false);
+    onAdded('kortix_slack');
+  };
 
   return (
-    <button
-      type="button"
-      onClick={() => add.mutate()}
-      disabled={add.isPending}
-      className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      <div className="flex items-center gap-3">
-        <EntityAvatar icon={Icon} size="sm" />
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground truncate text-sm font-semibold">{name}</div>
-          <div className="text-muted-foreground truncate text-xs">Channel profile</div>
-        </div>
-        {add.isPending ? (
-          <Loader2 className="text-muted-foreground size-4 shrink-0 animate-spin" />
-        ) : (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+      >
+        <div className="flex items-center gap-3">
+          <EntityAvatar icon={Slack} size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-semibold">Slack</div>
+            <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
+          </div>
           <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
-        )}
-      </div>
-      <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
-        {description}
-      </p>
-    </button>
+        </div>
+        <p className="text-muted-foreground mt-2 line-clamp-3 min-h-[3rem] text-xs leading-relaxed">
+          Add Kortix to Slack so mentions and threaded replies route into Kortix agent sessions.
+        </p>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+            <DialogTitle>Add Kortix to Slack</DialogTitle>
+            <DialogDescription>
+              Connect the built-in Slack channel. The connector profile appears automatically after
+              installation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
+            <SlackConnectForm projectId={projectId} onConnected={handleConnected} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -3048,7 +3372,9 @@ function ConnectorConfigFields({
                 provider,
                 platform:
                   provider === 'channel'
-                    ? (draft.platform === 'email' && !emailChannelEnabled ? 'slack' : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack')))
+                    ? draft.platform === 'email' && !emailChannelEnabled
+                      ? 'slack'
+                      : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
                     : undefined,
                 auth: provider === 'channel' ? { type: 'none' } : draft.auth,
               });
@@ -3071,7 +3397,11 @@ function ConnectorConfigFields({
         <div className="space-y-1.5">
           <Label>Channel</Label>
           <Select
-            value={draft.platform === 'email' && !emailChannelEnabled ? 'slack' : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))}
+            value={
+              draft.platform === 'email' && !emailChannelEnabled
+                ? 'slack'
+                : (draft.platform ?? (emailChannelEnabled ? 'email' : 'slack'))
+            }
             onValueChange={(v) => set({ platform: v as ChannelPlatform, auth: { type: 'none' } })}
           >
             <SelectTrigger>

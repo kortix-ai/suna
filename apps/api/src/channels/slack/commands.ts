@@ -12,11 +12,18 @@ import {
   setChannelAgent,
   setChannelModel,
 } from './selection';
+import { buildSlackLoginUrl } from './login';
+import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
+import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
   teamId: string;
   channelId: string;
+  // The Slack user who invoked the command (slash form `user_id`, or the DM
+  // sender). Drives `/login` / `/logout` / `whoami` identity. May be '' on legacy
+  // call sites that don't carry a user.
+  slackUserId: string;
   command: string;
   // Slack slash response_url — valid ~30 min / 5 uses. Used to post a deferred
   // reply for subcommands too slow for the synchronous 3s window (agent list
@@ -47,6 +54,13 @@ export async function handleSlashCommand(
       return slashSessions(ctx);
     case 'session':
       return slashSession(ctx);
+    case 'login':
+    case 'connect':
+      // Whole feature is flag-gated: when off, `/login` doesn't exist.
+      return config.SLACK_REQUIRE_USER_IDENTITY ? slashLogin(ctx) : unknownSub(sub, ctx.command);
+    case 'logout':
+    case 'disconnect':
+      return config.SLACK_REQUIRE_USER_IDENTITY ? slashLogout(ctx) : unknownSub(sub, ctx.command);
     case 'whoami':
     case 'who':
       return slashWhoami(ctx);
@@ -66,11 +80,15 @@ export async function handleSlashCommand(
     case '':
       return slashHelp(ctx.command);
     default:
-      return {
-        response_type: 'ephemeral',
-        text: `Unknown subcommand \`${sub}\`. Try \`${ctx.command} help\`.`,
-      };
+      return unknownSub(sub, ctx.command);
   }
+}
+
+function unknownSub(sub: string, command: string): SlashResponse {
+  return {
+    response_type: 'ephemeral',
+    text: `Unknown subcommand \`${sub}\`. Try \`${command} help\`.`,
+  };
 }
 
 function slashHelp(command: string): SlashResponse {
@@ -97,9 +115,16 @@ function slashHelp(command: string): SlashResponse {
         { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
         { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
         { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
+        // Only advertised when per-user identity is enabled.
+        ...(config.SLACK_REQUIRE_USER_IDENTITY
+          ? [
+              { cmd: `${command} login`,  desc: 'Connect your own Kortix account so the agent runs as you.' },
+              { cmd: `${command} logout`, desc: 'Disconnect your Kortix account from this Slack workspace.' },
+            ]
+          : []),
         { cmd: `${command} session`,  desc: 'Show this channel\'s most recent session + open it on the web.' },
         { cmd: `${command} sessions`, desc: 'Show the last 5 sessions started in this workspace.' },
-        { cmd: `${command} whoami`,   desc: 'What project, agent, and model are set for this channel.' },
+        { cmd: `${command} whoami`,   desc: 'This channel\'s project, agent, and model' + (config.SLACK_REQUIRE_USER_IDENTITY ? ' + your linked Kortix account.' : '.') },
         { cmd: `${command} help`,     desc: 'This message.' },
       ].map((r) => ({
         type: 'section',
@@ -348,7 +373,25 @@ async function slashSessions(ctx: { teamId: string; channelId: string }): Promis
   };
 }
 
+// A context line stating whether the caller has linked their own Kortix account.
+async function buildIdentityContext(ctx: SlashCtx): Promise<Record<string, unknown>> {
+  const identity = ctx.slackUserId ? await lookupSlackIdentity(ctx.teamId, ctx.slackUserId) : null;
+  if (!identity) {
+    return {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `🔌  Not connected — run \`${ctx.command} login\` to run as your own Kortix account.` }],
+    };
+  }
+  const email = (await lookupEmailsByUserIds([identity.userId])).get(identity.userId);
+  return {
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `🔗  Connected as *${email ? escapeMrkdwn(email) : 'your Kortix account'}*` }],
+  };
+}
+
 async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
+  // Identity line only when the per-user feature is on.
+  const identityBlocks = config.SLACK_REQUIRE_USER_IDENTITY ? [await buildIdentityContext(ctx)] : [];
   const selection = await currentChannelSelection(ctx);
   const currentId = selection?.projectId ?? null;
   const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
@@ -356,6 +399,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
     return {
       response_type: 'ephemeral',
       blocks: [
+        ...identityBlocks,
         {
           type: 'section',
           text: {
@@ -396,6 +440,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
   return {
     response_type: 'ephemeral',
     blocks: [
+      ...identityBlocks,
       section,
       {
         type: 'context',
@@ -424,6 +469,58 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
         ],
       },
     ],
+  };
+}
+
+// ── Login / Logout ───────────────────────────────────────────────────────────
+// Bind this Slack user to their OWN Kortix account so the agent runs as them
+// (their credentials/secrets/connectors) instead of the workspace owner. The
+// link opens an authenticated web page that completes the bind; nothing is
+// stored until the user logs in there.
+async function slashLogin(ctx: SlashCtx): Promise<SlashResponse> {
+  if (!ctx.slackUserId) {
+    return { response_type: 'ephemeral', text: "I couldn't tell who you are from Slack — try again from a channel or DM." };
+  }
+  const existing = await lookupSlackIdentity(ctx.teamId, ctx.slackUserId);
+  const url = buildSlackLoginUrl({ teamId: ctx.teamId, slackUserId: ctx.slackUserId });
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: existing
+            ? '*Your Slack is already connected to a Kortix account.*\nClick below to re-connect (e.g. to switch accounts). The link expires in 10 minutes.'
+            : '*Connect your Kortix account.*\nKortix runs as your own account, so it uses your credentials and connected apps — not the installer\'s. The link expires in 10 minutes and is private to you.',
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: existing ? 'Re-connect Kortix' : 'Connect my Kortix account', emoji: true },
+            style: 'primary',
+            url,
+            action_id: 'slack_login_connect',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function slashLogout(ctx: SlashCtx): Promise<SlashResponse> {
+  if (!ctx.slackUserId) {
+    return { response_type: 'ephemeral', text: "I couldn't tell who you are from Slack — try again from a channel or DM." };
+  }
+  const revoked = await revokeSlackIdentity(ctx.teamId, ctx.slackUserId);
+  return {
+    response_type: 'ephemeral',
+    text: revoked
+      ? "Disconnected. Kortix will ask you to connect again before it runs on your behalf. Run `/kortix login` anytime."
+      : "You weren't connected. Run `/kortix login` to connect your Kortix account.",
   };
 }
 

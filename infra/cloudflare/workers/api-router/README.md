@@ -1,16 +1,17 @@
 # api-router — the public API blue/green switch
 
 Cloudflare Worker that fronts the public API hostnames and forwards to whichever
-backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), two envs (`wrangler.toml`):
+backend `ACTIVE_BACKEND` names. One source (`worker.mjs`), three envs (`wrangler.toml`):
 
 | Env    | Custom domain        | Worker script           | `eks` backend          | `ecs-fargate` backend          |
 | ------ | -------------------- | ----------------------- | ---------------------- | ------------------------------ |
 | `prod` | `api.kortix.com`     | `api-kortix-router`     | `api-eks.kortix.com`     | `api-ecs-fargate.kortix.com`     |
+| `staging` | `staging-api.kortix.com` | `staging-api-kortix-router` | `staging-api-eks.kortix.com` | `staging-api-ecs-fargate.kortix.com` |
 | `dev`  | `dev-api.kortix.com` | `dev-api-kortix-router` | `dev-api-eks.kortix.com` | `dev-api-ecs-fargate.kortix.com` |
 
-EKS is the active backend for both public API hostnames (`X-Backend: eks` on
-`/v1/health`, verified 2026-06-21); ECS Fargate is the warm standby. CI deploys
-the EKS services via Argo CD GitOps (`deploy-dev.yml` / `deploy-prod.yml`). Keep
+EKS is the active backend for the public API hostnames; ECS Fargate is the warm
+standby. CI deploys the EKS services via Argo CD GitOps (`deploy-dev.yml` /
+`deploy-staging.yml` / `deploy-prod.yml`). Keep
 the ECS origins available for failover, but do not treat them as the primary
 runtime. Background-worker leadership is guarded by a single global DB lease
 (`apps/api/src/shared/leader-election.ts`), so only one side ever runs cron.
@@ -23,8 +24,9 @@ https://github.com/kortix-ai/suna/issues/3629).
 ## Deploy (code or var changes)
 
 ```bash
-# auth: scoped CLOUDFLARE_API_TOKEN, or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY
+# auth: scoped CLOUDFLARE_API_TOKEN, or CI's CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_API_KEY REST fallback
 wrangler deploy --env prod      # api.kortix.com
+wrangler deploy --env staging   # staging-api.kortix.com
 wrangler deploy --env dev       # dev-api.kortix.com
 ```
 

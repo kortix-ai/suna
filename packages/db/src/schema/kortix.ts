@@ -782,6 +782,35 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
+// Per-user identity binding: maps a chat-platform user (e.g. a Slack user in a
+// given workspace) to the Kortix user they authenticated as via `/login`. The
+// inbound gate resolves the sender through this table and runs the agent as that
+// Kortix user — so each member acts under their OWN credentials/secrets, never
+// the installer's. No row = unlinked = blocked until they log in. revokedAt set
+// = `/logout`, treated as unlinked. Membership against a project's account is
+// re-checked at run time, so this mapping is intentionally workspace-scoped, not
+// account-scoped (one workspace can map to multiple projects/accounts).
+export const chatUserIdentities = kortixSchema.table(
+  'chat_user_identities',
+  {
+    identityId: uuid('identity_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    userId: uuid('user_id').notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_user_identities_platform_user').on(
+      table.platform,
+      table.workspaceId,
+      table.platformUserId,
+    ),
+    index('idx_chat_user_identities_user').on(table.userId),
+  ],
+);
+
 // Live Slack turn-stream state, shared across API replicas. The agent's
 // `slack step` / `slack send` relays land on ANY instance behind the load
 // balancer, so the stream handle (which Slack message to update, the steps so

@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { sandboxEnvValue } from './sandbox-env.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-host config storage.
@@ -58,17 +59,6 @@ export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
 const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
 const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
-const DEFAULT_SANDBOX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
-const SANDBOX_AGENT_ENV_FILE_VAR = 'KORTIX_AGENT_ENV_FILE';
-
-const SANDBOX_ENV_ALLOWLIST = new Set([
-  'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
-  'KORTIX_API_URL',
-  'KORTIX_PROJECT_ID',
-  'KORTIX_FRONTEND_URL',
-  'KORTIX_DEFAULT_BRANCH',
-]);
 
 export interface Host {
   url: string;
@@ -82,51 +72,6 @@ export interface Host {
 export interface Config {
   active: string;
   hosts: Record<string, Host>;
-}
-
-function sandboxAgentEnvFile(): string {
-  return process.env[SANDBOX_AGENT_ENV_FILE_VAR] || DEFAULT_SANDBOX_AGENT_ENV_FILE;
-}
-
-function parseShellValue(raw: string): string | null {
-  const value = raw.trim();
-  if (!value) return '';
-  if (value.startsWith("'") && value.endsWith("'")) {
-    return value.slice(1, -1).replace(/'\\''/g, "'");
-  }
-  if (value.startsWith('"') && value.endsWith('"')) {
-    return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-  }
-  if (/[\s`$;&|<>]/.test(value)) return null;
-  return value;
-}
-
-function loadSandboxAgentEnvFile(): Record<string, string> {
-  const path = sandboxAgentEnvFile();
-  if (!existsSync(path)) return {};
-  try {
-    const out: Record<string, string> = {};
-    for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
-      const match = line.match(/^\s*export\s+([A-Z_][A-Z0-9_]*)=(.*)$/);
-      if (!match) continue;
-      const name = match[1];
-      if (!SANDBOX_ENV_ALLOWLIST.has(name)) continue;
-      const value = parseShellValue(match[2]);
-      if (value === null) continue;
-      out[name] = value;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-export function sandboxEnvValue(name: string): string | undefined {
-  return process.env[name] || loadSandboxAgentEnvFile()[name];
-}
-
-function sandboxCliToken(): string | undefined {
-  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
 }
 
 // ─── File path resolution ──────────────────────────────────────────────────
@@ -237,6 +182,10 @@ export function deleteConfig(): void {
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
+function sandboxCliToken(): string | undefined {
+  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+}
+
 export function hasEnvTokenHost(): boolean {
   return Boolean(sandboxCliToken());
 }

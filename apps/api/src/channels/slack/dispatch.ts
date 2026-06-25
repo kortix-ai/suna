@@ -4,6 +4,7 @@ import {
   chatChannelBindings,
   chatInstalls,
   chatThreads,
+  projectSessions,
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -24,6 +25,8 @@ import {
   deliverSlackFollowUpToSession,
   renderFollowUpPrompt,
 } from './session';
+import { postEphemeralLoginPrompt, resolveSlackActor } from './identity';
+import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
 import {
   deleteTurn,
   finalizeTurn,
@@ -323,7 +326,7 @@ export async function maybeHandleDmCommand(
 
   let resp: SlashResponse;
   try {
-    resp = await handleSlashCommand(sub, arg, { teamId, channelId, command, deferredDeliver });
+    resp = await handleSlashCommand(sub, arg, { teamId, channelId, slackUserId: event.user ?? '', command, deferredDeliver });
   } catch (err) {
     console.error('[slack-webhook] dm command failed', err);
     resp = { response_type: 'ephemeral', text: 'Something went wrong handling that command. Try again in a moment.' };
@@ -463,11 +466,50 @@ export async function spawnAgentTurn(
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
 
+  // Resolve who the agent runs AS. Gated by SLACK_REQUIRE_USER_IDENTITY:
+  //  • ON  — every sender (first message OR follow-up, channel OR button click)
+  //    must be linked to a Kortix account that is a member of this project's
+  //    account. No live mapping → block and nudge to `/login`; never fall back
+  //    to the owner (the impersonation this fixes).
+  //  • OFF — legacy behavior: run as the account owner stand-in.
+  const [project] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return;
+
+  let actorUserId: string;
+  if (config.SLACK_REQUIRE_USER_IDENTITY) {
+    const slackUserId = event.user ?? '';
+    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId);
+    if ('reason' in actor) {
+      await postEphemeralLoginPrompt({
+        projectId,
+        teamId,
+        channel: event.channel,
+        threadTs: event.thread_ts ?? event.ts,
+        slackUserId,
+        reason: actor.reason,
+      });
+      return;
+    }
+    actorUserId = actor.userId;
+  } else {
+    const owner = await resolveProjectAutomationActor(project.accountId);
+    if (!owner) {
+      console.warn('[slack-webhook] no actor for project', projectId);
+      return;
+    }
+    actorUserId = owner;
+  }
+
   let revived = false;
   if (teamId && threadId) {
     const [existing] = await db
-      .select({ sessionId: chatThreads.sessionId })
+      .select({ sessionId: chatThreads.sessionId, createdBy: projectSessions.createdBy })
       .from(chatThreads)
+      .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
       .where(
         and(
           eq(chatThreads.platform, 'slack'),
@@ -493,9 +535,14 @@ export async function spawnAgentTurn(
         handle.sessionId = existing.sessionId;
         await saveTurn(handle);
       }
+      // Per-thread identity: a follow-up runs as the thread's original creator,
+      // not whoever happens to be replying. The sandbox was already booted with
+      // the creator's credentials; attribute the command to them too (fall back
+      // to this validated sender if the row predates per-user identity).
       const outcome = await deliverSlackFollowUpToSession({
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
+        userId: existing.createdBy ?? actorUserId,
       });
 
       if (outcome === 'delivered') {
@@ -584,5 +631,5 @@ export async function spawnAgentTurn(
 
   // No live mapping for this thread → create the session, or JOIN one that a
   // concurrent handler is creating this very moment. Single atomic create path.
-  await createOrJoinThreadSession({ projectId, teamId, threadId, envelope, event, revived });
+  await createOrJoinThreadSession({ projectId, teamId, threadId, envelope, event, revived, actorUserId });
 }

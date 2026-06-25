@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { sandboxEnvValue } from './api/config.ts';
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
  * `.kortix/link.json` — the per-repo binding between a working
