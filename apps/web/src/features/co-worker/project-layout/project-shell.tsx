@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
@@ -18,9 +18,11 @@ import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { parseCustomizeSection } from '@/lib/customize-sections';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -39,6 +41,7 @@ interface ProjectShellProps {
 
 export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
 
   const { data: projectDetail } = useQuery({
@@ -52,6 +55,17 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
+
+  useEffect(() => {
+    const section = parseCustomizeSection(searchParams.get('customize'));
+    if (!section) return;
+    useCustomizeStore.getState().openCustomize(section);
+
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('customize');
+    const query = next.toString();
+    router.replace(`/projects/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [projectId, router, searchParams]);
 
   useEffect(() => {
     try {

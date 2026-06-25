@@ -43,4 +43,5 @@ export { slackWebhookApp, relayTurnStep, relayTurnAnswer, relayTurnEnd } from '.
 export { emailWebhookApp } from './email-webhook';
 export { telegramWebhookApp } from './telegram-webhook';
 export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
+export { slackIdentityApp } from './slack/identity-routes';
 export { slackOauthMode } from './slack-oauth-mode';

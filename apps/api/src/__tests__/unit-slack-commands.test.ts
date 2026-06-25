@@ -35,9 +35,21 @@ mock.module('../channels/slack/selection', () => ({
   modelLabel: (id: string) => (id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id),
 }));
 
+// Identity layer — kept out of the db chain so it doesn't disturb dbResults
+// ordering. Controllable per-test via `identityRow`.
+let identityRow: { userId: string } | null = null;
+mock.module('../channels/slack/identity', () => ({
+  lookupSlackIdentity: async () => identityRow,
+  revokeSlackIdentity: async () => true,
+}));
+mock.module('../accounts/core/app', () => ({
+  lookupEmailsByUserIds: async (ids: string[]) =>
+    new Map(ids.map((id) => [id, `${id}@example.com`])),
+}));
+
 const { handleSlashCommand } = await import('../channels/slack/commands');
 
-const ctx = { teamId: 'T1', channelId: 'C1', command: '/kortix' };
+const ctx = { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' };
 
 // Flatten all stringy text out of a blocks array for easy assertions.
 function allText(resp: any): string {
@@ -54,6 +66,7 @@ function actionIds(resp: any): string[] {
 
 beforeEach(() => {
   dbResults = [];
+  identityRow = null;
   selection = { projectId: 'p1', agentName: null, opencodeModel: null };
   setAgentResult = true;
   setModelResult = true;
@@ -75,6 +88,24 @@ describe('unknown subcommand', () => {
   test('points at help', async () => {
     const resp = await handleSlashCommand('frobnicate', '', ctx);
     expect(resp.text).toContain('Unknown subcommand');
+  });
+});
+
+// Per-user identity is OFF by default (SLACK_REQUIRE_USER_IDENTITY unset in the
+// test env), so the whole feature is dark: login/logout are not real subcommands
+// and help never advertises them.
+describe('identity feature gated OFF', () => {
+  test('/login is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('login', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('/logout is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('logout', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('help does not list login/logout', async () => {
+    const resp = await handleSlashCommand('help', '', ctx);
+    expect(allText(resp)).not.toContain('runs as you');
   });
 });
 
