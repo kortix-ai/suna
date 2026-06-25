@@ -1442,6 +1442,9 @@ export interface SessionChatInputProps {
   /** Slot rendered inside the input card, above the textarea (e.g. queue chip) */
   inputSlot?: React.ReactNode;
 
+  /** Slot rendered inline in the bottom toolbar, just left of the voice button */
+  toolbarSlot?: React.ReactNode;
+
   /** Reply context — shows a banner in the input indicating what's being replied to */
   replyTo?: { text: string } | null;
   /** Callback to clear the reply context */
@@ -1514,6 +1517,7 @@ export function SessionChatInput({
   threadContext,
   onContextClick,
   inputSlot,
+  toolbarSlot,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -2554,6 +2558,8 @@ export function SessionChatInput({
                 selectedModel={selectedModel}
                 onContextClick={onContextClick}
               />
+
+              {toolbarSlot}
 
               <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
 
