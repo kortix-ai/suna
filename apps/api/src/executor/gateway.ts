@@ -31,6 +31,7 @@ export interface GatewayConnector {
   connectorId: string;
   slug: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  platform?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ExecutorAuth;
@@ -66,6 +67,12 @@ export interface ExecutionRecord {
   resultSummary: Record<string, unknown> | null;
 }
 
+export interface EmailSessionContext {
+  inboxId: string;
+  threadId?: string | null;
+  messageId?: string | null;
+}
+
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
@@ -76,6 +83,10 @@ export interface GatewayDeps {
    * install token) without re-querying.
    */
   resolveCredential(connector: GatewayConnector, userId: string | null): Promise<string | null>;
+  /** Email-originated sessions pin native Email channel calls to the inbound inbox/thread. */
+  loadEmailSessionContext?(projectId: string, sessionId: string): Promise<EmailSessionContext | null>;
+  /** Resolve the AgentMail credential for the install that owns this inbox. */
+  resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
   loadPolicies(connectorId: string): Promise<Policy[]>;
   /** Project-scoped policies (fully-qualified patterns over <slug>.<path>). */
@@ -188,6 +199,7 @@ async function connectorUsable(
   deps: GatewayDeps,
   connector: GatewayConnector,
   subject: ShareSubject,
+  credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
   // 1. Access — who can use this connector.
   if (!isSecretUsableBy(connector.shareScope, connector.grants, subject)) {
@@ -195,10 +207,49 @@ async function connectorUsable(
   }
   // 2. Credential — none needed (public), shared, or this member's own (per_user).
   if (!connector.hasAuth) return { ok: true, secret: null };
+  if (credentialOverride != null) return { ok: true, secret: credentialOverride };
   const userId = connector.credentialMode === 'per_user' ? subject.userId : null;
   const secret = await deps.resolveCredential(connector, userId);
   if (secret == null) return { ok: false, reason: 'needs_auth' };
   return { ok: true, secret };
+}
+
+async function resolveEmailExecutionContext(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+): Promise<{ args: Record<string, unknown>; secretOverride: string | null }> {
+  const args = { ...(input.args ?? {}) };
+  if (
+    connector.provider !== 'channel' ||
+    connector.platform !== 'email' ||
+    !EMAIL_CHANNEL_ACTIONS.has(input.actionPath) ||
+    !input.sessionId ||
+    !deps.loadEmailSessionContext
+  ) {
+    return { args, secretOverride: null };
+  }
+
+  const context = await deps.loadEmailSessionContext(input.projectId, input.sessionId);
+  if (!context?.inboxId) return { args, secretOverride: null };
+
+  args.inbox_id = context.inboxId;
+  if ((input.actionPath === 'get_thread') && context.threadId) {
+    args.thread_id = context.threadId;
+  }
+  if (
+    (input.actionPath === 'reply_message' ||
+      input.actionPath === 'reply_all_message' ||
+      input.actionPath === 'get_message') &&
+    context.messageId
+  ) {
+    args.message_id = context.messageId;
+  }
+
+  const secretOverride = deps.resolveEmailCredentialForInbox
+    ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
+    : null;
+  return { args, secretOverride };
 }
 
 /** Run one executor call through the full gateway path. */
@@ -218,13 +269,22 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
-  const usable = await connectorUsable(deps, connector, input.subject);
+  const emailExecution = await resolveEmailExecutionContext(deps, input, connector);
+  const usable = await connectorUsable(
+    deps,
+    connector,
+    input.subject,
+    emailExecution.secretOverride,
+  );
   if (!usable.ok) {
     await audit(deps, input, connector.connectorId, 'denied', action.risk, {
       reason: usable.reason,
     });
     return { status: 'denied', reason: usable.reason };
   }
+
+  const executionArgs = emailExecution.args;
+  const executionSecret = usable.secret;
 
   // Layered policy enforcement: project policies first → connector → risk default.
   if (deps.enforcePolicies !== false) {
@@ -265,7 +325,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      const { computer: selectorRaw, ...rest } = input.args ?? {};
+      const { computer: selectorRaw, ...rest } = executionArgs;
       const selector = typeof selectorRaw === 'string' && selectorRaw.trim() ? selectorRaw.trim() : null;
       const outcome = await deps.executeComputerCall({
         accountId: input.accountId,
@@ -308,7 +368,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           connectorSlug: input.connectorSlug,
           app: b.app,
           actionKey: b.actionKey,
-          args: input.args ?? {},
+          args: executionArgs,
           accountId: usable.secret, // the resolved binding = Pipedream account id
           userId,
         });
@@ -318,7 +378,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           projectId: input.projectId,
           connectorSlug: input.connectorSlug,
           app: b.app,
-          args: input.args ?? {},
+          args: executionArgs,
           accountId: usable.secret,
           userId,
         });
@@ -330,8 +390,8 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         binding: action.binding,
         baseUrl: connector.baseUrl,
         auth: connector.auth,
-        secret: usable.secret,
-        args: input.args ?? {},
+        secret: executionSecret,
+        args: executionArgs,
         paramHints: paramHintsFromSchema(action.inputSchema),
         fetchImpl: deps.fetchImpl,
       });
