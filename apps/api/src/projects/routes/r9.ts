@@ -184,6 +184,10 @@ projectsApp.openapi(
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: managing a CR's lifecycle is part of the change-request
+  // capability. A scoped agent token must hold project.cr.open (no-op for
+  // human/PAT tokens).
+  assertAgentScope(c, 'project.cr.open');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -227,6 +231,10 @@ projectsApp.openapi(
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: managing a CR's lifecycle is part of the change-request
+  // capability. A scoped agent token must hold project.cr.open (no-op for
+  // human/PAT tokens).
+  assertAgentScope(c, 'project.cr.open');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);

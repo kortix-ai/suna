@@ -1,5 +1,5 @@
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
 import { auth, errors, json } from '../../openapi';
@@ -8,7 +8,7 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
@@ -154,12 +154,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
@@ -234,12 +232,10 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   if (!isProjectRole(body.role)) {
@@ -293,12 +289,10 @@ projectsApp.openapi(
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(
-    loaded.userId,
-    loaded.row.accountId,
-    PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    { type: 'project', id: projectId },
-  );
+  // assertProjectCapability (not bare assertAuthorized) so the acting token is
+  // threaded and the agent-grant fold fires: an agent-session token must also
+  // hold project.members.manage to mutate group grants, not just its user.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   await db
     .delete(projectGroupGrants)

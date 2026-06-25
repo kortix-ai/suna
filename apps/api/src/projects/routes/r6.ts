@@ -1,5 +1,6 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, errors, json } from '../../openapi';
@@ -409,6 +410,11 @@ projectsApp.openapi(
   const requestId = c.req.param('requestId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Approving an access request grants a project role to the requester —
+  // membership management, NOT plain write. loadProjectForUser('manage') only
+  // maps to project.write (editor), so without this an editor could approve
+  // requests and even hand out the 'manager' role. Gate on members.manage.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const role = body.role === undefined ? 'viewer' : parseProjectRole(body.role);
@@ -489,6 +495,9 @@ projectsApp.openapi(
   const requestId = c.req.param('requestId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Reviewing an access request is membership management — gate on
+  // members.manage (loadProjectForUser('manage') only enforces project.write).
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [request] = await db
     .select()
@@ -544,6 +553,8 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Inviting a member grants project access — members.manage, not plain write.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
@@ -1091,6 +1102,9 @@ projectsApp.openapi(
     const enabled = body.enabled;
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: toggling experimental features is project config. A scoped
+    // agent token must hold project.customize.write (no-op for humans/PATs).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     if (!isExperimentalFeatureKey(feature)) {
       return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
     }

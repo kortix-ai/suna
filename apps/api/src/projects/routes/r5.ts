@@ -11,6 +11,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
@@ -766,6 +767,9 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Per-agent gate: warm-pool sizing is infra/cost config. A scoped agent token
+  // must hold project.customize.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
   // Per-template (per sandbox-template slug) warm config, opt-in. Stored DB-only

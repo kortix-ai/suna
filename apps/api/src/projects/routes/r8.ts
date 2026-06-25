@@ -561,6 +561,8 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Per-agent gate: editing a CR is part of the change-request capability.
+    assertAgentScope(c, 'project.cr.open');
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);

@@ -190,6 +190,12 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Authorization is enforced by loadProjectForUser(... 'manage') above.
+  // Token management is a human/manage operation: an agent-session token must
+  // not revoke project tokens (it could knock out its own siblings / the human
+  // CLI token as a DoS). Symmetric with the mint guard above.
+  if (getAgentGrant(c)) {
+    return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
+  }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
