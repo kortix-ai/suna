@@ -10,4 +10,15 @@ describe('Slack channel connector catalogue', () => {
     expect(source).toContain('<AddSlackProfileCard projectId={projectId} onAdded={onAdded} />');
     expect(source).not.toMatch(/<ChannelProfileCard[\s\S]*slug="kortix_slack"/);
   });
+
+  test('keeps the full custom Slack app manifest setup before token fields', () => {
+    expect(source).toContain('Use custom Slack app');
+    expect(source).toContain('Bring your own Slack app');
+    expect(source).toContain('App manifest');
+    expect(source).toContain('copyManifest');
+    expect(source).toContain('https://api.slack.com/apps?new_app=1');
+    expect(source).toContain('Click Open Slack, choose "From a manifest", paste the JSON, confirm.');
+    expect(source).toContain('On the next screen, click Install to Workspace and approve.');
+    expect(source).toContain('Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.');
+  });
 });

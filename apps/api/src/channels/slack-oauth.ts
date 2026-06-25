@@ -91,10 +91,9 @@ slackOauthApp.openapi(
   const code = c.req.query('code');
   const state = c.req.query('state');
   const slackError = c.req.query('error');
-  if (slackError) return redirectToDashboard(c, { error: slackError });
+  const payload = state ? verifyState(state) : null;
+  if (slackError) return redirectToDashboard(c, { projectId: payload?.projectId, error: slackError });
   if (!code || !state) return c.json({ error: 'Missing code or state' }, 400);
-
-  const payload = verifyState(state);
   if (!payload) return c.json({ error: 'Invalid or expired state' }, 400);
 
   const exchangeBody = new URLSearchParams({
@@ -120,7 +119,10 @@ slackOauthApp.openapi(
     return redirectToDashboard(c, { projectId: payload.projectId, error: 'oauth_exchange_failed' });
   }
   if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
-    return redirectToDashboard(c, { error: tokenJson.error ?? 'oauth_exchange_failed' });
+    return redirectToDashboard(c, {
+      projectId: payload.projectId,
+      error: tokenJson.error ?? 'oauth_exchange_failed',
+    });
   }
 
   let project: { projectId: string } | undefined;
@@ -138,7 +140,9 @@ slackOauthApp.openapi(
     });
     return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_lookup_failed' });
   }
-  if (!project) return redirectToDashboard(c, { error: 'project_not_found' });
+  if (!project) {
+    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_not_found' });
+  }
 
   try {
     await saveSlackOauthInstall({
@@ -177,13 +181,12 @@ function redirectToDashboard(
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
   }
-  // Channels lives in the Customize overlay (no standalone /channels route) — it's
-  // opened via /projects/:id/customize?section=channels. Redirecting to the old
-  // /projects/:id/channels 404'd after a successful install. With no project (an
-  // error before the project resolved) fall back to the dashboard home.
-  if (qs.projectId) params.set('section', 'channels');
+  // Land on the real project page, then let the web shell open Customize from
+  // query params. The /customize shim renders null while client routing runs,
+  // which is too fragile as an external OAuth callback target.
+  if (qs.projectId) params.set('customize', 'connectors');
   const target = qs.projectId
-    ? `${base}/projects/${qs.projectId}/customize?${params.toString()}`
+    ? `${base}/projects/${qs.projectId}?${params.toString()}`
     : `${base}/?${params.toString()}`;
   return c.redirect(target, 302);
 }

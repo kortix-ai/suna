@@ -1478,22 +1478,24 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
           <ChevronDown
             className={cn('h-3.5 w-3.5 transition-transform', showCustom && 'rotate-180')}
           />
-          Bring your own Slack app
+          Use custom Slack app
         </Button>
         {showCustom ? (
-          <div className="space-y-4">
-            <p className="text-muted-foreground text-sm">
-              For self-hosted setups or custom-scoped installs.
-            </p>
-            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
+          <div className="space-y-5 rounded-2xl border border-border/60 bg-card p-4">
+            <div className="space-y-1">
+              <h3 className="text-foreground text-base font-semibold">Bring your own Slack app</h3>
+              <p className="text-muted-foreground text-sm">
+                For self-hosted setups or custom-scoped installs.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
                   <div className="text-foreground text-sm font-medium">
                     Step 1 of 2 - paste the manifest into Slack and install the app.
                   </div>
-                  <p className="text-muted-foreground mt-0.5 text-xs">
-                    Click Open Slack, choose "From a manifest", paste the JSON, then approve the app.
-                  </p>
+                  <div className="text-muted-foreground text-xs font-medium">App manifest</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
@@ -1519,6 +1521,7 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
                   </Button>
                 </div>
               </div>
+
               {manifest.isLoading ? (
                 <Skeleton className="h-52 w-full rounded-2xl" />
               ) : manifest.isError ? (
@@ -1526,12 +1529,28 @@ function SlackConnectForm({ projectId, onConnected }: { projectId: string; onCon
                   {(manifest.error as Error)?.message || 'Failed to load Slack manifest'}
                 </InfoBanner>
               ) : manifest.data ? (
-                <div className="max-h-72 overflow-auto rounded-2xl">
+                <div className="max-h-[26rem] overflow-auto rounded-2xl">
                   <CodeSnippet code={manifest.data} language="json" />
                 </div>
               ) : null}
+
+              <ol className="space-y-2">
+                {[
+                  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+                  'On the next screen, click Install to Workspace and approve.',
+                  'Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.',
+                ].map((step, index) => (
+                  <li key={step} className="flex gap-2 text-xs text-muted-foreground">
+                    <span className="border-border/60 bg-muted/40 text-foreground flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5">{step}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <div className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+
+            <div className="space-y-3">
               <div>
                 <div className="text-foreground text-sm font-medium">
                   Step 2 of 2 - paste tokens from Slack.
