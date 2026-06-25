@@ -238,6 +238,14 @@ export async function saveAgentMailInstall(
       );
   }
   await db
+    .delete(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, "email"),
+        eq(chatInstalls.workspaceId, input.inboxId),
+      ),
+    );
+  await db
     .insert(chatInstalls)
     .values({ platform: "email", workspaceId: input.inboxId, projectId })
     .onConflictDoNothing({
