@@ -18,6 +18,7 @@ import {
 } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 import {
   ACTION_CATALOG_WIRE,
   BUILTIN_BY_ID,
@@ -379,6 +380,34 @@ iamRouter.openapi(
 
     const rows = await db.select().from(iamPolicies).where(and(...conds));
     return c.json({ policies: rows.map(serializePolicy) });
+  },
+);
+
+// Auto-provisioned agent identities — the principal picker for binding a role to
+// an agent (promoting it to a standing teammate). Read-gated like policies.
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/agent-identities',
+    tags: ['iam'],
+    summary: 'List agent service-account identities (policy principal picker)',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
+    const rows = await listAgentServiceAccounts(accountId);
+    return c.json({
+      agents: rows.map((r) => ({
+        service_account_id: r.serviceAccountId,
+        name: r.name,
+        project_id: r.projectId,
+        agent_name: r.agentName,
+      })),
+    });
   },
 );
 

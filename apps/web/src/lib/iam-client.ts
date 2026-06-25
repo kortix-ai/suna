@@ -353,6 +353,21 @@ export async function listRoles(accountId: string) {
   ).roles;
 }
 
+/** Auto-provisioned agent (service-account) identities — the principal picker for
+ *  binding a role to an agent, promoting it to a standing teammate. */
+export interface AgentIdentity {
+  service_account_id: string;
+  name: string;
+  project_id: string | null;
+  agent_name: string | null;
+}
+
+export async function listAgentIdentities(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ agents: AgentIdentity[] }>(`/accounts/${accountId}/iam/agent-identities`),
+  ).agents;
+}
+
 export async function getRolePermissions(accountId: string, roleId: string) {
   return unwrap(
     await backendApi.get<{ role_id: string; key: string; actions: string[] }>(

@@ -34,8 +34,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   type IamPolicy,
   type IamRole,
+  type AgentIdentity,
   createPolicy,
   deletePolicy,
+  listAgentIdentities,
   listGroups,
   listPolicies,
   listRoles,
@@ -78,6 +80,12 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     staleTime: 30_000,
   });
 
+  const agentsQuery = useQuery({
+    queryKey: ['iam-agent-identities', accountId],
+    queryFn: () => listAgentIdentities(accountId),
+    staleTime: 30_000,
+  });
+
   const roleNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of rolesQuery.data ?? []) map.set(r.role_id, r.name);
@@ -96,6 +104,12 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     return map;
   }, [groupsQuery.data]);
 
+  const agentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agentsQuery.data ?? []) map.set(a.service_account_id, a.agent_name ?? a.name);
+    return map;
+  }, [agentsQuery.data]);
+
   const deleteMutation = useMutation({
     mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
     onSuccess: () => {
@@ -108,15 +122,15 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
 
   const policies = policiesQuery.data ?? [];
 
-  function principalLabel(p: IamPolicy): { name: string; kind: 'Member' | 'Group' | null } {
+  function principalLabel(p: IamPolicy): { name: string; kind: 'Member' | 'Group' | 'Agent' | null } {
     if (p.principal_type === 'member') {
       return { name: memberEmailById.get(p.principal_id) ?? p.principal_id, kind: 'Member' };
     }
     if (p.principal_type === 'group') {
       return { name: groupNameById.get(p.principal_id) ?? p.principal_id, kind: 'Group' };
     }
-    // token (legacy) — show raw id, no resolution
-    return { name: p.principal_id, kind: null };
+    // token = a service-account / agent identity.
+    return { name: agentNameById.get(p.principal_id) ?? p.principal_id, kind: 'Agent' };
   }
 
   function scopeLabel(p: IamPolicy): string {
@@ -221,6 +235,7 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
         rolesLoading={rolesQuery.isLoading}
         members={membersQuery.data ?? []}
         groups={groupsQuery.data ?? []}
+        agents={agentsQuery.data ?? []}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
           setCreateOpen(false);
@@ -262,6 +277,7 @@ function CreateAssignmentDialog({
   rolesLoading,
   members,
   groups,
+  agents,
   onCreated,
 }: {
   accountId: string;
@@ -271,6 +287,7 @@ function CreateAssignmentDialog({
   rolesLoading: boolean;
   members: Array<{ user_id: string; email: string | null }>;
   groups: Array<{ group_id: string; name: string }>;
+  agents: AgentIdentity[];
   onCreated: () => void;
 }) {
   const [principalType, setPrincipalType] = useState<PrincipalType>('member');
@@ -334,7 +351,7 @@ function CreateAssignmentDialog({
         <DialogHeader>
           <DialogTitle>New assignment</DialogTitle>
           <DialogDescription>
-            Bind a member or group to a custom role at a scope.
+            Bind a member, group, or agent to a custom role at a scope.
           </DialogDescription>
         </DialogHeader>
 
@@ -355,12 +372,15 @@ function CreateAssignmentDialog({
               <SelectContent>
                 <SelectItem value="member">Member</SelectItem>
                 <SelectItem value="group">Group</SelectItem>
+                {/* token = a service-account / agent standing identity. Assigning
+                    a role here promotes the agent to a standing teammate. */}
+                <SelectItem value="token">Agent</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1.5">
-            <Label>{principalType === 'member' ? 'Member' : 'Group'}</Label>
+            <Label>{principalType === 'member' ? 'Member' : principalType === 'group' ? 'Group' : 'Agent'}</Label>
             <Select
               value={principalId}
               onValueChange={setPrincipalId}
@@ -368,7 +388,13 @@ function CreateAssignmentDialog({
             >
               <SelectTrigger>
                 <SelectValue
-                  placeholder={principalType === 'member' ? 'Select a member' : 'Select a group'}
+                  placeholder={
+                    principalType === 'member'
+                      ? 'Select a member'
+                      : principalType === 'group'
+                        ? 'Select a group'
+                        : 'Select an agent'
+                  }
                 />
               </SelectTrigger>
               <SelectContent>
@@ -378,11 +404,19 @@ function CreateAssignmentDialog({
                         {m.email ?? m.user_id}
                       </SelectItem>
                     ))
-                  : groups.map((g) => (
-                      <SelectItem key={g.group_id} value={g.group_id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
+                  : principalType === 'group'
+                    ? groups.map((g) => (
+                        <SelectItem key={g.group_id} value={g.group_id}>
+                          {g.name}
+                        </SelectItem>
+                      ))
+                    : agents.length === 0
+                      ? <SelectItem value="__none" disabled>No agents yet — start an agent session first</SelectItem>
+                      : agents.map((a) => (
+                          <SelectItem key={a.service_account_id} value={a.service_account_id}>
+                            {a.agent_name ?? a.name}
+                          </SelectItem>
+                        ))}
               </SelectContent>
             </Select>
           </div>

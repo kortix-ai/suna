@@ -3,7 +3,7 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, iamPolicies } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -112,6 +112,30 @@ export async function createServiceAccount(args: {
     .returning();
   if (!row) throw new Error('failed to create service account');
   return { ...mapRow(row), secret };
+}
+
+/** Auto-provisioned AGENT identities (agent_name set), for the policy
+ *  principal picker — an admin binds a role to one to promote that agent to a
+ *  standing teammate. Distinct from listServiceAccounts (human bearer SAs). */
+export async function listAgentServiceAccounts(
+  accountId: string,
+): Promise<Array<{ serviceAccountId: string; name: string; projectId: string | null; agentName: string | null }>> {
+  return db
+    .select({
+      serviceAccountId: serviceAccounts.serviceAccountId,
+      name: serviceAccounts.name,
+      projectId: serviceAccounts.projectId,
+      agentName: serviceAccounts.agentName,
+    })
+    .from(serviceAccounts)
+    .where(
+      and(
+        eq(serviceAccounts.accountId, accountId),
+        isNotNull(serviceAccounts.agentName),
+        eq(serviceAccounts.status, 'active'),
+      ),
+    )
+    .orderBy(asc(serviceAccounts.name));
 }
 
 /**
