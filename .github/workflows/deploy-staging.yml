@@ -124,7 +124,7 @@ jobs:
             --query SecretString \
             --output text)"
 
-          payload="$(jq -c \
+          payload="$(jq -cn \
             --argjson base "$base" \
             --arg database "$STAGING_DATABASE_URL" \
             --arg supabase "$STAGING_SUPABASE_URL" \
