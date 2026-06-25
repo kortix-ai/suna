@@ -1,9 +1,16 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
 
-interface CatalogModel {
+export interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
+  // Capabilities mirrored from models.dev by scripts/refresh-llm-catalog.ts.
+  // Single source of truth — consumers derive flags from these, never hardcode.
+  attachment?: boolean; // image / file input (vision)
+  reasoning?: boolean;
+  tool_call?: boolean;
+  temperature?: boolean;
+  limit?: { context?: number; output?: number };
 }
 
 interface CatalogProvider {
@@ -40,6 +47,10 @@ export interface ManagedModel {
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
   tier: 'flagship' | 'balanced' | 'fast';
+  // Vision (image input). Curated explicitly: managed slugs don't all exist on
+  // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
+  // unlike BYOK models these can't derive it from the generated catalog.
+  vision: boolean;
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
@@ -61,6 +72,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-opus-4.8',
     tier: 'flagship',
+    vision: true,
   },
   {
     id: 'claude-sonnet-4.6',
@@ -69,6 +81,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'bedrock',
     pricingRef: 'anthropic/claude-sonnet-4.6',
     tier: 'balanced',
+    vision: true,
   },
   {
     id: 'glm-5.2',
@@ -77,6 +90,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'z-ai/glm-5.2',
     tier: 'balanced',
+    vision: false,
   },
   {
     id: 'qwen3.7-max',
@@ -85,6 +99,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'qwen/qwen3.7-max',
     tier: 'balanced',
+    vision: false,
   },
   {
     id: 'deepseek-v4-pro',
@@ -93,6 +108,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'deepseek/deepseek-v4-pro',
     tier: 'balanced',
+    vision: false,
   },
   {
     id: 'deepseek-v4-flash',
@@ -101,6 +117,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     transport: 'openrouter',
     pricingRef: 'deepseek/deepseek-v4-flash',
     tier: 'balanced',
+    vision: false,
   },
 ];
 

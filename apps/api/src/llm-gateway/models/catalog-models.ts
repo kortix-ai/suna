@@ -1,5 +1,10 @@
 import { resolveCatalogUpstream } from '@kortix/llm-gateway';
-import { AUTO_MODEL_ID, CATALOG, MANAGED_MODELS } from '@kortix/shared/llm-catalog';
+import {
+  AUTO_MODEL_ID,
+  CATALOG,
+  type CatalogModel,
+  MANAGED_MODELS,
+} from '@kortix/shared/llm-catalog';
 import { codexModelIds } from './codex-models';
 
 interface GatewayModel {
@@ -8,12 +13,14 @@ interface GatewayModel {
   tool_call?: boolean;
   attachment?: boolean;
   temperature?: boolean;
+  limit?: { context?: number; output?: number };
 }
 
-const catalogNameById = new Map<string, string>();
+// Full catalog model (with models.dev-derived capability flags) by `provider/model` id.
+const catalogModelById = new Map<string, CatalogModel>();
 for (const provider of CATALOG.providers) {
   for (const model of provider.models) {
-    catalogNameById.set(`${provider.id}/${model.id}`, model.name);
+    catalogModelById.set(`${provider.id}/${model.id}`, model);
   }
 }
 
@@ -22,27 +29,43 @@ function humanize(id: string): string {
   return tail.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Capability flags for a served model. models.dev is the single source of truth:
+// an enriched catalog entry (capabilities present) is used verbatim; a model
+// models.dev doesn't carry falls back to permissive legacy defaults so it isn't
+// crippled. See scripts/refresh-llm-catalog.ts.
+function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'name'> {
+  if (model && model.attachment !== undefined) {
+    return {
+      reasoning: !!model.reasoning,
+      tool_call: !!model.tool_call,
+      attachment: !!model.attachment,
+      temperature: !!model.temperature,
+      limit: model.limit,
+    };
+  }
+  return { reasoning: true, tool_call: true, attachment: false, temperature: false };
+}
+
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  // AUTO first so it surfaces at the top of the picker. Presented to users as
-  // "automatically picks the cheapest, most efficient model" — resolved by the
-  // gateway's autoRouter (GLM 5.2 for now) and billed as the model it routes to.
+  // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
+  // routes image-bearing requests to a vision-capable model.
   out[AUTO_MODEL_ID] = {
     name: 'Auto',
     reasoning: true,
     tool_call: true,
-    // AUTO accepts images — pickAutoModel routes image requests to a vision model.
     attachment: true,
     temperature: true,
   };
+  // The managed lineup is curated and its slugs don't all exist on models.dev
+  // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision is the explicit flag
+  // on each model. All current managed models support reasoning/tools/temperature.
   for (const m of MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,
       reasoning: true,
       tool_call: true,
-      // Only Claude is vision-capable in the managed set; GLM/Qwen/DeepSeek are
-      // text-only, so don't advertise attachments for them.
-      attachment: m.id.startsWith('claude'),
+      attachment: m.vision,
       temperature: true,
     };
   }
@@ -54,16 +77,8 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   for (const provider of CATALOG.providers) {
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
-      out[`${provider.id}/${model.id}`] = {
-        name: model.name,
-        reasoning: true,
-        tool_call: true,
-        // Conservative: the generated catalog carries no per-model modality, so
-        // BYOK models don't advertise attachments. (Closing this for vision-capable
-        // BYOK models needs input-modality data added to catalog.generated.json.)
-        attachment: false,
-        temperature: false,
-      };
+      // BYOK models ARE catalog entries — capabilities come straight from models.dev.
+      out[`${provider.id}/${model.id}`] = { name: model.name, ...capabilitiesOf(model) };
     }
   }
   return out;
@@ -72,14 +87,16 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
 export function gatewayCodexModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const id of codexModelIds()) {
+    const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
-      name: `${catalogNameById.get(`openai/${id}`) ?? humanize(id)} (ChatGPT)`,
-      reasoning: true,
-      tool_call: true,
-      // GPT-5.x is vision-capable and the openai-responses transport now forwards
-      // images (input_image), so Codex accepts attachments.
-      attachment: true,
-      temperature: false,
+      name: `${model?.name ?? humanize(id)} (ChatGPT)`,
+      // Derive from models.dev; default to GPT-5.x's profile (reasoning, tools,
+      // vision) for any id models.dev doesn't list yet.
+      reasoning: model?.reasoning ?? true,
+      tool_call: model?.tool_call ?? true,
+      attachment: model?.attachment ?? true,
+      temperature: model?.temperature ?? false,
+      limit: model?.limit,
     };
   }
   return out;
