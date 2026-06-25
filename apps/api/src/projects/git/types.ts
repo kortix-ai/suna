@@ -23,7 +23,15 @@ export interface ProjectConfigSummary {
   env: { required: string[]; optional: string[] };
   open_code_raw: string | null;
   open_code_default_agent: string | null;
-  agents: Array<{ name: string; path: string; description: string | null; mode: string | null }>;
+  agent_discovery: 'opencode' | 'declarative';
+  agents: Array<{
+    name: string;
+    path: string;
+    description: string | null;
+    mode: string | null;
+    source: 'opencode' | 'kortix.toml';
+    enabled?: boolean;
+  }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
 }

@@ -10,6 +10,12 @@ import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useServerStore } from '@/stores/server-store';
 import { ScopedCache } from '@/lib/storage/managed-storage';
+import {
+  getProjectDetail,
+  getProjectLlmCatalog,
+  type ProjectConfigSummary,
+  type ProjectLlmCatalogResponse,
+} from '@/lib/projects-client';
 import type {
   Session,
   Message,
@@ -614,16 +620,33 @@ export function useAbortOpenCodeSession() {
 // ============================================================================
 
 /**
- * Load opencode agents. Pass `directory` to get the project-scoped list
- * (globals + `<directory>/.opencode/agent/*.md`). Without it, opencode returns
- * the global set only.
+ * Load agents. With `projectId`, the server-side project config is source of
+ * truth: it returns declarative `kortix.toml [[agents]]` entries for adopted
+ * projects and OpenCode file discovery for legacy projects. Without `projectId`,
+ * this falls back to the sandbox OpenCode runtime.
  */
-export function useOpenCodeAgents(options?: { directory?: string }) {
+export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
   const directory = options?.directory;
+  const projectId = options?.projectId ?? null;
   const runtimeReady = useOpenCodeRuntimeReady();
+  const cacheScope = projectId
+    ? `project:${projectId}`
+    : directory
+      ? `dir:${directory}`
+      : CACHE_SCOPE_GLOBAL;
   return useQuery<Agent[]>({
-    queryKey: directory ? [...opencodeKeys.agents(), 'dir', directory] : opencodeKeys.agents(),
+    queryKey: projectId
+      ? ['project-detail', projectId, 'agents']
+      : directory
+        ? [...opencodeKeys.agents(), 'dir', directory]
+        : opencodeKeys.agents(),
     queryFn: async () => {
+      if (projectId) {
+        const detail = await getProjectDetail(projectId);
+        const agents = detail.config.agents.map(projectConfigAgentToOpenCodeAgent);
+        setLSCache(LS_AGENTS, agents, cacheScope);
+        return agents;
+      }
       const client = getClient();
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
@@ -634,15 +657,26 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
       // ephemeral per-sandbox server id — so a new session's picker paints from
       // cache instead of waiting on sandbox boot + the in-box /app/agents call.
       // (Previously the directory case cached nothing at all → guaranteed pop-in.)
-      setLSCache(LS_AGENTS, agents, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL);
+      setLSCache(LS_AGENTS, agents, cacheScope);
       return agents;
     },
-    placeholderData: () =>
-      getLSCache<Agent[]>(LS_AGENTS, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL),
-    enabled: runtimeReady,
-    staleTime: Infinity,
+    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
+    enabled: projectId ? true : runtimeReady,
+    staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });
+}
+
+function projectConfigAgentToOpenCodeAgent(
+  agent: ProjectConfigSummary['agents'][number],
+): Agent {
+  return {
+    name: agent.name,
+    description: agent.description ?? undefined,
+    mode: agent.mode ?? undefined,
+    source: agent.source,
+    hidden: agent.enabled === false,
+  } as Agent;
 }
 
 export function useOpenCodeAgent(agentName: string) {
@@ -1042,6 +1076,22 @@ function filterToGatewayProviders(providers: ProviderListResponse): ProviderList
   };
 }
 
+function projectLlmCatalogToProviderList(
+  catalog: ProjectLlmCatalogResponse,
+): ProviderListResponse {
+  const models = catalog.models ?? {};
+  return {
+    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    connected: ['kortix'],
+    all: [{
+      id: 'kortix',
+      name: 'Kortix',
+      source: 'gateway',
+      models,
+    }],
+  } as ProviderListResponse;
+}
+
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const params = useParams();
@@ -1051,8 +1101,14 @@ export function useOpenCodeProviders() {
   // the persisted placeholder is scoped per project — not the old global scope.
   const cacheScope = projectId ? `proj:${projectId}` : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
-    queryKey: opencodeKeys.providers(),
+    queryKey: projectId ? ['project-llm-catalog', projectId] : opencodeKeys.providers(),
     queryFn: async () => {
+      if (projectId) {
+        const catalog = await getProjectLlmCatalog(projectId);
+        const providers = projectLlmCatalogToProviderList(catalog);
+        setLSCache(LS_PROVIDERS, providers, cacheScope);
+        return providers;
+      }
       const client = getClient();
       const result = await client.provider.list();
       const providers = filterToGatewayProviders(unwrap(result));
@@ -1088,7 +1144,7 @@ export function useOpenCodeProviders() {
       // on read so a poisoned cache never paints a native provider.
       return filterToGatewayProviders(cached as ProviderListResponse);
     },
-    enabled: runtimeReady,
+    enabled: projectId ? true : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep

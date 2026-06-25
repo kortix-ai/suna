@@ -10,12 +10,12 @@ A **Kortix project** is one GitHub repo with a `kortix.toml` at the root — a s
 
 The repo has two configuration surfaces with strict ownership:
 
-- **Kortix config** — `kortix.toml` at the repo root, plus the `.kortix/` folder beside it (Dockerfile, opencode dir). The platform reads this.
-- **OpenCode config** — `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this; the platform never touches it.
+- **Kortix config** — `kortix.toml` at the repo root, plus the `.kortix/` folder beside it (Dockerfile, opencode dir). The platform reads this for project config, sandbox/triggers/apps, and Kortix-side agent governance.
+- **OpenCode config** — `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this as its native runtime implementation. `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers, providers, models, permissions, and default runtime behavior.
 
-Kortix-specific things — triggers, env spec, sandbox image, deployable apps, project metadata — go in `kortix.toml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.kortix/opencode/`. Each side owns its half.
+Kortix-specific things — triggers, env spec, sandbox image, deployable apps, project metadata, and which agents the platform may launch/authorize — go in `kortix.toml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.kortix/opencode/`. Each side owns its half.
 
-The default agent runtime inside every session is **OpenCode**. The same `.kortix/opencode/` config dir drives both the remote sandbox and a local `opencode` run on the user's machine — one source of truth, both surfaces.
+The default agent runtime inside every session is **OpenCode**. For legacy projects, OpenCode-native discovery remains backward-compatible. For projects that adopt `[[agents]]`, Kortix treats the manifest as the server-side source for the launchable agent list and grants, while still launching OpenCode against its native config dir. The same `.kortix/opencode/` config dir can still drive a local `opencode` run on the user's machine.
 </overview>
 
 <project-as-workspace>
@@ -225,20 +225,21 @@ The boundary between the two halves of the project:
 | Surface           | Owner    | File                                                       | Read by                          |
 | ----------------- | -------- | ---------------------------------------------------------- | -------------------------------- |
 | Kortix config     | Kortix   | `kortix.toml` + `.kortix/Dockerfile`                       | The Kortix platform              |
-| OpenCode config   | OpenCode | `.kortix/opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox)       |
+| OpenCode config   | OpenCode | `.kortix/opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
 
 The location of OpenCode's config dir is declared in `kortix.toml` under `[opencode] config_dir` — the default is `.kortix/opencode`. Relocate only if you want to share one OpenCode config across multiple Kortix repos.
 
-The platform never reads opencode's config dir; OpenCode never reads `kortix.toml`. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
+Do not duplicate OpenCode-native config in `kortix.toml`. `opencode.jsonc` owns plugins, MCP, providers, model/provider config, and OpenCode runtime defaults. `kortix.toml` owns the project/platform manifest and, when adopted, the server-side registry of launchable agents and their Kortix grants. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
 </contract>
 
 <agent-authorization>
-## Per-agent authorization — `[[agents]]`
+## Per-agent governance — `[[agents]]`
 
 An agent **is** its OpenCode `.md` (front matter + system prompt). Everything about
 *how an agent behaves* stays OpenCode-native in that file. `kortix.toml`'s optional
-`[[agents]]` block is a thin **scoping overlay**, keyed by the agent's name, that adds
-only the two things OpenCode's agent config cannot express:
+`[[agents]]` block is the Kortix-side declaration for **launchability and authority**,
+keyed by the agent's name. Today it primarily adds the two things OpenCode's agent
+config cannot express:
 
 ```toml
 [[agents]]
@@ -251,15 +252,22 @@ kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Ko
 
 | Setting | Lives in |
 | --- | --- |
-| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** (OpenCode-native) |
+| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** / `opencode.jsonc` (OpenCode-native) |
+| plugins, MCP servers, providers, runtime model catalog/defaults | **`opencode.jsonc`** (OpenCode-native) |
 | **`connectors`** (integration access) + **`kortix_cli`** (Kortix CLI/API powers) | **`kortix.toml` `[[agents]]`** |
 
-**How the grant resolves at session start (backward-compatible):**
-- Manifest has **no `[[agents]]`** at all → no restriction (full access). Existing projects are unchanged.
+**How the grant resolves at session start (v1, backward-compatible):**
+- Manifest has **no `[[agents]]`** at all → legacy mode: no agent-grant restriction, and older UI/runtime paths may discover agents directly from OpenCode. Existing projects are unchanged.
 - Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
-- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** (it still runs its `.md`, but with no connectors and no Kortix-CLI powers).
+- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** for Kortix grants (it can still be a native OpenCode file, but Kortix should not expose it as a platform-launchable agent unless it is listed).
 - **Your default agent:** with no `[[agents]]` it has **full access** (merge / deploy / spawn sub-agents, ∩ the user). The moment you adopt `[[agents]]`, **declare it too** — `[[agents]] name = "kortix"`, `kortix_cli = "all"`, `connectors = "all"` — or it falls under the unlisted-deny rule above. So: keep the default agent `"all"` and scope the *specialists* down.
 - The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
+
+**Discovery contract:**
+- `[[agents]]` is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every file under `.kortix/opencode/agents/` must be registered. Unregistered native files can exist for local experiments or runtime internals.
+- Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
+- Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
+- Future manifest versions / new project templates may default to declarative discovery. Older projects stay in legacy OpenCode-discovery mode until they opt in or are migrated.
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
 like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent). Run
@@ -432,9 +440,10 @@ Things that surprise people:
   `Dockerfile` and `opencode/` config dir sit under there to keep the
   root clean. Both paths are declared in `kortix.toml`
   (`[sandbox] dockerfile`, `[opencode] config_dir`) — relocate freely.
-- **OpenCode primitives are never platform-special.** The platform
-  doesn't read them; OpenCode does. Adding a new agent/skill/command/
-  tool/plugin is purely an OpenCode config change.
+- **OpenCode primitives remain runtime-native.** Adding a skill, command,
+  tool, plugin, MCP, or provider is still an OpenCode config change. Declaring
+  an agent in `[[agents]]` is a separate Kortix decision: it controls what the
+  platform may launch and what server-side grants that agent receives.
 - **Manifest schema is versioned.** `kortix_version` lets the platform
   evolve safely. A manifest declaring a higher version than the platform
   knows about is rejected outright — better than silent misread.

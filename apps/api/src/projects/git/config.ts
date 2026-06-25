@@ -1,6 +1,8 @@
 // Project config introspection: parses kortix.toml + the OpenCode config dir
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 
+import { parse as parseToml } from 'smol-toml';
+import { extractAgents, type LoadedAgents } from '../agents';
 import { readRepoFile, listRepoFiles } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -108,10 +110,73 @@ function agentNameFromPath(path: string) {
   return path.split('/').pop()?.replace(/\.md$/, '') || path;
 }
 
+function parseFullManifest(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    return parseToml(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function hasAgentsDeclaration(raw: string | null): boolean {
+  return Boolean(raw && /^\s*\[\[?agents\]?\]/m.test(raw));
+}
+
+type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' | 'enabled'>;
+
+export function resolveConfigAgents(
+  nativeAgents: NativeAgentSummary[],
+  loadedAgents: LoadedAgents,
+): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
+  if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
+    return {
+      agent_discovery: 'opencode',
+      agents: nativeAgents.map((agent) => ({
+        ...agent,
+        source: 'opencode' as const,
+        enabled: true,
+      })),
+    };
+  }
+
+  const nativeByName = new Map(nativeAgents.map((agent) => [agent.name, agent]));
+  const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
+  return {
+    agent_discovery: 'declarative',
+    agents: loadedAgents.specs
+      .filter((spec) => spec.enabled)
+      .map((spec) => {
+        const native = (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
+        return {
+          name: spec.name,
+          path: spec.file ?? native?.path ?? spec.path,
+          description: native?.description ?? null,
+          mode: native?.mode ?? null,
+          source: 'kortix.toml' as const,
+          enabled: spec.enabled,
+        };
+      }),
+  };
+}
+
 export async function loadProjectConfig(project: GitBackedProject, files?: ProjectFileEntry[]): Promise<ProjectConfigSummary> {
   const repoFiles = files ?? await listRepoFiles(project, project.defaultBranch);
   const manifestRaw = await optionalFile(project, project.manifestPath);
-  const manifest = parseManifest(manifestRaw);
+  const parsedManifest = parseFullManifest(manifestRaw);
+  const manifest = parsedManifest ?? parseManifest(manifestRaw);
+  const loadedAgents = parsedManifest
+    ? extractAgents({ schemaVersion: 1, raw: parsedManifest })
+    : hasAgentsDeclaration(manifestRaw)
+      ? {
+          specs: [],
+          errors: [{
+            name: '(manifest)',
+            path: project.manifestPath,
+            error: 'Failed to parse agents declaration',
+          }],
+        }
+      : { specs: [], errors: [] };
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -129,7 +194,7 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     .map((file) => file.path)
     .filter((path) => agentRe.test(path))
     .sort();
-  const agents = await Promise.all(agentPaths.map(async (path) => {
+  const nativeAgents = await Promise.all(agentPaths.map(async (path) => {
     const raw = await optionalFile(project, path);
     const meta = parseFrontmatter(raw);
     return {
@@ -139,6 +204,7 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
       mode: meta.mode || null,
     };
   }));
+  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -194,6 +260,7 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
     open_code_default_agent: parseJsonCString(openCodeRaw, 'default_agent'),
+    agent_discovery,
     agents,
     skills,
     commands,

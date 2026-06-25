@@ -1421,6 +1421,8 @@ export interface SessionChatInputProps {
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
+  /** Imperative draft prefill used by parent composers for starter prompts. */
+  prefill?: { text: string; id: number } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
@@ -1505,6 +1507,7 @@ export function SessionChatInput({
   disabled = false,
   autoFocus,
   placeholder = 'Ask anything...',
+  prefill = null,
 
   onFileSearch,
   providers,
@@ -1586,6 +1589,26 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  useEffect(() => {
+    if (!prefill?.text) return;
+    setText(prefill.text);
+    setStagedCommand(null);
+    setSlashFilter(null);
+    setMentionQuery(null);
+    setMentions([]);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      if (highlightRef.current) {
+        highlightRef.current.style.height = ta.style.height;
+      }
+    });
+  }, [prefill?.id, prefill?.text]);
+
   useEffect(() => {
     if (lockForQuestion) {
       // Question appeared — save current draft and clear input
@@ -2023,14 +2046,12 @@ export function SessionChatInput({
     }
   }, [
     text,
-    isBusy,
     disabled,
     onSend,
     onCommand,
     stagedCommand,
     attachedFiles,
     mentions,
-    sessionId,
     lockForQuestion,
     onCustomAnswer,
     onQuestionAction,

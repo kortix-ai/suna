@@ -171,6 +171,7 @@ export function InstantSessionShell({
         onSend={handleSend}
         onCommand={handleCommand}
         sessionId={sessionId}
+        projectId={projectId}
         isBusy={!!submitted}
         disabled={!!submitted}
         autoFocus
