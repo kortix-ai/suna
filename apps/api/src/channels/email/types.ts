@@ -35,7 +35,7 @@ export interface AgentMailThread {
 }
 
 export interface AgentMailMessageReceivedEvent {
-  type: "event";
+  type?: "event";
   event_type:
     | "message.received"
     | "message.received.spam"
@@ -43,5 +43,5 @@ export interface AgentMailMessageReceivedEvent {
     | "message.received.unauthenticated";
   event_id: string;
   message: AgentMailAddressedMessage;
-  thread: AgentMailThread;
+  thread?: AgentMailThread;
 }

@@ -197,6 +197,8 @@ interface ConnectEmailInput {
   display_name?: string;
   username?: string;
   domain?: string;
+  inbox_id?: string;
+  email?: string;
   sender_policy?: EmailSenderPolicy;
 }
 

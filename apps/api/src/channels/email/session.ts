@@ -56,7 +56,7 @@ export async function resolveProjectForAgentMailInbox(
 export async function dispatchAgentMailEvent(
   event: AgentMailMessageReceivedEvent,
 ): Promise<void> {
-  if (event.event_type !== "message.received") return;
+  if (!isInboundMessageEvent(event.event_type)) return;
   if (await alreadyHandled(`email:event:${event.event_id}`)) return;
   const projectId = await resolveProjectForAgentMailInbox(
     event.message.inbox_id,
@@ -202,7 +202,7 @@ async function createThreadSession(
         thread_id: threadId,
         message_id: event.message.message_id,
         from: messageSender(event),
-        subject: event.message.subject ?? event.thread.subject ?? null,
+        subject: messageSubject(event),
       },
     },
     extraEnvVars: {
@@ -342,13 +342,21 @@ function renderAgentPrompt(
     `Message ID: ${event.message.message_id}`,
     `From:       ${messageSender(event)}`,
     `To:         ${(event.message.to ?? []).join(", ")}`,
-    `Subject:    ${event.message.subject ?? event.thread.subject ?? "(no subject)"}`,
+    `Subject:    ${messageSubject(event) ?? "(no subject)"}`,
     "",
     messageSummary(event),
     "",
     EMAIL_TURN_INSTRUCTIONS,
   );
   return lines.join("\n");
+}
+
+function isInboundMessageEvent(eventType: AgentMailMessageReceivedEvent["event_type"]): boolean {
+  return eventType === "message.received" || eventType === "message.received.unauthenticated";
+}
+
+function messageSubject(event: AgentMailMessageReceivedEvent): string | null {
+  return event.message.subject ?? event.thread?.subject ?? null;
 }
 
 function messageSummary(event: AgentMailMessageReceivedEvent): string {

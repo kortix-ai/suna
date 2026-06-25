@@ -80,7 +80,7 @@ export async function createAgentMailWebhook(input: {
     method: 'POST',
     body: {
       url: input.url,
-      event_types: ['message.received'],
+      event_types: ['message.received', 'message.received.unauthenticated'],
       inbox_ids: [input.inboxId],
       client_id: input.clientId,
     },
