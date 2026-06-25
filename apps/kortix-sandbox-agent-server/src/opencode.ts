@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { access, constants, stat } from 'node:fs/promises'
 
 import { AGENT_ENV_SH } from './agent-env-file'
+import { LLM_PROXY_PLACEHOLDER_KEY, EXECUTOR_PROXY_PLACEHOLDER_KEY } from './llm-proxy'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
@@ -42,8 +43,27 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
   const llmApiKey = env.KORTIX_LLM_API_KEY
 
-  const hasExecutor = !!executorToken && !!apiUrl
-  const hasLlmGateway = !!llmBaseUrl && !!llmApiKey
+  // Warm-fork no-restart path (stateful only). When the daemon runs the localhost
+  // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
+  // the proxy with a placeholder key, making the gateway provider config
+  // SESSION-INDEPENDENT (the real per-session token is injected by the proxy, not
+  // baked here). This lets a tokenless warm seed bake a usable provider so claim
+  // can hot-swap the token with NO opencode restart. Cold/Daytona never set this
+  // env → unchanged direct-provider behavior below.
+  const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
+  const proxyMode = !!llmProxyUrl
+  // Same trick for the executor MCP: when the daemon runs the executor proxy it
+  // exports KORTIX_EXECUTOR_PROXY_URL; the MCP's KORTIX_API_URL points at the
+  // proxy with a placeholder token so the tokenless warm seed can bake a working
+  // kortix-executor MCP (tools exposed; the proxy injects the real per-session
+  // token on the first tool call after claim — no opencode restart).
+  const executorProxyUrl = env.KORTIX_EXECUTOR_PROXY_URL
+  const executorProxyMode = !!executorProxyUrl
+
+  // Direct mode needs both token+url; proxy mode needs only the proxy URL (the
+  // per-session token arrives live at request time via the proxy).
+  const hasExecutor = executorProxyMode || (!!executorToken && !!apiUrl)
+  const hasLlmGateway = proxyMode || (!!llmBaseUrl && !!llmApiKey)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
@@ -77,11 +97,16 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
         command: ['kortix', 'executor', 'mcp'],
         enabled: true,
         environment: {
-          KORTIX_EXECUTOR_TOKEN: executorToken,
-          KORTIX_API_URL: apiUrl,
+          // Proxy mode: the MCP talks to the localhost executor proxy with a
+          // placeholder token; the proxy injects the real per-session token
+          // upstream (so the baked config is session-independent → no restart on
+          // claim). Direct mode (cold/Daytona): the real token + api url, as before.
+          KORTIX_EXECUTOR_TOKEN: executorProxyMode ? EXECUTOR_PROXY_PLACEHOLDER_KEY : executorToken!,
+          KORTIX_API_URL: executorProxyMode ? executorProxyUrl! : apiUrl!,
           // Lets the CLI target the project-explicit gateway route. Optional —
           // the session token also pins the project for the legacy flat route,
-          // so this is belt-and-suspenders.
+          // so this is belt-and-suspenders. Project id is session-independent so
+          // it's safe to bake at seed.
           ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
         },
       },
@@ -96,7 +121,19 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
         : {}
     out.provider = {
       ...provider,
-      kortix: await buildKortixProvider(llmBaseUrl!, llmApiKey!),
+      kortix: await buildKortixProvider({
+        // In proxy mode opencode talks to the localhost proxy with a placeholder
+        // key; the proxy injects the real per-session token upstream. In direct
+        // mode (cold/Daytona) it's the real gateway base + key, as before.
+        baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
+        apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+        // Catalog is org-stable: prefer a baked file (lets the warm seed bake the
+        // full catalog with no per-session token), else fetch from the real
+        // gateway (needs a real base+key — only available in direct mode).
+        catalogFile: env.KORTIX_LLM_CATALOG_FILE,
+        fetchBaseURL: llmBaseUrl,
+        fetchApiKey: llmApiKey,
+      }),
     }
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
@@ -154,16 +191,56 @@ function gatewayEnabledProviders(env: NodeJS.ProcessEnv): string[] {
   return [...allow]
 }
 
-async function buildKortixProvider(llmBaseUrl: string, llmApiKey: string): Promise<Record<string, unknown>> {
+type KortixProviderOpts = {
+  /** baseURL opencode sends LLM requests to (real gateway, or localhost proxy). */
+  baseURL: string
+  /** apiKey baked into the config (real key, or the proxy placeholder). */
+  apiKey: string
+  /** Optional baked catalog file (org-stable models JSON) — preferred source. */
+  catalogFile?: string
+  /** Real gateway base/key for fetching the catalog when no file is baked. */
+  fetchBaseURL?: string
+  fetchApiKey?: string
+}
+
+async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<string, unknown>> {
   return {
     npm: '@ai-sdk/openai-compatible',
     name: 'Kortix',
     options: {
-      baseURL: llmBaseUrl,
-      apiKey: llmApiKey,
+      baseURL: opts.baseURL,
+      apiKey: opts.apiKey,
     },
-    models: withModelLimits(await fetchGatewayModels(llmBaseUrl, llmApiKey)),
+    models: withModelLimits(await loadGatewayCatalog(opts)),
   }
+}
+
+// Resolve the model catalog. A baked file (org-stable, written by a step that has
+// the catalog without a per-session token) wins — that's what lets a tokenless
+// warm seed bake the FULL catalog. Otherwise fetch from the real gateway (needs a
+// real base+key; only present in direct mode). Falls back to the minimal set.
+async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<string, KortixGatewayModel>> {
+  if (opts.catalogFile) {
+    try {
+      const raw = readFileSync(opts.catalogFile, 'utf8')
+      const parsed = JSON.parse(raw) as { models?: Record<string, KortixGatewayModel> } | Record<string, KortixGatewayModel>
+      const models = (parsed && typeof parsed === 'object' && 'models' in parsed
+        ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
+        : (parsed as Record<string, KortixGatewayModel>)) ?? {}
+      if (Object.keys(models).length > 0) {
+        logger.info(`[opencode] loaded ${Object.keys(models).length} gateway models from baked catalog ${opts.catalogFile}`)
+        return models
+      }
+      logger.warn(`[opencode] baked catalog ${opts.catalogFile} was empty; falling back`)
+    } catch (err) {
+      logger.warn(`[opencode] baked catalog read failed (${opts.catalogFile}): ${(err as Error).message}; falling back`)
+    }
+  }
+  if (opts.fetchBaseURL && opts.fetchApiKey) {
+    return fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+  }
+  logger.warn('[opencode] no baked catalog and no gateway credentials to fetch; using minimal fallback')
+  return MINIMAL_FALLBACK_MODELS
 }
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
