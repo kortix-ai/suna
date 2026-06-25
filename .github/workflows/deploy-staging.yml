@@ -398,6 +398,7 @@ jobs:
           mkdir -p .vercel
           jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" \
             '{orgId:$org, projectId:$project}' > .vercel/project.json
+          export VERCEL_ORG_ID="$VERCEL_TEAM_ID"
 
           url="$(npx vercel deploy --yes --target preview --archive=tgz \
             --token "$VERCEL_TOKEN" \
