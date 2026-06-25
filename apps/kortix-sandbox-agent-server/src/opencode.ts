@@ -245,7 +245,14 @@ async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<stri
 
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
 
-const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000]
+const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000]
+// Per-request hard cap. `opencode serve` cannot bind its port until
+// buildOpencodeConfigContent (which awaits this fetch) returns — so a slow/degraded
+// gateway `/models` directly blocks session start on BOTH providers (platinum +
+// daytona). Bound it and fall back to the minimal catalog rather than hang; a slow
+// gateway won't get faster on retry. Restoring the full catalog is the gateway's
+// job once /models is fast (it is uncached + ~400KB today).
+const GATEWAY_MODELS_TIMEOUT_MS = 6_000
 
 async function fetchGatewayModels(
   baseUrl: string,
@@ -253,10 +260,13 @@ async function fetchGatewayModels(
 ): Promise<Record<string, KortixGatewayModel>> {
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
   const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
-  logger.info(`[opencode] fetching gateway models from ${url}`)
+  logger.info(`[opencode] fetching gateway models from ${url} (timeout ${GATEWAY_MODELS_TIMEOUT_MS}ms)`)
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const res = await fetch(url, { headers: { authorization: `Bearer ${apiKey}` } })
+      const res = await fetch(url, {
+        headers: { authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(GATEWAY_MODELS_TIMEOUT_MS),
+      })
       if (!res.ok) {
         const detail = (await res.text().catch(() => '')).slice(0, 200)
         throw new Error(`HTTP ${res.status}${detail ? ` ${detail}` : ''}`)
@@ -267,14 +277,20 @@ async function fetchGatewayModels(
       logger.info(`[opencode] fetched ${Object.keys(models).length} gateway models from ${url}`)
       return models
     } catch (err) {
+      const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
       logger.warn(
-        `[opencode] gateway models fetch failed (attempt ${attempt + 1}/${attempts}) ${url}: ${(err as Error).message}`,
+        `[opencode] gateway models fetch ${timedOut ? `timed out (>${GATEWAY_MODELS_TIMEOUT_MS}ms)` : 'failed'} ` +
+          `(attempt ${attempt + 1}/${attempts}) ${url}: ${(err as Error).message}`,
       )
+      // A slow gateway won't get faster on retry, and opencode is blocked the whole
+      // time — fall back immediately on a timeout so the session can start. Only
+      // genuine transient failures (5xx / network) are worth retrying.
+      if (timedOut) break
       const delay = GATEWAY_MODELS_RETRY_DELAYS_MS[attempt]
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
-  logger.error(`[opencode] gateway models unavailable after ${attempts} attempts (${url}); using minimal fallback`)
+  logger.error(`[opencode] gateway models unavailable (${url}); using minimal fallback so the session can start`)
   return MINIMAL_FALLBACK_MODELS
 }
 

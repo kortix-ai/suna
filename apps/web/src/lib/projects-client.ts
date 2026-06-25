@@ -2333,9 +2333,14 @@ export interface SessionStartResult {
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
+  // Optional server-side long-poll budget (ms): the server holds the request
+  // until readiness flips (or its bounded deadline), so we learn `ready` the
+  // instant it happens instead of on a fixed poll tick. Omit = one-shot.
+  waitMs?: number,
 ): Promise<SessionStartResult | null> {
+  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : '';
   const response = await backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start`,
+    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
     // 402 (billing) is handled by the page's plan gate before polling; other
     // failures just yield null and the caller retries.
