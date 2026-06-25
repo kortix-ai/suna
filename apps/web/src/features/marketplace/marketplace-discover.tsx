@@ -1,19 +1,10 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-/**
- * The sources tab — manage *sources* (not items). "Your sources" (Kortix +
- * everything you've enabled, with live counts) and "Featured" (curated,
- * permissively-licensed repos you can enable in one click). Enable → its skills
- * flow into the catalog; Browse → jumps to Explore filtered to that source.
- */
-
-import { Check, ExternalLink, Plus, Search, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
@@ -24,6 +15,12 @@ import {
 } from '@/hooks/marketplace';
 import type { MarketplaceSummary } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
+import { TrashSolid } from '@mynaui/icons-react';
+import { Plus, Search } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
+import { useState } from 'react';
+import { Icon } from '../icon/icon';
 import { AddMarketplaceModal } from './add-marketplace-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 
@@ -38,8 +35,6 @@ function ghUrlFor(id: string): string | undefined {
   return id.includes('/') && !id.includes('://') ? `https://github.com/${id}` : undefined;
 }
 
-/** Drop repeats by their render key — guards against duplicate React keys (and
- * duplicate cards) if a source ever appears twice in the payload. */
 function dedupeBy<T>(arr: readonly T[], key: (t: T) => string): T[] {
   const seen = new Set<string>();
   return arr.filter((t) => {
@@ -52,7 +47,7 @@ function dedupeBy<T>(arr: readonly T[], key: (t: T) => string): T[] {
 
 function SourceCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-popover hover:bg-muted/80 flex items-start gap-3 rounded-md border p-3.5 transition-colors">
+    <div className="hover:bg-muted/40 flex items-start gap-3 rounded-md border px-4 py-3 transition-colors">
       {children}
     </div>
   );
@@ -106,16 +101,11 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
     <div className="space-y-7">
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-foreground text-sm font-semibold">
-              {tI18nHardcoded.raw(
-                'autoComponentsMarketplaceMarketplaceDiscoverJsxTextYourSourcesca5e4602',
-              )}
-            </h3>
-            {mine.length > 0 && (
-              <span className="text-muted-foreground/60 text-xs tabular-nums">{mine.length}</span>
+          <Label>
+            {tI18nHardcoded.raw(
+              'autoComponentsMarketplaceMarketplaceDiscoverJsxTextYourSourcesca5e4602',
             )}
-          </div>
+          </Label>
           <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
             <Plus className="size-4" />
             {tI18nHardcoded.raw(
@@ -136,57 +126,60 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
               const gh = m.sourceUrl ?? ghUrlFor(m.id);
               return (
                 <SourceCard key={m.id}>
-                  <MarketplaceAvatar
-                    id={m.id}
-                    owner={m.owner}
-                    sourceUrl={m.sourceUrl}
-                    label={m.label}
-                    size="md"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-foreground truncate text-sm font-medium">
-                        {m.label}
+                  <span className="relative inline-flex shrink-0">
+                    <MarketplaceAvatar
+                      id={m.id}
+                      owner={m.owner}
+                      sourceUrl={m.sourceUrl}
+                      label={m.label}
+                      size="md"
+                    />
+                    {!m.external && (
+                      <span className="absolute -right-1 -bottom-1 inline-flex rounded-full">
+                        <Icon.Verified className="size-5" />
                       </span>
-                      {!m.external && (
-                        <Badge variant="muted" size="sm" className="shrink-0">
-                          Official
-                        </Badge>
-                      )}
+                    )}
+                  </span>
+                  <div className="flex min-w-0 flex-1 items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {gh ? (
+                          <Link
+                            href={gh}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-foreground hover:text-foreground/80 min-w-0 truncate text-sm font-medium transition-colors hover:underline"
+                          >
+                            {m.label}
+                          </Link>
+                        ) : (
+                          <span className="text-foreground truncate text-sm font-medium">
+                            {m.label}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-muted-foreground mt-0.5 truncate text-xs">
+                        {m.count} items
+                        {typeBreakdown(m.types) ? ` · ${typeBreakdown(m.types)}` : ''}
+                      </div>
                     </div>
-                    <div className="text-muted-foreground mt-0.5 truncate text-xs">
-                      {m.count} items{typeBreakdown(m.types) ? ` · ${typeBreakdown(m.types)}` : ''}
-                    </div>
-                    <div className="mt-2 flex items-center gap-1">
+                    <ButtonGroup className="mt-2">
                       <Button size="xs" variant="outline" onClick={() => onBrowse(m.id)}>
                         Browse
                       </Button>
-                      {gh && (
-                        <a
-                          href={gh}
-                          target="_blank"
-                          rel="noreferrer"
-                          aria-label={tI18nHardcoded.raw(
-                            'autoComponentsMarketplaceMarketplaceDiscoverJsxAttrAriaLabelViewOn35edbd8c',
-                          )}
-                          className="text-muted-foreground hover:text-foreground inline-flex size-7 items-center justify-center rounded-lg transition-colors"
-                        >
-                          <ExternalLink className="size-3.5" />
-                        </a>
-                      )}
                       {removable && (
                         <Button
                           size="xs"
-                          variant="ghost"
+                          variant="outline"
                           aria-label={`Remove ${m.label}`}
                           className="text-muted-foreground hover:text-foreground ml-auto"
                           disabled={removeSource.isPending}
                           onClick={() => onRemove(m)}
                         >
-                          <Trash2 className="size-3.5" />
+                          <TrashSolid className="size-3.5" />
                         </Button>
                       )}
-                    </div>
+                    </ButtonGroup>
                   </div>
                 </SourceCard>
               );
@@ -195,27 +188,17 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
         )}
       </section>
 
+      <Separator />
+
       {/* Featured / discover */}
       {(featuredAll.length > 0 || featuredQ.isLoading) && (
         <section className="space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-foreground text-sm font-semibold">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsMarketplaceMarketplaceDiscoverJsxTextFeaturedSources185c12c5',
-                  )}
-                </h3>
-                <span className="text-muted-foreground/60 text-xs tabular-nums">
-                  {featuredAll.length}
-                </span>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                {tI18nHardcoded.raw(
-                  'autoComponentsMarketplaceMarketplaceDiscoverJsxTextCuratedPermissivelyLicensedReposadbe2517',
-                )}
-              </p>
-            </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Label>
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceDiscoverJsxTextFeaturedSources185c12c5',
+              )}
+            </Label>
             <div className="relative w-full sm:max-w-[220px]">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
               <Input
@@ -237,51 +220,52 @@ export function MarketplaceDiscover({ onBrowse }: { onBrowse: (id: string) => vo
               {search}”.
             </p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
               {featured.map((f) => {
                 const gh = ghUrlFor(f.address);
                 const busy = pending === f.address;
                 return (
                   <SourceCard key={f.address}>
-                    <MarketplaceAvatar id={f.address} owner={f.owner} label={f.label} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {f.label}
-                        </span>
-                        {f.license && (
-                          <Badge variant="muted" size="sm" className="shrink-0">
-                            {f.license}
-                          </Badge>
-                        )}
+                    <span className="relative inline-flex shrink-0">
+                      <MarketplaceAvatar id={f.address} owner={f.owner} label={f.label} size="md" />
+                    </span>
+                    <div className="flex min-w-0 flex-1 items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          {gh ? (
+                            <Link
+                              href={gh}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-foreground hover:text-foreground/80 min-w-0 truncate text-sm font-medium transition-colors hover:underline"
+                            >
+                              {f.label}
+                            </Link>
+                          ) : (
+                            <span className="text-foreground truncate text-sm font-medium">
+                              {f.label}
+                            </span>
+                          )}
+                          {/* {f.license && (
+                            <Badge variant="kortix" size="sm" className="shrink-0">
+                              {f.license}
+                            </Badge>
+                          )} */}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5 truncate text-xs">
+                          {f.description || f.address}
+                        </div>
                       </div>
-                      <div className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
-                        {f.description}
-                      </div>
-                      <div className="text-muted-foreground/60 mt-0.5 truncate font-mono text-[10px]">
-                        {f.address}
-                      </div>
-                      <div className="mt-2 flex items-center gap-1">
+                      <div className="mb-auto flex shrink-0 items-center gap-1">
                         <Button
                           size="xs"
+                          variant="secondary"
                           className={cn(busy && 'opacity-70')}
                           disabled={busy}
                           onClick={() => onEnable(f.address, f.label)}
                         >
-                          {busy ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
                           {busy ? 'Enabling…' : 'Enable'}
                         </Button>
-                        {gh && (
-                          <a
-                            href={gh}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors"
-                          >
-                            GitHub
-                            <ExternalLink className="size-3" />
-                          </a>
-                        )}
                       </div>
                     </div>
                   </SourceCard>

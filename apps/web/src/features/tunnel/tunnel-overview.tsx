@@ -75,7 +75,7 @@ function ConnectCommandPanel() {
   });
 
   return (
-    <div className="space-y-4 w-full">
+    <div className="w-full space-y-4">
       <div className="bg-popover overflow-hidden rounded-md border">
         <div className="flex items-center justify-between gap-3 px-4 py-2.5">
           <span className="text-muted-foreground text-xs">Install command</span>
@@ -163,9 +163,11 @@ export function TunnelOverview() {
         title="Computers"
         description="Connect local machines and grant agents permissioned access over a reverse tunnel."
       >
-          <div className="flex items-center justify-between gap-3 ">
+        {hasConnections && (
+          <div className="flex items-center justify-between gap-3">
             <ConnectCommandPanel />
           </div>
+        )}
 
         <div className="space-y-4">
           {hasConnections && (

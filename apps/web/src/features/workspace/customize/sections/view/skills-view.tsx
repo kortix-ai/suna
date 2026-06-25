@@ -198,7 +198,7 @@ function SkillDisclosure({ projectId, skill }: { projectId: string; skill: Skill
     <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
       <DisclosureTrigger variant="outline">
         <Button
-          variant="accent"
+          variant="popover"
           className={cn('flex w-full items-center justify-start rounded-none')}
         >
           <span className="truncate text-sm font-medium">{skill.name}</span>

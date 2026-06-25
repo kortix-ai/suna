@@ -177,10 +177,7 @@ export function DriveToolbar({
                 onClick={() => navigateToPath(homePath)}
                 variant="ghost"
                 size="xs"
-                className={cn(
-                  'shrink-0',
-                  segments.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground',
-                )}
+                className={cn('text-foreground shrink-0 font-medium')}
               >
                 <HomeSolid className="size-4" />
                 <span className="text-xs">{rootPath ? homeLabel : 'workspace'}</span>

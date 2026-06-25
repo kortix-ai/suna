@@ -4,11 +4,9 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { AppHeader } from '@/features/layout/app-header';
 import { AddToProjectModal } from '@/features/marketplace/add-to-project-modal';
 import { MarketplaceBrowser } from '@/features/marketplace/marketplace-browser';
-import { MarketplaceDiscover } from '@/features/marketplace/marketplace-discover';
 import { MarketplaceItemDetail } from '@/features/marketplace/marketplace-item-detail';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
@@ -19,15 +17,12 @@ export default function MarketplacePage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [addItem, setAddItem] = useState<MarketplaceItem | null>(null);
-  const [tab, setTab] = useState<'explore' | 'marketplaces'>('explore');
-  const [source, setSource] = useState('all');
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const closeSheet = useMarketplaceDetailStore((s) => s.close);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
-  // Leave the detail when the page unmounts so a stale detail never reopens.
   useEffect(() => () => closeSheet(), [closeSheet]);
 
   if (authLoading || !user) return <div className="bg-background min-h-screen" />;
@@ -53,50 +48,23 @@ export default function MarketplacePage() {
   return (
     <div className="bg-foreground/5 flex min-h-screen flex-col">
       <AppHeader user={user} breadcrumb="Marketplace" />
-      <main className="ring-input bg-background flex-1 rounded-t-3xl px-4 py-8 ring-1 sm:px-6 sm:py-10">
-        <div className="mx-auto w-full max-w-5xl space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-foreground text-lg font-semibold">Marketplace</h1>
-              <p className="text-muted-foreground text-sm">
-                {tI18nHardcoded.raw(
-                  'autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d',
-                )}
-              </p>
-            </div>
-            <FilterBar className="shrink-0">
-              <FilterBarItem
-                data-state={tab === 'explore' ? 'active' : 'inactive'}
-                onClick={() => setTab('explore')}
-              >
-                Explore
-              </FilterBarItem>
-              <FilterBarItem
-                data-state={tab === 'marketplaces' ? 'active' : 'inactive'}
-                onClick={() => setTab('marketplaces')}
-              >
-                Sources
-              </FilterBarItem>
-            </FilterBar>
-          </div>
+      <main className="ring-input bg-background flex-1 rounded-t-3xl ring-1">
+        <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-10 pb-20 lg:py-20">
+          <header className="space-y-1">
+            <h1 className="text-foreground text-xl font-medium text-balance">Marketplace</h1>
+            <p className="text-muted-foreground text-sm text-pretty">
+              {tI18nHardcoded.raw(
+                'autoAppAppMarketplacePageJsxTextBrowseSkillsAcrossEvery14a9148d',
+              )}
+            </p>
+          </header>
 
-          {tab === 'explore' ? (
-            <MarketplaceBrowser
-              source={source}
-              onSourceChange={setSource}
-              onAdd={(it) => {
-                closeSheet();
-                setAddItem(it);
-              }}
-            />
-          ) : (
-            <MarketplaceDiscover
-              onBrowse={(id) => {
-                setSource(id);
-                setTab('explore');
-              }}
-            />
-          )}
+          <MarketplaceBrowser
+            onAdd={(it) => {
+              closeSheet();
+              setAddItem(it);
+            }}
+          />
         </div>
       </main>
 

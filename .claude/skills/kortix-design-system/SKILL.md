@@ -1,11 +1,22 @@
 ---
 name: kortix-design-system
-description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web. Source of truth: globals.css + the live /design-system page + src/components/ui + the reference implementations listed below."
+description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web. Always load the companion skill make-interfaces-feel-better (apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) in the same session — brand/tokens here, polish/motion/haptics there. Source of truth: globals.css + the live /design-system page + src/components/ui + the reference implementations listed below."
 ---
 
 # Kortix Design System
 
 **If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished reference implementations — the old version is stale and superseded.
+
+## Companion skill — always load both
+
+**Always invoke [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) alongside this skill.** They are complementary, not optional alternatives:
+
+| Skill                                | Owns                                                                                                                              |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **kortix-design-system** (this file) | Brand, tokens, components, layout shells, color/radius/spacing law, reference implementations                                     |
+| **make-interfaces-feel-better**      | Polish: concentric radius, optical alignment, shadows, enter/exit motion, scale-on-press, tabular nums, hit areas, font smoothing |
+
+Load both before writing or reviewing UI. When Kortix rules and polish rules overlap (e.g. border radius, motion), **Kortix tokens win** — then apply the polish skill within those constraints.
 
 ## Philosophy
 
@@ -236,9 +247,10 @@ Rules:
 
 ## Workflow checklist
 
-1. **Read a reference implementation** first (list above). Match its structure.
-2. Open `/design-system` and skim `src/components/ui/` before writing UI.
-3. Compose: `CustomizeSectionWrapper` → `Card` + hand-composed rows (or `Table`) → `Badge` + `InlineMeta` + `EmptyState`. Never `SectionCard` or `List`.
-4. Status → tinted icon tile. Color → `kortix-*` token. Radius → `rounded-md` (container), `rounded-none` (flush seam).
-5. If you must create a primitive: tokens only, tiny API, add a showcase block to `/design-system`.
-6. Verify: no raw palette colors, no nested rounding, no direct card padding, both light + dark themes work, `tsc` clean.
+1. **Load [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md)** — run its review checklist after composing UI.
+2. **Read a reference implementation** first (list above). Match its structure.
+3. Open `/design-system` and skim `src/components/ui/` before writing UI.
+4. Compose: `CustomizeSectionWrapper` → `Card` + hand-composed rows (or `Table`) → `Badge` + `InlineMeta` + `EmptyState`. Never `SectionCard` or `List`.
+5. Status → tinted icon tile. Color → `kortix-*` token. Radius → `rounded-md` (container), `rounded-none` (flush seam).
+6. If you must create a primitive: tokens only, tiny API, add a showcase block to `/design-system`.
+7. Verify: no raw palette colors, no nested rounding, no direct card padding, both light + dark themes work, `tsc` clean, plus polish checklist from `make-interfaces-feel-better`.

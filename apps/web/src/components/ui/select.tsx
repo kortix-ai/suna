@@ -16,7 +16,7 @@ const SelectValue = SelectPrimitive.Value;
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
-    variant?: 'default' | 'outline' | 'secondary' | 'accent' | 'popover';
+    variant?: 'default' | 'outline' | 'secondary' | 'accent' | 'popover' | 'transparent';
     size?: ButtonProps['size'];
     arrow?: boolean;
   }
@@ -33,6 +33,7 @@ const SelectTrigger = React.forwardRef<
       variant === 'accent' && 'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8',
       variant === 'popover' &&
         'bg-popover text-foreground border-border focus:border-kortix-blue focus:border focus:outline-none',
+      variant === 'transparent' && 'text-foreground border-none bg-transparent',
       className,
     )}
     {...props}
