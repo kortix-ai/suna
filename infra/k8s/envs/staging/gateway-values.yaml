@@ -2,17 +2,14 @@
 # kortix-api (`kortix-staging`) and is promoted only from release-candidate code.
 
 image:
-  tag: "staging-latest"
-
+  tag: "staging-740b9b01"
 replicas: 2
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 4
-
 pdb:
   enabled: true
-
 resources:
   requests:
     cpu: "500m"
@@ -20,7 +17,6 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
-
 ingress:
   enabled: true
   host: gateway-staging.kortix.com
