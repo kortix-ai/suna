@@ -712,6 +712,9 @@ projectsApp.openapi(
       profile_slug?: string;
       username?: string;
       domain?: string;
+      inbox_id?: string;
+      inboxId?: string;
+      email?: string;
       display_name?: string;
       displayName?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
@@ -739,6 +742,18 @@ projectsApp.openapi(
     const username = normalizeAgentMailUsername(
       body.username ?? loaded.row.name,
     );
+    const existingInboxId =
+      typeof (body.inbox_id ?? body.inboxId) === "string"
+        ? (body.inbox_id ?? body.inboxId)!.trim()
+        : "";
+    const existingEmail =
+      typeof body.email === "string" ? body.email.trim() : "";
+    if ((existingInboxId && !existingEmail) || (!existingInboxId && existingEmail)) {
+      return c.json(
+        { error: "Existing AgentMail inbox requires both inbox_id and email" },
+        400,
+      );
+    }
     const domain =
       typeof body.domain === "string" && body.domain.trim()
         ? body.domain.trim()
@@ -752,24 +767,32 @@ projectsApp.openapi(
     const clientId = `kortix-project-${projectId}`;
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
-    try {
-      inbox = await createAgentMailInbox({
-        apiKey,
-        username,
-        domain,
-        displayName,
-        clientId,
-        metadata: {
-          provider: "kortix",
-          project_id: projectId,
-          account_id: loaded.row.accountId,
-        },
-      });
-    } catch (err) {
-      return c.json(
-        { error: `AgentMail inbox create failed: ${(err as Error).message}` },
-        502,
-      );
+    if (existingInboxId && existingEmail) {
+      inbox = {
+        inbox_id: existingInboxId,
+        email: existingEmail,
+        display_name: displayName,
+      };
+    } else {
+      try {
+        inbox = await createAgentMailInbox({
+          apiKey,
+          username,
+          domain,
+          displayName,
+          clientId,
+          metadata: {
+            provider: "kortix",
+            project_id: projectId,
+            account_id: loaded.row.accountId,
+          },
+        });
+      } catch (err) {
+        return c.json(
+          { error: `AgentMail inbox create failed: ${(err as Error).message}` },
+          502,
+        );
+      }
     }
 
     let webhookId: string;
