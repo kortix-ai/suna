@@ -60,7 +60,7 @@ Please include affected version/commit, reproduction steps, impact, and any PoC.
 - **dotenvx** — local-dev `.env` files are encrypted in git; keys live in Dotenv
   Armor, never the repo.
 - **gitleaks** — secret scanning on every PR (`secret-scan.yml`).
-- **CodeQL** — SAST on push/PR to `main`/`prod` and weekly (`codeql.yml`).
+- **CodeQL** — SAST on push/PR to `main`/`staging`/`prod` and weekly (`codeql.yml`).
 - **GuardDuty** — AWS threat detection on account `935064898258`.
 - **CloudTrail** — API-level audit logging.
 - **AWS Backup** — managed backups of stateful AWS resources.
