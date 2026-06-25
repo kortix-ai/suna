@@ -1,8 +1,13 @@
 import { CircuitOpenError, UpstreamHttpError } from '../errors';
 import { CircuitBreaker } from '../resilience';
 import { callUpstream, type FetchImpl } from '../http';
-import type { GatewayConfig, UpstreamDescriptor } from '../domain';
+import type { GatewayConfig, GatewayLogger, UpstreamDescriptor } from '../domain';
 import type { TraceEmitter, TraceFields } from './trace';
+
+// 4xx statuses that mean "this upstream won't serve you right now" rather than
+// "your request is wrong" — rate limit, payment required, quota/forbidden. These
+// are the ones worth failing over (e.g. BYOK out of quota → managed fallback).
+const LIMIT_STATUSES = new Set([402, 403, 429]);
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -22,6 +27,8 @@ export interface FailoverContext {
   fetchImpl?: FetchImpl;
   breakerFor: (provider: string) => CircuitBreaker;
   emit: TraceEmitter;
+  logger: GatewayLogger;
+  requestId: string;
   trace: Partial<TraceFields>;
   capturedRequest: unknown;
 }
@@ -36,27 +43,78 @@ export interface FailoverSuccess {
 export type FailoverResult = { kind: 'response'; response: Response } | { kind: 'success'; value: FailoverSuccess };
 
 export async function runFailover(ctx: FailoverContext): Promise<FailoverResult> {
-  const { candidates, payload, config, fetchImpl, breakerFor, emit, trace, capturedRequest } = ctx;
+  const { candidates, payload, config, fetchImpl, breakerFor, emit, logger, requestId, trace, capturedRequest } = ctx;
   const tried: string[] = [];
   let attempts = 0;
   let upstream: Response | null = null;
   let chosen: UpstreamDescriptor | null = null;
   let lastError: unknown;
 
-  for (const descriptor of candidates) {
+  const debug = (event: string, fields?: Record<string, unknown>): void =>
+    logger.debug?.(`[gateway] · ${requestId} ${event}`, { requestId, event, ...fields });
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const descriptor = candidates[i];
+    const hasFallback = i < candidates.length - 1;
     tried.push(descriptor.provider);
     attempts += 1;
+    const breaker = breakerFor(descriptor.provider);
+    const attemptStart = Date.now();
+    debug('upstream_attempt', {
+      candidate: i,
+      provider: descriptor.provider,
+      kind: descriptor.kind,
+      resolvedModel: descriptor.resolvedModel,
+      baseUrl: descriptor.baseUrl,
+      breakerState: breaker.current,
+      hasFallback,
+    });
     try {
       upstream = await callUpstream(payload, descriptor, {
-        retry: { ...config.retry, onRetry: (info) => { attempts += 1; config.retry?.onRetry?.(info); } },
-        binding: { provider: descriptor.provider, breaker: breakerFor(descriptor.provider) },
+        retry: {
+          ...config.retry,
+          onRetry: (info) => {
+            attempts += 1;
+            debug('upstream_retry', {
+              provider: descriptor.provider,
+              attempt: info.attempt,
+              delayMs: info.delayMs,
+              reason: errorMessage(info.error),
+            });
+            config.retry?.onRetry?.(info);
+          },
+        },
+        binding: { provider: descriptor.provider, breaker },
         fetchImpl,
       });
       chosen = descriptor;
+      debug('upstream_attempt_ok', {
+        provider: descriptor.provider,
+        status: upstream.status,
+        ms: Date.now() - attemptStart,
+      });
       break;
     } catch (err) {
       lastError = err;
+      debug('upstream_attempt_failed', {
+        provider: descriptor.provider,
+        ms: Date.now() - attemptStart,
+        status: err instanceof UpstreamHttpError ? err.status : undefined,
+        error: errorMessage(err),
+        breakerState: breaker.current,
+      });
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
+        // A rate-limit / quota / billing error (429/402/403) on a candidate that
+        // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
+        // managed model queued next — falls over instead of failing the turn.
+        // (429 was already retried on this candidate by callUpstream, so reaching
+        // here means it's persistent, not a transient blip.) Other 4xx — bad
+        // request, auth, model-not-found — are the caller's to fix: return as-is.
+        if (LIMIT_STATUSES.has(err.status) && hasFallback) {
+          debug('failover_to_next', { fromProvider: descriptor.provider, status: err.status });
+          continue;
+        }
+        debug('upstream_client_error_return', { provider: descriptor.provider, status: err.status });
         emit({
           ...trace, resolvedModel: descriptor.resolvedModel, provider: descriptor.provider,
           billingMode: descriptor.billingMode, status: err.status, ok: false,
@@ -72,6 +130,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const open = lastError instanceof CircuitOpenError;
     const status = open ? 503 : 502;
     const errorCode = open ? 'upstream_unavailable' : 'upstream_unreachable';
+    debug('all_upstreams_exhausted', { circuitOpen: open, status, tried, attempts, error: errorMessage(lastError) });
     emit({
       ...trace, provider: tried[tried.length - 1] ?? '', status, ok: false,
       errorCode, errorMessage: errorMessage(lastError), attempts, candidatesTried: tried,

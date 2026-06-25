@@ -21,12 +21,20 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
-import type { Event as OpenCodeEvent, Part } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent, Part } from '@opencode-ai/sdk/v2/client';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { ptyKeys } from './use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from './use-opencode-sessions';
 import { resetPrefetchState } from './use-session-prefetch';
+
+type OpenCodeEvent =
+  | OpenCodeSdkEvent
+  | {
+      id: string;
+      type: 'lsp.client.diagnostics';
+      properties: { serverID: string; path: string };
+    };
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
@@ -598,7 +606,7 @@ export function useOpenCodeEventStream() {
       // Sync store is the SINGLE source of truth for messages & parts.
       // This matches OpenCode's architecture where the SolidJS store is
       // the only place message/part data lives.
-      applySyncEvent(event);
+      applySyncEvent(event as OpenCodeSdkEvent);
 
       switch (event.type) {
         // ---- Message events — handled by sync store only ----

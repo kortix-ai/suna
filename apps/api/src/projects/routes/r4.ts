@@ -6,6 +6,7 @@ import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
@@ -535,6 +536,13 @@ projectsApp.openapi(
     blocks?: unknown[];
     status?: string;
     opencode_session_id?: string;
+    // Turn-end error detail (opencode AssistantMessage.error / session.error),
+    // so Slack can render "out of credits" / rate-limit / the real error.
+    error_name?: string;
+    error_message?: string;
+    error_status?: number;
+    error_retryable?: boolean;
+    error_provider?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -553,7 +561,17 @@ projectsApp.openapi(
   // session id for the server-side root-session guard.)
   if (body.kind === 'end' || body.kind === 'turn_end') {
     const status = body.status === 'error' ? 'error' : 'idle';
-    const ok = await relayTurnEnd(sessionId, status);
+    const errorInfo =
+      body.error_name || body.error_message || typeof body.error_status === 'number'
+        ? {
+            name: typeof body.error_name === 'string' ? body.error_name : undefined,
+            message: typeof body.error_message === 'string' ? body.error_message : undefined,
+            statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
+            isRetryable: typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
+            providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
+          }
+        : undefined;
+    const ok = await relayTurnEnd(sessionId, status, errorInfo);
     return c.json({ ok });
   }
 
@@ -661,6 +679,56 @@ projectsApp.openapi(
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/llm-catalog
+// The seed daemon fetches the org model catalog at PARK with its sandbox token
+// (no per-session LLM key yet) so the no-restart warm-fork bakes the FULL model
+// picker into the session-independent opencode config. Returns the same { models }
+// shape the internal gateway route serves. Sandbox-token only, scoped to a sandbox
+// that belongs to this project (same guard as turn-stream). The catalog is the
+// non-secret model list, so a sandbox token is sufficient.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/llm-catalog',
+    tags: ['projects'],
+    summary: 'GET /:projectId/llm-catalog',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+        ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  if (!(c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'sandbox')) {
+    return c.json({ error: 'llm-catalog requires a sandbox token' }, 403);
+  }
+  const accountId = c.get('accountId') as string | undefined;
+  const sandboxId = c.get('sandboxId') as string | undefined;
+  if (!accountId || !sandboxId) {
+    return c.json({ error: 'llm-catalog requires a sandbox token' }, 403);
+  }
+  const [sandbox] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId })
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sandboxId, sandboxId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, accountId),
+      inArray(sessionSandboxes.status, ['provisioning', 'active']),
+    ))
+    .limit(1);
+  if (!sandbox) {
+    return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+  }
+  const models = await gatewayModelCatalog(projectId, undefined);
+  return c.json({ models });
   },
 );
 

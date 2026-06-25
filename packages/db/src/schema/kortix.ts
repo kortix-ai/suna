@@ -1026,6 +1026,15 @@ export const sandboxTemplates = kortixSchema.table(
      * Dockerfile change drifted the identity.
      */
     builtFromCommit: text('built_from_commit'),
+    /**
+     * Agent-swap eligibility key of the last build: user image + spec + NON-agent
+     * runtime layer (everything the kortix-agent CAS swap does NOT touch). The
+     * builder swaps the agent in place of a full rebuild ONLY when the new
+     * identity's swapKey equals this stored value — i.e. the agent binary is the
+     * sole delta. NULL for rows built before this column / the platform default
+     * until first build → those rebuild. See snapshots/builder.ts maybeSwapAgent.
+     */
+    swapKey: text('swap_key'),
     /** Provider-side snapshot name (e.g. `kortix-default-…`, `kortix-tpl-…`). */
     providerSnapshotName: text('provider_snapshot_name'),
     /** Last-known provider state: 'active' | 'building' | 'pulling' | 'error' | 'missing'. */

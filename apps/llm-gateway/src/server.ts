@@ -3,6 +3,7 @@ import { createGateway } from '@kortix/llm-gateway';
 import { config } from './config';
 import { createApiClient } from './clients/api-client';
 import { createLangfuseSink, type TraceSink } from './observability/langfuse';
+import { createGatewayLogger } from './observability/logger';
 
 const STARTED_AT = Date.now();
 const SERVICE_VERSION = process.env.KORTIX_VERSION ?? 'dev';
@@ -20,6 +21,8 @@ export interface GatewayServer {
 
 export function buildServer(): GatewayServer {
   const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
+
+  const logger = createGatewayLogger();
 
   const traces =
     config.langfuse.publicKey && config.langfuse.secretKey
@@ -52,6 +55,7 @@ export function buildServer(): GatewayServer {
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
     },
+    { logger },
   );
 
   // Rolling per-second traffic buckets feeding the health endpoint's error-rate
@@ -88,7 +92,9 @@ export function buildServer(): GatewayServer {
 
   // Shallow liveness: the process is up. The k8s livenessProbe should point here
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
-  app.get('/health/live', (c) => c.json({ ok: true }));
+  // Includes version/commit so a rollout can be confirmed with one cheap probe
+  // (no deep dependency checks) — `curl /health/live` shows which build is live.
+  app.get('/health/live', (c) => c.json({ ok: true, version: SERVICE_VERSION, commit: SERVICE_COMMIT }));
 
   // Deep health/readiness, built for an external monitor: an overall status, the
   // specific incidents, dependency checks, and a rolling error rate. Returns HTTP

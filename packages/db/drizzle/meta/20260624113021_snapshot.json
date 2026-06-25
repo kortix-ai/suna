@@ -1,5 +1,5 @@
 {
-  "id": "658f6822-acbf-4a50-bf5e-5dc33f3f7aa7",
+  "id": "926d6517-93b8-4e9a-8d8e-918586861fa2",
   "prevId": "6bbb2499-c89f-4cd9-a3dc-8159be0b357c",
   "version": "7",
   "dialect": "postgresql",
@@ -2871,106 +2871,6 @@
           "columns": [
             {
               "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.chat_user_identities": {
-      "name": "chat_user_identities",
-      "schema": "kortix",
-      "columns": {
-        "identity_id": {
-          "name": "identity_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "platform": {
-          "name": "platform",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "platform_user_id": {
-          "name": "platform_user_id",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "linked_at": {
-          "name": "linked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_chat_user_identities_platform_user": {
-          "name": "idx_chat_user_identities_platform_user",
-          "columns": [
-            {
-              "expression": "platform",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "platform_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_user_identities_user": {
-          "name": "idx_chat_user_identities_user",
-          "columns": [
-            {
-              "expression": "user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9746,6 +9646,12 @@
         },
         "built_from_commit": {
           "name": "built_from_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "swap_key": {
+          "name": "swap_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false

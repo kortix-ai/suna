@@ -1008,8 +1008,8 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
-  // + DAYTONA_WARM_TARGET are set; best-effort.
+  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
+  // is on + DAYTONA_WARM_TARGET is set; best-effort.
   kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
@@ -1119,6 +1119,13 @@ export default {
     // the proxy's own upstream timeout decide instead of Bun closing the client
     // socket early with an empty reply.
     if (url.pathname.includes('/v1/p/')) {
+      server.timeout(req, 0);
+    }
+
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
       server.timeout(req, 0);
     }
 

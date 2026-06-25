@@ -33,8 +33,14 @@ import {
   saveTurn,
   startTurn,
 } from './turn';
-import { claimInboundMessage, inboundMessageKey } from './dedup';
-import { stripMentions } from './util';
+import {
+  claimInboundMessage,
+  claimThreadErrorNotice,
+  clearThreadErrorNotice,
+  inboundMessageKey,
+} from './dedup';
+import { sessionWebUrl, stripMentions } from './util';
+import { config } from '../../config';
 import type {
   EventClass,
   ProjectResolution,
@@ -561,11 +567,23 @@ export async function spawnAgentTurn(
         // the one honest failure — surface it; KEEP the mapping and never recreate
         // (a new session wouldn't fix a real fault, and silently recreating is what
         // we're eliminating). The thread stays bound to its session.
+        //
+        // But surface it ONCE. Because we keep the mapping, every later message in
+        // the thread lands right back here (`session.status === 'failed'` is sticky)
+        // and, unguarded, re-posts the identical line — the thread jammed on repeat.
+        // The first failure claims a durable per-thread notice and posts it with a
+        // direct link to open the session in Kortix; every later one just clears its
+        // ⏳ ack and stays silent, so the thread isn't spammed forever.
         if (handle) {
           await deleteTurn(existing.sessionId);
-          await finalizeTurn(handle, {
-            error: "This thread's session hit an error and couldn't start. Open it in Kortix to see what happened.",
-          });
+          if (await claimThreadErrorNotice(teamId, threadId)) {
+            const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
+            await finalizeTurn(handle, {
+              error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
+            });
+          } else {
+            await finalizeTurn(handle, {});
+          }
         }
         return;
       }
@@ -592,6 +610,9 @@ export async function spawnAgentTurn(
             eq(chatThreads.threadId, threadId),
           ),
         );
+      // Reviving onto a brand-new session — re-arm the failure notice so that
+      // session's own first fault is reported, not swallowed by the dead one's claim.
+      await clearThreadErrorNotice(teamId, threadId);
     }
   }
 

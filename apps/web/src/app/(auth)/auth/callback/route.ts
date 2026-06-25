@@ -1,3 +1,5 @@
+import { accountHasAppAccess } from '@/lib/auth/account-access';
+import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
@@ -196,12 +198,15 @@ export async function GET(request: NextRequest) {
 
             if (accountStateRes.ok) {
               const accountState = await accountStateRes.json();
-              const tierKey =
-                accountState?.subscription?.tier_key || accountState?.tier?.name || '';
-              const hasSubscription = tierKey && tierKey !== 'none';
-
-              if (!hasSubscription) {
+              if (!accountHasAppAccess(accountState)) {
                 finalDestination = '/accounts';
+              } else if (isNewUser) {
+                const projectPath = await resolveFirstProjectPathForNewUser({
+                  backendUrl,
+                  accessToken,
+                  isNewUser: true,
+                });
+                if (projectPath) finalDestination = projectPath;
               }
             }
           } catch (err) {

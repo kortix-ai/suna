@@ -979,7 +979,7 @@ importers:
         version: 8.5.10
       posthog-js:
         specifier: ^1.258.6
-        version: 1.391.6
+        version: 1.391.7
       radix-ui:
         specifier: ^1.4.3
         version: 1.6.0(@types/react-dom@19.2.3)(@types/react@19.1.17)(react-dom@19.1.0)(react@19.1.0)
@@ -21558,8 +21558,8 @@ packages:
     engines: {node: '>=12'}
     dev: false
 
-  /posthog-js@1.391.6:
-    resolution: {integrity: sha512-fln3Vd8OuJ7EEdwMHGd+dFtytOzGEfvjLL0UvxjYDW1DyBK5WZcQBkoarlK16zxjRhmAxeU4GPlHAcg2Z8Ij2Q==}
+  /posthog-js@1.391.7:
+    resolution: {integrity: sha512-zjAJZeL+1PhJIfXVavgd5WY3VObDUEOMBwTM1tfDVPUDeT+8H7q7miPOpTLD40VQXErntfXYBq0flw3WdWyscw==}
     dependencies:
       '@posthog/core': 1.35.3
       '@posthog/types': 1.390.2

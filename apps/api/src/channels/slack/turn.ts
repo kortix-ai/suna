@@ -1,6 +1,7 @@
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
+import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
 import { loadSlackTokenForProject } from '../install-store';
@@ -16,6 +17,7 @@ import {
   type StreamTaskChunk,
 } from '../slack-api';
 import { STREAM_TTL_MS, WORKING_EMOJI } from './app';
+import { classifyTurnError, type TurnErrorInfo } from './errors';
 import type { SlackEvent, LiveTurn } from './types';
 
 export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: string): LiveTurn {
@@ -45,6 +47,17 @@ export async function loadTurn(sessionId: string): Promise<LiveTurn | null> {
   if (!row) return null;
   const expiry = new Date(row.expiresAt).getTime();
   if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+    // Reaping an expired un-finalized row: best-effort clear the ⏳ first so a
+    // stale hourglass doesn't sit on the user's message forever (the GC only
+    // sweeps live rows; once this row is gone nothing else can clear it).
+    if (!row.finalized) {
+      const ev = row.originatingEvent as SlackEvent | undefined;
+      const triggerTs = row.triggerTs || ev?.ts;
+      if (row.channel && triggerTs) {
+        const token = await loadSlackTokenForProject(row.projectId);
+        if (token) await removeReaction(token, row.channel, triggerTs, WORKING_EMOJI).catch(() => {});
+      }
+    }
     await deleteTurn(sessionId);
     return null;
   }
@@ -121,7 +134,23 @@ setInterval(() => {
         if (!(await claimFinalize(row.sessionId))) continue;
         const token = await loadSlackTokenForProject(row.projectId);
         if (token) {
-          await finalizeTurn(rowToHandle(row, token), { error: '_This run ended without a reply._' });
+          // Last-resort close for a turn that went silent for 30 min — the
+          // sandbox never relayed an end (it died, hung, or stalled retrying).
+          // Be honest about why rather than a bare "ended without a reply".
+          await finalizeTurn(rowToHandle(row, token), {
+            error:
+              ':warning: *This run was closed after 30 minutes of silence* — it may have stalled or run out of credits.',
+            title: 'Run timed out',
+          });
+        } else {
+          // No token (app uninstalled / token rotated) → we can't post or clear
+          // the ⏳. Reap the row anyway (below) and surface it so a dead install
+          // is observable instead of silently dropping every turn.
+          console.warn('[slack-webhook] gc: no Slack token for project — cannot finalize turn', {
+            projectId: row.projectId,
+            teamId: row.teamId,
+            sessionId: row.sessionId,
+          });
         }
         await deleteTurn(row.sessionId);
       }
@@ -143,7 +172,17 @@ export async function startTurn(
 ): Promise<LiveTurn | null> {
   if (!event.channel || !event.ts || !event.user) return null;
   const token = await loadSlackTokenForProject(projectId);
-  if (!token) return null;
+  if (!token) {
+    // No bot token (app uninstalled / token rotated) → we can't even react. Log
+    // it so a dead install is observable rather than the bot silently ignoring
+    // every mention.
+    console.warn('[slack-webhook] startTurn: no Slack token for project — cannot start turn', {
+      projectId,
+      teamId,
+      channel: event.channel,
+    });
+    return null;
+  }
   await joinChannel(token, event.channel);
   // The only eager feedback is a ⏳ reaction on the user's own message — a
   // lightweight "received, working on it" signal that lives ON their message,
@@ -221,14 +260,22 @@ export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<str
 //     thread untouched. This is what stops an orphaned "On it…" from lingering.
 export async function finalizeTurn(
   handle: LiveTurn,
-  opts: { answer?: string; error?: string; blocks?: unknown[] },
+  opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
 ): Promise<void> {
   if (handle.finalized) return;
   handle.finalized = true;
   const hasContent = Boolean(opts.answer || opts.error || (opts.blocks && opts.blocks.length > 0));
-  const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
+  const rawBody = opts.answer ?? opts.error ?? '';
+  const truncated = rawBody.length > MAX_BODY;
+  const body = rawBody.slice(0, MAX_BODY);
   const ev = handle.originatingEvent;
   const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
+
+  // Did the content actually reach the thread? We gate the ✅ on this so we never
+  // imply a reply that was rejected, and we fall back to a plain post when a
+  // block render fails — a long answer dropped into one Block Kit section can be
+  // rejected (sections cap at 3000 chars), and that must not silently vanish.
+  let rendered = false;
 
   // Render the result — BEST-EFFORT. The row is already claimed-finalized by the
   // time we get here, so a Slack API hiccup while rendering must not throw: that
@@ -241,25 +288,60 @@ export async function finalizeTurn(
       // final plan (+ answer/error) into it via chat.update.
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
-      await updateBlocks(
+      rendered = await updateBlocks(
         handle.token,
         handle.channel,
         handle.ts,
         planTitleFor(opts),
-        buildFinalPlanBlocks(handle, body, opts),
+        buildFinalPlanBlocks(handle, body, opts, truncated),
       );
+      // chat.update rejected the blocks (e.g. invalid_blocks) — don't lose real
+      // content; post it fresh as plain text so it still lands in the thread.
+      if (!rendered && hasContent) {
+        const ts = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+        rendered = ts != null;
+      }
     } else if (hasContent) {
-      // The agent posted no `slack step` (no plan message) but has a reply — post
-      // it fresh in-thread.
+      // The agent posted no `slack step` (no plan message) but we have a reply or
+      // an error to surface — post it fresh in-thread.
       if (opts.blocks && opts.blocks.length > 0) {
-        await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+        const ts = await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+        rendered = ts != null;
+        if (!rendered) {
+          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+          rendered = f != null;
+        }
+      } else if (opts.error && handle.projectId && handle.sessionId) {
+        // An error with no plan stream: post the failure copy WITH an "Open
+        // session" footer so the thread always has a way to see what went wrong
+        // (the plan path already appends this footer; mirror it here).
+        const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+        const ts = await postBlocks(
+          handle.token,
+          handle.channel,
+          body,
+          [
+            ...toSectionBlocks(body, truncated),
+            { type: 'context', elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }] },
+          ],
+          threadRoot,
+        );
+        rendered = ts != null;
+        if (!rendered) {
+          const f = await postMessage(handle.token, handle.channel, plainFallback(handle, body), threadRoot);
+          rendered = f != null;
+        }
       } else {
-        await postMessage(handle.token, handle.channel, body, threadRoot);
+        // Plain post already — slackApiCall retries transient failures, so there's
+        // no block-vs-text fallback to add here.
+        const ts = await postMessage(handle.token, handle.channel, body, threadRoot);
+        rendered = ts != null;
       }
     }
     // A silent finalize with no plan message and no content leaves the thread
-    // untouched — we just clear the ⏳ below.
-    if (opts.answer && !opts.error) {
+    // untouched — we just clear the ⏳ below. The ✅ is reserved for a real answer
+    // that ACTUALLY posted (never imply a reply that was rejected).
+    if (opts.answer && !opts.error && rendered) {
       await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
     }
   } catch (err) {
@@ -269,7 +351,47 @@ export async function finalizeTurn(
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI).catch(() => {});
 }
 
-function planTitleFor(opts: { answer?: string; error?: string }): string {
+// Slack Block Kit caps a section's text at 3000 chars and the outer message has
+// its own limits, so we never drop the whole answer into one section. Cap the
+// body, split it across a few sections on newline boundaries, and flag overflow.
+const MAX_BODY = 11000;
+const SECTION_LIMIT = 2900;
+const MAX_SECTIONS = 5;
+
+function toSectionBlocks(body: string, truncated = false): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+  let rest = body;
+  while (rest.length > 0 && blocks.length < MAX_SECTIONS) {
+    let take = Math.min(rest.length, SECTION_LIMIT);
+    if (rest.length > SECTION_LIMIT) {
+      const nl = rest.lastIndexOf('\n', SECTION_LIMIT);
+      if (nl > SECTION_LIMIT * 0.6) take = nl;
+    }
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: rest.slice(0, take) } });
+    rest = rest.slice(take);
+  }
+  if (truncated || rest.length > 0) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: '_… truncated — open the session for the full output._' }],
+    });
+  }
+  return blocks;
+}
+
+// Plain-text rendering of the body for the chat.postMessage fallback when a block
+// render is rejected. postMessage's text field allows far more than a section, so
+// the full (already ≤MAX_BODY) body fits; append the session link inline.
+function plainFallback(handle: LiveTurn, body: string): string {
+  if (handle.projectId && handle.sessionId) {
+    const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
+    return `${body}\n\n<${url}|Open session in Kortix ↗>`;
+  }
+  return body;
+}
+
+function planTitleFor(opts: { answer?: string; error?: string; title?: string }): string {
+  if (opts.title) return opts.title;
   if (opts.error) return 'Run failed';
   return 'Task complete';
 }
@@ -303,7 +425,8 @@ function buildPlanTasks(steps: StreamTaskChunk[]): Array<Record<string, unknown>
 function buildFinalPlanBlocks(
   handle: LiveTurn,
   body: string,
-  opts: { answer?: string; error?: string; blocks?: unknown[] },
+  opts: { answer?: string; error?: string; blocks?: unknown[]; title?: string },
+  truncated = false,
 ): unknown[] {
   const blocks: Array<Record<string, unknown>> = [
     {
@@ -315,7 +438,8 @@ function buildFinalPlanBlocks(
   if (opts.blocks && opts.blocks.length > 0) {
     for (const b of opts.blocks) blocks.push(b as Record<string, unknown>);
   } else if (body) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+    // Chunk into ≤3000-char sections so a long answer isn't rejected wholesale.
+    for (const b of toSectionBlocks(body, truncated)) blocks.push(b);
   }
   // Footer: a link to open this session on the web. Lets anyone in the thread
   // jump straight to the full session (logs, files, diff) in Kortix.
@@ -430,16 +554,56 @@ export async function relayTurnAnswer(
 export async function relayTurnEnd(
   sessionId: string,
   status: 'idle' | 'error' = 'idle',
+  errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
   const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) return false;
+  if (!handle) {
+    // No open turn — the row was finalized/expired/GC'd before this arrived. A
+    // dropped IDLE is the benign tail of an already-answered turn, but a dropped
+    // ERROR means we lost a real failure signal, so surface that one.
+    if (status === 'error') {
+      console.warn('[slack-webhook] turn-end ERROR relay dropped — no open turn for session', { sessionId });
+    }
+    return false;
+  }
+  if (handle.finalized) return false;
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(
-    handle,
-    status === 'error'
-      ? { error: '_The run hit an error — open the session for details._' }
-      : {},
-  );
+  if (status === 'error') {
+    // Turn the opencode error into honest, specific copy (out of credits /
+    // usage limit / provider auth / the real error), not a blank failure line.
+    const classified = classifyTurnError(errorInfo);
+    await finalizeTurn(
+      handle,
+      // A user-initiated stop is not a failure — close quietly (retitle the plan,
+      // no alarming body) instead of posting red failure copy.
+      classified.aborted
+        ? { title: classified.title }
+        : { error: classified.text, title: classified.title },
+    );
+  } else {
+    await finalizeTurn(handle, {});
+  }
   await deleteTurn(sessionId);
   return true;
 }
+
+// A session this thread was waiting on died during async provisioning (provider
+// capacity, git-auth, generic). The agent never ran, so no step/answer/`end`
+// ever arrives — without this the ⏳ sits until the 30-min GC closes it with the
+// wrong reason. The platform already classified a friendly message, so post it
+// AS-IS (don't re-run classifyTurnError on it). Registered as the global session-
+// failure notifier; a no-op for non-Slack sessions (no turn row to load).
+export async function relayProvisioningFailure(sessionId: string, message: string): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) return false;
+  if (!(await claimFinalize(sessionId))) return false;
+  const detail = (message ?? '').trim().slice(0, 400) || 'Provisioning failed before the run could start.';
+  await finalizeTurn(handle, { error: `:warning: *I couldn't start this run.* ${detail}`, title: "Couldn't start" });
+  await deleteTurn(sessionId);
+  return true;
+}
+
+// Wire the relay into the platform's provisioning-failure hook (dependency-
+// inverted so platform/ never imports channels/). Runs once when this module is
+// first imported — which is at server boot, since the Slack app mounts it.
+registerSessionFailureNotifier(relayProvisioningFailure);

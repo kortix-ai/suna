@@ -1,120 +1,58 @@
 ---
 name: migration
-description: "How to change the database schema in this repo — Drizzle, and ONLY Drizzle. Covers the two-lane model (generated `kortix.*` DDL vs hand-written `--custom` SQL for functions/RLS/grants/backfills), every `db:*` command, and the mandatory safety drill: review the generated SQL, scan for destructive statements, validate, and apply to a throwaway DB first. Load WHENEVER you add/alter/drop a table, column, enum, index, or constraint; edit `packages/db/src/schema/*.ts`; write or apply anything under `packages/db/drizzle/**`; run `db:generate`/`db:migrate`; or plan a schema/data change. ENFORCES: Drizzle-only (never `db:push`/hand-applied SQL), every migration reviewed before apply, and ZERO data loss."
+description: "How to change the database schema in this repo. Current engine: node-pg-migrate, with SQL generated from Drizzle schema changes when possible. Load whenever you add/alter/drop a table, column, enum, index, constraint, RLS/function/grant, or any file under packages/db/migrations."
 ---
 
-# Migrations (Drizzle only)
+# Database migrations
 
-This repo's schema is owned by **Drizzle**, in `packages/db`. There is exactly
-one migration pipeline and one source of truth — never edit the live DB by hand,
-never run ad-hoc `ALTER`/`CREATE` against it, never use `drizzle-kit push`.
+The canonical, detailed runbook is `packages/db/MIGRATIONS.md`. This skill is a
+short safety wrapper; if anything here seems incomplete, trust that file and the
+current `package.json` scripts.
 
-- Schema source: `packages/db/src/schema/kortix.ts` (the `kortix` schema — the
-  only thing Drizzle diffs; `drizzle.config.ts` has `schemaFilter: ['kortix']`,
-  `tablesFilter: ['kortix.*']`).
-- Migration files: `packages/db/drizzle/*.sql` + the `meta/_journal.json` ledger
-  and `meta/*_snapshot.json` (the recorded schema state). All three are
-  committed and append-only.
-- New migrations get **timestamp-prefixed** filenames (`prefix: 'timestamp'`),
-  so two engineers branching off `main` don't both produce `0003_*.sql` and
-  collide. The `0000/0001/0002` files are the curated baseline.
+## Current model
 
-## THE RULES
+- **Engine:** node-pg-migrate, invoked by `packages/db/scripts/migrate.ts`.
+- **Schema source:** `packages/db/src/schema/kortix.ts` for the Drizzle-modeled
+  `kortix` schema.
+- **Migration files:** immutable SQL files in `packages/db/migrations/`, named
+  with a 17-digit UTC timestamp (`YYYYMMDDHHMMSSmmm_slug.sql`).
+- **Applied-state table:** `kortix_migrations.pgmigrations` (node-pg-migrate
+  tracks migration names; it does not checksum file contents).
+- **Deploy:** `deploy-dev.yml` and `deploy-prod.yml` run `pnpm --filter
+  @kortix/db migrate` before the EKS GitOps rollout. The disabled Helm PreSync
+  hook is not the live migration path.
 
-1. **Drizzle is the only way schema changes happen.** No `psql ... ALTER`, no
-   Supabase Studio edits, no `drizzle-kit push`. Every change is a committed
-   migration file applied by `db:migrate`.
-2. **Never `db:push`.** It diffs the live DB and applies directly with no file
-   and no review — it will silently DROP columns/tables to match the schema.
-   The script was removed on purpose. Don't add it back or run `bunx
-   drizzle-kit push`.
-3. **Read every generated migration before applying it.** `generate` is a
-   *diff*: if you removed or renamed something in `kortix.ts`, it emits
-   `DROP COLUMN` / `DROP TABLE` = permanent data loss. The file is the preview.
-4. **Zero data loss, always.** Apply to a throwaway/worktree DB first and verify
-   data survives, before dev, before prod. Renames and NOT-NULL additions use
-   the safe patterns below — never the naive drop+recreate Drizzle defaults to.
-5. **Migrations are forward-only and append-only.** Once a migration is applied
-   anywhere, never edit or delete its file — its hash is recorded in
-   `drizzle.__drizzle_migrations` and editing it breaks the checksum. To change
-   shipped schema, write a NEW migration.
-6. **Prod is gated.** The prod DB is live. Applying to prod requires showing the
-   exact SQL and getting explicit go-ahead first; probes against prod are
-   read-only until then. Choosing the target DB = picking `DATABASE_URL`; see
-   the `dotenvx-secrets` skill (local vs dev vs prod).
+## Rules
 
-## The two lanes
+1. Never edit a migration that has been applied anywhere. Write a new migration.
+2. Never use `drizzle-kit push` or hand-apply production DDL outside the migration
+   flow.
+3. Review every generated SQL file before it reaches a shared DB.
+4. Prefer expand/contract for destructive or compatibility-sensitive changes.
+5. Prod is live: show the exact SQL and get explicit go-ahead before any manual
+   prod migration action.
 
-Both lanes write files into `packages/db/drizzle/` and are applied together, in
-journal order, by one `db:migrate`.
+## Commands from repo root
 
-- **Lane A — generated (`kortix.*` tables).** Edit `packages/db/src/schema/
-  kortix.ts`, then `db:generate`. Drizzle authors the `CREATE/ALTER TABLE` DDL
-  for the `kortix` schema automatically.
-- **Lane B — hand-written (`--custom`).** Anything Drizzle can't author —
-  Postgres functions, RLS policies, GRANTs, triggers, extensions, data
-  backfills, or any object in `basejump`/`public`/`auth`/`storage`. Run
-  `db:generate --custom --name <desc>` to create an empty timestamped migration,
-  then write the SQL by hand with `--> statement-breakpoint` between statements.
+| Command | What it does |
+| --- | --- |
+| `pnpm migrate` | Apply pending migrations using node-pg-migrate. |
+| `pnpm migrate:status` | Dry-run/list pending migrations; exits non-zero if any are pending. |
+| `pnpm migrate:create <slug>` | Create an empty hand-written SQL migration. |
+| `pnpm migrate:generate <slug>` | Generate SQL from a `kortix.ts` schema change and update the Drizzle snapshot. |
+| `pnpm migrate:fake` | Mark pending migrations as applied without running them (for baselining existing envs). |
+| `pnpm migrate:lint` | Validate migration filename/order rules. |
 
-## Commands
+## Safe schema-change loop
 
-Run from `packages/db`, or from the repo root with `pnpm --filter @kortix/db
-<script>`. (There are no root-level `db:*` scripts.)
+1. Edit `packages/db/src/schema/kortix.ts` for schema-shape changes, or create a
+   hand-written migration for data/RLS/functions/grants/custom SQL.
+2. Run `pnpm migrate:generate <slug>` or `pnpm migrate:create <slug>`.
+3. Read the SQL top-to-bottom. Stop on accidental `DROP`, unsafe type changes,
+   immediate `NOT NULL` on populated tables, or non-idempotent backfills.
+4. Run `pnpm migrate:lint` and the relevant package tests/checks.
+5. Apply to a local/throwaway DB before dev/prod when the change is non-trivial.
+6. Commit both the migration SQL and any generated Drizzle snapshot changes.
 
-| Command | Needs DB? | What it does |
-| --- | --- | --- |
-| `pnpm --filter @kortix/db db:generate` | no (offline, diffs snapshots) | Diff `kortix.ts` vs the last snapshot → write a new timestamped migration + update `_journal.json` + snapshot. |
-| `pnpm --filter @kortix/db db:generate --custom --name <desc>` | no | Create an **empty** timestamped migration to hand-write (functions/RLS/grants/backfills). |
-| `pnpm --filter @kortix/db db:check` | no | Validate the migration set is consistent (journal/snapshots intact, no conflicts). Run after every generate. |
-| `pnpm --filter @kortix/db db:migrate` | **yes** (`DATABASE_URL`) | Apply all pending migrations and record them in `drizzle.__drizzle_migrations`. |
-| `pnpm --filter @kortix/db db:studio` | yes | Browse the DB to verify data after applying. |
-
-`DATABASE_URL` selects the target: local Supabase for `pnpm dev`, the worktree's
-Postgres in a worktree, or the dev/prod URL via `dotenvx` (prod = gated).
-Worktrees run `db:migrate` automatically on create/start, so the usual loop is:
-edit schema → `db:generate` → review → let the worktree apply it.
-
-## The pre-apply drill (run EVERY time, before `db:migrate`)
-
-1. **Generate, then open the file.** `db:generate`, then read the new
-   `packages/db/drizzle/<timestamp>_*.sql` top to bottom. Confirm it contains
-   only the change you intended.
-2. **Scan for destructive statements.** Grep the new migration for:
-   `DROP TABLE`, `DROP COLUMN`, `DROP CONSTRAINT`, `TRUNCATE`,
-   `ALTER COLUMN ... TYPE`, `SET NOT NULL`, `DROP DEFAULT`, dropping an enum
-   value. Any hit → stop and apply the safe pattern below; do not apply as-is.
-3. **Check consistency.** `db:check` — must pass.
-4. **Apply to a throwaway DB first.** A worktree (`pnpm worktree create …`) or
-   local Supabase. Confirm it applies with no error AND data is intact
-   (`db:studio` / a `psql` count on affected tables).
-5. **Diff the snapshot.** Ensure `meta/*_snapshot.json` changed only as expected.
-6. **Only then** widen to dev; and to prod **only** after showing the SQL and
-   getting explicit go-ahead.
-
-## No-data-loss patterns
-
-- **Rename a column/table.** Drizzle models a rename as drop+create (data loss).
-  Either hand-edit the generated migration to `ALTER TABLE … RENAME COLUMN old
-  TO new;`, or do expand/contract: add the new column → backfill → switch the
-  app → drop the old column in a *later* migration.
-- **Add a NOT NULL column to a populated table.** A bare `ADD COLUMN … NOT NULL`
-  fails on non-empty tables. Add it nullable (or `DEFAULT <v>`), backfill in a
-  `--custom` migration, then `SET NOT NULL` in a follow-up.
-- **New UNIQUE / PRIMARY KEY on existing data.** Verify there are no duplicates
-  first (the migration aborts mid-apply otherwise).
-- **Type changes.** `ALTER COLUMN … TYPE` can fail or truncate. Prefer add-new +
-  backfill + drop-old over an in-place narrowing cast.
-- **Backfills.** Put them in their own `--custom` migration, idempotent where
-  possible (`WHERE col IS NULL`, `IF NOT EXISTS`), safe to re-run.
-- **Ordering.** Dependent + destructive changes must be ordered so each
-  intermediate state is valid; split statements with `--> statement-breakpoint`.
-
-## Don't
-
-- Don't `drizzle-kit push` or hand-apply SQL to any DB.
-- Don't edit or delete an already-applied migration file or its snapshot/journal
-  entry — write a new migration instead.
-- Don't point `db:migrate` at prod without showing the SQL and getting the go.
-- Don't manage `basejump`/`public`/`auth`/`storage` objects in `kortix.ts` —
-  those are Lane B (`--custom`), outside Drizzle's `tablesFilter`.
+See `packages/db/MIGRATIONS.md` for the full baseline, preview/prod behavior,
+self-hosting command, and failure drill.
