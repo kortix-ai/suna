@@ -577,12 +577,16 @@ export default function ProvidersPage() {
             </div>
           </div>
 
-          {/* ── Warm-fork sessions ─────────────────────────────────────────── */}
+          {/* ── Warm-fork sessions (Platinum only — Daytona has no warm/stateful snapshots) ── */}
+          {allowed.includes('platinum') && (
           <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">
+                <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
                   {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextWarmForkSessionsf726dcdc')}
+                  <Badge variant="outline" size="sm" className="text-[10px] capitalize">
+                    platinum
+                  </Badge>
                 </h2>
                 <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
                   {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextPerProjectWarmbd60f907')}
@@ -608,6 +612,7 @@ export default function ProvidersPage() {
               {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveWarmFork8eeda5df')}
             </Button>
           </div>
+          )}
 
           {/* ── Provider failover ──────────────────────────────────────────── */}
           <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
