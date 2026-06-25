@@ -1,5 +1,5 @@
 import { getProvider as getDeploymentProvider } from '../../deployments/providers';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { getWarmPoolCounts, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
@@ -10,7 +10,7 @@ import { archiveRepoSubtree, getBranchDiff, getCommit, getCommitDiff, getFileHis
 import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
@@ -40,7 +40,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DEPLOY, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
 
   const { specs } = await loadProjectApps(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
@@ -91,7 +91,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DEPLOY, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DEPLOY);
 
   const latest = await getLatestDeployment(projectId, slug);
   if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
@@ -822,7 +822,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
   const nextMeta: Record<string, unknown> = { ...meta };

@@ -1,5 +1,5 @@
 import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject, type SecretGrant, type ShareSubject } from '../../executor/share';
-import { authorize } from '../../iam';
+import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { auth } from '../../openapi';
@@ -253,9 +253,29 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
       // secrets, snapshots, CLI tokens, etc. Map to project.write (which
       // Project Editor has) so editors aren't accidentally locked out.
       // Routes that need the stricter `project.members.manage` gate add
-      // an explicit assertAuthorized() on top of loadProjectForUser.
+      // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';
   }
+}
+
+/**
+ * Assert a SPECIFIC project capability (a leaf action like project.gitops.push)
+ * for the current request, threading the acting token id off the request context
+ * so the engine's agent-grant fold actually fires — `userRole ∩ agentGrant`. Use
+ * this (not a bare `assertAuthorized`) for every per-capability route gate: a
+ * bare call omits the token and the fold silently no-ops, which is exactly how
+ * the per-route checks leaked the agent grant. 403s on denial.
+ */
+export async function assertProjectCapability(
+  c: Context,
+  userId: string,
+  accountId: string,
+  projectId: string,
+  action: string,
+): Promise<void> {
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
+  await assertAuthorized(userId, accountId, action, { type: 'project', id: projectId }, actingTokenId, deriveRequestContext(c));
 }
 
 

@@ -1,5 +1,5 @@
 import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
-import { PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, errors, json } from '../../openapi';
@@ -9,7 +9,7 @@ import { foldEffectiveProjectAccess, isAccountManager, parseProjectRole, roleAll
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
+import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
@@ -100,7 +100,7 @@ projectsApp.openapi(
   // Deletion is admin-only. Project Editor explicitly excludes
   // project.delete; loadProjectForUser('manage') would otherwise let
   // editors through via project.write.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DELETE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
   const [row] = await db
     .update(projects)
@@ -721,7 +721,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   // JSONB containment check (`@>`) finds invitations whose grants array
   // contains an entry with this project_id. Includes expired invites in
@@ -807,7 +807,7 @@ projectsApp.openapi(
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [invite] = await db
     .select({
@@ -878,7 +878,7 @@ projectsApp.openapi(
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const [invite] = await db
     .select({
@@ -960,7 +960,7 @@ projectsApp.openapi(
   // Member management is admin-only; loadProjectForUser('manage') now
   // resolves to project.write (editor-tier), so we add an explicit
   // stricter gate here.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
@@ -1033,7 +1033,7 @@ projectsApp.openapi(
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {

@@ -8,12 +8,12 @@ import { MANIFEST_FILENAME } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
 import { assertAgentScope } from '../../iam/agent-scope';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 
 projectsApp.openapi(
   createRoute({
@@ -41,7 +41,7 @@ projectsApp.openapi(
   // Human-side capability gate: merging lands code on the base branch. Editors/
   // managers hold project.gitops.merge today; a custom role can OMIT it to take
   // Git-Ops merge away from a department without touching the rest of write.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_MERGE);
 
   // Per-agent gate: merging a CR lands code on the base branch — the canonical
   // destructive action. An agent-session token must be granted project.cr.merge

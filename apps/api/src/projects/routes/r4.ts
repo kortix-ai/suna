@@ -4,7 +4,7 @@ import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-pr
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { extractApps } from '../apps';
@@ -12,7 +12,7 @@ import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../tr
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, projectTriggerRuntime, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
+import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
 import { APPS_DISABLED_BODY, SlackAuthTest, draftToAppSpec, loadAppsForResponse, parseAppDraft, projectAppsEnabled, removeAppFromManifest, specToAppBody, upsertAppInManifest } from '../lib/apps-helpers';
 import { getAccountMembership, withProjectGitAuth } from '../lib/git';
@@ -97,7 +97,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Specific IAM gate so the audit trail records the precise action.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE);
 
   const draft = parseTriggerDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
@@ -170,12 +170,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertAuthorized(
-      loaded.userId,
-      loaded.row.accountId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: 'project', id: projectId },
-    );
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
     const paused = body.paused;
     if (typeof paused !== 'boolean') {
       return c.json({ error: 'paused must be a boolean' }, 400);
@@ -214,7 +209,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
 
   let manifest: ParsedManifest;
   try {
@@ -279,7 +274,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
 
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid slug' }, 400);
@@ -800,7 +795,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
 
   const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
@@ -925,7 +920,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const draft = parseAppDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
@@ -977,7 +972,7 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let manifest: ParsedManifest;
   try {
@@ -1027,7 +1022,7 @@ projectsApp.openapi(
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE, { type: 'project', id: projectId });
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid slug' }, 400);
