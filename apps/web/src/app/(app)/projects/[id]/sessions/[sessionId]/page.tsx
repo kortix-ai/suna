@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
@@ -73,11 +73,10 @@ export default function ProjectSessionPage() {
   // open projects (no-op unless the pool is enabled + the member can launch).
   useProjectPresence(projectId);
 
-  // Billing gate. An account with no active plan can't run a session — the
+  // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
-  // Detect "no plan" up front so we can (a) skip the sandbox poll entirely and
-  // (b) render a calm gated screen instead of an infinite loader. Subscribed-
-  // but-out-of-credits accounts are NOT gated (they can still CRUD).
+  // Free accounts with the monthly sandbox grant are allowed through because
+  // account-state reports `credits.can_run`.
   //
   // Scope to the account that OWNS this project (team account), not the viewer's
   // primary account — otherwise a member who owns their own personal account
@@ -85,15 +84,21 @@ export default function ProjectSessionPage() {
   // the wrong wallet. Reuses ProjectShell's project-detail query (same key).
   const { data: projectDetail } = useQuery({
     queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId!),
+    queryFn: () => {
+      if (!projectId) throw new Error('Missing project id');
+      return getProjectDetail(projectId);
+    },
     enabled: !!projectId,
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
-  const { data: accountState } = useAccountState({ accountId: projectAccountId });
+  const { data: accountState, isLoading: accountStateLoading } = useAccountState({
+    accountId: projectAccountId,
+  });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
-  // Managed cloud is paid-only: gate session boot on an active subscription.
-  const noPlan = isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
+  const billingGatePending =
+    isBillingEnabled() && !!projectAccountId && (accountStateLoading || !accountLoaded);
+  const noPlan = isBillingEnabled() && accountLoaded && !accountState.credits?.can_run;
 
   // ONE session-open call. POST /start idempotently provisions/resumes the
   // sandbox AND resolves the OpenCode pin server-side, returning a single
@@ -101,8 +106,11 @@ export default function ProjectSessionPage() {
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: start } = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId!, sessionId!),
-    enabled: !!user && !!sessionId && !!projectId && !noPlan,
+    queryFn: () => {
+      if (!projectId || !sessionId) throw new Error('Missing project or session id');
+      return startProjectSession(projectId, sessionId);
+    },
+    enabled: !!user && !!sessionId && !!projectId && !billingGatePending && !noPlan,
     staleTime: 0,
     // Poll until the runtime is ready or a terminal stage. `retriable` is the
     // backend's authoritative "still making progress" signal; null = a transient
@@ -293,8 +301,8 @@ export default function ProjectSessionPage() {
     }
 
     if (fatal) {
-      const meta = (sandbox!.metadata as Record<string, unknown>) ?? {};
-      return sandbox!.status === 'error' ? (
+      const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
+      return sandbox?.status === 'error' ? (
         <InlineSessionError
           title={`Couldn't start ${sandboxLabel ?? 'session'}`}
           message={

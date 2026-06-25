@@ -2,71 +2,30 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
+import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
+import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import KortixGrid from '@/components/ui/marketing/gridder';
-import { cn } from '@/lib/utils';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
-type Plan = {
-  name: string;
-  price: string;
-  unit?: string;
-  note: string;
-  cta: string;
-  href: string;
-  highlight?: boolean;
-  badge?: string;
-  features: string[];
+const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
+  free: { cta: 'Start free', href: START_URL },
+  team: { cta: 'Get started', href: START_URL },
+  enterprise: { cta: 'Contact sales', href: DEMO_URL },
 };
 
-const PLANS: Plan[] = [
-  {
-    name: 'Team',
-    price: '$40',
-    unit: '/ seat / mo',
-    note: 'For teams running real work on agents.',
-    cta: 'Get started',
-    href: START_URL,
-    highlight: true,
-    badge: 'Most popular',
-    features: [
-      '$20 of usage credits per seat, pooled',
-      'Every frontier model included',
-      'Up to 200 projects, up to 100 seats',
-      'Top up credits anytime',
-      'Standard support',
-    ],
-  },
-  {
-    name: 'Enterprise',
-    price: 'Custom',
-    note: 'Scale, security, and your deployment.',
-    cta: 'Contact sales',
-    href: DEMO_URL,
-    features: [
-      'Everything in Team',
-      'SAML SSO + SCIM directory sync',
-      'Advanced RBAC + audit logs',
-      'Cloud, VPC, or on-prem',
-      'SLA, DPA & dedicated support',
-    ],
-  },
-];
-
-// Plain-language, Viktor-style. Keeps the only two facts that matter (models at
-// +20%, compute ~$0.10/hr) without a rate card.
 const CREDIT_POINTS: { title: string; body: string }[] = [
   {
-    title: 'One wallet, in plain dollars',
-    body: 'Credits cover models and Agent Computers from a single balance. No tokens to decode — spend shows up in dollars.',
+    title: 'Free credits are for sandboxes',
+    body: 'Free includes 500 credits for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
   },
   {
-    title: 'Models at cost + 20%',
-    body: 'Every model is billed at its provider’s price plus a flat 20%. Bring your own key and you pay the provider directly — $0 to us.',
+    title: 'Use the models you already pay for',
+    body: 'Run free OpenCode models, bring your own API key, or connect your ChatGPT subscription for premium model access.',
   },
   {
     title: 'Compute by the second',
@@ -75,25 +34,29 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
 ];
 
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
-  { label: 'A quick task', body: 'Summarize a thread or fix a small bug — a few cents.' },
+  { label: 'Free start', body: '500 credits covers sandbox runtime for early projects and demos.' },
   {
-    label: 'A working session',
-    body: 'An agent coding for an hour — around $0.10 of compute plus model calls.',
+    label: 'Bring your model',
+    body: 'Use BYOK or ChatGPT subscription when you want premium models without using Kortix credits.',
   },
   {
-    label: 'A full project',
-    body: 'Research and ship across many steps — scales with the work, not a flat fee.',
+    label: 'Team scale',
+    body: 'Upgrade when you want managed frontier models, pooled credits, and seats for the whole team.',
   },
 ];
 
 const FAQ: [string, string][] = [
   [
+    'What does Free include?',
+    'Free includes 500 credits each month for sandbox compute. You can run free OpenCode models, bring your own API key, or connect your ChatGPT subscription. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+  ],
+  [
     'What does a Team seat include?',
-    '$40/seat/month includes $20 of usage credits (pooled across your workspace) and every frontier model with no key to set up. Add seats anytime; credits scale with them.',
+    '$40/seat/month includes $20 of pooled usage credits, managed frontier models, and seats for the people on your team. Add seats anytime; credits scale with them.',
   ],
   [
     'How are models and compute priced?',
-    'Every model is its provider’s list price plus a flat 20% — our only margin on inference. Bring your own key and you pay the provider directly. Agent-Computer compute is about $0.10/hour, billed by the second and $0 while stopped.',
+    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent-Computer compute is about $0.10/hour, billed by the second and $0 while stopped.',
   ],
   [
     'Do I pay per seat or per usage?',
@@ -105,47 +68,18 @@ const FAQ: [string, string][] = [
   ],
 ];
 
-function PlanCard({ plan }: { plan: Plan }) {
+function PlanCard({ plan }: { plan: (typeof PRICING_PLANS)[number] }) {
+  const { cta, href } = PLAN_CTAS[plan.id];
+
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-6 rounded-xl border p-8',
-        plan.highlight &&
-          'ring-border bg-border/60 dark:bg-card relative shadow-xl ring-1 shadow-black/6.5 backdrop-blur',
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-lg font-medium tracking-tight">{plan.name}</div>
-          <div className="text-muted-foreground mt-1 text-sm text-balance">{plan.note}</div>
-        </div>
-        {plan.badge && (
-          <Badge variant="update" className="rounded-full">
-            {plan.badge}
-          </Badge>
-        )}
-      </div>
-
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className="text-4xl" style={{ fontKerning: 'none' }}>
-          {plan.price}
-        </span>
-        {plan.unit && <span className="text-muted-foreground text-sm">{plan.unit}</span>}
-      </div>
-
-      <Button variant={plan.highlight ? 'default' : 'outline'} asChild>
-        <Link href={plan.href}>{plan.cta}</Link>
-      </Button>
-
-      <ul role="list" className="flex flex-col space-y-3 text-left text-sm">
-        {plan.features.map((feature) => (
-          <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
-            <Check className="text-foreground mt-0.5 size-4 shrink-0" />
-            <span>{feature}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <PricingPlanCard
+      plan={plan}
+      action={
+        <Button variant={plan.highlight ? 'default' : 'outline'} asChild>
+          <Link href={href}>{cta}</Link>
+        </Button>
+      }
+    />
   );
 }
 
@@ -165,9 +99,9 @@ export default function PricingPage() {
         </div>
 
         {/* ── Plan cards ───────────────────────────────────────── */}
-        <div className="mx-auto grid max-w-3xl gap-4 pt-16 md:grid-cols-2">
-          {PLANS.map((plan) => (
-            <PlanCard key={plan.name} plan={plan} />
+        <div className="mx-auto grid max-w-5xl gap-4 pt-16 md:grid-cols-3">
+          {PRICING_PLANS.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} />
           ))}
         </div>
 

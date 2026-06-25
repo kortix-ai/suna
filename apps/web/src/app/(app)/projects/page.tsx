@@ -14,6 +14,8 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { UpgradeButton } from '@/features/billing/upgrade-button';
 import { Icon } from '@/features/icon/icon';
 import { AppHeader } from '@/features/layout/app-header';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
@@ -27,20 +29,23 @@ import {
   useStartLegacyMigration,
 } from '@/hooks/legacy/use-legacy-machine-migration';
 import { billingApi } from '@/lib/api/billing';
+import { isBillingEnabled } from '@/lib/config';
+import { ensureFirstProject } from '@/lib/onboarding/ensure-first-project';
 import {
+  type KortixProject,
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-  provisionProject,
-  type KortixProject,
 } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useProjectsViewStore, type ProjectsViewMode } from '@/stores/projects-view-store';
+import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+const PROJECT_SKELETON_KEYS = Array.from({ length: 6 }, (_, index) => `project-skeleton-${index}`);
 
 export default function ProjectsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -185,7 +190,7 @@ export default function ProjectsPage() {
   // Also makes the post-subscribe return (/projects?team_signup=success) land
   // directly inside a project. Fires once per account (ref guard); falls back to
   // the manual empty state on failure so the user is never trapped.
-  const { data: accountState } = useAccountState({
+  const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,
   });
@@ -196,22 +201,31 @@ export default function ProjectsPage() {
     if (!activeAccountId || !canCreateProjects) return;
     if (autoCreateAttempted.current.has(activeAccountId)) return;
     if (accountsQuery.isLoading || projectsQuery.isLoading || projectsQuery.isError) return;
-    if (!projectsQuery.data || !legacyMachinesQuery.data) return;
+    if (!projectsQuery.data) return;
     if ((projectsQuery.data.length ?? 0) > 0) return;
-    if ((legacyMachinesQuery.data.sandboxes?.length ?? 0) > 0) return;
-    // Only bootstrap accounts that can actually run — subscribed, or billing
-    // disabled / self-host (where can_run is forced true). Unpaid accounts fall
-    // through to the empty state / subscribe wall.
-    if (!accountState?.credits?.can_run) return;
+
+    const legacySandboxes = legacyMachinesQuery.data?.sandboxes;
+    if (legacyMachinesQuery.isSuccess && (legacySandboxes?.length ?? 0) > 0) return;
+
+    if (isBillingEnabled()) {
+      if (accountStateLoading) return;
+      if (!accountState?.credits?.can_run) return;
+    }
 
     autoCreateAttempted.current.add(activeAccountId);
     setAutoCreating(true);
-    provisionProject({ account_id: activeAccountId, name: 'My First Project' })
+    ensureFirstProject(activeAccountId)
       .then((project) => {
+        if (!project) {
+          setAutoCreating(false);
+          autoCreateAttempted.current.delete(activeAccountId);
+          return;
+        }
         queryClient.invalidateQueries({ queryKey: ['projects', activeAccountId] });
         router.replace(`/projects/${project.project_id}`);
       })
       .catch((err) => {
+        autoCreateAttempted.current.delete(activeAccountId);
         setAutoCreating(false);
         console.error('[onboarding] auto-create first project failed', err);
       });
@@ -222,7 +236,9 @@ export default function ProjectsPage() {
     projectsQuery.isLoading,
     projectsQuery.isError,
     projectsQuery.data,
+    legacyMachinesQuery.isSuccess,
     legacyMachinesQuery.data,
+    accountStateLoading,
     accountState?.credits?.can_run,
     queryClient,
     router,
@@ -318,7 +334,11 @@ export default function ProjectsPage() {
 
   return (
     <div className="bg-foreground/5 flex min-h-screen flex-col">
-      <AppHeader user={user} breadcrumb="Projects" />
+      <AppHeader
+        user={user}
+        breadcrumb="Projects"
+        actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
+      />
       <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <SunaMigrationBanner accountId={activeAccountId} />
@@ -383,8 +403,8 @@ export default function ProjectsPage() {
             <>
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  {PROJECT_SKELETON_KEYS.map((key) => (
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
               )}
@@ -476,8 +496,8 @@ export default function ProjectsPage() {
             <div className="space-y-10">
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  {PROJECT_SKELETON_KEYS.map((key) => (
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
               )}
@@ -588,6 +608,7 @@ export default function ProjectsPage() {
       />
 
       <PersonalOnboardingWelcome />
+      {isBillingEnabled() && <GlobalUpgradeModal />}
     </div>
   );
 }

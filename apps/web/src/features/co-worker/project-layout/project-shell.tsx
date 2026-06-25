@@ -9,7 +9,6 @@ import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
 import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
@@ -147,8 +146,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <AppsOverlay projectId={projectId} />
 
         <GatewayOverlay projectId={projectId} />
-
-        <ProjectOnboardingWizard projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>

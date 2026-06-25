@@ -1,5 +1,5 @@
-import { eq, and, or, isNull, lte, ne } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
+import { and, eq, isNull, lte, ne, or } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export async function getCreditAccount(accountId: string) {
@@ -105,10 +105,23 @@ export async function getYearlyAccountsDueForRotation() {
         ne(creditAccounts.tier, 'free'),
         eq(creditAccounts.stripeSubscriptionStatus, 'active'),
         ne(creditAccounts.paymentStatus, 'past_due'),
-        or(
-          isNull(creditAccounts.nextCreditGrant),
-          lte(creditAccounts.nextCreditGrant, now),
-        ),
+        or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
+      ),
+    );
+
+  return rows;
+}
+
+export async function getFreeAccountsDueForRotation() {
+  const now = new Date().toISOString();
+
+  const rows = await db
+    .select()
+    .from(creditAccounts)
+    .where(
+      and(
+        eq(creditAccounts.tier, 'free'),
+        or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     );
 

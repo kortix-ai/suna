@@ -96,7 +96,8 @@ const DropdownMenuContent = React.forwardRef<
         ref={ref}
         sideOffset={sideOffset}
         className={cn(
-          'bg-sidebar text-sidebar-foreground ease-out hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 min-w-[14rem] overflow-hidden rounded-lg border p-1 shadow-sm',
+          'bg-sidebar text-sidebar-foreground hover:text-foreground border-border data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 min-w-[14rem] overflow-hidden rounded-md border-[1.5px] p-1 ease-out',
+          'shadow-[0_8px_32px_0_rgba(30,41,59,0.10),0_1.5px_6px_0_rgba(30,41,59,0.04)] backdrop-blur-md',
           className,
         )}
         style={{ zIndex: floatingZ(depth), ...style }}
@@ -117,7 +118,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      'focus:bg-foreground/10 ease-out focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+      'focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       variant === 'default' &&
         'text-foreground/80 hover:bg-primary/10 hover:text-foreground w-full items-center justify-start gap-2 text-sm font-normal transition-all duration-500',
       variant === 'destructive' &&
