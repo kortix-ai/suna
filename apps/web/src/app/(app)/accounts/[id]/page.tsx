@@ -32,6 +32,7 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -113,6 +114,7 @@ const ACCOUNT_PERMISSION_PROBES = [
   { action: 'member.update' },
   { action: 'group.create' },
   { action: 'audit.read' },
+  { action: 'role.create' },
 ];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -219,6 +221,7 @@ export default function AccountSettingsPage() {
     { allowed: canUpdateMember },
     { allowed: canCreateGroup },
     { allowed: canReadAudit },
+    { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
@@ -230,6 +233,7 @@ export default function AccountSettingsPage() {
   const VALID_TABS = [
     'members',
     'groups',
+    'roles',
     'billing',
     'transactions',
     'git',
@@ -242,7 +246,10 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
     | (typeof VALID_TABS)[number]
     | null;
-  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  const requestedTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  // The 'roles' tab trigger + panel are gated on canManageRoles; a non-manager
+  // deep-linking ?tab=roles would otherwise land on an empty panel.
+  const initialTab = requestedTab === 'roles' && !canManageRoles ? 'members' : requestedTab;
 
   return (
     <main className="w-full flex-1 px-4 py-8">
@@ -293,6 +300,7 @@ export default function AccountSettingsPage() {
                 {tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}
               </TabsTrigger>
               <TabsTrigger value="groups">Groups</TabsTrigger>
+              {canManageRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
               {/* Billing holds plan + limits + wallet + spend; Credits ledger
                     holds the per-transaction history. Both are gated on
                     account.write so non-admins don't see money surfaces. */}
@@ -359,6 +367,12 @@ export default function AccountSettingsPage() {
             <TabsContent value="groups" className="space-y-6">
               <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
             </TabsContent>
+
+            {canManageRoles && (
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab accountId={account.account_id} canManage={canManageRoles} />
+              </TabsContent>
+            )}
 
             {canReadAudit && (
               <TabsContent value="audit" className="space-y-6">
