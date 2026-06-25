@@ -187,7 +187,11 @@ export async function supabaseAuth(c: Context, next: Next) {
   const sandboxTokenPathAllowed =
     path.endsWith('/git/clone-credential') ||
     path.endsWith('/turn-stream') ||
-    path.endsWith('/turn-question');
+    path.endsWith('/turn-question') ||
+    // The seed daemon fetches the org model catalog at PARK with its sandbox
+    // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
+    // full picker. Catalog is the non-secret model list — safe for a sandbox token.
+    path.endsWith('/llm-catalog');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {

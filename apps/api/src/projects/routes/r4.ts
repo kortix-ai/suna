@@ -6,6 +6,7 @@ import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
@@ -678,6 +679,56 @@ projectsApp.openapi(
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/llm-catalog
+// The seed daemon fetches the org model catalog at PARK with its sandbox token
+// (no per-session LLM key yet) so the no-restart warm-fork bakes the FULL model
+// picker into the session-independent opencode config. Returns the same { models }
+// shape the internal gateway route serves. Sandbox-token only, scoped to a sandbox
+// that belongs to this project (same guard as turn-stream). The catalog is the
+// non-secret model list, so a sandbox token is sufficient.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/llm-catalog',
+    tags: ['projects'],
+    summary: 'GET /:projectId/llm-catalog',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+        ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  if (!(c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'sandbox')) {
+    return c.json({ error: 'llm-catalog requires a sandbox token' }, 403);
+  }
+  const accountId = c.get('accountId') as string | undefined;
+  const sandboxId = c.get('sandboxId') as string | undefined;
+  if (!accountId || !sandboxId) {
+    return c.json({ error: 'llm-catalog requires a sandbox token' }, 403);
+  }
+  const [sandbox] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId })
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sandboxId, sandboxId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, accountId),
+      inArray(sessionSandboxes.status, ['provisioning', 'active']),
+    ))
+    .limit(1);
+  if (!sandbox) {
+    return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+  }
+  const models = await gatewayModelCatalog(projectId, undefined);
+  return c.json({ models });
   },
 );
 
