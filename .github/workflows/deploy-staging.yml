@@ -109,10 +109,27 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           STAGING_SUPABASE_JWT_SECRET: ${{ secrets.STAGING_SUPABASE_JWT_SECRET }}
           STAGING_KORTIX_ADMIN_API_KEY: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
         run: |
           set -euo pipefail
-          for required in STAGING_DATABASE_URL STAGING_SUPABASE_URL STAGING_SUPABASE_SERVICE_ROLE_KEY STAGING_SUPABASE_JWT_SECRET; do
-            if [ -z "${!required:-}" ]; then
+
+          missing() {
+            [ -z "${1:-}" ] || [ "$1" = "-" ]
+          }
+
+          database="$STAGING_DATABASE_URL"
+          supabase="$STAGING_SUPABASE_URL"
+          anon="$STAGING_SUPABASE_ANON_KEY"
+          service="$STAGING_SUPABASE_SERVICE_ROLE_KEY"
+          jwt="$STAGING_SUPABASE_JWT_SECRET"
+
+          if missing "$database"; then
+            echo "::notice::STAGING_DATABASE_URL is not configured; using KE2E data plane fallback for staging."
+            database="$KE2E_DATABASE_URL"
+          fi
+
+          for required in database supabase service jwt; do
+            if missing "${!required:-}"; then
               echo "::error::$required is required for a real staging data plane."
               exit 1
             fi
@@ -126,11 +143,11 @@ jobs:
 
           payload="$(jq -cn \
             --argjson base "$base" \
-            --arg database "$STAGING_DATABASE_URL" \
-            --arg supabase "$STAGING_SUPABASE_URL" \
-            --arg anon "$STAGING_SUPABASE_ANON_KEY" \
-            --arg service "$STAGING_SUPABASE_SERVICE_ROLE_KEY" \
-            --arg jwt "$STAGING_SUPABASE_JWT_SECRET" \
+            --arg database "$database" \
+            --arg supabase "$supabase" \
+            --arg anon "$anon" \
+            --arg service "$service" \
+            --arg jwt "$jwt" \
             --arg admin "$STAGING_KORTIX_ADMIN_API_KEY" \
             --arg frontend "https://${WEB_HOST}" \
             --arg api "https://${PUBLIC_API_HOST}" \
@@ -325,8 +342,8 @@ jobs:
           if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
             echo "::error::VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID are required."; exit 1
           fi
-          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]; then
-            echo "::error::STAGING_SUPABASE_URL and STAGING_SUPABASE_ANON_KEY are required."; exit 1
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ "${NEXT_PUBLIC_SUPABASE_URL:-}" = "-" ] || [ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ] || [ "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" = "-" ]; then
+            echo "::error::staging Supabase URL and anon key are required."; exit 1
           fi
           mkdir -p .vercel
           jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" \
