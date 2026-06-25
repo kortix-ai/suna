@@ -172,8 +172,9 @@ export function deleteConfig(): void {
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
  *      authenticate against the project-scoped API routes the CLI calls.)
- *   2. `--host` flag (handled at the call site via `getHost(name)`)
- *   3. The `active` host in config.json
+ *   2. KORTIX_API_URL env var (URL override for the stored active host)
+ *   3. `--host` flag (handled at the call site via `getHost(name)`)
+ *   4. The `active` host in config.json
  */
 /**
  * True when the platform-injected sandbox token (KORTIX_CLI_TOKEN /
@@ -204,7 +205,10 @@ export function activeHost(): Host | null {
   }
   const config = loadConfig();
   const host = config.hosts[config.active];
-  return host ?? null;
+  if (!host) return null;
+  const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
+  if (envApiUrl) return { ...host, url: envApiUrl };
+  return host;
 }
 
 export function getHost(name: string): Host | null {
@@ -222,6 +226,7 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
 export function activeHostEntry(): { name: string; host: Host } {
   const envHost = activeHost();
   if (sandboxCliToken() && envHost) return { name: 'sandbox', host: envHost };
+  if (sandboxEnvValue('KORTIX_API_URL') && envHost) return { name: 'env', host: envHost };
   const config = loadConfig();
   const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
   return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
