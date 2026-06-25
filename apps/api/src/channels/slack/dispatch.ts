@@ -26,6 +26,7 @@ import {
   renderFollowUpPrompt,
 } from './session';
 import { postEphemeralLoginPrompt, resolveSlackActor } from './identity';
+import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
 import {
   deleteTurn,
   finalizeTurn,
@@ -465,10 +466,12 @@ export async function spawnAgentTurn(
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
 
-  // Identity gate. Every sender — first message OR follow-up, channel message OR
-  // button click — must be linked to a Kortix account that is a member of this
-  // project's account. No live mapping → block and nudge to `/login`; we never
-  // fall back to running as the account owner (the impersonation this fixes).
+  // Resolve who the agent runs AS. Gated by SLACK_REQUIRE_USER_IDENTITY:
+  //  • ON  — every sender (first message OR follow-up, channel OR button click)
+  //    must be linked to a Kortix account that is a member of this project's
+  //    account. No live mapping → block and nudge to `/login`; never fall back
+  //    to the owner (the impersonation this fixes).
+  //  • OFF — legacy behavior: run as the account owner stand-in.
   const [project] = await db
     .select({ accountId: projects.accountId })
     .from(projects)
@@ -476,20 +479,30 @@ export async function spawnAgentTurn(
     .limit(1);
   if (!project) return;
 
-  const slackUserId = event.user ?? '';
-  const actor = await resolveSlackActor(teamId, slackUserId, project.accountId);
-  if ('reason' in actor) {
-    await postEphemeralLoginPrompt({
-      projectId,
-      teamId,
-      channel: event.channel,
-      threadTs: event.thread_ts ?? event.ts,
-      slackUserId,
-      reason: actor.reason,
-    });
-    return;
+  let actorUserId: string;
+  if (config.SLACK_REQUIRE_USER_IDENTITY) {
+    const slackUserId = event.user ?? '';
+    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId);
+    if ('reason' in actor) {
+      await postEphemeralLoginPrompt({
+        projectId,
+        teamId,
+        channel: event.channel,
+        threadTs: event.thread_ts ?? event.ts,
+        slackUserId,
+        reason: actor.reason,
+      });
+      return;
+    }
+    actorUserId = actor.userId;
+  } else {
+    const owner = await resolveProjectAutomationActor(project.accountId);
+    if (!owner) {
+      console.warn('[slack-webhook] no actor for project', projectId);
+      return;
+    }
+    actorUserId = owner;
   }
-  const actorUserId = actor.userId;
 
   let revived = false;
   if (teamId && threadId) {
