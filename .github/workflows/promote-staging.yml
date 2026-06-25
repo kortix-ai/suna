@@ -34,10 +34,25 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
       - name: Push exact commit to staging
+        env:
+          PROMOTE_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
-          sha="$(git rev-parse HEAD)"
+          source_sha="$(git rev-parse HEAD)"
           git fetch origin staging --quiet || true
-          echo "Promoting ${{ inputs.ref }} @ $sha to staging"
-          git push origin "$sha:refs/heads/staging"
-          echo "staging now points at $sha"
+          staging_sha="$(git rev-parse origin/staging 2>/dev/null || true)"
+          echo "Promoting ${PROMOTE_REF} @ ${source_sha} to staging"
+
+          if [ -n "$staging_sha" ] && ! git merge-base --is-ancestor "$staging_sha" "$source_sha"; then
+            git config user.name "kortix-ci[bot]"
+            git config user.email "kortix-ci[bot]@users.noreply.github.com"
+            tree="$(git show -s --format=%T "$source_sha")"
+            promote_sha="$(printf 'chore(staging): promote %s %s\n\nSource: %s\nPrevious-staging: %s\n' \
+              "$PROMOTE_REF" "${source_sha:0:8}" "$source_sha" "$staging_sha" \
+              | git commit-tree "$tree" -p "$staging_sha" -p "$source_sha")"
+            git push origin "$promote_sha:refs/heads/staging"
+            echo "staging now points at promotion commit ${promote_sha}"
+          else
+            git push origin "$source_sha:refs/heads/staging"
+            echo "staging now points at ${source_sha}"
+          fi
