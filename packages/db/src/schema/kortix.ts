@@ -1401,6 +1401,17 @@ export const accountTokens = kortixSchema.table(
      *  the reaper's reliable activity signal + precise billing. Null for
      *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
     sessionId: text('session_id'),
+    /** The STANDING IDENTITY this session token acts as. When set, the IAM
+     *  engine authorizes the request as this service account (its own policies),
+     *  not the launching user — `effective = SA standing role ∩ agentGrant`. The
+     *  user_id stays for provenance/audit. NULL = legacy behavior (authorize as
+     *  the user). Set at session mint to the agent's auto-provisioned SA.
+     *  ON DELETE CASCADE (fail-closed): deleting the SA identity kills its live
+     *  session tokens (next call 401s) rather than silently reverting the agent
+     *  to the broader launching-user perms — sessions only ever NARROW. */
+    serviceAccountId: uuid('service_account_id').references(() => serviceAccounts.serviceAccountId, {
+      onDelete: 'cascade',
+    }),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -2721,13 +2732,23 @@ export const serviceAccounts = kortixSchema.table(
     name: varchar('name', { length: 128 }).notNull(),
     description: text('description'),
     /** SHA-256 hex of the plaintext bearer (kortix_sa_*). Plaintext
-     *  is shown ONCE at creation, never persisted. */
+     *  is shown ONCE at creation, never persisted. Auto-provisioned agent SAs
+     *  (agent_name set) are IDENTITY-ONLY: a random secret is generated and the
+     *  plaintext discarded, so the bearer is unusable — the agent authenticates
+     *  via its session account_token (service_account_id), not this bearer. */
     secretHash: text('secret_hash').notNull(),
     /** Display prefix so admins can recognise SAs in lists. */
     publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
     /** active | disabled. Disabled SAs are kept for audit trail but
      *  refuse every request. */
     status: varchar('status', { length: 16 }).default('active').notNull(),
+    /** Set for an auto-provisioned AGENT identity: the project the agent lives
+     *  in. NULL for a manually-created (human-managed) service account. */
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** The kortix.toml [[agents]] name this SA is the standing identity for.
+     *  NULL for a manual service account. (account_id, project_id, agent_name)
+     *  is unique so get-or-create is idempotent per agent. */
+    agentName: text('agent_name'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
@@ -2738,7 +2759,15 @@ export const serviceAccounts = kortixSchema.table(
   (table) => [
     index('idx_service_accounts_account').on(table.accountId),
     uniqueIndex('idx_service_accounts_secret_hash').on(table.secretHash),
-    uniqueIndex('idx_service_accounts_account_name').on(table.accountId, table.name),
+    // Display-name uniqueness applies to MANUAL service accounts only — auto
+    // agent SAs are uniqued by their (account, project, agent) tuple instead, so
+    // two projects can each have an agent with the same friendly name.
+    uniqueIndex('idx_service_accounts_account_name')
+      .on(table.accountId, table.name)
+      .where(sql`agent_name IS NULL`),
+    uniqueIndex('idx_service_accounts_agent')
+      .on(table.accountId, table.projectId, table.agentName)
+      .where(sql`agent_name IS NOT NULL`),
   ],
 );
 

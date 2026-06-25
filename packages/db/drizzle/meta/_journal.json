@@ -120,6 +120,13 @@
       "when": 1782237363343,
       "tag": "20260623175603_iam_roles_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782389866805,
+      "tag": "20260625121746_d2_agent_service_account_identity",
+      "breakpoints": true
     }
   ]
 }
