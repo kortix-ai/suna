@@ -50,10 +50,6 @@ import {
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
 import {
-  OnboardingSetupNavItem,
-  ProjectSetupRailItem,
-} from '@/features/workspace/project-sidebar/footer/project-onboarding-setup';
-import {
   ProjectSandboxAlert,
   ProjectSandboxAlertRailItem,
 } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
@@ -81,7 +77,6 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
@@ -101,7 +96,6 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const router = useRouter();
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
   const isMobile = useIsMobile();
@@ -269,7 +263,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectChatGptConnectRailItem projectId={projectId} />
             <ProjectGatewayRailItem />
-            <ProjectSetupRailItem projectId={projectId} />
             <ProjectCustomizeRailItem />
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
@@ -383,7 +376,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
               <ProjectGatewayNavItem />
-              <OnboardingSetupNavItem projectId={projectId} />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />
