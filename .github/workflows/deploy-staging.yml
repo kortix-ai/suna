@@ -271,7 +271,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+      CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d' }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -315,7 +318,54 @@ jobs:
           upsert "$GATEWAY_HOST" "$GATEWAY_ALB"
       - name: Deploy staging API router Worker
         working-directory: infra/cloudflare/workers/api-router
-        run: npx wrangler deploy --env staging
+        env:
+          WORKER_NAME: staging-api-kortix-router
+          WORKER_ROUTE: staging-api.kortix.com/*
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_GLOBAL_API_KEY:-}" ] && [ -n "${CLOUDFLARE_EMAIL:-}" ]; then
+            auth_headers=(-H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" -H "X-Auth-Key: ${CLOUDFLARE_GLOBAL_API_KEY}")
+          elif [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            auth_headers=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          else
+            echo "::error::Cloudflare Worker deploy requires CLOUDFLARE_GLOBAL_API_KEY + CLOUDFLARE_EMAIL, or a scoped CLOUDFLARE_API_TOKEN with Workers permissions."
+            exit 1
+          fi
+
+          metadata="$(jq -cn '{
+            main_module: "worker.mjs",
+            compatibility_date: "2026-06-01",
+            bindings: [
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
+              {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
+              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"}
+            ]
+          }')"
+          curl -fsS -X PUT \
+            "${auth_headers[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}" \
+            -F "metadata=${metadata};type=application/json" \
+            -F "worker.mjs=@worker.mjs;type=application/javascript+module" >/dev/null
+
+          routes="$(curl -fsS \
+            "${auth_headers[@]}" \
+            "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes")"
+          route_id="$(printf '%s' "$routes" | jq -r --arg pattern "$WORKER_ROUTE" '.result[]? | select(.pattern == $pattern) | .id' | head -n1)"
+          route_body="$(jq -cn --arg pattern "$WORKER_ROUTE" --arg script "$WORKER_NAME" '{pattern:$pattern, script:$script}')"
+          if [ -n "$route_id" ]; then
+            curl -fsS -X PUT \
+              "${auth_headers[@]}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes/${route_id}" \
+              --data "$route_body" >/dev/null
+          else
+            curl -fsS -X POST \
+              "${auth_headers[@]}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes" \
+              --data "$route_body" >/dev/null
+          fi
+          echo "deployed ${WORKER_NAME} and route ${WORKER_ROUTE}"
 
   deploy-web:
     name: Deploy staging web to Vercel
