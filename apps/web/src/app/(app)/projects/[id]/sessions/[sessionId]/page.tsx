@@ -101,16 +101,21 @@ export default function ProjectSessionPage() {
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: start } = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
-    queryFn: () => startProjectSession(projectId!, sessionId!),
+    // Long-poll: the server holds the request (wait_ms) and returns the instant
+    // readiness flips or at its bounded deadline — so we learn `ready` without a
+    // fixed poll tick of latency.
+    queryFn: () => startProjectSession(projectId!, sessionId!, 6000),
     enabled: !!user && !!sessionId && !!projectId && !noPlan,
     staleTime: 0,
-    // Poll until the runtime is ready or a terminal stage. `retriable` is the
-    // backend's authoritative "still making progress" signal; null = a transient
+    // RE-ARM promptly while still provisioning (the long-poll already absorbed the
+    // wait server-side), so steady state is one in-flight long-poll, not a 2/sec
+    // poll. `retriable` is the backend's authoritative "still making progress"
+    // signal (false ⇒ ready/terminal ⇒ stop); null (no data) = a transient
     // failure, so retry shortly.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 500;
-      return data.retriable ? 800 : false;
+      return data.retriable ? 100 : false;
     },
   });
   const sandbox = start?.sandbox ?? null;
