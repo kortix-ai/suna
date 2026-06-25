@@ -68,6 +68,7 @@ import {
   CalendarClock,
   ChevronRight,
   List,
+  Mail,
   MessagesSquare,
   PanelLeft,
   Plus,
@@ -91,6 +92,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
   mine: MessagesSquare,
   shared: UsersSolid,
   slack: Icon.Slack,
+  email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
 };
