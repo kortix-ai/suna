@@ -24,7 +24,7 @@ https://github.com/kortix-ai/suna/issues/3629).
 ## Deploy (code or var changes)
 
 ```bash
-# auth: scoped CLOUDFLARE_API_TOKEN, or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY
+# auth: scoped CLOUDFLARE_API_TOKEN, or CI's CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_API_KEY REST fallback
 wrangler deploy --env prod      # api.kortix.com
 wrangler deploy --env staging   # staging-api.kortix.com
 wrangler deploy --env dev       # dev-api.kortix.com
