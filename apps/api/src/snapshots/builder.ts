@@ -329,11 +329,11 @@ async function runInlineBuild(
             // No-restart warm-fork: bake proxy-mode opencode at PARK so a claim
             // hot-swaps the per-session token into the live proxy instead of
             // restarting opencode (~8s). Best-effort: a hot-swap failure falls
-            // back to the restart. NOTE: the shared seed has no sandbox token /
-            // projectId, so it can't prefetch the full catalog at PARK — opencode
-            // uses the daemon's minimal catalog. Wiring a token-less catalog fetch
-            // for the shared seed (full picker) is a follow-up.
+            // back to the restart. The full model catalog is baked into the image
+            // at build time (build-context.ts → /opt/kortix/llm-catalog.json), so
+            // the token-less shared seed still serves the FULL picker (no fallback).
             KORTIX_LLM_HOTSWAP: '1',
+            KORTIX_LLM_CATALOG_FILE: '/opt/kortix/llm-catalog.json',
           }
         : undefined,
     });
