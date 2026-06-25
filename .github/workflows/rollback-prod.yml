@@ -33,7 +33,7 @@ name: Rollback Production
 # this workflow with `surfaces=frontend` to re-pin the frontend. (Backend is the
 # only review-gated step; everything else is immediate.)
 #
-# The next promote of `main` supersedes the whole rollback cleanly (merge -s ours).
+# The next promote of `staging` supersedes the whole rollback cleanly (merge -s ours).
 
 on:
   workflow_dispatch:
@@ -214,5 +214,5 @@ jobs:
             echo ""
             [ -n "${PR:-}" ] && echo "- Backend PR: $PR"
             echo "- ⚠️ Merge the backend PR, then re-run with \`surfaces=frontend\` to re-pin the FE (the merge rebuilds prod FE)."
-            echo "- DB untouched. Next promote of \`main\` supersedes this cleanly."
+            echo "- DB untouched. Next promote of \`staging\` supersedes this cleanly."
           } >> "$GITHUB_STEP_SUMMARY"

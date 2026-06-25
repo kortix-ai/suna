@@ -5,7 +5,8 @@
 #   wrangler deploy --env dev     # dev-api.kortix.com  → dev-api-kortix-router
 #
 # Auth: a scoped CLOUDFLARE_API_TOKEN (Workers Scripts:Edit + Workers Routes:Edit
-# + DNS:Edit on kortix.com), or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY (global).
+# + DNS:Edit on kortix.com). CI also supports CLOUDFLARE_EMAIL +
+# CLOUDFLARE_GLOBAL_API_KEY for the REST API fallback used by deploy-staging.
 #
 # Flip a backend live WITHOUT redeploying code:
 #   wrangler secret put / or set the plain-text var ACTIVE_BACKEND in the dash,

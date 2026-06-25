@@ -9,6 +9,7 @@ import {
   removeHost,
   type Host,
 } from './config.ts';
+import { sandboxEnvValue } from './sandbox-env.ts';
 
 // Backward-compatible auth surface — every existing command imports
 // `Auth`, `loadAuth`, `saveAuth`, `clearAuth`, `authFileLocation` from
@@ -53,7 +54,7 @@ function authToHost(auth: Auth): Host {
   };
 }
 
-/** Load the active host's auth. Honors KORTIX_CLI_TOKEN env override. */
+/** Load the active host's auth. Honors platform-injected sandbox CLI auth. */
 export function loadAuth(): Auth | null {
   const host = activeHost();
   return host ? hostToAuth(host) : null;
@@ -92,7 +93,8 @@ export function authFileLocation(): string {
 
 /** Resolve the API base URL the CLI should use for "no auth yet" calls. */
 export function resolveApiBase(): string {
-  if (process.env.KORTIX_API_URL) return process.env.KORTIX_API_URL;
+  const sandboxApiUrl = sandboxEnvValue('KORTIX_API_URL');
+  if (sandboxApiUrl) return sandboxApiUrl;
   const host = activeHost();
   return host?.url ?? DEFAULT_API_BASE;
 }

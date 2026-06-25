@@ -1,0 +1,46 @@
+# Argo CD Application for the staging release-candidate API.
+#
+# Tracks the `staging` branch. A push to staging updates the immutable
+# `staging-<sha8>` image tag in infra/k8s/envs/staging/values.yaml; Argo CD then
+# reconciles the `kortix-staging` namespace. Rollback is a Git revert on staging.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kortix
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: staging
+    path: infra/k8s/charts/kortix-api
+    helm:
+      releaseName: kortix-api
+      valueFiles:
+        - ../../envs/staging/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-staging
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.dataFrom[]?.extract.conversionStrategy
+        - .spec.dataFrom[]?.extract.decodingStrategy
+        - .spec.dataFrom[]?.extract.metadataPolicy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { sandboxEnvValue } from './sandbox-env.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-host config storage.
@@ -182,14 +183,17 @@ export function deleteConfig(): void {
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
 export function hasEnvTokenHost(): boolean {
-  return Boolean(process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN);
+  return Boolean(
+    sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN'),
+  );
 }
 
 export function activeHost(): Host | null {
-  const envToken = process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN;
+  const envToken =
+    sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
   if (envToken) {
     return {
-      url: process.env.KORTIX_API_URL ?? DEFAULT_API_BASE,
+      url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
       token: envToken,
       user_id: '',
       user_email: '',

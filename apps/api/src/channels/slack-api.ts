@@ -114,6 +114,30 @@ export async function postMessage(
   }
 }
 
+// Posts an ephemeral message — visible only to `userId` in the channel/thread.
+// Used to nudge an unlinked sender to run `/login` without leaking the prompt to
+// the whole channel. Best-effort: a failure just means the nudge didn't show.
+export async function postEphemeral(
+  token: string,
+  channel: string,
+  userId: string,
+  text: string,
+  opts?: { blocks?: unknown[]; threadTs?: string },
+): Promise<void> {
+  try {
+    const r = await slackApiCall(token, 'chat.postEphemeral', {
+      channel,
+      user: userId,
+      text,
+      ...(opts?.blocks ? { blocks: opts.blocks } : {}),
+      ...(opts?.threadTs ? { thread_ts: opts.threadTs } : {}),
+    });
+    if (!r.ok) console.warn('[slack-api] chat.postEphemeral failed', { error: r.error });
+  } catch (err) {
+    console.warn('[slack-api] chat.postEphemeral error', err);
+  }
+}
+
 // Posts a Block Kit message and returns its ts (needed to edit it later).
 export async function postBlocks(
   token: string,

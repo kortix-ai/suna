@@ -104,10 +104,10 @@ jobs:
           SHA="$(git rev-parse HEAD)"
           echo "Promote source ${{ inputs.ref }} @ $SHA"
           # Every check-run on this commit must be completed + success (skipped /
-          # neutral OK). Crucially this INCLUDES deploy-dev, which builds the
-          # :dev-<sha8> image that deploy-prod retags — so an all-green commit
-          # guarantees that image exists. This blocks the race where prod retags a
-          # stale :dev-latest because the new dev image hadn't finished building.
+          # neutral OK). For the default `staging` source this includes the
+          # staging build/deploy/QA lane, which publishes staging-<sha8> images
+          # that deploy-prod retags. This blocks the race where prod retags stale
+          # fallback images because the staging artifacts have not finished.
           # Robustly judge greenness, tolerating two GitHub quirks that would
           # otherwise make this gate un-passable:
           #   1. THIS promote run registers an in_progress check on HEAD (and a
@@ -122,21 +122,24 @@ jobs:
           #        which fail routinely (lockfile/monorepo) and are irrelevant.
           #      - "Analyze*" — CodeQL security scans. They run on every push for
           #        visibility but are SLOW (~15m) and a security scan shouldn't gate
-          #        a release. The gate still waits for the build + typecheck (its
-          #        real purpose: guaranteeing the dev image exists to retag).
+          #        a release. The gate still waits for the staging artifact build
+          #        + QA checks, which guarantee the staging image exists to retag.
+          #      - "compliance-as-code-action" — Drata IaC visibility. It has a
+          #        separate compliance remediation track and must not block the
+          #        staging → prod release lane until the baseline is clean.
           #      - "Open review-gated release PR" — a PRIOR promote attempt's own
           #        check (the current run is already excluded via run_id, but an
           #        earlier failed attempt would otherwise self-block the retry).
           NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
             --jq '[ .check_runs[]
                     | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
-                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "Open review-gated release PR")) | not) ]
+                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not) ]
                   | group_by(.name) | map(max_by(.started_at // ""))
                   | .[]
                   | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
                   | "\(.name): \(.status)/\(.conclusion)"' || true)"
           if [ -n "$NOT_GREEN" ]; then
-            echo "::error::Refusing to promote — $SHA is not all-green (this includes the dev image build):"
+            echo "::error::Refusing to promote — $SHA is not all-green (this includes the staging build/deploy/QA lane):"
             echo "$NOT_GREEN"
             echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
             exit 1
@@ -154,7 +157,7 @@ jobs:
           TAG="${{ steps.ver.outputs.tag }}"
           RELBR="release/$TAG"
           # The commit being promoted (the source ref's HEAD, BEFORE we branch +
-          # merge prod). deploy-prod pins the dev image to this exact SHA.
+          # merge prod). deploy-prod pins the staging image to this exact SHA.
           SRC_SHA="$(git rev-parse HEAD)"
 
           git config user.name "github-actions[bot]"
