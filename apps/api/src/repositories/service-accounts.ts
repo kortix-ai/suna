@@ -109,6 +109,67 @@ export async function createServiceAccount(args: {
   return { ...mapRow(row), secret };
 }
 
+/**
+ * Get-or-create the auto-provisioned STANDING IDENTITY for a kortix.toml
+ * [[agents]] agent. Idempotent per (account, project, agent) via the partial
+ * unique index. The returned SA id is stamped onto the session's account_token
+ * (service_account_id) so the agent authorizes AS this identity.
+ *
+ * Identity-ONLY: a bearer secret is generated and the plaintext DISCARDED, so
+ * the kortix_sa_ credential is unusable — the agent never presents it; it acts
+ * via its session token. An admin assigns this SA a role in the Roles UI.
+ */
+export async function ensureAgentServiceAccount(args: {
+  accountId: string;
+  projectId: string;
+  agentName: string;
+  displayName?: string;
+}): Promise<string> {
+  const match = and(
+    eq(serviceAccounts.accountId, args.accountId),
+    eq(serviceAccounts.projectId, args.projectId),
+    eq(serviceAccounts.agentName, args.agentName),
+  );
+  const existing = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(match)
+    .limit(1);
+  if (existing[0]) return existing[0].id;
+
+  if (!isApiKeySecretConfigured()) {
+    throw new Error('API_KEY_SECRET not configured');
+  }
+  const { secret, publicPrefix } = generateServiceAccountSecret();
+  const secretHash = hashSecretKey(secret); // plaintext `secret` intentionally discarded — identity-only
+  const name = (args.displayName ?? args.agentName).slice(0, 128);
+  try {
+    const [row] = await db
+      .insert(serviceAccounts)
+      .values({
+        accountId: args.accountId,
+        projectId: args.projectId,
+        agentName: args.agentName,
+        name,
+        secretHash,
+        publicPrefix,
+        createdBy: null,
+      })
+      .returning({ id: serviceAccounts.serviceAccountId });
+    if (row) return row.id;
+  } catch (err) {
+    // Lost a concurrent create race (unique violation) — fall through to re-read.
+    if ((err as { code?: string })?.code !== '23505') throw err;
+  }
+  const [winner] = await db
+    .select({ id: serviceAccounts.serviceAccountId })
+    .from(serviceAccounts)
+    .where(match)
+    .limit(1);
+  if (!winner) throw new Error('failed to ensure agent service account');
+  return winner.id;
+}
+
 export async function disableServiceAccount(args: {
   accountId: string;
   serviceAccountId: string;

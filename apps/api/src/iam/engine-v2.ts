@@ -363,16 +363,47 @@ const loadTokenProjectBinding = ttlMemo({
   keyFn: (tokenId: string) => tokenId,
   loader: async (
     tokenId: string,
-  ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null } | null> => {
+  ): Promise<{ projectId: string | null; agentGrant: AgentGrant | null; serviceAccountId: string | null } | null> => {
     const [row] = await db
-      .select({ projectId: accountTokens.projectId, agentGrant: accountTokens.agentGrant })
+      .select({
+        projectId: accountTokens.projectId,
+        agentGrant: accountTokens.agentGrant,
+        serviceAccountId: accountTokens.serviceAccountId,
+      })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
       .limit(1);
-    return row ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null } : null;
+    return row
+      ? { projectId: row.projectId, agentGrant: row.agentGrant ?? null, serviceAccountId: row.serviceAccountId ?? null }
+      : null;
   },
   shouldCache: (row) => row !== null,
 });
+
+type TokenBinding = NonNullable<Awaited<ReturnType<typeof loadTokenProjectBinding>>>;
+
+/**
+ * Token project-scope, computed from the already-loaded binding (no extra
+ * query). A session/PAT token bound to a project (binding.projectId) is refused
+ * off that project and on account-level requests. A direct service-account
+ * bearer has NO account_tokens row (binding null) and is scoped by its own
+ * policies, not a token — so it's "in scope" here. A null binding for a
+ * non-SA acting id is a revoked/invalid token → out of scope.
+ */
+export function computeTokenScope(
+  binding: TokenBinding | null,
+  actingTokenId: string | undefined,
+  actorKind: 'member' | 'service_account',
+  scope: ActionScopeV2,
+  target: AuthorizeTarget,
+): boolean {
+  if (!actingTokenId) return true; // JWT/browser — no token-scope restriction
+  if (!binding) return actorKind === 'service_account'; // direct SA bearer vs. revoked token
+  if (!binding.projectId) return true; // unscoped PAT → falls through to perms
+  if (scope === 'account') return false; // project-bound token can't do account actions
+  if (target.type !== 'project') return false;
+  return target.id === binding.projectId; // only its bound project
+}
 
 // A project action that an agent grant SHOULD gate. The coarse membership
 // actions (read/write, what loadProjectForUser maps onto) are exempt: a route
@@ -391,19 +422,6 @@ export function agentGrantGates(scope: ActionScopeV2, action: string): boolean {
   return scope === 'project' && !AGENT_GRANT_EXEMPT_ACTIONS.has(action);
 }
 
-async function tokenInScope(
-  actingTokenId: string,
-  scope: ActionScopeV2,
-  target: AuthorizeTarget,
-): Promise<boolean> {
-  const row = await loadTokenProjectBinding(actingTokenId);
-  if (!row) return false;
-  if (!row.projectId) return true; // unscoped PAT — falls through to user perms
-  // Project-scoped PAT.
-  if (scope === 'account') return false;
-  if (target.type !== 'project') return false;
-  return target.id === row.projectId;
-}
 
 // ─── Public surface ────────────────────────────────────────────────────────
 
@@ -424,22 +442,24 @@ export async function authorizeV2(
   const scope = scopeForActionV2(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
 
-  // Actor resolve and PAT scope check are independent — overlap them so a
-  // token-authed request pays one roundtrip of latency, not two.
-  const [actor, patInScope] = await Promise.all([
-    resolveActorV2(userId, accountId),
-    actingTokenId
-      ? tokenInScope(actingTokenId, scope, effectiveTarget)
-      : Promise.resolve(true),
-  ]);
+  // Load the acting token's binding once (memoized) — it carries the project
+  // scope, the agent grant, AND the standing-identity service account. JWT/
+  // browser requests have no actingTokenId, so they skip this entirely (the
+  // common dashboard path resolves the actor directly, unchanged).
+  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+
+  // STANDING IDENTITY: an agent-session token bound to a service account
+  // authorizes AS that SA (its own policies), not the launching human — the
+  // user_id stays only for provenance. effective = SA role ∩ agentGrant (∩ the
+  // token's project scope). A token WITHOUT a service_account_id is unchanged
+  // (authorize as the user) — the default-safe path. A direct SA bearer already
+  // arrives with userId = serviceAccountId (set by auth), binding null.
+  const principalId = binding?.serviceAccountId ?? userId;
+  const actor = await resolveActorV2(principalId, accountId);
   if (!actor) return { allowed: false, reason: 'not_a_member' };
 
-  // PAT scope short-circuit. If the token is project-bound and this
-  // request isn't on that project, deny before we even look at perms. Applies
-  // only to human/PAT principals — a service account is not a project-bound PAT
-  // (its acting id is its own principal id, absent from account_tokens), so the
-  // PAT scope verdict is meaningless for it.
-  if (actor.kind === 'member' && !patInScope) {
+  // Token project-scope short-circuit (computed from the binding, no extra query).
+  if (!computeTokenScope(binding, actingTokenId, actor.kind, scope, effectiveTarget)) {
     return { allowed: false, reason: 'token_out_of_scope' };
   }
 
@@ -498,16 +518,14 @@ export async function authorizeV2(
     return { allowed: false, reason: 'project_role_insufficient' };
   }
 
-  // userRole ∩ agentGrant — the central enforcement. A scoped agent session
-  // token can never exceed its kortix.toml kortixCli on a specific capability,
-  // EVEN when the launching user would be allowed. This matters most because
-  // automation sessions (Slack/cron/trigger) run AS AN ACCOUNT OWNER, so the
-  // role half grants everything — the agent grant is the only real containment
-  // for exactly those sessions. Enforced here (not per-route) so it can't be
-  // forgotten on a new route. No-op for non-agent tokens (null grant) and
-  // 'all' grants; exempt for the coarse membership actions (read/write).
+  // (standingRole|userRole) ∩ agentGrant — the central enforcement. A scoped
+  // agent session token can never exceed its kortix.toml kortixCli on a specific
+  // capability, EVEN when the resolved role (the agent's standing SA role, or the
+  // launching user) would allow it. This is the per-task narrowing on top of the
+  // standing identity. Enforced here (not per-route) so it can't be forgotten on
+  // a new route. No-op for non-agent tokens (null grant) and 'all' grants; exempt
+  // for the coarse membership actions (read/write). Reuses the binding loaded above.
   if (actingTokenId && agentGrantGates(scope, action)) {
-    const binding = await loadTokenProjectBinding(actingTokenId); // memoized — same entry as tokenInScope
     if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
       return { allowed: false, reason: 'agent_scope_insufficient' };
     }
@@ -536,31 +554,30 @@ export async function listAccessibleProjectsV2(
   actingTokenId?: string,
   _requestCtx: RequestContext = {},
 ): Promise<AccessibleResourcesV2> {
-  const actor = await resolveActorV2(userId, accountId);
+  // Standing identity: an agent-session token bound to a service account lists
+  // the SA's accessible projects, not the launching human's. (Mirror authorizeV2.)
+  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+  const principalId = binding?.serviceAccountId ?? userId;
+  const actor = await resolveActorV2(principalId, accountId);
   if (!actor) return { mode: 'none' };
 
-  // PAT bound to a single project narrows the listing to just that project.
-  // Human/PAT principals only — a service account's acting id is its own
-  // principal id (not an account_tokens row), so skip this and let its own
-  // policies drive the listing (folded in below), or it would wrongly resolve
-  // to mode:'none'.
-  if (actingTokenId && actor.kind === 'member') {
-    const [row] = await db
-      .select({ projectId: accountTokens.projectId })
-      .from(accountTokens)
-      .where(eq(accountTokens.tokenId, actingTokenId))
-      .limit(1);
-    if (!row) return { mode: 'none' };
-    if (row.projectId) {
-      // Confirm the user has access to that project; reuse authorize.
+  // A token bound to a single project narrows the listing to that project — for
+  // both a human PAT and an agent-session SA. A direct SA bearer has no
+  // account_tokens row (binding null) → no narrowing; its own policies drive the
+  // listing below. A null binding for a non-SA acting id is a revoked token.
+  if (actingTokenId) {
+    if (!binding) {
+      if (actor.kind !== 'service_account') return { mode: 'none' };
+    } else if (binding.projectId) {
+      // Confirm access to the bound project; reuse authorize (re-derives the SA).
       const v = await authorizeV2(
         userId,
         accountId,
         action,
-        { type: 'project', id: row.projectId },
+        { type: 'project', id: binding.projectId },
         actingTokenId,
       );
-      return v.allowed ? { mode: 'allow_only', allowed: new Set([row.projectId]) } : { mode: 'none' };
+      return v.allowed ? { mode: 'allow_only', allowed: new Set([binding.projectId]) } : { mode: 'none' };
     }
   }
 
@@ -605,7 +622,9 @@ export async function listAccessibleProjectsV2(
     .innerJoin(projects, eq(projects.projectId, projectMembers.projectId))
     .where(
       and(
-        eq(projectMembers.userId, userId),
+        // principalId, not userId: an SA session lists the SA's memberships
+        // (none — empty, correct), not the launching human's.
+        eq(projectMembers.userId, principalId),
         eq(projects.accountId, accountId),
         notExpiredMember,
       ),

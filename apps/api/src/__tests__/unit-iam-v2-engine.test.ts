@@ -8,6 +8,7 @@ import {
   deriveEffectiveProjectRole,
   customPolicyAllows,
   agentGrantGates,
+  computeTokenScope,
   type CustomAction,
 } from '../iam/engine-v2';
 import { agentMayPerform } from '../iam/agent-scope';
@@ -155,6 +156,42 @@ describe('service-account standing identity — authority is policy-ONLY', () =>
     const ciBot: CustomAction[] = [{ scopeType: 'account', scopeId: null, action: PROJECT_ACTIONS.PROJECT_DEPLOY }];
     expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('a'))).toBe(true);
     expect(customPolicyAllows(ciBot, 'project', PROJECT_ACTIONS.PROJECT_DEPLOY, proj('b'))).toBe(true);
+  });
+});
+
+describe('computeTokenScope — token project-scope (D2 standing-identity)', () => {
+  const proj = (id: string) => ({ type: 'project' as const, id });
+  const acct = { type: 'account' as const };
+  const bind = (over: Partial<{ projectId: string | null; agentGrant: null; serviceAccountId: string | null }> = {}) => ({
+    projectId: null,
+    agentGrant: null,
+    serviceAccountId: null,
+    ...over,
+  });
+
+  test('no acting token (JWT/browser) → always in scope', () => {
+    expect(computeTokenScope(null, undefined, 'member', 'project', proj('p1'))).toBe(true);
+  });
+
+  test('null binding: a direct SA bearer is in scope; a revoked/invalid token is NOT', () => {
+    // auth sets actingTokenId = serviceAccountId for a kortix_sa_ bearer; no account_tokens row.
+    expect(computeTokenScope(null, 'sa-id', 'service_account', 'project', proj('p1'))).toBe(true);
+    // a member acting id with no token row = revoked/invalid → out of scope.
+    expect(computeTokenScope(null, 'dead-token', 'member', 'project', proj('p1'))).toBe(false);
+  });
+
+  test('unscoped PAT (binding, no projectId) → in scope everywhere', () => {
+    expect(computeTokenScope(bind(), 'tok', 'member', 'project', proj('p1'))).toBe(true);
+    expect(computeTokenScope(bind(), 'tok', 'member', 'account', acct)).toBe(true);
+  });
+
+  test('project-bound token (PAT or agent-session SA) → only its project, never account scope', () => {
+    const b = bind({ projectId: 'company', serviceAccountId: 'sa-marketing' });
+    expect(computeTokenScope(b, 'tok', 'service_account', 'project', proj('company'))).toBe(true);
+    // a DIFFERENT project → out of scope, even for the SA session (sessions narrow)
+    expect(computeTokenScope(b, 'tok', 'service_account', 'project', proj('other'))).toBe(false);
+    // account-scope action on a project-bound token → denied
+    expect(computeTokenScope(b, 'tok', 'service_account', 'account', acct)).toBe(false);
   });
 });
 

@@ -17,6 +17,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
   getProvider,
   WarmRuntimeUnavailableError,
@@ -111,10 +112,25 @@ async function mintExecutorToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string | null> {
-  const agentGrant = await resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-    console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
-    return null;
-  });
+  // Resolve the per-session grant AND the agent's standing-identity service
+  // account in parallel. The SA resolution is FAIL-SAFE: on error we mint
+  // without a service_account_id, which is the legacy behavior (authorize as the
+  // user ∩ grant) — it never WIDENS, so a provisioning hiccup degrades to the
+  // previous secure model rather than breaking session start.
+  const [agentGrant, serviceAccountId] = await Promise.all([
+    resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+      console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
+      return null;
+    }),
+    ensureAgentServiceAccount({
+      accountId: opts.accountId,
+      projectId: opts.projectId,
+      agentName: opts.agentName,
+    }).catch((err) => {
+      console.warn(`[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`, err);
+      return null;
+    }),
+  ]);
   try {
     const tok = await createAccountToken({
       accountId: opts.accountId,
@@ -125,6 +141,7 @@ async function mintExecutorToken(opts: {
       sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
+      serviceAccountId,
     });
     return tok.secretKey;
   } catch (err) {

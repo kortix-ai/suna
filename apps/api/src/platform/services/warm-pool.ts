@@ -35,6 +35,7 @@ import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { resolveAgentGrant } from '../../projects/agents';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import type { GitBackedProject } from '../../projects/git';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
@@ -531,6 +532,18 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     console.warn('[warm-pool] failed to resolve agent grant:', err instanceof Error ? err.message : err);
     return null;
   });
+  // Standing identity, IN PARALLEL with the claim too. Fail-safe → null = legacy
+  // (authorize as user ∩ grant); never widens, so a hiccup can't break the warm
+  // start. MUST be set here as well or warm-served sessions silently lose the
+  // agent identity (the same trap the AgentGrant comment below flags).
+  const saPromise = ensureAgentServiceAccount({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    agentName: input.agentName,
+  }).catch((err) => {
+    console.warn('[warm-pool] failed to ensure agent service account:', err instanceof Error ? err.message : err);
+    return null;
+  });
   try {
     spare = await claimSpare(input.projectId, slug);
     if (!spare) return null;
@@ -541,8 +554,8 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     // the warm path silently bypasses all kortix_cli + connector scoping.
     let executorToken: string | null = null;
     try {
-      const agentGrant = await grantPromise;
-      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}`, agentGrant })).secretKey;
+      const [agentGrant, serviceAccountId] = await Promise.all([grantPromise, saPromise]);
+      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}`, agentGrant, serviceAccountId })).secretKey;
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }
