@@ -109,7 +109,6 @@ jobs:
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
           STAGING_SUPABASE_JWT_SECRET: ${{ secrets.STAGING_SUPABASE_JWT_SECRET }}
           STAGING_KORTIX_ADMIN_API_KEY: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
-          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
         run: |
           set -euo pipefail
 
@@ -123,14 +122,9 @@ jobs:
           service="$STAGING_SUPABASE_SERVICE_ROLE_KEY"
           jwt="$STAGING_SUPABASE_JWT_SECRET"
 
-          if missing "$database"; then
-            echo "::notice::STAGING_DATABASE_URL is not configured; using KE2E data plane fallback for staging."
-            database="$KE2E_DATABASE_URL"
-          fi
-
-          for required in database supabase service jwt; do
+          for required in database supabase anon service jwt; do
             if missing "${!required:-}"; then
-              echo "::error::$required is required for a real staging data plane."
+              echo "::error::$required is required for the real staging data plane; staging must never fall back to dev, KE2E, or prod."
               exit 1
             fi
           done
@@ -180,9 +174,38 @@ jobs:
           fi
           echo "kortix-staging-env synced with $(printf '%s' "$payload" | jq 'keys | length') keys."
 
+  migrate-db:
+    name: Apply DB migrations to staging
+    needs: [preflight, sync-secret]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - name: Apply pending migrations (node-pg-migrate; halts on failure)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ "$DATABASE_URL" = "-" ]; then
+            echo "::error::STAGING_DATABASE_URL secret is not set — refusing to deploy staging without a migration check."
+            exit 1
+          fi
+          pnpm --filter @kortix/db migrate
+
   deploy-k8s:
     name: Deploy API and gateway to staging
-    needs: [preflight, sync-secret]
+    needs: [preflight, sync-secret, migrate-db]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
