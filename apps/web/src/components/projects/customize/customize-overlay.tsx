@@ -22,7 +22,7 @@
  *   └──────────┴────────────────────────────────────┘
  */
 
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -60,7 +60,12 @@ import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';
 import { getProjectDetail } from '@/lib/projects-client';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
+import {
+  CUSTOMIZE_SECTION_ACCESS,
+  CUSTOMIZE_SECTION_READ_ACTIONS,
+} from '@/lib/project-actions';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -163,15 +168,71 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   });
   const projectName = detail.data?.project?.name ?? '';
 
+  // IAM visibility gating. One batched probe over every section's read leaf —
+  // a custom role that OMITS a leaf (e.g. project.gitops.read) makes that
+  // section disappear from the rail and blocks its content. NOT a security
+  // boundary (the API re-checks every mutation); this only decides what to show.
+  // Feed the accountId we ALREADY hold from the project-detail query above, so
+  // the probe runs on first render instead of being disabled while a second
+  // getProject (a different cache key) resolves — otherwise the rail would flash
+  // empty + "no access" on every open.
+  const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_READ_ACTIONS, {
+    accountId: detail.data?.project?.account_id,
+  });
+
+  // Treat BOTH "still loading" and "errored" as not-yet-resolved. This is a
+  // VISIBILITY layer, not a security boundary (the API re-checks every
+  // mutation), so we fail OPEN — render the full rail rather than blank the
+  // whole UI on a transient probe 5xx or while it's in flight.
+  const capsResolved = useMemo(
+    () =>
+      CUSTOMIZE_SECTION_READ_ACTIONS.every(
+        (action) => caps[action] && !caps[action].isLoading && !caps[action].isError,
+      ),
+    [caps],
+  );
+
+  // A section is permitted when its read leaf resolved to allowed:true. Until
+  // the probe resolves (or if it errored) we permit everything (optimistic).
+  const isSectionAllowed = useCallback(
+    (s: CustomizeSection) => {
+      if (!capsResolved) return true;
+      const readAction = CUSTOMIZE_SECTION_ACCESS[s].read;
+      return caps[readAction]?.allowed === true;
+    },
+    [caps, capsResolved],
+  );
+
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled),
-    [tunnelEnabled, marketplaceEnabled],
+    // Compose the existing experimental-flag filtering with IAM visibility: an
+    // item shows only if it passes BOTH its flag check (already baked into
+    // railGroups) AND its read-leaf probe. Empty groups drop out so no orphan
+    // header renders.
+    () =>
+      railGroups(tunnelEnabled, marketplaceEnabled)
+        .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
+        .filter((g) => g.items.length > 0),
+    [tunnelEnabled, marketplaceEnabled, isSectionAllowed],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+
+  // If the active section is denied once the probe resolves (e.g. a bookmarked
+  // deep-link into a section this role no longer grants), fall back to the
+  // first permitted section so the user lands somewhere valid instead of an
+  // access placeholder.
+  const activeAllowed = isSectionAllowed(section);
+  useEffect(() => {
+    // Only redirect once the probe has actually RESOLVED to a denial — never
+    // during the loading/optimistic window, or we'd clobber a valid deep-linked
+    // section before the engine has had a chance to permit it.
+    if (!open || !capsResolved || activeAllowed) return;
+    const fallback = allItems[0]?.section ?? DEFAULT_CUSTOMIZE_SECTION;
+    if (fallback !== section) setSection(fallback);
+  }, [open, capsResolved, activeAllowed, allItems, section, setSection]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -281,7 +342,21 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           )}
 
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-            {open && <SectionContent section={section} projectId={projectId} />}
+            {open &&
+              (activeAllowed ? (
+                <SectionContent section={section} projectId={projectId} />
+              ) : (
+                // Probe resolved and the current user's role doesn't grant this
+                // section's read leaf — block the content even if it was reached
+                // via a bookmarked deep-link. The redirect effect above moves to
+                // a permitted section; this is the guard for the interim frame
+                // (and the all-denied edge case).
+                <div className="flex h-full items-center justify-center p-6">
+                  <p className="text-sm text-muted-foreground">
+                    You don&apos;t have access to this section.
+                  </p>
+                </div>
+              ))}
           </main>
         </div>
       </DialogContent>
