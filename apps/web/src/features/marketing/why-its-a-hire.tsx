@@ -179,27 +179,27 @@ type Card = {
 
 const CARDS: Card[] = [
   {
-    title: 'Real output, not just text',
-    body: 'Kortix hands you the finished PR, deck, dashboard, or app — not a wall of suggestions.',
-    snippet: "Done. The PR's merged.",
+    title: 'It ships finished work.',
+    body: 'You get the merged PR, the deck, the deployed app — the actual deliverable, ready to use. No wall of suggestions to go act on yourself.',
+    snippet: "Done — PR's merged and deployed.",
     visual: <OutputVisual />,
   },
   {
-    title: 'One message, your whole stack',
-    body: '3,000+ tools in a single request. The work that crosses every system.',
-    snippet: 'Pulled it from Stripe, Salesforce, and Notion in one pass.',
+    title: 'Works across every system.',
+    body: 'Wired into 3,000+ tools, one request reaches all of them in a single pass — the job that usually means five tabs and three teammates.',
+    snippet: 'Hit Stripe, Salesforce, and Notion in one run.',
     visual: <StackVisual />,
   },
   {
-    title: 'On a schedule — and on triggers',
-    body: 'Daily reports and weekly digests on autopilot, or fired by a webhook the moment something happens. Agents running 24/7.',
-    snippet: 'Posted your Monday recap. And paged on that incident at 2am.',
+    title: 'Always on — schedule or trigger.',
+    body: 'Put it on a cadence, or wire it to an event so a webhook fires it the instant something happens. Your agents run 24/7.',
+    snippet: "Monday recap's up. Also paged you on the 2am incident.",
     visual: <ScheduleVisual />,
   },
   {
-    title: 'It learns your company',
-    body: 'It remembers your decisions, your formats, your context — so you never repeat yourself.',
-    snippet: 'Used your usual format. I remembered.',
+    title: 'It remembers how you work.',
+    body: 'Your decisions, your formats, your context — saved as memory it reuses. Tell it once; never repeat yourself.',
+    snippet: 'Formatted it your way — already knew.',
     visual: <MemoryVisual />,
   },
 ];
@@ -210,13 +210,13 @@ export function WhyItsAHire() {
       <Reveal>
         <div className="mb-10 max-w-2xl space-y-3">
           <Badge variant="kortix" className="rounded">
-            Why it feels like a hire
+            More hire than tool
           </Badge>
           <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
             Not a chatbot. A coworker.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            Four things that make Kortix feel less like a tool and more like someone you just hired.
+            Four reasons it feels less like software and more like someone on the team.
           </p>
         </div>
       </Reveal>
