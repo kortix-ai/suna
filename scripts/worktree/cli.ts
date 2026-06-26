@@ -38,6 +38,13 @@ const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
 const warn = (s: string) => console.log(`${pc.yellow('!')} ${s}`);
 const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); process.exit(1); };
 const url = (u: string) => pc.cyan(pc.underline(u));
+// OSC 8 hyperlink — makes `text` actually clickable in supporting terminals
+// (iTerm2, VS Code, modern macOS terminals). Terminals without OSC 8 support
+// just render `text` as-is, so styling is left to the caller for graceful
+// degradation. Wrap only the visible glyphs (no trailing padding) so the
+// clickable/underlined region matches the text exactly.
+const link = (href: string, text: string) =>
+  process.stdout.isTTY ? `\x1b]8;;${href}\x07${text}\x1b]8;;\x07` : text;
 
 // Free any stale process still holding this slot's ports — a previous `up` that
 // didn't shut down cleanly, or a gateway that crashed but left the port bound.
@@ -526,17 +533,36 @@ function cmdList() {
   const names = Object.keys(reg.slots);
   if (!names.length) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
   const statusColor: Record<string, (s: string) => string> = { running: pc.green, stopped: pc.dim, created: pc.yellow };
-  console.log('\n  ' + pc.dim('NAME'.padEnd(20) + 'SLOT  STATUS    DB MODE     BRANCH'.padEnd(42) + 'WEB    API    DB     STUDIO'));
-  for (const n of names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot)) {
+  // A cell carries its plain `text` (used for width math) separately from its
+  // `render` (with color/links). Widths derive from content + header so the
+  // header always lines up with the rows and nothing is truncated.
+  type Cell = { text: string; render: string };
+  const cell = (text: string, render = text): Cell => ({ text, render });
+  const portCell = (port: number): Cell => cell(String(port), link(`http://localhost:${port}`, pc.green(String(port))));
+  const headers = ['NAME', 'SLOT', 'STATUS', 'DB MODE', 'BRANCH', 'WEB', 'API', 'DB', 'STUDIO'];
+  const rows: Cell[][] = names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot).map((n) => {
     const e = reg.slots[n];
     const col = statusColor[e.status] ?? ((s: string) => s);
     const dbMode = dbModeOf(e);
-    console.log('  ' +
-      pc.bold(n.padEnd(20)) + pc.dim(String(e.slot).padEnd(6)) + col(e.status.padEnd(10)) + dbMode.padEnd(12) + e.branch.slice(0, 20).padEnd(22) +
-      pc.green(String(e.ports.web).padEnd(7)) + pc.green(String(e.ports.api).padEnd(7)) +
-      String(dbMode === 'isolated' ? e.ports.sbDb : SHARED_SUPABASE_PORTS.sbDb).padEnd(7) +
-      String(dbMode === 'isolated' ? e.ports.sbStudio : SHARED_SUPABASE_PORTS.sbStudio));
-  }
+    return [
+      cell(n, pc.bold(n)),
+      cell(String(e.slot), pc.dim(String(e.slot))),
+      cell(e.status, col(e.status)),
+      cell(dbMode),
+      cell(e.branch),
+      portCell(e.ports.web),
+      portCell(e.ports.api),
+      portCell(dbMode === 'isolated' ? e.ports.sbDb : SHARED_SUPABASE_PORTS.sbDb),
+      portCell(dbMode === 'isolated' ? e.ports.sbStudio : SHARED_SUPABASE_PORTS.sbStudio),
+    ];
+  });
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].text.length)));
+  const GAP = '  ';
+  // Pad after `render` using the plain-text length so zero-width escape codes
+  // don't throw off alignment. The last column gets no trailing padding.
+  const fmt = (c: Cell, i: number) => c.render + (i === widths.length - 1 ? '' : ' '.repeat(widths[i] - c.text.length));
+  console.log('\n  ' + pc.dim(headers.map((h, i) => (i === headers.length - 1 ? h : h.padEnd(widths[i]))).join(GAP)));
+  for (const r of rows) console.log('  ' + r.map(fmt).join(GAP));
   console.log('');
 }
 
