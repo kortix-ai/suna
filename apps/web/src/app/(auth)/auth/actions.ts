@@ -3,6 +3,7 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
+import { restrictedAuthDecision } from '@/lib/auth/nonprod-access';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
@@ -44,6 +45,15 @@ function mobileCallbackState(formData: FormData): string | null {
   if (formData.get('mobileCallback') !== 'true') return null;
   const state = formData.get('mobileCallbackState');
   return typeof state === 'string' && state.length > 0 ? state : null;
+}
+
+function authAccessError(email: string | null | undefined, origin: string | null | undefined) {
+  const decision = restrictedAuthDecision({
+    email,
+    origin,
+    appUrl: getServerPublicEnv().APP_URL,
+  });
+  return decision.allowed ? null : { message: decision.message };
 }
 
 function emailRedirectUrl({
@@ -88,8 +98,11 @@ export async function signIn(prevState: any, formData: FormData) {
     return { message: 'Please enter a valid email address' };
   }
 
-  const supabase = await createClient();
   const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
+
+  const supabase = await createClient();
 
   // Use magic link (passwordless) authentication
   // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
@@ -151,6 +164,8 @@ export async function signUp(prevState: any, formData: FormData) {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
 
   // Check access control — if signups are closed and email isn't allowlisted, block
   let shouldCreateUser = true;
@@ -258,6 +273,9 @@ export async function forgotPassword(prevState: any, formData: FormData) {
     return { message: 'Please enter a valid email address' };
   }
 
+  const accessError = authAccessError(email.trim().toLowerCase(), origin);
+  if (accessError) return accessError;
+
   const supabase = await createClient();
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -314,8 +332,11 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     return { message: 'Please enter a valid email address' };
   }
 
-  const supabase = await createClient();
   const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
+
+  const supabase = await createClient();
 
   // Use magic link (passwordless) authentication
   // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
@@ -370,8 +391,11 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
     return { message: 'Please enter a valid email address' };
   }
 
-  const supabase = await createClient();
   const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
+
+  const supabase = await createClient();
 
   let emailRedirectTo: string;
   if (isDesktopApp && origin.startsWith('kortix://')) {
@@ -419,10 +443,14 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
     return { message: 'Password must be at least 6 characters' };
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     password,
   });
 
@@ -483,6 +511,9 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   if (password !== confirmPassword) {
     return { message: 'Passwords do not match' };
   }
+
+  const accessError = authAccessError(email, origin);
+  if (accessError) return accessError;
 
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
@@ -622,10 +653,14 @@ export async function verifyOtp(prevState: any, formData: FormData) {
     return { message: 'Please enter the 6-digit code from your email' };
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+  const accessError = authAccessError(normalizedEmail, origin);
+  if (accessError) return accessError;
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.verifyOtp({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     token: token.trim(),
     type: 'magiclink',
   });

@@ -79,9 +79,11 @@ function LiveClock() {
 function AuthCardForm({
   returnUrl,
   mobileCallbackState,
+  initialError,
 }: {
   returnUrl: string;
   mobileCallbackState: string | null;
+  initialError?: string | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -99,7 +101,7 @@ function AuthCardForm({
   const passwordEnabled = enabledMethods.includes('password');
   const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
   const [pending, setPending] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialError || null);
   const [info, setInfo] = useState<string | null>(null);
   // After a magic-link email is sent, the same email also carries a 6-digit
   // code. We keep the sent-to address around so the user can paste the code
@@ -125,6 +127,10 @@ function AuthCardForm({
       .filter(Boolean);
   }, []);
   const googleEnabled = enabledProviders.includes('google');
+
+  useEffect(() => {
+    setErrorMessage(initialError || null);
+  }, [initialError]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -563,6 +569,10 @@ function AuthContent() {
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
+  const authError =
+    searchParams.get('error') === 'restricted_environment'
+      ? 'This environment is restricted to the Kortix team. Use your Kortix email address.'
+      : null;
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
@@ -702,7 +712,11 @@ function AuthContent() {
               transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="bg-background/75 dark:bg-background/70 border-foreground/[0.08] max-h-[calc(100vh-4rem)] overflow-y-auto rounded-2xl border p-7 backdrop-blur-2xl">
-                <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
+                <AuthCardForm
+                  returnUrl={returnUrl}
+                  mobileCallbackState={mobileCallbackState}
+                  initialError={authError}
+                />
               </div>
             </motion.div>
           </motion.div>
