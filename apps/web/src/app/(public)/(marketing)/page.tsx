@@ -41,8 +41,6 @@ export default function Home() {
       <div className="bg-background relative">
         <Hero />
 
-        <ModalitySwitcher />
-
         <div className="mx-auto max-w-6xl">
           <Separator />
         </div>
@@ -79,6 +77,12 @@ export default function Home() {
         </div>
 
         <RuntimeArchitecture />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <ModalitySwitcher />
 
         <div className="mx-auto max-w-6xl">
           <Separator />

@@ -4,7 +4,16 @@ import { CodeWindow } from '@/components/home/code-window';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { FileCode2, FolderClosed, GitBranch } from 'lucide-react';
+import {
+  FileCode2,
+  FolderClosed,
+  GitBranch,
+  KeyRound,
+  Layers,
+  ShieldCheck,
+  type LucideIcon,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
 
 const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
 
@@ -27,7 +36,59 @@ const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
   ['connectors', 2, 'dir'],
 ];
 
-const FACTS = ['1 git repo', '1 kortix.toml', '1 OpenCode runtime'];
+type ValueProp = {
+  icon: LucideIcon;
+  title: string;
+  body: ReactNode;
+};
+
+const VALUE_PROPS: ValueProp[] = [
+  {
+    icon: Layers,
+    title: 'One place for everything',
+    body: (
+      <>
+        Every agent, skill, and piece of operational knowledge lives in{' '}
+        <span className="text-foreground font-medium">a single repo</span> — not scattered across
+        ten tools.
+      </>
+    ),
+  },
+  {
+    icon: ShieldCheck,
+    title: 'You own all of it',
+    body: (
+      <>
+        Your data, your agents, your integrations — yours to read, fork, and host.{' '}
+        <span className="text-foreground font-medium">Nothing locked in</span> someone else&apos;s
+        product.
+      </>
+    ),
+  },
+  {
+    icon: KeyRound,
+    title: 'Secured · one token',
+    body: (
+      <>
+        Every integration runs through{' '}
+        <span className="text-foreground font-medium">one connector layer</span> — scoped,
+        auditable, revocable from a single place.
+      </>
+    ),
+  },
+];
+
+function ValuePropCard({ icon: Icon, title, body }: ValueProp) {
+  return (
+    <div className="border-border bg-card flex h-full flex-col rounded-2xl border p-5">
+      <span className="border-border bg-background text-foreground flex size-9 items-center justify-center rounded-xl border">
+        <Icon className="size-4" />
+      </span>
+      <p className="text-foreground mt-4 text-sm font-medium">{title}</p>
+      <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">{body}</p>
+    </div>
+  );
+}
 
 function RepoTree() {
   return (
@@ -82,24 +143,19 @@ export function CompanyAsRepo() {
             The core idea
           </Badge>
           <h2 className="text-foreground text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-            Kortix treats your whole company as a code repository
+            Your whole company as a code repo.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed text-balance">
-            Because all your agents, skills, and context are just files. Your context in one place,
-            your integrations in one place — saved and versioned in a Git repo.
+            Agents, skills, and context are just files — so everything lives in one place, you own
+            every bit of it, and it&apos;s saved and versioned in a single Git repo.
           </p>
         </div>
       </Reveal>
 
       <Reveal delay={0.05}>
-        <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-          {FACTS.map((fact) => (
-            <span
-              key={fact}
-              className="border-border text-foreground inline-flex items-center rounded-full border px-4 py-1.5 font-mono text-sm"
-            >
-              {fact}
-            </span>
+        <div className="mb-10 grid gap-4 sm:grid-cols-3">
+          {VALUE_PROPS.map((prop) => (
+            <ValuePropCard key={prop.title} {...prop} />
           ))}
         </div>
       </Reveal>
@@ -109,6 +165,13 @@ export function CompanyAsRepo() {
           <RepoTree />
           <CodeWindow className="h-full" />
         </div>
+      </Reveal>
+
+      <Reveal delay={0.15}>
+        <p className="text-muted-foreground mt-8 text-center text-sm">
+          One repo. One connector layer. One runtime —{' '}
+          <span className="text-foreground font-medium">all of it yours.</span>
+        </p>
       </Reveal>
     </section>
   );

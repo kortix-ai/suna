@@ -213,10 +213,10 @@ export function WhyItsAHire() {
             More hire than tool
           </Badge>
           <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-            Not a chatbot. A coworker.
+            Not chatbots. Coworkers.
           </h2>
           <p className="text-muted-foreground text-base leading-relaxed">
-            Four reasons it feels less like software and more like someone on the team.
+            Four reasons they feel less like software and more like people on the team.
           </p>
         </div>
       </Reveal>
