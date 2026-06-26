@@ -8,6 +8,11 @@ raw API, `authenticatedFetch`, or `@opencode-ai/sdk` directly.
 > Philosophy: **one Kortix token, one client, every action a method.** Keys never
 > leave the server; mutations own their side-effects there; the host states intent.
 
+📖 **Full documentation:** [kortix.com/docs/sdk](https://kortix.com/docs/sdk) —
+getting started, the full client, sessions, React hooks, and the subpath modules.
+The REST API has an auto-generated reference at
+[api.kortix.com/v1/docs](https://api.kortix.com/v1/docs).
+
 ---
 
 ## Quick start

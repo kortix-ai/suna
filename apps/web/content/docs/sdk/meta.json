@@ -1,0 +1,11 @@
+{
+  "title": "TypeScript SDK",
+  "pages": [
+    "index",
+    "getting-started",
+    "the-client",
+    "sessions",
+    "react",
+    "modules"
+  ]
+}

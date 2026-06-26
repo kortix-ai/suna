@@ -1,0 +1,92 @@
+---
+title: Sessions
+description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **session** is one agent run, in its own disposable sandbox, on its own git
+branch. `kortix.session(projectId, sessionId)` binds both ids and is the single
+handle for everything a session does.
+
+```ts
+const s = kortix.session(projectId, sessionId);
+```
+
+<Callout>
+**Session-scoped, by design.** A session owns its runtime, so you ask the *session*
+about health and previews — never a global "sandbox." The sandbox is plumbing the
+SDK resolves for you.
+</Callout>
+
+## Lifecycle
+
+```ts
+await s.get();                 // session detail
+await s.update({ /* … */ });   // rename, settings
+await s.start();               // provision + boot the runtime
+await s.restart();             // restart the runtime
+await s.commit();              // commit the agent's work
+await s.setSharing(intent);    // sharing / visibility
+await s.delete();
+```
+
+### Previews & public shares
+
+```ts
+await s.previews();            // candidate preview ports the runtime exposes
+await s.publicShares.list();
+await s.publicShares.create(input);
+await s.publicShares.revoke(shareId);
+```
+
+## The runtime
+
+The session owns its runtime, so these resolve the active sandbox for you — you
+pass a port or a URL, never a sandbox id.
+
+| method | returns | what |
+|---|---|---|
+| `s.health(init?)` | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready |
+| `s.previewUrl(port, path?)` | `string` | proxy/preview URL for a port the agent exposed |
+| `s.proxyUrl(url?)` | `string \| undefined` | rewrite a localhost URL the agent printed into a reachable proxy URL |
+
+```ts
+const { ok, health } = await s.health();
+// health?.ready · health?.building · health?.version …
+
+const url = s.previewUrl(3000, '/docs');       // → the live preview URL
+const fixed = s.proxyUrl('http://localhost:8080');
+```
+
+<Callout>
+Stateless URL helpers — detecting localhost URLs in agent output, parsing preview
+URLs — live at [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The
+session handle wraps them with the sandbox context already resolved.
+</Callout>
+
+## Talking to the agent — `s.runtime`
+
+`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
+only through the SDK. Prompt the agent, manage messages, drive the runtime — all
+typed.
+
+```ts
+// send a prompt
+await s.runtime.session.prompt({
+  sessionID: sessionId,
+  parts: [{ type: 'text', text: 'Refactor the auth module' }],
+});
+
+// abort the current run
+await s.runtime.session.abort({ sessionID: sessionId });
+```
+
+For **live** message / part / event streaming in a UI, use the reactive hooks in
+[`@kortix/sdk/react`](/docs/sdk/react) rather than polling the runtime client.
+
+<Callout type="warn">
+Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by
+the SDK, with the full opencode type surface re-exported from
+[`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
+</Callout>

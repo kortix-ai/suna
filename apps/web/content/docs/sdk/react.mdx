@@ -1,0 +1,329 @@
+---
+title: React hooks
+description: "@kortix/sdk/react — reactive hooks for live session data: messages, streaming parts, events, config, MCP, PTY, and models."
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`@kortix/sdk/react` is the **reactive** half of the SDK. Where `createKortix(...)`
+is imperative — you call a method, you get a promise — these hooks subscribe to
+**live** data and re-render as it changes. They are built on
+[React Query](https://tanstack.com/query) (server cache, mutations) and
+[zustand](https://zustand-demo.pmnd.rs/) (the live message/part/status store),
+and kept current by OpenCode's SSE event stream.
+
+Use the two layers together: **hooks for live UI data** (the message thread, the
+session list, runtime status), the **facade for imperative actions**
+(`kortix.session(pid, sid).start()`, `.commit()`). They share one cache, so a
+mutation and a subscription stay consistent.
+
+```ts
+import {
+  useOpenCodeSessions,
+  useSessionSync,
+  useSendOpenCodeMessage,
+} from '@kortix/sdk/react';
+```
+
+<Callout type="warn">
+These hooks read the **active runtime** — the session whose sandbox the host has
+made current (via `kortix.session(pid, sid).start()` and the server store). They
+import `react` and `@tanstack/react-query` as optional peers, so install both if
+you use this subpath.
+</Callout>
+
+## Wire the provider
+
+Two things must be in scope: a React Query `QueryClientProvider`, and the headless
+`OpenCodeEventStreamProvider`, which opens the SSE connection and applies
+incremental cache updates. Mount the event provider **once**, high in the tree of
+any page that needs live data.
+
+```tsx
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { OpenCodeEventStreamProvider } from '@kortix/sdk/react';
+
+const queryClient = new QueryClient();
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* renders nothing — just connects the live event stream */}
+      <OpenCodeEventStreamProvider />
+      {children}
+    </QueryClientProvider>
+  );
+}
+```
+
+`OpenCodeEventStreamProvider` is a thin wrapper around `useOpenCodeEventStream()`;
+call the hook directly if you need to co-locate it in an existing component. It
+reconnects automatically on a runtime/server switch.
+
+## Session list & CRUD
+
+The session list and per-session lifecycle, as React Query queries and mutations.
+Reads are gated on the runtime being ready; mutations update the cache surgically
+and the SSE stream reconciles the authoritative state.
+
+```tsx
+import {
+  useOpenCodeSessions,
+  useCreateOpenCodeSession,
+  useUpdateOpenCodeSession,
+  useDeleteOpenCodeSession,
+} from '@kortix/sdk/react';
+
+function Sidebar() {
+  const { data: sessions = [], isLoading } = useOpenCodeSessions();
+  const create = useCreateOpenCodeSession();
+  const rename = useUpdateOpenCodeSession();
+  const remove = useDeleteOpenCodeSession();
+
+  return (
+    <>
+      <button onClick={() => create.mutate({ title: 'New task' })}>New</button>
+      {sessions.map((s) => (
+        <Row
+          key={s.id}
+          session={s}
+          onRename={(title) => rename.mutate({ sessionId: s.id, title })}
+          onArchive={() => rename.mutate({ sessionId: s.id, archived: true })}
+          onDelete={() => remove.mutate(s.id)}
+        />
+      ))}
+    </>
+  );
+}
+```
+
+| hook | purpose |
+|---|---|
+| `useOpenCodeSessions()` | the live session list (newest first) |
+| `useOpenCodeSession(id)` | one session record |
+| `useCreateOpenCodeSession()` | create `{ directory?, title? }` |
+| `useUpdateOpenCodeSession()` | rename / archive `{ sessionId, title?, archived? }` |
+| `useDeleteOpenCodeSession()` | delete by id |
+| `useForkSession()` | branch a session at a message |
+| `useSummarizeOpenCodeSession()` | compact the thread |
+| `useInitSession()` | run `/init` (analyze repo, write `AGENTS.md`) |
+| `useOpenCodeSessionDiff(id)` · `useOpenCodeSessionTodo(id)` | the session's working diff · todo list |
+
+## Live messages & streaming parts
+
+`useSessionSync(sessionId)` is the single hook for everything about one open
+session. On first access it fetches the thread (warm-starting from an IndexedDB
+cache), then SSE events stream message **parts** into the zustand store as the
+agent works — so the thread updates token-by-token without refetching.
+
+```tsx
+import { useSessionSync, useSendOpenCodeMessage, useAbortOpenCodeSession } from '@kortix/sdk/react';
+
+function Thread({ sessionId }: { sessionId: string }) {
+  const { messages, status, isBusy, isLoading, permissions, todos } = useSessionSync(sessionId);
+  const send = useSendOpenCodeMessage();
+  const abort = useAbortOpenCodeSession();
+
+  if (isLoading) return <Spinner />;
+
+  return (
+    <>
+      {messages.map(({ info, parts }) => (
+        <MessageView key={info.id} message={info} parts={parts} />
+      ))}
+
+      {isBusy && <button onClick={() => abort.mutate(sessionId)}>Stop</button>}
+
+      <Composer
+        onSend={(text) =>
+          send.mutate({ sessionId, parts: [{ type: 'text', text }] })
+        }
+      />
+    </>
+  );
+}
+```
+
+`useSessionSync` returns the derived, render-stable view of the session:
+
+| field | type | what |
+|---|---|---|
+| `messages` | `{ info, parts }[]` | the thread, parts streamed live |
+| `status` | `SessionStatus` | `idle` / `busy` / `retry` … |
+| `isBusy` · `isLoading` | `boolean` | agent running · first load in flight |
+| `permissions` · `questions` | `[]` | pending approvals / agent questions |
+| `diffs` · `todos` | `[]` | live file diffs · todo items |
+
+Companion hooks:
+
+- `useOpenCodeMessages(sessionId)` — a read-only, React-Query-shaped view of just
+  the messages (reads the same store; use `useSessionSync` for the full surface).
+- `useSendOpenCodeMessage()` — send a prompt. `parts` accept `text`, `file`, and
+  `agent` mentions; pass `options.model` / `options.agent` to override per-message.
+- `useAbortOpenCodeSession()` — stop the current run.
+- `useUpdatePart()` / `useDeletePart()` — edit or remove a message part; the SSE
+  stream applies the cache update.
+
+<Callout>
+Sending is fire-and-forget: `useSendOpenCodeMessage` calls the blocking
+`session.prompt` endpoint, but the UI doesn't await it — all incremental updates
+arrive over SSE and land in the store via `useSessionSync`.
+</Callout>
+
+## Events
+
+`useOpenCodeEventStream()` is the engine the provider mounts. It connects to the
+runtime's SSE stream and **incrementally** updates the React Query cache and the
+sync store (rather than invalidating + refetching), so streaming stays cheap. You
+rarely call it directly — mount `OpenCodeEventStreamProvider` once and every hook
+above goes live.
+
+```tsx
+import { useOpenCodeEventStream } from '@kortix/sdk/react';
+
+function LiveData() {
+  useOpenCodeEventStream(); // headless; renders nothing
+  return null;
+}
+```
+
+## Runtime config
+
+Read and write OpenCode's runtime config (`opencode.jsonc` as the server sees it).
+Updates are optimistic and roll back on error.
+
+```tsx
+import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@kortix/sdk/react';
+
+function PermissionToggle() {
+  const { data: config } = useOpenCodeConfig();
+  const update = useUpdateOpenCodeConfig();
+
+  return (
+    <Switch
+      checked={config?.permission?.edit === 'allow'}
+      onChange={(on) =>
+        update.mutate({ permission: { edit: on ? 'allow' : 'ask' } })
+      }
+    />
+  );
+}
+```
+
+## MCP servers
+
+Manage the runtime's [Model Context Protocol](/docs/concepts/connections) servers
+— list status, add/connect/disconnect, and run the OAuth flow. All status writes
+are optimistic and reconciled by SSE.
+
+```tsx
+import {
+  useOpenCodeMcpStatus,
+  useAddMcpServer,
+  useConnectMcpServer,
+  useDisconnectMcpServer,
+} from '@kortix/sdk/react';
+
+function McpPanel() {
+  const { data: servers = {} } = useOpenCodeMcpStatus();
+  const add = useAddMcpServer();
+  const connect = useConnectMcpServer();
+  const disconnect = useDisconnectMcpServer();
+
+  const addRemote = () =>
+    add.mutate({ name: 'linear', type: 'remote', url: 'https://mcp.linear.app/sse' });
+
+  return <McpList servers={servers} onConnect={connect.mutate} onDisconnect={disconnect.mutate} onAdd={addRemote} />;
+}
+```
+
+OAuth for servers that need it: `useMcpAuthStart()` (returns an
+`authorizationUrl`), `useMcpAuthCallback()` (`{ name, code }`), and
+`useMcpAuthRemove()`.
+
+## PTY terminal
+
+A live terminal into the session's sandbox. List/create/remove/resize PTYs, then
+open a WebSocket for the byte stream. PTY query keys are deliberately scoped per
+server URL so they survive a runtime switch.
+
+```tsx
+import {
+  useOpenCodePtyList,
+  useCreatePty,
+  useRemovePty,
+  getPtyWebSocketUrl,
+} from '@kortix/sdk/react';
+
+function Terminal() {
+  const { data: ptys = [] } = useOpenCodePtyList();
+  const create = useCreatePty();
+  const remove = useRemovePty();
+
+  async function open(id: string) {
+    const url = await getPtyWebSocketUrl(id); // wss://… with the auth token appended
+    const ws = new WebSocket(url);
+    // pipe ws ⇄ xterm.js
+  }
+
+  return <Terminals ptys={ptys} onNew={() => create.mutate({ title: 'shell' })} onClose={remove.mutate} onOpen={open} />;
+}
+```
+
+Use `useUpdatePty()` to push title or `{ rows, cols }` resize events.
+
+## Model store
+
+`useModelStore(allModels, opts?)` is a zustand-backed store of the user's model
+preferences — visibility, recents, per-agent and per-session selections, the
+global default, and per-model variants. It's persisted client-side and pure UI
+state (it does **not** fetch models — pass in the flattened catalog you got from
+`kortix.project(id).llmCatalog()` or `useOpenCodeProviders()`).
+
+```tsx
+import { useModelStore, type ModelKey } from '@kortix/sdk/react';
+
+// `models` is the flattened model catalog (provider/model rows)
+function ModelPicker({ models }: { models: ModelKey[] }) {
+  const store = useModelStore(models, { connectedProviderIds });
+
+  const visible = models.filter((m) => store.isVisible(m));
+
+  const pick = (m: ModelKey) => {
+    store.setSessionModel(sessionId, m);
+    store.pushRecent(m);
+  };
+
+  return <Menu items={visible} recent={store.recent} default={store.globalDefault} onPick={pick} />;
+}
+```
+
+Returned helpers include `isVisible` / `isLatest`, `setVisibility` /
+`resetVisibility`, `recent` / `pushRecent`, `getVariant` / `setVariant`,
+`getSelectedModel` / `setSelectedModel`, `getSessionModel` / `setSessionModel`,
+`getSessionAgentName` / `setSessionAgentName`, `lastAgentName` /
+`setLastAgentName`, `globalDefault` / `setGlobalDefault`, and `userPrefs`. The
+module-level `setGlobalDefaultModel` / `hydrateGlobalDefaultFromServer` set the
+default outside React; `useModelHydration()` seeds the store from the server.
+
+## More hooks
+
+Everything the OpenCode runtime exposes has a hook. A few you'll reach for:
+
+| hook | what |
+|---|---|
+| `useVisibleAgents({ directory? })` · `useOpenCodeAgents()` | selectable agents · all agents |
+| `useOpenCodeProviders()` | configured providers + their models |
+| `useOpenCodeCommands()` · `useExecuteOpenCodeCommand()` | slash commands · run one |
+| `useOpenCodeToolIds()` · `useOpenCodeSkills()` | available tool ids · skills |
+| `useOpenCodeProjects()` · `useOpenCodeCurrentProject()` | runtime project list · current |
+| `useShareSession()` · `useUnshareSession()` | public share links |
+| `useBackgroundSessionPrefetch(sessions)` | warm message caches on hover |
+
+The `opencodeKeys` query-key factory is exported too, for targeted
+`invalidateQueries` / `setQueryData` against the same cache the hooks use.
+
+## Next
+
+- [The client](/docs/sdk/the-client) — the imperative `createKortix` facade.
+- [Modules](/docs/sdk/modules) — lower-level subpath imports the hooks build on.

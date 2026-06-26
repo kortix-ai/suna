@@ -1,0 +1,91 @@
+---
+title: Getting started
+description: Install @kortix/sdk, create a client, authenticate, and make your first calls.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Install
+
+```sh
+pnpm add @kortix/sdk
+```
+
+`react` (≥18) and `@tanstack/react-query` (≥5) are **optional peers** — needed only
+if you use the `@kortix/sdk/react` hooks. The core client is framework-agnostic
+and works in Node, the browser, and React Native.
+
+## Create a client
+
+`createKortix(config)` wires the platform seam once and returns one client. The
+only required config is `backendUrl` and a `getToken` that returns your Kortix
+token.
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+export const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  },
+});
+```
+
+### Config
+
+| field | type | required | what |
+|---|---|---|---|
+| `backendUrl` | `string` | yes | Kortix API base, e.g. `https://api.kortix.com/v1` |
+| `getToken` | `() => Promise<string \| null>` | yes | Returns the bearer token (Supabase JWT or `kortix_pat_…`) |
+| `getUserId` | `() => Promise<string \| null>` | no | Current user id, when the host knows it |
+| `billingEnabled` | `boolean` | no | Toggles billing-gated behaviour |
+| `onError` · `onToast` · `onNotify` | callbacks | no | Host sinks for errors, toasts, and notifications |
+
+<Callout>
+`createKortix` calls `configureKortix` for you — the one global seam every SDK
+module reads. Call it once at app startup.
+</Callout>
+
+## Authentication
+
+Every request sends `Authorization: Bearer <token>`. The token is either:
+
+- a **Supabase JWT** — interactive user sessions, or
+- a **Kortix personal access token** (`kortix_pat_…`) — server-side and automation.
+
+`getToken` is called on demand; the host owns caching and refresh. Keys never live
+inside the SDK.
+
+## Your first calls
+
+```ts
+// list your projects
+const projects = await kortix.projects.list();
+
+// open a project, read its detail
+const detail = await kortix.project(projectId).detail();
+
+// create + start a session (one agent run, in its own sandbox on its own branch)
+const created = await kortix.project(projectId).sessions.create();
+const s = kortix.session(projectId, created.id);
+await s.start();
+
+// talk to the running agent — the typed opencode runtime, reached via the SDK
+await s.runtime.session.prompt({
+  sessionID: created.id,
+  parts: [{ type: 'text', text: 'Add a README' }],
+});
+```
+
+<Callout type="warn">
+Don't import `@opencode-ai/sdk`, `backendApi`, or `authenticatedFetch` in app
+code. Everything is reachable through `createKortix` or a `@kortix/sdk/*` subpath.
+</Callout>
+
+## Next
+
+- [The client](/docs/sdk/the-client) — the full facade surface.
+- [Sessions](/docs/sdk/sessions) — lifecycle, runtime health, previews, and the opencode runtime.
+- [React hooks](/docs/sdk/react) — live, reactive data for your UI.

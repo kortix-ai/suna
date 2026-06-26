@@ -1,0 +1,132 @@
+---
+title: The client
+description: The createKortix facade — accounts, projects, and the id-bound project handle, with every sub-resource.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`createKortix(config)` returns one client. REST methods are direct, fully-typed
+references to the platform client; the `project()` and `session()` handles bind
+ids so you never repeat them.
+
+```ts
+const kortix = createKortix({ backendUrl, getToken });
+
+kortix.accounts          // account / team operations
+kortix.projects          // top-level project operations
+kortix.project(id)       // id-bound project handle (every sub-resource)
+kortix.session(pid, sid) // id-bound session handle  →  see Sessions
+kortix.runtime()         // the opencode client for the active runtime (escape hatch)
+```
+
+## Accounts
+
+Team / organization operations.
+
+```ts
+await kortix.accounts.list();
+await kortix.accounts.get(accountId);
+await kortix.accounts.create({ name });
+await kortix.accounts.updateName(accountId, name);
+await kortix.accounts.members(accountId);
+await kortix.accounts.invite(accountId, { email, role });
+await kortix.accounts.updateMemberRole(accountId, userId, role);
+await kortix.accounts.removeMember(accountId, userId);
+await kortix.accounts.invites(accountId);
+await kortix.accounts.leave(accountId);
+```
+
+## Projects
+
+A **project** is one git repo with a `kortix.toml`. Top-level operations:
+
+| method | what |
+|---|---|
+| `projects.list()` | your projects |
+| `projects.listForAccount(accountId)` | projects in an account |
+| `projects.get(id)` · `projects.detail(id)` | summary · full detail |
+| `projects.create(input)` | create a project |
+| `projects.provision(id)` | provision its runtime |
+| `projects.update(id, input)` · `projects.archive(id)` | update · archive |
+| `projects.llmCatalog(id)` | available models |
+| `projects.sandboxTemplates(id)` | the project's sandbox **templates** (Dockerfile/image/warm-pool) |
+| `projects.sandboxHealth(id)` | sandbox-image **build** health |
+| `projects.sessions(id)` · `projects.createSession(id, input?)` | list · create sessions |
+
+<Callout>
+`projects.sandboxTemplates` returns build **templates** — not the legacy
+one-project-one-sandbox instances. See [Sandbox image](/docs/reference/sandbox-image).
+</Callout>
+
+## The project handle
+
+`kortix.project(id)` binds the project id and exposes every sub-resource:
+
+```ts
+const p = kortix.project(projectId);
+
+await p.detail();
+await p.update({ name });
+await p.llmCatalog();
+await p.archive();
+```
+
+### `p.secrets` — project secrets / env
+
+```ts
+await p.secrets.list();
+await p.secrets.upsert({ name: 'DATABASE_URL', value });
+await p.secrets.remove('DATABASE_URL');
+await p.secrets.setPersonal(name, value);   // per-user override
+await p.secrets.setGitCredential(input);     // git auth
+```
+
+### `p.access` — members, invites, requests
+
+```ts
+await p.access.list();
+await p.access.invite(email, role);
+await p.access.update(userId, role);
+await p.access.revoke(userId);
+await p.access.requests();                    // pending access requests
+await p.access.approveRequest(requestId);
+```
+
+### `p.triggers` — automations (cron / webhook)
+
+```ts
+await p.triggers.list();
+await p.triggers.create({ /* slug, type, agent, … */ });
+await p.triggers.update(triggerId, { /* … */ });
+await p.triggers.fire(triggerId);
+await p.triggers.remove(triggerId);
+```
+
+### `p.connectors` · `p.policies` · `p.files` · `p.git` · `p.changeRequests`
+
+```ts
+await p.connectors.list();           // MCP / tool connectors
+await p.policies.list();             // project policies
+await p.files.list();                // repo files, read-only via the API
+await p.files.read(path, ref);
+await p.git.commits();               // git history
+await p.git.commit(sha);
+await p.changeRequests.list();       // the review queue
+await p.changeRequests.merge(crId);
+```
+
+### `p.sessions` — and the session handle
+
+```ts
+await p.sessions.list();
+const created = await p.sessions.create();
+const s = p.session(created.id);     // === kortix.session(projectId, created.id)
+```
+
+The session handle is the heart of the runtime — see **[Sessions](/docs/sdk/sessions)**.
+
+## Escape hatch
+
+`kortix.runtime()` returns the typed opencode v2 client for the active runtime.
+Prefer `kortix.session(pid, sid).runtime`, the same client scoped to a session.
+You should never need `@opencode-ai/sdk` directly.
