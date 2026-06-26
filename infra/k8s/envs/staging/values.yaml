@@ -1,0 +1,68 @@
+# Staging environment values for the kortix-api chart.
+#
+# Staging is the release-candidate branch: human/code changes should reach it
+# only by PR into `staging`. Deploy automation may add `[skip ci]` GitOps pin
+# commits for exact image tags. Anything deployed here must be considered ready
+# to promote to production after QA.
+
+image:
+  tag: "staging-latest"
+kortixVersion: ""
+
+env:
+  internalKortixEnv: staging
+
+extraEnv:
+  LLM_GATEWAY_BASE_URL: "https://gateway-staging.kortix.com/v1/llm"
+  KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  KORTIX_WARM_POOL_MAX_TOTAL: "10"
+  KORTIX_WARM_POOL_SIZE: "1"
+  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
+
+# Staging has its own DB/Supabase data plane via `kortix-staging-env`, so the
+# singleton background workers are safe to run here. This makes staging a true
+# production rehearsal instead of a read-only preview.
+workers:
+  enabled: true
+
+replicas: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 60
+
+pdb:
+  enabled: true
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+health:
+  livenessPath: /health/live
+
+serviceAccount:
+  name: kortix-api
+  roleArn: arn:aws:iam::935064898258:role/kortix-staging-eks-app
+
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-staging-env
+  targetSecretName: kortix-api-env
+
+ingress:
+  enabled: true
+  host: staging-api-eks.kortix.com
+  # us-west-2 wildcard cert for *.kortix.com.
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755
+  cloudflareProxied: true
+
+rollout:
+  enabled: false

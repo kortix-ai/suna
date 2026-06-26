@@ -9,6 +9,7 @@ import {
   buildRefreshBody,
   needsRefresh,
   parseCodexAuth,
+  tokenStillValid,
   type CodexCredential,
   type StoredCodexAuth,
 } from './codex-core';
@@ -104,8 +105,15 @@ export async function resolveCodexCredential(
   if (!stored?.access) return null;
 
   if (needsRefresh(stored, Date.now())) {
-    const refreshed = await refreshSingleFlight(projectId, row, stored, fetchImpl);
-    if (refreshed?.access) stored = refreshed;
+    try {
+      const refreshed = await refreshSingleFlight(projectId, row, stored, fetchImpl);
+      if (refreshed?.access) stored = refreshed;
+    } catch (err) {
+      // Grace period: a refresh blip shouldn't fail every Codex request. If the
+      // current token is still within its validity window, keep using it; only
+      // surface the error once it has genuinely expired.
+      if (!tokenStillValid(stored, Date.now())) throw err;
+    }
   }
 
   const access = stored.access;

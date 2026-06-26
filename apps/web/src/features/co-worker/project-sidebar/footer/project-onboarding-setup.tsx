@@ -10,32 +10,12 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { ProgressRing } from '@/components/ui/progress-ring';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { useProjectSetup, type ProjectSetupStep } from '@/hooks/projects/use-project-setup';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import Link from 'next/link';
-
-function SetupRing({ value, className }: { value: number; className?: string }) {
-  const r = 7;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (Math.max(0, Math.min(100, value)) / 100) * circ;
-  return (
-    <svg viewBox="0 0 18 18" className={cn('size-4 -rotate-90', className)} fill="none">
-      <circle cx="9" cy="9" r={r} strokeWidth="2" className="stroke-kortix-base/15" />
-      <circle
-        cx="9"
-        cy="9"
-        r={r}
-        strokeWidth="2"
-        strokeLinecap="round"
-        className="stroke-kortix-blue transition-[stroke-dashoffset] duration-500"
-        strokeDasharray={circ}
-        strokeDashoffset={offset}
-      />
-    </svg>
-  );
-}
 
 function useStepHandler(projectId: string, onStartSession?: () => void) {
   const router = useRouter();
@@ -193,7 +173,7 @@ export function OnboardingSetupNavItem({ projectId }: { projectId: string }) {
       <Popover>
         <PopoverTrigger asChild>
           <SidebarMenuButton className="text-sm! font-medium [&_svg]:size-4!">
-            <SetupRing value={setup.percent} />
+            <ProgressRing value={setup.percent} progressClassName="text-kortix-blue" />
             <span>
               {tI18nHardcoded.raw(
                 'autoFeaturesCoWorkerProjectSidebarFooterProjectOnboardingSetupJsx814d0f37',
@@ -235,7 +215,11 @@ export function ProjectSetupRailItem({ projectId }: { projectId: string }) {
             )}
             className="flex items-center justify-center"
           >
-            <SetupRing value={setup.percent} className="size-5" />
+            <ProgressRing
+              value={setup.percent}
+              className="size-5"
+              progressClassName="text-kortix-blue"
+            />
           </SidebarMenuButton>
         </PopoverTrigger>
       </Hint>

@@ -8,6 +8,13 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_CONFIG_FILE = process.env.KORTIX_CONFIG_FILE;
 const ORIGINAL_STDOUT_WRITE = process.stdout.write;
 const ORIGINAL_STDERR_WRITE = process.stderr.write;
+const ORIGINAL_SANDBOX_ENV = {
+  KORTIX_API_URL: process.env.KORTIX_API_URL,
+  KORTIX_CLI_TOKEN: process.env.KORTIX_CLI_TOKEN,
+  KORTIX_EXECUTOR_TOKEN: process.env.KORTIX_EXECUTOR_TOKEN,
+  KORTIX_FRONTEND_URL: process.env.KORTIX_FRONTEND_URL,
+  KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
+};
 
 let tmp: string;
 let stdout = '';
@@ -49,8 +56,24 @@ function captureOutput() {
   };
 }
 
+function clearSandboxEnvOverrides() {
+  delete process.env.KORTIX_API_URL;
+  delete process.env.KORTIX_CLI_TOKEN;
+  delete process.env.KORTIX_EXECUTOR_TOKEN;
+  delete process.env.KORTIX_FRONTEND_URL;
+  delete process.env.KORTIX_PROJECT_ID;
+}
+
+function restoreSandboxEnvOverrides() {
+  for (const [key, value] of Object.entries(ORIGINAL_SANDBOX_ENV)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
 describe('kortix marketplace', () => {
   beforeEach(() => {
+    clearSandboxEnvOverrides();
     tmp = mkdtempSync(join(tmpdir(), 'kortix-marketplace-test-'));
     writeTestConfig();
     captureOutput();
@@ -63,6 +86,7 @@ describe('kortix marketplace', () => {
     (process.stderr as any).write = ORIGINAL_STDERR_WRITE;
     if (ORIGINAL_CONFIG_FILE === undefined) delete process.env.KORTIX_CONFIG_FILE;
     else process.env.KORTIX_CONFIG_FILE = ORIGINAL_CONFIG_FILE;
+    restoreSandboxEnvOverrides();
     rmSync(tmp, { recursive: true, force: true });
   });
 

@@ -181,7 +181,20 @@ config_dir = ".kortix/opencode"
 | ------------ | ------ | ------------------ | ------------------------------------------------------ |
 | `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `[[sandbox.templates]]` paths. |
 
-That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout opencode reads by convention. Kortix doesn't read those files; opencode does. See [Kortix vs OpenCode config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
+That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout opencode reads by convention. OpenCode owns the runtime semantics; Kortix may inspect metadata to build server-side agent/model UI surfaces. See [Kortix vs OpenCode config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
+
+`opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Do not duplicate those details in `kortix.toml`. Use `[[agents]]` for the
+Kortix-side decision of which agents are launchable and what server-side grants
+they receive.
+
+Legacy projects with no `[[agents]]` keep OpenCode-native discovery for
+backward compatibility. Projects that add `[[agents]]` opt into declarative,
+server-side agent discovery: product UI should use the API's registered agents,
+while unregistered OpenCode files may still exist for local experiments or
+runtime internals. Model pickers should similarly come from the server /
+LLM-gateway catalog rather than a sandbox-local OpenCode provider list.
 
 ## `[[triggers]]`
 
@@ -203,7 +216,7 @@ prompt  = "Summarize yesterday's commits."
 | `type`    | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
 | `prompt`  | yes      | string | —           | Mustache-style template.                                      |
 | `name`    | no       | string | `slug`      | Human label.                                                  |
-| `agent`   | no       | string | `"default"` | OpenCode agent name.                                          |
+| `agent`   | no       | string | `"default"` | Agent name. Legacy projects resolve this through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
 | `enabled` | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
 
 Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).

@@ -42,22 +42,48 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   app.route('/internal/gateway', createInternalGatewayRoutes());
 
   if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
-    const proxyBase = (
-      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
-    ).replace(/\/+$/, '');
-    app.all('/v1/llm-gateway/*', async (c) => {
-      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-      const target = `${proxyBase}${tail}`;
-      const init: RequestInit & { duplex?: 'half' } = {
-        method: c.req.method,
-        headers: c.req.raw.headers,
-      };
-      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-        init.body = c.req.raw.body;
-        init.duplex = 'half';
+    const rawTarget =
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`;
+    let proxyBase: string | null = null;
+    try {
+      const url = new URL(rawTarget);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error(`unsupported protocol "${url.protocol}"`);
       }
-      const upstream = await fetch(target, init);
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    });
+      proxyBase = rawTarget.replace(/\/+$/, '');
+    } catch (err) {
+      console.error('[gateway] invalid LLM_GATEWAY_PROXY_TARGET — reverse proxy disabled:', err);
+    }
+
+    if (proxyBase) {
+      const base = proxyBase;
+      app.all('/v1/llm-gateway/*', async (c) => {
+        const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+        const target = `${base}${tail}`;
+        const init: RequestInit & { duplex?: 'half' } = {
+          method: c.req.method,
+          headers: c.req.raw.headers,
+        };
+        if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+          init.body = c.req.raw.body;
+          init.duplex = 'half';
+        }
+        try {
+          const upstream = await fetch(target, init);
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: upstream.headers,
+          });
+        } catch (err) {
+          // Standalone gateway pod unreachable (network / DNS / pod down).
+          // Without this guard the request rejects unhandled; return 502 instead.
+          console.error('[gateway] reverse proxy to standalone gateway failed:', err);
+          return c.json(
+            { error: 'gateway upstream unreachable', code: 'gateway_proxy_unreachable' },
+            502,
+          );
+        }
+      });
+    }
   }
 }

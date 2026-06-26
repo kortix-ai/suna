@@ -195,6 +195,13 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
+  // Feature flag for per-Slack-user identity. OFF (default): every Slack message
+  // runs as the account owner (legacy behavior). ON: each sender must link their
+  // own Kortix account via `/kortix login` (a member of the project's account)
+  // and the agent runs AS them; unlinked senders are blocked. `/kortix login`
+  // and the bind endpoint stay available regardless, so users can pre-link
+  // before the flag is flipped on.
+  SLACK_REQUIRE_USER_IDENTITY: optBoolFalse,
 
   // ── Channels — AgentMail email adapter (optional) ────────────────────────
   AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
@@ -210,6 +217,10 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // Fleet default for projects with no explicit per-project override. The
+  // master switch above still wins: LLM_GATEWAY_ENABLED=false forces native
+  // OpenCode for everyone regardless of this value.
+  LLM_GATEWAY_DEFAULT_ENABLED: optBoolFalse,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
@@ -602,6 +613,7 @@ export const config = {
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
+  SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
 
   // ─── Channels (AgentMail email) ──────────────────────────────────────────
   AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
@@ -612,6 +624,7 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,

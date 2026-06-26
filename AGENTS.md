@@ -7,10 +7,15 @@ in** — don't assume. Three choices:
 
 1. **A new isolated worktree** (`pnpm worktree`) — the default for any feature,
    bugfix, refactor, or experiment beyond a one-line edit. Own branch, own port
-   block, own Supabase project, own `node_modules`, own tunnel; runs in parallel
-   without touching the primary stack. Provision non-blocking with
+   block, own `node_modules`, own tunnel; runs in parallel without touching the
+   primary web/API stack. By default it reuses the primary checkout's standard
+   local Supabase DB for fast setup and consistent auth. Provision non-blocking with
    `pnpm worktree create --name <feat> --yes --no-start`, then do all edits/runs
-   under the sibling checkout `../suna-<feat>`. See the **worktree** skill.
+   under the sibling checkout `../suna-<feat>`. If the change needs database
+   migrations, destructive data work, schema drift, or independent auth/storage
+   state, opt into the full isolated data plane with
+   `pnpm worktree create --name <feat> --db --yes --no-start`. See the
+   **worktree** skill.
 2. **Straight in this primary checkout** via `pnpm dev` (web `3000` / api `8008`)
    — on `main` or whatever branch is already checked out here. Simplest; fine
    for small or quick iterative work where isolation isn't needed.
@@ -108,7 +113,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 
 ### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
+  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
   `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
   authoritative route manifest (`tests/spec/routes.generated.json`).
@@ -125,6 +130,26 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   `bun run apps/api/scripts/dump-routes.ts`.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
   flows that boot sandboxes have generous timeouts; run long checks in the background.
+
+### Release topology — dev, staging, prod
+- **`main` = dev trunk.** It is the repo default branch and deploys to
+  `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
+  incomplete development can live here while it is being shaken out.
+- **`staging` = release-candidate branch.** Nothing should land on staging unless
+  it is intended to be production-ready. Human/code changes enter staging by PR:
+  `main` -> `staging` for the full dev candidate, or a targeted branch ->
+  `staging` for a selective release candidate. Staging deploys to
+  `staging.kortix.com` / `staging-api.kortix.com` and must use the staging data
+  plane, not dev or prod.
+- Staging deploys must apply pending DB migrations against `STAGING_DATABASE_URL`
+  before the staging EKS rollout. If that secret is missing or points at dev/prod,
+  treat the deploy as broken; staging must never fall back to dev, KE2E, or prod DBs.
+- **`prod` = production.** Production moves only through **Promote to Production**,
+  which uses `staging` as the source, opens a reviewed release PR into `prod`,
+  publishes the release artifacts, and rolls production after merge.
+- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+  `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
+  staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`

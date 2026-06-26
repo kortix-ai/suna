@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { accountIdFromJwt, applyRefresh, needsRefresh, parseCodexAuth } from './codex-core';
+import {
+  accountIdFromJwt,
+  applyRefresh,
+  needsRefresh,
+  parseCodexAuth,
+  tokenStillValid,
+} from './codex-core';
 
 function jwt(claims: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
@@ -52,6 +58,22 @@ describe('applyRefresh', () => {
 
   test('returns null without an access token', () => {
     expect(applyRefresh({ refresh_token: 'r2' }, { refresh: 'r1' }, now)).toBeNull();
+  });
+});
+
+describe('tokenStillValid', () => {
+  const now = 1_000_000_000_000;
+  test('true while the access token has not expired (grace fallback)', () => {
+    expect(tokenStillValid({ access: 'a', expires: now + 60_000 }, now)).toBe(true);
+  });
+  test('false once expired', () => {
+    expect(tokenStillValid({ access: 'a', expires: now - 1 }, now)).toBe(false);
+  });
+  test('false without an access token', () => {
+    expect(tokenStillValid({ expires: now + 60_000 }, now)).toBe(false);
+  });
+  test('true when expiry is unknown but an access token exists', () => {
+    expect(tokenStillValid({ access: 'a' }, now)).toBe(true);
   });
 });
 

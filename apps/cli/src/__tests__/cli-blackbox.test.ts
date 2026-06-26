@@ -6,6 +6,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 const ORIGINAL_ENV = { ...process.env };
+const SANDBOX_ENV_OVERRIDES = [
+  'KORTIX_API_URL',
+  'KORTIX_CLI_TOKEN',
+  'KORTIX_EXECUTOR_TOKEN',
+  'KORTIX_FRONTEND_URL',
+  'KORTIX_PROJECT_ID',
+] as const;
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
@@ -34,16 +41,19 @@ function writeConfig(apiBase: string): string {
 }
 
 async function runCli(args: string[], cwd = tmp, extraEnv: Record<string, string> = {}) {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    KORTIX_NO_UPDATE_CHECK: '1',
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+    ...extraEnv,
+  };
+  for (const key of SANDBOX_ENV_OVERRIDES) delete env[key];
+  Object.assign(env, extraEnv);
   const proc = Bun.spawn({
     cmd: [process.execPath, CLI_ENTRY, ...args],
     cwd,
-    env: {
-      ...process.env,
-      KORTIX_NO_UPDATE_CHECK: '1',
-      NO_COLOR: '1',
-      FORCE_COLOR: '0',
-      ...extraEnv,
-    },
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -277,6 +287,7 @@ describe('kortix CLI black-box behavior', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-cli-blackbox-'));
     requests = [];
     process.env = { ...ORIGINAL_ENV };
+    for (const key of SANDBOX_ENV_OVERRIDES) delete process.env[key];
   });
 
   afterEach(() => {

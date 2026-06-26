@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
  * `.kortix/link.json` — the per-repo binding between a working
@@ -80,7 +81,8 @@ export function clearLink(cwd = process.cwd()): void {
  */
 export function resolveProjectId(projectArg?: string): string | null {
   if (projectArg) return projectArg;
-  if (process.env.KORTIX_PROJECT_ID) return process.env.KORTIX_PROJECT_ID;
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return envProjectId;
   const link = loadLink();
   return link?.project_id ?? null;
 }

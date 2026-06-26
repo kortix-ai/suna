@@ -13,11 +13,13 @@ import { memo } from 'react';
 interface WallpaperBackgroundProps {
   wallpaperId?: Wallpaper['id'];
   preview?: boolean;
+  showBrandMark?: boolean;
 }
 
 export const WallpaperBackground = memo(function WallpaperBackground({
   wallpaperId: wallpaperIdProp,
   preview = false,
+  showBrandMark = true,
 }: WallpaperBackgroundProps = {}) {
   const storeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
@@ -30,16 +32,18 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   if (wallpaper.type === 'svg') {
     return (
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.svgUrl}
-          alt=""
-          className={cn(
-            'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
-            centerTopClass,
-          )}
-          draggable={false}
-        />
+        {showBrandMark && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={wallpaper.svgUrl}
+            alt=""
+            className={cn(
+              'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
+              centerTopClass,
+            )}
+            draggable={false}
+          />
+        )}
       </div>
     );
   }
@@ -47,16 +51,18 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   if (wallpaper.type === 'symbol') {
     return (
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.symbolUrl}
-          alt=""
-          className={cn(
-            'absolute left-1/2 h-auto w-[clamp(36px,9%,130px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-100 select-none dark:invert',
-            centerTopClass,
-          )}
-          draggable={false}
-        />
+        {showBrandMark && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={wallpaper.symbolUrl}
+            alt=""
+            className={cn(
+              'absolute left-1/2 h-auto w-[clamp(36px,9%,130px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-100 select-none dark:invert',
+              centerTopClass,
+            )}
+            draggable={false}
+          />
+        )}
       </div>
     );
   }
@@ -138,16 +144,18 @@ export const WallpaperBackground = memo(function WallpaperBackground({
         {/* L2 — Kortix logomark, sized relative to the actual container so
              it stays the right size in both real-page and thumbnail
              contexts (independent of the 1280×720 arc scaler above). */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.svgUrl}
-          alt=""
-          className={cn(
-            'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none dark:invert-0',
-            centerTopClass,
-          )}
-          draggable={false}
-        />
+        {showBrandMark && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={wallpaper.svgUrl}
+            alt=""
+            className={cn(
+              'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none dark:invert-0',
+              centerTopClass,
+            )}
+            draggable={false}
+          />
+        )}
       </div>
     );
   }
@@ -168,16 +176,18 @@ export const WallpaperBackground = memo(function WallpaperBackground({
         {/* ASCII Tunnel keeps the logo dead-center so it sits at the
              tunnel's vanishing point; other shader wallpapers lift it
              slightly above center to balance the chat input below. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.svgUrl}
-          alt=""
-          className={cn(
-            'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert select-none dark:invert-0',
-            wallpaper.id === 'ascii-tunnel' ? 'top-[50%]' : centerTopClass,
-          )}
-          draggable={false}
-        />
+        {showBrandMark && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={wallpaper.svgUrl}
+            alt=""
+            className={cn(
+              'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert select-none dark:invert-0',
+              wallpaper.id === 'ascii-tunnel' ? 'top-[50%]' : centerTopClass,
+            )}
+            draggable={false}
+          />
+        )}
       </div>
     );
   }

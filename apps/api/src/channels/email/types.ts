@@ -3,7 +3,11 @@ export interface AgentMailAddressedMessage {
   thread_id: string;
   message_id: string;
   timestamp?: string;
-  from: string;
+  from?: string;
+  from_?:
+    | string
+    | string[]
+    | Array<{ email?: string; address?: string; name?: string }>;
   reply_to?: string[];
   to: string[];
   cc?: string[];
@@ -31,13 +35,13 @@ export interface AgentMailThread {
 }
 
 export interface AgentMailMessageReceivedEvent {
-  type: 'event';
+  type?: "event";
   event_type:
-    | 'message.received'
-    | 'message.received.spam'
-    | 'message.received.blocked'
-    | 'message.received.unauthenticated';
+    | "message.received"
+    | "message.received.spam"
+    | "message.received.blocked"
+    | "message.received.unauthenticated";
   event_id: string;
   message: AgentMailAddressedMessage;
-  thread: AgentMailThread;
+  thread?: AgentMailThread;
 }

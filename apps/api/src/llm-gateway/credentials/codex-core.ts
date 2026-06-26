@@ -68,6 +68,18 @@ export function needsRefresh(stored: StoredCodexAuth, now: number): boolean {
   return stored.expires - now < REFRESH_WINDOW_MS;
 }
 
+/**
+ * Whether the current access token can still be used right now. Used as a grace
+ * fallback: when a refresh blip (OpenAI auth briefly unreachable) happens, an
+ * access token that hasn't actually expired yet should keep serving instead of
+ * failing every Codex request.
+ */
+export function tokenStillValid(stored: StoredCodexAuth, now: number): boolean {
+  if (!stored.access) return false;
+  if (typeof stored.expires !== 'number') return true;
+  return stored.expires > now;
+}
+
 export function applyRefresh(tokens: RefreshTokenResponse, current: StoredCodexAuth, now: number): StoredCodexAuth | null {
   if (!tokens.access_token) return null;
   return {

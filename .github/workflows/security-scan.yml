@@ -12,7 +12,7 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
     paths:
       - "infra/**"
       - "apps/*/Dockerfile"

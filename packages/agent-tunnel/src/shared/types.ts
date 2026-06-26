@@ -149,7 +149,7 @@ export interface AgentInfo {
 
 export interface TunnelRelayEvents {
   'agent:connect': { tunnelId: string; metadata?: Record<string, unknown> };
-  'agent:disconnect': { tunnelId: string };
+  'agent:disconnect': { tunnelId: string; metadata?: Record<string, unknown> };
   'agent:timeout': { tunnelId: string };
   'rpc:request': { tunnelId: string; method: string; requestId: string };
   'rpc:response': { tunnelId: string; method: string; requestId: string; durationMs: number };

@@ -2,24 +2,16 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { DEFAULT_MANAGED_MODEL_IDS, getManagedModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel } from '@kortix/shared/llm-catalog';
 
 import { cn } from '@/lib/utils';
 
-const CHART_TOKENS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-];
+// One brand accent for the whole surface (Kortix is monochrome + a single
+// accent). Per-model rainbow coloring was the "yellow-brown" noise — gone.
+export const ACCENT = 'var(--kortix-blue)';
 
-export function modelAccent(id: string): string {
-  const idx = DEFAULT_MANAGED_MODEL_IDS.indexOf(id);
-  if (idx >= 0) return CHART_TOKENS[idx % CHART_TOKENS.length];
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return CHART_TOKENS[hash % CHART_TOKENS.length];
+export function modelAccent(_id: string): string {
+  return ACCENT;
 }
 
 export function modelLabel(id: string): string {

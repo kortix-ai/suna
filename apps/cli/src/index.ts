@@ -29,8 +29,8 @@ import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { printBanner } from './banner.ts';
-import { activeHostEntry } from './api/config.ts';
 import { getUpdateNotice } from './update-check.ts';
+import { renderHostNotice } from './host-notice.ts';
 import { C, header, pad, rule } from './style.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
@@ -133,7 +133,7 @@ async function main(argv: string[]): Promise<number> {
   // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
   // + update notices so its output stays clean.
   if (argv[0] !== 'executor') {
-    printActiveHostNotice(argv[0]);
+    printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
   if (argv[0] === 'init') {
@@ -248,13 +248,9 @@ async function main(argv: string[]): Promise<number> {
   return runCreate(argv);
 }
 
-function printActiveHostNotice(command: string): void {
-  if (['help', '--help', '-h', 'version'].includes(command)) return;
-  const { name, host } = activeHostEntry();
-  const loginState = host.token ? host.user_email || host.user_id || 'logged in' : 'not logged in';
-  process.stderr.write(
-    `${C.dim}host ${C.reset}${C.bold}${name}${C.reset}${C.dim} (${host.url}, ${loginState})${C.reset}\n`,
-  );
+function printActiveHostNotice(argv: readonly string[]): void {
+  const notice = renderHostNotice(argv);
+  if (notice) process.stderr.write(notice);
 }
 
 // Passive, cache-only nudge for subcommands (never touches the network, so it

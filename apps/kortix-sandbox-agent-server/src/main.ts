@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
@@ -15,6 +15,7 @@ import {
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
+import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
@@ -237,6 +238,10 @@ async function main() {
         )
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
           bootMark('seed-opencode-session')
@@ -467,12 +472,11 @@ async function runPoolMode(
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful/warm-pool
   // only — this whole function is the warm path; cold + Daytona never run it).
-  // Start TWO localhost credential proxies (LLM gateway + executor MCP) and point
-  // opencode's baked config at them, so the SEED bakes a SESSION-INDEPENDENT
-  // config (placeholder tokens + proxied URLs) and CLAIM can inject the real
-  // per-session tokens live, skipping the ~8s opencode restart. Best-effort: a
-  // bind failure leaves the *_PROXY_URL unset → that contributor bakes nothing
-  // session-independent and claim falls back to the restart path.
+  // Start the localhost LLM credential proxy, and optionally the Executor proxy
+  // used by the compatibility MCP face. The agent-facing Executor path is the
+  // `kortix executor` CLI, which reads live env on each shell command and does
+  // not need an OpenCode restart. Best-effort: a bind failure leaves the
+  // *_PROXY_URL unset and claim falls back to the restart path where needed.
   const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
   if (llmHotswap) {
     const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
@@ -487,11 +491,11 @@ async function runPoolMode(
     const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
     const exUrl = startExecutorProxy(exPort)
     if (exUrl) {
-      // Seen by buildOpencodeConfigContent → mcp.kortix-executor.KORTIX_API_URL
-      // routes through the proxy, so the tokenless seed bakes a working MCP.
+      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
+      // The proxy is harmless when unused; the CLI remains the primary path.
       process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
       bootMark('pool-executor-proxy-started')
-      logger.info('[pool] executor hot-swap proxy up; seed bakes proxied executor MCP', { exUrl })
+      logger.info('[pool] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -529,6 +533,10 @@ async function runPoolMode(
         const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
           bootMark('pool-seed-session')
@@ -603,20 +611,18 @@ async function runPoolMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
-        // Executor MCP: the seed baked the MCP pointing at the executor proxy, so
-        // the running MCP already exposes the tools; injecting the real token here
-        // makes the first tool call work — no restart. Best-effort: a session with
-        // no executor token leaves the proxy un-tokened (the MCP stays exposed but
-        // 503s a tool call, exactly like a no-executor session).
+        // Optional Executor MCP compatibility: if the seed enabled that face,
+        // the running MCP points at this proxy. The CLI path does not need this;
+        // it reads the live session env through BASH_ENV on every command.
         if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
           setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
         }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('claim-opencode-hotswapped')
-          // Observability: confirms the executor proxy has a live token, i.e.
-          // tools are callable on this hot-swapped claim (not just exposed).
-          if (executorProxyReady()) bootMark('claim-executor-tools-ready')
+          // Observability only: this confirms the optional executor proxy has a
+          // live token. It does not assert that OpenCode registered MCP tools.
+          if (executorProxyReady()) bootMark('claim-executor-proxy-ready')
           logger.info('[pool] claim hot-swap: per-session tokens injected via proxies, opencode NOT restarted', {
             executorReady: executorProxyReady(),
           })
@@ -674,7 +680,19 @@ async function maybeCreateInitialOpencodeSession(
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
-  const existing = await resolveExistingRoot(baseUrl, workspace)
+  let existing = await resolveExistingRoot(baseUrl, workspace)
+  // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
+  // pinned root, so `existing` here is the SHARED seed root — every fork would
+  // otherwise resolve the same opencode session id and their chats bleed together
+  // (the client keys all message state by that id). Rotate onto a fresh
+  // per-session root EXACTLY ONCE by ignoring the seed root here; the marker is
+  // retired below so later restarts reuse THIS fork's own root via the path above.
+  const seedBakedId = readSeedBakedSessionId()
+  const rotateOffSeedRoot = isSharedSeedBakedRoot(existing?.id, seedBakedId)
+  if (rotateOffSeedRoot) {
+    logger.info('[boot] fork is on the shared seed-baked root; rotating to its own', { seedBakedId })
+    existing = null
+  }
   let sessionId: string
   let alreadyDelivered = false
   if (existing) {
@@ -701,6 +719,15 @@ async function maybeCreateInitialOpencodeSession(
   }
 
   pinOpencodeSessionFile(sessionId)
+  if (rotateOffSeedRoot) {
+    // This fork now owns `sessionId` (pinned above): retire the one-shot marker
+    // and drop the orphaned shared seed root (best-effort — the pin is
+    // authoritative, so cleanup failing never reintroduces the collision).
+    clearSeedBakedMarker()
+    if (seedBakedId && seedBakedId !== sessionId) {
+      void deleteOpencodeSession(baseUrl, workspace, seedBakedId)
+    }
+  }
   bootState.initialOpenCodeSessionId = sessionId
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
@@ -741,6 +768,52 @@ function pinOpencodeSessionFile(sessionId: string): void {
     writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
+  }
+}
+
+/** Record (at seed time) that the pinned root is the SEED's pre-baked one, so the
+ *  first claiming fork rotates off it instead of sharing it. Captured into the
+ *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
+function markSeedBakedSession(sessionId: string): void {
+  try {
+    mkdirSync(dirname(OPENCODE_SEED_BAKED_PIN_PATH), { recursive: true })
+    writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, sessionId, 'utf8')
+  } catch (err) {
+    logger.warn('[seed] failed to write seed-baked session marker', err)
+  }
+}
+
+function readSeedBakedSessionId(): string | null {
+  try {
+    if (!existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) return null
+    const id = readFileSync(OPENCODE_SEED_BAKED_PIN_PATH, 'utf8').trim()
+    return id.length > 0 ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
+ *  restarts then reuse the fork's root via the normal idempotent reuse path. */
+function clearSeedBakedMarker(): void {
+  try {
+    if (existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) unlinkSync(OPENCODE_SEED_BAKED_PIN_PATH)
+  } catch (err) {
+    logger.warn('[boot] failed to clear seed-baked marker', err)
+  }
+}
+
+/** Best-effort delete of the orphaned shared seed root after a fork rotates onto
+ *  its own. Correctness does NOT depend on this (the fork pins + relays its own
+ *  id); it just stops the empty shared root from lingering in the session list. */
+async function deleteOpencodeSession(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  try {
+    await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(workspace)}`,
+      { method: 'DELETE', signal: AbortSignal.timeout(3_000) },
+    )
+  } catch {
+    /* orphan is harmless — the fork's own pinned root is authoritative */
   }
 }
 
@@ -1191,13 +1264,15 @@ export function readPinnedOpencodeSessionId(): string | null {
 // push/clone credential for the managed remote. Detect that mode before the
 // daemon boot path so we don't spin up opencode/proxy just to print a token.
 const subcommand = process.argv[2]
-if (subcommand === 'git-credential') {
-  runGitCredentialHelper(loadConfig(), process.argv[3])
-    .then((code) => process.exit(code))
-    .catch(() => process.exit(0))
-} else {
-  main().catch((err) => {
-    logger.error('[boot] fatal', err)
-    process.exit(1)
-  })
+if (import.meta.main) {
+  if (subcommand === 'git-credential') {
+    runGitCredentialHelper(loadConfig(), process.argv[3])
+      .then((code) => process.exit(code))
+      .catch(() => process.exit(0))
+  } else {
+    main().catch((err) => {
+      logger.error('[boot] fatal', err)
+      process.exit(1)
+    })
+  }
 }

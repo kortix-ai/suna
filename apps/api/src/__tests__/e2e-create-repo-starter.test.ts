@@ -36,6 +36,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
   '.kortix/opencode/skills/kortix-computer/SKILL.md',
+  '.kortix/opencode/skills/kortix-executor/references/executor-sdk.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
   '.kortix/opencode/skills/kortix-slack/SKILL.md',
@@ -261,8 +262,8 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     stripeSubscriptionStatus: 'active',
   }),
   getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
-  updateCreditAccount: async () => {},
   upsertCreditAccount: async () => {},
+  updateCreditAccount: async () => {},
 }));
 
 async function selectRowsForTable(table: unknown) {

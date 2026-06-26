@@ -16,12 +16,12 @@ import { eq } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 import { TunnelRelayError, TunnelMethods, TunnelErrorCode, type TunnelCapability } from 'agent-tunnel';
-import { tunnelRelay } from './relay';
 import { checkPermission } from './permission-checker';
 import { writeAuditLog, buildRequestSummary } from './audit-logger';
 import { notifyPermissionRequest } from '../routes/permission-requests';
 import { tunnelRateLimiter } from './rate-limiter';
 import { isValidCapability, validateScope as validateScopeInput } from './scope-validator';
+import { isTunnelConnectionLive, relayRpcToConnectedAgent } from './cluster-forwarder';
 
 /** Outcome of a single relayed tunnel RPC. The route + the executor each map this. */
 export type TunnelRpcOutcome =
@@ -114,9 +114,14 @@ export async function executeTunnelRpc(input: {
 
   const startTime = Date.now();
   try {
-    const result = await tunnelRelay.relayRPC(tunnelId, method, {
-      ...params,
-      permissionId: permCheck.permissionId,
+    const result = await relayRpcToConnectedAgent({
+      tunnelId,
+      accountId,
+      method,
+      params: {
+        ...params,
+        permissionId: permCheck.permissionId,
+      },
     });
 
     writeAuditLog({
@@ -174,7 +179,7 @@ export interface ComputerMachine {
   platform: string | null;
 }
 
-/** Every machine connected to an account, with live online status from the relay. */
+/** Every machine connected to an account, with live online status from DB relay ownership. */
 export async function listAccountComputers(accountId: string): Promise<ComputerMachine[]> {
   const rows = await db
     .select()
@@ -183,7 +188,7 @@ export async function listAccountComputers(accountId: string): Promise<ComputerM
   return rows.map((r) => ({
     id: r.tunnelId,
     name: r.name,
-    online: tunnelRelay.isConnected(r.tunnelId),
+    online: isTunnelConnectionLive(r),
     capabilities: Array.isArray(r.capabilities) ? (r.capabilities as string[]) : [],
     platform: (r.machineInfo as Record<string, unknown> | null)?.platform as string | null ?? null,
   }));

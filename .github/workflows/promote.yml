@@ -4,7 +4,7 @@ name: Promote to Production
 #
 # This workflow never publishes anything. It:
 #   1. computes the NEXT version from what's currently live on `prod`,
-#   2. freezes the promoted code (the source ref, default `main`) on an
+#   2. freezes the promoted code (the source ref, default `staging`) on an
 #      ephemeral `release/vX.Y.Z` branch, stamping `VERSION` + `RELEASE_NOTES.md`,
 #   3. opens a PR into the protected `prod` branch.
 #
@@ -13,7 +13,7 @@ name: Promote to Production
 # advances `prod`, and its push event triggers deploy-prod.yml, which is what
 # actually creates the tag `vX.Y.Z`, cuts the Release, and deploys. So a version
 # only ever comes into existence when code lands on `prod`. `main` (dev) stays
-# push-friendly; the review gate lives entirely at the prod boundary.
+# push-friendly; staging is the pre-prod source of truth.
 #
 # The release branch does a `merge -s ours origin/prod` so `prod` is always an
 # ancestor of the PR head → the promote PR merges cleanly every time (no VERSION
@@ -41,9 +41,9 @@ on:
         required: false
         type: string
       ref:
-        description: 'Source ref to promote (default main)'
+        description: 'Source ref to promote (default staging)'
         required: false
-        default: main
+        default: staging
         type: string
 
 concurrency:
@@ -97,17 +97,30 @@ jobs:
           echo "Proposing v$NEW"
 
       - name: Pre-flight — refuse to promote unless this commit is fully green
+        id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          SHA="$(git rev-parse HEAD)"
-          echo "Promote source ${{ inputs.ref }} @ $SHA"
-          # Every check-run on this commit must be completed + success (skipped /
-          # neutral OK). Crucially this INCLUDES deploy-dev, which builds the
-          # :dev-<sha8> image that deploy-prod retags — so an all-green commit
-          # guarantees that image exists. This blocks the race where prod retags a
-          # stale :dev-latest because the new dev image hadn't finished building.
+          TREE_SHA="$(git rev-parse HEAD)"
+          IMAGE_SHA="$TREE_SHA"
+          if [ "${{ inputs.ref }}" = "staging" ] && [ -f infra/k8s/envs/staging/values.yaml ]; then
+            staging_tag="$(yq -r '.image.tag // ""' infra/k8s/envs/staging/values.yaml)"
+            if [[ "$staging_tag" =~ ^staging-([0-9a-f]{8})$ ]]; then
+              candidate="$(git rev-parse "${BASH_REMATCH[1]}^{commit}" 2>/dev/null || true)"
+              if [ -n "$candidate" ] && git merge-base --is-ancestor "$candidate" "$TREE_SHA"; then
+                IMAGE_SHA="$candidate"
+              fi
+            fi
+          fi
+          echo "tree_sha=$TREE_SHA" >> "$GITHUB_OUTPUT"
+          echo "image_sha=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Promote tree ${{ inputs.ref }} @ $TREE_SHA"
+          echo "Release image source @ $IMAGE_SHA"
+          # The staging branch tip can be a GitOps pin commit created by
+          # deploy-staging.yml after the build. In that normal case the deploy
+          # check is on TREE_SHA, while build/QA/artifact checks are on IMAGE_SHA.
+          # Both must be green so prod retags exactly what staging deployed.
           # Robustly judge greenness, tolerating two GitHub quirks that would
           # otherwise make this gate un-passable:
           #   1. THIS promote run registers an in_progress check on HEAD (and a
@@ -122,26 +135,38 @@ jobs:
           #        which fail routinely (lockfile/monorepo) and are irrelevant.
           #      - "Analyze*" — CodeQL security scans. They run on every push for
           #        visibility but are SLOW (~15m) and a security scan shouldn't gate
-          #        a release. The gate still waits for the build + typecheck (its
-          #        real purpose: guaranteeing the dev image exists to retag).
+          #        a release. The gate still waits for the staging artifact build
+          #        + QA checks, which guarantee the staging image exists to retag.
+          #      - "compliance-as-code-action" — Drata IaC visibility. It has a
+          #        separate compliance remediation track and must not block the
+          #        staging → prod release lane until the baseline is clean.
           #      - "Open review-gated release PR" — a PRIOR promote attempt's own
           #        check (the current run is already excluded via run_id, but an
           #        earlier failed attempt would otherwise self-block the retry).
-          NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
-            --jq '[ .check_runs[]
-                    | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
-                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "Open review-gated release PR")) | not) ]
-                  | group_by(.name) | map(max_by(.started_at // ""))
-                  | .[]
-                  | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
-                  | "\(.name): \(.status)/\(.conclusion)"' || true)"
-          if [ -n "$NOT_GREEN" ]; then
-            echo "::error::Refusing to promote — $SHA is not all-green (this includes the dev image build):"
-            echo "$NOT_GREEN"
-            echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
-            exit 1
+          check_green() {
+            local sha="$1" label="$2"
+            local not_green
+            not_green="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/${sha}/check-runs?per_page=100" --paginate \
+              --jq '[ .check_runs[]
+                      | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
+                      | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not) ]
+                    | group_by(.name) | map(max_by(.started_at // ""))
+                    | .[]
+                    | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
+                    | "\(.name): \(.status)/\(.conclusion)"' || true)"
+            if [ -n "$not_green" ]; then
+              echo "::error::Refusing to promote — ${label} ${sha} is not all-green:"
+              echo "$not_green"
+              echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
+              exit 1
+            fi
+            echo "✓ ${label} ${sha} is green."
+          }
+          check_green "$IMAGE_SHA" "release image source"
+          if [ "$TREE_SHA" != "$IMAGE_SHA" ]; then
+            check_green "$TREE_SHA" "staging branch tip"
           fi
-          echo "✓ All checks green on $SHA — safe to promote."
+          echo "✓ Safe to promote."
 
       - name: Freeze release branch + open PR into prod
         env:
@@ -153,9 +178,10 @@ jobs:
           NEW="${{ steps.ver.outputs.new }}"
           TAG="${{ steps.ver.outputs.tag }}"
           RELBR="release/$TAG"
-          # The commit being promoted (the source ref's HEAD, BEFORE we branch +
-          # merge prod). deploy-prod pins the dev image to this exact SHA.
-          SRC_SHA="$(git rev-parse HEAD)"
+          # The image source is normally the staged source commit. When staging
+          # HEAD is a GitOps pin commit, this is the commit named by the pinned
+          # `staging-<sha8>` image tag, not the pin commit itself.
+          SRC_SHA="${{ steps.preflight.outputs.image_sha }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
