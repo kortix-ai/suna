@@ -23,9 +23,10 @@ import { ExportTranscriptModal } from '@/features/session/header/export-transcri
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { Pencil, Share, TrashSolid, HomeSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, Layers, MoreHorizontal, PanelRight, RotateCcw } from 'lucide-react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -90,12 +91,19 @@ export function SessionSiteHeader({
         <div className="flex items-center justify-between p-2 pb-0">
           <div className="pointer-events-auto flex items-center gap-0.5">
             {isProjectSession && (
-              <SidebarTrigger
-                className="size-8 md:hidden"
-                aria-label={tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f',
-                )}
-              />
+              <>
+                <SidebarTrigger
+                  className="size-8 md:hidden"
+                  aria-label={tI18nHardcoded.raw(
+                    'autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f',
+                  )}
+                />
+                <Button type="button" variant="ghost" size="icon" className="shrink-0" asChild>
+                  <Link href={`/projects/${projectId}`}>
+                    <HomeSolid className="size-4.5" />
+                  </Link>
+                </Button>
+              </>
             )}
             {leadingAction}
           </div>
