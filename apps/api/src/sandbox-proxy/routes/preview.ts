@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -12,6 +13,8 @@ import {
   resolvePreviewLink,
   wakeSandbox,
 } from '../backend';
+
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -645,8 +648,6 @@ export async function resolvePreviewWsUpstream(opts: {
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
     .replace(/^https:/i, 'wss:');
-  const url = wsBase + remainingPath + queryString;
-
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId,
     userId,
@@ -654,7 +655,13 @@ export async function resolvePreviewWsUpstream(opts: {
     previewToken,
   });
 
-  return { ok: true, url, headers };
+  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+    const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
+    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
+  }
+
+  return { ok: true, url: upstreamUrl.toString(), headers };
 }
 
 // === Route handlers: ALL /:sandboxId/:port(/*) ===
