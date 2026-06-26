@@ -1,7 +1,7 @@
 /**
- * E2E for the Executor user-facing surfaces. These tests run SDK, CLI, MCP,
- * and a sandbox-agent-style env-only invocation against a live Hono router
- * backed by the real gateway path.
+ * E2E for the Executor user-facing surfaces. These tests run the SDK, CLI,
+ * optional MCP compatibility server, and a sandbox-agent-style env-only
+ * invocation against a live Hono router backed by the real gateway path.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
@@ -188,6 +188,39 @@ describe('TS SDK face', () => {
     expect(result.data?.auth).toBe(`Bearer ${SERVER_SECRET}`);
     expect(result.data?.url).toBe('https://example.test/anything?q=sdk');
     expect(world.executions.at(-1)).toMatchObject({ status: 'ok', actingUserId: USER, actionPath: 'echo.get' });
+  });
+
+  test('supports a durable multi-step script workflow without provider secrets in code', async () => {
+    const sdk = createExecutorClient({ apiUrl, token: TOKEN, projectId: PROJECT });
+
+    const connectors = await sdk.connectors();
+    const echo = connectors.find((c) => c.slug === 'echo');
+    expect(echo).toBeDefined();
+    expect(echo?.actions.map((a) => a.path)).toContain('get');
+
+    const [match] = await sdk.discover('query value', { limit: 1 });
+    expect(match).toMatchObject({ tool: 'echo.get', connector: 'echo', action: 'get' });
+
+    const schema = await sdk.describe(match!.tool);
+    expect(schema?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: { q: { type: 'string', 'x-in': 'query' } },
+    });
+
+    const first = await sdk.call<{ auth: string; url: string }>(match!.connector, match!.action, { q: 'step-1' });
+    expect(first.ok).toBe(true);
+    expect(first.data?.auth).toBe(`Bearer ${SERVER_SECRET}`);
+
+    const nextQuery = first.data!.url.endsWith('step-1') ? 'step-2' : 'unexpected';
+    const second = await sdk.call<{ auth: string; url: string }>(match!.connector, match!.action, { q: nextQuery });
+    expect(second.ok).toBe(true);
+    expect(second.data?.url).toBe('https://example.test/anything?q=step-2');
+
+    expect(world.upstream.map((hit) => hit.headers.Authorization)).toEqual([
+      `Bearer ${SERVER_SECRET}`,
+      `Bearer ${SERVER_SECRET}`,
+    ]);
+    expect(world.executions.map((rec) => rec.actionPath)).toEqual(['echo.get', 'echo.get']);
   });
 });
 

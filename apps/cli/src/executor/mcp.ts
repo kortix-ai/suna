@@ -1,10 +1,10 @@
 /**
  * `kortix executor mcp` — the Executor exposed as a stdio MCP server.
  *
- * This is the agent's PRIMARY interface to every configured integration
- * (Pipedream / MCP / OpenAPI / GraphQL / HTTP). OpenCode auto-loads it in every
- * session (the daemon registers `kortix executor mcp` via OPENCODE_CONFIG_CONTENT),
- * so the agent reaches connectors as native MCP tools.
+ * This is an optional compatibility face for every configured integration
+ * (Pipedream / MCP / OpenAPI / GraphQL / HTTP). The default agent path is the
+ * `kortix executor` CLI; OpenCode only sees this MCP server when the runtime
+ * explicitly registers it.
  *
  * Modeled on RhysSullivan/executor: instead of exploding every connector action
  * into tools/list (which floods context once a catalog has hundreds of actions),
