@@ -87,8 +87,10 @@ export function SessionSiteHeader({
     <>
       <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
         <div className="flex items-center justify-between p-2 pb-0">
-          <div className="pointer-events-auto flex items-center gap-0.5">
-            {leadingAction}
+          <div className="pointer-events-auto flex items-center gap-0.5">{leadingAction}</div>
+
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <SessionChangesIndicator sessionId={sessionId} />
 
             <DropdownMenu>
               <Hint
@@ -110,7 +112,7 @@ export function SessionSiteHeader({
                 </DropdownMenuTrigger>
               </Hint>
 
-              <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuContent align="end" className="w-52">
                 {isProjectSession && (
                   <>
                     <DropdownMenuItem
@@ -170,10 +172,7 @@ export function SessionSiteHeader({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
 
-          <div className="pointer-events-auto flex items-center gap-1.5">
-            <SessionChangesIndicator sessionId={sessionId} />
             <Hint
               side="bottom"
               sideOffset={4}
