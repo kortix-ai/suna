@@ -73,6 +73,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
           slug: input.sandboxSlug,
           builtEnvVars: extraEnvVars,
           sessionMetadata: input.sessionMetadata,
+          projectMetadata: input.project.metadata,
         });
         if (claimed) {
           tl.mark('warm-claim');
@@ -99,6 +100,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         ...(input.runtimeMetadata ?? {}),
       },
       extraEnvVars,
+      projectMetadata: input.project.metadata,
       gitProject: {
         projectId: input.projectId,
         repoUrl: input.project.repoUrl,

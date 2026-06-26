@@ -6,7 +6,7 @@ import { getEnv } from '@/lib/env-config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -256,6 +256,7 @@ export interface ProjectDetail {
 export interface ProjectLlmCatalogResponse {
   models: Record<string, {
     name: string;
+    free?: boolean;
     reasoning?: boolean;
     tool_call?: boolean;
     attachment?: boolean;

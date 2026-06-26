@@ -24,4 +24,21 @@ describe('openai-compat transport', () => {
     const req = buildUpstreamRequest({ model: 'foo/bar', messages: [] }, { ...descriptor, resolvedModel: undefined });
     expect(req.payload.model).toBe('foo/bar');
   });
+
+  test('can omit Authorization for public upstreams like OpenCode Zen', () => {
+    const req = buildUpstreamRequest(
+      { model: 'deepseek-v4-flash-free', messages: [] },
+      {
+        ...descriptor,
+        provider: 'opencode-zen',
+        baseUrl: 'https://opencode.ai/zen/v1',
+        apiKey: '',
+        omitAuthorization: true,
+        resolvedModel: 'deepseek-v4-flash-free',
+      },
+    );
+    expect(req.url).toBe('https://opencode.ai/zen/v1/chat/completions');
+    expect(req.payload.model).toBe('deepseek-v4-flash-free');
+    expect(req.headers.authorization).toBeUndefined();
+  });
 });

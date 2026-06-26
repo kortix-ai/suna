@@ -9,6 +9,10 @@ import { codexModelIds } from "./codex-models";
 
 interface GatewayModel {
   name: string;
+  released?: string | null;
+  release_date?: string | null;
+  family?: string;
+  free?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
   attachment?: boolean;
@@ -99,6 +103,7 @@ export function managedModels(): Record<string, GatewayModel> {
   for (const m of MANAGED_MODELS) {
     out[m.id] = {
       name: m.name,
+      free: m.free,
       reasoning: true,
       tool_call: true,
       attachment: m.vision,
@@ -112,11 +117,15 @@ export function managedModels(): Record<string, GatewayModel> {
 export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
+    if (provider.id === "opencode") continue;
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
+        released: model.released,
+        release_date: model.released,
+        family: (model as { family?: string }).family,
         ...capabilitiesOf(model),
       };
     }
@@ -130,6 +139,9 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
       name: `${model?.name ?? humanize(id)} (ChatGPT)`,
+      released: model?.released,
+      release_date: model?.released,
+      family: (model as { family?: string } | undefined)?.family,
       // Derive from models.dev; default to GPT-5.x's profile (reasoning, tools,
       // vision) for any id models.dev doesn't list yet.
       reasoning: model?.reasoning ?? true,
