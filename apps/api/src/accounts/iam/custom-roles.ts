@@ -8,7 +8,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts } from '@kortix/db';
+import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accountMembers, accountGroups } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -624,16 +624,25 @@ iamRouter.openapi(
         result.skipped++;
         continue;
       }
-      await db.insert(iamPolicies).values({
-        accountId,
-        principalType: parsed.value.principalType,
-        principalId: parsed.value.principalId,
-        roleId: parsed.value.roleId,
-        scopeType: parsed.value.scopeType,
-        scopeId: parsed.value.scopeId,
-        expiresAt: parsed.value.expiresAt,
-        grantedBy: userId,
-      });
+      // Catch per-row insert failures so one bad row becomes a skip (matching the
+      // partial-success contract) rather than aborting the batch with a 500 and
+      // leaving earlier rows committed.
+      try {
+        await db.insert(iamPolicies).values({
+          accountId,
+          principalType: parsed.value.principalType,
+          principalId: parsed.value.principalId,
+          roleId: parsed.value.roleId,
+          scopeType: parsed.value.scopeType,
+          scopeId: parsed.value.scopeId,
+          expiresAt: parsed.value.expiresAt,
+          grantedBy: userId,
+        });
+      } catch (err) {
+        result.errors.push({ index: i, error: err instanceof Error ? err.message : 'insert failed' });
+        result.skipped++;
+        continue;
+      }
       bustedPrincipals.push({ t: parsed.value.principalType, id: parsed.value.principalId });
       result.created++;
     }
@@ -683,6 +692,26 @@ async function parsePolicyInput(
       )
       .limit(1);
     if (!sa) return { ok: false, status: 404, error: 'principalId does not match an active service account in this account' };
+  }
+
+  // Ownership parity for member/group principals: binding a foreign user/group id
+  // creates an inert policy (the engine resolves by account membership) — reject
+  // it with a clear error instead, matching the token + project ownership checks.
+  if (principalType === 'member') {
+    const [m] = await db
+      .select({ id: accountMembers.userId })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, principalId), eq(accountMembers.accountId, accountId)))
+      .limit(1);
+    if (!m) return { ok: false, status: 404, error: 'principalId is not a member of this account' };
+  }
+  if (principalType === 'group') {
+    const [g] = await db
+      .select({ id: accountGroups.groupId })
+      .from(accountGroups)
+      .where(and(eq(accountGroups.groupId, principalId), eq(accountGroups.accountId, accountId)))
+      .limit(1);
+    if (!g) return { ok: false, status: 404, error: 'principalId is not a group in this account' };
   }
 
   const scopeType = String(body.scopeType ?? '');

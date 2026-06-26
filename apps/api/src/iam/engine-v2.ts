@@ -248,6 +248,14 @@ async function resolveActorV2Uncached(
           eq(iamPolicies.principalType, 'token'),
           eq(iamPolicies.principalId, userId),
           eq(iamPolicies.accountId, accountId),
+          // Respect expiry, same as the customActions query — otherwise an
+          // EXPIRED-only binding reads as activated:true with empty actions =
+          // permanent deny-all (bricked agent). With this, an expired/removed
+          // binding → activated:false → the session reverts to the baseline
+          // (launching user ∩ grant), the pre-standing-identity containment. To
+          // LOCK an agent down, bind it a live restrictive role (activated, but
+          // its omitted leaves deny); removing the binding un-manages it.
+          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         ),
       )
       .limit(1);
