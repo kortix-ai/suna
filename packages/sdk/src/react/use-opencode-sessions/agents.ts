@@ -5,6 +5,10 @@ import { getClient } from '../../opencode/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
+import {
+  getProjectDetail,
+  type ProjectConfigSummary,
+} from '../../platform/projects-client';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
@@ -14,16 +18,33 @@ export { useVisibleAgents } from '../use-visible-agents';
 // ============================================================================
 
 /**
- * Load opencode agents. Pass `directory` to get the project-scoped list
- * (globals + `<directory>/.opencode/agent/*.md`). Without it, opencode returns
- * the global set only.
+ * Load agents. With `projectId`, the server-side project config is source of
+ * truth: it returns declarative `kortix.toml [[agents]]` entries for adopted
+ * projects and OpenCode file discovery for legacy projects. Without `projectId`,
+ * this falls back to the sandbox OpenCode runtime.
  */
-export function useOpenCodeAgents(options?: { directory?: string }) {
+export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
   const directory = options?.directory;
+  const projectId = options?.projectId ?? null;
   const runtimeReady = useOpenCodeRuntimeReady();
+  const cacheScope = projectId
+    ? `project:${projectId}`
+    : directory
+      ? `dir:${directory}`
+      : CACHE_SCOPE_GLOBAL;
   return useQuery<Agent[]>({
-    queryKey: directory ? [...opencodeKeys.agents(), 'dir', directory] : opencodeKeys.agents(),
+    queryKey: projectId
+      ? ['project-detail', projectId, 'agents']
+      : directory
+        ? [...opencodeKeys.agents(), 'dir', directory]
+        : opencodeKeys.agents(),
     queryFn: async () => {
+      if (projectId) {
+        const detail = await getProjectDetail(projectId);
+        const agents = detail.config.agents.map(projectConfigAgentToOpenCodeAgent);
+        setLSCache(LS_AGENTS, agents, cacheScope);
+        return agents;
+      }
       const client = getClient();
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
@@ -34,15 +55,26 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
       // ephemeral per-sandbox server id — so a new session's picker paints from
       // cache instead of waiting on sandbox boot + the in-box /app/agents call.
       // (Previously the directory case cached nothing at all → guaranteed pop-in.)
-      setLSCache(LS_AGENTS, agents, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL);
+      setLSCache(LS_AGENTS, agents, cacheScope);
       return agents;
     },
-    placeholderData: () =>
-      getLSCache<Agent[]>(LS_AGENTS, directory ? `dir:${directory}` : CACHE_SCOPE_GLOBAL),
-    enabled: runtimeReady,
-    staleTime: Infinity,
+    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
+    enabled: projectId ? true : runtimeReady,
+    staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });
+}
+
+function projectConfigAgentToOpenCodeAgent(
+  agent: ProjectConfigSummary['agents'][number],
+): Agent {
+  return {
+    name: agent.name,
+    description: agent.description ?? undefined,
+    mode: agent.mode ?? undefined,
+    source: agent.source,
+    hidden: agent.enabled === false,
+  } as unknown as Agent;
 }
 
 export function useOpenCodeAgent(agentName: string) {

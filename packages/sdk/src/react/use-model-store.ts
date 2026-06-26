@@ -13,7 +13,11 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import { DEFAULT_MANAGED_MODEL_IDS, MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/shared/llm-catalog';
+import {
+  AUTO_MODEL_ID,
+  DEFAULT_MANAGED_MODEL_IDS,
+  MANAGED_FLAGSHIP_MODEL_ID,
+} from '@kortix/shared/llm-catalog';
 import type { FlatModel } from './model-flatten';
 import { safeSetItem } from '../platform/storage/managed-storage';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
@@ -171,7 +175,8 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // or its underlying provider is connected (live, from project secrets). The
 // rest stay one search away. Single source for the managed set lives in
 // @kortix/shared (mirrors the gateway's managed-ids).
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// Includes the synthetic `auto` entry so it's always offered in the picker.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');

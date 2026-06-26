@@ -252,9 +252,9 @@ export function useOpenCodeLocal({
           const key = { providerID: p.id, modelID: configured };
           if (isModelValid(key)) return key;
         }
-        const first = Object.values(p.models)[0];
-        if (!first) continue;
-        const key = { providerID: p.id, modelID: first.id };
+        const firstModelID = Object.keys(p.models)[0];
+        if (!firstModelID) continue;
+        const key = { providerID: p.id, modelID: firstModelID };
         if (isModelValid(key)) return key;
       }
     }

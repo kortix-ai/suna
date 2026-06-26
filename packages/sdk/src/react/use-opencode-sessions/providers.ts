@@ -6,6 +6,10 @@ import { getClient } from '../../opencode/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
+import {
+  getProjectLlmCatalog,
+  type ProjectLlmCatalogResponse,
+} from '../../platform/projects-client';
 
 // ============================================================================
 // Provider Hooks
@@ -47,6 +51,22 @@ function filterToGatewayProviders(providers: ProviderListResponse): ProviderList
   };
 }
 
+function projectLlmCatalogToProviderList(
+  catalog: ProjectLlmCatalogResponse,
+): ProviderListResponse {
+  const models = catalog.models ?? {};
+  return {
+    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    connected: ['kortix'],
+    all: [{
+      id: 'kortix',
+      name: 'Kortix',
+      source: 'gateway',
+      models,
+    }],
+  } as unknown as ProviderListResponse;
+}
+
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const params = useParams();
@@ -56,8 +76,14 @@ export function useOpenCodeProviders() {
   // the persisted placeholder is scoped per project — not the old global scope.
   const cacheScope = projectId ? `proj:${projectId}` : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
-    queryKey: opencodeKeys.providers(),
+    queryKey: projectId ? ['project-llm-catalog', projectId] : opencodeKeys.providers(),
     queryFn: async () => {
+      if (projectId) {
+        const catalog = await getProjectLlmCatalog(projectId);
+        const providers = projectLlmCatalogToProviderList(catalog);
+        setLSCache(LS_PROVIDERS, providers, cacheScope);
+        return providers;
+      }
       const client = getClient();
       const result = await client.provider.list();
       const providers = filterToGatewayProviders(unwrap(result));
@@ -93,7 +119,7 @@ export function useOpenCodeProviders() {
       // on read so a poisoned cache never paints a native provider.
       return filterToGatewayProviders(cached as ProviderListResponse);
     },
-    enabled: runtimeReady,
+    enabled: projectId ? true : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep
