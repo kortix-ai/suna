@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "getting-started",
+    "auth",
     "the-client",
     "sessions",
     "react",

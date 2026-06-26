@@ -1,0 +1,66 @@
+---
+title: Authentication
+description: How the SDK authenticates — create an API key, scope a personal access token, or use a Supabase JWT.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Every SDK request carries `Authorization: Bearer <token>`. You supply that token
+through `getToken`; the SDK never stores keys. Three token types work — choose by
+where your code runs.
+
+## API key — the default
+
+For backends, scripts, CI, and automation, create a **Kortix API key** and use it
+as a static token.
+
+1. In your dashboard, open **Settings → API keys** → **Create API key**.
+2. Copy it once (shown only at creation) and store it as a secret, e.g. `KORTIX_API_KEY`.
+3. Return it from `getToken`:
+
+```ts
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => process.env.KORTIX_API_KEY!,
+});
+```
+
+An API key acts as the account that created it and stays valid until you revoke it.
+Rotate by creating a new key and deleting the old one.
+
+## Personal access token — scoped automation
+
+A `kortix_pat_…` token can be **scoped to a single project** — ideal for CI that
+should only touch one repo. It acts as you and is used exactly like an API key:
+
+```ts
+getToken: async () => process.env.KORTIX_PAT!,
+```
+
+A project-scoped PAT is rejected (`403`) if it tries to act on a different project
+or call account-level routes — a tight blast radius for shared pipelines.
+
+## Supabase JWT — web apps on Kortix auth
+
+Only if you're building a web app on Kortix's own login. Return the user's live
+session token; it refreshes itself, so `getToken` re-reads it each call:
+
+```ts
+getToken: async () =>
+  (await supabase.auth.getSession()).data.session?.access_token ?? null,
+```
+
+## Which one?
+
+| you're building | use |
+|---|---|
+| a backend service or API | **API key** |
+| CI/CD for one project | **project-scoped PAT** |
+| a web app on Kortix login | **Supabase JWT** |
+| the Kortix CLI | a PAT (the CLI mints one for you) |
+
+<Callout>
+Tokens are bearer credentials — treat them like passwords. Keep them in a secret
+manager, never in client-side code or a committed file. `getToken` is called on
+demand, so the host owns storage, caching, and rotation.
+</Callout>
