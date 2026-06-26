@@ -8,7 +8,7 @@ branches, one version number, four artifacts.
 ## TL;DR
 
 - **`main`** = DEV. Default branch, direct pushes allowed, every push auto-deploys to dev.
-- **`staging`** = PRE-PROD. Advanced by **Promote Dev to Staging** or direct PRs into staging; builds exact staging artifacts and runs heavier e2e.
+- **`staging`** = PRE-PROD. Advanced by PRs into staging; builds exact staging artifacts and runs heavier e2e.
 - **`prod`** = PROD. Only advanced by the **Promote to Production** button + reviewed release PR; deploys EKS by GitOps.
 - **`VERSION`** file (repo root) = one number for the whole platform.
 - A release = one `vX.Y.Z` GitHub Release bundling **API + Frontend + CLI + Desktop**.
@@ -20,7 +20,7 @@ PR ─► ci · codeql · secret-scan
  ▼
 main (DEV) ──push──► dev-api.kortix.com (Worker → EKS/ECS) + dev.kortix.com (Vercel) + CLI dev-latest
  │
- │  "Promote Dev to Staging" or PR directly into staging
+ │  PR main→staging, or targeted PR directly into staging
  ▼
 staging (PRE-PROD) ──push──► staging-api.kortix.com (Worker → EKS/ECS) + staging.kortix.com
  │
@@ -86,7 +86,6 @@ There is no per-component version.
 | `deploy-staging.yml` | build-staging success / manual    | deploy staging API/gateway, wire staging Cloudflare/Vercel, and verify staging runtime config |
 | `qa-staging.yml`  | push → `staging`                     | e2e · visual · a11y · migration report against staging target        |
 | `desktop.yml`     | push → main (`apps/desktop/**`) / dispatch | signed desktop installers → `desktop-dev-latest`              |
-| `promote-staging.yml` | manual dispatch                  | move `staging` to a chosen dev ref, usually `main`                  |
 | `promote.yml`     | manual dispatch                      | promote `staging` by default; open a reviewed `release/vX.Y.Z` PR into `prod`; no tag/release/deploy until merge |
 | `deploy-prod.yml` | push → `prod`                        | retag images → `:X.Y.Z`+`:latest`, run prod DB migrations, cut Release, watch EKS GitOps rollout |
 
@@ -122,7 +121,7 @@ best-effort. Desktop can never block or delay a release.
 
 ## How to release (promote)
 
-1. Make sure the release candidate is on `staging` via **Promote Dev to Staging** or a PR into `staging`.
+1. Make sure the release candidate is on `staging` via a PR into `staging` (`main` -> `staging` for the full dev candidate, or a targeted branch -> `staging` for a selective release).
 2. Actions → **Promote to Production** → Run workflow.
 3. Pick a `bump` (patch/minor/major) — or set an explicit `version`.
 4. It freezes `release/vX.Y.Z`, stamps `VERSION` / `RELEASE_NOTES.md` /

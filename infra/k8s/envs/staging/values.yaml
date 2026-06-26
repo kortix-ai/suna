@@ -1,8 +1,9 @@
 # Staging environment values for the kortix-api chart.
 #
-# Staging is the release-candidate branch: code should reach this file only by
-# Promote Dev to Staging or by a targeted PR directly into `staging`. Anything
-# deployed here must be considered ready to promote to production after QA.
+# Staging is the release-candidate branch: human/code changes should reach it
+# only by PR into `staging`. Deploy automation may add `[skip ci]` GitOps pin
+# commits for exact image tags. Anything deployed here must be considered ready
+# to promote to production after QA.
 
 image:
   tag: "staging-latest"

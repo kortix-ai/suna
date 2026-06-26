@@ -142,9 +142,10 @@ ApplicationSet (`infra/k8s/argocd/applicationsets/preview.yaml`).
    closing the PR prunes the preview namespace.
 
 That's your first deploy: PR → preview → merge → dev. Production candidates then
-go to **staging** via Promote Dev to Staging or a targeted PR into `staging`.
-Promoting to **prod** is a
-separate, reviewed flow — see `docs/runbooks/deployment-procedure.md`.
+go to **staging** via PR into `staging` (`main` -> `staging` for the full dev
+candidate, or a targeted branch -> `staging` for a selective release).
+Promoting to **prod** is a separate, reviewed flow — see
+`docs/runbooks/deployment-procedure.md`.
 
 ---
 
