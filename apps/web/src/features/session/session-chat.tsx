@@ -68,6 +68,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+import {
+  FIRST_MESSAGE_SEND_BACKOFF_MS,
+  shouldRetrySend,
+} from '@/features/session/opencode-send-retry';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
@@ -4005,8 +4009,7 @@ export function SessionChat({
         // (handleSend) already uses — instead of surfacing a transient blip as a
         // terminal error. Only non-transient (4xx) or exhausted retries fall
         // through to handlePromptError.
-        const retryBackoffMs = [400, 800, 1500, 3000, 5000, 8000, 8000, 8000];
-        const maxAttempts = retryBackoffMs.length + 1;
+        const retryBackoffMs = FIRST_MESSAGE_SEND_BACKOFF_MS;
         const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
         for (let attempt = 1; ; attempt++) {
           if (cancelled) return;
@@ -4035,9 +4038,7 @@ export function SessionChat({
           const status = thrown
             ? undefined
             : (res as { response?: Response } | undefined)?.response?.status;
-          const transient =
-            status === undefined || status >= 500 || status === 408 || status === 429;
-          if (transient && attempt < maxAttempts) {
+          if (shouldRetrySend(status, attempt, retryBackoffMs)) {
             setIsRetrying(true);
             await sleep(retryBackoffMs[attempt - 1]);
             continue;
