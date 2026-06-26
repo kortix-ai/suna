@@ -198,8 +198,13 @@ export function InstantSessionShell({
         onCommand={handleCommand}
         sessionId={sessionId}
         projectId={projectId}
+        // While the computer boots after the first send the input stays fully
+        // normal (typeable) — only the send button flips to a stop button. The
+        // stop is disabled because there's nothing running to stop yet; the real
+        // chat's live stop takes over the instant it crossfades in. (A duplicate
+        // send is harmless — handleSend ignores it while `submitted` is set.)
         isBusy={!!submitted}
-        disabled={!!submitted}
+        stopDisabled={!!submitted}
         autoFocus
       />
     </div>
