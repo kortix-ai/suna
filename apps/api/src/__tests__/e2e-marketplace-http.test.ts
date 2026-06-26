@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 
+let authCalls = 0;
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: () => Promise<void>) => {
+    authCalls += 1;
     c.set('user', {
       id: '00000000-0000-4000-a000-000000000001',
       email: 'marketplace-http@example.test',
@@ -60,6 +63,24 @@ describe('marketplace HTTP contract', () => {
     expect(body.items.find((item) => item.name === 'pdf')?.managedBy).toBeUndefined();
     expect(body.items.find((item) => item.name === 'kortix')?.managedBy).toBeUndefined();
     expect(body.items.find((item) => item.name === 'memory-reflector')?.managedBy).toBeUndefined();
+  });
+
+  test('GET /marketplace/items is public read-only', async () => {
+    authCalls = 0;
+    const res = await fetch(`${baseUrl}/marketplace/items?query=pty&source=kortix`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { items: Array<{ name: string; type: string }> };
+    expect(body.items).toContainEqual(expect.objectContaining({ name: 'pty', type: 'registry:tool' }));
+    expect(authCalls).toBe(0);
+  });
+
+  test('GET /marketplace/sources still requires auth middleware', async () => {
+    authCalls = 0;
+    const res = await fetch(`${baseUrl}/marketplace/sources`);
+    // The test auth middleware accepts when it runs; this pins that source
+    // management still passes through auth instead of staying public.
+    expect(res.status).not.toBe(404);
+    expect(authCalls).toBeGreaterThan(0);
   });
 
   test('GET /marketplace/items/:id exposes managed metadata on detail', async () => {
