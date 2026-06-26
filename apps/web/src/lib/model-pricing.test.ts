@@ -93,4 +93,24 @@ describe('createModelPricingLookup', () => {
     const lookup = createModelPricingLookup(undefined, new Map());
     expect(lookup('kortix', 'unknown-model')).toBeNull();
   });
+
+  test('resolves provider slash model ids from cached models.dev rates', () => {
+    const cached = buildModelsDevPricingMap({
+      deepseek: {
+        models: {
+          'deepseek/deepseek-v4-pro': {
+            id: 'deepseek/deepseek-v4-pro',
+            cost: { input: 0.435, output: 0.87 },
+          },
+        },
+      },
+    });
+
+    const lookup = createModelPricingLookup(undefined, cached);
+    expect(lookup('deepseek', 'deepseek-v4-pro')).toEqual({
+      inputPer1M: 0.435,
+      outputPer1M: 0.87,
+      cacheReadPer1M: undefined,
+    });
+  });
 });

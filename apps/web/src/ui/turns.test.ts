@@ -102,6 +102,42 @@ describe('getSessionCost', () => {
     const raw = 1 * deepseekRates.inputPer1M;
     expect(getSessionCost(messages, lookup)).toBeCloseTo(raw * COST_MARKUP, 8);
   });
+
+  test('regression: gateway session with tokens but step-finish.cost zero shows billed spend', () => {
+    const messages: MessageWithParts[] = [
+      {
+        info: assistantInfo(),
+        parts: [
+          stepFinishPart({
+            cost: 0,
+            tokens: { input: 23_330, output: 217, reasoning: 40 },
+          }),
+        ],
+      },
+    ];
+    const raw =
+      (23_330 / 1_000_000) * deepseekRates.inputPer1M +
+      ((217 + 40) / 1_000_000) * deepseekRates.outputPer1M;
+    const billed = getSessionCost(messages, lookup);
+    expect(billed).toBeGreaterThan(0);
+    expect(billed).toBeCloseTo(raw * COST_MARKUP, 8);
+    expect(formatCost(billed)).not.toBe('$0.00');
+  });
+
+  test('includes reasoning tokens in output-side pricing', () => {
+    const messages: MessageWithParts[] = [
+      {
+        info: assistantInfo(),
+        parts: [
+          stepFinishPart({
+            tokens: { input: 0, output: 0, reasoning: 1_000_000 },
+          }),
+        ],
+      },
+    ];
+    const raw = 1 * deepseekRates.outputPer1M;
+    expect(getSessionCost(messages, lookup)).toBeCloseTo(raw * COST_MARKUP, 8);
+  });
 });
 
 describe('getTurnCost', () => {
