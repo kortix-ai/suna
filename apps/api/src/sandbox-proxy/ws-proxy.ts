@@ -13,13 +13,13 @@
 //      key + signed user-context), and
 //   3. pipes bytes both ways once Bun upgrades the client socket.
 //
-// IMPORTANT — opencode PTY targets port 4096, not 8000.
-// The in-sandbox daemon on port 8000 is an HTTP-only reverse proxy: it strips
-// the `Upgrade` header and has no `websocket` handler, so a WS can never reach
-// opencode through it. opencode serves its PTY WebSocket (`/pty/{id}/connect`)
-// directly on its internal port 4096, which Daytona can expose via its own
-// preview link. So for any `/pty/` path we resolve the upstream against port
-// 4096 regardless of the port the client addressed.
+// IMPORTANT — opencode PTY usually targets port 4096, not 8000.
+// opencode serves its PTY WebSocket (`/pty/{id}/connect`) directly on its
+// internal port 4096. Daytona can expose that port directly. Platinum cannot:
+// the opencode process is loopback-bound and direct public exposure would bypass
+// the sandbox agent's signed user-context auth. The resolver therefore keeps
+// Daytona on 4096 and sends Platinum PTY upgrades through the agent bridge on
+// 8000.
 // ════════════════════════════════════════════════════════════════════════════
 
 import { authenticatePreviewPrincipal } from './preview-auth';
