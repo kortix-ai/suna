@@ -406,16 +406,16 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Idle lifecycle is owned by the provider-agnostic reaper (projects/
-    // sandbox-reaper.ts), keyed off MEANINGFUL activity (real turns), with each
-    // provider's native auto-stop as a secondary backstop. We pass NO explicit
-    // autoStopInterval for a normal session so each provider applies its own
-    // policy via daytonaLifecycle(): Daytona → KORTIX_SANDBOX_AUTOSTOP_MINUTES
-    // (default 15); Platinum → persistent (autoStop=0) because its stop→resume
-    // is broken (CH resume-freeze) — the reaper stops idle Platinum boxes and
-    // flags reprovision-on-open instead. (The old divergent KORTIX_SANDBOX_AUTO_
-    // STOP_MIN env, default 30, also wrongly made Platinum ephemeral — removed.)
-    // Warm-pool spares (legacy; pool disabled) stay persistent until claimed.
+    // Idle lifecycle: each provider's NATIVE auto-stop is the primary stop
+    // mechanism. We pass NO explicit autoStopInterval for a normal session so the
+    // provider applies its own policy: Daytona → daytonaLifecycle()
+    // (KORTIX_SANDBOX_AUTOSTOP_MINUTES); Platinum → the same idle timeout (see
+    // platinum.ts). Platinum NO LONGER forces persistent — the CH resume-freeze
+    // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
+    // idle-stops + CoW-resumes natively rather than depending on the maintenance
+    // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
+    // reaper stays as a secondary backstop only. Warm seeds / legacy spares pass
+    // an EXPLICIT autoStopInterval=0 to stay persistent.
     ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
