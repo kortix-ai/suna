@@ -39,6 +39,7 @@ const PUBLIC_ROUTES = [
   '/presentation', // Standalone product deck (/presentation) should be public
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
+  '/experience', // Interactive guided walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
