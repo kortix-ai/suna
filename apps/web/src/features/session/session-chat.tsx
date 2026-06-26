@@ -123,6 +123,7 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
+import { useModelPricingLookup } from '@/lib/model-pricing';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
@@ -2483,6 +2484,7 @@ function SessionTurn({
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const [editForkLoading, setEditForkLoading] = useState(false);
+  const pricingLookup = useModelPricingLookup(providers);
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -2576,8 +2578,8 @@ function SessionTurn({
 
   // Cost info (only when not working)
   const costInfo = useMemo(
-    () => (!working ? getTurnCost(allParts) : undefined),
-    [allParts, working],
+    () => (!working ? getTurnCost(allParts, pricingLookup) : undefined),
+    [allParts, working, pricingLookup],
   );
 
   // Turn error — derived directly from message data (same approach as SolidJS reference).
