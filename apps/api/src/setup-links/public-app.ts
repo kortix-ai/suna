@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { projectStateChanged } from '../projects/lib/sandbox-env-sync';
 import { pipedreamConfigured, pipedreamConnectUrl } from '../executor/pipedream';
 import { resolveSetupLink } from './token';
 
@@ -85,7 +85,7 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
   }
 
   // Live-propagate so an active session sees the new value without a restart.
-  void propagateProjectSecretsToActiveSandboxes(resolved.projectId);
+  void projectStateChanged(resolved.projectId, { reason: 'secret-link-redeemed' });
 
   return c.json({ ok: true, saved });
 });

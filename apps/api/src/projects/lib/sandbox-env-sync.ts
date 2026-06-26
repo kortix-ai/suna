@@ -136,6 +136,36 @@ export async function syncSandboxEnvForPrompt(args: {
   await markSandboxLlmGatewayMode(args.sessionId, true);
 }
 
+/**
+ * The single owner of a project-state change's sandbox side-effect.
+ *
+ * Every site that mutates project state (a secret written or removed, an OAuth
+ * login changed, secrets imported, a setup link redeemed) routes through here
+ * instead of poking sandboxes directly — so there is exactly ONE place that
+ * decides AND performs what a project-state change does to active sandboxes.
+ *
+ * Today every reason resolves to the same action: re-push the project's
+ * secrets to its active sandboxes. The gateway is the only LLM path, so a
+ * secret change never reloads opencode — there is intentionally no model
+ * refresh here. To give a reason a different (or additional) side-effect,
+ * branch on `change.reason` in this function rather than re-introducing direct
+ * calls at the call sites.
+ */
+export async function projectStateChanged(
+  projectId: string,
+  change: {
+    reason:
+      | 'secret-updated'
+      | 'secret-deleted'
+      | 'oauth-changed'
+      | 'secrets-imported'
+      | 'secret-link-redeemed';
+  },
+): Promise<void> {
+  void change.reason; // branch here when a reason needs its own side-effect
+  await propagateProjectSecretsToActiveSandboxes(projectId);
+}
+
 export async function propagateProjectSecretsToActiveSandboxes(
   projectId: string,
 ): Promise<void> {
