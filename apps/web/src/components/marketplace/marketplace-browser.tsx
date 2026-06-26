@@ -24,6 +24,8 @@ import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemCard } from './marketplace-item-card';
 import { TYPE_FILTERS, TYPE_SECTIONS } from './marketplace-meta';
 
+const MARKETPLACE_GRID_CLASS = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3';
+
 /** Search + adaptive type filters + a source switcher + a card grid (grouped by
  *  type when browsing everything). Selecting a card opens its detail as a full
  *  in-place page (not a slide-out). Shared by the top-level /marketplace page
@@ -95,7 +97,12 @@ export function MarketplaceBrowser({
   const effectiveType = typeTabs.some((t) => t.value === type) ? type : 'all';
   const showTypeTabs = typeTabs.length > 1;
 
-  const itemsQuery = useMarketplaceItems({ query: debounced, type: effectiveType, source, publicOnly });
+  const itemsQuery = useMarketplaceItems({
+    query: debounced,
+    type: effectiveType,
+    source,
+    publicOnly,
+  });
   const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
   const grouped = effectiveType === 'all' && !debounced;
   // Catalog still streaming external sources in (cold first load).
@@ -182,7 +189,12 @@ export function MarketplaceBrowser({
             </FilterBar>
           )}
           {!readOnly && (
-            <Button variant="outline" size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setAddOpen(true)}
+            >
               <Plus className="size-4" />
               {tI18nHardcoded.raw(
                 'autoComponentsMarketplaceMarketplaceBrowserJsxTextAddSource8387392e',
@@ -287,7 +299,7 @@ export function MarketplaceBrowser({
       )}
 
       {itemsQuery.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[92px] rounded-2xl" />
           ))}
@@ -307,7 +319,7 @@ export function MarketplaceBrowser({
         />
       ) : items.length === 0 ? (
         streaming ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-[92px] rounded-2xl" />
             ))}
@@ -331,12 +343,16 @@ export function MarketplaceBrowser({
                 {section.label}{' '}
                 <span className="text-muted-foreground/60 font-normal">{section.items.length}</span>
               </h2>
-              <div className="grid gap-3 sm:grid-cols-2">{section.items.map(renderCard)}</div>
+              <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
+                {section.items.map(renderCard)}
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">{items.map(renderCard)}</div>
+        <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
+          {items.map(renderCard)}
+        </div>
       )}
 
       {streaming && items.length > 0 && (

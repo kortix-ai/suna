@@ -23,7 +23,8 @@ import {
   useUpdateMarketplaceItem,
 } from '@/hooks/marketplace';
 import type { InstalledItem } from '@/lib/marketplace-client';
-import { TypeTile, typeMeta } from './marketplace-meta';
+import { MarketplaceItemAvatar, type MarketplaceItemAvatarItem } from './marketplace-item-avatar';
+import { typeMeta } from './marketplace-meta';
 
 function relativeDate(iso: string | null): string {
   if (!iso) return '';
@@ -136,6 +137,12 @@ export function MarketplaceInstalledPanel({
           const status = statusByName.get(it.name);
           const meta = typeMeta(it.type);
           const cat = catalogByName.get(it.name);
+          const avatarItem: MarketplaceItemAvatarItem = cat ?? {
+            id: `${it.source}:${it.name}`,
+            name: it.name,
+            marketplaceId: it.source,
+            marketplaceLabel: it.source,
+          };
           const caps = cat?.capabilities;
           const capCount = caps
             ? caps.secrets.length + caps.connectors.length + caps.tools.length
@@ -145,7 +152,7 @@ export function MarketplaceInstalledPanel({
               key={it.name}
               className="border-border/60 bg-card flex items-center gap-3 rounded-2xl border p-3"
             >
-              <TypeTile type={it.type} size="md" />
+              <MarketplaceItemAvatar item={avatarItem} size="md" showSource={!!cat} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-foreground truncate text-sm font-medium">
