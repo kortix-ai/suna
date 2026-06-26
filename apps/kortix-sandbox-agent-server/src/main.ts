@@ -1267,13 +1267,15 @@ export function readPinnedOpencodeSessionId(): string | null {
 // push/clone credential for the managed remote. Detect that mode before the
 // daemon boot path so we don't spin up opencode/proxy just to print a token.
 const subcommand = process.argv[2]
-if (subcommand === 'git-credential') {
-  runGitCredentialHelper(loadConfig(), process.argv[3])
-    .then((code) => process.exit(code))
-    .catch(() => process.exit(0))
-} else {
-  main().catch((err) => {
-    logger.error('[boot] fatal', err)
-    process.exit(1)
-  })
+if (import.meta.main) {
+  if (subcommand === 'git-credential') {
+    runGitCredentialHelper(loadConfig(), process.argv[3])
+      .then((code) => process.exit(code))
+      .catch(() => process.exit(0))
+  } else {
+    main().catch((err) => {
+      logger.error('[boot] fatal', err)
+      process.exit(1)
+    })
+  }
 }

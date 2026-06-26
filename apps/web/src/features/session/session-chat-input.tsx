@@ -53,6 +53,7 @@ import {
   useOpenCodeSessionTodo,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { AnimatePresence, motion } from 'motion/react';
+import { extractClipboardFiles } from './clipboard-files';
 import { ModelSelector } from './model-selector';
 
 import {
@@ -1421,6 +1422,8 @@ export interface SessionChatInputProps {
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
+  /** Imperative draft prefill used by parent composers for starter prompts. */
+  prefill?: { text: string; id: number } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
@@ -1439,6 +1442,9 @@ export interface SessionChatInputProps {
 
   /** Slot rendered inside the input card, above the textarea (e.g. queue chip) */
   inputSlot?: React.ReactNode;
+
+  /** Slot rendered inline in the bottom toolbar, just left of the voice button */
+  toolbarSlot?: React.ReactNode;
 
   /** Reply context — shows a banner in the input indicating what's being replied to */
   replyTo?: { text: string } | null;
@@ -1505,12 +1511,14 @@ export function SessionChatInput({
   disabled = false,
   autoFocus,
   placeholder = 'Ask anything...',
+  prefill = null,
 
   onFileSearch,
   providers,
   threadContext,
   onContextClick,
   inputSlot,
+  toolbarSlot,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -1586,6 +1594,26 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  useEffect(() => {
+    if (!prefill?.text) return;
+    setText(prefill.text);
+    setStagedCommand(null);
+    setSlashFilter(null);
+    setMentionQuery(null);
+    setMentions([]);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      if (highlightRef.current) {
+        highlightRef.current.style.height = ta.style.height;
+      }
+    });
+  }, [prefill?.id, prefill?.text]);
+
   useEffect(() => {
     if (lockForQuestion) {
       // Question appeared — save current draft and clear input
@@ -1795,6 +1823,18 @@ export function SessionChatInput({
       appendAttachedFiles(Array.from(dropped));
     },
     [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (disabled || lockForQuestion) return;
+      const files = extractClipboardFiles(e.clipboardData);
+      // No files on the clipboard — let the browser handle the text paste.
+      if (files.length === 0) return;
+      e.preventDefault();
+      appendAttachedFiles(files);
+    },
+    [appendAttachedFiles, disabled, lockForQuestion],
   );
 
   const removeAttachedFile = (index: number) => {
@@ -2023,14 +2063,12 @@ export function SessionChatInput({
     }
   }, [
     text,
-    isBusy,
     disabled,
     onSend,
     onCommand,
     stagedCommand,
     attachedFiles,
     mentions,
-    sessionId,
     lockForQuestion,
     onCustomAnswer,
     onQuestionAction,
@@ -2438,6 +2476,7 @@ export function SessionChatInput({
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 onScroll={() => {
                   if (highlightRef.current && textareaRef.current) {
                     highlightRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -2533,6 +2572,8 @@ export function SessionChatInput({
                 selectedModel={selectedModel}
                 onContextClick={onContextClick}
               />
+
+              {toolbarSlot}
 
               <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
 

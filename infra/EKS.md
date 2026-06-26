@@ -112,9 +112,9 @@ helm upgrade --install kortix-api ../../../k8s/charts/kortix-api \
 curl -fsS https://api-eks.kortix.com/v1/health
 ```
 
-After bring-up, a push to `main` deploys dev via `deploy-dev.yml`; a promotion
-or PR into `staging` deploys staging via `deploy-staging.yml`; a reviewed promote
-PR merged to `prod` deploys prod via `deploy-prod.yml`.
+After bring-up, a push to `main` deploys dev via `deploy-dev.yml`; a PR merged
+into `staging` deploys staging via `deploy-staging.yml`; a reviewed promote PR
+merged to `prod` deploys prod via `deploy-prod.yml`.
 
 ## Switch-back / coexistence
 

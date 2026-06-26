@@ -122,7 +122,7 @@ Watch a canary: `kubectl argo rollouts get rollout kortix-api -n kortix-prod --w
 PRs merge to main  ─►  DEV only        (dev Argo app tracks `main`)
                        staging/prod untouched
 
-Promote Dev to Staging or PR to staging
+PR main→staging or targeted PR to staging
                     └─►  STAGING only  (staging Argo app tracks `staging`)
                          production untouched
 

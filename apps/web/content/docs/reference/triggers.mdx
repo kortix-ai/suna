@@ -78,7 +78,7 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | `type` | yes | string | — | `"cron"` or `"webhook"`. |
 | `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. |
 | `name` | no | string | `slug` | Human label. |
-| `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. |
+| `agent` | no | string | `"default"` | Agent name. Legacy projects resolve it through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
 | `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
 
 ### Cron-only fields

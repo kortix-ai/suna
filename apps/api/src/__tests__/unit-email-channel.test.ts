@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { config } from "../config";
-import { resolveAgentMailApiKey } from "../channels/agentmail-api";
+import { createAgentMailWebhook, resolveAgentMailApiKey } from "../channels/agentmail-api";
 import { verifyAgentMailSignature } from "../channels/email/verify";
 import type { AgentMailMessageReceivedEvent } from "../channels/email/types";
 
@@ -145,6 +145,34 @@ describe("AgentMail credential resolution", () => {
   });
 });
 
+describe("AgentMail webhook provisioning", () => {
+  test("subscribes new inbox webhooks to normal and unauthenticated inbound mail", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestBody: any = null;
+    globalThis.fetch = (async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify({ webhook_id: "wh-1", secret: "whsec_test" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    try {
+      await createAgentMailWebhook({
+        apiKey: "am_test",
+        inboxId: "inb-1",
+        url: "https://api.kortix.test/v1/webhooks/email/agentmail",
+        clientId: "kortix-email-proj-1",
+      });
+      expect(requestBody.event_types).toEqual([
+        "message.received",
+        "message.received.unauthenticated",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("dispatchAgentMailEvent", () => {
   test("first message creates one project-visible session bound to the email thread", async () => {
     dbResults = [
@@ -176,9 +204,73 @@ describe("dispatchAgentMailEvent", () => {
         workspaceId: "inb-1",
         threadId: "thr-1",
       },
+      expect.objectContaining({
+        type: "deliver_prompt",
+        source: "email",
+        userId: "user-1",
+      }),
     ]);
+    expect(createCalls[0].postCreate[1].text).toContain("Need help");
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe("inb-1");
-    expect(createCalls[0].body.initial_prompt).toContain("Need help");
+    expect(createCalls[0].body.initial_prompt).toBeUndefined();
+  });
+
+  test("accepts AgentMail's unwrapped message.received payload without top-level thread metadata", async () => {
+    const { type: _type, thread: _thread, ...unwrappedEvent } = event;
+    const actualAgentMailPayload: AgentMailMessageReceivedEvent = {
+      ...unwrappedEvent,
+      event_id: "evt-unwrapped",
+      message: {
+        ...event.message,
+        thread_id: "thr-unwrapped",
+        message_id: "msg-unwrapped",
+        subject: "Actual AgentMail payload",
+      },
+    };
+    dbResults = [
+      [{ eventId: "email:event:evt-unwrapped" }],
+      [{ projectId: "proj-1" }],
+      [],
+      [{ eventId: "email:msg:inb-1:msg-unwrapped" }],
+      [],
+      [
+        {
+          projectId: "proj-1",
+          accountId: "acc-1",
+          defaultBranch: "main",
+          name: "Support",
+        },
+      ],
+      [{ eventId: "email:threadcreate:inb-1:thr-unwrapped" }],
+    ];
+
+    await dispatchAgentMailEvent(actualAgentMailPayload);
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0].metadata.email.subject).toBe("Actual AgentMail payload");
+    expect(createCalls[0].postCreate[1].text).toContain("Thread ID:  thr-unwrapped");
+  });
+
+  test("routes unauthenticated inbound mail through the same sender policy and session path", async () => {
+    const unauthenticatedEvent: AgentMailMessageReceivedEvent = {
+      ...event,
+      event_type: "message.received.unauthenticated",
+      event_id: "evt-unauth",
+      message: { ...event.message, message_id: "msg-unauth" },
+    };
+    dbResults = [
+      [{ eventId: "email:event:evt-unauth" }],
+      [{ projectId: "proj-1" }],
+      [],
+      [{ eventId: "email:msg:inb-1:msg-unauth" }],
+      [{ sessionId: "sess-1" }],
+    ];
+
+    await dispatchAgentMailEvent(unauthenticatedEvent);
+
+    expect(createCalls).toHaveLength(0);
+    expect(continueCalls).toHaveLength(1);
+    expect(continueCalls[0].sessionId).toBe("sess-1");
   });
 
   test("known thread routes a new email into the existing session", async () => {
