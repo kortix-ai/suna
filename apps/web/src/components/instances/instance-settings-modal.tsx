@@ -10,7 +10,6 @@ import {
   ArrowDownToLine,
   Copy,
   HardDrive,
-  KeyRound,
   Loader2,
   Cpu,
   MemoryStick,
@@ -29,15 +28,11 @@ import {
   getSandboxUrl,
   createBackup,
   getLatestSandboxVersion,
-  getSSHConnection,
   renameSandbox,
   restartSandbox,
-  setupSSH,
   stopSandbox,
   type BackupInfo,
   type SandboxInfo,
-  type SSHConnectionInfo,
-  type SSHSetupResult,
 } from '@/lib/platform-client';
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
 import { useCan } from '@/hooks/platform/use-can';
@@ -440,7 +435,6 @@ export function InstanceSettingsModal({
   const [backupDescription, setBackupDescription] = useState('');
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [setupResult, setSetupResult] = useState<SSHSetupResult | null>(null);
 
   const isJustAVPS = sandbox?.provider === 'justavps';
   const supportsBackups = !!sandbox && isJustAVPS && ['active', 'stopped'].includes(sandbox.status);
@@ -624,7 +618,6 @@ export function InstanceSettingsModal({
   useEffect(() => {
     if (!open) {
       setActiveTab(defaultTab);
-      setSetupResult(null);
       setBackupDescription('');
       setRestoreTarget(null);
       setDeleteTarget(null);
@@ -650,13 +643,6 @@ export function InstanceSettingsModal({
       setActiveTab('overview');
     }
   }, [activeTab, visibleTabs]);
-
-  const sshQuery = useQuery<SSHConnectionInfo>({
-    queryKey: ['instance', 'ssh', sandbox?.sandbox_id],
-    queryFn: () => getSSHConnection(sandbox!.sandbox_id),
-    enabled: open && activeTab === 'host' && !!sandbox && !isAdmin,
-    staleTime: 30_000,
-  });
 
   const latestVersionQuery = useQuery({
     queryKey: ['instance', 'latest-version', sandbox?.sandbox_id],
@@ -751,17 +737,6 @@ export function InstanceSettingsModal({
     );
   }
 
-  const setupSshMutation = useMutation({
-    mutationFn: () => setupSSH(sandbox!.sandbox_id),
-    onSuccess: (result) => {
-      setSetupResult(result);
-      toast.success('SSH key generated');
-      sshQuery.refetch();
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to set up SSH');
-    },
-  });
 
   async function handleCreateBackup() {
     if (!sandbox) return;
@@ -1307,31 +1282,6 @@ export function InstanceSettingsModal({
                       {effectiveServerType ? <div className="text-sm font-mono">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1336JsxTextServerType')}{effectiveServerType}</div> : null}
                     </div>
                   )}
-                </div>
-              ) : sshQuery.isLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1342JsxTextResolvingConnectionDetails')}</div>
-              ) : sshQuery.error ? (
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                  <div className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1346JsxTextSshIsNotConfiguredForThisInstanceYet')}</div>
-                  <Button onClick={() => setupSshMutation.mutate()} disabled={setupSshMutation.isPending}>
-                    {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1349JsxTextSetUpSsh')}</Button>
-                </div>
-              ) : sshQuery.data ? (
-                <div className="space-y-4">
-                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1354JsxAttrLabelSshCommand')} value={setupResult?.ssh_command || sshQuery.data.ssh_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1354JsxAttrHintCopiesTheSshCommandWithoutExposingTheFull')} />
-                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1355JsxAttrLabelReconnectCommand')} value={setupResult?.reconnect_command || sshQuery.data.reconnect_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1355JsxAttrHintCopiesTheReconnectCommandForFutureSessions')} />
-                  <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1356JsxAttrLabelSshConfigCommand')} value={setupResult?.ssh_config_command || sshQuery.data.ssh_config_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1356JsxAttrHintCopiesTheSshConfigSnippetCommandForYour')} />
-                  <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
-                    <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1358JsxTextConnectionDetails')}</div>
-                    <div className="text-sm">{sshQuery.data.username}@{sshQuery.data.host}:{sshQuery.data.port}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1360JsxTextHostAlias')}{sshQuery.data.host_alias}</div>
-                  </div>
-                  {!setupResult && (
-                    <Button variant="outline" onClick={() => setupSshMutation.mutate()} disabled={setupSshMutation.isPending}>
-                      {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}{tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1365JsxTextRegenerateSshSetup')}</Button>
-                  )}
-                  {setupResult && <CommandCopyField label={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1368JsxAttrLabelSetupCommand')} value={setupResult.setup_command} hint={tHardcodedUi.raw('componentsInstancesInstanceSettingsModal.line1368JsxAttrHintCopiesTheFullSetupCommandIncludingAnyHidden')} />}
                 </div>
               ) : null}
 

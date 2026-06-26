@@ -40,7 +40,6 @@ import {
   GitCompareArrows,
   Globe,
   Hash,
-  Key,
   Keyboard,
   // Settings pages
   KeyRound,
@@ -505,17 +504,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'openProviderModal',
-  },
-  {
-    id: 'ssh-quick',
-    label: 'SSH',
-    icon: Key,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'action',
-    actionId: 'generateSSHKey',
-    keywords: 'ssh key generate public private git clone remote',
   },
   {
     id: 'api-keys-quick',
