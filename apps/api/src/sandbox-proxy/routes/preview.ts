@@ -607,10 +607,19 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, upstreamPort, userId, remainingPath, queryString } = opts;
+  const { sandboxId, userId, remainingPath, queryString } = opts;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
+
+  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
+  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
+  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
+  const upstreamPort =
+    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
+      ? 8000
+      : opts.upstreamPort;
+
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
