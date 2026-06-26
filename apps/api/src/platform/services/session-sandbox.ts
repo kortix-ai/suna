@@ -40,6 +40,7 @@ import {
 } from '../../snapshots/builder';
 import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
+import { buildGatewayLlmEnv, resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-llm-env';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -335,11 +336,7 @@ export async function provisionSessionSandbox(opts: {
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
 
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  const llmBaseUrl =
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+  const llmBaseUrl = resolveLlmGatewayBaseUrl();
 
   // The sandbox's OpenCode `kortix` provider mounts when KORTIX_LLM_* is
   // injected. It authenticates the gateway with the per-session executor PAT,
@@ -382,14 +379,7 @@ export async function provisionSessionSandbox(opts: {
       ...(executorToken
         ? { KORTIX_CLI_TOKEN: executorToken, KORTIX_EXECUTOR_TOKEN: executorToken }
         : {}),
-      ...(gatewayLlmKey
-        ? {
-            KORTIX_LLM_API_KEY: gatewayLlmKey,
-            KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: gatewayLlmKey,
-            KORTIX_YOLO_URL: llmBaseUrl,
-          }
-        : {}),
+      ...buildGatewayLlmEnv(gatewayLlmKey, llmBaseUrl),
     },
     // Idle lifecycle: each provider's NATIVE auto-stop is the primary stop
     // mechanism. We pass NO explicit autoStopInterval for a normal session so the

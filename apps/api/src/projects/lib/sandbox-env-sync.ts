@@ -3,8 +3,8 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolveShareSubject } from '../../executor/share';
-import { config } from '../../config';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-llm-env';
 import {
   listProjectSecretsForUser,
   projectSecretsRevision,
@@ -196,15 +196,6 @@ async function markSandboxLlmGatewayMode(
       updatedAt: new Date(),
     })
     .where(eq(sessionSandboxes.sessionId, sessionId));
-}
-
-function resolveLlmGatewayBaseUrl(): string {
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  return (
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`)
-  );
 }
 
 async function runBounded<T>(

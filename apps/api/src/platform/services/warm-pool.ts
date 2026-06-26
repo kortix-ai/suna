@@ -38,6 +38,7 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { warmPoolSetting } from './runtime-settings';
 import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
+import { buildGatewayLlmEnv, resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-llm-env';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -537,16 +538,12 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     // Gateway is the only LLM path: always wire the executor token + base URL.
     // Per-request tier/affordability is enforced inside the gateway, not here.
     const gatewayLlmKey = executorToken;
-    const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-    const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-    const llmBaseUrl =
-      config.LLM_GATEWAY_BASE_URL ||
-      (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+    const llmBaseUrl = resolveLlmGatewayBaseUrl();
 
     const fullEnv: Record<string, string> = {
       ...input.builtEnvVars,
       ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken } : {}),
-      ...(gatewayLlmKey ? { KORTIX_LLM_API_KEY: gatewayLlmKey, KORTIX_LLM_BASE_URL: llmBaseUrl, KORTIX_YOLO_API_KEY: gatewayLlmKey, KORTIX_YOLO_URL: llmBaseUrl } : {}),
+      ...buildGatewayLlmEnv(gatewayLlmKey, llmBaseUrl),
     };
     delete fullEnv.KORTIX_TOKEN; // never overwrite the box's park token
 
