@@ -186,10 +186,10 @@ jobs:
   dispatch-deploy:
     name: Dispatch staging deploy
     needs: [version, build-api, build-gateway, build-frontend]
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]'))
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Start Deploy Staging for completed build
+      - name: Start Deploy Staging for completed manual build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
