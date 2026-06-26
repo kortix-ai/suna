@@ -24,7 +24,6 @@ const cfg = {
   DAYTONA_WARM_TARGET: '',
   KORTIX_WARM_POOL_ENABLED: false,
   KORTIX_WARM_POOL_SIZE: 0,
-  KORTIX_WARM_SNAPSHOT_ENABLED: true,
 };
 let platinumConfigured = false;
 
@@ -50,6 +49,7 @@ async function loadRows(rows: Array<{ key: string; value: unknown }>): Promise<v
   await refreshRuntimeSettings();
 }
 const MASTER_OFF = [{ key: WARM_SNAPSHOT_KEY, value: { enabled: false } }];
+const MASTER_ON = [{ key: WARM_SNAPSHOT_KEY, value: { enabled: true } }];
 
 beforeEach(() => {
   // Clean per-provider sub-gate baseline; each test sets what it needs.
@@ -58,34 +58,30 @@ beforeEach(() => {
   platinumConfigured = false;
 });
 
-describe('warmSnapshotSetting (DB-backed admin master, default ON)', () => {
-  test('no warm_snapshot row → enabled:true (ON by default)', async () => {
+describe('warmSnapshotSetting (admin-panel toggle, OFF by default / opt-in)', () => {
+  test('no warm_snapshot row → OFF (opt-in; the admin panel must explicitly enable it)', async () => {
     await loadRows([]);
-    expect(warmSnapshotSetting().enabled).toBe(true);
+    expect(warmSnapshotSetting().enabled).toBe(false);
   });
 
-  test('row { enabled: false } → master OFF', async () => {
+  test('row { enabled: false } → OFF', async () => {
     await loadRows(MASTER_OFF);
     expect(warmSnapshotSetting().enabled).toBe(false);
   });
 
-  test('row { enabled: true } → master ON', async () => {
-    await loadRows([{ key: WARM_SNAPSHOT_KEY, value: { enabled: true } }]);
+  test('row { enabled: true } → ON (admin opted in)', async () => {
+    await loadRows(MASTER_ON);
     expect(warmSnapshotSetting().enabled).toBe(true);
   });
 
-  test('cold cache (before first DB read) follows KORTIX_WARM_SNAPSHOT_ENABLED, not a hardcoded ON', () => {
-    // Regression for the 2026-06-26 opencode wedge: a fresh pod served warm-snapshot
-    // ON for the ~30s cold-cache window despite an operator "off", warm-forking a
-    // stale seed. The cold default is now the env, so a deployment pinned OFF stays
-    // OFF before any DB refresh. (invalidate → cache=null → sync read = envDefaults.)
-    dbRows = [];
-    cfg.KORTIX_WARM_SNAPSHOT_ENABLED = false;
-    invalidateRuntimeSettings();
+  test('cold cache (before first DB read) is OFF — never warm-fork before the toggle loads', () => {
+    // Regression for the 2026-06-26 opencode wedge: a fresh pod served warm ON for
+    // the ~30s cold-cache window despite the admin "off", warm-forking a stale seed.
+    // An unloaded cache now resolves OFF even when the row is ON — boot warms the
+    // cache before serving, so the row is read before any session is created.
+    dbRows = MASTER_ON;
+    invalidateRuntimeSettings(); // cache=null → sync read = OFF defaults
     expect(warmSnapshotSetting().enabled).toBe(false);
-    cfg.KORTIX_WARM_SNAPSHOT_ENABLED = true;
-    invalidateRuntimeSettings();
-    expect(warmSnapshotSetting().enabled).toBe(true);
   });
 });
 
@@ -99,8 +95,17 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
     expect(warmSnapshotsEnabledFor('platinum')).toBe(false);
   });
 
+  test('no row (default OFF) → false for every provider even with sub-gates satisfied', async () => {
+    await loadRows([]);
+    cfg.DAYTONA_API_KEY = 'k';
+    cfg.DAYTONA_WARM_TARGET = 'experimental';
+    platinumConfigured = true;
+    expect(warmSnapshotsEnabledFor('daytona')).toBe(false);
+    expect(warmSnapshotsEnabledFor('platinum')).toBe(false);
+  });
+
   test('master ON + daytona: requires DAYTONA_WARM_TARGET (+ API key)', async () => {
-    await loadRows([]); // master ON (default)
+    await loadRows(MASTER_ON);
     cfg.DAYTONA_API_KEY = 'k';
     cfg.DAYTONA_WARM_TARGET = 'experimental';
     expect(warmSnapshotsEnabledFor('daytona')).toBe(true);
@@ -112,7 +117,7 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
   });
 
   test('master ON + platinum: requires isPlatinumConfigured()', async () => {
-    await loadRows([]); // master ON
+    await loadRows(MASTER_ON);
     platinumConfigured = true;
     expect(warmSnapshotsEnabledFor('platinum')).toBe(true);
     platinumConfigured = false;
@@ -120,7 +125,7 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
   });
 
   test('platinum does NOT depend on the daytona warm target', async () => {
-    await loadRows([]); // master ON
+    await loadRows(MASTER_ON);
     cfg.DAYTONA_API_KEY = '';
     cfg.DAYTONA_WARM_TARGET = ''; // daytona would be OFF…
     platinumConfigured = true; // …but platinum only needs a configured host
@@ -129,14 +134,14 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
   });
 
   test('unknown provider → false even with master ON', async () => {
-    await loadRows([]); // master ON
+    await loadRows(MASTER_ON);
     expect(warmSnapshotsEnabledFor('local_docker' as never)).toBe(false);
   });
 
   test('warmSnapshotsEnabled() (daytona helper) tracks master AND warm target', async () => {
     cfg.DAYTONA_API_KEY = 'k';
     cfg.DAYTONA_WARM_TARGET = 'experimental';
-    await loadRows([]); // master ON
+    await loadRows(MASTER_ON);
     expect(warmSnapshotsEnabled()).toBe(true);
     await loadRows(MASTER_OFF); // master OFF gates it off despite the target
     expect(warmSnapshotsEnabled()).toBe(false);
@@ -144,11 +149,11 @@ describe('warmSnapshotsEnabledFor (master AND per-provider sub-gate)', () => {
 });
 
 // LAST: the unloaded-cache sync fallback. This read kicks a background refresh,
-// so it goes last with dbRows=[] (that refresh also resolves to ON) → harmless.
+// so it goes last with dbRows=[] → harmless.
 describe('warmSnapshotSetting (unloaded-cache fallback)', () => {
-  test('an unloaded cache returns the env default (enabled:true) synchronously', () => {
+  test('an unloaded cache returns OFF synchronously (fail-safe; never warm before the row loads)', () => {
     dbRows = [];
     invalidateRuntimeSettings();
-    expect(warmSnapshotSetting().enabled).toBe(true);
+    expect(warmSnapshotSetting().enabled).toBe(false);
   });
 });

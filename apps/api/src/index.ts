@@ -983,13 +983,12 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
-  // Warm the runtime-settings cache BEFORE serving traffic so the DB-backed admin
+  // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / warm_pool / provider_fallback) are honored from
-  // request #1. Without this a fresh pod serves the cold-cache env defaults for
-  // the first ~30s — which on a deploy let warm_snapshot resolve to the (old
-  // hardcoded) ON despite an operator "off", warm-forking a stale seed: the
-  // 2026-06-26 opencode-wedge incident. Best-effort: a DB hiccup leaves the env
-  // defaults, which now honor KORTIX_WARM_SNAPSHOT_ENABLED.
+  // request #1. Without this a fresh pod serves the cold-cache defaults for the
+  // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
+  // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
+  // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
   await import('./platform/services/runtime-settings')
     .then((m) => m.refreshRuntimeSettings())
     .catch(() => {});
