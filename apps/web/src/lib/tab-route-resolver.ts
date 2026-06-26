@@ -97,18 +97,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/files',
   },
-  '/board': {
-    id: 'page:/board',
-    title: 'Project view',
-    type: 'page',
-    href: '/board',
-  },
-  '/deployments': {
-    id: 'page:/deployments',
-    title: 'Deployments',
-    type: 'page',
-    href: '/deployments',
-  },
   '/changelog': {
     id: 'page:/changelog',
     title: 'Changelog',
@@ -120,12 +108,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     title: 'Credits',
     type: 'page',
     href: '/credits-explained',
-  },
-  '/settings/credentials': {
-    id: 'page:/settings/credentials',
-    title: 'Secrets',
-    type: 'settings',
-    href: '/settings/credentials',
   },
   '/settings/api-keys': {
     id: 'page:/settings/api-keys',
@@ -243,19 +225,6 @@ const DYNAMIC_RESOLVERS: DynamicResolver[] = [
       title: 'Legacy Thread',
       type: 'page',
       href: `/legacy/${threadId}`,
-    };
-  },
-
-  // /tasks/<id> — standalone task detail page
-  (pathname) => {
-    const m = pathname.match(/^\/tasks\/([^/]+)$/);
-    if (!m) return null;
-    const taskId = decodeURIComponent(m[1]);
-    return {
-      id: `task:${taskId}`,
-      title: 'Task',
-      type: 'page',
-      href: `/tasks/${m[1]}`,
     };
   },
 

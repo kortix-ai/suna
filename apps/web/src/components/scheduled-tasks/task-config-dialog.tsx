@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useColumns, useProjectAgents, useTickets } from '@/hooks/kortix/use-kortix-tickets';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import {
   useCreateTrigger,
@@ -28,7 +27,6 @@ import {
   type SessionMode,
   type TriggerType,
 } from '@/hooks/scheduled-tasks';
-import { featureFlags } from '@/lib/feature-flags';
 import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -41,7 +39,6 @@ import {
   Loader2,
   MessageSquare,
   Terminal,
-  Ticket as TicketIcon,
   Timer,
   Webhook,
 } from 'lucide-react';
@@ -59,8 +56,6 @@ interface TaskConfigDialogProps {
   onCreated?: () => void;
   /** Scope the new trigger to a project — shows up in that project's Triggers tab. */
   projectId?: string;
-  /** Pre-select a ticket to bind. Only meaningful when `projectId` is set. */
-  defaultTicketId?: string;
 }
 
 const TIMEZONES = [
@@ -85,7 +80,6 @@ export function TaskConfigDialog({
   onOpenChange,
   onCreated,
   projectId,
-  defaultTicketId,
 }: TaskConfigDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [step, setStep] = useState<Step>('source');
@@ -119,19 +113,6 @@ export function TaskConfigDialog({
   const [httpUrl, setHttpUrl] = useState('');
   const [httpMethod, setHttpMethod] = useState('POST');
   const [httpBody, setHttpBody] = useState('');
-
-  // ticket_create action (only usable when scoped to a project — the new
-  // ticket lands in that project)
-  const [newTicketTitle, setNewTicketTitle] = useState('');
-  const [newTicketBody, setNewTicketBody] = useState('');
-  const [newTicketColumn, setNewTicketColumn] = useState<string>('');
-  const [newTicketAssignees, setNewTicketAssignees] = useState<string>(''); // comma-separated slugs
-
-  // Optional ticket binding (only surfaces when scoped to a project)
-  const [ticketId, setTicketId] = useState<string>(defaultTicketId ?? '');
-  const { data: projectTickets = [] } = useTickets(projectId, { enabled: !!projectId });
-  const { data: projectColumns = [] } = useColumns(projectId);
-  const { data: projectAgents = [] } = useProjectAgents(projectId);
 
   const { sandbox } = useSandbox();
   const createMutation = useCreateTrigger();
@@ -168,11 +149,6 @@ export function TaskConfigDialog({
     setHttpUrl('');
     setHttpMethod('POST');
     setHttpBody('');
-    setNewTicketTitle('');
-    setNewTicketBody('');
-    setNewTicketColumn('');
-    setNewTicketAssignees('');
-    setTicketId(defaultTicketId ?? '');
     onOpenChange(false);
   };
 
@@ -207,15 +183,6 @@ export function TaskConfigDialog({
       action.url = httpUrl.trim();
       action.method = httpMethod;
       if (httpBody.trim()) action.body_template = httpBody.trim();
-    } else if (actionType === 'ticket_create') {
-      action.title = newTicketTitle.trim();
-      if (newTicketBody.trim()) action.body_md = newTicketBody.trim();
-      if (newTicketColumn) action.column = newTicketColumn;
-      const slugs = newTicketAssignees
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (slugs.length) action.assignee_slugs = slugs;
     }
 
     try {
@@ -224,7 +191,6 @@ export function TaskConfigDialog({
         source,
         action,
         ...(projectId ? { project_id: projectId } : {}),
-        ...(ticketId ? { ticket_id: ticketId } : {}),
       });
       toast.success('Trigger created');
       handleClose();
@@ -241,7 +207,6 @@ export function TaskConfigDialog({
     if (actionType === 'prompt' && !prompt.trim()) return false;
     if (actionType === 'command' && !command.trim()) return false;
     if (actionType === 'http' && !httpUrl.trim()) return false;
-    if (actionType === 'ticket_create' && (!newTicketTitle.trim() || !projectId)) return false;
     return true;
   };
 
@@ -412,39 +377,19 @@ export function TaskConfigDialog({
                     title: 'HTTP',
                     desc: 'Call an external URL',
                   },
-                  // "Create Ticket" — only with the multi-project paradigm
-                  // AND when scoped to a project.
-                  ...(featureFlags.enableProjects
-                    ? [
-                        {
-                          id: 'ticket_create' as ActionType,
-                          icon: TicketIcon,
-                          title: 'Create ticket',
-                          desc: 'Drop a new ticket on the board',
-                          disabled: !projectId,
-                          disabledHint: 'Only available when the trigger is scoped to a project',
-                        },
-                      ]
-                    : []),
                 ].map((action) => {
                   const Icon = action.icon;
                   const isActive = actionType === action.id;
-                  const isDisabled = 'disabled' in action ? action.disabled : false;
                   return (
                     <button
                       key={action.id}
                       type="button"
-                      onClick={() => !isDisabled && setActionType(action.id)}
-                      disabled={isDisabled}
-                      title={
-                        isDisabled && 'disabledHint' in action ? action.disabledHint : undefined
-                      }
+                      onClick={() => setActionType(action.id)}
                       className={cn(
                         'group flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
                         isActive
                           ? 'border-primary/50 bg-primary/[0.04]'
                           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
-                        isDisabled && 'hover:bg-muted/20 cursor-not-allowed opacity-50',
                       )}
                     >
                       <Icon className="text-muted-foreground h-4 w-4 shrink-0" />
@@ -474,52 +419,6 @@ export function TaskConfigDialog({
                   )}
                 />
               </div>
-
-              {/* Ticket binding — only when scoped to a project. Binding makes
-                  the ticket the running review thread: every fire threads onto
-                  the same session and the agent sees ticket_id in its event. */}
-              {projectId && projectTickets.length > 0 && (
-                <div className="space-y-2">
-                  <Label>
-                    {tHardcodedUi.raw(
-                      'componentsScheduledTasksTaskConfigDialog.line382JsxTextBindToTicketOptional',
-                    )}
-                  </Label>
-                  <Select
-                    value={ticketId || '__none__'}
-                    onValueChange={(v) => setTicketId(v === '__none__' ? '' : v)}
-                  >
-                    <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
-                      <SelectValue
-                        placeholder={tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line385JsxAttrPlaceholderNoTicket',
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-muted-foreground cursor-pointer">
-                        {tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line388JsxTextNoTicketGenericProjectTrigger',
-                        )}
-                      </SelectItem>
-                      {projectTickets.map((t) => (
-                        <SelectItem key={t.id} value={t.id} className="cursor-pointer">
-                          #{t.number} · {t.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-muted-foreground text-xs">
-                    {tHardcodedUi.raw(
-                      'componentsScheduledTasksTaskConfigDialog.line397JsxTextEachFireThreadsOntoOneSessionPerTicket',
-                    )}
-                    <code className="font-mono">ticket_comment</code>
-                    {tHardcodedUi.raw(
-                      'componentsScheduledTasksTaskConfigDialog.line397JsxTextStatusUpdates',
-                    )}
-                  </p>
-                </div>
-              )}
 
               {actionType === 'prompt' && (
                 <>
@@ -700,104 +599,6 @@ export function TaskConfigDialog({
                     <p className="text-muted-foreground text-xs">
                       {'Use {{ var }} for template variables from webhook payloads'}
                     </p>
-                  </div>
-                </>
-              )}
-
-              {actionType === 'ticket_create' && (
-                <>
-                  <div className="space-y-2">
-                    <Label>
-                      {tHardcodedUi.raw(
-                        'componentsScheduledTasksTaskConfigDialog.line509JsxTextTicketTitle',
-                      )}
-                    </Label>
-                    <Input
-                      type="text"
-                      value={newTicketTitle}
-                      onChange={(e) => setNewTicketTitle(e.target.value)}
-                      placeholder={tHardcodedUi.raw(
-                        'componentsScheduledTasksTaskConfigDialog.line514JsxAttrPlaceholderSummarySource',
-                      )}
-                    />
-                    <p className="text-muted-foreground text-xs">
-                      {'Supports {{ var }} substitution from webhook payloads.'}
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>
-                      {tHardcodedUi.raw(
-                        'componentsScheduledTasksTaskConfigDialog.line519JsxTextBodyOptional',
-                      )}
-                    </Label>
-                    <Textarea
-                      value={newTicketBody}
-                      onChange={(e) => setNewTicketBody(e.target.value)}
-                      rows={3}
-                      placeholder={tHardcodedUi.raw(
-                        'componentsScheduledTasksTaskConfigDialog.line524JsxAttrPlaceholderFromUserNNText',
-                      )}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label>
-                        {tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line529JsxTextLandInColumn',
-                        )}
-                      </Label>
-                      <Select
-                        value={newTicketColumn || '__default__'}
-                        onValueChange={(v) => setNewTicketColumn(v === '__default__' ? '' : v)}
-                      >
-                        <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
-                          <SelectValue
-                            placeholder={tHardcodedUi.raw(
-                              'componentsScheduledTasksTaskConfigDialog.line532JsxAttrPlaceholderBacklogDefault',
-                            )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem
-                            value="__default__"
-                            className="text-muted-foreground cursor-pointer"
-                          >
-                            {tHardcodedUi.raw(
-                              'componentsScheduledTasksTaskConfigDialog.line535JsxTextFirstColumnDefault',
-                            )}
-                          </SelectItem>
-                          {projectColumns.map((c) => (
-                            <SelectItem key={c.key} value={c.key} className="cursor-pointer">
-                              {c.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>
-                        {tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line543JsxTextAssignTo',
-                        )}
-                      </Label>
-                      <Input
-                        type="text"
-                        value={newTicketAssignees}
-                        onChange={(e) => setNewTicketAssignees(e.target.value)}
-                        placeholder={tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line548JsxAttrPlaceholderEngineerQa',
-                        )}
-                        className="font-mono text-sm"
-                      />
-                      <p className="text-muted-foreground text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsScheduledTasksTaskConfigDialog.line552JsxTextCommaSeparatedAgentSlugs',
-                        )}
-                        {projectAgents.length > 0 && (
-                          <> Available: {projectAgents.map((a) => a.slug).join(', ')}</>
-                        )}
-                      </p>
-                    </div>
                   </div>
                 </>
               )}

@@ -58,7 +58,6 @@ import {
   Plus,
   Receipt,
   RefreshCw,
-  Rocket,
   ScrollText,
   Search,
   SlidersHorizontal,
@@ -67,8 +66,6 @@ import {
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
-
-const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
 // ============================================================================
 // Types
@@ -484,18 +481,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'workspace agents skills commands tools build create',
   },
   {
-    id: 'secrets-quick',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabId: 'settings:secrets',
-    tabType: 'settings',
-  },
-  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,
@@ -541,20 +526,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/scheduled-tasks',
   },
-  ...(DEPLOYMENTS_ENABLED
-    ? [
-        {
-          id: 'deployments',
-          label: 'Deployments',
-          icon: Rocket,
-          group: 'navigation' as const,
-          subGroup: 'services' as const,
-          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
-          kind: 'navigate' as const,
-          href: '/deployments',
-        },
-      ]
-    : []),
   {
     id: 'running-services',
     label: 'Service Manager',
@@ -694,17 +665,6 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   // SETTINGS PAGES (navigate to route)
   // ──────────────────────────────────────────────────────────────────────────
-  {
-    id: 'secrets-manager',
-    label: 'Secrets Manager',
-    icon: KeyRound,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/credentials',
-    tabType: 'settings',
-    keywords: 'secrets manager credentials env environment variables integrations keys',
-  },
   {
     id: 'api-keys',
     label: 'API Keys',

@@ -5,8 +5,6 @@ import { useTranslations } from 'next-intl';
 import { lazy, Suspense, useMemo, type ComponentType } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
-const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
-
 // ---------------------------------------------------------------------------
 // Lazy-load every route-based page component so they can be pre-mounted in the
 // DOM and kept alive when the user switches tabs (CSS show/hide).
@@ -16,10 +14,6 @@ const DashboardContent = lazy(() =>
 	import('@/components/dashboard/dashboard-content').then((m) => ({
 		default: m.DashboardContent,
 	})),
-);
-
-const SecretsPage = lazy(() =>
-	import('@/components/pages/settings/credentials/page'),
 );
 
 const ApiKeysPage = lazy(() =>
@@ -55,14 +49,6 @@ const FilesPage = lazy(() =>
 	})),
 );
 
-const BoardPage = lazy(() => import('@/components/pages/board/page'));
-
-const DeploymentsPage = lazy(() =>
-	import('@/components/deployments/deployments-page').then((m) => ({
-		default: m.DeploymentsPage,
-	})),
-);
-
 // Admin pages (currently live under the dashboard route group)
 const AdminAnalyticsPage = lazy(() =>
 	import('@/components/pages/admin/analytics/page'),
@@ -83,10 +69,6 @@ const LegacyThreadPage = lazy(() =>
 	import('@/components/pages/legacy/page'),
 );
 
-const TaskDetailPage = lazy(() =>
-	import('@/components/pages/tasks/page'),
-);
-
 // ---------------------------------------------------------------------------
 // Route → Component mapping
 // ---------------------------------------------------------------------------
@@ -94,7 +76,6 @@ const TaskDetailPage = lazy(() =>
 const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/dashboard': DashboardContent,
 	'/configuration': WorkspacePage,
-	'/settings/credentials': SecretsPage,
 	'/settings/api-keys': ApiKeysPage,
 	'/settings/providers': ProvidersPage,
 	'/credits-explained': CreditsPage,
@@ -106,8 +87,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	// Extra pages not in original ROUTE_MAP but exist as routes
 	'/scheduled-tasks': TriggersPage,
 	'/files': FilesPage,
-	'/board': BoardPage,
-	...(DEPLOYMENTS_ENABLED ? { '/deployments': DeploymentsPage } : {}),
 	// Admin
 	'/admin/analytics': AdminAnalyticsPage,
 	'/admin/feedback': AdminFeedbackPage,
@@ -123,11 +102,6 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 	const legacyMatch = routeKey.match(/^\/legacy\/(.+)$/);
 	if (legacyMatch) {
 		return { Component: LegacyThreadPage, params: { threadId: legacyMatch[1] } };
-	}
-
-	const taskMatch = routeKey.match(/^\/tasks\/([^/]+)$/);
-	if (taskMatch) {
-		return { Component: TaskDetailPage, params: { id: decodeURIComponent(taskMatch[1]) } };
 	}
 
 	return null;

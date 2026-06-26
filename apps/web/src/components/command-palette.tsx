@@ -155,7 +155,6 @@ const LEGACY_PALETTE_HIDDEN = new Set([
   'templates',
   'changelog',
   'credits-explained',
-  'secrets-manager',
   'api-keys',
   'llm-providers',
   'open-terminal',
