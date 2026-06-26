@@ -26,13 +26,17 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
+  Boxes,
   Container,
   FolderOpen,
+  Gauge,
   GitPullRequest,
   KeyRound,
+  KeySquare,
   MessageSquare,
   Monitor,
   Plug,
+  ScrollText,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -40,6 +44,7 @@ import {
   Terminal,
   Timer,
   Users,
+  Wallet,
   Webhook,
   X,
   type LucideIcon,
@@ -50,6 +55,13 @@ import { ChannelsView } from '@/components/projects/customize/sections/channels-
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
+import {
+  LlmBudgetsView,
+  LlmKeysView,
+  LlmLogsView,
+  LlmOverviewView,
+  LlmProvidersView,
+} from '@/components/projects/customize/sections/gateway-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -99,6 +111,16 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'secrets', label: 'Secrets', icon: KeyRound },
       { section: 'channels', label: 'Channels', icon: MessageSquare },
+    ],
+  },
+  {
+    label: 'LLM',
+    items: [
+      { section: 'llm-overview', label: 'Overview', icon: Gauge },
+      { section: 'llm-providers', label: 'Providers', icon: Boxes },
+      { section: 'llm-logs', label: 'Logs', icon: ScrollText },
+      { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
+      { section: 'llm-keys', label: 'Keys', icon: KeySquare },
     ],
   },
   {
@@ -367,6 +389,16 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
+    case 'llm-overview':
+      return <LlmOverviewView projectId={projectId} />;
+    case 'llm-providers':
+      return <LlmProvidersView projectId={projectId} />;
+    case 'llm-logs':
+      return <LlmLogsView projectId={projectId} />;
+    case 'llm-budgets':
+      return <LlmBudgetsView projectId={projectId} />;
+    case 'llm-keys':
+      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'members':

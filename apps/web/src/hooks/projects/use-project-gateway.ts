@@ -15,7 +15,6 @@ import {
   getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
-  runGatewayPlayground,
   setGatewayBudget,
   type SetGatewayBudgetInput,
 } from '@/lib/projects-gateway-client';
@@ -129,12 +128,5 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
   return useMutation({
     mutationFn: (keyId: string) => revokeGatewayKey(projectId!, keyId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['project-gateway-keys', projectId] }),
-  });
-}
-
-export function useGatewayPlayground(projectId: string | undefined) {
-  return useMutation({
-    mutationFn: ({ prompt, models }: { prompt: string; models: string[] }) =>
-      runGatewayPlayground(projectId!, prompt, models),
   });
 }

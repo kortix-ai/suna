@@ -103,7 +103,14 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         heartbeats,
         downstreamAlive,
       });
-      await settle(extractUsageFromSseBuffer(sseBuffer), captureBodies ? sseBuffer : null);
+      // Settlement (usage extraction + recordUsage + trace) must never throw out
+      // of this detached async task — a failure here would otherwise be an
+      // unhandled rejection and silently lose billing/trace for the stream.
+      try {
+        await settle(extractUsageFromSseBuffer(sseBuffer), captureBodies ? sseBuffer : null);
+      } catch (err) {
+        logger.warn(`[llm-gateway] stream settle failed ${requestId}:`, err);
+      }
     }
   })();
 
