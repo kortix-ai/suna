@@ -222,6 +222,10 @@ function makeDbGatewayDeps(): GatewayDeps {
         messageId: typeof email.message_id === 'string' ? email.message_id : null,
       };
     },
+    loadEmailConnectorContext: async (projectId, connectorSlug) => {
+      const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
+      return install?.inboxId ? { inboxId: install.inboxId } : null;
+    },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,

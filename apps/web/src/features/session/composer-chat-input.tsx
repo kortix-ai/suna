@@ -36,6 +36,7 @@ export function ComposerChatInput({
   sessionId,
   projectId,
   isBusy,
+  stopDisabled,
   disabled,
   autoFocus,
   placeholder,
@@ -48,6 +49,8 @@ export function ComposerChatInput({
   sessionId?: string;
   projectId?: string;
   isBusy?: boolean;
+  /** Show a disabled stop button while busy (e.g. the computer is still booting). */
+  stopDisabled?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
@@ -75,6 +78,7 @@ export function ComposerChatInput({
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       isBusy={isBusy}
+      stopDisabled={stopDisabled}
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}

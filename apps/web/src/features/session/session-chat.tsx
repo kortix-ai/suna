@@ -71,6 +71,10 @@ import { uploadFile } from '@/features/files/api/opencode-files';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import {
+  buildOptimisticPromptTextWithUploads,
+  buildPromptPartsWithUploads,
+} from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
   formatModelString,
@@ -123,6 +127,7 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
+import { useModelPricingLookup } from '@/lib/model-pricing';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
@@ -2483,6 +2488,7 @@ function SessionTurn({
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const [editForkLoading, setEditForkLoading] = useState(false);
+  const pricingLookup = useModelPricingLookup(providers);
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -2576,8 +2582,8 @@ function SessionTurn({
 
   // Cost info (only when not working)
   const costInfo = useMemo(
-    () => (!working ? getTurnCost(allParts) : undefined),
-    [allParts, working],
+    () => (!working ? getTurnCost(allParts, pricingLookup) : undefined),
+    [allParts, working, pricingLookup],
   );
 
   // Turn error — derived directly from message data (same approach as SolidJS reference).
@@ -3911,8 +3917,16 @@ export function SessionChat({
       const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
       const messageID = ascendingId('msg');
       const textPartId = ascendingId('prt');
+      // Consume pending files before rendering the optimistic message so
+      // uploaded file cards are visible while the sandbox is still starting.
+      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
+      const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
+        pendingPrompt,
+        pendingFiles,
+      );
+      setOptimisticPrompt(optimisticPendingPrompt);
       setPendingSendMessageId(messageID);
-      addOptimisticUserMessage(messageID, pendingPrompt, [textPartId]);
+      addOptimisticUserMessage(messageID, optimisticPendingPrompt, [textPartId]);
       lastSendTimeRef.current = Date.now();
 
       // Fire-and-forget via promptAsync. Don't send messageID — let the
@@ -3931,13 +3945,14 @@ export function SessionChat({
         removeOptimisticUserMessage(messageID);
         return;
       }
-      const handlePromptError = () => {
+      const handlePromptError = (err?: unknown) => {
         setIsRetrying(false);
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        if (err) setCommandError(formatCommandError(err));
         // Fetch real messages from the server. Some error paths
         // (e.g. missing API key) return the error directly in the
         // HTTP response without ever emitting a session.error SSE
@@ -3965,87 +3980,41 @@ export function SessionChat({
             removeOptimisticUserMessage(messageID);
           });
       };
-      // Consume any pending files stored by the dashboard (File objects
-      // can't survive sessionStorage, so they're in a Zustand store).
-      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
-        const parts: Array<
-          | { type: 'text'; text: string }
-          | { type: 'file'; mime: string; url: string; filename: string }
-        > = [{ type: 'text', text: pendingPrompt }];
-
-        const localFiles = pendingFiles.filter(
-          (f): f is Extract<typeof f, { kind: 'local' }> => f.kind === 'local',
-        );
-        const remoteFiles = pendingFiles.filter(
-          (f): f is Extract<typeof f, { kind: 'remote' }> => f.kind === 'remote',
-        );
-
-        // Include remote files (from fork drafts etc.)
-        for (const file of remoteFiles) {
-          parts.push({
-            type: 'file',
-            mime: file.mime,
-            url: file.url,
-            filename: file.filename,
-          });
-        }
-
-        // Upload local files. The server (/file/upload) guarantees
-        // collision-free destinations — if two files share a name it
-        // auto-suffixes and returns the actual written path.
-        if (localFiles.length > 0) {
-          const uploadResults = await Promise.all(
-            localFiles.map(async (af) => {
-              const safeName = af.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const uploadBlob = new File([af.file], safeName, {
-                type: af.file.type,
-              });
-              const results = await uploadFile(uploadBlob, '/workspace/uploads');
-              if (!results || results.length === 0) {
-                throw new Error(`Failed to upload file: ${af.file.name}`);
-              }
-              return {
-                path: results[0].path,
-                mime: af.file.type || 'application/octet-stream',
-                filename: af.file.name,
-              };
-            }),
-          );
-          const uploadedFileRefs = uploadResults
-            .map(
-              (f) =>
-                `<file path="${f.path}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-            )
-            .join('\n');
-          (parts[0] as { type: 'text'; text: string }).text += `\n\n${uploadedFileRefs}`;
-        }
-
-        return parts;
+        const built = await buildPromptPartsWithUploads(pendingPrompt, pendingFiles, uploadFile);
+        return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
       };
 
-      void sendPendingPrompt()
-        .then((parts) =>
-          client.session.promptAsync({
+      void (async () => {
+        let parts: Awaited<ReturnType<typeof sendPendingPrompt>>;
+        try {
+          parts = await sendPendingPrompt();
+        } catch (err) {
+          sessionStorage.setItem(`opencode_pending_prompt:${sessionId}`, pendingPrompt);
+          usePendingFilesStore.getState().setPendingFiles(pendingFiles);
+          pendingPromptHandled.current = false;
+          handlePromptError(err);
+          return;
+        }
+
+        try {
+          const res = await client.session.promptAsync({
             sessionID: sessionId,
             parts,
             ...(session?.directory ? { directory: session.directory } : {}),
             ...(sendOpts?.agent && { agent: sendOpts.agent }),
             ...(sendOpts?.model && { model: sendOpts.model }),
             ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          } as any),
-        )
-        .then((res: any) => {
+          } as any);
           // The SDK resolves (not rejects) on HTTP errors, returning
           // { error: ... } instead of throwing. Handle this case so
           // the UI doesn't stay stuck on "busy" forever.
-          if (res?.error) handlePromptError();
-        })
-        .catch(() => {
-          handlePromptError();
-        });
+          if (res?.error) handlePromptError(res.error);
+        } catch (err) {
+          handlePromptError(err);
+        }
+      })();
     };
 
     attemptSend(0);
@@ -4821,26 +4790,7 @@ export function SessionChat({
       // (not duplicate) the optimistic parts. This matches OpenCode's
       // SolidJS approach where part IDs are sent with the prompt request.
       const textPartId = ascendingId('prt');
-      const remoteFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'remote' }> => file.kind === 'remote',
-      );
-      const localFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'local' }> => file.kind === 'local',
-      );
-      // The server (/file/upload) assigns the final, collision-free path.
-      // We pass the sanitized name for the upload and use it in the
-      // optimistic text as a placeholder — the real path returned by the
-      // server replaces it when the message is actually sent.
-      const uploadPlans = localFiles.map((af) => {
-        const safeName = af.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        return {
-          file: af.file,
-          filename: af.file.name,
-          mime: af.file.type || 'application/octet-stream',
-          safeName,
-          optimisticPath: `/workspace/uploads/${safeName}`,
-        };
-      });
+      const attachedFiles = files ?? [];
 
       // Build optimistic text that includes session ref XML so that
       // HighlightMentions / UserMessageRow can detect multi-word session
@@ -4868,24 +4818,7 @@ export function SessionChat({
         ...rawOptimisticSessionIds,
       ];
       let optimisticText = text;
-      if (uploadPlans.length > 0) {
-        const optimisticFileRefs = uploadPlans
-          .map(
-            (f) =>
-              `<file path="${f.optimisticPath}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-          )
-          .join('\n');
-        optimisticText = `${optimisticText}\n\n${optimisticFileRefs}`;
-      }
-      if (remoteFiles.length > 0) {
-        const optimisticFileRefs = remoteFiles
-          .map(
-            (file) =>
-              `<file path="${file.filename}" mime="${file.mime}" filename="${file.filename}">\nThis file will be restored from the forked prompt.\n</file>`,
-          )
-          .join('\n');
-        optimisticText = `${optimisticText}\n\n${optimisticFileRefs}`;
-      }
+      optimisticText = buildOptimisticPromptTextWithUploads(optimisticText, attachedFiles);
       if (allOptimisticSessionMentions.length > 0) {
         const refs = allOptimisticSessionMentions
           .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
@@ -4939,40 +4872,18 @@ export function SessionChat({
       const parts: Array<
         typeof textPrompt | { type: 'file'; mime: string; url: string; filename: string }
       > = [textPrompt];
-      parts.push(
-        ...remoteFiles.map((file) => ({
-          type: 'file' as const,
-          mime: file.mime,
-          url: file.url,
-          filename: file.filename,
-        })),
-      );
-
-      if (uploadPlans.length > 0) {
-        const uploadResults = await Promise.all(
-          uploadPlans.map(async (plan) => {
-            const uploadBlob = new File([plan.file], plan.safeName, {
-              type: plan.file.type,
-            });
-            const results = await uploadFile(uploadBlob, '/workspace/uploads');
-            if (!results || results.length === 0) {
-              throw new Error(`Failed to upload file: ${plan.filename}`);
-            }
-            return {
-              path: results[0].path,
-              mime: plan.mime,
-              filename: plan.filename,
-            };
-          }),
-        );
-        const uploadedFileRefs = uploadResults
-          .map(
-            (f) =>
-              `<file path="${f.path}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-          )
-          .join('\n');
-        textPrompt.text = `${textPrompt.text}\n\n${uploadedFileRefs}`;
+      let built: Awaited<ReturnType<typeof buildPromptPartsWithUploads>>;
+      try {
+        built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
+      } catch (err) {
+        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        removeOptimisticUserMessage(messageID);
+        const message = formatCommandError(err);
+        setCommandError(message);
+        throw err instanceof Error ? err : new Error(message);
       }
+      textPrompt.text = built.text;
+      parts.push(...built.remoteParts);
 
       // Append session reference hints for @session mentions.
       // Merge tracked mentions with any raw @ses_<id> tags typed directly.

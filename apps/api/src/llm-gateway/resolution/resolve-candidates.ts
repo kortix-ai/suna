@@ -90,7 +90,7 @@ export async function resolveCandidates(
   if (managed && config.LLM_GATEWAY_ENABLED) {
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
-      if (!tierGrantsAllModels(tier)) return [];
+      if (!managed.free && !tierGrantsAllModels(tier)) return [];
     }
     return managedCandidates(managed);
   }

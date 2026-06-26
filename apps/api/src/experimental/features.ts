@@ -24,7 +24,12 @@
 import { config } from '../config';
 
 /** Stable identifiers for experimental features. */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email';
+export type ExperimentalFeatureKey =
+  | 'apps'
+  | 'agent_tunnel'
+  | 'marketplace'
+  | 'agentmail_email'
+  | 'llm_gateway';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -95,23 +100,31 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
   },
+  {
+    key: 'llm_gateway',
+    name: 'LLM Gateway',
+    description:
+      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
+    stability: 'experimental',
+    // Master kill switch: when off, the feature disappears and every project
+    // falls back to native OpenCode provider behavior.
+    available: () => config.LLM_GATEWAY_ENABLED,
+    // Fleet rollout switch. Operators can default the gateway on for every
+    // project, while explicit project overrides still win and the master
+    // availability gate above remains the emergency kill switch.
+    platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
+  },
 ];
 
-const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> =
-  Object.fromEntries(FEATURES.map((f) => [f.key, f])) as Record<
-    ExperimentalFeatureKey,
-    ExperimentalFeatureDef
-  >;
+const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> = Object.fromEntries(
+  FEATURES.map((f) => [f.key, f]),
+) as Record<ExperimentalFeatureKey, ExperimentalFeatureDef>;
 
-const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] =
-  FEATURES.map((f) => f.key);
+const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] = FEATURES.map((f) => f.key);
 
-export function isExperimentalFeatureKey(
-  value: unknown,
-): value is ExperimentalFeatureKey {
+export function isExperimentalFeatureKey(value: unknown): value is ExperimentalFeatureKey {
   return (
-    typeof value === 'string' &&
-    (EXPERIMENTAL_FEATURE_KEYS as readonly string[]).includes(value)
+    typeof value === 'string' && (EXPERIMENTAL_FEATURE_KEYS as readonly string[]).includes(value)
   );
 }
 
@@ -129,15 +142,11 @@ function overridesOf(metadata: unknown): Record<string, unknown> {
  * Back-compat: `apps` used to live at the top level as `metadata.apps_enabled`
  * before the registry existed. Honor it so existing opt-ins survive.
  */
-function explicitOverride(
-  metadata: unknown,
-  key: ExperimentalFeatureKey,
-): boolean | undefined {
+function explicitOverride(metadata: unknown, key: ExperimentalFeatureKey): boolean | undefined {
   const fromMap = overridesOf(metadata)[key];
   if (typeof fromMap === 'boolean') return fromMap;
   if (key === 'apps') {
-    const legacy = (metadata as Record<string, unknown> | null | undefined)
-      ?.apps_enabled;
+    const legacy = (metadata as Record<string, unknown> | null | undefined)?.apps_enabled;
     if (typeof legacy === 'boolean') return legacy;
   }
   return undefined;
@@ -184,9 +193,7 @@ export interface ExperimentalFeatureView {
  * Build the full per-project catalog the web client renders. Self-contained so
  * the UI never hard-codes the feature list — add to FEATURES and it appears.
  */
-export function buildExperimentalCatalog(
-  metadata: unknown,
-): ExperimentalFeatureView[] {
+export function buildExperimentalCatalog(metadata: unknown): ExperimentalFeatureView[] {
   return FEATURES.map((f) => ({
     key: f.key,
     name: f.name,
@@ -210,18 +217,22 @@ export function applyExperimentalOverride(
   enabled: boolean | null,
 ): Record<string, unknown> {
   const meta = { ...((metadata as Record<string, unknown> | null) ?? {}) };
-  const exp = { ...overridesOf(meta) };
-  if (enabled === null) {
-    delete exp[key];
-  } else {
+  const exp = Object.fromEntries(
+    Object.entries(overridesOf(meta)).filter(([candidate]) => candidate !== key),
+  );
+  if (enabled !== null) {
     exp[key] = enabled;
   }
+  const base =
+    key === 'apps'
+      ? (() => {
+          const { apps_enabled: _appsEnabled, ...rest } = meta;
+          return rest;
+        })()
+      : meta;
   if (Object.keys(exp).length > 0) {
-    meta.experimental = exp;
-  } else {
-    delete meta.experimental;
+    return { ...base, experimental: exp };
   }
-  // Retire the legacy top-level mirror so it can't shadow the registry value.
-  if (key === 'apps') delete meta.apps_enabled;
-  return meta;
+  const { experimental: _experimental, ...rest } = base;
+  return rest;
 }

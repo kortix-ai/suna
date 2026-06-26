@@ -48,6 +48,7 @@ let mockFetchResponses: Array<{
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let mockResolvedPreviewPorts: number[] = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -186,7 +187,8 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
-    resolvePreviewLink: async () => {
+    resolvePreviewLink: async (_externalId: string, port: number) => {
+      mockResolvedPreviewPorts.push(port);
       return { url: mockPreviewUrl, token: mockPreviewToken };
     },
     ensureRunning: async (sandboxId: string) => {
@@ -268,6 +270,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
+const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -323,6 +326,7 @@ beforeEach(() => {
   mockFetchCallCount = 0;
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
+  mockResolvedPreviewPorts = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -330,6 +334,49 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe('Preview proxy: websocket upstream resolution', () => {
+  test('keeps Daytona PTY websocket upstreams on direct OpenCode port 4096', async () => {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([4096]);
+    if (upstream.ok) {
+      expect(upstream.url).toBe('wss://preview.daytona.io/proxy-url/pty/pty_test/connect');
+    }
+  });
+
+  test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockPreviewUrl = 'https://8000-platinum.sbx.example';
+    mockPreviewToken = null;
+
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (upstream.ok) {
+      const url = new URL(upstream.url);
+      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      const queryContext = url.searchParams.get('__kortix_user_context');
+      expect(queryContext).toBeTruthy();
+      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
+      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
+    }
+  });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -553,6 +600,7 @@ describe('Preview proxy: forwarding', () => {
         SENTRY_DSN: 'https://example.test/1',
       },
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      refreshModels: false,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(

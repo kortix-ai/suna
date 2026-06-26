@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-a8413fc2"
+  tag: "dev-1abaf843"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -22,7 +22,14 @@ extraEnv:
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
   # catalog shape) and the model picker collapses to a single model.
   LLM_GATEWAY_BASE_URL: "https://gateway-dev.kortix.com/v1/llm"
-  KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # NOTE: warm-template (warm_snapshot) is NOT an env — it's the admin Providers
+  # panel toggle (DB row), default OFF / opt-in. Don't reintroduce an env knob.
+  # Idle auto-stop for sandboxes (Daytona AND Platinum honor this now — Platinum
+  # used to hardcode persistent and depend on the maintenance reaper, which died
+  # and let boxes run 24/7 and flood the host). 15min keeps idle cost down; a
+  # stopped Platinum box CoW-resumes on reopen (~2.3s, CH resume-freeze is fixed).
+  # Per-deployment setting, not a code default.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: "15"
   # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
   # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's
   # a pure accelerator: any claim miss/error falls through to the unchanged cold

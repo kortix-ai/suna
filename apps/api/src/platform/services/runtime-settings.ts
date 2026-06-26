@@ -11,10 +11,15 @@ import { config } from '../../config';
  * after writing, so a toggle takes effect immediately for the writing process;
  * other processes pick it up within the TTL.
  *
- * Fail-safe defaults: warm_pool + provider_fallback default OFF (spares/handoff
- * cost resources). warm_snapshot defaults ON — it's a pure latency optimization
- * (a failed bake degrades to a cold clone, never a broken session), so a DB
- * hiccup / missing row / cold cache resolving to "on" is the SAFE direction.
+ * The admin DB row is the ONLY control surface for all three — NOT env vars.
+ * warm_pool, provider_fallback AND warm_snapshot all default OFF and are opt-in
+ * via the panel (the panel writes { enabled: true }). A cold cache / DB hiccup /
+ * missing row resolves to OFF, so a fresh pod (e.g. right after a deploy) is
+ * never warm on against the admin's setting before the first DB read completes —
+ * boot awaits refreshRuntimeSettings() so the row is loaded before serving.
+ * (Previously warm_snapshot hardcoded ON on the theory "a failed bake just
+ * cold-clones"; the 2026-06-26 opencode wedge disproved it — a STALE warm seed
+ * can hang a session — so off-until-explicitly-enabled is the safe direction.)
  */
 
 export const WARM_POOL_KEY = 'warm_pool';
@@ -44,9 +49,13 @@ export interface WarmSnapshotSetting {
 const TTL_MS = 30_000;
 const MAX_WARM_SIZE = 25;
 
-/** Env is only the FALLBACK default now; the DB row is the real control surface,
- *  so operators never redeploy to toggle these. warm_pool/fallback ship OFF,
- *  warm_snapshot ships ON. */
+/** Fallback defaults used until the DB rows load and whenever the DB can't be
+ *  read. ALL default OFF (fail-safe): warm_snapshot is now admin-OPT-IN — the
+ *  admin Providers panel turns it on/off and that DB row is the ONLY control
+ *  surface (no env knob). A cold cache / DB hiccup / no row therefore resolves to
+ *  OFF, so a fresh pod (e.g. right after a deploy) never warm-forks against the
+ *  admin's "off" — the 2026-06-26 stale-seed opencode wedge. The old "default ON,
+ *  a failed bake just cold-clones" premise was wrong: a stale warm seed can hang. */
 function envDefaults(): {
   warmPool: WarmPoolSetting;
   fallback: ProviderFallbackSetting;
@@ -55,7 +64,7 @@ function envDefaults(): {
   return {
     warmPool: { enabled: config.KORTIX_WARM_POOL_ENABLED, size: Math.max(0, config.KORTIX_WARM_POOL_SIZE) },
     fallback: { enabled: false },
-    warmSnapshot: { enabled: true },
+    warmSnapshot: { enabled: false },
   };
 }
 
@@ -93,14 +102,14 @@ export async function refreshRuntimeSettings(): Promise<void> {
         } else if (r.key === PROVIDER_FALLBACK_KEY) {
           fallback = { enabled: v.enabled === true };
         } else if (r.key === WARM_SNAPSHOT_KEY) {
-          // A row is authoritative (enabled may be explicitly false). With NO row,
-          // the env default (ON) stands — warm-fork is on out of the box.
+          // The admin row is the ONLY control. With NO row warm-fork stays OFF
+          // (envDefaults) — it is opt-in; the admin panel writes { enabled: true }.
           warmSnapshot = { enabled: v.enabled === true };
         }
       }
     }
   } catch {
-    /* DB hiccup -> env defaults (warm_pool/fallback OFF, warm_snapshot ON) */
+    /* DB hiccup -> fail-safe defaults: warm_pool/fallback/warm_snapshot all OFF */
   }
   cache = { warmPool, fallback, warmSnapshot, at: Date.now() };
 }

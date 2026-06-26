@@ -114,27 +114,21 @@ export async function postMessage(
   }
 }
 
-// Posts an ephemeral message — visible only to `userId` in the channel/thread.
-// Used to nudge an unlinked sender to run `/login` without leaking the prompt to
-// the whole channel. Best-effort: a failure just means the nudge didn't show.
-export async function postEphemeral(
-  token: string,
-  channel: string,
-  userId: string,
-  text: string,
-  opts?: { blocks?: unknown[]; threadTs?: string },
-): Promise<void> {
+// Opens (or returns) the bot's DM channel with a user so we can message them
+// directly — a real DM notifies and persists, unlike an ephemeral. Returns the
+// IM channel id, or null on failure.
+export async function openDmChannel(token: string, userId: string): Promise<string | null> {
   try {
-    const r = await slackApiCall(token, 'chat.postEphemeral', {
-      channel,
-      user: userId,
-      text,
-      ...(opts?.blocks ? { blocks: opts.blocks } : {}),
-      ...(opts?.threadTs ? { thread_ts: opts.threadTs } : {}),
-    });
-    if (!r.ok) console.warn('[slack-api] chat.postEphemeral failed', { error: r.error });
+    const r = await slackApiCall(token, 'conversations.open', { users: userId });
+    if (!r.ok) {
+      console.warn('[slack-api] conversations.open failed', { error: r.error });
+      return null;
+    }
+    const ch = r.channel as { id?: string } | undefined;
+    return ch?.id ?? null;
   } catch (err) {
-    console.warn('[slack-api] chat.postEphemeral error', err);
+    console.warn('[slack-api] conversations.open error', err);
+    return null;
   }
 }
 

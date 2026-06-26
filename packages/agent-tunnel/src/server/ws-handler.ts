@@ -12,7 +12,7 @@ export interface WsHandlerOptions {
 export interface WsHandlers {
   onOpen(tunnelId: string, ws: WebSocket): void;
   onMessage(tunnelId: string, message: string | Buffer): void;
-  onClose(tunnelId: string): void;
+  onClose(tunnelId: string, ws?: WebSocket): void;
 }
 
 export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): WsHandlers {
@@ -101,16 +101,16 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
       relay.handleAgentMessage(tunnelId, message);
     },
 
-    onClose(tunnelId: string) {
+    onClose(tunnelId: string, ws?: WebSocket) {
       const pending = pendingConnections.get(tunnelId);
-      if (pending) {
+      if (pending && (!ws || pending.ws === ws)) {
         clearTimeout(pending.timer);
         pendingConnections.delete(tunnelId);
         return;
       }
 
-      relay.unregisterAgent(tunnelId);
-      if (heartbeat) {
+      const removed = relay.unregisterAgent(tunnelId, ws);
+      if (removed && heartbeat) {
         heartbeat.unregister(tunnelId);
       }
     },

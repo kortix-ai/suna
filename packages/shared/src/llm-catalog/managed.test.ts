@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
@@ -16,6 +17,7 @@ describe("managed catalog", () => {
       "qwen3.7-max",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
+      ...DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
     ]);
   });
 
@@ -39,7 +41,7 @@ describe("managed catalog", () => {
         m.pricingRef.length,
         `${m.id} needs a pricing ref`,
       ).toBeGreaterThan(0);
-      expect(["bedrock", "openrouter"]).toContain(m.transport);
+      expect(["bedrock", "openrouter", "opencode-zen"]).toContain(m.transport);
     }
   });
 
@@ -50,11 +52,39 @@ describe("managed catalog", () => {
         expect(m.upstreamModelId, `${m.id} (Bedrock) → Anthropic`).toContain(
           "anthropic.claude",
         );
-      } else {
+      } else if (m.transport === "openrouter") {
         // OpenRouter slugs are provider/model.
         expect(m.transport, `${m.id} transport`).toBe("openrouter");
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain("/");
+      } else {
+        expect(m.transport, `${m.id} transport`).toBe("opencode-zen");
+        expect(m.upstreamModelId, `${m.id} Zen id`).not.toContain("/");
       }
+    }
+  });
+
+  test("curated OpenCode Zen free ids are managed Kortix models", () => {
+    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).toEqual([
+      "deepseek-v4-flash-free",
+      "mimo-v2.5-free",
+      "nemotron-3-ultra-free",
+      "north-mini-code-free",
+    ]);
+    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain("big-pickle");
+    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
+      "qwen3.6-plus-free",
+    );
+    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
+      "minimax-m3-free",
+    );
+
+    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
+      const model = getManagedModel(id);
+      expect(model, `${id} should resolve`).toBeDefined();
+      expect(model?.transport).toBe("opencode-zen");
+      expect(model?.upstreamModelId).toBe(id);
+      expect(model?.tier).toBe("free");
+      expect(model?.free).toBe(true);
     }
   });
 });

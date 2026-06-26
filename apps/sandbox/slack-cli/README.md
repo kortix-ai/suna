@@ -7,8 +7,9 @@ results.
 
 > **Scope today: just `slack`.** The Executor — once the `executor` /
 > `executor-mcp` shims here — has been absorbed into the one `kortix` CLI as
-> `kortix executor` (CLI) + `kortix executor mcp` (the stdio MCP server opencode
-> auto-loads), both built on the `@kortix/executor-sdk` framework. The old
+> `kortix executor` (the agent-facing CLI) plus the optional
+> `kortix executor mcp` compatibility server, both built on the
+> `@kortix/executor-sdk` framework. The old
 > `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
 > channel state is in the sandbox env already, and secrets are `kortix secrets …`.
 > Slack stays here as a standalone vendor adapter.
