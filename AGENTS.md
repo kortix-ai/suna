@@ -7,10 +7,15 @@ in** — don't assume. Three choices:
 
 1. **A new isolated worktree** (`pnpm worktree`) — the default for any feature,
    bugfix, refactor, or experiment beyond a one-line edit. Own branch, own port
-   block, own Supabase project, own `node_modules`, own tunnel; runs in parallel
-   without touching the primary stack. Provision non-blocking with
+   block, own `node_modules`, own tunnel; runs in parallel without touching the
+   primary web/API stack. By default it reuses the primary checkout's standard
+   local Supabase DB for fast setup and consistent auth. Provision non-blocking with
    `pnpm worktree create --name <feat> --yes --no-start`, then do all edits/runs
-   under the sibling checkout `../suna-<feat>`. See the **worktree** skill.
+   under the sibling checkout `../suna-<feat>`. If the change needs database
+   migrations, destructive data work, schema drift, or independent auth/storage
+   state, opt into the full isolated data plane with
+   `pnpm worktree create --name <feat> --db --yes --no-start`. See the
+   **worktree** skill.
 2. **Straight in this primary checkout** via `pnpm dev` (web `3000` / api `8008`)
    — on `main` or whatever branch is already checked out here. Simplest; fine
    for small or quick iterative work where isolation isn't needed.
