@@ -38,7 +38,7 @@ s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via th
 
 | namespace | what |
 |---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · sandboxes · sessions |
+| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · sandboxTemplates · sessions |
 | `kortix.accounts` | list · get · create · members · invites |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` · `.sessions` · `.session(sid)` |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`setSharing`/`previews`/`commit`/`publicShares`) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |

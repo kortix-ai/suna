@@ -96,7 +96,12 @@ export interface RebuildSnapshotResponse {
   snapshot_name: string;
 }
 
-export async function listProjectSandboxes(projectId: string) {
+/**
+ * List a project's sandbox **templates** (Dockerfile/image/warm-pool config) —
+ * NOT the legacy one-project-one-sandbox instances. The endpoint path keeps the
+ * historical `/sandboxes` name; the function is named for what it returns.
+ */
+export async function listProjectSandboxTemplates(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
       `/projects/${projectId}/sandboxes`,

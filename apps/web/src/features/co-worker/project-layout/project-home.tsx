@@ -38,7 +38,7 @@ import {
   getProjectDetail,
   listConnectors,
   listProjectAccess,
-  listProjectSandboxes,
+  listProjectSandboxTemplates,
   listProjectTriggers,
   type SandboxTemplate,
 } from '@/lib/projects-client';
@@ -82,7 +82,7 @@ export function ProjectHome({
 
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],
-    queryFn: () => listProjectSandboxes(projectId),
+    queryFn: () => listProjectSandboxTemplates(projectId),
     ...Q,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];

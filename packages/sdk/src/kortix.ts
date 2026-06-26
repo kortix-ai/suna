@@ -74,7 +74,7 @@ export function createKortix(config: KortixPlatformConfig) {
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
     sandboxHealth: P.getProjectSandboxHealth,
-    sandboxes: P.listProjectSandboxes,
+    sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
     createSession: P.createProjectSession,
   };
