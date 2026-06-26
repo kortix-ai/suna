@@ -11,6 +11,7 @@ import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { useSidebar } from '@/components/ui/sidebar';
 import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
+import { parseSidebarStateCookie } from '@/features/co-worker/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -39,7 +40,22 @@ interface ProjectShellProps {
   children: React.ReactNode;
 }
 
+/**
+ * Read the sidebar's persisted open/collapsed state from the `sidebar_state`
+ * cookie that {@link SidebarProvider} writes on every toggle. ProjectShell
+ * remounts on navigation (opening a session, ⌘J, switching sessions), so
+ * without re-seeding from the cookie the sidebar snaps back to its default
+ * (expanded) every time. Client-only — the shell is gated behind client auth,
+ * so the provider never renders during SSR and this can't cause a hydration
+ * mismatch.
+ */
+function readSidebarOpenCookie(): boolean | undefined {
+  if (typeof document === 'undefined') return undefined;
+  return parseSidebarStateCookie(document.cookie);
+}
+
 export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
+  const resolvedSidebarOpen = initialSidebarOpen ?? readSidebarOpenCookie();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
@@ -129,7 +145,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         showRightSidebar={false}
         showGlobalNewInstanceModal={false}
         showGlobalUserSettingsModal={false}
-        defaultSidebarOpen={initialSidebarOpen}
+        defaultSidebarOpen={resolvedSidebarOpen}
         sidebarContent={<ProjectSidebar projectId={projectId} />}
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">

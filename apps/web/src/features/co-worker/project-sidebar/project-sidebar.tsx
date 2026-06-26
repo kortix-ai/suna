@@ -62,6 +62,7 @@ import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -105,7 +106,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
-  const [sessionFilter, setSessionFilter] = useState<SessionFilterValue>('all');
+  // Filter lives in a persisted store (keyed by project) so it survives the
+  // project shell remounting on navigation — local state reset to "all" on
+  // every session open / ⌘J / switch.
+  const sessionFilter = useSessionFilterStore((s) => s.filterByProject[projectId] ?? 'all');
+  const setSessionFilter = useSessionFilterStore((s) => s.setFilter);
   const [sessionsOpen, setSessionsOpen] = useState(true);
   const { data: filterSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -322,7 +327,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                             <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
                               {tI18nHardcoded.raw(
                                 'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
-                              )}
+                              )}{' '}
                               {activeFilterOption.label}
                             </span>
                           )}
@@ -338,7 +343,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                           <DropdownMenuItem
                             key={option.value}
                             className="cursor-pointer"
-                            onClick={() => setSessionFilter(option.value)}
+                            onClick={() => setSessionFilter(projectId, option.value)}
                           >
                             <OptionIcon className="h-4 w-4" />
                             {option.label}
