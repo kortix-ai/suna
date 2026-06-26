@@ -20,6 +20,9 @@ import { configureKortix, type KortixPlatformConfig } from './platform/config';
 import * as P from './platform/projects-client';
 import { getClient } from './opencode/client';
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { getSessionHealth } from './session/health';
+import { rewriteLocalhostUrl, proxyLocalhostUrl, type SubdomainUrlOptions } from './session/url';
+import { getActiveSandboxId } from './state/server-store';
 
 /** The opencode runtime client for the currently-active sandbox (set by the host). */
 function runtime(): OpencodeClient {
@@ -29,6 +32,21 @@ function runtime(): OpencodeClient {
 export function createKortix(config: KortixPlatformConfig) {
   // Wire the platform seam once. All wrapped functions read it.
   configureKortix(config);
+
+  /**
+   * Resolve the proxy/preview URL context (sandboxId + api base) from config +
+   * the active runtime, so a session's `previewUrl`/`proxyUrl` never make the
+   * host name a sandbox.
+   */
+  function resolvePreviewOpts(): SubdomainUrlOptions {
+    const apiBaseUrl = config.backendUrl;
+    let backendPort = 80;
+    try {
+      const u = new URL(apiBaseUrl);
+      backendPort = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
+    } catch {}
+    return { sandboxId: getActiveSandboxId() ?? '', backendPort, apiBaseUrl };
+  }
 
   /** Account-scoped operations. */
   const accounts = {
@@ -170,6 +188,15 @@ export function createKortix(config: KortixPlatformConfig) {
         create: (...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>) => P.createSessionPublicShare(projectId, sessionId, ...a),
         revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) => P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
+
+      // ── runtime health + preview (the session owns its runtime) ──────────
+      /** Liveness/readiness of this session's runtime (`GET /kortix/health`). */
+      health: (init?: RequestInit) => getSessionHealth(undefined, init),
+      /** Proxy/preview URL for a port this session's runtime exposes. */
+      previewUrl: (port: number, path = '/') =>
+        rewriteLocalhostUrl(port, path, resolvePreviewOpts()),
+      /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
+      proxyUrl: (url?: string) => proxyLocalhostUrl(url, resolvePreviewOpts()),
 
       // ── runtime (opencode v2, active sandbox) ────────────────────────────
       // The typed opencode client, reached ONLY through the SDK. The host never

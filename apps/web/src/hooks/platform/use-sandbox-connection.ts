@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { getAuthToken } from "@/lib/auth-token";
-import { getSandboxHealth, isRuntimeReady } from "@kortix/sdk/sandbox";
+import { getSessionHealth, isRuntimeReady } from "@kortix/sdk/session";
 import {
 	incrementSandboxFail,
 	markInitialCheckDone,
@@ -49,7 +49,7 @@ function isImmediateOfflineStatus(status: number): boolean {
 /**
  * useSandboxConnection — monitors the active server's reachability.
  *
- * Probes the SDK-owned `/kortix/health` endpoint (`getSandboxHealth`) and maps
+ * Probes the SDK-owned `/kortix/health` endpoint (`getSessionHealth`) and maps
  * the result into the connection store. Behaviour:
  *   - On first failure, immediately switches to fast polling.
  *   - If the user was previously connected, the first failure moves to
@@ -103,7 +103,7 @@ export function useSandboxConnection() {
 			try {
 				const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
 
-				const result = await getSandboxHealth(url, { signal: controller.signal });
+				const result = await getSessionHealth(url, { signal: controller.signal });
 				clearTimeout(timer);
 
 				if (!alive) return;

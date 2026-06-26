@@ -7,7 +7,7 @@ import {
   buildPreviewAuthEndpoint,
   isSubdomainPreviewUrl,
   appendPreviewToken,
-} from '@kortix/sdk/sandbox';
+} from '@kortix/sdk/session';
 
 // The preview-proxy auth helpers now live in the SDK (single source of truth,
 // verified against the current `/proxy` + `/v1/p/` surface). Re-exported here so

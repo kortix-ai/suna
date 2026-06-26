@@ -41,7 +41,7 @@ s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via th
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · sandboxes · sessions |
 | `kortix.accounts` | list · get · create · members · invites |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` · `.sessions` · `.session(sid)` |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`setSharing`/`previews`/`commit`/`publicShares`) + `.runtime` (the typed opencode client) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`setSharing`/`previews`/`commit`/`publicShares`) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
 | `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
 
 > Higher-level ergonomic methods (`session.send()` / `session.stream()` with
@@ -58,6 +58,7 @@ Stable, tree-shakeable surfaces (also reachable via the facade):
 | `@kortix/sdk` | `createKortix`, `configureKortix`, `files`, all file types |
 | `@kortix/sdk/react` | every `useOpenCode*` hook + providers (reactive data) |
 | `@kortix/sdk/files` | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, … |
+| `@kortix/sdk/session` | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
 | `@kortix/sdk/opencode-client` | `getClient`, `getClientForUrl` + the **full opencode v2 type surface** (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …) |
 | `@kortix/sdk/projects-client` | the raw REST functions (the facade wraps these) |
 | `@kortix/sdk/auth` | `authenticatedFetch`, token accessors |

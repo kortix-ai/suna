@@ -34,10 +34,10 @@ export { files } from './files/client';
 export type * from './files/types';
 
 /**
- * Sandbox daemon surface — proxy/preview/web-proxy URL building + the
- * `/kortix/health` liveness probe. Verified against the current agent server;
- * legacy `/kortix/ports`, `/env` CRUD, `/kortix/services` and the board are
- * excluded. Granular functions live at `@kortix/sdk/sandbox`.
+ * A session's runtime surface — proxy/preview/web-proxy URL building + the
+ * `/kortix/health` liveness probe. The host reaches these through the session
+ * handle (`createKortix(...).session(pid, sid).health()/.previewUrl()/.proxyUrl()`);
+ * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
+ * public surface — a session owns its runtime.
  */
-export { sandbox } from './sandbox';
-export type { SandboxHealthResponse, SandboxHealthResult } from './sandbox/health';
+export type { SessionHealthResponse, SessionHealthResult } from './session/health';
