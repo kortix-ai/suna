@@ -94,6 +94,7 @@ mock.module('../channels/install-store', () => ({
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));
 mock.module('../channels/slack-api', () => ({
+  openDmChannel: async () => null,
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},

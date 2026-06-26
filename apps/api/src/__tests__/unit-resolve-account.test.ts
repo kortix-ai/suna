@@ -88,6 +88,7 @@ mock.module('../billing/repositories/customers', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  getCreditAccount: async () => null,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     upsertCreditAccountCalls.push({ accountId, data });
   },

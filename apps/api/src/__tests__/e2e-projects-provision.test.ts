@@ -176,6 +176,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),

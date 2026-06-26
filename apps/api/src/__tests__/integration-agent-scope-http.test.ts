@@ -16,7 +16,11 @@ const minted: string[] = [];
 let ctx: { projectId: string; accountId: string; userId: string } | null = null;
 
 beforeAll(async () => {
+  // Idempotently ensure the columns createAccountToken writes (the local DB may
+  // be behind on migrations). Mirrors the agent_grant pattern already here.
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
+  await db.execute(sql`alter table kortix.account_tokens add column if not exists session_id text`);
+  await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
   const rows = (await db.execute(sql`
     select p.project_id, p.account_id, m.user_id
     from kortix.projects p

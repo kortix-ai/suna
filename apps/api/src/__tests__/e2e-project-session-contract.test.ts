@@ -284,6 +284,7 @@ mock.module('../platform/providers', () => ({
 // contract holds regardless of whether KORTIX_BILLING_INTERNAL_ENABLED is set
 // in the run environment (the gate is a no-op when billing is disabled).
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
