@@ -11,10 +11,15 @@ import { config } from '../../config';
  * after writing, so a toggle takes effect immediately for the writing process;
  * other processes pick it up within the TTL.
  *
- * Fail-safe defaults: warm_pool + provider_fallback default OFF (spares/handoff
- * cost resources). warm_snapshot defaults ON — it's a pure latency optimization
- * (a failed bake degrades to a cold clone, never a broken session), so a DB
- * hiccup / missing row / cold cache resolving to "on" is the SAFE direction.
+ * Defaults come from envDefaults() — the env IS read (KORTIX_WARM_POOL_ENABLED /
+ * KORTIX_WARM_SNAPSHOT_ENABLED), so an operator can pin a whole deployment OFF
+ * without ever writing a DB row. warm_pool + provider_fallback ship OFF;
+ * warm_snapshot follows KORTIX_WARM_SNAPSHOT_ENABLED (ON unless pinned off).
+ * A cold cache / missing row resolves to that env default — NOT a hardcoded ON.
+ * (Previously warm_snapshot hardcoded ON here on the theory "a failed bake just
+ * degrades to a cold clone"; the 2026-06-26 opencode wedge disproved it — a STALE
+ * warm seed can hang a session — so "on" is not unconditionally safe and the
+ * operator's setting must win even before the first DB refresh.)
  */
 
 export const WARM_POOL_KEY = 'warm_pool';
@@ -44,9 +49,9 @@ export interface WarmSnapshotSetting {
 const TTL_MS = 30_000;
 const MAX_WARM_SIZE = 25;
 
-/** Env is only the FALLBACK default now; the DB row is the real control surface,
- *  so operators never redeploy to toggle these. warm_pool/fallback ship OFF,
- *  warm_snapshot ships ON. */
+/** Env is the FALLBACK default; the DB row is the live control surface, so
+ *  operators flip the admin toggle without a redeploy. warm_pool/fallback ship
+ *  OFF; warm_snapshot follows KORTIX_WARM_SNAPSHOT_ENABLED (ON unless pinned off). */
 function envDefaults(): {
   warmPool: WarmPoolSetting;
   fallback: ProviderFallbackSetting;
@@ -55,7 +60,7 @@ function envDefaults(): {
   return {
     warmPool: { enabled: config.KORTIX_WARM_POOL_ENABLED, size: Math.max(0, config.KORTIX_WARM_POOL_SIZE) },
     fallback: { enabled: false },
-    warmSnapshot: { enabled: true },
+    warmSnapshot: { enabled: config.KORTIX_WARM_SNAPSHOT_ENABLED },
   };
 }
 

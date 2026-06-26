@@ -24,6 +24,7 @@ const cfg = {
   DAYTONA_WARM_TARGET: '',
   KORTIX_WARM_POOL_ENABLED: false,
   KORTIX_WARM_POOL_SIZE: 0,
+  KORTIX_WARM_SNAPSHOT_ENABLED: true,
 };
 let platinumConfigured = false;
 
@@ -70,6 +71,20 @@ describe('warmSnapshotSetting (DB-backed admin master, default ON)', () => {
 
   test('row { enabled: true } → master ON', async () => {
     await loadRows([{ key: WARM_SNAPSHOT_KEY, value: { enabled: true } }]);
+    expect(warmSnapshotSetting().enabled).toBe(true);
+  });
+
+  test('cold cache (before first DB read) follows KORTIX_WARM_SNAPSHOT_ENABLED, not a hardcoded ON', () => {
+    // Regression for the 2026-06-26 opencode wedge: a fresh pod served warm-snapshot
+    // ON for the ~30s cold-cache window despite an operator "off", warm-forking a
+    // stale seed. The cold default is now the env, so a deployment pinned OFF stays
+    // OFF before any DB refresh. (invalidate → cache=null → sync read = envDefaults.)
+    dbRows = [];
+    cfg.KORTIX_WARM_SNAPSHOT_ENABLED = false;
+    invalidateRuntimeSettings();
+    expect(warmSnapshotSetting().enabled).toBe(false);
+    cfg.KORTIX_WARM_SNAPSHOT_ENABLED = true;
+    invalidateRuntimeSettings();
     expect(warmSnapshotSetting().enabled).toBe(true);
   });
 });
