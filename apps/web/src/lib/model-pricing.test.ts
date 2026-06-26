@@ -113,4 +113,27 @@ describe('createModelPricingLookup', () => {
       cacheReadPer1M: undefined,
     });
   });
+
+  test('rebuilds from empty pricing to loaded cached pricing', () => {
+    const emptyLookup = createModelPricingLookup(undefined, new Map());
+    expect(emptyLookup('kortix', 'deepseek-v4-pro')).toBeNull();
+
+    const cached = buildModelsDevPricingMap({
+      deepseek: {
+        models: {
+          'deepseek/deepseek-v4-pro': {
+            id: 'deepseek/deepseek-v4-pro',
+            cost: { input: 0.435, output: 0.87 },
+          },
+        },
+      },
+    });
+
+    const loadedLookup = createModelPricingLookup(undefined, cached);
+    expect(loadedLookup('kortix', 'deepseek-v4-pro')).toEqual({
+      inputPer1M: 0.435,
+      outputPer1M: 0.87,
+      cacheReadPer1M: undefined,
+    });
+  });
 });

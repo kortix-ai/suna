@@ -143,8 +143,8 @@ export function useModelPricingLookup(
     pricingPromise?.then(() => setPricingReady(true));
   }, []);
 
-  // Re-render once models.dev pricing is cached so cost labels populate.
-  void pricingReady;
-
-  return useMemo(() => createModelPricingLookup(providers), [providers]);
+  return useMemo(
+    () => createModelPricingLookup(providers, pricingReady ? pricingCache ?? undefined : undefined),
+    [providers, pricingReady],
+  );
 }
