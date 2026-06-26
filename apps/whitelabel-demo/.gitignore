@@ -1,0 +1,5 @@
+.data/
+.env.local
+.next/
+test-results/
+playwright-report/
