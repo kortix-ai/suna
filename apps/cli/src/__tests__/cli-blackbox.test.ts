@@ -12,6 +12,8 @@ const SANDBOX_ENV_OVERRIDES = [
   'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_TOKEN',
+  'BASH_ENV',
 ] as const;
 
 let tmp: string;
@@ -46,6 +48,7 @@ async function runCli(args: string[], cwd = tmp, extraEnv: Record<string, string
     KORTIX_NO_UPDATE_CHECK: '1',
     NO_COLOR: '1',
     FORCE_COLOR: '0',
+    KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
     ...extraEnv,
   };
   for (const key of SANDBOX_ENV_OVERRIDES) delete env[key];
@@ -125,31 +128,21 @@ function projectSummary(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function catalogItem(name: string) {
-  const base = {
+  return {
     id: `kortix-starter:${name}`,
     registry: 'kortix-starter',
     name,
-    type: 'registry:tool',
-    title: name === 'pty' ? 'PTY Sessions' : name,
+    type: 'registry:skill',
+    title: name === 'agent-browser' ? 'Agent Browser' : name,
     description: `${name} marketplace item`,
     categories: ['kortix-runtime'],
     capabilities: { secrets: [], connectors: [], tools: [name], network: [] },
     dependencies: [],
-    fileCount: name === 'pty' ? 11 : 1,
+    fileCount: 1,
     external: false,
     marketplaceId: 'kortix',
     marketplaceLabel: 'Kortix',
   };
-  if (name === 'web_search') {
-    return {
-      ...base,
-      title: 'Web Search',
-      capabilities: { secrets: ['TAVILY_API_KEY'], connectors: [], tools: ['web_search'], network: ['api.tavily.com'] },
-      dependencies: ['kortix-tool-env'],
-      fileCount: 2,
-    };
-  }
-  return base;
 }
 
 function startCliE2eServer() {
@@ -196,7 +189,7 @@ function startCliE2eServer() {
 
       if (url.pathname === '/v1/marketplace/items' && req.method === 'GET') {
         const query = url.searchParams.get('query') ?? '';
-        const items = ['pty', 'web_search', 'agent-browser', 'kortix-simple-memory']
+        const items = ['agent-browser']
           .filter((name) => !query || name.includes(query) || query === `kortix-starter:${name}`)
           .map(catalogItem);
         return Response.json({ items });
@@ -205,7 +198,7 @@ function startCliE2eServer() {
       if (itemDetail && req.method === 'GET') {
         const raw = decodeURIComponent(itemDetail[1]!);
         const name = raw.includes(':') ? raw.split(':').pop()! : raw;
-        if (!['pty', 'web_search', 'agent-browser', 'kortix-simple-memory'].includes(name)) {
+        if (name !== 'agent-browser') {
           return Response.json({ error: 'Not found' }, { status: 404 });
         }
         return Response.json(catalogItem(name));
@@ -217,10 +210,10 @@ function startCliE2eServer() {
         const name = body.id.split(':').pop()!;
         installed.set(name, {
           name,
-          type: name === 'agent-browser' ? 'registry:skill' : 'registry:tool',
+          type: 'registry:skill',
           source: body.id,
           installed_at: '2026-06-26T00:00:00.000Z',
-          file_count: name === 'pty' ? 11 : name === 'web_search' ? 2 : 1,
+          file_count: 1,
         });
         removed = false;
         updateAvailable = true;
@@ -374,11 +367,11 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(false);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'GENERAL-KNOWLEDGE-WORKER', 'pdf', 'SKILL.md'))).toBe(false);
   });
 
@@ -398,14 +391,14 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'GENERAL-KNOWLEDGE-WORKER', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
-  test('init can install selected bundled marketplace items locally', async () => {
+  test('init can install selected bundled marketplace skills locally', async () => {
     const result = await runCli([
       'init',
       'marketplace-project',
       '--yes',
       '--no-git',
       '--marketplace',
-      'pty,web_search',
+      'agent-browser',
     ]);
 
     expect(result.code).toBe(0);
@@ -415,10 +408,11 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'opencode-pty', 'src', 'plugin', 'constants.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'lib', 'get-env.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
 
     const lock = JSON.parse(readFileSync(join(root, 'registry-lock.json'), 'utf8'));
     expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toEqual(['kortix-tool-env', 'pty', 'web_search']);
+    expect(Object.keys(lock.items).sort()).toEqual(['agent-browser']);
   });
 
   test('E2E: CLI project setup plus marketplace install/status/update/remove lifecycle', async () => {
@@ -432,8 +426,8 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(false);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);
@@ -449,68 +443,60 @@ describe('kortix CLI black-box behavior', () => {
     expect(info.code).toBe(0);
     expect(JSON.parse(info.stdout)).toMatchObject({ project_id: 'proj_e2e', default_branch: 'main' });
 
-    const search = await runCli(['marketplace', 'search', 'pty', '--source', 'kortix', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const search = await runCli(['marketplace', 'search', 'agent-browser', '--source', 'kortix', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(search.code).toBe(0);
     expect(JSON.parse(search.stdout).items).toEqual([
       expect.objectContaining({
-        id: 'kortix-starter:pty',
-        name: 'pty',
-        fileCount: 11,
-        capabilities: expect.objectContaining({ tools: ['pty'] }),
+        id: 'kortix-starter:agent-browser',
+        name: 'agent-browser',
+        type: 'registry:skill',
+        capabilities: expect.objectContaining({ tools: ['agent-browser'] }),
       }),
     ]);
 
-    const show = await runCli(['marketplace', 'show', 'pty', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const show = await runCli(['marketplace', 'show', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(show.code).toBe(0);
-    expect(JSON.parse(show.stdout)).toMatchObject({ id: 'kortix-starter:pty', name: 'pty', type: 'registry:tool' });
+    expect(JSON.parse(show.stdout)).toMatchObject({ id: 'kortix-starter:agent-browser', name: 'agent-browser', type: 'registry:skill' });
 
-    const dryInstall = await runCli(['marketplace', 'install', 'pty', '--dry-run'], root, { KORTIX_CONFIG_FILE: configFile });
+    const dryInstall = await runCli(['marketplace', 'install', 'agent-browser', '--dry-run'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(dryInstall.code).toBe(0);
     expect(dryInstall.stdout).toContain('Dry run');
     expect(dryInstall.stdout).toContain('proj_e2e');
 
-    const install = await runCli(['marketplace', 'install', 'pty', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const install = await runCli(['marketplace', 'install', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(install.code).toBe(0);
     expect(JSON.parse(install.stdout)).toMatchObject({
       ok: true,
-      commit_sha: 'commit_install_pty',
+      commit_sha: 'commit_install_agent-browser',
       branch: 'main',
-      installed: [{ name: 'pty', type: 'registry:tool' }],
+      installed: [{ name: 'agent-browser', type: 'registry:skill' }],
     });
 
     const status = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(status.code).toBe(0);
     expect(JSON.parse(status.stdout).installed).toEqual([
-      expect.objectContaining({ name: 'pty', type: 'registry:tool', source: 'kortix-starter:pty', file_count: 11 }),
+      expect.objectContaining({ name: 'agent-browser', type: 'registry:skill', source: 'kortix-starter:agent-browser', file_count: 1 }),
     ]);
 
     const updates = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(updates.code).toBe(0);
-    expect(JSON.parse(updates.stdout)).toMatchObject({ update_available: ['pty'] });
+    expect(JSON.parse(updates.stdout)).toMatchObject({ update_available: ['agent-browser'] });
 
-    const update = await runCli(['marketplace', 'update', 'pty', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const update = await runCli(['marketplace', 'update', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(update.code).toBe(0);
-    expect(JSON.parse(update.stdout)).toMatchObject({ ok: true, updated: 'pty', commit_sha: 'commit_update_pty' });
+    expect(JSON.parse(update.stdout)).toMatchObject({ ok: true, updated: 'agent-browser', commit_sha: 'commit_update_agent-browser' });
 
     const updatesAfter = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(updatesAfter.code).toBe(0);
     expect(JSON.parse(updatesAfter.stdout)).toMatchObject({ update_available: [] });
 
-    const remove = await runCli(['marketplace', 'remove', 'pty', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const remove = await runCli(['marketplace', 'remove', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(remove.code).toBe(0);
-    expect(JSON.parse(remove.stdout)).toMatchObject({ ok: true, removed: 'pty', commit_sha: 'commit_remove_pty' });
+    expect(JSON.parse(remove.stdout)).toMatchObject({ ok: true, removed: 'agent-browser', commit_sha: 'commit_remove_agent-browser' });
 
     const statusAfterRemove = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(statusAfterRemove.code).toBe(0);
     expect(JSON.parse(statusAfterRemove.stdout).installed).toEqual([]);
-
-    const installWebSearch = await runCli(['marketplace', 'install', 'web_search', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
-    expect(installWebSearch.code).toBe(0);
-    expect(JSON.parse(installWebSearch.stdout)).toMatchObject({
-      ok: true,
-      commit_sha: 'commit_install_web_search',
-      capabilities: expect.objectContaining({ secrets: ['TAVILY_API_KEY'], tools: ['web_search'] }),
-    });
 
     const unlink = await runCli(['projects', 'unlink'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(unlink.code).toBe(0);
@@ -529,19 +515,17 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/projects', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
-      ['GET', '/v1/marketplace/items?query=pty&source=kortix', null],
-      ['GET', '/v1/marketplace/items/pty', null],
-      ['GET', '/v1/marketplace/items?query=pty', null],
-      ['GET', '/v1/marketplace/items?query=pty', null],
-      ['POST', '/v1/projects/proj_e2e/marketplace/install', { id: 'kortix-starter:pty' }],
+      ['GET', '/v1/marketplace/items?query=agent-browser&source=kortix', null],
+      ['GET', '/v1/marketplace/items/agent-browser', null],
+      ['GET', '/v1/marketplace/items?query=agent-browser', null],
+      ['GET', '/v1/marketplace/items?query=agent-browser', null],
+      ['POST', '/v1/projects/proj_e2e/marketplace/install', { id: 'kortix-starter:agent-browser' }],
       ['GET', '/v1/projects/proj_e2e/marketplace', null],
       ['GET', '/v1/projects/proj_e2e/marketplace/updates', null],
-      ['POST', '/v1/projects/proj_e2e/marketplace/update', { name: 'pty' }],
+      ['POST', '/v1/projects/proj_e2e/marketplace/update', { name: 'agent-browser' }],
       ['GET', '/v1/projects/proj_e2e/marketplace/updates', null],
-      ['DELETE', '/v1/projects/proj_e2e/marketplace/pty', null],
+      ['DELETE', '/v1/projects/proj_e2e/marketplace/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e/marketplace', null],
-      ['GET', '/v1/marketplace/items?query=web_search', null],
-      ['POST', '/v1/projects/proj_e2e/marketplace/install', { id: 'kortix-starter:web_search' }],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['DELETE', '/v1/projects/proj_e2e?purge=true', null],

@@ -149,32 +149,33 @@ describe('getStarterFiles', () => {
     expect(files.some((f) => f.path.startsWith('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/'))).toBe(false);
   });
 
-  test('minimal starter keeps optional runtime items out of the starter floor', () => {
+  test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
     expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
     expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
     expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
-    expect([...paths].some((p) => p.startsWith('.kortix/opencode/pty/'))).toBe(false);
-    expect(paths.has('.kortix/opencode/tools/memory.ts')).toBe(false);
-    expect(paths.has('.kortix/opencode/tools/web_search.ts')).toBe(false);
-    expect(paths.has('.kortix/opencode/tools/scrape_webpage.ts')).toBe(false);
-    expect(paths.has('.kortix/opencode/tools/image_search.ts')).toBe(false);
-    expect(paths.has('.kortix/opencode/tools/lib/get-env.ts')).toBe(false);
+    expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/memory.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/web_search.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/scrape_webpage.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/image_search.ts')).toBe(true);
+    expect(paths.has('.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
   });
 
-  test('marketplace source contains optional first-party runtime items', () => {
+  test('marketplace source contains optional first-party skills only', () => {
     const paths = new Set(getMarketplaceFiles().map((f) => f.path));
 
     expect(paths.has('kortix.registry.json')).toBe(true);
     expect(paths.has('runtime/skills/agent-browser/SKILL.md')).toBe(true);
-    expect(paths.has('runtime/pty/pty-tools.ts')).toBe(true);
-    expect(paths.has('runtime/tools/memory.ts')).toBe(true);
-    expect(paths.has('runtime/tools/web_search.ts')).toBe(true);
-    expect(paths.has('runtime/tools/scrape_webpage.ts')).toBe(true);
-    expect(paths.has('runtime/tools/image_search.ts')).toBe(true);
-    expect(paths.has('runtime/tools/lib/get-env.ts')).toBe(true);
+    expect(paths.has('runtime/pty/pty-tools.ts')).toBe(false);
+    expect(paths.has('runtime/tools/memory.ts')).toBe(false);
+    expect(paths.has('runtime/tools/web_search.ts')).toBe(false);
+    expect(paths.has('runtime/tools/scrape_webpage.ts')).toBe(false);
+    expect(paths.has('runtime/tools/image_search.ts')).toBe(false);
+    expect(paths.has('runtime/tools/lib/get-env.ts')).toBe(false);
   });
 });
 

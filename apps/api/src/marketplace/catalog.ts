@@ -645,7 +645,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
   const { items } = await mergedCatalog();
   const by = new Map<string, MarketplaceFacet>();
   for (const it of items) {
-    if (UI_HIDDEN_TYPES.has(it.type) || it.hidden) continue; // bundles/support items hidden until supported
+    if (!isBrowseableCatalogItem(it)) continue;
     const id = it.marketplaceId;
     let m = by.get(id);
     if (!m) {
@@ -796,17 +796,21 @@ export async function listFeaturedMarketplaces(): Promise<Array<FeaturedMarketpl
 // ── public read API ────────────────────────────────────────────────────────
 type ItemQuery = { query?: string; type?: string; source?: string };
 
-// Types we don't yet support end-to-end in the UI, so we hide them from browse
-// + facet counts. `registry:bundle` (a marketplace.json group) has no proper
-// install/preview UX yet — re-enable here once it does.
-const UI_HIDDEN_TYPES = new Set<string>(['registry:bundle']);
+// Launch scope: the marketplace is the skill library. Agents, commands, tools,
+// bundles, and support files may still exist in registries for compatibility
+// and dependency resolution, but they are not browse/install choices.
+const MARKETPLACE_VISIBLE_TYPES = new Set<string>(['registry:skill']);
+
+function isBrowseableCatalogItem(it: CatalogItem): boolean {
+  return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
+}
 
 function filterCatalogItems(items: CatalogItem[], opts: ItemQuery): CatalogItem[] {
   const q = (opts.query ?? '').trim().toLowerCase();
   const type = opts.type?.trim();
   const source = opts.source?.trim();
   return items.filter((it) => {
-    if (UI_HIDDEN_TYPES.has(it.type) || it.hidden) return false;
+    if (!isBrowseableCatalogItem(it)) return false;
     if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
     if (source && source !== 'all' && marketplaceIdOf(it.registry) !== source) return false;
     if (!q) return true;
@@ -879,6 +883,7 @@ export async function getCatalogItemDetail(id: string): Promise<CatalogItemDetai
   const entry = byId.get(id);
   if (!entry) return null;
   const base = items.find((i) => i.id === id)!;
+  if (!isBrowseableCatalogItem(base)) return null;
 
   // Files come straight from the cached catalog entry — no re-fetch, so the full
   // file tree previews instantly even for a 174-skill source.

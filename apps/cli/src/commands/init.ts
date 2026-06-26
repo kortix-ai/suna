@@ -69,7 +69,7 @@ Options:
                        Example: --agents claude,cursor
   --template <name>    Starter template: minimal (default) or general-knowledge-worker.
                        Use general-knowledge-worker to include the optional skill pack.
-  --marketplace <list> Comma-separated marketplace items to install into the
+  --marketplace <list> Comma-separated marketplace skills to install into the
                        new project. Use "none" to skip. Interactive mode
                        opens a preselected picker.
   --no-git             Don't run \`git init\` in the new project directory.
@@ -379,7 +379,7 @@ export async function runInit(argv: string[]): Promise<number> {
     template = includeSkills ? 'general-knowledge-worker' : 'minimal';
   }
 
-  // ── Resolve marketplace runtime items ───────────────────────────────
+  // ── Resolve marketplace skills ──────────────────────────────────────
   let marketplaceItems: string[];
   if (flags.marketplace) {
     marketplaceItems = flags.marketplace;
@@ -388,7 +388,7 @@ export async function runInit(argv: string[]): Promise<number> {
   } else {
     const defaults = defaultStarterMarketplaceItems();
     const picked = await selectMultiFromList<string>({
-      title: 'Pick marketplace items to install',
+      title: 'Pick marketplace skills to install',
       searchHint: `${C.dim}↑/↓ navigate · Space toggle · Enter confirm${C.reset}`,
       items: defaults.map((item) => ({
         value: item.name,

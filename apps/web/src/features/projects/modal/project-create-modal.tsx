@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
   Form,
@@ -39,11 +40,14 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { MarketplaceItemAvatar } from '@/components/marketplace/marketplace-item-avatar';
 import { Icon } from '@/features/icon/icon';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
-import { listMarketplaceItems, type MarketplaceItem } from '@/lib/marketplace-client';
+import {
+  defaultProjectMarketplaceItems,
+  listMarketplaceItems,
+} from '@/lib/marketplace-client';
 import {
   linkRepository,
   listGitHubInstallations,
@@ -55,9 +59,9 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
+import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -103,12 +107,6 @@ function upsertProject(projects: KortixProject[] | undefined, project: KortixPro
   return next;
 }
 
-function defaultProjectItems(items: MarketplaceItem[] | undefined): MarketplaceItem[] {
-  return (items ?? [])
-    .filter((item) => item.defaultProjectInstall)
-    .sort((a, b) => (a.defaultProjectInstallOrder ?? 999) - (b.defaultProjectInstallOrder ?? 999) || a.name.localeCompare(b.name));
-}
-
 export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCreateModalProps) => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -123,7 +121,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
-      includeGeneralKnowledgeSkills: false,
+      includeGeneralKnowledgeSkills: true,
       marketplaceItems: [],
     },
   });
@@ -202,14 +200,18 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   const marketplaceDefaultsQuery = useQuery({
     queryKey: ['marketplace-default-project-items'],
-    queryFn: () => listMarketplaceItems({ source: 'kortix' }),
+    queryFn: () => listMarketplaceItems({ source: 'kortix', type: 'skill' }),
     enabled: open && mode === 'managed',
     staleTime: 60_000,
   });
   const marketplaceItems = useMemo(
-    () => defaultProjectItems(marketplaceDefaultsQuery.data?.items),
+    () => defaultProjectMarketplaceItems(marketplaceDefaultsQuery.data?.items),
     [marketplaceDefaultsQuery.data?.items],
   );
+  const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
+  const selectedMarketplaceItems = managedForm.watch('marketplaceItems');
+  const includedCount =
+    (includeGeneralKnowledgeSkills ? 1 : 0) + selectedMarketplaceItems.length;
 
   useEffect(() => {
     if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
@@ -381,85 +383,72 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                     )}
                   />
 
-                  <FormField
-                    control={managedForm.control}
-                    name="includeGeneralKnowledgeSkills"
-                    render={({ field }) => (
-                      <Item variant="outline" className="items-start">
-                        <ItemContent>
-                          <ItemTitle>
-                            <FormLabel>
-                              {tHardcodedUi.raw(
-                                'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
-                              )}
-                            </FormLabel>
-                          </ItemTitle>
-                          <ItemDescription>
-                            {tHardcodedUi.raw(
-                              'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
-                            )}
-                          </ItemDescription>
-                        </ItemContent>
-                        <ItemActions>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              disabled={submitting}
-                            />
-                          </FormControl>
-                        </ItemActions>
-                      </Item>
-                    )}
-                  />
-
-                  <FormField
-                    control={managedForm.control}
-                    name="marketplaceItems"
-                    render={({ field }) => (
-                      <div className="space-y-2">
-                        <FormLabel>Marketplace items</FormLabel>
-                        {marketplaceDefaultsQuery.isLoading ? (
-                          <div className="text-muted-foreground flex h-12 items-center gap-2 text-sm">
-                            <Loading />
-                            Loading marketplace defaults
-                          </div>
-                        ) : marketplaceItems.length > 0 ? (
-                          <div className="space-y-2">
-                            {marketplaceItems.map((item) => {
-                              const checked = field.value.includes(item.id);
-                              return (
-                                <Item key={item.id} variant="outline" className="items-start">
-                                  <ItemContent>
-                                    <ItemTitle>{item.title}</ItemTitle>
-                                    <ItemDescription>{item.description ?? item.name}</ItemDescription>
-                                  </ItemContent>
-                                  <ItemActions>
-                                    <Switch
-                                      checked={checked}
-                                      onCheckedChange={(next) => {
-                                        field.onChange(
-                                          next
-                                            ? [...new Set([...field.value, item.id])]
-                                            : field.value.filter((value) => value !== item.id),
-                                        );
-                                      }}
-                                      disabled={submitting}
-                                      aria-label={item.title}
-                                    />
-                                  </ItemActions>
-                                </Item>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="text-muted-foreground text-sm">
-                            No default marketplace items are configured.
-                          </div>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-foreground text-sm font-medium">Starter skills</span>
+                      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                        {includedCount} included
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Preinstalled into your project&apos;s repo and ready in the first session.
+                      Toggle off anything you don&apos;t need.
+                    </p>
+                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                      <SetupOptionRow
+                        icon={
+                          <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                            <Boxes className="size-4" />
+                          </span>
+                        }
+                        title={tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
                         )}
-                      </div>
-                    )}
-                  />
+                        badge="Starter pack"
+                        description={tHardcodedUi.raw(
+                          'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
+                        )}
+                        selected={includeGeneralKnowledgeSkills}
+                        disabled={submitting}
+                        onToggle={(next) =>
+                          managedForm.setValue('includeGeneralKnowledgeSkills', next, {
+                            shouldDirty: true,
+                          })
+                        }
+                      />
+                      {marketplaceDefaultsQuery.isLoading ? (
+                        <div className="text-muted-foreground flex items-center gap-2 px-3.5 py-3 text-xs">
+                          <Loading />
+                          Loading recommended skills
+                        </div>
+                      ) : (
+                        marketplaceItems.map((item) => {
+                            const checked = selectedMarketplaceItems.includes(item.id);
+                            return (
+                              <SetupOptionRow
+                                key={item.id}
+                                icon={
+                                  <MarketplaceItemAvatar item={item} size="sm" showSource={false} />
+                                }
+                                title={item.title}
+                                description={item.description ?? item.name}
+                                selected={checked}
+                                disabled={submitting}
+                                onToggle={(next) =>
+                                  managedForm.setValue(
+                                    'marketplaceItems',
+                                    next
+                                      ? [...new Set([...selectedMarketplaceItems, item.id])]
+                                      : selectedMarketplaceItems.filter((value) => value !== item.id),
+                                    { shouldDirty: true },
+                                  )
+                                }
+                              />
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
 
                   <Button
                     type="button"
@@ -733,6 +722,65 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     </Modal>
   );
 };
+
+/** One selectable row in the New Project "Starter skills" surface — the whole
+ *  row is a label wrapping a real checkbox, so a click anywhere toggles it and
+ *  it stays keyboard-accessible. Selected rows read as "included in this
+ *  project" via the tinted fill + checked box (no "Add" affordance). */
+function SetupOptionRow({
+  icon,
+  title,
+  description,
+  badge,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  badge?: string;
+  selected: boolean;
+  disabled?: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors',
+        selected ? 'bg-primary/[0.05]' : 'hover:bg-foreground/[0.03]',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      {icon}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-foreground truncate text-sm font-medium">{title}</span>
+          {badge && (
+            <Badge variant="new" size="sm" className="shrink-0">
+              {badge}
+            </Badge>
+          )}
+          {selected && (
+            <Badge variant="outline" size="sm" className="shrink-0">
+              Included
+            </Badge>
+          )}
+        </div>
+        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+          {description}
+        </p>
+      </div>
+      <Checkbox
+        checked={selected}
+        onCheckedChange={(value) => onToggle(value === true)}
+        disabled={disabled}
+        aria-label={title}
+        className="mt-0.5 shrink-0"
+      />
+    </label>
+  );
+}
 
 function RepositoryPicker({
   value,

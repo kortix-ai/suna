@@ -189,6 +189,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
+  upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
 
@@ -331,7 +332,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(backendCalls).toEqual(['createRepo']);
   });
 
-  test('seeds selected marketplace items into the initial managed repo setup commit', async () => {
+  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -340,29 +341,27 @@ describe('POST /v1/projects/provision (managed git)', () => {
         account_id: ACCOUNT_ID,
         name: 'Runtime Project',
         seed_starter: true,
-        marketplace_items: ['kortix-starter:pty', 'web_search'],
+        marketplace_items: ['kortix-starter:agent-browser'],
       }),
     });
 
     expect(res.status).toBe(201);
     expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    expect(seedFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
-    expect(seedFilePaths).toContain('.kortix/opencode/plugins/opencode-pty/src/plugin/constants.ts');
-    expect(seedFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
-    expect(seedFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
     expect(seedFilePaths).toContain('registry-lock.json');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
-    expect(seedBaseFilePaths).not.toContain('.kortix/opencode/plugins/pty.ts');
-    expect(seedBaseFilePaths).not.toContain('.kortix/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
 
     const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
     expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toEqual(['kortix-tool-env', 'pty', 'web_search']);
-    expect(lock.items.pty.type).toBe('registry:tool');
-    expect(lock.items.web_search.files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/tools/web_search.ts');
+    expect(Object.keys(lock.items).sort()).toEqual(['agent-browser']);
+    expect(lock.items['agent-browser'].type).toBe('registry:skill');
+    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {

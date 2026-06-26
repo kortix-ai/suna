@@ -4,28 +4,28 @@ import { join } from 'node:path';
 
 import embeddedStarter from '../embedded.generated.json' with { type: 'json' };
 
-const marketplaceManagerPath = 'runtime/pty/opencode-pty/src/plugin/pty/manager.ts';
-const marketplaceToolsPath = 'runtime/pty/pty-tools.ts';
+const baseManagerPath = '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts';
+const baseToolsPath = '.kortix/opencode/plugins/pty.ts';
 const templateManagerPath = join(
   import.meta.dir,
   '..',
   '..',
   'templates',
-  'marketplace',
-  marketplaceManagerPath,
+  'base',
+  baseManagerPath,
 );
 const templateToolsPath = join(
   import.meta.dir,
   '..',
   '..',
   'templates',
-  'marketplace',
-  marketplaceToolsPath,
+  'base',
+  baseToolsPath,
 );
 
 function findEmbeddedFile(path: string): string {
-  const marketplace = (embeddedStarter as Record<string, { files: { path: string; content: string }[] }>).marketplace;
-  const file = marketplace.files.find((item) => item.path === path);
+  const base = (embeddedStarter as Record<string, { files: { path: string; content: string }[] }>).base;
+  const file = base.files.find((item) => item.path === path);
   if (!file) throw new Error(`Missing embedded starter file: ${path}`);
   return file.content;
 }
@@ -33,7 +33,7 @@ function findEmbeddedFile(path: string): string {
 describe('starter PTY manager resilience', () => {
   test('falls back to local PTY when backend spawn or websocket attach fails', () => {
     const source = readFileSync(templateManagerPath, 'utf8');
-    const embedded = findEmbeddedFile(marketplaceManagerPath);
+    const embedded = findEmbeddedFile(baseManagerPath);
 
     for (const content of [source, embedded]) {
       expect(content).toContain('function resolveBackendCommand');
@@ -47,7 +47,7 @@ describe('starter PTY manager resilience', () => {
 
   test('returns structured tool failures instead of throwing through OpenCode', () => {
     const source = readFileSync(templateToolsPath, 'utf8');
-    const embedded = findEmbeddedFile(marketplaceToolsPath);
+    const embedded = findEmbeddedFile(baseToolsPath);
 
     for (const content of [source, embedded]) {
       expect(content).toContain('async function recoverPtyTool');

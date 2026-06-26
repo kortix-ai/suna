@@ -181,6 +181,10 @@ export function MarketplaceItemDetail({
 
   const actions = !data ? null : isInstalled ? (
     <div className="flex shrink-0 items-center gap-1.5">
+      <Badge variant="new" size="sm" className="gap-1">
+        <Check className="size-3" />
+        Installed
+      </Badge>
       {onRemove && (
         <Button
           variant="ghost"
@@ -192,10 +196,6 @@ export function MarketplaceItemDetail({
           Remove
         </Button>
       )}
-      <Button variant="outline" size="sm" onClick={() => onAdd(data)}>
-        <Check className="size-4" />
-        Re-add
-      </Button>
     </div>
   ) : (
     <Button size="sm" className="shrink-0" onClick={() => onAdd(data)}>

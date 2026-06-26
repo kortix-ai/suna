@@ -58,19 +58,20 @@ describe('marketplace HTTP contract', () => {
     }
 
     expect(body.items.find((item) => item.name === 'agent-browser')?.managedBy).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'pty')?.managedBy).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'web_search')?.managedBy).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'pty')).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'web_search')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'pdf')?.managedBy).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'kortix')?.managedBy).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'memory-reflector')?.managedBy).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'kortix')).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'memory-reflector')).toBeUndefined();
   });
 
-  test('GET /marketplace/items is public read-only', async () => {
+  test('GET /marketplace/items is public read-only and skill-only', async () => {
     authCalls = 0;
-    const res = await fetch(`${baseUrl}/marketplace/items?query=pty&source=kortix`);
+    const res = await fetch(`${baseUrl}/marketplace/items?query=agent-browser&source=kortix`);
     expect(res.status).toBe(200);
     const body = await res.json() as { items: Array<{ name: string; type: string }> };
-    expect(body.items).toContainEqual(expect.objectContaining({ name: 'pty', type: 'registry:tool' }));
+    expect(body.items).toContainEqual(expect.objectContaining({ name: 'agent-browser', type: 'registry:skill' }));
+    expect(body.items.every((item) => item.type === 'registry:skill')).toBe(true);
     expect(authCalls).toBe(0);
   });
 

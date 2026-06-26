@@ -119,6 +119,21 @@ export async function listMarketplaceItems(params?: {
   return { items: res.items ?? [], loading: !!res.loading, pending: res.pending ?? 0, sources: res.sources ?? [] };
 }
 
+export function defaultProjectMarketplaceItems(items: MarketplaceItem[] | undefined): MarketplaceItem[] {
+  return (items ?? [])
+    .filter((item) => item.defaultProjectInstall)
+    .sort(
+      (a, b) =>
+        (a.defaultProjectInstallOrder ?? 999) - (b.defaultProjectInstallOrder ?? 999) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+export async function listDefaultProjectMarketplaceItems(): Promise<MarketplaceItem[]> {
+  const page = await listMarketplaceItems({ source: 'kortix', type: 'skill' });
+  return defaultProjectMarketplaceItems(page.items);
+}
+
 export async function listPublicMarketplaceItems(params?: {
   query?: string;
   type?: string;

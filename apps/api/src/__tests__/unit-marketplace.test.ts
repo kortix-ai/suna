@@ -26,45 +26,37 @@ describe('marketplace catalog', () => {
     expect(DEFAULT_MARKETPLACES).not.toContain('NousResearch/hermes-agent');
   });
 
-  test('lists the starter skill pack; bundles are hidden from browse', async () => {
+  test('lists the starter skill pack; non-skill items are hidden from browse', async () => {
     const all = await listCatalogItems();
     expect(all.length).toBeGreaterThan(50);
 
-    // Bundles (registry:bundle) have no proper install/preview UX yet, so they
-    // are filtered out of the browse list (UI_HIDDEN_TYPES).
+    // Launch scope: marketplace browsing is the skill library. Non-skill
+    // registry entries remain internal for compatibility/dependency handling.
     expect(all.some((i) => i.type === 'registry:bundle')).toBe(false);
+    expect(all.some((i) => i.type === 'registry:agent')).toBe(false);
+    expect(all.some((i) => i.type === 'registry:tool')).toBe(false);
     expect(all.find((i) => i.id === 'kortix:research-pack')).toBeUndefined();
 
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
 
-  test('lists optional Kortix runtime items through the marketplace, not the starter floor', async () => {
+  test('lists only optional Kortix skills through the marketplace', async () => {
     const all = await listCatalogItems({ source: 'kortix' });
-    for (const name of [
-      'agent-browser',
-      'pty',
-      'kortix-simple-memory',
-      'web_search',
-      'scrape_webpage',
-      'image_search',
-    ]) {
-      const item = all.find((i) => i.name === name);
-      expect(item).toBeTruthy();
-      expect(item!.marketplaceId).toBe('kortix');
-      expect(item!.managedBy).toBeUndefined();
-      expect(item!.defaultProjectInstall).toBe(true);
-    }
+    const agentBrowser = all.find((i) => i.name === 'agent-browser');
+    expect(agentBrowser).toBeTruthy();
+    expect(agentBrowser!.marketplaceId).toBe('kortix');
+    expect(agentBrowser!.type).toBe('registry:skill');
+    expect(agentBrowser!.managedBy).toBeUndefined();
+    expect(agentBrowser!.defaultProjectInstall).toBe(true);
+    expect(all.find((i) => i.name === 'pty')).toBeUndefined();
+    expect(all.find((i) => i.name === 'kortix-simple-memory')).toBeUndefined();
+    expect(all.find((i) => i.name === 'web_search')).toBeUndefined();
+    expect(all.find((i) => i.name === 'scrape_webpage')).toBeUndefined();
+    expect(all.find((i) => i.name === 'image_search')).toBeUndefined();
     expect(all
       .filter((i) => i.defaultProjectInstall)
       .map((i) => i.name)
-      .sort()).toEqual([
-        'agent-browser',
-        'image_search',
-        'kortix-simple-memory',
-        'pty',
-        'scrape_webpage',
-        'web_search',
-      ]);
+      .sort()).toEqual(['agent-browser']);
     expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
   });
 
@@ -158,10 +150,10 @@ describe('marketplace catalog', () => {
     expect(lock.items.pdf.type).toBe('registry:skill');
   });
 
-  test('buildInstall(pty) installs an auto-discovered OpenCode plugin without patching opencode.jsonc', async () => {
-    const pty = (await listCatalogItems({ query: 'pty', source: 'kortix' })).find((i) => i.name === 'pty')!;
+  test('buildInstall(agent-browser) installs the default marketplace skill', async () => {
+    const agentBrowser = (await listCatalogItems({ query: 'agent-browser', source: 'kortix' })).find((i) => i.name === 'agent-browser')!;
     const built = await buildInstall({
-      id: pty.id,
+      id: agentBrowser.id,
       configDir: '.kortix/opencode',
       existingLockRaw: null,
       legacyLockRaw: null,
@@ -169,27 +161,9 @@ describe('marketplace catalog', () => {
     });
 
     const paths = built.files.map((f) => f.path);
-    expect(paths).toContain('.kortix/opencode/plugins/pty.ts');
-    expect(paths).toContain('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts');
-    expect(paths).not.toContain('.kortix/opencode/opencode.jsonc');
-    expect(built.installed.map((i) => i.name)).toEqual(['pty']);
-  });
-
-  test('buildInstall(web_search) pulls the shared tool env bridge before the tool', async () => {
-    const item = (await listCatalogItems({ query: 'web_search', source: 'kortix' })).find((i) => i.name === 'web_search')!;
-    const built = await buildInstall({
-      id: item.id,
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-
-    expect(built.installed.map((i) => i.name)).toEqual(['kortix-tool-env', 'web_search']);
-    expect(built.files.some((f) => f.path === '.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
-    expect(built.files.some((f) => f.path === '.kortix/opencode/tools/web_search.ts')).toBe(true);
-    expect(built.capabilities.secrets).toContain('TAVILY_API_KEY');
-    expect(built.capabilities.tools).toContain('web_search');
+    expect(paths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(built.installed.map((i) => i.name)).toEqual(['agent-browser']);
+    expect(built.capabilities.tools).toContain('agent-browser');
   });
 
   test('buildInstall(bundle) → pulls every dependency in one commit', async () => {
