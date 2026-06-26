@@ -5769,7 +5769,13 @@ export function SessionChat({
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}
           onClearReply={handleClearReply}
-          lockForQuestion={!!renderedQuestion}
+          // Only lock the input into question-answer mode while the session is
+          // actually busy (a live question keeps the run busy). If a question
+          // chip is ever showing while the session is idle — e.g. a dead /
+          // abandoned question the agent left behind — the input stays unlocked
+          // so a typed message is sent to the agent instead of being swallowed
+          // as a custom answer.
+          lockForQuestion={!!renderedQuestion && isBusy}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5789,6 +5795,7 @@ export function SessionChat({
                 )}
               >
                 <QuestionPrompt
+                  key={renderedQuestion.id}
                   ref={questionPromptRef}
                   request={renderedQuestion}
                   onReply={handleQuestionReply}
