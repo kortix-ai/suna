@@ -1,8 +1,61 @@
 # LLM Gateway Refactor — Ultimate Spec
 
-> Status: proposal · Author: Marko + Claude · Date: 2026-06-26
+> Status: **LOCKED — gateway-only (step 1)** · Author: Marko + Claude · Date: 2026-06-26
 > Goal: one reliable LLM path. Add a model → instantly selectable. Add a key → its
 > models instantly selectable, no reload. Kill the dual implementation.
+
+---
+
+## 0. STATUS — decisions, done, remaining (read this first)
+
+### Decision: LOCKED ✅
+**Gateway-only is the path.** Every model call (managed *and* BYOK) goes through the
+Kortix gateway; opencode is locked to the `kortix` provider. We do **not** keep a
+native passthrough path. Rationale: **managed models can never go native** (Kortix's
+own keys can't sit in an agent-controlled sandbox), so the gateway must exist
+anyway — routing BYOK through it too gives one path + central metering for free.
+
+**The "Kortix-native, no opencode" idea is Phase 2 / LATER** — Kortix becomes the LLM
+client itself and proxies turns to the sandbox, dropping opencode's LLM role. Captured
+in §12; **not** designed in detail here.
+
+### Sub-decisions: LOCKED ✅
+- **No kill switch.** `LLM_GATEWAY_ENABLED` / `LLM_GATEWAY_DEFAULT_ENABLED` deleted.
+- **Provider keys are project-shared only** — personal per-member provider keys dropped.
+- **Self-host with no managed keys → hide managed models** in the picker.
+- **Key posture = keep current (NOT hard-strip).** Provider keys still propagate into
+  the sandbox env (the agent's own app code may use them) but are **withheld from the
+  opencode process** by the always-on deny-list. Fully stripping them from the sandbox
+  filesystem is an *optional future hardening*, not part of this spec. (Supersedes the
+  aspirational "keys never enter the sandbox" wording in §1/§3 below.)
+- **Drop `google` from the picker** until it has a real (OpenAI-compatible) transport.
+
+### Done — in draft PR #3849 (branch `llm-gateway-refactor`) ✅
+1. **Gateway is unconditionally the only path** — deleted the entire opt-in apparatus
+   (master switch, fleet default, per-project `llm_gateway` flag, `enablement.ts`, the
+   boot 503-guard, the `/llm-catalog` 404-gate, `accountEntitledToLlmGateway` provision
+   gate). Tier is enforced per-request inside the gateway (the only entitlement gate now).
+2. **No sandbox reload on provider-key change** — dropped `refreshModels`; the gateway
+   owns the model list, so a key change resolves server-side + lights up the picker.
+3. **Deduped** the triplicated base-URL resolver + env injection into one module;
+   dropped vestigial `KORTIX_YOLO_*`.
+4. **Frontend flipped to always-gateway.**
+   Verified: typecheck clean; no new test failures vs base; e2e-preview-proxy fixed.
+
+### Remaining — to fully nail gateway-only 🔲
+- **Phase 2.5 — clean resource API + single side-effect owner** (§11). `secrets/`,
+  `models/`, `sessions/` router+service modules; one `projectStateChanged(...)` owns
+  all sandbox side-effects; `apply:{sessionId}` so mutations are self-contained.
+- **Phase 4 — reliability** (§7, billing-critical). Durable usage ledger (no
+  fire-and-forget loss), fail-closed managed pricing (no silent $0), shared circuit
+  breaker, trace-on-control-plane-error.
+- **Phase 5 — model preferences server home** (§8/§11). `default_model` + visibility
+  pins → DB; serve the catalog tier-filtered + hide-managed-when-no-key; drop `google`.
+- **Proxy-mode deletion** — delete the `/v1/llm-gateway/*` reverse-proxy +
+  `LLM_GATEWAY_PROXY_*`. ⚠️ **Blocked on migrating preview/ephemeral k8s envs off proxy
+  mode first** (live-infra change — human).
+- **End-to-end boot + UI smoke** — add-key→selectable-no-restart, managed call, auto
+  routing, usage recorded.
 
 ---
 
@@ -371,3 +424,42 @@ This section slots in **after Phase 2** (once keys stay server-side, the secret
 side-effect collapses and the clean contract becomes natural): add a **Phase 2.5 —
 resource-module + effect-owner refactor**, then **Phase 5 — model-preferences server
 home**.
+
+---
+
+## 12. Phase 2 (FUTURE / out of scope here): Kortix-native LLM — no opencode
+
+> Documented, **not designed in detail**. This spec (§1–§11) is *step 1*: the gateway
+> sits behind opencode, which remains the agent runtime + LLM client. Step 2 is a
+> separate, larger effort to be spec'd on its own.
+
+**The idea.** Today the LLM call is made *by opencode inside the sandbox*, pointed at
+the Kortix gateway. Step 2 inverts that: **Kortix itself becomes the LLM client** — it
+runs the model turn server-side (where the keys, catalog, billing, and routing already
+live) and **proxies only the *execution* to the sandbox** (tool calls, file ops, shell)
+rather than the *inference*. opencode stops owning the LLM loop.
+
+**Why it's attractive (eventually).**
+- The gateway already holds everything the model turn needs (auth, keys, catalog,
+  pricing, failover). Making Kortix the client removes the sandbox→gateway round-trip
+  and the opencode provider-config surface entirely.
+- One place owns the turn → cleaner streaming, tracing, interruption, and billing.
+- The sandbox shrinks to a pure execution environment (no LLM credentials or provider
+  config at all → the "keys never in the sandbox" property becomes automatic).
+
+**Why it's NOT step 1.**
+- It replaces opencode's core role — a much bigger, riskier change than routing
+  opencode's existing calls through a gateway.
+- Step 1 (this spec) already delivers the product requirement (reliable, add-a-key/
+  add-a-model just works) without touching the agent runtime.
+
+**Open questions to resolve when step 2 is spec'd (NOT now).**
+- How much of opencode stays? (Likely: tools / sandbox exec / file ops stay; the
+  agent+LLM loop moves to Kortix.) Or is it a different runtime entirely?
+- Turn-proxy protocol: how Kortix streams a turn and dispatches tool calls into the
+  sandbox and gets results back.
+- Session/state ownership: opencode session model vs a Kortix-owned turn store.
+- Migration: can step 1's gateway pipeline be reused as the step-2 turn engine?
+
+**For now:** ship step 1 (gateway-only behind opencode), keep this section as the
+north star, and spec step 2 separately when step 1 is solid in production.
