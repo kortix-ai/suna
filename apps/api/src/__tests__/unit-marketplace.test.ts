@@ -6,6 +6,7 @@ process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 import {
   assertAllowedSourceAddress,
   getCatalogItemDetail,
+  githubLoaderOptions,
   listCatalogItems,
   listMarketplaces,
   marketplaceIdOf,
@@ -26,6 +27,42 @@ describe('marketplace catalog', () => {
     expect(all.find((i) => i.id === 'kortix:research-pack')).toBeUndefined();
 
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
+  });
+
+  test('lists optional Kortix runtime items through the marketplace, not the starter floor', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    for (const name of [
+      'agent-browser',
+      'pty',
+      'kortix-simple-memory',
+      'web_search',
+      'scrape_webpage',
+      'image_search',
+    ]) {
+      const item = all.find((i) => i.name === name);
+      expect(item).toBeTruthy();
+      expect(item!.marketplaceId).toBe('kortix');
+      expect(item!.managedBy).toBeUndefined();
+    }
+    expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
+  });
+
+  test('marks only kortix-* runtime skills as Kortix-managed', async () => {
+    const all = await listCatalogItems();
+    const managed = all.filter((i) => i.managedBy === 'kortix').map((i) => i.name).sort();
+
+    expect(managed).toEqual([
+      'kortix-computer',
+      'kortix-executor',
+      'kortix-memory',
+      'kortix-slack',
+      'kortix-system',
+    ]);
+    expect(all.find((i) => i.name === 'agent-browser')?.managedBy).toBeUndefined();
+    expect(all.find((i) => i.name === 'kortix')?.managedBy).toBeUndefined();
+    expect(all.find((i) => i.name === 'memory-reflector')?.managedBy).toBeUndefined();
+    expect(all.find((i) => i.name === 'web_search')?.managedBy).toBeUndefined();
+    expect(all.find((i) => i.name === 'pdf')?.managedBy).toBeUndefined();
   });
 
   test('filters by type and query', async () => {
@@ -100,6 +137,40 @@ describe('marketplace catalog', () => {
     expect(lock.items.pdf.type).toBe('registry:skill');
   });
 
+  test('buildInstall(pty) installs an auto-discovered OpenCode plugin without patching opencode.jsonc', async () => {
+    const pty = (await listCatalogItems({ query: 'pty', source: 'kortix' })).find((i) => i.name === 'pty')!;
+    const built = await buildInstall({
+      id: pty.id,
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+    });
+
+    const paths = built.files.map((f) => f.path);
+    expect(paths).toContain('.kortix/opencode/plugins/pty.ts');
+    expect(paths).toContain('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts');
+    expect(paths).not.toContain('.kortix/opencode/opencode.jsonc');
+    expect(built.installed.map((i) => i.name)).toEqual(['pty']);
+  });
+
+  test('buildInstall(web_search) pulls the shared tool env bridge before the tool', async () => {
+    const item = (await listCatalogItems({ query: 'web_search', source: 'kortix' })).find((i) => i.name === 'web_search')!;
+    const built = await buildInstall({
+      id: item.id,
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+    });
+
+    expect(built.installed.map((i) => i.name)).toEqual(['kortix-tool-env', 'web_search']);
+    expect(built.files.some((f) => f.path === '.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
+    expect(built.files.some((f) => f.path === '.kortix/opencode/tools/web_search.ts')).toBe(true);
+    expect(built.capabilities.secrets).toContain('TAVILY_API_KEY');
+    expect(built.capabilities.tools).toContain('web_search');
+  });
+
   test('buildInstall(bundle) → pulls every dependency in one commit', async () => {
     const built = await buildInstall({
       id: 'kortix:research-pack',
@@ -160,17 +231,26 @@ describe('marketplace catalog', () => {
 
 describe('marketplace external registries (skills.sh / GitHub path)', () => {
   const ORIG_FETCH = globalThis.fetch;
+  const ORIG_GITHUB_FETCH = githubLoaderOptions.fetchImpl;
   const RAW = 'https://raw.githubusercontent.com/mockorg/mockrepo/main';
 
   function stub(map: Record<string, string>) {
-    globalThis.fetch = (async (url: unknown) => {
-      const body = map[String(url)];
+    const fetchStub = (async (url: unknown) => {
+      const key = typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
+      const body = map[key];
       if (body == null) return new Response('not found', { status: 404 });
       return new Response(body, { status: 200 });
     }) as typeof fetch;
+    globalThis.fetch = fetchStub;
+    githubLoaderOptions.fetchImpl = fetchStub;
   }
 
-  test('ingests an external registry + installs its item from source', async () => {
+  function restoreFetch() {
+    globalThis.fetch = ORIG_FETCH;
+    githubLoaderOptions.fetchImpl = ORIG_GITHUB_FETCH;
+  }
+
+  test.serial('ingests an external registry + installs its item from source', async () => {
     stub({
       [`${RAW}/registry.json`]: JSON.stringify({
         name: 'mock-skills',
@@ -206,13 +286,13 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       expect(skillFile).toBeTruthy();
       expect(skillFile!.content).toContain('Hi from an external registry');
     } finally {
-      globalThis.fetch = ORIG_FETCH;
+      restoreFetch();
       delete process.env.KORTIX_MARKETPLACE_REGISTRIES;
       _resetExternalCache();
     }
   });
 
-  test('a flaky external registry degrades gracefully (base still served)', async () => {
+  test.serial('a flaky external registry degrades gracefully (base still served)', async () => {
     stub({}); // every fetch 404s
     process.env.KORTIX_MARKETPLACE_REGISTRIES = 'github:does-not/exist';
     _resetExternalCache();
@@ -221,13 +301,13 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       expect(all.find((i) => i.name === 'pdf')).toBeTruthy(); // base intact
       expect(all.find((i) => i.name === 'hello-ext')).toBeUndefined();
     } finally {
-      globalThis.fetch = ORIG_FETCH;
+      restoreFetch();
       delete process.env.KORTIX_MARKETPLACE_REGISTRIES;
       _resetExternalCache();
     }
   });
 
-  test('DB-persisted "Add marketplace" sources merge into the catalog', async () => {
+  test.serial('DB-persisted "Add marketplace" sources merge into the catalog', async () => {
     stub({
       [`${RAW}/registry.json`]: JSON.stringify({
         name: 'db-mock',
@@ -252,7 +332,7 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       expect(ext!.external).toBe(true);
       expect(ext!.id).toBe('db-mock:db-ext');
     } finally {
-      globalThis.fetch = ORIG_FETCH;
+      restoreFetch();
       registerMarketplaceSourceProvider(async () => []);
       _resetExternalCache();
     }

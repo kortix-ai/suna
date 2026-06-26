@@ -5237,7 +5237,7 @@
       "line251JsxAttrTitleKortixManagedRepository": "Kortix 管理のリポジトリ",
       "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "プライベートな管理対象リポジトリを作成し、スタータープロジェクトを配置して、デフォルトブランチから最初のサンドボックススナップショットを作成します。",
       "line258JsxTextProjectName": "プロジェクト名",
-      "line273JsxTextGeneralKnowledgeWorkerSkills": "一般的なナレッジワーカー向けスキル",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "スタータースキル",
       "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "調査、監査支援、ブランドボイス、コンテンツ作成、ドキュメント、スライド、データ、Web 作業向けの事前設定済みスキルを含めます。",
       "line297JsxTextImportExistingGithubRepo": "既存の GitHub リポジトリをインポート",
       "line320JsxTextCreateProject": "プロジェクトを作成",

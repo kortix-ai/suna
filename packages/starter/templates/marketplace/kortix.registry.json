@@ -1,0 +1,166 @@
+{
+  "name": "kortix-marketplace",
+  "items": [
+    {
+      "name": "agent-browser",
+      "type": "registry:skill",
+      "title": "Agent Browser",
+      "description": "Browser automation skill for using the baked agent-browser runtime from an OpenCode agent.",
+      "categories": ["kortix-runtime", "browser"],
+      "files": [
+        {
+          "path": "runtime/skills/agent-browser",
+          "type": "registry:file",
+          "target": "@skills/agent-browser"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["agent-browser"]
+        }
+      }
+    },
+    {
+      "name": "pty",
+      "type": "registry:tool",
+      "title": "PTY Sessions",
+      "description": "OpenCode plugin that adds long-running terminal sessions: pty_spawn, pty_write, pty_read, pty_list, and pty_kill.",
+      "categories": ["kortix-runtime", "terminal"],
+      "files": [
+        {
+          "path": "runtime/pty/pty-tools.ts",
+          "type": "registry:file",
+          "target": "@opencode/plugins/pty.ts"
+        },
+        {
+          "path": "runtime/pty/opencode-pty",
+          "type": "registry:file",
+          "target": "@opencode/plugins/opencode-pty"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["pty_spawn", "pty_write", "pty_read", "pty_list", "pty_kill"]
+        }
+      }
+    },
+    {
+      "name": "kortix-tool-env",
+      "type": "registry:tool",
+      "title": "Kortix Tool Environment Bridge",
+      "description": "Shared helper for marketplace tools that read project secrets directly or through the Kortix router.",
+      "categories": ["kortix-runtime", "support"],
+      "files": [
+        {
+          "path": "runtime/tools/lib/get-env.ts",
+          "type": "registry:file",
+          "target": "@tools/lib/get-env.ts"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "hidden": true
+      }
+    },
+    {
+      "name": "kortix-simple-memory",
+      "type": "registry:tool",
+      "title": "Kortix Simple Memory",
+      "description": "Project-scoped memory tool rooted at .kortix/memory.",
+      "categories": ["kortix-runtime", "memory"],
+      "files": [
+        {
+          "path": "runtime/tools/memory.ts",
+          "type": "registry:file",
+          "target": "@tools/memory.ts"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["memory"]
+        }
+      }
+    },
+    {
+      "name": "web_search",
+      "type": "registry:tool",
+      "title": "Web Search",
+      "description": "Search the web through Tavily or the Kortix router.",
+      "categories": ["kortix-runtime", "search"],
+      "dependencies": ["@tavily/core@0.7.3"],
+      "registryDependencies": ["kortix-tool-env"],
+      "envVars": {
+        "TAVILY_API_KEY": "Tavily API key when not using the Kortix router."
+      },
+      "files": [
+        {
+          "path": "runtime/tools/web_search.ts",
+          "type": "registry:file",
+          "target": "@tools/web_search.ts"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["web_search"],
+          "network": ["api.tavily.com"]
+        }
+      }
+    },
+    {
+      "name": "scrape_webpage",
+      "type": "registry:tool",
+      "title": "Scrape Webpage",
+      "description": "Scrape webpages through Firecrawl or the Kortix router.",
+      "categories": ["kortix-runtime", "search"],
+      "dependencies": ["@mendable/firecrawl-js@4.25.1"],
+      "registryDependencies": ["kortix-tool-env"],
+      "envVars": {
+        "FIRECRAWL_API_KEY": "Firecrawl API key when not using the Kortix router."
+      },
+      "files": [
+        {
+          "path": "runtime/tools/scrape_webpage.ts",
+          "type": "registry:file",
+          "target": "@tools/scrape_webpage.ts"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["scrape_webpage"],
+          "network": ["api.firecrawl.dev"]
+        }
+      }
+    },
+    {
+      "name": "image_search",
+      "type": "registry:tool",
+      "title": "Image Search",
+      "description": "Search and enrich images through the Kortix router or direct providers.",
+      "categories": ["kortix-runtime", "search", "images"],
+      "dependencies": ["replicate@1.4.0"],
+      "registryDependencies": ["kortix-tool-env"],
+      "envVars": {
+        "REPLICATE_API_TOKEN": "Replicate token when not using the Kortix router."
+      },
+      "files": [
+        {
+          "path": "runtime/tools/image_search.ts",
+          "type": "registry:file",
+          "target": "@tools/image_search.ts"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "capabilities": {
+          "tools": ["image_search"],
+          "network": ["api.replicate.com"]
+        }
+      }
+    }
+  ]
+}

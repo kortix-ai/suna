@@ -645,8 +645,8 @@ importers:
         specifier: ^15.3.1
         version: 15.5.19(next@15.5.18)(react@19.1.0)
       '@opencode-ai/sdk':
-        specifier: ^1.14.28
-        version: 1.17.9
+        specifier: 1.17.11
+        version: 1.17.11
       '@paper-design/shaders-react':
         specifier: ^0.0.76
         version: 0.0.76(@types/react@19.1.17)(react@19.1.0)
@@ -4903,8 +4903,8 @@ packages:
     engines: {node: '>=12.4.0'}
     dev: true
 
-  /@opencode-ai/sdk@1.17.9:
-    resolution: {integrity: sha512-MHmXEpGPHkg14v1p+cUlIOUxd6DQdSElfau9nqY7tcDI0x5r4Y8D0dKXcyAh0Gc73ptaGW67Vg84nkcV6O27Pw==}
+  /@opencode-ai/sdk@1.17.11:
+    resolution: {integrity: sha512-UdSwnNM4/cD5rHnI8O7VaHuiwYnsEOglpRPVeeYE2S5Nm1K34ijCyZGDvBecb0ShdBQgn49XvyQWJH6cREsIPw==}
     dependencies:
       cross-spawn: 7.0.6
     dev: false

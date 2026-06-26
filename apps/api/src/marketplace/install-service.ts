@@ -19,6 +19,7 @@ import {
 import {
   findCatalogEntryByName,
   getCatalogEntry,
+  githubLoaderOptions,
   type CatalogEntry,
   type ItemCapabilities,
 } from './catalog';
@@ -40,7 +41,7 @@ function inlineResolvedItem(entry: CatalogEntry): ResolvedItem {
 
 /** Resolve an entry to a ResolvedItem — inline for base, fetched for external. */
 function resolveEntry(entry: CatalogEntry, raw: string): Promise<ResolvedItem> {
-  if (entry.external) return loadItem({ registry: entry.external, item: entry.item.name, raw });
+  if (entry.external) return loadItem({ registry: entry.external, item: entry.item.name, raw }, githubLoaderOptions);
   return Promise.resolve(inlineResolvedItem(entry));
 }
 

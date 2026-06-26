@@ -12,7 +12,7 @@
  * catalog entry → plan → files to commit) lives in `install-service.ts`.
  */
 
-import { getStarterFiles } from '@kortix/starter';
+import { getMarketplaceFiles, getStarterFiles, isKortixManagedSkillName } from '@kortix/starter';
 import {
   buildRegistry,
   describeRegistry,
@@ -55,6 +55,10 @@ export interface CatalogItem {
   owner?: string;
   /** The user-added source row this came from (for exact Remove matching); absent for base/env. */
   sourceId?: string;
+  /** First-party runtime skill managed by Kortix, not an ordinary optional install. */
+  managedBy?: 'kortix';
+  updatePolicy?: 'kortix-managed';
+  hidden?: boolean;
 }
 
 export interface DependencyItem {
@@ -160,6 +164,9 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     marketplaceLabel: marketplaceLabelOf(e.registry),
     owner: ownerOf(marketplaceId),
     sourceId: e.sourceId,
+    managedBy: e.item.meta?.managedBy === 'kortix' ? 'kortix' : undefined,
+    updatePolicy: e.item.meta?.updatePolicy === 'kortix-managed' ? 'kortix-managed' : undefined,
+    hidden: e.item.meta?.hidden === true,
   };
 }
 
@@ -192,10 +199,21 @@ function memSource(map: Map<string, string>): BuildSource {
 }
 
 function buildStarterRegistry(): RegistryJson {
-  const files = getStarterFiles({ projectName: 'Kortix Starter', template: 'general-knowledge-worker' });
+  const files = [
+    ...getStarterFiles({ projectName: 'Kortix Starter', template: 'general-knowledge-worker' }),
+    ...getMarketplaceFiles(),
+  ];
   const map = new Map(files.map((f) => [f.path, f.content] as const));
   const { registry } = buildRegistry({ name: 'kortix-starter', source: memSource(map) });
   for (const item of registry.items ?? []) {
+    if (item.type === 'registry:skill' && isKortixManagedSkillName(item.name)) {
+      item.categories = [...new Set([...(item.categories ?? []), 'kortix-managed'])];
+      item.meta = {
+        ...(item.meta ?? {}),
+        managedBy: 'kortix',
+        updatePolicy: 'kortix-managed',
+      };
+    }
     for (const f of item.files ?? []) {
       const content = map.get(f.path);
       if (content != null) f.content = content;
@@ -620,7 +638,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
   const { items } = await mergedCatalog();
   const by = new Map<string, MarketplaceFacet>();
   for (const it of items) {
-    if (UI_HIDDEN_TYPES.has(it.type)) continue; // bundles hidden until supported
+    if (UI_HIDDEN_TYPES.has(it.type) || it.hidden) continue; // bundles/support items hidden until supported
     const id = it.marketplaceId;
     let m = by.get(id);
     if (!m) {
@@ -781,7 +799,7 @@ function filterCatalogItems(items: CatalogItem[], opts: ItemQuery): CatalogItem[
   const type = opts.type?.trim();
   const source = opts.source?.trim();
   return items.filter((it) => {
-    if (UI_HIDDEN_TYPES.has(it.type)) return false;
+    if (UI_HIDDEN_TYPES.has(it.type) || it.hidden) return false;
     if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
     if (source && source !== 'all' && marketplaceIdOf(it.registry) !== source) return false;
     if (!q) return true;

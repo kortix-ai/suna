@@ -79,12 +79,6 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 
 FROM oven/bun:1-debian
 
-ARG OPENCODE_VERSION=1.14.28
-# Keep AGENT_BROWSER_VERSION / PLAYWRIGHT_VERSION in sync with the production
-# snapshot layer: apps/api/src/snapshots/dockerfile-layer.ts (and warm-bake.ts).
-ARG AGENT_BROWSER_VERSION=0.27.0
-ARG PLAYWRIGHT_VERSION=1.60.0
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -99,7 +93,9 @@ RUN apt-get update \
 # OpenCode is distributed as an npm package. Install globally so it ends
 # up on PATH as `opencode` — the daemon will auto-detect it (or prefer
 # /usr/local/bin/opencode-kortix if a patched build is present).
-RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
+COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
+RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
+    && npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version
 
@@ -126,12 +122,14 @@ RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
 # is ever ignored again (vercel-labs/agent-browser#422). The build FAILS LOUDLY
 # if Chromium didn't wire up. HOME pins the cache to the runtime HOME so the
 # agent finds it at runtime. Keep PLAYWRIGHT_VERSION in sync with
-# apps/api/src/snapshots/dockerfile-layer.ts + warm-bake.ts.
+# packages/shared/src/runtime-versions.json.
 # --no-sandbox: container runs as root and Chromium refuses its own sandbox there.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
-RUN npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
+RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
+    && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
+    && npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
     && agent-browser --version \
     && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* \

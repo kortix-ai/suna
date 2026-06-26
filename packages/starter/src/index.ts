@@ -10,7 +10,8 @@
  *
  * Editing the starter is plain file editing — shared Kortix runtime
  * files live under `templates/base/`, richer starter layers live under
- * `templates/<template>/`, and both the API and CLI pick them up.
+ * `templates/<template>/`, optional first-party marketplace items live
+ * under `templates/marketplace/`, and both the API and CLI pick them up.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -34,14 +35,29 @@ export interface StarterFile {
 
 export const STARTER_TEMPLATE_IDS = ['minimal', 'general-knowledge-worker'] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
-export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
+export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'minimal';
+
+export const KORTIX_MANAGED_SKILL_NAMES = [
+  'kortix-computer',
+  'kortix-executor',
+  'kortix-memory',
+  'kortix-slack',
+  'kortix-system',
+] as const;
+export type KortixManagedSkillName = (typeof KORTIX_MANAGED_SKILL_NAMES)[number];
+
+const KORTIX_MANAGED_SKILL_NAME_SET = new Set<string>(KORTIX_MANAGED_SKILL_NAMES);
+
+export function isKortixManagedSkillName(name: string): name is KortixManagedSkillName {
+  return KORTIX_MANAGED_SKILL_NAME_SET.has(name);
+}
 
 export interface StarterVars {
   /** Human display name for the project (e.g. "Company OS"). */
   projectName: string;
   /** "owner/repo" GitHub identifier. Optional — defaults to "your-org/your-repo". */
   repoFullName?: string;
-  /** Starter variant. Defaults to the richer general knowledge worker. */
+  /** Starter variant. Defaults to the minimal Kortix runtime floor. */
   template?: StarterTemplateId;
 }
 
@@ -53,6 +69,7 @@ const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
   'templates',
   'general-knowledge-worker',
 );
+const MARKETPLACE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'marketplace');
 
 export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
   if (typeof value === 'string' && (STARTER_TEMPLATE_IDS as readonly string[]).includes(value)) {
@@ -119,6 +136,14 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
 
   const files = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
   return files;
+}
+
+/**
+ * Optional first-party items that are listed in the Kortix marketplace but are
+ * not part of the starter floor.
+ */
+export function getMarketplaceFiles(): StarterFile[] {
+  return rawFilesForRoot('marketplace', MARKETPLACE_TEMPLATE_DIR).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**

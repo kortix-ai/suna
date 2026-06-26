@@ -1,12 +1,11 @@
 /**
- * `kortix add <item>` — install a registry item (skill / agent / command /
- * tool / file / folder / bundle) into this project.
+ * Installer implementation backing `kortix marketplace install`.
  *
- *   kortix add kortix-ai/skills/pdf          GitHub registry item
- *   kortix add github:kortix-ai/skills@v1/pdf  pinned ref
- *   kortix add @kortix/pdf                    namespaced registry
- *   kortix add ./local/registry.json#pdf      a local registry
- *   kortix add https://host/r/pdf.json        a direct item URL
+ *   kortix marketplace install kortix-ai/skills/pdf
+ *   kortix marketplace install github:kortix-ai/skills@v1/pdf
+ *   kortix marketplace install @kortix/pdf
+ *   kortix marketplace install ./local/registry.json#pdf
+ *   kortix marketplace install https://host/r/pdf.json
  *
  * Default target is the local working tree (files written under .kortix/,
  * you commit). `--project <id>` commits straight into a linked cloud project's
@@ -50,23 +49,26 @@ interface InstallResponse {
   capabilities: { secrets: string[]; connectors: string[]; tools: string[]; network: string[] };
 }
 
-const HELP = `Usage: kortix add <item> [options]
+const HELP = `Usage: kortix marketplace install <item> [options]
 
-Install a registry item into this project. Items can be skills, agents,
-commands, tools, files, folders, or bundles — anything in a registry.
+Install a marketplace item into this project. Items can be skills, agents,
+commands, tools, files, folders, or bundles.
 
 Address forms:
-  owner/repo/item            A GitHub registry item (registry.json at repo root)
+  pdf                        A marketplace item name
+  kortix-starter:pdf         A marketplace item id
+  owner/repo/item            A legacy GitHub registry item
   github:owner/repo@ref/item Pin to a branch/tag/sha
-  @namespace/item            A namespaced registry (configure with --namespace)
-  ./path/registry.json#item  A local registry on disk
-  https://host/r/item.json   A direct item URL
+  @namespace/item            A legacy namespaced registry item
+  ./path/registry.json#item  A legacy local registry item
+  https://host/r/item.json   A legacy direct item URL
 
 Options:
   --root <dir>      Project root to install into (default: cwd).
   --project <id>    Commit into a linked cloud project's repo instead of cwd.
+  --host <name>     Use a configured Kortix host for --project installs.
   --ref <ref>       Git ref for a GitHub registry (default: main, then master).
-  --namespace <a=b> Map a namespace to an item URL template (repeatable).
+  --namespace <a=b> Legacy namespace to item URL template (repeatable).
   --overwrite       Overwrite files that already exist.
   --dry-run         Show what would be installed without writing anything.
   --json            Machine-readable output.
@@ -75,7 +77,9 @@ Options:
 
 interface Flags {
   root: string;
+  rootExplicit: boolean;
   project?: string;
+  host?: string;
   ref?: string;
   namespaces: Record<string, string>;
   overwrite: boolean;
@@ -86,6 +90,7 @@ interface Flags {
 function parseFlags(argv: string[]): { address?: string; flags: Flags } {
   const flags: Flags = {
     root: process.cwd(),
+    rootExplicit: false,
     namespaces: {},
     overwrite: false,
     dryRun: false,
@@ -94,8 +99,12 @@ function parseFlags(argv: string[]): { address?: string; flags: Flags } {
   let address: string | undefined;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--root' && argv[i + 1]) flags.root = resolve(argv[++i]);
+    if (arg === '--root' && argv[i + 1]) {
+      flags.root = resolve(argv[++i]);
+      flags.rootExplicit = true;
+    }
     else if (arg === '--project' && argv[i + 1]) flags.project = argv[++i];
+    else if (arg === '--host' && argv[i + 1]) flags.host = argv[++i];
     else if (arg === '--ref' && argv[i + 1]) flags.ref = argv[++i];
     else if (arg === '--namespace' && argv[i + 1]) {
       const [k, v] = argv[++i].split('=');
@@ -127,18 +136,19 @@ function configDirFor(root: string): string {
   return resolveOpencodeDir(raw);
 }
 
-export async function runAdd(argv: string[]): Promise<number> {
+export async function runMarketplaceInstall(argv: string[]): Promise<number> {
   const { address, flags } = parseFlags(argv);
   if (!address || argv.includes('-h') || argv.includes('--help')) {
     process.stdout.write(HELP);
     return address ? 0 : 2;
   }
 
-  // Cloud path: install straight into a linked project's repo (no local clone).
+  // Default cloud path: install straight into the linked project's repo (no
+  // local clone). `--root` keeps the developer/local registry path explicit.
   // The address is resolved against the project's marketplace catalog, so it
   // may be a bare name ("pdf"), a catalog id ("kortix-starter:pdf"), or a title.
-  if (flags.project) {
-    return addToProject(address, flags);
+  if (flags.project || !flags.rootExplicit) {
+    return installToProject(address, flags);
   }
 
   let resolved: ResolvedItem;
@@ -223,8 +233,8 @@ function printPlan(resolved: ResolvedItem, plan: InstallPlan, flags: Flags): voi
 }
 
 /** Install a marketplace item straight into a linked cloud project's repo. */
-async function addToProject(address: string, flags: Flags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project });
+async function installToProject(address: string, flags: Flags): Promise<number> {
+  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
 
   let items: CatalogItem[];
@@ -246,7 +256,7 @@ async function addToProject(address: string, flags: Flags): Promise<number> {
   if (!match) {
     process.stderr.write(
       `${status.err(`No marketplace item matches "${address}".`)} ` +
-        `Browse with ${C.cyan}kortix registry list${C.reset} or the web marketplace.\n`,
+        `Browse with ${C.cyan}kortix marketplace search ${address}${C.reset} or the web marketplace.\n`,
     );
     if (items.length > 1) {
       process.stdout.write(`  ${C.dim}Did you mean:${C.reset} ${items.slice(0, 6).map((i) => i.id).join(', ')}\n`);
@@ -254,16 +264,18 @@ async function addToProject(address: string, flags: Flags): Promise<number> {
     return 1;
   }
 
-  process.stdout.write(
-    `\n  ${C.bold}${match.title}${C.reset} ${C.faded}(${match.type.replace('registry:', '')})${C.reset}\n`,
-  );
-  if (match.description) process.stdout.write(`  ${C.dim}${match.description}${C.reset}\n`);
-  if (match.dependencies.length > 0) {
-    process.stdout.write(`  ${C.dim}Pulls:${C.reset} ${match.dependencies.join(', ')}\n`);
-  }
-  const secrets = match.capabilities?.secrets ?? [];
-  if (secrets.length > 0) {
-    process.stdout.write(`  ${C.dim}Needs secrets:${C.reset} ${secrets.join(', ')}\n`);
+  if (!flags.json) {
+    process.stdout.write(
+      `\n  ${C.bold}${match.title}${C.reset} ${C.faded}(${match.type.replace('registry:', '')})${C.reset}\n`,
+    );
+    if (match.description) process.stdout.write(`  ${C.dim}${match.description}${C.reset}\n`);
+    if (match.dependencies.length > 0) {
+      process.stdout.write(`  ${C.dim}Pulls:${C.reset} ${match.dependencies.join(', ')}\n`);
+    }
+    const secrets = match.capabilities?.secrets ?? [];
+    if (secrets.length > 0) {
+      process.stdout.write(`  ${C.dim}Needs secrets:${C.reset} ${secrets.join(', ')}\n`);
+    }
   }
 
   if (flags.dryRun) {
@@ -275,7 +287,7 @@ async function addToProject(address: string, flags: Flags): Promise<number> {
 
   let res: InstallResponse;
   try {
-    res = await ctx.client.post<InstallResponse>(`/projects/${ctx.projectId}/registry/install`, { id: match.id });
+    res = await ctx.client.post<InstallResponse>(`/projects/${ctx.projectId}/marketplace/install`, { id: match.id });
   } catch (err) {
     return surfaceApiError(err);
   }

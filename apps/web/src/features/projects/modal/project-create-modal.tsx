@@ -114,7 +114,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
-      includeGeneralKnowledgeSkills: true,
+      includeGeneralKnowledgeSkills: false,
     },
   });
 

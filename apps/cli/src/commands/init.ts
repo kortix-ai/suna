@@ -58,8 +58,8 @@ Options:
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: general-knowledge-worker (default) or minimal.
-                       Use minimal to skip the general knowledge worker skills.
+  --template <name>    Starter template: minimal (default) or general-knowledge-worker.
+                       Use general-knowledge-worker to include the optional skill pack.
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -276,7 +276,7 @@ export async function runInit(argv: string[]): Promise<number> {
     const skills = listGeneralKnowledgeWorkerSkills();
     const includeSkills = await confirm(
       `Include general knowledge worker skills? (${formatSkillList(skills)})`,
-      true,
+      false,
     );
     template = includeSkills ? 'general-knowledge-worker' : 'minimal';
   }

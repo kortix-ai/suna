@@ -21,13 +21,17 @@
  * the user-facing constraint list.
  */
 
+import {
+  AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
+
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
  * the layer when the caller doesn't pin one explicitly. The builder may pass an
  * override via `agentBrowserVersion` to centralize the pin (and fold it into the
  * snapshot fingerprint); this fallback keeps the layer self-contained.
  */
-const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
  * Chromium source for `agent-browser`. agent-browser's own `install` fetches
@@ -38,7 +42,6 @@ const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
  * RUNTIME_LAYER_VERSION in templates.ts when this changes so cached images
  * rebuild (the rendered Dockerfile text is not itself part of the fingerprint).
  */
-const PLAYWRIGHT_VERSION = '1.60.0';
 
 /**
  * Hardcoded "platform default" Dockerfile. Used when a session boots from

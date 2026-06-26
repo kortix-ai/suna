@@ -52,11 +52,11 @@ function walk(root: string, relPrefix = ''): string[] {
 }
 
 describe('applyScaffold', () => {
-  test('writes the full Kortix starter into a fresh directory', () => {
+  test('writes the default minimal Kortix starter into a fresh directory', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
 
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
-    for (const path of GKW_SKILL_PATHS) expect(result.written).toContain(path);
+    for (const path of GKW_SKILL_PATHS) expect(result.written).not.toContain(path);
     expect(result.skipped).toEqual([]);
 
     expect(walk(dir)).toEqual(result.written.sort());
@@ -71,6 +71,17 @@ describe('applyScaffold', () => {
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('.kortix/memory/overview.md');
+  });
+
+  test('general knowledge worker skills are explicit opt-in', () => {
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Hello World',
+      template: 'general-knowledge-worker',
+    });
+
+    for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
+    for (const path of GKW_SKILL_PATHS) expect(result.written).toContain(path);
   });
 
   test('minimal template writes only the shared Kortix starter', () => {
