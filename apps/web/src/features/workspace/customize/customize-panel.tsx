@@ -8,6 +8,14 @@ import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/mod
 import { Icon } from '@/features/icon/icon';
 import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { ConnectorsView } from '@/features/workspace/customize/sections/connectors-view';
+import {
+  LlmBudgetsView,
+  LlmGatewayEnablePrompt,
+  LlmKeysView,
+  LlmLogsView,
+  LlmOverviewView,
+  LlmProvidersView,
+} from '@/features/workspace/customize/sections/gateway-view';
 import { AgentsView } from '@/features/workspace/customize/sections/view/agents-view';
 import { ChannelsView } from '@/features/workspace/customize/sections/view/channels-view';
 import { CommandsView } from '@/features/workspace/customize/sections/view/commands-view';
@@ -18,8 +26,8 @@ import { SecretsView } from '@/features/workspace/customize/sections/view/secret
 import { SettingsView } from '@/features/workspace/customize/sections/view/settings-view';
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { useIsMobile } from '@/hooks/utils';
-import type { CustomizeSection } from '@/lib/customize-sections';
-import { getProjectDetail } from '@/lib/projects-client';
+import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
+import { getProjectDetail, type KortixProject } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -27,17 +35,22 @@ import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
+  Boxes,
   Container,
   FolderOpen,
+  Gauge,
   GitPullRequest,
   KeyRound,
+  KeySquare,
   Monitor,
   Plug,
+  ScrollText,
   Store,
   Terminal,
+  Wallet,
   Webhook,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { LuSettings, LuUsersRound } from 'react-icons/lu';
 import { FilesSection } from './sections/files-section';
 import { ChangesView } from './sections/view/changes-view';
@@ -86,20 +99,57 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
+const LLM_GROUP: RailGroup = {
+  label: 'LLM',
+  items: [
+    { section: 'llm-overview', label: 'Overview', icon: Gauge },
+    { section: 'llm-providers', label: 'Providers', icon: Boxes },
+    { section: 'llm-logs', label: 'Logs', icon: ScrollText },
+    { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
+    { section: 'llm-keys', label: 'Keys', icon: KeySquare },
+  ],
+};
+
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
-function railGroups(tunnelEnabled: boolean, marketplaceEnabled: boolean): readonly RailGroup[] {
-  return GROUPS.map((g) => {
+function isLlmGatewayEnabled(project: KortixProject | undefined): boolean {
+  if (!project) return false;
+  if (project.experimental?.llm_gateway === true) return true;
+  return (
+    project.experimental_features?.some((feature) => feature.key === 'llm_gateway' && feature.enabled) ??
+    false
+  );
+}
+
+function isLlmGatewayAvailable(project: KortixProject | undefined): boolean {
+  return (
+    project?.experimental_features?.some(
+      (feature) => feature.key === 'llm_gateway' && feature.available,
+    ) ?? false
+  );
+}
+
+function railGroups(
+  tunnelEnabled: boolean,
+  marketplaceEnabled: boolean,
+  llmGatewayAvailable: boolean,
+): readonly RailGroup[] {
+  const groups: RailGroup[] = [];
+  for (const g of GROUPS) {
     if (g.label === 'Build' && marketplaceEnabled) {
-      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
+      groups.push({ ...g, items: [...g.items, MARKETPLACE_ITEM] });
+    } else if (g.label === 'Connect' && tunnelEnabled) {
+      groups.push({ ...g, items: [...g.items, COMPUTERS_ITEM] });
+    } else {
+      groups.push(g);
     }
-    if (g.label === 'Connect' && tunnelEnabled) {
-      return { ...g, items: [...g.items, COMPUTERS_ITEM] };
+    if (g.label === 'Connect' && llmGatewayAvailable) {
+      groups.push(LLM_GROUP);
     }
-    return g;
-  });
+  }
+  return groups;
 }
 
 export function CustomizPanel({ projectId }: { projectId: string }) {
@@ -112,7 +162,7 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
   const detail = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
-    enabled: open && !!projectId,
+    enabled: !!projectId,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
@@ -120,11 +170,20 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
 
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
+  const llmGatewayEnabled = isLlmGatewayEnabled(detail.data?.project);
+  const llmGatewayAvailable = isLlmGatewayAvailable(detail.data?.project);
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled),
-    [tunnelEnabled, marketplaceEnabled],
+    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayAvailable),
+    [tunnelEnabled, marketplaceEnabled, llmGatewayAvailable],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const sectionVisible = allItems.some((item) => item.section === section);
+
+  useEffect(() => {
+    if (open && !sectionVisible && !section.startsWith('llm-')) {
+      setSection(DEFAULT_CUSTOMIZE_SECTION);
+    }
+  }, [open, section, sectionVisible, setSection]);
 
   return (
     <Modal open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -227,7 +286,16 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
           )}
 
           <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            {open && <SectionContent section={section} projectId={projectId} />}
+            {open && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <SectionContent
+                  section={section}
+                  projectId={projectId}
+                  llmGatewayEnabled={llmGatewayEnabled}
+                  onOpenSettings={() => setSection('settings')}
+                />
+              </div>
+            )}
           </main>
         </div>
       </ModalContent>
@@ -266,7 +334,21 @@ function RailButton({
   );
 }
 
-function SectionContent({ section, projectId }: { section: CustomizeSection; projectId: string }) {
+function SectionContent({
+  section,
+  projectId,
+  llmGatewayEnabled,
+  onOpenSettings,
+}: {
+  section: CustomizeSection;
+  projectId: string;
+  llmGatewayEnabled: boolean;
+  onOpenSettings: () => void;
+}) {
+  if (section.startsWith('llm-') && !llmGatewayEnabled) {
+    return <LlmGatewayEnablePrompt onOpenSettings={onOpenSettings} />;
+  }
+
   switch (section) {
     case 'agents':
       return <AgentsView projectId={projectId} />;
@@ -282,6 +364,16 @@ function SectionContent({ section, projectId }: { section: CustomizeSection; pro
       return <SecretsView projectId={projectId} />;
     case 'channels':
       return <ChannelsView projectId={projectId} />;
+    case 'llm-overview':
+      return <LlmOverviewView projectId={projectId} />;
+    case 'llm-providers':
+      return <LlmProvidersView projectId={projectId} />;
+    case 'llm-logs':
+      return <LlmLogsView projectId={projectId} />;
+    case 'llm-budgets':
+      return <LlmBudgetsView projectId={projectId} />;
+    case 'llm-keys':
+      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'schedules':

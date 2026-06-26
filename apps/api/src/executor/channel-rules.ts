@@ -52,7 +52,7 @@ export function withChannelDeclaration(
 ): { connectors: Entry[]; changed: boolean } {
   let changed = false;
   for (const e of connectors) {
-    if (isChannelFor(e, platform) && e.slug !== slug) {
+    if (platform === 'slack' && isChannelFor(e, platform) && e.slug !== slug) {
       e.slug = slug;
       changed = true;
     }
@@ -74,6 +74,10 @@ export function withoutChannelDeclaration(
   platform: ChannelPlatform,
   slug: string,
 ): { connectors: Entry[]; changed: boolean } {
-  const next = connectors.filter((e) => e?.slug !== slug && !isChannelFor(e, platform));
+  const next = connectors.filter((e) => {
+    if (e?.slug === slug) return false;
+    if (platform === 'slack' && isChannelFor(e, platform) && e.slug === 'slack') return false;
+    return true;
+  });
   return { connectors: next, changed: next.length !== connectors.length };
 }

@@ -20,6 +20,7 @@ import {
   selectionToIntent,
 } from '@/features/workspace/shared/sharing-picker';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
 import {
   listProjectSecrets,
@@ -160,6 +161,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           toast.success('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          refreshProjectProviderState(queryClient, projectId);
           onConnected?.();
           return;
         }

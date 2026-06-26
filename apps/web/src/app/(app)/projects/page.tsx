@@ -30,7 +30,11 @@ import {
 } from '@/hooks/legacy/use-legacy-machine-migration';
 import { billingApi } from '@/lib/api/billing';
 import { isBillingEnabled } from '@/lib/config';
-import { ensureFirstProject } from '@/lib/onboarding/ensure-first-project';
+import {
+  ensureFirstProject,
+  hasFirstProjectBootstrapSignal,
+  shouldAutoCreateFirstProject,
+} from '@/lib/onboarding/ensure-first-project';
 import {
   type KortixProject,
   archiveProject,
@@ -61,6 +65,9 @@ export default function ProjectsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const [firstProjectBootstrapRequested, setFirstProjectBootstrapRequested] = useState(() => {
+    return hasFirstProjectBootstrapSignal(searchParams);
+  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -185,11 +192,9 @@ export default function ProjectsPage() {
   });
   const startMigration = useStartLegacyMigration(activeAccountId);
 
-  // ── Onboarding: a subscribed account with zero projects auto-gets a starter
-  // project and drops straight into it — no "create your first project" substep.
-  // Also makes the post-subscribe return (/projects?team_signup=success) land
-  // directly inside a project. Fires once per account (ref guard); falls back to
-  // the manual empty state on failure so the user is never trapped.
+  // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
+  // first project. A normal empty projects list can come from deleting the last
+  // project, and must stay empty instead of recreating it.
   const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,
@@ -198,34 +203,45 @@ export default function ProjectsPage() {
   const [autoCreating, setAutoCreating] = useState(false);
 
   useEffect(() => {
-    if (!activeAccountId || !canCreateProjects) return;
-    if (autoCreateAttempted.current.has(activeAccountId)) return;
-    if (accountsQuery.isLoading || projectsQuery.isLoading || projectsQuery.isError) return;
-    if (!projectsQuery.data) return;
-    if ((projectsQuery.data.length ?? 0) > 0) return;
-
+    const accountId = activeAccountId;
     const legacySandboxes = legacyMachinesQuery.data?.sandboxes;
-    if (legacyMachinesQuery.isSuccess && (legacySandboxes?.length ?? 0) > 0) return;
-
-    if (isBillingEnabled()) {
-      if (accountStateLoading) return;
-      if (!accountState?.credits?.can_run) return;
+    if (
+      !shouldAutoCreateFirstProject({
+        bootstrapRequested: firstProjectBootstrapRequested,
+        activeAccountId: accountId,
+        canCreateProjects,
+        autoCreateAttempted: accountId ? autoCreateAttempted.current.has(accountId) : false,
+        accountsLoading: accountsQuery.isLoading,
+        projectsLoading: projectsQuery.isLoading,
+        projectsError: projectsQuery.isError,
+        projectsLoaded: !!projectsQuery.data,
+        projectCount: projectsQuery.data?.length ?? 0,
+        legacyMachinesLoaded: legacyMachinesQuery.isSuccess,
+        legacyMachineCount: legacySandboxes?.length ?? 0,
+        billingEnabled: isBillingEnabled(),
+        accountStateLoading,
+        canRun: !!accountState?.credits?.can_run,
+      })
+    ) {
+      return;
     }
+    if (!accountId) return;
 
-    autoCreateAttempted.current.add(activeAccountId);
+    autoCreateAttempted.current.add(accountId);
+    setFirstProjectBootstrapRequested(false);
     setAutoCreating(true);
-    ensureFirstProject(activeAccountId)
+    ensureFirstProject(accountId)
       .then((project) => {
         if (!project) {
           setAutoCreating(false);
-          autoCreateAttempted.current.delete(activeAccountId);
+          autoCreateAttempted.current.delete(accountId);
           return;
         }
-        queryClient.invalidateQueries({ queryKey: ['projects', activeAccountId] });
+        queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
         router.replace(`/projects/${project.project_id}`);
       })
       .catch((err) => {
-        autoCreateAttempted.current.delete(activeAccountId);
+        autoCreateAttempted.current.delete(accountId);
         setAutoCreating(false);
         console.error('[onboarding] auto-create first project failed', err);
       });
@@ -238,6 +254,7 @@ export default function ProjectsPage() {
     projectsQuery.data,
     legacyMachinesQuery.isSuccess,
     legacyMachinesQuery.data,
+    firstProjectBootstrapRequested,
     accountStateLoading,
     accountState?.credits?.can_run,
     queryClient,

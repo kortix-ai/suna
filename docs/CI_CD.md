@@ -13,17 +13,20 @@ PR opened ─┬─ ci.yml ............. build/typecheck per app + Trivy fs + de
            ├─ codeql.yml ......... SAST (security-and-quality)
            └─ secret-scan.yml .... gitleaks on the PR range
                  │  (all must pass)
-merge to main ─── deploy-dev.yml ... build image + node-pg-migrate dev DB + GitOps dev roll
-                  qa-main.yml ..... e2e·visual·a11y (vs deployed target) + migration checks + publish Allure
+push/merge main ─ deploy-dev.yml ... build image + node-pg-migrate dev DB + GitOps dev roll
+                 │
+promote/PR staging ─ build-staging.yml . build exact staging images
+                     deploy-staging.yml . node-pg-migrate staging DB + staging GitOps roll
+                     qa-staging.yml ... e2e·visual·a11y (vs deployed target) + migration checks + publish Allure
                  │
 nightly cron ──── qa-nightly.yml .. performance(k6)·DAST(ZAP)·pentest·mutation·chaos·static-security
                  │
-PR → prod ─────── qa-release.yml .. full suite in sequence + gates (blocking pre-prod)
+PR staging → prod ─ qa-release.yml .. full suite in sequence + gates (blocking pre-prod)
                  │  promote.yml gates on all-green check-runs
-merge to prod ─── deploy-prod.yml . retag dev→version images, node-pg-migrate prod DB, publish, GitOps prod roll
+merge to prod ─── deploy-prod.yml . retag staging→version images, node-pg-migrate prod DB, publish, GitOps prod roll
 ```
 
-Deploy lanes: `deploy-dev.yml` (push→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `deploy-preview.yml` (PR→Vercel preview), `deploy-prod.yml` (prod DB migrations + EKS GitOps), `hotfix-prod.yml` (break-glass — see below). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
+Deploy lanes: `deploy-dev.yml` (main→dev, Trivy CRITICAL gate + SBOM + cosign + dev DB migrations + EKS GitOps), `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` (staging release-candidate artifacts + staging DB migrations + e2e), `deploy-preview.yml` (PR→Vercel preview), `deploy-prod.yml` (prod DB migrations + EKS GitOps), `hotfix-prod.yml` (break-glass — see below). IaC: `terraform-ci.yml`, `drata-compliance.yml`, `security-scan.yml` (weekly).
 
 ## Emergency hotfix (break-glass)
 
@@ -56,7 +59,7 @@ it skipped is still owed afterward (open a follow-up PR through the normal path)
 | Integration · contract · api/ke2e route-coverage | qa-pr.yml | yes |
 | gitleaks (PR range) | secret-scan.yml | yes |
 | SAST (Semgrep) | package-tests.yml (advisory ratchet), qa-nightly/release (blocking) | mixed |
-| e2e · visual · a11y | qa-main.yml (post-merge) | tracked |
+| e2e · visual · a11y | qa-staging.yml (post-staging) | tracked |
 | Full suite + gates | qa-release.yml | yes (pre-prod) |
 
 `make gates` (`tests/scripts/quality-gates.sh`) fails on: any JUnit failure, unit line coverage `< MIN_COVERAGE` (80%), any CRITICAL/HIGH SARIF finding, any k6 threshold breach.
@@ -72,7 +75,7 @@ Tests that need a live system read their target from env/vars — never hardcode
 | performance / DAST | `BASE_URL` / `TARGET_URL` | `vars` (dedicated perf/QA target) |
 | Report publish | `QA_REPORTS_ROLE_ARN` (OIDC), `QA_REPORTS_BUCKET` | secrets/vars (S3 + `qa.kortix.com`) |
 
-If a UI target var is unset, `qa-main` **skips browser regression with a notice** (it does not fail) — set `QA_WEB_BASE_URL` (e.g. to the preview/dev deployment) to enable it.
+If a UI target var is unset, `qa-staging` **skips browser regression with a notice** (it does not fail) — set `QA_WEB_BASE_URL` (e.g. to the staging deployment) to enable it.
 
 ## Accessibility gate (ratchet)
 
@@ -97,5 +100,8 @@ If a UI target var is unset, `qa-main` **skips browser regression with a notice*
 
 - **Secrets:** `DOTENV_PRIVATE_KEY` (api suite), `KE2E_*` (ke2e), `QA_REPORTS_ROLE_ARN`, `DRATA_IAC_PIPELINE_KEY`, `SLACK_BOT_TOKEN` + `SLACK_RELEASE_CHANNEL` (release/hotfix alerts), `SLACK_HOTFIX_CHANNEL` (optional dedicated incident channel; falls back to release channel), `PROD_HOTFIX_TOKEN` (optional, if branch protection blocks the bot push).
 - **Vars:** `QA_WEB_BASE_URL` (enables UI regression), `A11Y_CONTRAST_MAX`, `QA_REPORTS_BUCKET`, `QA_AWS_REGION`, `QA_REPORTS_PUBLIC_BASE_URL`, `MIN_COVERAGE`.
-- **Branch protection:** require `ci`, `package-tests`, `qa-pr` on `main`; require `qa-release` on `prod`; create the `production-hotfix` environment with reviewers.
+- **Branch protection:** keep `main` push-friendly (no force/delete), keep `staging` as the pre-prod branch for PR-based human/code changes plus bot GitOps pin commits, require `qa-release` on `prod`; create the `production-hotfix` environment with reviewers. See `docs/specs/2026-06-25-dev-staging-prod-release-topology.md`.
+- **Staging DB isolation:** `deploy-staging.yml` must fail if `STAGING_DATABASE_URL`
+  is missing; staging must not fall back to dev, KE2E, or prod Postgres for
+  migrations or runtime.
 - **QA report portal (`qa.kortix.com`):** served from the private `kortix-qa-reports` S3 bucket via the in-cluster nginx pod, behind **Cloudflare Access (Zero Trust)** — every report (incl. the per-PR Allure links) requires Kortix auth. Configured in `infra/terraform/modules/qa-portal` (`enable_access = true`); needs `TF_VAR_cloudflare_account_id`, a Zero Trust identity provider, and a Cloudflare token with *Account · Access: Apps and Policies · Edit*. `QA_REPORTS_PUBLIC_BASE_URL` should point at `https://qa.kortix.com`, so PR links land at `qa.kortix.com/reports/pr/<PR#>/<run-id>/` and prompt login.

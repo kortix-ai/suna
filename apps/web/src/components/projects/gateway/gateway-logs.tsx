@@ -3,19 +3,21 @@
 import {
   Activity,
   ArrowLeft,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clock,
   Coins,
   DollarSign,
   ScrollText,
 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { forwardRef, type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
+import Hint from '@/components/ui/hint';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import { CopyButton, displayModel, modelAccent } from './_shared';
 
@@ -28,12 +30,6 @@ function fmtTime(iso: string) {
     minute: '2-digit',
     second: '2-digit',
   });
-}
-
-function latencyTone(ms: number): string {
-  if (ms < 800) return 'text-kortix-green';
-  if (ms < 2500) return 'text-muted-foreground';
-  return 'text-kortix-orange';
 }
 
 function StatusBadge({ ok, status }: { ok: boolean; status: number }) {
@@ -56,13 +52,22 @@ const FILTERS: { key: 'all' | 'ok' | 'err'; label: string }[] = [
   { key: 'err', label: 'Errors' },
 ];
 
-function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
+const LogRow = forwardRef<
+  HTMLButtonElement,
+  { row: GatewayLogRow; focused: boolean; onClick: () => void; onHover: () => void }
+>(function LogRow({ row, focused, onClick, onHover }, ref) {
   const accent = modelAccent(row.requested_model || row.resolved_model);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
-      className="group grid w-full grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-3 border-b border-border/40 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-muted/50"
+      onMouseMove={onHover}
+      aria-current={focused ? 'true' : undefined}
+      className={cn(
+        'group grid w-full scroll-mt-2 grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-3 border-b border-border/40 px-4 py-2.5 text-left transition-colors duration-150',
+        focused ? 'bg-primary/[0.06]' : 'hover:bg-muted/50',
+      )}
     >
       <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
       <div className="min-w-0">
@@ -74,7 +79,7 @@ function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
           {!row.ok && row.error_code ? ` · ${row.error_code}` : ''}
         </div>
       </div>
-      <span className={cn('hidden text-xs tabular-nums sm:block', latencyTone(row.latency_ms))}>
+      <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
         {row.latency_ms}ms
       </span>
       <span className="hidden w-20 text-right text-xs tabular-nums text-muted-foreground md:block">
@@ -85,11 +90,16 @@ function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
         <span className="w-16 text-right text-xs tabular-nums text-foreground">
           ${row.final_cost.toFixed(4)}
         </span>
-        <ChevronRight className="size-4 text-muted-foreground/40 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+        <ChevronRight
+          className={cn(
+            'size-4 text-muted-foreground/40 transition-transform duration-150',
+            focused ? 'translate-x-0.5 text-muted-foreground' : 'group-hover:translate-x-0.5',
+          )}
+        />
       </span>
     </button>
   );
-}
+});
 
 function StatTile({
   icon: Icon,
@@ -141,20 +151,73 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: string }) {
-  const selectLog = useGatewayOverlayStore((s) => s.selectLog);
+function NavButton({
+  icon: Icon,
+  label,
+  disabled,
+  onClick,
+}: {
+  icon: typeof ChevronUp;
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Hint label={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+      >
+        <Icon className="size-4" />
+      </button>
+    </Hint>
+  );
+}
+
+function GatewayLogDetail({
+  projectId,
+  logId,
+  index,
+  total,
+  onBack,
+  onPrev,
+  onNext,
+}: {
+  projectId: string;
+  logId: string;
+  index: number;
+  total: number;
+  onBack: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
   const { data, isLoading } = useGatewayLog(projectId, logId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/50 bg-background/95 px-4 py-2.5 backdrop-blur">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border/50 bg-background/95 px-4 py-2.5 backdrop-blur">
         <button
           type="button"
-          onClick={() => selectLog(null)}
+          onClick={onBack}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowLeft className="size-4" /> Logs
         </button>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs tabular-nums text-muted-foreground/70">
+            {index + 1} / {total}
+          </span>
+          <NavButton icon={ChevronUp} label="Previous (↑)" disabled={index <= 0} onClick={onPrev} />
+          <NavButton
+            icon={ChevronDown}
+            label="Next (↓)"
+            disabled={index >= total - 1}
+            onClick={onNext}
+          />
+        </div>
       </div>
       {isLoading || !data ? (
         <div className="space-y-3 p-5">
@@ -183,29 +246,22 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatTile
-              icon={Clock}
-              label="Latency"
-              value={`${data.latency_ms}ms`}
-              accent="var(--chart-2)"
-            />
+            <StatTile icon={Clock} label="Latency" value={`${data.latency_ms}ms`} />
             <StatTile
               icon={Coins}
               label="Tokens"
               value={(data.input_tokens + data.output_tokens).toLocaleString()}
-              accent="var(--chart-3)"
             />
             <StatTile
               icon={Activity}
               label="Provider cost"
               value={`$${data.upstream_cost.toFixed(4)}`}
-              accent="var(--chart-4)"
             />
             <StatTile
               icon={DollarSign}
               label="Billed"
               value={`$${data.final_cost.toFixed(4)}`}
-              accent="var(--chart-1)"
+              accent="var(--kortix-blue)"
             />
           </div>
 
@@ -248,16 +304,97 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
 }
 
 export function GatewayLogs({ projectId }: { projectId: string }) {
-  const selectedLogId = useGatewayOverlayStore((s) => s.selectedLogId);
-  const selectLog = useGatewayOverlayStore((s) => s.selectLog);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'ok' | 'err'>('all');
+  const [focused, setFocused] = useState(0);
   const { data, isLoading } = useGatewayLogs(
     projectId,
     filter === 'all' ? undefined : { ok: filter === 'ok' },
   );
   const logs = data?.logs ?? [];
 
-  if (selectedLogId) return <GatewayLogDetail projectId={projectId} logId={selectedLogId} />;
+  // Keep focus in-bounds as the live list grows/shrinks or the filter changes.
+  useEffect(() => {
+    setFocused((i) => Math.min(i, Math.max(0, logs.length - 1)));
+  }, [logs.length]);
+  useEffect(() => setFocused(0), [filter]);
+
+  const focusedRowRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!selectedLogId) focusedRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focused, selectedLogId]);
+
+  // One global key handler reading the latest state through refs — full keyboard
+  // control: ↑/↓ or j/k to move, ↵ to open, ↑/↓ to step through an open entry,
+  // Esc/← to go back.
+  const state = useRef({ logs, selectedLogId, focused });
+  state.current = { logs, selectedLogId, focused };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const { logs: ls, selectedLogId: sel, focused: fi } = state.current;
+      if (ls.length === 0) return;
+      const down = e.key === 'ArrowDown' || e.key === 'j';
+      const up = e.key === 'ArrowUp' || e.key === 'k';
+
+      if (sel) {
+        const idx = ls.findIndex((l) => l.log_id === sel);
+        if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'h') {
+          e.preventDefault();
+          setSelectedLogId(null);
+        } else if (down && idx < ls.length - 1) {
+          e.preventDefault();
+          setSelectedLogId(ls[idx + 1].log_id);
+          setFocused(idx + 1);
+        } else if (up && idx > 0) {
+          e.preventDefault();
+          setSelectedLogId(ls[idx - 1].log_id);
+          setFocused(idx - 1);
+        }
+        return;
+      }
+
+      if (down) {
+        e.preventDefault();
+        setFocused((i) => Math.min(ls.length - 1, i + 1));
+      } else if (up) {
+        e.preventDefault();
+        setFocused((i) => Math.max(0, i - 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const row = ls[fi];
+        if (row) setSelectedLogId(row.log_id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  if (selectedLogId) {
+    const idx = logs.findIndex((l) => l.log_id === selectedLogId);
+    return (
+      <GatewayLogDetail
+        projectId={projectId}
+        logId={selectedLogId}
+        index={idx}
+        total={logs.length}
+        onBack={() => setSelectedLogId(null)}
+        onPrev={() => {
+          if (idx > 0) {
+            setSelectedLogId(logs[idx - 1].log_id);
+            setFocused(idx - 1);
+          }
+        }}
+        onNext={() => {
+          if (idx < logs.length - 1) {
+            setSelectedLogId(logs[idx + 1].log_id);
+            setFocused(idx + 1);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -306,11 +443,26 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
             description="Every LLM call routed through the gateway shows up here — model, status, latency, tokens, and cost."
           />
         ) : (
-          logs.map((row) => (
-            <LogRow key={row.log_id} row={row} onClick={() => selectLog(row.log_id)} />
+          logs.map((row, i) => (
+            <LogRow
+              key={row.log_id}
+              ref={i === focused ? focusedRowRef : undefined}
+              row={row}
+              focused={i === focused}
+              onHover={() => setFocused(i)}
+              onClick={() => setSelectedLogId(row.log_id)}
+            />
           ))
         )}
       </div>
+
+      {logs.length > 0 && (
+        <div className="flex shrink-0 items-center gap-3 border-t border-border/50 px-4 py-1.5 text-xs text-muted-foreground/60">
+          <span><kbd className="font-sans">↑↓</kbd> navigate</span>
+          <span><kbd className="font-sans">↵</kbd> open</span>
+          <span><kbd className="font-sans">esc</kbd> back</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ export type SessionInvocationSource =
   | 'mobile'
   | 'cli'
   | 'slack'
+  | 'email'
   | 'telegram'
   | 'trigger:webhook'
   | 'trigger:cron'
@@ -22,6 +23,12 @@ export type SessionLifecyclePostCreateAction =
       platform: 'slack' | 'telegram' | string;
       workspaceId: string;
       threadId: string;
+    }
+  | {
+      type: 'deliver_prompt';
+      source: SessionInvocationSource;
+      text: string;
+      userId?: string | null;
     };
 
 export type SessionLifecycleStatus =

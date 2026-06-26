@@ -754,8 +754,19 @@
 
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active div:last-child:not(:has(table)) {
+.kortix-markdown.streaming-active div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
+}
+
+/* KaTeX — block/display math scrolls horizontally; keep inline math in flow */
+.kortix-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.kortix-markdown .katex {
+  font-size: 1.05em;
 }
 
 .kortix-markdown[data-streaming='true'] > *:last-child {

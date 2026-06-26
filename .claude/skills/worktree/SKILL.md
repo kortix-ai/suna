@@ -1,32 +1,43 @@
 ---
 name: worktree
-description: "How to do TRULY ISOLATED feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of ports, its own Supabase project, and its own node_modules — so any number run at once and the primary `pnpm dev` (3000/8008) is never disturbed. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: every non-trivial change happens in its own worktree."
+description: "How to do feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of app ports, its own node_modules, and by default shares the primary checkout's standard local Supabase DB for fast setup; pass `--db` only when a separate Supabase project/data plane is needed. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: every non-trivial change happens in its own worktree."
 ---
 
 # Worktrees (`pnpm worktree`)
 
-Isolated, multi-instance dev environments for this monorepo. One command from a
-clean checkout provisions a complete, collision-free stack on its own branch:
-unique ports for every service (web, api, the full Supabase set), its own
-Supabase project, its own `node_modules` + pnpm store, and a tunnel for cloud
-sandbox callbacks. The CLI lives at `scripts/worktree/cli.ts`, run via the
-root `package.json` script `pnpm worktree`.
+Multi-instance dev environments for this monorepo. One command from a clean
+checkout provisions a collision-free app stack on its own branch: unique ports
+for web/api/gateway, its own `node_modules` + pnpm store, and a tunnel for cloud
+sandbox callbacks. By default the worktree uses the primary checkout's standard
+local Supabase DB (`kortix-local` on 54321/54322) so setup is fast and auth/data
+state is shared. Pass `--db` only when the work needs a separate Supabase
+project, schema, auth users, storage, or destructive data changes. The CLI lives
+at `scripts/worktree/cli.ts`, run via the root `package.json` script
+`pnpm worktree`.
 
 ## THE RULE — always work in a worktree
 
 **Default to a worktree for any feature, bugfix, refactor, or experiment** that
 spans more than a one-line edit or that you'll want to run, migrate, or test.
 Never do feature work directly in the primary checkout — it keeps `main`/your
-base clean, lets work run in parallel without port/DB/dependency collisions, and
-gives each change its own branch automatically.
+base clean, lets work run in parallel without port/dependency collisions, and
+gives each change its own branch automatically. Use shared DB mode for ordinary
+UI/API work; opt into `--db` when database isolation is materially required.
 
 Carve-outs (a worktree is *not* required):
 - Read-only investigation / answering questions.
 - A trivial single-file typo/comment fix on the branch you're already on.
 - Operating on the primary `pnpm dev` stack itself.
 
-When in doubt, spin a worktree. They're cheap to create and `nuke` cleans up
-everything (containers, volumes, the git worktree, and the branch).
+When in doubt, spin a worktree. Shared-DB worktrees are cheap to create and
+`nuke` removes only the app worktree resources; isolated-DB worktrees also clean
+up their own Supabase containers and volumes.
+
+> **Session start:** `AGENTS.md` ("First, at session start: where do you work?")
+> has you *ask the user* which environment to use before non-trivial work — a
+> new worktree (this skill, the recommended default), straight in the primary
+> `pnpm dev` checkout, or an existing worktree. A fresh worktree is the default
+> answer, but honour the user's choice.
 
 ## Agent quick start (non-interactive, non-blocking)
 
@@ -36,6 +47,8 @@ pnpm worktree create --name <feat> --yes --no-start
 
 - `--name <feat>` names the worktree (letters/numbers/dashes; lowercased).
 - `--yes` auto-installs any missing toolchain deps and skips prompts.
+- Uses the shared primary Supabase DB by default. Add `--db` only for work that
+  needs a separate database/data plane.
 - **`--no-start` is mandatory for agents** — without it, `create` ends by
   booting the dev servers **in the foreground and blocks until Ctrl+C**, which
   will hang your turn. `--no-start` provisions everything and returns.
@@ -52,8 +65,9 @@ git -C "$WT" add -A && git -C "$WT" commit -m "..."
 ```
 
 When the branch is merged/pushed and you're done: `pnpm worktree nuke <feat>`.
+In shared-DB mode this leaves the primary Supabase DB running and untouched.
 
-## Prerequisite: the base branch must carry database migrations
+## Prerequisite for `--db`: the base branch must carry database migrations
 
 Current migrations live in `packages/db/migrations` and are applied with
 node-pg-migrate (`pnpm --filter @kortix/db migrate`; see
@@ -77,19 +91,24 @@ pnpm worktree create <n>        [flags]   # positional name also works
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + `kortix-wt-<n>` Supabase project. |
+| `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + slot identity. |
 | `--branch <b>` | `<n>` | Branch to use. If it already exists it's checked out; otherwise created from `--from`. |
 | `--from <ref>` | `HEAD` | Base ref for a newly created branch. Must carry current `packages/db/migrations` (see above). |
+| `--db` / `--with-db` / `--isolated-db` | off | Opt into the old full isolated Supabase project (`kortix-wt-<n>`) with its own containers/volumes/migrations. |
+| `--no-db` / `--shared-db` | on | Explicitly use the default shared primary Supabase DB. |
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |
 | `--yes` | off | Auto-install missing deps; non-interactive. |
 | `--no-tunnel` | off | Skip the Cloudflare tunnel (offline; cloud sandboxes won't be reachable). |
 
 What it does, in order: toolchain preflight → allocate the lowest free slot
-(probing ports, skipping any in use) → `git worktree add` (new branch from
-`--from`, or checkout existing `--branch`) → render an isolated Supabase project
-→ `pnpm install` into the worktree's own store → `supabase start` → apply
-database migrations → verify the `kortix` schema exists → (unless `--no-start`)
-boot the stack. Re-running `create` for an existing name resumes it idempotently.
+(probing app ports, skipping any in use) → `git worktree add` (new branch from
+`--from`, or checkout existing `--branch`) → `pnpm install` into the worktree's
+own store → build runtime artifacts → (unless `--no-start`) boot the stack
+against the shared primary Supabase DB. With `--db`, it also renders an isolated
+Supabase project, starts it, applies database migrations, verifies the `kortix`
+schema exists, and starts that Supabase stack. Re-running `create` for an
+existing name resumes it idempotently; a worktree's DB mode is fixed until you
+`nuke` and recreate it.
 
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
@@ -97,9 +116,12 @@ boot the stack. Re-running `create` for an existing name resumes it idempotently
 pnpm worktree start <n> [--stripe] [--no-tunnel]
 ```
 
-Ensures Supabase is up, applies pending migrations, then runs **api + web in the
-foreground and blocks until Ctrl+C** (clean shutdown stops the servers, force-
-kills stragglers, and marks the worktree stopped). Requires Docker running.
+In shared-DB mode, ensures the primary local Supabase is reachable, checks that
+the `kortix` schema exists, then runs **api + web in the foreground and blocks
+until Ctrl+C**. In isolated-DB mode, starts that worktree's Supabase, applies
+pending migrations, then boots the app stack. Clean shutdown stops the worktree
+app servers, force-kills stragglers, and marks the worktree stopped. Requires
+Docker running when Supabase needs to be reached or started.
 
 - **Agents:** do not call this inline — it will hang the turn. If you need the
   stack running to test, launch it as a background process and poll, or ask the
@@ -121,8 +143,9 @@ kills stragglers, and marks the worktree stopped). Requires Docker running.
 pnpm worktree stop <n>
 ```
 
-Kills the web/api processes and stops the worktree's Supabase. Data (DB volume,
-branch, files) is preserved; `start` resumes it.
+Kills the web/api/gateway processes. Shared-DB mode leaves the primary Supabase
+running. Isolated-DB mode also stops the worktree's Supabase. Data (DB volume
+for isolated mode, branch, files) is preserved; `start` resumes it.
 
 ### `nuke` (alias `rm`) — tear down and free the slot
 
@@ -130,12 +153,13 @@ branch, files) is preserved; `start` resumes it.
 pnpm worktree nuke <n> [--force]
 ```
 
-Stops servers + Supabase, removes the project's Docker containers/volumes/
-network, removes the git worktree, **deletes the branch**, drops the slot, and
-frees the ports. By default the branch is deleted with `git branch -d` (safe —
-refuses if unmerged); `--force` uses `git worktree remove --force` **and**
-`git branch -D` (drops unmerged commits). Only `nuke` after the work is merged
-or pushed.
+Stops servers, removes the git worktree, **deletes the branch**, drops the slot,
+and frees the app ports. In shared-DB mode it does **not** stop or delete the
+primary Supabase DB. In isolated-DB mode it also stops Supabase and removes that
+worktree project's Docker containers/volumes/network. By default the branch is
+deleted with `git branch -d` (safe — refuses if unmerged); `--force` uses
+`git worktree remove --force` **and** `git branch -D` (drops unmerged commits).
+Only `nuke` after the work is merged or pushed.
 
 ### `pr` — push the branch and open a pull request
 
@@ -158,7 +182,7 @@ push remote (`origin`) to be authenticated for your account.
 pnpm worktree list
 ```
 
-Shows name, slot, status, branch, and the web/api/db/studio ports.
+Shows name, slot, status, DB mode, branch, and the web/api/db/studio ports.
 
 ### `status` — live health
 
@@ -166,7 +190,8 @@ Shows name, slot, status, branch, and the web/api/db/studio ports.
 pnpm worktree status [<n>]    # all worktrees, or just <n>
 ```
 
-Per-worktree: whether web/api ports are listening and whether Supabase is up.
+Per-worktree: whether web/api ports are listening and whether its configured
+Supabase target is up.
 
 ### `doctor` — verify toolchain + integrity
 
@@ -174,10 +199,10 @@ Per-worktree: whether web/api ports are listening and whether Supabase is up.
 pnpm worktree doctor [--yes]
 ```
 
-Checks required tools (bun, node ≥22, pnpm, supabase, dotenvx, docker) and the
-optional `cloudflared`, then flags any worktree whose dir is missing, isn't a
-registered git worktree, or has orphaned containers. `--yes` auto-installs
-missing deps.
+Checks required tools (bun, node >=22, pnpm, dotenvx, plus Supabase/Docker/psql
+for DB modes) and the optional `cloudflared`, then flags any worktree whose dir
+is missing, isn't a registered git worktree, or has orphaned isolated-DB
+containers. `--yes` auto-installs missing deps.
 
 ## What each worktree isolates
 
@@ -185,14 +210,15 @@ missing deps.
 | --- | --- | --- |
 | web | 3000 | **13000 + N·100** |
 | api | 8008 | **13008 + N·100** |
-| Supabase API / DB / Studio / Inbucket | local default | 13321 / 13322 / 13323 / 13324 (+N·100) |
-| Supabase project | `kortix-local` | `kortix-wt-<n>` (own containers/volumes/network) |
+| Supabase API / DB / Studio / Inbucket | local default | shared default: 54321 / 54322 / 54323 / 54324; with `--db`: 13321 / 13322 / 13323 / 13324 (+N·100) |
+| Supabase project | `kortix-local` | shared default: `kortix-local`; with `--db`: `kortix-wt-<n>` (own containers/volumes/network) |
 | branch | your current branch | dedicated `<n>` (or `--branch`) |
 | deps | repo `node_modules` | own `node_modules` + pnpm store |
 
-Slot 0 → web 13000 / api 13008 / db 13322; slot 1 → web 13100 / api 13108 /
-db 13422; and so on. Slots are assigned lowest-free and skip any port already in
-use, so worktrees never collide with each other or with `pnpm dev`.
+Slot 0 → web 13000 / api 13008 / gateway 13090; slot 1 → web 13100 / api 13108 /
+gateway 13190; and so on. Isolated DB ports follow the same stride. Slots are
+assigned lowest-free and skip any app port already in use, so worktrees never
+collide with each other or with `pnpm dev`.
 
 ## State & layout
 
@@ -201,7 +227,7 @@ use, so worktrees never collide with each other or with `pnpm dev`.
   a per-worktree dir holding the rendered Supabase config (`sb/`) and pnpm store.
   Lives entirely outside any checkout, so nothing dirties a tracked tree. Set
   `KORTIX_HOME` to relocate it.
-- In-worktree marker: a gitignored `.kortix-worktree.json` (slot/ports/project).
+- In-worktree marker: a gitignored `.kortix-worktree.json` (slot/ports/project/DB mode).
 
 ## Scope & safety
 

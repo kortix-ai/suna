@@ -8,6 +8,7 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
@@ -84,6 +85,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          refreshProjectProviderState(queryClient, projectId);
           onConnected();
           return;
         }

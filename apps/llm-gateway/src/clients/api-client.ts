@@ -1,5 +1,12 @@
 import { withRetry } from '@kortix/llm-gateway';
-import type { AuthedPrincipal, GatewayTrace, ModelCatalog, UpstreamDescriptor, UsageEvent } from '@kortix/llm-gateway';
+import type {
+  AuthedPrincipal,
+  AuthorizeResult,
+  GatewayTrace,
+  ModelCatalog,
+  UpstreamDescriptor,
+  UsageEvent,
+} from '@kortix/llm-gateway';
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -11,7 +18,10 @@ export interface ApiClientOptions {
 }
 
 export class ApiUnavailableError extends Error {
-  constructor(readonly path: string, readonly status?: number) {
+  constructor(
+    readonly path: string,
+    readonly status?: number,
+  ) {
     super(`kortix api ${path} unavailable${status ? ` (${status})` : ''}`);
     this.name = 'ApiUnavailableError';
   }
@@ -26,6 +36,7 @@ export interface ApiPingResult {
 
 export interface ApiClient {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
+  authorize: (token: string) => Promise<AuthorizeResult>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   assertBillingActive: (accountId: string) => Promise<void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
@@ -74,26 +85,41 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
 
   return {
     authenticate: async (token) => {
-      const result = await post<{ principal: AuthedPrincipal | null }>('/internal/gateway/authenticate', { token });
+      const result = await post<{ principal: AuthedPrincipal | null }>(
+        '/internal/gateway/authenticate',
+        { token },
+      );
       return result.principal ?? null;
     },
+    authorize: async (token) => {
+      return post<AuthorizeResult>('/internal/gateway/authorize', { token });
+    },
     resolveUpstream: async (principal, model) => {
-      const result = await post<{ candidates: UpstreamDescriptor[] }>('/internal/gateway/resolve-upstream', {
-        principal,
-        model,
-      });
+      const result = await post<{ candidates: UpstreamDescriptor[] }>(
+        '/internal/gateway/resolve-upstream',
+        {
+          principal,
+          model,
+        },
+      );
       return result.candidates ?? [];
     },
     assertBillingActive: async (accountId) => {
-      const result = await post<{ active: boolean; message?: string }>('/internal/gateway/billing', { accountId });
+      const result = await post<{ active: boolean; message?: string }>(
+        '/internal/gateway/billing',
+        { accountId },
+      );
       if (!result.active) {
         throw new Error(result.message ?? 'subscription required');
       }
     },
     assertBudget: async (principal) => {
-      const result = await post<{ exceeded: boolean; message?: string }>('/internal/gateway/budget-check', {
-        principal,
-      });
+      const result = await post<{ exceeded: boolean; message?: string }>(
+        '/internal/gateway/budget-check',
+        {
+          principal,
+        },
+      );
       if (result.exceeded) {
         throw new Error(result.message ?? 'Budget exceeded');
       }
@@ -106,7 +132,9 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       await post<{ ok: boolean }>('/internal/gateway/trace', { trace });
     },
     listModels: async (principal) => {
-      const result = await post<{ models: ModelCatalog }>('/internal/gateway/models', { principal });
+      const result = await post<{ models: ModelCatalog }>('/internal/gateway/models', {
+        principal,
+      });
       return result.models ?? {};
     },
     ping: async () => {

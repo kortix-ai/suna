@@ -2,7 +2,7 @@
 
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
-import { listProjectSecrets } from '@/lib/projects-client';
+import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -11,13 +11,22 @@ import {
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
+import { buildCodexProvider } from './utils';
 
-export function useConnectedProviders(projectId: string, open: boolean) {
+export function useConnectedProviders(projectId: string, enabled: boolean) {
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 30_000,
+    enabled,
+  });
+  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId),
     staleTime: 10_000,
-    enabled: open,
+    enabled,
   });
 
   const secretNames = useMemo(() => {
@@ -26,9 +35,14 @@ export function useConnectedProviders(projectId: string, open: boolean) {
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
+  // The managed Kortix gateway exists only for projects that explicitly opt
+  // into the LLM Gateway. Native OpenCode projects should show only providers
+  // backed by project secrets, even if an old running sandbox still exposes a
+  // stale `kortix` provider.
   const { data: ocProviders } = useOpenCodeProviders();
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
+    if (!llmGatewayEnabled) return null;
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
@@ -49,19 +63,21 @@ export function useConnectedProviders(projectId: string, open: boolean) {
       featured: true,
       managed: true,
     };
-  }, [ocProviders]);
+  }, [llmGatewayEnabled, ocProviders]);
 
   const connectedProviders = useMemo(() => {
+    const hasCodexSubscription =
+      secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
+      secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
         p.id !== 'kortix' &&
-        ((p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
-          (p.id === 'openai' &&
-            (secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME)))),
+        p.envVars.length > 0 &&
+        p.envVars.every((v) => secretNames.has(v)),
     );
-    return kortixProvider ? [kortixProvider, ...byo] : byo;
-  }, [secretNames, kortixProvider]);
+    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
+    return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
+  }, [secretNames, kortixProvider, ocProviders]);
 
-  return { secretsQuery, connectedProviders };
+  return { secretsQuery, connectedProviders, llmGatewayEnabled };
 }

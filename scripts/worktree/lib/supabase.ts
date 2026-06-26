@@ -4,6 +4,13 @@ import type { Ports } from './ports';
 import { portInUse, run, sh, type ShResult } from './exec';
 import { supaWorkdir } from './registry';
 
+export const SHARED_SUPABASE_PORTS = {
+  sbApi: 54321,
+  sbDb: 54322,
+  sbStudio: 54323,
+  sbInbucket: 54324,
+} as const;
+
 export function rewriteConfigToml(toml: string, projectId: string, ports: Ports): string {
   const sectionPort: Record<string, number> = {
     '[api]': ports.sbApi, '[db]': ports.sbDb, '[db.pooler]': ports.sbPooler,
@@ -87,6 +94,35 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
   return {
     dbUrl: st.DB_URL || `postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres`,
     supabaseUrl: st.API_URL || `http://127.0.0.1:${ports.sbApi}`,
+    serviceRoleKey: st.SERVICE_ROLE_KEY || '',
+    anonKey: st.ANON_KEY || '',
+  };
+}
+
+export function primarySupabaseStatusEnv(root: string): Record<string, string> {
+  const r = sh(['supabase', 'status', '-o', 'env'], { cwd: root });
+  if (!r.ok) return {};
+  const env: Record<string, string> = {};
+  for (const line of r.stdout.split('\n')) {
+    const m = line.match(/^([A-Z0-9_]+)="?([^"]*)"?$/);
+    if (m) env[m[1]] = m[2];
+  }
+  return env;
+}
+
+export async function ensurePrimarySupabase(root: string): Promise<Record<string, string>> {
+  let env = primarySupabaseStatusEnv(root);
+  if (env.API_URL && env.DB_URL && env.SERVICE_ROLE_KEY && env.ANON_KEY) return env;
+  const started = await run(['supabase', 'start'], { cwd: root });
+  if (started !== 0) return {};
+  env = primarySupabaseStatusEnv(root);
+  return env;
+}
+
+export function primaryCredsFromStatus(st: Record<string, string>): SlotCreds {
+  return {
+    dbUrl: st.DB_URL || `postgresql://postgres:postgres@127.0.0.1:${SHARED_SUPABASE_PORTS.sbDb}/postgres`,
+    supabaseUrl: st.API_URL || `http://127.0.0.1:${SHARED_SUPABASE_PORTS.sbApi}`,
     serviceRoleKey: st.SERVICE_ROLE_KEY || '',
     anonKey: st.ANON_KEY || '',
   };

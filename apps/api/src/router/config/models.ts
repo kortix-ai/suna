@@ -7,96 +7,25 @@ import { getModelPricing } from './model-pricing';
 export interface ModelConfig {
   /** The actual model ID to send to OpenRouter */
   openrouterId: string;
-  inputPer1M: number;   // Cost per 1M input tokens (USD)
-  outputPer1M: number;  // Cost per 1M output tokens (USD)
+  inputPer1M: number; // Cost per 1M input tokens (USD)
+  outputPer1M: number; // Cost per 1M output tokens (USD)
   contextWindow: number;
   tier: 'free' | 'paid';
-  cacheReadPer1M?: number;   // Cost per 1M cached-read tokens (USD)
-  cacheWritePer1M?: number;  // Cost per 1M cache-write tokens (USD)
+  cacheReadPer1M?: number; // Cost per 1M cached-read tokens (USD)
+  cacheWritePer1M?: number; // Cost per 1M cache-write tokens (USD)
 }
 
 /**
- * Kortix model registry — maps model IDs exposed through the Kortix provider
- * to their OpenRouter equivalents with pricing.
+ * Legacy Kortix model registry for the `/v1/router` passthrough.
  *
- * Model IDs use the real provider/model format (e.g. "moonshotai/kimi-k2.5")
- * so users see actual model names, not opaque aliases.
- *
- * Any model NOT in this registry is passed through to OpenRouter as-is
- * with live pricing from models.dev (or zero if unknown).
+ * Emptied: opencode now talks to the LLM GATEWAY (KORTIX_LLM_BASE_URL) with the
+ * managed catalog ids — it no longer sends the old `kortix/minimax-m27` /
+ * `kortix/kimi` style aliases to `/v1/router`. The router is now a pure
+ * OpenRouter passthrough: any model id is forwarded as-is with live pricing from
+ * models.dev (registry metadata is only an optional fallback). Add an entry here
+ * only if a client sends an alias OpenRouter wouldn't recognise.
  */
-const MODELS: Record<string, ModelConfig> = {
-  'minimax/minimax-m2.7': {
-    openrouterId: 'minimax/minimax-m2.7',
-    inputPer1M: 0.30,
-    outputPer1M: 1.20,
-    contextWindow: 204800,
-    tier: 'free',
-    cacheReadPer1M: 0.06,
-  },
-  'z-ai/glm-5-turbo': {
-    openrouterId: 'z-ai/glm-5-turbo',
-    inputPer1M: 1.20,
-    outputPer1M: 4.00,
-    contextWindow: 202752,
-    tier: 'free',
-    cacheReadPer1M: 0.24,
-  },
-  'moonshotai/kimi-k2.5': {
-    openrouterId: 'moonshotai/kimi-k2.5',
-    inputPer1M: 0.45,
-    outputPer1M: 2.20,
-    contextWindow: 262144,
-    tier: 'free',
-    cacheReadPer1M: 0.225,
-  },
-  'minimax/minimax-m2.5': {
-    openrouterId: 'minimax/minimax-m2.5',
-    inputPer1M: 0.20,
-    outputPer1M: 1.17,
-    contextWindow: 196608,
-    tier: 'free',
-    cacheReadPer1M: 0.10,
-  },
-  // Opencode-side aliases (from core/kortix-master/opencode/opencode.jsonc).
-  // Opencode's openai-compatible client ships the alias as the model param
-  // — e.g. `kortix/minimax-m27`, not the resolved upstream id — so the
-  // router needs to translate them. Without these, every agent call from
-  // opencode 400s with "is not a valid model ID" and PM/team hangs at
-  // 0 tokens / ready_at=null.
-  'kortix/minimax-m27': {
-    openrouterId: 'minimax/minimax-m2.7',
-    inputPer1M: 0.30,
-    outputPer1M: 1.20,
-    contextWindow: 204800,
-    tier: 'free',
-    cacheReadPer1M: 0.06,
-  },
-  'kortix/glm-turbo': {
-    openrouterId: 'z-ai/glm-5-turbo',
-    inputPer1M: 1.20,
-    outputPer1M: 4.00,
-    contextWindow: 202752,
-    tier: 'free',
-    cacheReadPer1M: 0.24,
-  },
-  'kortix/kimi': {
-    openrouterId: 'moonshotai/kimi-k2.5',
-    inputPer1M: 0.45,
-    outputPer1M: 2.20,
-    contextWindow: 262144,
-    tier: 'free',
-    cacheReadPer1M: 0.225,
-  },
-  'kortix/minimax': {
-    openrouterId: 'minimax/minimax-m2.5',
-    inputPer1M: 0.20,
-    outputPer1M: 1.17,
-    contextWindow: 196608,
-    tier: 'free',
-    cacheReadPer1M: 0.10,
-  },
-};
+const MODELS: Record<string, ModelConfig> = {};
 
 // =============================================================================
 // Model Resolution

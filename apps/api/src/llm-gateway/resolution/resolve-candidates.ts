@@ -3,7 +3,7 @@ import {
   type UpstreamDescriptor,
   resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel } from '@kortix/shared/llm-catalog';
+import { getManagedModel, pickAutoModel } from '@kortix/shared/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { tierGrantsAllModels } from '../../billing/services/tiers';
 import { config } from '../../config';
@@ -41,12 +41,16 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  const provider = model.includes('/') ? model.split('/')[0] : '';
+  // The gateway package normally applies pickAutoModel before calling this hook.
+  // Keep the same fallback here so a stale standalone gateway that asks the API
+  // to resolve raw "auto" still gets a concrete upstream instead of 400ing.
+  const effectiveModel = pickAutoModel(model, {}) ?? model;
+  const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
     if (!principal.projectId) return [];
     const credential = await resolveCodexCredential(principal.projectId, principal.userId);
-    return credential ? [codexDescriptor(credential, model)] : [];
+    return credential ? [codexDescriptor(credential, effectiveModel)] : [];
   }
 
   const byok = resolveCatalogUpstream(provider);
@@ -66,8 +70,8 @@ export async function resolveCandidates(
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
-        resolvedModel: model.slice(provider.length + 1),
-        pricing: livePricing(model.slice(provider.length + 1)),
+        resolvedModel: effectiveModel.slice(provider.length + 1),
+        pricing: livePricing(effectiveModel.slice(provider.length + 1)),
       };
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it
@@ -82,11 +86,11 @@ export async function resolveCandidates(
   // `provider/model`) is handled above and requires the user's own key; it never
   // falls through here. A non-managed, non-connected model yields no candidate →
   // clear "model not available" error.
-  const managed = getManagedModel(model);
+  const managed = getManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED) {
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
-      if (!tierGrantsAllModels(tier)) return [];
+      if (!managed.free && !tierGrantsAllModels(tier)) return [];
     }
     return managedCandidates(managed);
   }

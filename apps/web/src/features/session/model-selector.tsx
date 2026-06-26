@@ -3,7 +3,6 @@
 import { useTranslations } from 'next-intl';
 
 import {
-  CommandFooter,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -14,7 +13,7 @@ import {
 } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -24,15 +23,17 @@ import {
   ProviderLogo,
 } from '@/features/providers/provider-branding';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { LLM_PROVIDERS } from '@/lib/llm-providers';
-import { listProjectSecrets } from '@/lib/projects-client';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
+import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
+import { AutoModelToggle } from './auto-model-toggle';
+import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 
 // Re-export for consumers
@@ -65,40 +66,12 @@ export function ConnectProviderDialog({
   return null;
 }
 
-export function ManageModelsDialog({
-  open,
-  onOpenChange,
-  models: _models,
-  modelStore: _modelStore,
-  onConnectProvider: _onConnectProvider,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  models: FlatModel[];
-  modelStore: ReturnType<typeof useModelStore>;
-  onConnectProvider: () => void;
-}) {
-  const { openProviderModal, closeProviderModal } = useProviderModalStore();
-
-  useEffect(() => {
-    if (open) openProviderModal('models');
-    else closeProviderModal();
-  }, [open, openProviderModal, closeProviderModal]);
-
-  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
-  useEffect(() => {
-    if (!isStoreOpen && open) onOpenChange(false);
-  }, [isStoreOpen, open, onOpenChange]);
-
-  return null;
-}
-
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
 
-const SHOW_OPENCODE_ZEN = true;
-
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// `auto` is a synthetic managed entry (not a real upstream model): grouped under
+// Kortix and always shown, but rendered as a special "smart routing" affordance.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
@@ -126,15 +99,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  // Reveal models the "latest" filter hides by default (older releases /
-  // superseded models in a family). Off by default to keep the picker tidy.
-  const [showHidden, setShowHidden] = useState(false);
+  // When AUTO is on, the manual provider list is hidden by default. This reveals
+  // it (so the user can switch to a specific model) without turning AUTO off yet.
+  const [expandManual, setExpandManual] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const openGateway = useGatewayOverlayStore((s) => s.openGateway);
-  const baseModels = useMemo(
-    () => (SHOW_OPENCODE_ZEN ? models : models.filter((m) => m.providerID !== 'opencode')),
-    [models],
-  );
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
 
   // When mounted under /projects/[id]/..., route the action buttons to the
   // per-project provider modal so credentials land in `project_secrets`. On
@@ -142,12 +111,19 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // the legacy GlobalProviderModal that writes to the active sandbox.
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId as string),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+  const baseModels = useMemo(() => {
+    return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
+  }, [models, llmGatewayEnabled]);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
-  );
-  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(
-    undefined,
   );
 
   // Track project secrets whenever we're in a project (not only while the picker
@@ -157,7 +133,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId,
+    enabled: !!projectId && llmGatewayEnabled,
     staleTime: 10_000,
   });
   const secretNames = useMemo(() => {
@@ -165,63 +141,43 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     const items = Array.isArray(data) ? data : (data?.items ?? []);
     return new Set(items.map((secret: { name: string }) => secret.name));
   }, [secretsQuery.data]);
-  const openaiConnected = secretNames.has('OPENAI_API_KEY');
-
   // Providers whose key(s) are present — drives which of the gateway's full
   // baked catalog is shown by default in the picker (connected providers light
   // up the instant their secret lands; everything else stays search-only).
   const connectedProviderIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const provider of LLM_PROVIDERS) {
-      if (provider.envVars.length > 0 && provider.envVars.every((v) => secretNames.has(v))) {
-        ids.add(provider.id);
-      }
-    }
-    // ChatGPT subscription (Codex) — its auth is a JSON blob, not an env var, so
-    // it isn't in LLM_PROVIDERS. Surface it so codex/* models light up the instant
-    // the subscription is connected (same live-reflection as BYOK keys).
-    if (secretNames.has('CODEX_AUTH_JSON') || secretNames.has('OPENCODE_AUTH_JSON')) {
-      ids.add('codex');
-    }
-    return ids;
-  }, [secretNames]);
+    if (!llmGatewayEnabled) return new Set<string>();
+    return connectedGatewayProviderIdsFromSecretNames(secretNames);
+  }, [llmGatewayEnabled, secretNames]);
 
-  const modelStore = useModelStore(baseModels, { connectedProviderIds });
+  const modelStore = useModelStore(baseModels, {
+    connectedProviderIds,
+  });
 
-  const current = models.find(
+  const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || models[0]?.modelName || 'Model';
+  const displayName = current?.modelName || baseModels[0]?.modelName || 'Model';
 
-  // Reset search + collapse "older" reveal when closing
+  // Reset transient picker state when closing.
   useEffect(() => {
     if (!open) {
       setSearch('');
-      setShowHidden(false);
+      setExpandManual(false);
     }
   }, [open]);
 
   // ── Filtered + grouped models ──
 
-  // Are there any models the "latest" filter is currently hiding? Drives the
-  // "Show older models" footer — no point showing it when nothing is hidden.
-  const hasHidden = useMemo(
-    () =>
-      models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
-    [models, modelStore],
-  );
-
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
-    return models
+    return baseModels
       .filter((m) => {
-        // A search query reveals everything; otherwise respect visibility
-        // unless the user expanded the "older models" section.
-        if (
-          !q &&
-          !showHidden &&
-          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })
-        )
+        // AUTO is rendered as a standalone toggle above the providers — never
+        // inside a provider group.
+        if (m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID) return false;
+        // A search query reveals everything; otherwise respect visibility from
+        // the provider modal's Models tab.
+        if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }))
           return false;
         return (
           !q ||
@@ -231,7 +187,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [models, search, showHidden, modelStore]);
+  }, [baseModels, search, modelStore]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -239,7 +195,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
     for (const m of visibleModels) {
-      const groupID = pickerGroupId(m);
+      const groupID = llmGatewayEnabled ? pickerGroupId(m) : m.providerID;
       const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
@@ -261,7 +217,32 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       return a.providerName.localeCompare(b.providerName);
     });
     return entries;
-  }, [visibleModels]);
+  }, [visibleModels, llmGatewayEnabled]);
+
+  // AUTO lives outside the provider groups — a standalone toggle. When it's on,
+  // the manual model list is hidden unless the user expands it.
+  const autoModel = useMemo(
+    () =>
+      llmGatewayEnabled
+        ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
+        : undefined,
+    [baseModels, llmGatewayEnabled],
+  );
+  const isAutoSelected =
+    selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
+  // "On" is the collapsed active view; expanding the manual list to pick a
+  // specific model reads as off and reveals the providers. So the switch is on
+  // exactly when the manual list is hidden.
+  const autoOn = isAutoSelected && !expandManual;
+  const showManual = !autoOn;
+  const toggleAuto = () => {
+    if (!autoModel) return;
+    if (autoOn) setExpandManual(true);
+    else {
+      onSelect({ providerID: autoModel.providerID, modelID: autoModel.modelID });
+      setExpandManual(false);
+    }
+  };
 
   // ── Handlers ──
 
@@ -277,22 +258,18 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     (tab: ProviderModalTab) => {
       setOpen(false);
       if (projectId) {
-        openGateway({ section: tab === 'models' ? 'models' : 'providers' });
+        if (llmGatewayEnabled) {
+          openCustomize('llm-providers');
+        } else {
+          setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
+          setProjectModalOpen(true);
+        }
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, openProviderModal, openGateway],
+    [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
   );
-
-  const openConnectOpenAI = useCallback(() => {
-    setOpen(false);
-    if (projectId) {
-      openGateway({ section: 'providers' });
-      return;
-    }
-    openProviderModal('providers');
-  }, [projectId, openProviderModal, openGateway]);
 
   return (
     <>
@@ -334,148 +311,150 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         </Tooltip>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-          <CommandInput
-            compact
-            placeholder={tHardcodedUi.raw(
-              'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-            )}
-            value={search}
-            onValueChange={setSearch}
-            rightElement={
-              <div className="-mr-1 flex shrink-0 items-center gap-0.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenProviderModal('providers')}
-                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {tHardcodedUi.raw(
-                      'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenProviderModal('models')}
-                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
-                    >
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    {tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            }
-          />
+          {/* AUTO — standalone, above every provider. An elegant on/off control. */}
+          {autoModel && <AutoModelToggle autoOn={autoOn} onToggle={toggleAuto} />}
 
-          <CommandList className="max-h-[380px]">
-            {grouped.length > 0 ? (
-              <>
-                {grouped.map((group) => (
-                  <CommandGroup
-                    key={group.providerID}
-                    heading={
-                      <div className="flex items-center gap-2">
-                        <ProviderLogo
-                          providerID={group.providerID}
-                          name={group.providerName}
-                          size="small"
-                        />
-                        <span className="flex-1">
-                          {PROVIDER_LABELS[group.providerID] || group.providerName}
-                        </span>
-                        <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
-                          {group.models.length}
-                        </span>
-                      </div>
-                    }
-                    forceMount
-                  >
-                    {group.models.map((model) => {
-                      const isSelected =
-                        selectedModel?.providerID === model.providerID &&
-                        selectedModel?.modelID === model.modelID;
-                      // Every opencode (Zen) model is free: it routes natively,
-                      // never through the gateway, so kortix never bills it.
-                      const isFree = model.providerID === 'opencode';
-                      const modelKey = { providerID: model.providerID, modelID: model.modelID };
-                      // "Latest" models are always shown; older ones get an
-                      // activation switch so they can be pinned into the picker.
-                      const isLatestModel = modelStore.isLatest(modelKey);
-                      const isModelVisible = modelStore.isVisible(modelKey);
-                      // Under a BYOK provider group the `<provider>/` prefix is
-                      // redundant — show just the bare model id.
-                      const displayModelID =
-                        group.providerID !== model.providerID && model.modelID.includes('/')
-                          ? model.modelID.slice(model.modelID.indexOf('/') + 1)
-                          : model.modelID;
+          {showManual && <div className="bg-border/60 h-px" />}
 
-                      return (
-                        <CommandItem
-                          key={`${model.providerID}:${model.modelID}`}
-                          value={`model-${model.providerID}-${model.modelID}`}
-                          className={cn(
-                            '!pl-3',
-                            isSelected && 'bg-foreground/[0.06]',
-                            !isLatestModel && !isModelVisible && 'opacity-60',
-                          )}
-                          onSelect={() => handleSelect(model)}
+          {showManual ? (
+            <>
+              <CommandInput
+                compact
+                placeholder={tHardcodedUi.raw(
+                  'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
+                )}
+                value={search}
+                onValueChange={setSearch}
+                rightElement={
+                  <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProviderModal('providers')}
+                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
-                          <div className="min-w-0 flex-1 py-0.5">
-                            <div
-                              className={cn(
-                                'truncate text-sm leading-tight',
-                                isSelected
-                                  ? 'text-foreground font-semibold'
-                                  : 'text-foreground/90 font-medium',
-                              )}
-                            >
-                              {model.modelName}
-                            </div>
-                            <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                              {displayModelID}
-                            </p>
-                          </div>
-                          {isFree && <Tag variant="free">Free</Tag>}
-                          {isSelected && <Check className="text-foreground shrink-0" />}
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                ))}
-              </>
-            ) : (
-              <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
-              </div>
-            )}
-          </CommandList>
-
-          {hasHidden && !search && (
-            <CommandFooter
-              role="button"
-              tabIndex={0}
-              onClick={() => setShowHidden((v) => !v)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setShowHidden((v) => !v);
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsSessionModelSelector.line239JsxTextConnectProvider',
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProviderModal('models')}
+                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsSessionModelSelector.line251JsxTextManageModels',
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 }
-              }}
-              className="hover:bg-foreground/[0.04] hover:text-foreground cursor-pointer transition-colors select-none"
-            >
-              {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
-            </CommandFooter>
+              />
+
+              <CommandList className="max-h-[380px]">
+                {grouped.length > 0 ? (
+                  <>
+                    {grouped.map((group) => (
+                      <CommandGroup
+                        key={group.providerID}
+                        heading={
+                          <div className="flex items-center gap-2">
+                            <ProviderLogo
+                              providerID={group.providerID}
+                              name={group.providerName}
+                              size="small"
+                            />
+                            <span className="flex-1">
+                              {PROVIDER_LABELS[group.providerID] || group.providerName}
+                            </span>
+                            <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                              {group.models.length}
+                            </span>
+                          </div>
+                        }
+                        forceMount
+                      >
+                        {group.models.map((model) => {
+                          const isSelected =
+                            selectedModel?.providerID === model.providerID &&
+                            selectedModel?.modelID === model.modelID;
+
+                          const isFree = shouldShowFreeTag(model);
+                          const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                          // "Latest" models are always shown; older ones get an
+                          // activation switch so they can be pinned into the picker.
+                          const isLatestModel = modelStore.isLatest(modelKey);
+                          const isModelVisible = modelStore.isVisible(modelKey);
+                          // Under a BYOK provider group the `<provider>/` prefix is
+                          // redundant — show just the bare model id.
+                          const displayModelID =
+                            group.providerID !== model.providerID && model.modelID.includes('/')
+                              ? model.modelID.slice(model.modelID.indexOf('/') + 1)
+                              : model.modelID;
+
+                          return (
+                            <CommandItem
+                              key={`${model.providerID}:${model.modelID}`}
+                              value={`model-${model.providerID}-${model.modelID}`}
+                              className={cn(
+                                '!pl-3',
+                                isSelected && 'bg-foreground/[0.06]',
+                                !isLatestModel && !isModelVisible && 'opacity-60',
+                              )}
+                              onSelect={() => handleSelect(model)}
+                            >
+                              <div className="min-w-0 flex-1 py-0.5">
+                                <div
+                                  className={cn(
+                                    'truncate text-sm leading-tight',
+                                    isSelected
+                                      ? 'text-foreground font-semibold'
+                                      : 'text-foreground/90 font-medium',
+                                  )}
+                                >
+                                  {model.modelName}
+                                </div>
+                                <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                                  {displayModelID}
+                                </p>
+                              </div>
+                              {isFree && <Tag variant="free">Free</Tag>}
+                              {isSelected && <Check className="text-foreground shrink-0" />}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    ))}
+                  </>
+                ) : (
+                  <div className="text-muted-foreground/50 py-8 text-center text-xs">
+                    {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
+                  </div>
+                )}
+              </CommandList>
+            </>
+          ) : (
+            <div className="p-1.5 pt-0">
+              <button
+                type="button"
+                onClick={() => setExpandManual(true)}
+                className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center justify-center rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+              >
+                Pick a specific model
+              </button>
+            </div>
           )}
         </CommandPopoverContent>
       </CommandPopover>

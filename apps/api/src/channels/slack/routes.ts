@@ -34,6 +34,7 @@ async function runSlashCommandBody(rawBody: string): Promise<SlashResponse> {
   const text = (params.get('text') ?? '').trim();
   const teamId = params.get('team_id') ?? '';
   const channelId = params.get('channel_id') ?? '';
+  const slackUserId = params.get('user_id') ?? '';
   const command = params.get('command') || '/kortix';
   const responseUrl = params.get('response_url') ?? undefined;
 
@@ -41,7 +42,7 @@ async function runSlashCommandBody(rawBody: string): Promise<SlashResponse> {
   const arg = rest.join(' ').trim();
   const subLower = (sub || 'help').toLowerCase();
   try {
-    return await handleSlashCommand(subLower, arg, { teamId, channelId, command, responseUrl });
+    return await handleSlashCommand(subLower, arg, { teamId, channelId, slackUserId, command, responseUrl });
   } catch (err) {
     console.error('[slack-webhook] slash command failed', err);
     return { response_type: 'ephemeral', text: 'Something went wrong handling that command. Try again in a moment.' };

@@ -1,10 +1,53 @@
-import type { LlmProviderEntry } from '@/lib/llm-providers';
+import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
+import {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+} from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';
+  if (provider.id === 'codex') return 'ChatGPT subscription';
+  if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
+}
+
+type OpenCodeProvidersSnapshot =
+  | {
+      connected?: string[];
+      all?: Array<{ id: string; models?: Record<string, unknown> }>;
+    }
+  | undefined;
+
+export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmProviderEntry {
+  const connectedIds = new Set(ocProviders?.connected ?? []);
+  const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
+  const models: LlmProviderModel[] =
+    kortix && connectedIds.has('kortix')
+      ? Object.entries(kortix.models ?? {})
+          .filter(([id]) => id.startsWith('codex/'))
+          .map(([id, m]) => ({
+            id: id.slice('codex/'.length),
+            name: (((m as { name?: string }).name || id).replace('(latest)', '').trim()).replace(
+              /\s*\(ChatGPT\)$/,
+              '',
+            ),
+            released:
+              (m as { release_date?: string; released?: string }).release_date ??
+              (m as { released?: string }).released ??
+              null,
+          }))
+      : [];
+
+  return {
+    id: 'codex',
+    label: 'ChatGPT',
+    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    helpUrl: null,
+    hint: 'ChatGPT Plus or Pro subscription',
+    models,
+    featured: true,
+  };
 }
 
 export function pickInitialTab(defaultTab: ActiveTab | undefined, hasConnections: boolean): ActiveTab {

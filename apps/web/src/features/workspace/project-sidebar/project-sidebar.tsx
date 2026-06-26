@@ -1,16 +1,11 @@
 'use client';
 
 import {
-  ProjectGatewayNavItem,
-  ProjectGatewayRailItem,
-} from '@/components/projects/gateway/gateway-nav';
-import {
   matchesSessionFilter,
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,12 +57,13 @@ import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   CalendarClock,
-  ChevronRight,
   List,
+  Mail,
   MessagesSquare,
   PanelLeft,
   Plus,
@@ -77,7 +73,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
 import { SidebarUpgradeButton, SidebarUpgradeRailItem } from './footer/project-upgrade-button';
@@ -90,6 +86,7 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
   mine: MessagesSquare,
   shared: UsersSolid,
   slack: Icon.Slack,
+  email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
 };
@@ -101,8 +98,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
-  const [sessionFilter, setSessionFilter] = useState<SessionFilterValue>('all');
-  const [sessionsOpen, setSessionsOpen] = useState(true);
+  // Filter lives in a persisted store (keyed by project) so it survives the
+  // project shell remounting on navigation — local state reset to "all" on
+  // every session open / ⌘J / switch.
+  const sessionFilter = useSessionFilterStore((s) => s.filterByProject[projectId] ?? 'all');
+  const setSessionFilter = useSessionFilterStore((s) => s.setFilter);
   const { data: filterSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -262,7 +262,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectChatGptConnectRailItem projectId={projectId} />
-            <ProjectGatewayRailItem />
             <ProjectCustomizeRailItem />
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
@@ -295,38 +294,24 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </SidebarGroup>
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <Disclosure
-              open={sessionsOpen}
-              onOpenChange={setSessionsOpen}
-              className="group/sessions flex min-h-0 flex-1 flex-col space-y-2"
-              variants={{
-                expanded: { height: '100%', opacity: 1 },
-                collapsed: { height: 0, opacity: 0 },
-              }}
-            >
-              <SidebarGroupLabel className="group/label text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
+            {/* Sessions are always expanded — no collapse toggle. The header
+                label only carries the active filter; the ⋯ button opens the
+                filter menu. */}
+            <div className="flex min-h-0 flex-1 flex-col space-y-2">
+              <SidebarGroupLabel className="text-muted-foreground/60 mt-1 flex h-6 items-center px-0 text-xs font-medium tracking-wider uppercase">
                 <div className="flex w-full flex-row items-center gap-0.5">
+                  <div className="flex min-w-0 flex-1 flex-row items-center gap-0.5 px-2 text-[13px] font-normal">
+                    <span>Sessions</span>
+                    {sessionFilter !== 'all' && (
+                      <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
+                        {tI18nHardcoded.raw(
+                          'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
+                        )}{' '}
+                        {activeFilterOption.label}
+                      </span>
+                    )}
+                  </div>
                   <DropdownMenu>
-                    <DisclosureTrigger>
-                      <SidebarMenuButton
-                        type="button"
-                        className="flex-1 items-center justify-start px-2 text-[13px] font-normal hover:bg-transparent"
-                      >
-                        <span className="flex flex-row items-center gap-0.5">
-                          <span>Sessions</span>
-                          {sessionFilter !== 'all' && (
-                            <span className="text-muted-foreground/90 truncate tracking-normal normal-case">
-                              {tI18nHardcoded.raw(
-                                'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextBulled44625b',
-                              )}
-                              {activeFilterOption.label}
-                            </span>
-                          )}
-                        </span>
-
-                        <ChevronRight className="size-3 opacity-0 transition-transform duration-200 group-hover/label:opacity-100 group-data-[state=open]/sessions:rotate-90" />
-                      </SidebarMenuButton>
-                    </DisclosureTrigger>
                     <DropdownMenuContent align="start" className="w-44 p-1">
                       {SESSION_FILTER_OPTIONS.map((option) => {
                         const OptionIcon = SESSION_FILTER_ICONS[option.value];
@@ -334,7 +319,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                           <DropdownMenuItem
                             key={option.value}
                             className="cursor-pointer"
-                            onClick={() => setSessionFilter(option.value)}
+                            onClick={() => setSessionFilter(projectId, option.value)}
                           >
                             <OptionIcon className="h-4 w-4" />
                             {option.label}
@@ -359,15 +344,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   </DropdownMenu>
                 </div>
               </SidebarGroupLabel>
-              <DisclosureContent
-                className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                contentClassName={tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxAttrContentClassName35c48ace',
-                )}
-              >
-                <ProjectSessionList projectId={projectId} filter={sessionFilter} />
-              </DisclosureContent>
-            </Disclosure>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col">
+                  <ProjectSessionList projectId={projectId} filter={sessionFilter} />
+                </div>
+              </div>
+            </div>
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto py-0.5">
@@ -375,7 +357,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
-              <ProjectGatewayNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />

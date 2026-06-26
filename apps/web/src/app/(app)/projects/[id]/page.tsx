@@ -5,11 +5,13 @@ import {
   type ProjectHomeSendOptions,
 } from '@/features/workspace/project-layout/project-home';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
+import type { AttachedFile } from '@/features/session/session-chat-input';
 import { useAccountState } from '@/hooks/billing';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { getProjectDetail } from '@/lib/projects-client';
+import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
@@ -52,8 +54,8 @@ export default function ProjectIndexPage() {
   }, [accountState, projectAccountId, openUpgradeDialog]);
 
   const handleSend = useCallback(
-    (text: string, options?: ProjectHomeSendOptions) => {
-      if (!text.trim()) return;
+    (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
+      if (!text.trim() && !files?.length) return;
 
       if (isBillingEnabled() && billingLoading) return;
 
@@ -74,6 +76,20 @@ export default function ProjectIndexPage() {
         create: options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : undefined,
         onNavigate: (sessionId) => {
           sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
+          if (files?.length) {
+            usePendingFilesStore.getState().setPendingFiles(files);
+          }
+          const pendingOptions = {
+            ...(options?.agent ? { agent: options.agent } : {}),
+            ...(options?.model ? { model: options.model } : {}),
+            ...(options?.variant ? { variant: options.variant } : {}),
+          };
+          if (Object.keys(pendingOptions).length > 0) {
+            sessionStorage.setItem(
+              `project_pending_options:${sessionId}`,
+              JSON.stringify(pendingOptions),
+            );
+          }
         },
       });
     },

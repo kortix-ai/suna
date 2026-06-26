@@ -17,6 +17,7 @@ import { SectionCard } from '@/components/ui/section-card';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deletePersonalProjectSecret, deleteProjectSecret } from '@/lib/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -44,7 +45,7 @@ export function ConnectedTab({
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
       const names =
-        provider.id === 'openai'
+        provider.id === 'openai' || provider.id === 'codex'
           ? [
               ...provider.envVars,
               CODEX_AUTH_JSON_SECRET_NAME,
@@ -63,6 +64,7 @@ export function ConnectedTab({
       successToast(`${provider.label} disconnected`);
       setConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => errorToast(err instanceof Error ? err.message : 'Failed to disconnect'),
   });
@@ -108,7 +110,9 @@ export function ConnectedTab({
     );
   }
 
-  const confirmProvider = confirmId ? LLM_PROVIDER_BY_ID.get(confirmId) : null;
+  const confirmProvider = confirmId
+    ? (connectedProviders.find((p) => p.id === confirmId) ?? LLM_PROVIDER_BY_ID.get(confirmId) ?? null)
+    : null;
 
   return (
     <>

@@ -59,6 +59,7 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -66,7 +67,9 @@ import {
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 import {
   DangerTriangleSolid,
   LockSolid,
@@ -109,7 +112,15 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = ['project-secrets', projectId];
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 30_000,
+  });
+  const llmGatewayEnabled =
+    projectDetailQuery.data?.project.experimental?.llm_gateway === true;
 
   const secretsQuery = useQuery({
     queryKey,
@@ -134,18 +145,23 @@ export function SecretsView({ projectId }: { projectId: string }) {
     row: null,
   });
 
+  const refreshSecretsAndProviders = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey });
+    refreshProjectProviderState(queryClient, projectId);
+  }, [projectId, queryClient, queryKey]);
+
   const removeShared = useMutation({
     mutationFn: (name: string) => deleteProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
   const removeMine = useMutation({
     mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
   const setSource = useMutation({
     mutationFn: ({ name, active }: { name: string; active: boolean }) =>
       setPersonalProjectSecret(projectId, name, { active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
 
   const filtered = useMemo(() => {
@@ -161,6 +177,13 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const openSharedEdit = (row: SecretRow) => {
     setSharedDialogRow(row);
     setSharedDialogOpen(true);
+  };
+  const openProviderManagement = () => {
+    if (llmGatewayEnabled) {
+      openCustomize('llm-providers');
+    } else {
+      setProviderModalOpen(true);
+    }
   };
 
   const chooseSource = useCallback(
@@ -190,7 +213,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
           !secretsQuery.isLoading && !secretsQuery.isError ? (
             <div className="flex items-center gap-1.5">
               {canManage && (
-                <Button size="sm" variant="outline" onClick={() => setProviderModalOpen(true)}>
+                <Button size="sm" variant="outline" onClick={openProviderManagement}>
                   <Plug className="size-4 shrink-0" />
                   {tI18nHardcoded.raw(
                     'autoComponentsProjectsCustomizeSectionsSecretsViewJsxTextConnectLLMd75427c8',
@@ -325,14 +348,14 @@ export function SecretsView({ projectId }: { projectId: string }) {
                 onOpenChange={setSharedDialogOpen}
                 projectId={projectId}
                 row={sharedDialogRow}
-                onSaved={() => queryClient.invalidateQueries({ queryKey })}
+                onSaved={refreshSecretsAndProviders}
               />
               <PersonalSecretDialog
                 open={personalDialog.open}
                 row={personalDialog.row}
                 projectId={projectId}
                 onClose={() => setPersonalDialog({ open: false, row: null })}
-                onSaved={() => queryClient.invalidateQueries({ queryKey })}
+                onSaved={refreshSecretsAndProviders}
               />
             </>
           )}

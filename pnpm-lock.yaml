@@ -218,6 +218,9 @@ importers:
       "@kortix/llm-gateway":
         specifier: workspace:*
         version: link:../../packages/llm-gateway
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       hono:
         specifier: 4.12.18
         version: 4.12.18
@@ -1012,12 +1015,18 @@ importers:
       recharts:
         specifier: ^3.2.1
         version: 3.8.1(@types/react@19.1.17)(react-dom@19.1.0)(react-is@19.2.7)(react@19.1.0)(redux@5.0.1)
+      rehype-harden:
+        specifier: ^1.1.6
+        version: 1.1.8
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
+      rehype-raw:
+        specifier: ^7.0.0
+        version: 7.0.0
       rehype-sanitize:
         specifier: ^6.0.0
         version: 6.0.0
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -1057,6 +1066,9 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.1.17)(react-dom@19.1.0)(react@19.1.0)
@@ -1109,12 +1121,24 @@ importers:
       prettier-plugin-tailwindcss:
         specifier: ^0.6.14
         version: 0.6.14(prettier-plugin-organize-imports@4.3.0)(prettier@3.8.4)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+      remark-math:
+        specifier: ^6.0.0
+        version: 6.0.0
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
       shiki:
         specifier: ^3.12.0
         version: 3.23.0
       tw-animate-css:
         specifier: ^1.2.4
         version: 1.4.0
+      unist-util-visit:
+        specifier: ^5.0.0
+        version: 5.1.0
 
   packages/agent-tunnel:
     dependencies:
@@ -13059,7 +13083,6 @@ packages:
       }
     dependencies:
       "@types/ms": 2.1.0
-    dev: false
 
   /@types/diff@7.0.2:
     resolution:
@@ -13186,10 +13209,7 @@ packages:
     dev: false
 
   /@types/katex@0.16.8:
-    resolution:
-      {
-        integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==,
-      }
+    resolution: {integrity: sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==}
     dev: false
 
   /@types/mdast@4.0.4:
@@ -13208,10 +13228,7 @@ packages:
     dev: false
 
   /@types/ms@2.1.0:
-    resolution:
-      {
-        integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==,
-      }
+    resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
     dev: false
 
   /@types/node@14.18.63:
@@ -17463,10 +17480,7 @@ packages:
     dev: false
 
   /bail@2.0.2:
-    resolution:
-      {
-        integrity: sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw==,
-      }
+    resolution: {integrity: sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw==}
     dev: false
 
   /balanced-match@1.0.2:
@@ -17923,10 +17937,7 @@ packages:
       }
 
   /character-entities@2.0.2:
-    resolution:
-      {
-        integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==,
-      }
+    resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
     dev: false
 
   /character-reference-invalid@2.0.1:
@@ -18313,11 +18324,8 @@ packages:
     engines: { node: ">= 10" }
 
   /commander@8.3.0:
-    resolution:
-      {
-        integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==,
-      }
-    engines: { node: ">= 12" }
+    resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
+    engines: {node: '>= 12'}
     dev: false
 
   /comment-json@4.6.2:
@@ -19249,7 +19257,6 @@ packages:
       }
     dependencies:
       character-entities: 2.0.2
-    dev: false
 
   /decode-uri-component@0.2.2:
     resolution:
@@ -20158,11 +20165,8 @@ packages:
     engines: { node: ">=10" }
 
   /escape-string-regexp@5.0.0:
-    resolution:
-      {
-        integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==,
-      }
-    engines: { node: ">=12" }
+    resolution: {integrity: sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw==}
+    engines: {node: '>=12'}
     dev: false
 
   /eslint-config-next@15.2.2(eslint@9.39.4)(typescript@5.9.3):
@@ -21503,10 +21507,7 @@ packages:
       }
 
   /extend@3.0.2:
-    resolution:
-      {
-        integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==,
-      }
+    resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
     dev: false
 
   /fast-csv@4.3.6:
@@ -23499,11 +23500,8 @@ packages:
     dev: false
 
   /is-plain-obj@4.1.0:
-    resolution:
-      {
-        integrity: sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg==,
-      }
-    engines: { node: ">=12" }
+    resolution: {integrity: sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg==}
+    engines: {node: '>=12'}
     dev: false
 
   /is-promise@2.2.2:
@@ -24062,7 +24060,6 @@ packages:
     hasBin: true
     dependencies:
       commander: 8.3.0
-    dev: false
 
   /kdbush@4.1.0:
     resolution:
@@ -24750,10 +24747,7 @@ packages:
     dev: false
 
   /longest-streak@3.1.0:
-    resolution:
-      {
-        integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==,
-      }
+    resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
     dev: false
 
   /loose-envify@1.4.0:
@@ -24922,10 +24916,7 @@ packages:
     dev: false
 
   /markdown-table@3.0.4:
-    resolution:
-      {
-        integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==,
-      }
+    resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
     dev: false
 
   /marked@15.0.12:
@@ -24969,7 +24960,6 @@ packages:
       escape-string-regexp: 5.0.0
       unist-util-is: 6.0.1
       unist-util-visit-parents: 6.0.2
-    dev: false
 
   /mdast-util-from-markdown@2.0.3:
     resolution:
@@ -24991,7 +24981,6 @@ packages:
       unist-util-stringify-position: 4.0.0
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-gfm-autolink-literal@2.0.1:
     resolution:
@@ -25004,7 +24993,6 @@ packages:
       devlop: 1.1.0
       mdast-util-find-and-replace: 3.0.2
       micromark-util-character: 2.1.1
-    dev: false
 
   /mdast-util-gfm-footnote@2.1.0:
     resolution:
@@ -25019,7 +25007,6 @@ packages:
       micromark-util-normalize-identifier: 2.0.1
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-gfm-strikethrough@2.0.0:
     resolution:
@@ -25032,7 +25019,6 @@ packages:
       mdast-util-to-markdown: 2.1.2
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-gfm-table@2.0.0:
     resolution:
@@ -25047,7 +25033,6 @@ packages:
       mdast-util-to-markdown: 2.1.2
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-gfm-task-list-item@2.0.0:
     resolution:
@@ -25061,7 +25046,6 @@ packages:
       mdast-util-to-markdown: 2.1.2
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-gfm@3.1.0:
     resolution:
@@ -25078,7 +25062,6 @@ packages:
       mdast-util-to-markdown: 2.1.2
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-math@3.0.0:
     resolution:
@@ -25095,7 +25078,6 @@ packages:
       unist-util-remove-position: 5.0.0
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /mdast-util-mdx-expression@2.0.1:
     resolution:
@@ -25174,7 +25156,6 @@ packages:
     dependencies:
       "@types/mdast": 4.0.4
       unist-util-is: 6.0.1
-    dev: false
 
   /mdast-util-to-hast@13.2.1:
     resolution:
@@ -25207,7 +25188,6 @@ packages:
       micromark-util-decode-string: 2.0.1
       unist-util-visit: 5.1.0
       zwitch: 2.0.4
-    dev: false
 
   /mdast-util-to-string@4.0.0:
     resolution:
@@ -25215,7 +25195,7 @@ packages:
         integrity: sha512-0H44vDimn51F0YwvxSJSm0eCDOJTRlmN0R1yBh4HLj9wiV1Dn0QoXGbvFAWj2hSItVTlCmBF1hqKlIyUBVFLPg==,
       }
     dependencies:
-      "@types/mdast": 4.0.4
+      '@types/mdast': 4.0.4
     dev: false
 
   /mdn-data@2.0.14:
@@ -25850,7 +25830,6 @@ packages:
       micromark-util-subtokenize: 2.1.0
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-cjk-friendly-gfm-strikethrough@1.2.3(micromark@4.0.2):
     resolution:
@@ -25923,7 +25902,6 @@ packages:
       micromark-util-sanitize-uri: 2.0.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm-footnote@2.1.0:
     resolution:
@@ -25939,7 +25917,6 @@ packages:
       micromark-util-sanitize-uri: 2.0.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm-strikethrough@2.1.0:
     resolution:
@@ -25953,7 +25930,6 @@ packages:
       micromark-util-resolve-all: 2.0.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm-table@2.1.1:
     resolution:
@@ -25966,7 +25942,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm-tagfilter@2.0.0:
     resolution:
@@ -25975,7 +25950,6 @@ packages:
       }
     dependencies:
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm-task-list-item@2.1.0:
     resolution:
@@ -25988,7 +25962,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-gfm@3.0.0:
     resolution:
@@ -26004,7 +25977,6 @@ packages:
       micromark-extension-gfm-task-list-item: 2.1.0
       micromark-util-combine-extensions: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-math@3.1.0:
     resolution:
@@ -26019,7 +25991,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-extension-mdx-expression@3.0.1:
     resolution:
@@ -26106,7 +26077,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-factory-label@2.0.1:
     resolution:
@@ -26118,7 +26088,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-factory-mdx-expression@2.0.3:
     resolution:
@@ -26145,7 +26114,6 @@ packages:
     dependencies:
       micromark-util-character: 2.1.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-factory-title@2.0.1:
     resolution:
@@ -26157,7 +26125,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-factory-whitespace@2.0.1:
     resolution:
@@ -26169,7 +26136,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-util-character@2.1.1:
     resolution:
@@ -26187,7 +26153,6 @@ packages:
       }
     dependencies:
       micromark-util-symbol: 2.0.1
-    dev: false
 
   /micromark-util-classify-character@2.0.1:
     resolution:
@@ -26198,7 +26163,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-util-combine-extensions@2.0.1:
     resolution:
@@ -26208,7 +26172,6 @@ packages:
     dependencies:
       micromark-util-chunked: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-util-decode-numeric-character-reference@2.0.2:
     resolution:
@@ -26217,7 +26180,6 @@ packages:
       }
     dependencies:
       micromark-util-symbol: 2.0.1
-    dev: false
 
   /micromark-util-decode-string@2.0.1:
     resolution:
@@ -26229,7 +26191,6 @@ packages:
       micromark-util-character: 2.1.1
       micromark-util-decode-numeric-character-reference: 2.0.2
       micromark-util-symbol: 2.0.1
-    dev: false
 
   /micromark-util-encode@2.0.1:
     resolution:
@@ -26253,10 +26214,7 @@ packages:
     dev: false
 
   /micromark-util-html-tag-name@2.0.1:
-    resolution:
-      {
-        integrity: sha512-2cNEiYDhCWKI+Gs9T0Tiysk136SnR13hhO8yW6BGNyhOC4qYFnwF1nKfD3HFAIXA5c45RrIG1ub11GiXeYd1xA==,
-      }
+    resolution: {integrity: sha512-2cNEiYDhCWKI+Gs9T0Tiysk136SnR13hhO8yW6BGNyhOC4qYFnwF1nKfD3HFAIXA5c45RrIG1ub11GiXeYd1xA==}
     dev: false
 
   /micromark-util-normalize-identifier@2.0.1:
@@ -26266,7 +26224,6 @@ packages:
       }
     dependencies:
       micromark-util-symbol: 2.0.1
-    dev: false
 
   /micromark-util-resolve-all@2.0.1:
     resolution:
@@ -26275,7 +26232,6 @@ packages:
       }
     dependencies:
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-util-sanitize-uri@2.0.1:
     resolution:
@@ -26297,7 +26253,6 @@ packages:
       micromark-util-chunked: 2.0.1
       micromark-util-symbol: 2.0.1
       micromark-util-types: 2.0.2
-    dev: false
 
   /micromark-util-symbol@2.0.1:
     resolution:
@@ -26336,7 +26291,6 @@ packages:
       micromark-util-types: 2.0.2
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /micromatch@4.0.8:
     resolution:
@@ -29936,7 +29890,6 @@ packages:
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /remark-math@6.0.0:
     resolution:
@@ -29950,7 +29903,6 @@ packages:
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /remark-mdx@3.1.1:
     resolution:
@@ -29976,7 +29928,6 @@ packages:
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color
-    dev: false
 
   /remark-rehype@11.1.2:
     resolution:
@@ -30000,7 +29951,6 @@ packages:
       "@types/mdast": 4.0.4
       mdast-util-to-markdown: 2.1.2
       unified: 11.0.5
-    dev: false
 
   /remark@15.0.1:
     resolution:
@@ -31945,10 +31895,7 @@ packages:
     dev: false
 
   /trough@2.2.0:
-    resolution:
-      {
-        integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==,
-      }
+    resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
     dev: false
 
   /ts-api-utils@2.5.0(typescript@5.9.3):
@@ -32299,7 +32246,6 @@ packages:
       is-plain-obj: 4.1.0
       trough: 2.2.0
       vfile: 6.0.3
-    dev: false
 
   /unist-util-find-after@5.0.0:
     resolution:
@@ -32344,7 +32290,6 @@ packages:
     dependencies:
       "@types/unist": 3.0.3
       unist-util-visit: 5.1.0
-    dev: false
 
   /unist-util-stringify-position@4.0.0:
     resolution:

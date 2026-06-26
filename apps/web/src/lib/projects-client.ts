@@ -6,7 +6,7 @@ import { getEnv } from '@/lib/env-config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -231,11 +231,14 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   open_code_raw: string | null;
   open_code_default_agent: string | null;
+  agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
+    source?: 'opencode' | 'kortix.toml';
+    enabled?: boolean;
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
@@ -248,6 +251,18 @@ export interface ProjectDetail {
   config: ProjectConfigSummary;
   file_count: number;
   files: ProjectFileEntry[];
+}
+
+export interface ProjectLlmCatalogResponse {
+  models: Record<string, {
+    name: string;
+    free?: boolean;
+    reasoning?: boolean;
+    tool_call?: boolean;
+    attachment?: boolean;
+    temperature?: boolean;
+    limit?: { context?: number; output?: number };
+  }>;
 }
 
 export interface ProjectInput {
@@ -558,6 +573,15 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+  );
+}
+
+export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 
@@ -950,6 +974,7 @@ export interface AdminConnector {
   slug: string;
   name: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
@@ -1033,6 +1058,7 @@ export async function setConnectorPolicies(projectId: string, slug: string, poli
 export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
+  platform: 'slack' | 'email' | null;
   credentialMode: 'shared' | 'per_user';
   app: string | null;
   account: string | null;
@@ -1074,6 +1100,7 @@ export interface ConnectorDraftInput {
   slug: string;
   name?: string;
   provider: AdminConnector['provider'];
+  platform?: 'slack' | 'email';
   app?: string;
   account?: string;
   url?: string;
@@ -2066,10 +2093,12 @@ export async function createProjectSession(
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
+  options?: { showErrors?: boolean },
 ) {
   return unwrap(
     await backendApi.get<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
+      { showErrors: options?.showErrors },
     ),
   );
 }

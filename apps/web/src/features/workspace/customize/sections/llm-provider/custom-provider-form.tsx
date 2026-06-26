@@ -9,6 +9,7 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -109,6 +110,7 @@ export function CustomProviderForm({
     onSuccess: (result) => {
       setSavedSnippet(result);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
   });

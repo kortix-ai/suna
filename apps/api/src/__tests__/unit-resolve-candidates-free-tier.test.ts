@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let billingEnabled = true;
 let accountTier = 'free';
@@ -6,32 +6,38 @@ let accountTierCalls = 0;
 
 mock.module('@kortix/llm-gateway', () => ({
   resolveCatalogUpstream: (provider: string) =>
-    provider === 'openai'
+    provider === 'openai' || provider === 'anthropic'
       ? {
-          envVar: 'OPENAI_API_KEY',
-          kind: 'openai-chat',
-          baseUrl: 'https://api.openai.com/v1',
+          envVar: provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
+          kind: provider === 'openai' ? 'openai-chat' : 'anthropic',
+          baseUrl:
+            provider === 'openai'
+              ? 'https://api.openai.com/v1'
+              : 'https://api.anthropic.com/v1',
         }
       : null,
 }));
 
-mock.module('@kortix/shared/llm-catalog', () => ({
-  getManagedModel: (model: string) =>
-    model === 'claude-sonnet-4.6' ? { id: model, transport: 'openrouter' } : null,
-}));
-
 mock.module('../config', () => ({
+  SANDBOX_VERSION: 'test',
+  KORTIX_MARKUP: 1.2,
+  PLATFORM_FEE_MARKUP: 0.1,
   config: new Proxy(
     {},
     {
-      get: (_target, key) => {
+      get: (target: Record<PropertyKey, unknown>, key) => {
+        if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
+        if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
+        if (key === 'KORTIX_APPS_EXPERIMENTAL') return false;
+        if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
-        return undefined;
+        return target[key];
       },
     },
   ),
+  getToolCost: () => 0,
 }));
 
 mock.module('../billing/services/entitlements', () => ({
@@ -42,11 +48,29 @@ mock.module('../billing/services/entitlements', () => ({
 }));
 
 mock.module('../projects/secrets', () => ({
+  decryptProjectSecret: (_projectId: string, value: string) => value,
+  encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  listProjectSecrets: async () => ({}),
+  listProjectSecretsForUser: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({
+    env: {},
+    names: [],
+    revision: 'empty',
+  }),
+  listProjectSecretsSnapshotForUser: async () => ({
+    env: {},
+    names: [],
+    revision: 'empty',
+  }),
+  projectSecretsRevision: () => 'empty',
 }));
 
 mock.module('../llm-gateway/credentials/codex', () => ({
-  resolveCodexCredential: async () => ({ access: 'codex-token', accountId: 'chatgpt-account' }),
+  resolveCodexCredential: async () => ({
+    access: 'codex-token',
+    accountId: 'chatgpt-account',
+  }),
 }));
 
 mock.module('../llm-gateway/resolution/descriptors', () => ({
@@ -84,6 +108,10 @@ function principal(accountId: string) {
 }
 
 describe('resolveCandidates free-tier premium gate', () => {
+  afterAll(() => {
+    mock.restore();
+  });
+
   beforeEach(() => {
     billingEnabled = true;
     accountTier = 'free';
@@ -102,6 +130,15 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-managed'), 'claude-sonnet-4.6');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
+    expect(accountTierCalls).toBe(1);
+  });
+
+  test('resolves raw auto to a concrete managed upstream for stale gateway callers', async () => {
+    accountTier = 'per_seat';
+    const candidates = await resolveCandidates(principal('team-auto'), 'auto');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.provider).toBe('openrouter');
+    expect(candidates[0]?.resolvedModel).toBe('fusion');
     expect(accountTierCalls).toBe(1);
   });
 

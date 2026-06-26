@@ -10,7 +10,10 @@ export class TimeoutError extends Error {
 
 export class NetworkError extends Error {
   readonly kind: UpstreamErrorKind = 'network';
-  constructor(message = 'upstream network error', readonly cause?: unknown) {
+  constructor(
+    message = 'upstream network error',
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'NetworkError';
   }
@@ -44,4 +47,19 @@ export function defaultIsRetryable(err: unknown): boolean {
     return err.status === 429 || (err.status >= 500 && err.status <= 599);
   }
   return true;
+}
+
+// A circuit breaker exists to fail fast when an upstream is genuinely DOWN —
+// network failures, timeouts, 5xx. This is deliberately NOT the same set as
+// `defaultIsRetryable`: a 429/402/403 is per-credential flow control (rate
+// limit, quota, billing), not a host-health signal. Breakers are keyed by
+// provider and SHARED across every caller of that provider, so counting one
+// tenant's rate-limited BYOK key as a "failure" would open the breaker for all
+// other tenants whose own keys are fine. A 429 is therefore still retried and
+// failed-over, but it never trips the breaker.
+export function indicatesUpstreamDown(err: unknown): boolean {
+  if (err instanceof TimeoutError) return true;
+  if (err instanceof NetworkError) return true;
+  if (err instanceof UpstreamHttpError) return err.status >= 500 && err.status <= 599;
+  return false;
 }

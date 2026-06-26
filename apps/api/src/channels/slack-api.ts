@@ -114,6 +114,24 @@ export async function postMessage(
   }
 }
 
+// Opens (or returns) the bot's DM channel with a user so we can message them
+// directly — a real DM notifies and persists, unlike an ephemeral. Returns the
+// IM channel id, or null on failure.
+export async function openDmChannel(token: string, userId: string): Promise<string | null> {
+  try {
+    const r = await slackApiCall(token, 'conversations.open', { users: userId });
+    if (!r.ok) {
+      console.warn('[slack-api] conversations.open failed', { error: r.error });
+      return null;
+    }
+    const ch = r.channel as { id?: string } | undefined;
+    return ch?.id ?? null;
+  } catch (err) {
+    console.warn('[slack-api] conversations.open error', err);
+    return null;
+  }
+}
+
 // Posts a Block Kit message and returns its ts (needed to edit it later).
 export async function postBlocks(
   token: string,

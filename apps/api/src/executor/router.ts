@@ -45,6 +45,7 @@ const CatalogConnectorSchema = z
     slug: z.string(),
     name: z.string(),
     provider: z.string(),
+    platform: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
   })
@@ -103,6 +104,8 @@ export interface CatalogConnector {
   slug: string;
   name: string;
   provider: string;
+  /** Channel provider only: native platform backing this profile. */
+  platform?: string | null;
   status: string;
   actions: CatalogAction[];
 }
@@ -176,6 +179,7 @@ export interface ExecutorRouterDeps {
   getConnectorConfig?(projectId: string, slug: string): Promise<{
     slug: string;
     provider: string;
+    platform?: string | null;
     credentialMode: 'shared' | 'per_user';
     app: string | null;
     account: string | null;

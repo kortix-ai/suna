@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
@@ -13,48 +14,70 @@ import { useMemo } from 'react';
 export function ModelsTab({
   connectedProviders,
   search,
+  llmGatewayEnabled,
 }: {
   connectedProviders: LlmProviderEntry[];
   search: string;
+  llmGatewayEnabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
-  const flatModels = useMemo<FlatModel[]>(
+  const rows = useMemo(
     () =>
       connectedProviders.flatMap((p) =>
         p.models.map((m) => ({
-          providerID: p.id,
-          providerName: p.label,
-          modelID: m.id,
-          modelName: m.name,
-          releaseDate: m.released ?? undefined,
+          provider: p,
+          model: m,
+          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
         })),
       ),
-    [connectedProviders],
+    [connectedProviders, llmGatewayEnabled],
   );
-  const modelStore = useModelStore(flatModels);
+
+  const flatModels = useMemo<FlatModel[]>(
+    () =>
+      rows.map(({ provider, model, storeKey }) => ({
+        providerID: storeKey.providerID,
+        providerName: provider.label,
+        modelID: storeKey.modelID,
+        modelName: model.name,
+        releaseDate: model.released ?? undefined,
+      })),
+    [rows],
+  );
+
+  const connectedProviderIds = useMemo(() => {
+    if (!llmGatewayEnabled) return undefined;
+    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
+  }, [connectedProviders, llmGatewayEnabled]);
+
+  const modelStore = useModelStore(flatModels, {
+    connectedProviderIds,
+  });
 
   const enabledCount = useMemo(
-    () =>
-      flatModels.filter((m) =>
-        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
-      ).length,
-    [flatModels, modelStore],
+    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
+    [rows, modelStore],
   );
   const hasOverrides = modelStore.userPrefs.length > 0;
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return connectedProviders
-      .map((provider) => ({
-        provider,
-        models: provider.models.filter(
-          (model) =>
-            !q || model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((group) => group.models.length > 0);
-  }, [connectedProviders, search]);
+    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
+    for (const row of rows) {
+      if (
+        q &&
+        !row.model.name.toLowerCase().includes(q) &&
+        !row.model.id.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+      const existing = byProvider.get(row.provider.id);
+      if (existing) existing.rows.push(row);
+      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
+    }
+    return Array.from(byProvider.values());
+  }, [rows, search]);
 
   if (connectedProviders.length === 0) {
     return (
@@ -103,19 +126,18 @@ export function ModelsTab({
         </div>
       )}
       <div className="space-y-3">
-        {grouped.map(({ provider, models }) => (
+        {grouped.map(({ provider, rows: providerRows }) => (
           <div key={provider.id}>
             <div className="flex items-center gap-2 px-1 pb-1">
               <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
               <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
               </span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">{models.length}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{providerRows.length}</span>
             </div>
             <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
-              {models.map((model, i) => {
-                const key = { providerID: provider.id, modelID: model.id };
-                const visible = modelStore.isVisible(key);
+              {providerRows.map(({ model, storeKey }, i) => {
+                const visible = modelStore.isVisible(storeKey);
                 return (
                   <label
                     key={model.id}
@@ -133,7 +155,7 @@ export function ModelsTab({
                     </div>
                     <Switch
                       checked={visible}
-                      onCheckedChange={(c) => modelStore.setVisibility(key, c)}
+                      onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
                     />
                   </label>
                 );

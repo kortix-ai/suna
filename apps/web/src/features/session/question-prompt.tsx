@@ -162,6 +162,22 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 			const trimmed = value.trim();
 			if (!trimmed) return;
 
+			// On the Confirm tab there is no "current question" to answer. Treat a
+			// typed message as the user's intent to submit: send all collected
+			// answers and carry the typed text along as an extra note on the last
+			// question (the per-question reply contract has no separate channel for
+			// a free-form message, and an answer list already accepts custom text).
+			if (isConfirm) {
+				const finalAnswers = questions.map((_, i) => answers[i] ?? []);
+				const lastIdx = questions.length - 1;
+				if (lastIdx >= 0) {
+					finalAnswers[lastIdx] = [...finalAnswers[lastIdx], trimmed];
+				}
+				setReplying(true);
+				onReply(request.id, finalAnswers);
+				return;
+			}
+
 			if (isMulti) {
 				const existing = answers[tab] ?? [];
 				if (!existing.includes(trimmed)) {
@@ -175,7 +191,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 
 			pick(trimmed);
 		},
-		[isMulti, answers, tab, pick],
+		[isConfirm, isMulti, answers, tab, pick, questions, request.id, onReply],
 	);
 
 	const advanceToNext = useCallback(() => {

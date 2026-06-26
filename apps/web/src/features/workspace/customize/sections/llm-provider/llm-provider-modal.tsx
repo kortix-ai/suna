@@ -39,7 +39,10 @@ export function ProjectProviderModal({
   allowedTabs,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { secretsQuery, connectedProviders } = useConnectedProviders(projectId, open);
+  const { secretsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
+    projectId,
+    open || asPanel,
+  );
   const hasConnections = connectedProviders.length > 0;
 
   const clampTab = useCallback(
@@ -170,7 +173,11 @@ export function ProjectProviderModal({
             </TabsContent>
 
             <TabsContent value="models" className="mt-0">
-              <ModelsTab connectedProviders={connectedProviders} search={search} />
+              <ModelsTab
+                connectedProviders={connectedProviders}
+                search={search}
+                llmGatewayEnabled={llmGatewayEnabled}
+              />
             </TabsContent>
           </>
         )}

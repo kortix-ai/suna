@@ -661,7 +661,7 @@ function ActiveSessionChat({
       projectId={projectId}
       projectSessionId={sessionId}
     >
-      <SessionChat key={chatSessionId} sessionId={chatSessionId} />
+      <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
     </SessionLayout>
   );
 }

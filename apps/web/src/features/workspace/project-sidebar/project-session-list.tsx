@@ -19,6 +19,7 @@ import {
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -34,7 +35,14 @@ import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { CalendarClock, MoreHorizontal, RotateCcw, Webhook, type LucideIcon } from 'lucide-react';
+import {
+  CalendarClock,
+  Mail,
+  MoreHorizontal,
+  RotateCcw,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -56,12 +64,32 @@ const SOURCE_ICONS: Record<
 > = {
   slack: Icon.Slack,
   telegram: Icon.Telegram,
+  email: Mail,
   schedule: CalendarClock,
   webhook: Webhook,
 };
 
 function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+}
+
+// Staggered (unique) widths so the loading state reads as a list of rows, not a
+// block; the width doubles as a stable key.
+const SKELETON_ROW_WIDTHS = ['w-40', 'w-28', 'w-44', 'w-32', 'w-48', 'w-24', 'w-36', 'w-20'];
+
+/** Loading placeholder mirroring the session-row layout: status dot · title · time. */
+function ProjectSessionListSkeleton() {
+  return (
+    <div className="space-y-px" aria-hidden>
+      {SKELETON_ROW_WIDTHS.map((width) => (
+        <div key={width} className="flex h-8 items-center gap-2 px-2">
+          <Skeleton className="size-2 shrink-0 rounded-full py-0" />
+          <Skeleton className={cn('h-3 py-0', width)} />
+          <Skeleton className="ml-auto h-3 w-7 shrink-0 py-0" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
@@ -98,13 +126,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   });
 
   if (isLoading) {
-    return (
-      <div className="space-y-1">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="bg-sidebar-accent/30 h-8 animate-pulse rounded-lg" />
-        ))}
-      </div>
-    );
+    return <ProjectSessionListSkeleton />;
   }
 
   if (error) {
@@ -461,9 +483,7 @@ function getSessionDisplayTitle(session: ProjectSession): string {
       ? (session.metadata.session_name as string)
       : null;
   const titleCandidate =
-    session.custom_name?.trim() ||
-    session.name?.trim() ||
-    legacyMetadataName?.trim();
+    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim();
 
   if (titleCandidate) return titleCandidate;
   return session.branch_name ? session.branch_name.slice(0, 14) : 'session';

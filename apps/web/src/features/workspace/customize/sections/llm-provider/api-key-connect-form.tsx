@@ -10,6 +10,7 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { setPersonalProjectSecret, upsertProjectSecret } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
@@ -63,6 +64,7 @@ export function ApiKeyConnectForm({
     onSuccess: () => {
       successToast(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),

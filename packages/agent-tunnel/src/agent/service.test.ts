@@ -6,18 +6,21 @@ import {
   getServicePaths,
   renderLaunchdPlist,
   renderSystemdUnit,
+  renderWindowsPowerShellScript,
 } from './service';
 
 describe('agent tunnel service definitions', () => {
   test('builds a command that runs the supervised tunnel agent', () => {
     const command = buildServiceShellCommand();
-    expect(command).toContain('run --service');
+    expect(command).toContain("'run'");
+    expect(command).toContain("'--service'");
     expect(command).toStartWith('exec ');
   });
 
   test('keep-awake command wraps the service on supported platforms', () => {
     const command = buildServiceShellCommand({ keepAwake: true });
-    expect(command).toContain('run --service');
+    expect(command).toContain("'run'");
+    expect(command).toContain("'--service'");
     if (platform() === 'darwin') {
       expect(command).toContain('/usr/bin/caffeinate -dimsu');
     }
@@ -44,11 +47,23 @@ describe('agent tunnel service definitions', () => {
     expect(unit).toContain('agent-tunnel.err.log');
   });
 
+  test('windows scheduled-task script restarts forever and can keep awake', () => {
+    const script = renderWindowsPowerShellScript(
+      { keepAwake: true },
+      { command: 'node', args: ['agent-tunnel.js', 'run', '--service'] },
+    );
+    expect(script).toContain('SetThreadExecutionState');
+    expect(script).toContain('while ($true)');
+    expect(script).toContain("& 'node' 'agent-tunnel.js' 'run' '--service'");
+    expect(script).toContain('Start-Sleep -Seconds 5');
+  });
+
   test('service paths are under the user home', () => {
     const paths = getServicePaths();
     expect(paths.configDir).toContain('.agent-tunnel');
     expect(paths.logDir).toContain('.agent-tunnel');
     expect(paths.launchdPlist).toContain(`${SERVICE_LABEL}.plist`);
     expect(paths.systemdUnit).toContain(`${SERVICE_LABEL}.service`);
+    expect(paths.windowsScript).toContain('agent-tunnel-service.ps1');
   });
 });
