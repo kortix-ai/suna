@@ -21,3 +21,10 @@ export {
   isConfigured,
   type KortixPlatformConfig,
 } from './platform/config';
+
+/**
+ * The opinionated single entry point. `createKortix({ getToken })` wires the
+ * platform seam and returns one client whose methods cover the whole REST +
+ * opencode surface — so a host app imports ONLY from `@kortix/sdk`.
+ */
+export { createKortix, type Kortix } from './kortix';
