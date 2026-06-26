@@ -1070,15 +1070,10 @@ export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId!),
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
-  const projectGatewayEnabled =
-    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
-  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
+  // The gateway is the only LLM path for projects now, so any project route is
+  // gateway mode. Non-project surfaces (no projectId) still talk to the running
+  // sandbox's native provider list.
+  const projectGatewayEnabled = !!projectId;
   // BYOK makes the connected model set project-specific (a provider connected
   // in one project must NOT leak into another, nor linger after removal), so
   // the persisted placeholder is scoped per project — not the old global scope.
@@ -1151,7 +1146,7 @@ export function useOpenCodeProviders() {
       }
       return cached;
     },
-    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
+    enabled: projectId ? projectGatewayEnabled || runtimeReady : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep

@@ -10,9 +10,9 @@ export function shouldShowFreeTag(model: Pick<FlatModel, 'free' | 'modelID' | 'm
 export function modelVisibilityKeyForProviderModel(
   providerID: string,
   modelID: string,
-  llmGatewayEnabled: boolean,
 ): { providerID: string; modelID: string } {
-  if (!llmGatewayEnabled) return { providerID, modelID };
+  // The gateway is the only LLM path: every provider's models live under the
+  // single `kortix` namespace (BYOK models keep a `<provider>/` prefix).
   return {
     providerID: 'kortix',
     modelID: providerID === 'kortix' ? modelID : `${providerID}/${modelID}`,

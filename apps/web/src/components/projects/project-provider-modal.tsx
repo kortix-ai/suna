@@ -77,7 +77,6 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
-  getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -156,13 +155,6 @@ export function ProjectProviderModal({
   allowedTabs,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
-    enabled: open || asPanel,
-  });
-  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
 
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
   // like ModelSelector (so `<Dialog>` can animate in/out cleanly), and firing
@@ -181,13 +173,10 @@ export function ProjectProviderModal({
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // The managed Kortix gateway exists only for projects that explicitly opt
-  // into the LLM Gateway. Native OpenCode projects should show only providers
-  // backed by project secrets, even if an old running sandbox still exposes a
-  // stale `kortix` provider.
+  // The managed Kortix gateway is the only LLM path. It surfaces as a provider
+  // whenever the running sandbox actually exposes a connected `kortix` provider.
   const { data: ocProviders } = useOpenCodeProviders();
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
-    if (!llmGatewayEnabled) return null;
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
@@ -208,7 +197,7 @@ export function ProjectProviderModal({
       featured: true,
       managed: true,
     };
-  }, [llmGatewayEnabled, ocProviders]);
+  }, [ocProviders]);
 
   // A provider is "connected" when its API-key route is fully wired (every
   // env var stored). Partial API-key state stays not-connected on purpose — a
@@ -362,11 +351,7 @@ export function ProjectProviderModal({
         )}
 
         {!secretsQuery.isLoading && activeTab === 'models' && (
-          <ModelsTab
-            connectedProviders={connectedProviders}
-            search={search}
-            llmGatewayEnabled={llmGatewayEnabled}
-          />
+          <ModelsTab connectedProviders={connectedProviders} search={search} />
         )}
       </div>
     </>
@@ -1516,11 +1501,9 @@ function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): string {
 function ModelsTab({
   connectedProviders,
   search,
-  llmGatewayEnabled,
 }: {
   connectedProviders: LlmProviderEntry[];
   search: string;
-  llmGatewayEnabled: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1533,10 +1516,10 @@ function ModelsTab({
         p.models.map((m) => ({
           provider: p,
           model: m,
-          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
+          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id),
         })),
       ),
-    [connectedProviders, llmGatewayEnabled],
+    [connectedProviders],
   );
 
   const flatModels = useMemo<FlatModel[]>(
@@ -1551,9 +1534,8 @@ function ModelsTab({
     [rows],
   );
   const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return undefined;
     return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
-  }, [connectedProviders, llmGatewayEnabled]);
+  }, [connectedProviders]);
   const modelStore = useModelStore(flatModels, {
     connectedProviderIds,
   });

@@ -18,10 +18,7 @@ import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/cl
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  connectedGatewayProviderIdsFromSecretNames,
-  normalizeProviderList,
-} from './provider-selection';
+import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -132,10 +129,11 @@ export function formatModelString(model: ModelKey): string {
 
 export type ModelProviderMode = 'native' | 'gateway';
 
-export function modelProviderMode(providers: ProviderListResponse | undefined): ModelProviderMode {
-  if (!providers) return 'native';
-  const normalized = normalizeProviderList(providers);
-  return normalized.connected?.includes('kortix') ? 'gateway' : 'native';
+export function modelProviderMode(_providers?: ProviderListResponse | undefined): ModelProviderMode {
+  // The gateway is the only LLM path now, so model selection is always scoped to
+  // gateway mode. (The `native` branch and the `providers` argument are kept only
+  // until the wider providerMode plumbing is removed in a later phase.)
+  return 'gateway';
 }
 
 export function scopedModelSelectionKey(

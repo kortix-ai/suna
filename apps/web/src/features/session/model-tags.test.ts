@@ -33,21 +33,15 @@ describe('shouldShowFreeTag', () => {
 });
 
 describe('modelVisibilityKeyForProviderModel', () => {
-  test('keeps native provider keys unchanged', () => {
+  test('maps BYOK provider models onto the kortix provider namespace', () => {
     expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', false),
-    ).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
-  });
-
-  test('maps gateway BYOK provider models onto the kortix provider namespace', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', true),
+      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6'),
     ).toEqual({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' });
   });
 
-  test('keeps managed kortix model ids bare in gateway mode', () => {
+  test('keeps managed kortix model ids bare', () => {
     expect(
-      modelVisibilityKeyForProviderModel('kortix', 'deepseek-v4-flash-free', true),
+      modelVisibilityKeyForProviderModel('kortix', 'deepseek-v4-flash-free'),
     ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4-flash-free' });
   });
 });

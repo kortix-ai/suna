@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -59,7 +58,6 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
-  getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -237,13 +235,6 @@ function SecretsCard({
   const queryClient = useQueryClient();
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
-  });
-  const llmGatewayEnabled =
-    projectDetailQuery.data?.project.experimental?.llm_gateway === true;
 
   const normalized = useMemo(() => normalizeResponse(data), [data]);
   const canManage = normalized.can_manage ?? false;
@@ -256,7 +247,6 @@ function SecretsCard({
   );
 
   const [search, setSearch] = useState('');
-  const [providerModalOpen, setProviderModalOpen] = useState(false);
 
   // Shared (manager) add/edit dialog — null row = create new.
   const [sharedDialogOpen, setSharedDialogOpen] = useState(false);
@@ -304,11 +294,7 @@ function SecretsCard({
     setSharedDialogOpen(true);
   };
   const openProviderManagement = () => {
-    if (llmGatewayEnabled) {
-      openCustomize('llm-providers');
-    } else {
-      setProviderModalOpen(true);
-    }
+    openCustomize('llm-providers');
   };
 
   const chooseSource = useCallback(
@@ -348,12 +334,6 @@ function SecretsCard({
           )}
         </InfoBanner>
       )}
-
-      <ProjectProviderModal
-        projectId={projectId}
-        open={providerModalOpen}
-        onOpenChange={setProviderModalOpen}
-      />
 
       <SectionCard
         title="Secrets"

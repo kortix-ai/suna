@@ -161,7 +161,6 @@ const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
-  llmGatewayEnabled: boolean,
 ): readonly RailGroup[] {
   const groups: RailGroup[] = [];
   for (const g of GROUPS) {
@@ -172,7 +171,9 @@ function railGroups(
     } else {
       groups.push(g);
     }
-    if (g.label === 'Connect' && llmGatewayEnabled) {
+    // The LLM group (gateway providers + models) is the only LLM path now, so
+    // it's always shown right after Connect.
+    if (g.label === 'Connect') {
       groups.push(LLM_GROUP);
     }
   }
@@ -199,10 +200,9 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
-  const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayEnabled),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayEnabled],
+    () => railGroups(tunnelEnabled, marketplaceEnabled),
+    [tunnelEnabled, marketplaceEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const sectionVisible = allItems.some((item) => item.section === section);
@@ -322,11 +322,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
 
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
             {open && sectionVisible && (
-              <SectionContent
-                section={section}
-                projectId={projectId}
-                llmGatewayEnabled={llmGatewayEnabled}
-              />
+              <SectionContent section={section} projectId={projectId} />
             )}
           </main>
         </div>
@@ -389,16 +385,10 @@ function RailButton({
 function SectionContent({
   section,
   projectId,
-  llmGatewayEnabled,
 }: {
   section: CustomizeSection;
   projectId: string;
-  llmGatewayEnabled: boolean;
 }) {
-  if (section.startsWith('llm-') && !llmGatewayEnabled) {
-    return null;
-  }
-
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).

@@ -9,7 +9,7 @@ describe('OpenCode local model selection scoping', () => {
     expect(scopedModelSelectionKey(undefined, 'native')).toBeUndefined();
   });
 
-  test('detects gateway mode from the Kortix provider', () => {
+  test('always resolves to gateway mode (gateway is the only LLM path)', () => {
     expect(
       modelProviderMode({
         all: [{ id: 'kortix', name: 'Kortix', models: {} }],
@@ -17,14 +17,12 @@ describe('OpenCode local model selection scoping', () => {
         default: { kortix: 'auto' },
       } as any),
     ).toBe('gateway');
-  });
-
-  test('keeps native mode for v0.9.68 legacy provider-list responses', () => {
     expect(
       modelProviderMode({
         providers: [{ id: 'opencode', name: 'OpenCode', models: {} }],
         default: { opencode: 'deepseek-v4-flash-free' },
       } as any),
-    ).toBe('native');
+    ).toBe('gateway');
+    expect(modelProviderMode(undefined)).toBe('gateway');
   });
 });
