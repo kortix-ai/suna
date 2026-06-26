@@ -9,8 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import {
+  ArrowUpRight,
   Check,
   Download,
+  GitMerge,
   MonitorSmartphone,
   SendHorizontal,
   Smartphone,
@@ -22,11 +24,20 @@ const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
 
 const MARKO_AVATAR = 'https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png';
 
-type Deliverable = { name: string; meta: string };
+type DeliverableKind = 'pdf' | 'xlsx' | 'pptx' | 'pr';
+
+type Deliverable = { name: string; meta: string; kind?: DeliverableKind };
 
 type ChatLine =
-  | { from: 'user'; name: string; text: string }
+  | { from: 'user'; name: string; avatar?: string; text: string }
   | { from: 'kortix'; text: ReactNode; steps?: string[]; deliverable?: Deliverable };
+
+const DELIVERABLE_BADGE: Record<DeliverableKind, string> = {
+  pdf: 'PDF',
+  xlsx: 'XLSX',
+  pptx: 'PPTX',
+  pr: 'PR',
+};
 
 function KortixAvatar({ size = 8 }: { size?: number }) {
   return (
@@ -39,14 +50,26 @@ function KortixAvatar({ size = 8 }: { size?: number }) {
   );
 }
 
-function UserAvatar({ size = 8 }: { size?: number }) {
+function UserAvatar({
+  size = 8,
+  name = 'Marko',
+  src,
+}: {
+  size?: number;
+  name?: string;
+  src?: string;
+}) {
   return (
     <span
-      className="bg-muted relative flex shrink-0 items-center justify-center overflow-hidden rounded-md"
+      className="bg-muted text-muted-foreground relative flex shrink-0 items-center justify-center overflow-hidden rounded-md text-xs font-semibold"
       style={{ width: `${size * 0.25}rem`, height: `${size * 0.25}rem` }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={MARKO_AVATAR} alt="Marko" className="size-full object-cover" />
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={name} className="size-full object-cover" />
+      ) : (
+        name.charAt(0).toUpperCase()
+      )}
     </span>
   );
 }
@@ -58,6 +81,8 @@ function DeliverableCard({
   deliverable: Deliverable;
   compact?: boolean;
 }) {
+  const kind = deliverable.kind ?? 'pdf';
+  const isPr = kind === 'pr';
   return (
     <div
       className={cn(
@@ -65,15 +90,21 @@ function DeliverableCard({
         compact && 'p-2.5',
       )}
     >
-      <span className="bg-destructive/10 text-destructive flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold">
-        PDF
-      </span>
+      {isPr ? (
+        <span className="text-kortix-green border-border flex size-9 shrink-0 items-center justify-center rounded-lg border">
+          <GitMerge className="size-4" />
+        </span>
+      ) : (
+        <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-semibold">
+          {DELIVERABLE_BADGE[kind]}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-foreground truncate text-sm font-medium">{deliverable.name}</p>
         <p className="text-muted-foreground truncate text-xs">{deliverable.meta}</p>
       </div>
       <span className="text-muted-foreground hover:text-foreground flex size-7 shrink-0 items-center justify-center transition-colors">
-        <Download className="size-4" />
+        {isPr ? <ArrowUpRight className="size-4" /> : <Download className="size-4" />}
       </span>
     </div>
   );
@@ -94,7 +125,7 @@ function ChatBody({
       {lines.map((line, i) =>
         line.from === 'user' ? (
           <div key={i} className="flex items-start gap-2.5">
-            <UserAvatar size={avatarSize} />
+            <UserAvatar size={avatarSize} name={line.name} src={line.avatar} />
             <div className="min-w-0">
               <span className="text-foreground text-sm font-semibold">{line.name}</span>
               <p className="text-foreground mt-0.5 text-sm leading-relaxed">{line.text}</p>
@@ -180,11 +211,12 @@ const REPORT_DELIVERABLE: Deliverable = {
   meta: 'Revenue, signups, churn · 12 pages · just now',
 };
 
-function reportLines(name: string): ChatLine[] {
+function reportLines(name: string, avatar?: string): ChatLine[] {
   return [
     {
       from: 'user',
       name,
+      avatar,
       text: 'pull this week’s performance report and post it here',
     },
     {
@@ -206,25 +238,83 @@ function reportLines(name: string): ChatLine[] {
   ];
 }
 
+// Slack — the support/incident story: customer-facing bug → root-caused in
+// logs → traced to Stripe → fixed and shipped as a PR.
+const FIX_DELIVERABLE: Deliverable = {
+  name: 'fix/webhook-retry #4827',
+  meta: 'support-bot → main · +48 −6 · merged just now',
+  kind: 'pr',
+};
+
+function slackLines(): ChatLine[] {
+  return [
+    {
+      from: 'user',
+      name: 'Maya',
+      text: 'customers report failed renewals since 9am — can you find and fix it?',
+    },
+    {
+      from: 'kortix',
+      steps: [
+        'read error logs in the support channel',
+        'traced it to a dropped Stripe webhook',
+        'patched the retry + opened a PR',
+      ],
+      text: (
+        <>
+          Found it — renewal webhooks were timing out. Added a retry with backoff and a test.{' '}
+          <span className="text-foreground font-medium">12 renewals</span> already recovered.
+        </>
+      ),
+      deliverable: FIX_DELIVERABLE,
+    },
+  ];
+}
+
+// Teams — the finance story: close the month, reconcile, produce the P&L pack.
+const CLOSE_DELIVERABLE: Deliverable = {
+  name: 'Close-October.xlsx',
+  meta: 'P&L, reconciliations, variance · 6 tabs · just now',
+  kind: 'xlsx',
+};
+
+function teamsLines(): ChatLine[] {
+  return [
+    {
+      from: 'user',
+      name: 'Alex',
+      text: 'close out October — reconcile the books and send me the P&L',
+    },
+    {
+      from: 'kortix',
+      steps: [
+        'reconciled QuickBooks against Stripe + bank',
+        'flagged 2 unmatched transactions',
+        'built the P&L + variance pack',
+      ],
+      text: (
+        <>
+          October is closed. Net margin <span className="text-foreground font-medium">+4.2pts</span>{' '}
+          vs September; two items need your sign-off. Full pack attached.
+        </>
+      ),
+      deliverable: CLOSE_DELIVERABLE,
+    },
+  ];
+}
+
 function WebDesktopSurface() {
   // The full Kortix web/desktop app — the rich tabbed product UI (Projects ·
-  // Chat · Agents · Skills · Integrations · Models · Channels). The CLI lives in
-  // its own tab now, so this is the app surface only (embedded = no CLI window).
+  // Chat · Agents · Skills · Integrations · Models · Channels). Shown directly,
+  // no window-chrome wrapper, exactly how the real app presents it.
   return (
-    <div className="border-card bg-background relative flex h-full w-full flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
-      <div className="border-border/60 bg-muted/40 flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-        <span className="bg-foreground/20 size-2.5 rounded-full" />
-        <span className="bg-foreground/20 size-2.5 rounded-full" />
-        <span className="bg-foreground/20 size-2.5 rounded-full" />
-      </div>
-      <div className="min-h-0 flex-1 p-2 sm:p-3">
-        <InteractiveDemoSection
-          gradientbg={false}
-          embedded
-          className="h-full"
-          contentClassName="h-full"
-        />
-      </div>
+    <div className="h-full w-full">
+      <InteractiveDemoSection
+        gradientbg={false}
+        embedded
+        className="h-full"
+        contentClassName="h-full"
+      />
     </div>
   );
 }
@@ -249,7 +339,7 @@ function PhoneSurface() {
           <Icon.Slack className="size-4" />
           <span className="text-foreground text-sm font-semibold">#leadership</span>
         </div>
-        <ChatBody lines={reportLines('Marko')} composerPlaceholder="Message" dense />
+        <ChatBody lines={reportLines('Marko', MARKO_AVATAR)} composerPlaceholder="Message" dense />
       </div>
     </div>
   );
@@ -309,19 +399,16 @@ export function ModalitySwitcher() {
 
             <TabsContent value="slack" className={CONTENT_CLASS}>
               <div className="h-full rounded-2xl bg-[linear-gradient(in_oklch_180deg,oklch(from_var(--kortix-blue)_l_c_h/0.18)_0%,oklch(from_var(--kortix-green)_l_c_h/0.14)_50%,transparent_100%)] p-4 md:p-6">
-                <SurfaceFrame icon={<Icon.Slack className="size-5" />} title="#leadership">
-                  <ChatBody
-                    lines={reportLines('Marko')}
-                    composerPlaceholder="Message #leadership"
-                  />
+                <SurfaceFrame icon={<Icon.Slack className="size-5" />} title="#support">
+                  <ChatBody lines={slackLines()} composerPlaceholder="Message #support" />
                 </SurfaceFrame>
               </div>
             </TabsContent>
 
             <TabsContent value="teams" className={CONTENT_CLASS}>
               <div className="from-kortix-purple/15 via-kortix-blue/10 h-full rounded-2xl bg-linear-180 to-transparent p-4 md:p-6">
-                <SurfaceFrame icon={<Icon.MicrosoftTeams className="size-5" />} title="Leadership">
-                  <ChatBody lines={reportLines('Alex')} composerPlaceholder="Type a message" />
+                <SurfaceFrame icon={<Icon.MicrosoftTeams className="size-5" />} title="Finance">
+                  <ChatBody lines={teamsLines()} composerPlaceholder="Type a message" />
                 </SurfaceFrame>
               </div>
             </TabsContent>

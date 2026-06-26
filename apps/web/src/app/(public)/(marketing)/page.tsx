@@ -45,6 +45,12 @@ export default function Home() {
           <Separator />
         </div>
 
+        <ModalitySwitcher />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
         <UseCasesByDepartment />
 
         <div className="mx-auto max-w-6xl">
@@ -77,12 +83,6 @@ export default function Home() {
         </div>
 
         <RuntimeArchitecture />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <ModalitySwitcher />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
