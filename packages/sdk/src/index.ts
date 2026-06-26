@@ -32,3 +32,12 @@ export { createKortix, type Kortix } from './kortix';
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
 export { files } from './files/client';
 export type * from './files/types';
+
+/**
+ * Sandbox daemon surface — proxy/preview/web-proxy URL building + the
+ * `/kortix/health` liveness probe. Verified against the current agent server;
+ * legacy `/kortix/ports`, `/env` CRUD, `/kortix/services` and the board are
+ * excluded. Granular functions live at `@kortix/sdk/sandbox`.
+ */
+export { sandbox } from './sandbox';
+export type { SandboxHealthResponse, SandboxHealthResult } from './sandbox/health';

@@ -38,7 +38,9 @@
     "./projects-client": "./src/platform/projects-client/index.ts",
     "./server-store": "./src/state/server-store.ts",
     "./sync-store": "./src/state/sync-store.ts",
-    "./files": "./src/files/client.ts"
+    "./files": "./src/files/client.ts",
+    "./sandbox": "./src/sandbox/index.ts",
+    "./sandbox/url": "./src/sandbox/url.ts"
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {
