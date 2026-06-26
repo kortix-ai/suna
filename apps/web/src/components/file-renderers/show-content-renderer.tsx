@@ -5,7 +5,7 @@
  * show tool content inline in the session chat and side panel.
  *
  * Architecture:
- *  Binary files (image, video, audio, pdf, docx, pptx)
+ *  Binary files (image, video, audio, docx, pptx)
  *    → loaded via useBinaryBlob (/file/raw endpoint, direct binary fetch)
  *    → rendered with shared leaf renderers (ImageRenderer, PdfRenderer, etc.)
  *
@@ -130,7 +130,7 @@ function getShowFileCategory(filePath: string): string {
 }
 
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */
-const BLOB_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'docx', 'pptx']);
+const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
 
 function RendererFallback({ className }: { className?: string }) {
   return (
@@ -264,6 +264,13 @@ export function ShowContentRenderer({
   const { url: heicImageUrl, isConverting: heicConverting } = useHeicBlob(
     isHeic ? rawBlob : null,
     fileName,
+  );
+
+  // PDF: base64 content via SDK, decoded by PdfRenderer into a Blob URL.
+  const pdfLoadPath = isPdf && sandboxPath ? sandboxPath : null;
+  const { data: pdfData, isLoading: pdfLoading, error: pdfError } = useFileContent(
+    pdfLoadPath,
+    { enabled: !!pdfLoadPath },
   );
 
   // CSV/TSV: text content via SDK
@@ -429,16 +436,16 @@ export function ShowContentRenderer({
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // PDF — loaded via useBinaryBlob → blobUrl → PdfRenderer (with zoom)
+  // PDF — loaded via useFileContent base64 → atob → Blob URL → native PDF viewer
   // ═════════════════════════════════════════════════════════════════════════
   if (isPdf && path) {
-    if (blobLoading) return <RendererFallback className={mediaH} />;
-    if (blobError) return <LoadError message={blobError} />;
-    if (rawBlob) {
+    if (pdfLoading) return <RendererFallback className={mediaH} />;
+    if (pdfError) return <LoadError message={pdfError instanceof Error ? pdfError.message : String(pdfError)} />;
+    if (pdfData?.content) {
       return (
         <Suspense fallback={<RendererFallback className={mediaH} />}>
           <div className={mediaH}>
-            <PdfRenderer blob={rawBlob} className="h-full" />
+            <PdfRenderer fileContent={pdfData.content} className="h-full" />
           </div>
         </Suspense>
       );

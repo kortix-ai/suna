@@ -41,12 +41,10 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
-  // 'bedrock' = Anthropic InvokeModel/anthropic-payload; 'bedrock-converse' =
-  // the model-agnostic Converse API (Kimi, MiniMax). Same bearer key, different
-  // request/response shape — the kind selects the transport.
+  // Managed Bedrock = Claude via the Anthropic InvokeModel/anthropic-payload transport.
   return {
     provider: 'bedrock',
-    kind: managed.transport === 'bedrock-converse' ? 'bedrock-converse' : 'bedrock',
+    kind: 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
     billingMode: 'credits',

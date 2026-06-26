@@ -20,6 +20,7 @@
  *      localhost) — a best-effort fallback for old servers that don't inject (2).
  *   5. https://kortix.com.
  */
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 function stripTrailingSlash(s: string): string {
   return s.replace(/\/+$/, '');
@@ -27,7 +28,7 @@ function stripTrailingSlash(s: string): string {
 
 /** The frontend dashboard base URL (no trailing slash), never the API host. */
 export function webDashboardUrl(apiBase: string): string {
-  const explicit = process.env.KORTIX_FRONTEND_URL || process.env.KORTIX_DASHBOARD_URL;
+  const explicit = sandboxEnvValue('KORTIX_FRONTEND_URL') || process.env.KORTIX_DASHBOARD_URL;
   if (explicit && explicit.trim()) return stripTrailingSlash(explicit.trim());
   return stripTrailingSlash(deriveFrontendFromApiBase(apiBase));
 }

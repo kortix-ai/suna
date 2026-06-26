@@ -68,6 +68,27 @@ describe('relayStream', () => {
     expect(text.indexOf('data: a')).toBeLessThan(text.indexOf('data: b'));
   });
 
+  test('a throwing settle is caught and logged, never an unhandled rejection', async () => {
+    const up = controllableUpstream();
+    const warnings: unknown[][] = [];
+    const out = relayStream({
+      upstreamBody: up.stream,
+      captureBodies: false,
+      requestId: 'r4',
+      logger: { warn: (...args: unknown[]) => warnings.push(args) },
+      settle: async () => {
+        throw new Error('settle boom');
+      },
+      heartbeatMs: 10_000,
+    });
+    up.push('data: hi\n\n');
+    up.close();
+    const text = await drain(out);
+    await delay(10); // let the detached finally run settle()
+    expect(text).toBe('data: hi\n\n');
+    expect(warnings.some((w) => String(w[0]).includes('stream settle failed'))).toBe(true);
+  });
+
   test('never splits a partial event — no heartbeat injected mid-frame', async () => {
     const up = controllableUpstream();
     const out = relayStream({

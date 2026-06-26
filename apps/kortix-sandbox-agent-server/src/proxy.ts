@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { ServerWebSocket } from 'bun'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -28,6 +29,114 @@ const STRIP_REQUEST_HEADERS = new Set([
 ])
 
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
+
+const PTY_WS_PATH_RE = /^\/pty\/[^/]+\/connect\/?$/
+
+type OpencodeWsData = {
+  type: 'opencode-pty'
+  url: string
+  upstream?: WebSocket
+  ready?: boolean
+  queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>
+}
+
+function jsonError(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function sanitizeCloseCode(code: number | undefined): number {
+  if (typeof code !== 'number') return 1000
+  if (code === 1000) return 1000
+  if (code >= 3000 && code <= 4999) return code
+  return 1000
+}
+
+async function prepareOpencodePtyWsUpgrade(
+  req: Request,
+  cfg: Config,
+  opencode: Opencode,
+  bootState: SandboxBootState,
+): Promise<
+  | { ok: true; data: OpencodeWsData }
+  | { ok: false; response: Response }
+> {
+  const url = new URL(req.url)
+  if (!PTY_WS_PATH_RE.test(url.pathname)) {
+    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
+  }
+
+  if (!cfg.sandboxToken) {
+    logger.warn('[proxy] rejecting websocket: KORTIX_TOKEN not configured')
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
+    }
+  }
+
+  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER)
+  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  if (!auth.ok) {
+    logger.warn('[proxy] reject websocket', { reason: auth.reason, path: url.pathname })
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+  }
+
+  if (bootState.repoMaterializationError) {
+    return {
+      ok: false,
+      response: jsonError(503, {
+        error: 'sandbox runtime not ready',
+        reason: 'repo_materialization_failed',
+        message: bootState.repoMaterializationError,
+      }),
+    }
+  }
+
+  if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'sandbox runtime not ready', reason: 'repo_not_materialized' }),
+    }
+  }
+
+  if (bootState.initialOpenCodeSessionError) {
+    return {
+      ok: false,
+      response: jsonError(503, {
+        error: 'sandbox runtime not ready',
+        reason: 'initial_opencode_session_failed',
+        message: bootState.initialOpenCodeSessionError,
+      }),
+    }
+  }
+
+  if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
+    return {
+      ok: false,
+      response: jsonError(503, {
+        error: 'sandbox runtime not ready',
+        reason: 'initial_opencode_session_pending',
+      }),
+    }
+  }
+
+  if (opencode.getState() !== 'ok') {
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'opencode not ready', opencode: opencode.getState() }),
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      type: 'opencode-pty',
+      url: `${opencode.getInternalUrl()}${url.pathname}${url.search}`.replace(/^http:/i, 'ws:'),
+    },
+  }
+}
 
 export function buildOpencodeApp(
   cfg: Config,
@@ -235,15 +344,86 @@ export function startProxy(
 ): ProxyServer {
   // Mutable so claim-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
+  let currentCfg = cfg
   let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
 
-  const server = Bun.serve({
+  const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
     hostname: '0.0.0.0',
     // SSE streams from OpenCode can be long-lived with no traffic; default 10s
     // kills them. 255s matches kortix-master's tuned value.
     idleTimeout: 255,
-    fetch: (req, srv) => app.fetch(req, srv),
+    async fetch(req, srv) {
+      const url = new URL(req.url)
+      const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+      if (isWsUpgrade && PTY_WS_PATH_RE.test(url.pathname)) {
+        const prep = await prepareOpencodePtyWsUpgrade(req, currentCfg, opencode, bootState)
+        if (!prep.ok) return prep.response
+        const upgraded = srv.upgrade(req, { data: prep.data })
+        if (upgraded) return undefined
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
+      return app.fetch(req, srv)
+    },
+    websocket: {
+      open(ws: ServerWebSocket<OpencodeWsData>) {
+        const state = ws.data
+        if (state.type !== 'opencode-pty') {
+          try { ws.close(1011, 'unsupported websocket upgrade') } catch {}
+          return
+        }
+
+        state.queue = []
+        state.ready = false
+
+        let upstream: WebSocket
+        try {
+          upstream = new WebSocket(state.url)
+        } catch (err) {
+          logger.warn('[proxy] opencode websocket connect threw', {
+            err: err instanceof Error ? err.message : String(err),
+          })
+          try { ws.close(1011, 'upstream connect failed') } catch {}
+          return
+        }
+
+        upstream.binaryType = 'arraybuffer'
+        state.upstream = upstream
+
+        upstream.onopen = () => {
+          state.ready = true
+          const queued = state.queue ?? []
+          state.queue = []
+          for (const msg of queued) {
+            try { upstream.send(msg as any) } catch {}
+          }
+        }
+
+        upstream.onmessage = (event: MessageEvent) => {
+          try { ws.send(event.data as any) } catch {}
+        }
+
+        upstream.onclose = (event: CloseEvent) => {
+          try { ws.close(sanitizeCloseCode(event.code), (event.reason || '').slice(0, 120)) } catch {}
+        }
+
+        upstream.onerror = () => {
+          try { ws.close(1011, 'upstream error') } catch {}
+        }
+      },
+      message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
+        const state = ws.data
+        const upstream = state.upstream
+        if (state.ready && upstream && upstream.readyState === WebSocket.OPEN) {
+          try { upstream.send(message as any) } catch {}
+        } else {
+          (state.queue ??= []).push(message)
+        }
+      },
+      close(ws: ServerWebSocket<OpencodeWsData>) {
+        try { ws.data.upstream?.close() } catch {}
+      },
+    },
   })
 
   const boundPort = server.port ?? cfg.servicePort
@@ -252,6 +432,7 @@ export function startProxy(
   return {
     port: boundPort,
     reload(next: Config) {
+      currentCfg = next
       app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },

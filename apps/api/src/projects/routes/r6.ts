@@ -13,6 +13,7 @@ import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
+import { reconcileComputerConnectors } from '../../executor/sync';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1101,6 +1102,9 @@ projectsApp.openapi(
       .where(eq(projects.projectId, projectId))
       .returning();
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    if (feature === 'agent_tunnel') {
+      void reconcileComputerConnectors(row.accountId);
+    }
     return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },
 );

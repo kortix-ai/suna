@@ -49,6 +49,8 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/pty/opencode-pty/src/shared/constants.ts',
   '.kortix/opencode/pty/pty-tools.ts',
   '.kortix/opencode/skills/agent-browser/SKILL.md',
+  '.kortix/opencode/skills/kortix-computer/SKILL.md',
+  '.kortix/opencode/skills/kortix-executor/references/executor-sdk.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
   '.kortix/opencode/skills/kortix-slack/SKILL.md',
@@ -279,6 +281,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     stripeSubscriptionStatus: 'active',
   }),
   getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
 

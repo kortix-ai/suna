@@ -16,6 +16,7 @@ import {
   type FileSource,
 } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
+import { SHARE_FILE_IFRAME_CLASS } from './share-layout';
 
 export interface PublicFileShare {
   label: string;
@@ -222,7 +223,7 @@ export function PublicFileShareView({
         <iframe
           title={fileName}
           src={fileUrl}
-          className="min-h-0 flex-1 border-0 bg-white"
+          className={SHARE_FILE_IFRAME_CLASS}
           sandbox={tI18nHardcoded.raw(
             'autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063',
           )}

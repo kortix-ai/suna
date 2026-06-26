@@ -167,7 +167,7 @@ function DeviceAuthorize() {
   // ── Main form ──
   return (
     <div className="fixed inset-0 overflow-hidden">
-      <WallpaperBackground />
+      <WallpaperBackground showBrandMark={false} />
 
       <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
 
@@ -316,7 +316,7 @@ function StatusScreen({
 }) {
   return (
     <div className="fixed inset-0">
-      <WallpaperBackground />
+      <WallpaperBackground showBrandMark={false} />
       <div className="relative z-10 flex h-full flex-col items-center justify-center gap-6 px-4">
         <KortixLogo size={28} />
         <div

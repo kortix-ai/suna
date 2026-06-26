@@ -309,7 +309,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       html: { type: 'string', description: 'HTML body.' },
       attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
     },
-    required: ['inbox_id', 'to'],
+    required: ['to'],
   },
   {
     path: 'reply_message',
@@ -329,7 +329,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       html: { type: 'string', description: 'HTML body.' },
       attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
     },
-    required: ['inbox_id', 'message_id'],
+    required: ['message_id'],
   },
   {
     path: 'reply_all_message',
@@ -345,7 +345,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       html: { type: 'string', description: 'HTML body.' },
       attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
     },
-    required: ['inbox_id', 'message_id'],
+    required: ['message_id'],
   },
   {
     path: 'list_messages',
@@ -358,7 +358,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
       limit: { type: 'number', description: 'Maximum messages to return.' },
     },
-    required: ['inbox_id'],
+    required: [],
   },
   {
     path: 'get_message',
@@ -371,7 +371,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
       message_id: { type: 'string', description: 'AgentMail message ID.' },
     },
-    required: ['inbox_id', 'message_id'],
+    required: ['message_id'],
   },
   {
     path: 'search_messages',
@@ -385,7 +385,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       query: { type: 'string', description: 'Search query.' },
       limit: { type: 'number', description: 'Maximum messages to return.' },
     },
-    required: ['inbox_id', 'query'],
+    required: ['query'],
   },
   {
     path: 'list_threads',
@@ -398,7 +398,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
       limit: { type: 'number', description: 'Maximum threads to return.' },
     },
-    required: ['inbox_id'],
+    required: [],
   },
   {
     path: 'get_thread',
@@ -411,7 +411,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
       thread_id: { type: 'string', description: 'AgentMail thread ID.' },
     },
-    required: ['inbox_id', 'thread_id'],
+    required: ['thread_id'],
   },
   {
     path: 'get_message_attachment',
@@ -425,7 +425,7 @@ const EMAIL_ACTIONS: ChannelActionDef[] = [
       message_id: { type: 'string', description: 'AgentMail message ID.' },
       attachment_id: { type: 'string', description: 'AgentMail attachment ID.' },
     },
-    required: ['inbox_id', 'message_id', 'attachment_id'],
+    required: ['message_id', 'attachment_id'],
   },
 ];
 

@@ -1,0 +1,495 @@
+name: Deploy Staging
+
+# Staging is the release-candidate lane. It tracks the `staging` branch and is
+# the only normal source for Promote to Production. Dev can be messy; staging
+# should contain only code that is ready to ship after e2e validation.
+
+on:
+  workflow_run:
+    workflows: ["Build Staging Artifacts"]
+    branches: [staging]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Staging commit SHA to deploy; defaults to current staging HEAD"
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  AWS_REGION: us-west-2
+  CLUSTER: kortix-dev-eks
+  NAMESPACE: kortix-staging
+  STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
+  API_APP: kortix-api
+  GATEWAY_APP: kortix-gateway
+  API_HOST: staging-api-eks.kortix.com
+  GATEWAY_HOST: gateway-staging.kortix.com
+  PUBLIC_API_HOST: staging-api.kortix.com
+  WEB_HOST: staging.kortix.com
+  VALUES: infra/k8s/envs/staging/values.yaml
+  GATEWAY_VALUES: infra/k8s/envs/staging/gateway-values.yaml
+  ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-staging
+
+jobs:
+  preflight:
+    name: Resolve staging ref
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.ref.outputs.sha }}
+      sha8: ${{ steps.ref.outputs.sha8 }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Resolve deploy commit
+        id: ref
+        env:
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin staging:refs/remotes/origin/staging --quiet
+          sha="${INPUT_SHA:-${WORKFLOW_SHA:-}}"
+          [ -n "$sha" ] || sha="$(git rev-parse origin/staging)"
+          sha="$(git rev-parse "$sha")"
+          git merge-base --is-ancestor "$sha" origin/staging || {
+            echo "::error::$sha is not reachable from origin/staging"; exit 1;
+          }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha8=${sha::8}" >> "$GITHUB_OUTPUT"
+      - name: Compute staging version
+        id: version
+        env:
+          SOURCE_SHA: ${{ steps.ref.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
+          [ -n "$latest" ] || latest="$(tr -d '[:space:]' < VERSION)"
+          IFS='.' read -r ma mi pa <<< "$latest"
+          : "${ma:=0}"; : "${mi:=0}"; : "${pa:=0}"
+          next="${ma}.${mi}.$((pa + 1))"
+          echo "version=${next}-staging.${SOURCE_SHA::8}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - name: Assert staging images exist
+        env:
+          SHA8: ${{ steps.ref.outputs.sha8 }}
+        run: |
+          set -euo pipefail
+          for image in kortix/kortix-api kortix/kortix-gateway; do
+            docker buildx imagetools inspect "${image}:staging-${SHA8}" >/dev/null
+            echo "found ${image}:staging-${SHA8}"
+          done
+
+  sync-secret:
+    name: Sync staging secret bundle
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Create or update kortix-staging-env
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_SUPABASE_JWT_SECRET: ${{ secrets.STAGING_SUPABASE_JWT_SECRET }}
+          STAGING_KORTIX_ADMIN_API_KEY: ${{ secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          missing() {
+            [ -z "${1:-}" ] || [ "$1" = "-" ]
+          }
+
+          database="$STAGING_DATABASE_URL"
+          supabase="$STAGING_SUPABASE_URL"
+          anon="$STAGING_SUPABASE_ANON_KEY"
+          service="$STAGING_SUPABASE_SERVICE_ROLE_KEY"
+          jwt="$STAGING_SUPABASE_JWT_SECRET"
+
+          for required in database supabase anon service jwt; do
+            if missing "${!required:-}"; then
+              echo "::error::$required is required for the real staging data plane; staging must never fall back to dev, KE2E, or prod."
+              exit 1
+            fi
+          done
+          if [[ "$database" != *"$STAGING_SUPABASE_REF"* ]]; then
+            echo "::error::STAGING_DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to sync a dev/prod DB into staging."
+            exit 1
+          fi
+          if [ "$supabase" != "https://${STAGING_SUPABASE_REF}.supabase.co" ]; then
+            echo "::error::STAGING_SUPABASE_URL must be https://${STAGING_SUPABASE_REF}.supabase.co."
+            exit 1
+          fi
+
+          base="$(aws secretsmanager get-secret-value \
+            --secret-id kortix-dev-env \
+            --region "$AWS_REGION" \
+            --query SecretString \
+            --output text)"
+
+          payload="$(jq -cn \
+            --argjson base "$base" \
+            --arg database "$database" \
+            --arg supabase "$supabase" \
+            --arg anon "$anon" \
+            --arg service "$service" \
+            --arg jwt "$jwt" \
+            --arg admin "$STAGING_KORTIX_ADMIN_API_KEY" \
+            --arg frontend "https://${WEB_HOST}" \
+            --arg api "https://${PUBLIC_API_HOST}" \
+            --arg gateway "https://${GATEWAY_HOST}/v1/llm" \
+            '$base + {
+              INTERNAL_KORTIX_ENV: "staging",
+              DATABASE_URL: $database,
+              SUPABASE_URL: $supabase,
+              SUPABASE_ANON_KEY: $anon,
+              SUPABASE_SERVICE_ROLE_KEY: $service,
+              SUPABASE_JWT_SECRET: $jwt,
+              KORTIX_ADMIN_API_KEY: $admin,
+              FRONTEND_URL: $frontend,
+              KORTIX_URL: $api,
+              CORS_ALLOWED_ORIGINS: $frontend,
+              LLM_GATEWAY_BASE_URL: $gateway,
+              KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+            }')"
+
+          if aws secretsmanager describe-secret --secret-id kortix-staging-env --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value \
+              --secret-id kortix-staging-env \
+              --region "$AWS_REGION" \
+              --secret-string "$payload" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name kortix-staging-env \
+              --region "$AWS_REGION" \
+              --secret-string "$payload" >/dev/null
+          fi
+          echo "kortix-staging-env synced with $(printf '%s' "$payload" | jq 'keys | length') keys."
+
+  migrate-db:
+    name: Apply DB migrations to staging
+    needs: [preflight, sync-secret]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
+        env:
+          npm_config_engine_strict: "false"
+      - name: Apply pending migrations (node-pg-migrate; halts on failure)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ] || [ "$DATABASE_URL" = "-" ]; then
+            echo "::error::STAGING_DATABASE_URL secret is not set — refusing to deploy staging without a migration check."
+            exit 1
+          fi
+          if [[ "$DATABASE_URL" != *"$STAGING_SUPABASE_REF"* ]]; then
+            echo "::error::STAGING_DATABASE_URL must target the staging Supabase project ref ${STAGING_SUPABASE_REF}; refusing to migrate dev/prod from staging."
+            exit 1
+          fi
+          pnpm --filter @kortix/db migrate
+
+  deploy-k8s:
+    name: Deploy API and gateway to staging
+    needs: [preflight, sync-secret, migrate-db]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.47.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+      - name: Pin staging GitOps image tags
+        env:
+          TAG: staging-${{ needs.preflight.outputs.sha8 }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git fetch origin staging:refs/remotes/origin/staging --quiet
+          git checkout -B staging origin/staging
+          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
+          yq -i '.image.tag = strenv(TAG)' "$GATEWAY_VALUES"
+          if git diff --quiet -- "$VALUES" "$GATEWAY_VALUES"; then
+            echo "staging GitOps values already pinned to ${TAG}."
+          else
+            git config user.name "kortix-ci[bot]"
+            git config user.email "kortix-ci[bot]@users.noreply.github.com"
+            git add "$VALUES" "$GATEWAY_VALUES"
+            git commit -m "chore(staging): deploy ${TAG} [skip ci]"
+            git push origin HEAD:staging
+          fi
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+      - name: Apply Argo CD staging applications
+        run: |
+          set -euo pipefail
+          kubectl apply -f infra/k8s/argocd/applications/staging.yaml
+          kubectl apply -f infra/k8s/argocd/applications/gateway-staging.yaml
+          kubectl -n argocd annotate application kortix-staging argocd.argoproj.io/refresh=hard --overwrite
+          kubectl -n argocd annotate application kortix-gateway-staging argocd.argoproj.io/refresh=hard --overwrite
+      - name: Wait for staging deployments
+        env:
+          TAG: staging-${{ needs.preflight.outputs.sha8 }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 80); do
+            api_img="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            gw_img="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            api_avail="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
+            gw_avail="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
+            api_desired="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
+            gw_desired="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
+            echo "($i/80) api=${api_img:-?} ${api_avail:-0}/${api_desired}; gateway=${gw_img:-?} ${gw_avail:-0}/${gw_desired}"
+            if printf '%s' "$api_img" | grep -q ":${TAG}$" \
+               && printf '%s' "$gw_img" | grep -q ":${TAG}$" \
+               && [ "${api_avail:-0}" = "$api_desired" ] \
+               && [ "${gw_avail:-0}" = "$gw_desired" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::staging deployments did not roll out to ${TAG}."
+          kubectl -n "$NAMESPACE" get deploy,pods,externalsecret,ingress -o wide || true
+          exit 1
+      - name: Capture ALB hostnames
+        id: ing
+        run: |
+          set -euo pipefail
+          api_alb="$(kubectl -n "$NAMESPACE" get ingress "$API_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+          gateway_alb="$(kubectl -n "$NAMESPACE" get ingress "$GATEWAY_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+          [ -n "$api_alb" ] && [ -n "$gateway_alb" ]
+          echo "api_alb=$api_alb" >> "$GITHUB_OUTPUT"
+          echo "gateway_alb=$gateway_alb" >> "$GITHUB_OUTPUT"
+    outputs:
+      api_alb: ${{ steps.ing.outputs.api_alb }}
+      gateway_alb: ${{ steps.ing.outputs.gateway_alb }}
+
+  wire-cloudflare:
+    name: Wire Cloudflare staging DNS and Worker
+    needs: deploy-k8s
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
+      CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+      CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d' }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+      - name: Upsert proxied CNAME records
+        env:
+          API_ALB: ${{ needs.deploy-k8s.outputs.api_alb }}
+          GATEWAY_ALB: ${{ needs.deploy-k8s.outputs.gateway_alb }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is required."; exit 1
+          fi
+          upsert() {
+            local name="$1" target="$2"
+            local existing
+            existing="$(curl -fsS \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
+            local id
+            id="$(printf '%s' "$existing" | jq -r '.result[0].id // empty')"
+            local body
+            body="$(jq -n --arg type CNAME --arg name "$name" --arg content "$target" \
+              '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')"
+            if [ -n "$id" ]; then
+              curl -fsS -X PUT \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${id}" \
+                --data "$body" >/dev/null
+            else
+              curl -fsS -X POST \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
+                --data "$body" >/dev/null
+            fi
+            echo "wired ${name}"
+          }
+          upsert "$API_HOST" "$API_ALB"
+          upsert "$GATEWAY_HOST" "$GATEWAY_ALB"
+      - name: Deploy staging API router Worker
+        working-directory: infra/cloudflare/workers/api-router
+        env:
+          WORKER_NAME: staging-api-kortix-router
+          WORKER_ROUTE: staging-api.kortix.com/*
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_GLOBAL_API_KEY:-}" ] && [ -n "${CLOUDFLARE_EMAIL:-}" ]; then
+            auth_headers=(-H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" -H "X-Auth-Key: ${CLOUDFLARE_GLOBAL_API_KEY}")
+          elif [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            auth_headers=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          else
+            echo "::error::Cloudflare Worker deploy requires CLOUDFLARE_GLOBAL_API_KEY + CLOUDFLARE_EMAIL, or a scoped CLOUDFLARE_API_TOKEN with Workers permissions."
+            exit 1
+          fi
+
+          metadata="$(jq -cn '{
+            main_module: "worker.mjs",
+            compatibility_date: "2026-06-01",
+            bindings: [
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"},
+              {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
+              {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"}
+            ]
+          }')"
+          curl -fsS -X PUT \
+            "${auth_headers[@]}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}" \
+            -F "metadata=${metadata};type=application/json" \
+            -F "worker.mjs=@worker.mjs;type=application/javascript+module" >/dev/null
+
+          routes="$(curl -fsS \
+            "${auth_headers[@]}" \
+            "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes")"
+          route_id="$(printf '%s' "$routes" | jq -r --arg pattern "$WORKER_ROUTE" '.result[]? | select(.pattern == $pattern) | .id' | head -n1)"
+          route_body="$(jq -cn --arg pattern "$WORKER_ROUTE" --arg script "$WORKER_NAME" '{pattern:$pattern, script:$script}')"
+          if [ -n "$route_id" ]; then
+            curl -fsS -X PUT \
+              "${auth_headers[@]}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes/${route_id}" \
+              --data "$route_body" >/dev/null
+          else
+            curl -fsS -X POST \
+              "${auth_headers[@]}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/workers/routes" \
+              --data "$route_body" >/dev/null
+          fi
+          echo "deployed ${WORKER_NAME} and route ${WORKER_ROUTE}"
+
+  deploy-web:
+    name: Deploy staging web to Vercel
+    needs: [preflight, wire-cloudflare]
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy and alias staging.kortix.com
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ] || [ -z "${VERCEL_TEAM_ID:-}" ]; then
+            echo "::error::VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID are required."; exit 1
+          fi
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ "${NEXT_PUBLIC_SUPABASE_URL:-}" = "-" ] || [ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ] || [ "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" = "-" ]; then
+            echo "::error::staging Supabase URL and anon key are required."; exit 1
+          fi
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" \
+            '{orgId:$org, projectId:$project}' > .vercel/project.json
+          export VERCEL_ORG_ID="$VERCEL_TEAM_ID"
+
+          url="$(npx vercel deploy --yes --target preview --archive=tgz \
+            --token "$VERCEL_TOKEN" \
+            -e NEXT_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
+            -e KORTIX_PUBLIC_BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
+            -e NEXT_PUBLIC_APP_URL="https://${WEB_HOST}" \
+            -e KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}" \
+            -e NEXT_PUBLIC_URL="https://${WEB_HOST}" \
+            -e NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
+            -e KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
+            -e NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            -e KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            -e NEXT_PUBLIC_BILLING_ENABLED="true" \
+            -e KORTIX_PUBLIC_BILLING_ENABLED="true" \
+            -e NEXT_PUBLIC_AUTH_PROVIDERS="google" \
+            -e KORTIX_PUBLIC_AUTH_PROVIDERS="google" \
+            -e NEXT_PUBLIC_AUTH_METHODS="magic,password" \
+            -e KORTIX_PUBLIC_AUTH_METHODS="magic,password" \
+            -b NEXT_PUBLIC_KORTIX_VERSION="$VERSION" \
+            | tail -n1)"
+          echo "Vercel deployment: ${url}"
+          npx vercel alias set "$url" "$WEB_HOST" --token "$VERCEL_TOKEN"
+
+  verify:
+    name: Verify live staging
+    needs: [preflight, deploy-k8s, wire-cloudflare, deploy-web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify API, web TLS, and runtime config
+        env:
+          EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            api="$(curl -fsS --max-time 15 "https://${PUBLIC_API_HOST}/v1/health" 2>/dev/null || true)"
+            envv="$(printf '%s' "$api" | jq -r '.environment // empty' 2>/dev/null || true)"
+            version="$(printf '%s' "$api" | jq -r '.version // empty' 2>/dev/null || true)"
+            if [ "$envv" = "staging" ] && [ "$version" = "$EXPECTED_VERSION" ]; then
+              break
+            fi
+            sleep 10
+          done
+          [ "${envv:-}" = "staging" ] || { echo "::error::staging API did not report environment=staging"; exit 1; }
+
+          curl -fsSI --max-time 20 "https://${WEB_HOST}/" >/tmp/web-headers
+          runtime="$(curl -fsS --max-time 20 "https://${WEB_HOST}/api/runtime-config")"
+          printf '%s' "$runtime" | grep -F "\"BACKEND_URL\":\"https://${PUBLIC_API_HOST}/v1\"" >/dev/null
+          printf '%s' "$runtime" | grep -F "\"APP_URL\":\"https://${WEB_HOST}\"" >/dev/null
+          if printf '%s' "$runtime" | grep -F "dev-api.kortix.com" >/dev/null; then
+            echo "::error::staging web runtime config still references dev-api.kortix.com"
+            exit 1
+          fi
+          {
+            echo "### Staging verified"
+            echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
+            echo "- Web: https://${WEB_HOST} serves staging runtime config"
+            echo "- GitOps: API ALB ${{ needs.deploy-k8s.outputs.api_alb }}"
+          } >> "$GITHUB_STEP_SUMMARY"

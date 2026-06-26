@@ -31,8 +31,7 @@ interface CustomizeState {
 export const useCustomizeStore = create<CustomizeState>((set) => ({
   open: false,
   section: 'agents',
-  openCustomize: (section) =>
-    set((s) => ({ open: true, section: section ?? s.section })),
+  openCustomize: (section) => set((s) => ({ open: true, section: section ?? s.section })),
   setSection: (section) => set({ section }),
   close: () => set({ open: false }),
 }));

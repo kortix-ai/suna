@@ -17,8 +17,8 @@ branch persists. Work reaches the default branch only via a merged
   imported GitHub) plus its manifest.
 - **[Sessions](/docs/concepts/sessions)** — isolated Daytona sandbox VMs, each on
   its own branch. Many run at once without interfering.
-- **[Agents](/docs/concepts/agents)** — OpenCode, configured from
-  `.kortix/opencode/`.
+- **[Agents](/docs/concepts/agents)** — OpenCode, governed by `kortix.toml`
+  and implemented through `.kortix/opencode/`.
 - **[Change requests](/docs/concepts/change-requests)** — the git merge layer
   that lands a branch on the default branch.
 - **[Secrets](/docs/concepts/secrets)** — per-project encrypted values, given to
@@ -54,7 +54,8 @@ branch work survives, and only a merged change request makes it permanent.
 ## Two config surfaces
 
 `kortix.toml` + `.kortix/Dockerfile` are Kortix-owned; `.kortix/opencode/` is
-agent behavior, read only by OpenCode. See
+OpenCode-native runtime behavior. Declarative `[[agents]]` entries make Kortix
+the server-side source for launchable agents and grants. See
 [Kortix vs OpenCode config](/docs/reference/config-boundary). Drive any of it
 from a terminal with the [CLI](/docs/reference/cli) — it controls the cloud, it
 doesn't run the agent locally.

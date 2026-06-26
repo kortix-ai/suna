@@ -147,6 +147,8 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.session.read', 'project.session.start', 'project.session.exec', 'project.session.stop',
   'project.members.read', 'project.members.manage',
   'project.trigger.read', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.trigger.fire',
+  'project.gateway.logs.read', 'project.gateway.spend.read', 'project.gateway.routing.edit',
+  'project.gateway.budget.set', 'project.gateway.keys.manage',
   'channel.read', 'channel.connect', 'channel.send', 'channel.disconnect',
 ];
 

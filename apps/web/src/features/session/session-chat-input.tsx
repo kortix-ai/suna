@@ -2,30 +2,30 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { usePathname } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { ProgressRing } from '@/components/ui/progress-ring';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { normalizeAppPathname } from '@/lib/instance-routes';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   ArrowUp,
   ArrowUpLeft,
-  ChevronDown,
   Check,
-  GitFork,
+  ChevronDown,
+  Folder,
+  ListTodo,
   // Info,       // AutoContinue — commented out
   // Infinity,   // AutoContinue — commented out
   Loader2,
-  Paperclip,
-  X,
-  ListTodo,
   MessageSquare,
-  Terminal,
+  Paperclip,
   Reply,
-  Folder,
+  Terminal,
+  X,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { STATUS_TEXT } from '@/components/ui/status';
+import { usePathname } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 /* AutoContinue — commented out
 import {
   Dialog,
@@ -35,36 +35,35 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 */
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { AnimatePresence, motion } from 'motion/react';
 import { VoiceRecorder } from '@/components/thread/chat-input/voice-recorder';
-import { ModelSelector } from './model-selector';
-import type {
-  MessageWithParts,
-  Agent,
-  Command,
-  ProviderListResponse,
-  PromptPart,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodeSessions, useOpenCodeSessionTodo, GATEWAY_PROVIDER_IDS } from '@/hooks/opencode/use-opencode-sessions';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
-import type { Session } from '@/hooks/opencode/use-opencode-sessions';
-import { featureFlags } from '@/lib/feature-flags';
+import type {
+  Agent,
+  Command,
+  MessageWithParts,
+  PromptPart,
+  ProviderListResponse,
+  Session,
+} from '@/hooks/opencode/use-opencode-sessions';
+import {
+  GATEWAY_PROVIDER_IDS,
+  useOpenCodeSessions,
+  useOpenCodeSessionTodo,
+} from '@/hooks/opencode/use-opencode-sessions';
+import { AnimatePresence, motion } from 'motion/react';
+import { extractClipboardFiles } from './clipboard-files';
+import { ModelSelector } from './model-selector';
 
 import {
-  CommandPopover,
-  CommandPopoverTrigger,
-  CommandPopoverContent,
-  CommandInput,
-  CommandList,
   CommandGroup,
+  CommandInput,
   CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
 } from '@/components/ui/command';
 
 export type { ProviderListResponse };
@@ -131,22 +130,26 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
         modelID,
         modelName: (model.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
-        capabilities: caps ? {
-          reasoning: caps.reasoning ?? false,
-          vision: caps.input?.image ?? false,
-          toolcall: caps.toolcall ?? false,
-        } : {
-          reasoning: (model as any).reasoning ?? false,
-          vision: modalities?.input?.includes('image') ?? false,
-          toolcall: (model as any).tool_call ?? false,
-        },
+        capabilities: caps
+          ? {
+              reasoning: caps.reasoning ?? false,
+              vision: caps.input?.image ?? false,
+              toolcall: caps.toolcall ?? false,
+            }
+          : {
+              reasoning: (model as any).reasoning ?? false,
+              vision: modalities?.input?.includes('image') ?? false,
+              toolcall: (model as any).tool_call ?? false,
+            },
         contextWindow: (model as any).limit?.context,
         releaseDate: (model as any).release_date,
         family: (model as any).family,
-        cost: (model as any).cost ? {
-          input: (model as any).cost.input ?? 0,
-          output: (model as any).cost.output ?? 0,
-        } : undefined,
+        cost: (model as any).cost
+          ? {
+              input: (model as any).cost.input ?? 0,
+              output: (model as any).cost.output ?? 0,
+            }
+          : undefined,
         providerSource: (p as any).source,
       });
     }
@@ -173,7 +176,10 @@ export function AgentSelector({
   const [flash, setFlash] = useState(false);
   const prevAgentRef = useRef(selectedAgent);
 
-  const primaryAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode !== 'subagent'), [agents]);
+  const primaryAgents = useMemo(
+    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
+    [agents],
+  );
 
   // Flash highlight when agent changes (e.g. via Tab cycling)
   useEffect(() => {
@@ -198,8 +204,8 @@ export function AgentSelector({
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
-    return primaryAgents.filter((a) =>
-      a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
+    return primaryAgents.filter(
+      (a) => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
     );
   }, [primaryAgents, search]);
 
@@ -213,27 +219,39 @@ export function AgentSelector({
           <CommandPopoverTrigger>
             <button
               type="button"
-              aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker')}
+              aria-label={tHardcodedUi.raw(
+                'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
+              )}
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
+                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
               )}
             >
-              <span className="truncate max-w-[100px]">{displayName}</span>
-              <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
+              <span className="max-w-[100px] truncate">{displayName}</span>
+              <ChevronDown
+                className={cn(
+                  'size-3 opacity-50 transition-transform duration-200',
+                  open && 'rotate-180',
+                )}
+              />
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}<kbd className="ml-1 px-1.5 py-0.5 rounded bg-foreground/10 text-xs font-mono">Tab</kbd></p>
+          <p>
+            {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
+            <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">Tab</kbd>
+          </p>
         </TooltipContent>
       </Tooltip>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
           compact
-          placeholder={tHardcodedUi.raw('componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents')}
+          placeholder={tHardcodedUi.raw(
+            'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
+          )}
           value={search}
           onValueChange={setSearch}
         />
@@ -243,7 +261,8 @@ export function AgentSelector({
           {filteredPrimary.length > 0 && (
             <CommandGroup heading="Agents" forceMount>
               {filteredPrimary.map((agent) => {
-                const isSelected = selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+                const isSelected =
+                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
                 return (
                   <CommandItem
                     key={agent.name}
@@ -255,14 +274,20 @@ export function AgentSelector({
                     }}
                   >
                     <div className="min-w-0 flex-1 py-0.5">
-                      <div className={cn(
-                        'truncate text-sm leading-tight capitalize',
-                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                      )}>
+                      <div
+                        className={cn(
+                          'truncate text-sm leading-tight capitalize',
+                          isSelected
+                            ? 'text-foreground font-semibold'
+                            : 'text-foreground/90 font-medium',
+                        )}
+                      >
                         {agent.name}
                       </div>
                       {agent.description && (
-                        <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
+                        <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                          {agent.description}
+                        </p>
                       )}
                     </div>
                     {isSelected && <Check className="text-foreground shrink-0" />}
@@ -274,7 +299,13 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo')}{search.trim()}{tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}</div>
+            <div className="text-muted-foreground/50 py-8 text-center text-xs">
+              {tHardcodedUi.raw(
+                'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
+              )}
+              {search.trim()}
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
+            </div>
           )}
         </CommandList>
       </CommandPopoverContent>
@@ -315,15 +346,17 @@ function VariantSelector({
           type="button"
           onClick={cycle}
           className={cn(
-            "inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer capitalize",
-            selectedVariant && "text-foreground",
+            'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium capitalize transition-colors',
+            selectedVariant && 'text-foreground',
           )}
         >
           {displayName}
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}</p>
+        <p className="text-xs">
+          {tHardcodedUi.raw('componentsSessionSessionChatInput.line322JsxTextCycleThinkingEffort')}
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -689,15 +722,25 @@ function getLastAssistantTokenTotal(messages: MessageWithParts[] | undefined): n
     if (msg.info.role !== 'assistant') continue;
     const t = (msg.info as any).tokens;
     if (!t) continue;
-    const total = (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0);
+    const total =
+      (t.input ?? 0) +
+      (t.output ?? 0) +
+      (t.reasoning ?? 0) +
+      (t.cache?.read ?? 0) +
+      (t.cache?.write ?? 0);
     if (total > 0) return total;
   }
   return 0;
 }
 
-function getContextLimit(models: FlatModel[] | undefined, selectedModel: { providerID: string; modelID: string } | null | undefined): number {
+function getContextLimit(
+  models: FlatModel[] | undefined,
+  selectedModel: { providerID: string; modelID: string } | null | undefined,
+): number {
   if (selectedModel && models) {
-    const model = models.find(m => m.providerID === selectedModel.providerID && m.modelID === selectedModel.modelID);
+    const model = models.find(
+      (m) => m.providerID === selectedModel.providerID && m.modelID === selectedModel.modelID,
+    );
     if (model?.contextWindow && model.contextWindow > 0) return model.contextWindow;
   }
   return 200000;
@@ -706,16 +749,20 @@ function getContextLimit(models: FlatModel[] | undefined, selectedModel: { provi
 function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
-  const contextLimit = useMemo(() => getContextLimit(models, selectedModel), [models, selectedModel]);
+  const contextLimit = useMemo(
+    () => getContextLimit(models, selectedModel),
+    [models, selectedModel],
+  );
   const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
 
   if (contextTokens === 0 && !onContextClick) return null;
 
-  const circumference = 2 * Math.PI * 7;
-  const offset = circumference * (1 - ratio);
-  const color = ratio >= 0.9 ? STATUS_TEXT.destructive
-    : ratio > 0.8 ? STATUS_TEXT.warning
-    : 'text-muted-foreground';
+  const color =
+    ratio >= 0.9
+      ? STATUS_TEXT.destructive
+      : ratio > 0.8
+        ? STATUS_TEXT.warning
+        : 'text-muted-foreground';
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -724,22 +771,35 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
           <span className="relative inline-flex">
             <button
               type="button"
-              className="size-6 flex items-center justify-center cursor-pointer"
-              onPointerDown={(e) => { e.stopPropagation(); }}
-              onClick={(e) => { e.stopPropagation(); onContextClick?.(); }}
+              className="flex size-6 cursor-pointer items-center justify-center"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onContextClick?.();
+              }}
             >
-              <svg className="size-5 -rotate-90" viewBox="0 0 18 18">
-                <circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted" />
-                <circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" strokeWidth="2"
-                  strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className={color} />
-              </svg>
+              <ProgressRing
+                value={Math.round(ratio * 100)}
+                className="size-5"
+                progressClassName={color}
+              />
             </button>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">
-          <div className="text-xs font-mono space-y-0.5">
-            <div>Context: {(contextTokens / 1000).toFixed(1)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextK')}{(contextLimit / 1000).toFixed(0)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextKTokens')}</div>
-            <div className="text-muted-foreground">{Math.round(ratio * 100)}{tHardcodedUi.raw('componentsSessionSessionChatInput.line737JsxTextUsed')}</div>
+          <div className="space-y-0.5 font-mono text-xs">
+            <div>
+              Context: {(contextTokens / 1000).toFixed(1)}
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextK')}
+              {(contextLimit / 1000).toFixed(0)}
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line736JsxTextKTokens')}
+            </div>
+            <div className="text-muted-foreground">
+              {Math.round(ratio * 100)}
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line737JsxTextUsed')}
+            </div>
           </div>
         </TooltipContent>
       </Tooltip>
@@ -770,7 +830,19 @@ function isImageFile(file: File): boolean {
   if (file.type.startsWith('image/')) return true;
   // Fallback: check extension for when MIME type is missing (e.g. pasted files)
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'].includes(ext);
+  return [
+    'jpg',
+    'jpeg',
+    'png',
+    'gif',
+    'webp',
+    'svg',
+    'bmp',
+    'ico',
+    'heic',
+    'heif',
+    'avif',
+  ].includes(ext);
 }
 
 // ============================================================================
@@ -783,9 +855,12 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
   const ext = name.split('.').pop()?.toLowerCase() || '';
 
   // Check if this is an image — be generous with detection
-  const isImg = af.isImage ||
+  const isImg =
+    af.isImage ||
     (af.kind === 'local' && af.file.type.startsWith('image/')) ||
-    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'].includes(ext);
+    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'].includes(
+      ext,
+    );
 
   // HEIC: convert to JPEG for preview (browsers can't render HEIC natively)
   const isHeic = ext === 'heic' || ext === 'heif';
@@ -794,49 +869,99 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
     if (!isHeic || !isImg || af.kind !== 'local') return;
     let cancelled = false;
     let u: string | null = null;
-    import('@/lib/utils/heic-convert').then(({ convertHeicBlobToJpeg }) =>
-      convertHeicBlobToJpeg(af.file).then((jpeg) => {
-        if (cancelled) return;
-        u = URL.createObjectURL(jpeg);
-        setHeicUrl(u);
-      }),
-    ).catch(() => {});
-    return () => { cancelled = true; if (u) URL.revokeObjectURL(u); };
+    import('@/lib/utils/heic-convert')
+      .then(({ convertHeicBlobToJpeg }) =>
+        convertHeicBlobToJpeg(af.file).then((jpeg) => {
+          if (cancelled) return;
+          u = URL.createObjectURL(jpeg);
+          setHeicUrl(u);
+        }),
+      )
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (u) URL.revokeObjectURL(u);
+    };
   }, [af, isHeic, isImg]);
 
   // For local text/code files, read first ~12 lines for preview
   useEffect(() => {
     if (af.kind !== 'local' || isImg) return;
     const textExts = [
-      'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
-      'css', 'scss', 'html', 'vue', 'svelte', 'json', 'yaml', 'yml', 'toml', 'xml',
-      'md', 'mdx', 'txt', 'log', 'sh', 'bash', 'zsh', 'sql', 'swift', 'kt', 'scala',
-      'lua', 'r', 'php', 'pl', 'ini', 'conf', 'env', 'gitignore', 'dockerfile',
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'py',
+      'rb',
+      'go',
+      'rs',
+      'java',
+      'c',
+      'cpp',
+      'h',
+      'hpp',
+      'css',
+      'scss',
+      'html',
+      'vue',
+      'svelte',
+      'json',
+      'yaml',
+      'yml',
+      'toml',
+      'xml',
+      'md',
+      'mdx',
+      'txt',
+      'log',
+      'sh',
+      'bash',
+      'zsh',
+      'sql',
+      'swift',
+      'kt',
+      'scala',
+      'lua',
+      'r',
+      'php',
+      'pl',
+      'ini',
+      'conf',
+      'env',
+      'gitignore',
+      'dockerfile',
     ];
     if (!textExts.includes(ext)) return;
     const reader = new FileReader();
-    reader.onload = () => setTextPreview((reader.result as string).split('\n').slice(0, 12).join('\n'));
+    reader.onload = () =>
+      setTextPreview((reader.result as string).split('\n').slice(0, 12).join('\n'));
     reader.readAsText(af.file.slice(0, 2048));
   }, [af, ext, isImg]);
 
   // Image thumbnail — HEIC uses converted URL, everything else uses original
   if (isImg) {
-    const src = isHeic ? heicUrl : (af.kind === 'local' ? af.localUrl : af.url);
+    const src = isHeic ? heicUrl : af.kind === 'local' ? af.localUrl : af.url;
     if (!src) return null; // HEIC still converting — show nothing briefly
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt={name} className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+      <img
+        src={src}
+        alt={name}
+        className="absolute inset-0 h-full w-full object-cover"
+        draggable={false}
+      />
     );
   }
 
   // Text/code thumbnail
   if (textPreview) {
     return (
-      <div className="absolute inset-0 p-1 overflow-hidden">
-        <pre className="m-0 p-0 text-xs leading-[1.4] text-muted-foreground/70 font-mono whitespace-pre overflow-hidden select-none pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden p-1">
+        <pre className="text-muted-foreground/70 pointer-events-none m-0 overflow-hidden p-0 font-mono text-xs leading-[1.4] whitespace-pre select-none">
           {textPreview}
         </pre>
-        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-muted/20 to-transparent" />
+        <div className="from-muted/20 absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t to-transparent" />
       </div>
     );
   }
@@ -861,34 +986,36 @@ function AttachmentPreview({
         const ext = name.split('.').pop()?.toLowerCase() || '';
 
         return (
-          <div key={i} className="relative group">
-            <div className={cn(
-              'flex flex-col rounded-2xl border border-border/50 overflow-hidden',
-              'w-[120px] cursor-default select-none',
-              'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
-            )}>
+          <div key={i} className="group relative">
+            <div
+              className={cn(
+                'border-border/50 flex flex-col overflow-hidden rounded-2xl border',
+                'w-[120px] cursor-default select-none',
+                'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
+              )}
+            >
               {/* Thumbnail area */}
-              <div className="h-[80px] relative flex items-center justify-center overflow-hidden bg-muted/20">
+              <div className="bg-muted/20 relative flex h-[80px] items-center justify-center overflow-hidden">
                 <AttachmentThumbnail af={af} name={name} />
                 {/* Extension badge */}
                 {ext && !af.isImage && (
-                  <span className="absolute bottom-1 right-1 text-xs font-medium text-muted-foreground/50 uppercase tracking-wider bg-background/80 px-1 py-0.5 rounded z-[5]">
+                  <span className="text-muted-foreground/50 bg-background/80 absolute right-1 bottom-1 z-[5] rounded px-1 py-0.5 text-xs font-medium tracking-wider uppercase">
                     {ext.toUpperCase()}
                   </span>
                 )}
               </div>
               {/* Name bar */}
-              <div className="px-2 py-1.5 border-t border-border/30 h-[32px] flex items-center">
-                <div className="flex items-center gap-1 min-w-0 w-full">
+              <div className="border-border/30 flex h-[32px] items-center border-t px-2 py-1.5">
+                <div className="flex w-full min-w-0 items-center gap-1">
                   {getFileIcon(name, { className: 'h-3.5 w-3.5 shrink-0', variant: 'monochrome' })}
-                  <span className="text-xs truncate text-foreground">{name}</span>
+                  <span className="text-foreground truncate text-xs">{name}</span>
                 </div>
               </div>
             </div>
             {/* Remove button */}
             <button
               onClick={() => onRemove(i)}
-              className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-black dark:bg-white border-2 border-card text-white dark:text-black flex items-center justify-center z-10 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+              className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
             >
               <X className="h-3 w-3" />
             </button>
@@ -921,8 +1048,7 @@ function SlashCommandPopover({
     const q = filter.toLowerCase();
     return commands.filter(
       (c) =>
-        (c.name || '').toLowerCase().includes(q) ||
-        (c.description || '').toLowerCase().includes(q),
+        (c.name || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q),
     );
   }, [commands, filter]);
 
@@ -946,8 +1072,12 @@ function SlashCommandPopover({
 
   return (
     <div
-      className="fixed z-[99999] bg-popover border border-border/60 rounded-2xl overflow-hidden"
-      style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      style={{
+        bottom: window.innerHeight - r.top + 4,
+        left: r.left,
+        width: Math.min(r.width, 480),
+      }}
     >
       <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
         {filtered.map((cmd, i) => (
@@ -958,13 +1088,15 @@ function SlashCommandPopover({
               onSelect(cmd);
             }}
             className={cn(
-              'w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors cursor-pointer border border-transparent rounded-2xl -mx-1',
+              '-mx-1 flex w-full cursor-pointer flex-col gap-0.5 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors',
               i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
             )}
           >
-            <span className="font-mono text-sm text-foreground">/{cmd.name}</span>
+            <span className="text-foreground font-mono text-sm">/{cmd.name}</span>
             {cmd.description && (
-              <span className="text-xs text-muted-foreground/40 line-clamp-2">{cmd.description}</span>
+              <span className="text-muted-foreground/40 line-clamp-2 text-xs">
+                {cmd.description}
+              </span>
             )}
           </button>
         ))}
@@ -1008,7 +1140,9 @@ function MentionPopover({
 
   // Scroll selected item into view
   useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-mention-index="${selectedIndex}"]`) as HTMLElement | null;
+    const el = listRef.current?.querySelector(
+      `[data-mention-index="${selectedIndex}"]`,
+    ) as HTMLElement | null;
     el?.scrollIntoView({ block: 'nearest' });
   }, [selectedIndex]);
 
@@ -1027,28 +1161,43 @@ function MentionPopover({
 
   return (
     <div
-      className="fixed z-[99999] bg-popover border border-border/60 rounded-2xl overflow-hidden"
-      style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
+      className="bg-popover border-border/60 fixed z-[99999] overflow-hidden rounded-2xl border"
+      style={{
+        bottom: window.innerHeight - r.top + 4,
+        left: r.left,
+        width: Math.min(r.width, 480),
+      }}
     >
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
         {agents.length > 0 && (
           <>
-            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Agents</div>
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+              Agents
+            </div>
             {agents.map((item) => {
               const idx = globalIndex++;
               return (
                 <button
                   key={`agent-${item.value}`}
                   data-mention-index={idx}
-                  onMouseDown={(e) => { e.preventDefault(); onSelect(item); }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onSelect(item);
+                  }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer',
+                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-xs font-semibold shrink-0">@</span>
+                  <span className="bg-foreground/10 text-foreground/60 flex size-4 shrink-0 items-center justify-center rounded text-xs font-semibold">
+                    @
+                  </span>
                   <span className="truncate font-medium capitalize">{item.label}</span>
-                  {item.description && <span className="text-muted-foreground/40 truncate text-xs">{item.description}</span>}
+                  {item.description && (
+                    <span className="text-muted-foreground/40 truncate text-xs">
+                      {item.description}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1056,22 +1205,31 @@ function MentionPopover({
         )}
         {sessions.length > 0 && (
           <>
-            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">Sessions</div>
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+              Sessions
+            </div>
             {sessions.map((item) => {
               const idx = globalIndex++;
               return (
                 <button
                   key={`session-${item.value}`}
                   data-mention-index={idx}
-                  onMouseDown={(e) => { e.preventDefault(); onSelect(item); }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onSelect(item);
+                  }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer',
+                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <MessageSquare className="size-4 text-foreground/50 shrink-0" />
+                  <MessageSquare className="text-foreground/50 size-4 shrink-0" />
                   <span className="truncate text-sm font-medium">{item.label}</span>
-                  {item.description && <span className="text-xs text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
+                  {item.description && (
+                    <span className="text-muted-foreground/35 ml-auto truncate text-xs">
+                      {item.description}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1079,7 +1237,9 @@ function MentionPopover({
         )}
         {files.length > 0 && (
           <>
-            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</div>
+            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+              Files
+            </div>
             {files.map((item) => {
               const idx = globalIndex++;
               const filePath = item.value || item.label;
@@ -1090,20 +1250,23 @@ function MentionPopover({
                 <button
                   key={`file-${item.value}`}
                   data-mention-index={idx}
-                  onMouseDown={(e) => { e.preventDefault(); onSelect(item); }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onSelect(item);
+                  }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer',
+                    'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors',
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
                   {isDir ? (
-                    <Folder className="size-4 shrink-0 text-foreground/50" />
+                    <Folder className="text-foreground/50 size-4 shrink-0" />
                   ) : (
                     getFileIcon(fileName, { className: 'size-4 shrink-0 text-foreground/50' })
                   )}
-                  <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                     <span className="truncate text-sm font-medium">{fileName}</span>
-                    <span className="text-xs text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
+                    <span className="text-muted-foreground/35 min-w-0 flex-shrink truncate font-mono text-xs">
                       {cleanPath}
                     </span>
                   </div>
@@ -1114,9 +1277,11 @@ function MentionPopover({
         )}
         {/* Loading indicator while searching for files */}
         {loading && files.length === 0 && (
-          <div className="px-3 py-2 flex items-center gap-2 text-muted-foreground/50">
+          <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
             <Loader2 className="size-3.5 animate-spin" />
-            <span className="text-xs">{tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}</span>
+            <span className="text-xs">
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
+            </span>
           </div>
         )}
       </div>
@@ -1143,54 +1308,82 @@ function TodoChip({ sessionId }: { sessionId: string }) {
 
   // Sort: in_progress first, then pending, then completed/cancelled
   const sorted = [...todos].sort((a: any, b: any) => {
-    const order: Record<string, number> = { in_progress: 0, pending: 1, completed: 2, cancelled: 3 };
+    const order: Record<string, number> = {
+      in_progress: 0,
+      pending: 1,
+      completed: 2,
+      cancelled: 3,
+    };
     return (order[a.status] ?? 2) - (order[b.status] ?? 2);
   });
 
   return (
-    <div className="rounded-2xl bg-muted/50 overflow-hidden">
+    <div className="bg-muted/50 overflow-hidden rounded-2xl">
       {/* Header row */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 w-full px-3 py-1.5 hover:bg-muted/80 transition-colors cursor-pointer"
+        className="hover:bg-muted/80 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 transition-colors"
       >
-        <ListTodo className="size-3.5 text-muted-foreground flex-shrink-0" />
-        <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate text-left">
-          {completed} of {total}{tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{' '}{inProgress && (
+        <ListTodo className="text-muted-foreground size-3.5 flex-shrink-0" />
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
+          {completed} of {total}
+          {tHardcodedUi.raw('componentsSessionSessionChatInput.line1153JsxTextTasksDone')}{' '}
+          {inProgress && (
             <span className="text-foreground/80 font-medium"> · {inProgress.content}</span>
           )}
         </span>
-        <ChevronDown className={cn('size-3 text-muted-foreground/40 transition-transform', expanded && 'rotate-180')} />
+        <ChevronDown
+          className={cn(
+            'text-muted-foreground/40 size-3 transition-transform',
+            expanded && 'rotate-180',
+          )}
+        />
       </button>
 
       {/* Expanded task list */}
       {expanded && (
-        <div className="border-t border-border/30 max-h-[160px] overflow-y-auto scrollbar-hide px-3 py-1.5 space-y-px">
+        <div className="border-border/30 scrollbar-hide max-h-[160px] space-y-px overflow-y-auto border-t px-3 py-1.5">
           {sorted.map((todo: any, i: number) => {
             const done = todo.status === 'completed';
             const cancelled = todo.status === 'cancelled';
             const active = todo.status === 'in_progress';
             if (cancelled) return null;
             return (
-              <div key={todo.id || i} className={cn(
-                'flex items-center gap-2 py-0.5',
-                done && 'opacity-40',
-              )}>
-                <span className={cn(
-                  'size-3 rounded-sm flex-shrink-0 flex items-center justify-center border',
-                  done ? 'border-border bg-muted' : active ? 'border-foreground/30' : 'border-border',
-                )}>
-                  {done && (
-                    <svg viewBox="0 0 12 12" fill="none" width="8" height="8"><path d="M3 7.17905L5.02703 8.85135L9 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" className="text-foreground" /></svg>
+              <div
+                key={todo.id || i}
+                className={cn('flex items-center gap-2 py-0.5', done && 'opacity-40')}
+              >
+                <span
+                  className={cn(
+                    'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
+                    done
+                      ? 'border-border bg-muted'
+                      : active
+                        ? 'border-foreground/30'
+                        : 'border-border',
                   )}
-                  {active && <div className="size-1 rounded-full bg-foreground" />}
+                >
+                  {done && (
+                    <svg viewBox="0 0 12 12" fill="none" width="8" height="8">
+                      <path
+                        d="M3 7.17905L5.02703 8.85135L9 3.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="square"
+                        className="text-foreground"
+                      />
+                    </svg>
+                  )}
+                  {active && <div className="bg-foreground size-1 rounded-full" />}
                 </span>
-                <span className={cn(
-                  'text-xs leading-tight truncate',
-                  done && 'line-through text-muted-foreground',
-                  !done && 'text-foreground',
-                )}>
+                <span
+                  className={cn(
+                    'truncate text-xs leading-tight',
+                    done && 'text-muted-foreground line-through',
+                    !done && 'text-foreground',
+                  )}
+                >
                   {todo.content}
                 </span>
               </div>
@@ -1203,7 +1396,11 @@ function TodoChip({ sessionId }: { sessionId: string }) {
 }
 
 export interface SessionChatInputProps {
-  onSend: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void | Promise<void>;
+  onSend: (
+    text: string,
+    files?: AttachedFile[],
+    mentions?: TrackedMention[],
+  ) => void | Promise<void>;
   isBusy?: boolean;
   onStop?: () => void;
   agents?: Agent[];
@@ -1225,6 +1422,8 @@ export interface SessionChatInputProps {
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
+  /** Imperative draft prefill used by parent composers for starter prompts. */
+  prefill?: { text: string; id: number } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
@@ -1243,6 +1442,9 @@ export interface SessionChatInputProps {
 
   /** Slot rendered inside the input card, above the textarea (e.g. queue chip) */
   inputSlot?: React.ReactNode;
+
+  /** Slot rendered inline in the bottom toolbar, just left of the voice button */
+  toolbarSlot?: React.ReactNode;
 
   /** Reply context — shows a banner in the input indicating what's being replied to */
   replyTo?: { text: string } | null;
@@ -1309,12 +1511,14 @@ export function SessionChatInput({
   disabled = false,
   autoFocus,
   placeholder = 'Ask anything...',
+  prefill = null,
 
   onFileSearch,
   providers,
   threadContext,
   onContextClick,
   inputSlot,
+  toolbarSlot,
   replyTo,
   onClearReply,
   lockForQuestion = false,
@@ -1357,18 +1561,27 @@ export function SessionChatInput({
   const pathname = normalizeAppPathname(usePathname());
   const isOnboarding = pathname?.startsWith('/onboarding');
   const dragDepthRef = useRef(0);
-  const primaryAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode !== 'subagent'), [agents]);
+  const primaryAgents = useMemo(
+    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
+    [agents],
+  );
 
   // File search: use provided callback or fall back to the SDK directly
   const fileSearchFn = useMemo(() => {
     if (onFileSearch) return onFileSearch;
     return async (query: string): Promise<string[]> => {
-      try { return await searchWorkspaceFiles(query); } catch { return []; }
+      try {
+        return await searchWorkspaceFiles(query);
+      } catch {
+        return [];
+      }
     };
   }, [onFileSearch]);
 
   // @ mention state
-  const [mentionQuery, setMentionQuery] = useState<{ query: string; triggerPos: number } | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<{ query: string; triggerPos: number } | null>(
+    null,
+  );
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentions, setMentions] = useState<TrackedMention[]>([]);
   const [fileResults, setFileResults] = useState<string[]>([]);
@@ -1381,6 +1594,26 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  useEffect(() => {
+    if (!prefill?.text) return;
+    setText(prefill.text);
+    setStagedCommand(null);
+    setSlashFilter(null);
+    setMentionQuery(null);
+    setMentions([]);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      if (highlightRef.current) {
+        highlightRef.current.style.height = ta.style.height;
+      }
+    });
+  }, [prefill?.id, prefill?.text]);
+
   useEffect(() => {
     if (lockForQuestion) {
       // Question appeared — save current draft and clear input
@@ -1491,7 +1724,6 @@ export function SessionChatInput({
     return () => window.removeEventListener('focus-session-textarea', handler);
   }, []);
 
-
   // Default autoFocus: true on desktop, false on mobile
   const shouldAutoFocus = autoFocus ?? (typeof window !== 'undefined' && window.innerWidth >= 640);
 
@@ -1549,37 +1781,61 @@ export function SessionChatInput({
     return Array.from(e.dataTransfer?.types ?? []).includes('Files');
   }, []);
 
-  const handleDragEnter = useCallback((e: React.DragEvent<HTMLElement>) => {
-    if (disabled || lockForQuestion || !dragHasFiles(e)) return;
-    e.preventDefault();
-    dragDepthRef.current += 1;
-    setIsDragOver(true);
-  }, [disabled, lockForQuestion, dragHasFiles]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current += 1;
+      setIsDragOver(true);
+    },
+    [disabled, lockForQuestion, dragHasFiles],
+  );
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLElement>) => {
-    if (disabled || lockForQuestion || !dragHasFiles(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, [disabled, lockForQuestion, dragHasFiles]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    },
+    [disabled, lockForQuestion, dragHasFiles],
+  );
 
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLElement>) => {
-    if (!dragHasFiles(e)) return;
-    e.preventDefault();
-    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-    if (dragDepthRef.current === 0) {
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      if (!dragHasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setIsDragOver(false);
+      }
+    },
+    [dragHasFiles],
+  );
+
+  const handleDropFiles = useCallback(
+    (e: React.DragEvent<HTMLElement>) => {
+      if (disabled || lockForQuestion || !dragHasFiles(e)) return;
+      e.preventDefault();
+      dragDepthRef.current = 0;
       setIsDragOver(false);
-    }
-  }, [dragHasFiles]);
+      const dropped = e.dataTransfer.files;
+      if (!dropped || dropped.length === 0) return;
+      appendAttachedFiles(Array.from(dropped));
+    },
+    [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
+  );
 
-  const handleDropFiles = useCallback((e: React.DragEvent<HTMLElement>) => {
-    if (disabled || lockForQuestion || !dragHasFiles(e)) return;
-    e.preventDefault();
-    dragDepthRef.current = 0;
-    setIsDragOver(false);
-    const dropped = e.dataTransfer.files;
-    if (!dropped || dropped.length === 0) return;
-    appendAttachedFiles(Array.from(dropped));
-  }, [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles]);
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (disabled || lockForQuestion) return;
+      const files = extractClipboardFiles(e.clipboardData);
+      // No files on the clipboard — let the browser handle the text paste.
+      if (files.length === 0) return;
+      e.preventDefault();
+      appendAttachedFiles(files);
+    },
+    [appendAttachedFiles, disabled, lockForQuestion],
+  );
 
   const removeAttachedFile = (index: number) => {
     setAttachedFiles((prev) => {
@@ -1594,8 +1850,7 @@ export function SessionChatInput({
     const q = slashFilter.toLowerCase();
     return commands.filter(
       (c) =>
-        (c.name || '').toLowerCase().includes(q) ||
-        (c.description || '').toLowerCase().includes(q),
+        (c.name || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q),
     );
   }, [commands, slashFilter]);
 
@@ -1655,7 +1910,7 @@ export function SessionChatInput({
       }
     }, 150);
     return () => clearTimeout(fileSearchTimer.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mentionQuery?.query, fileSearchFn]);
 
   // Build mention popover items: agents (sync) + sessions (sync) + files (async)
@@ -1693,9 +1948,8 @@ export function SessionChatInput({
         return { kind: 'session' as const, label: s.title || s.id, value: s.id, description: desc };
       });
 
-    const filteredFiles = q.length > 0
-      ? fileResults.filter((f) => f.toLowerCase().includes(q))
-      : fileResults;
+    const filteredFiles =
+      q.length > 0 ? fileResults.filter((f) => f.toLowerCase().includes(q)) : fileResults;
     const fileItems: MentionItem[] = filteredFiles.map((f) => ({
       kind: 'file' as const,
       label: f,
@@ -1807,7 +2061,18 @@ export function SessionChatInput({
           : 'Couldn’t send your message. Please try again.',
       );
     }
-  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, lockForQuestion, onCustomAnswer, onQuestionAction]);
+  }, [
+    text,
+    disabled,
+    onSend,
+    onCommand,
+    stagedCommand,
+    attachedFiles,
+    mentions,
+    lockForQuestion,
+    onCustomAnswer,
+    onQuestionAction,
+  ]);
 
   const handleSelectCommand = (cmd: Command) => {
     // Stage the command — show an args input instead of executing immediately
@@ -1874,7 +2139,8 @@ export function SessionChatInput({
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (mentionItems.length > 0) setMentionIndex((i) => (i - 1 + mentionItems.length) % mentionItems.length);
+        if (mentionItems.length > 0)
+          setMentionIndex((i) => (i - 1 + mentionItems.length) % mentionItems.length);
         return;
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
@@ -2016,7 +2282,7 @@ export function SessionChatInput({
   }, [text, mentions]);
 
   return (
-    <div className="mx-auto w-full max-w-[52rem] relative z-10 shrink-0 px-2 sm:px-4 pb-6">
+    <div className="relative z-10 mx-auto w-full max-w-[52rem] shrink-0 px-2 pb-6 sm:px-4">
       {/* Todo panel removed — now inline inside the card as TodoChip */}
       <div
         ref={cardRef}
@@ -2025,14 +2291,18 @@ export function SessionChatInput({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'w-full bg-card border border-border rounded-[24px] overflow-visible relative z-10 transition-colors',
+          'bg-card border-border relative z-10 w-full overflow-visible rounded-[24px] border transition-colors',
           isDragOver && 'border-primary',
         )}
       >
-        <div className="relative flex flex-col w-full gap-2 overflow-visible">
+        <div className="relative flex w-full flex-col gap-2 overflow-visible">
           {isDragOver && (
-            <div className="absolute inset-0 z-30 rounded-[24px] border-2 border-dashed border-primary/70 bg-primary/5 pointer-events-none flex items-center justify-center">
-              <span className="px-3 py-1 rounded-md bg-background/90 text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach')}</span>
+            <div className="border-primary/70 bg-primary/5 pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[24px] border-2 border-dashed">
+              <span className="bg-background/90 text-foreground rounded-md px-3 py-1 text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionChatInput.line2038JsxTextDropFilesToAttach',
+                )}
+              </span>
             </div>
           )}
           {/* Slash command popover (portalled to body to escape overflow-hidden ancestors) */}
@@ -2059,19 +2329,21 @@ export function SessionChatInput({
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
           {(threadContext || sessionId || inputSlot || replyTo) && (
-            <div className="flex flex-col gap-1.5 mx-3 mt-2.5 empty:hidden">
+            <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
               {replyTo && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
-                  <Reply className="size-3 text-primary/60 flex-shrink-0" />
-                  <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
+                <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                     {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}
                   </span>
                   {onClearReply && (
                     <button
                       type="button"
                       onClick={onClearReply}
-                      className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                      aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply')}
+                      className="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors"
+                      aria-label={tHardcodedUi.raw(
+                        'componentsSessionSessionChatInput.line2078JsxAttrAriaLabelClearReply',
+                      )}
                     >
                       <X className="size-3" />
                     </button>
@@ -2082,14 +2354,15 @@ export function SessionChatInput({
                 <button
                   onClick={threadContext.onBackToParent}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer',
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                   )}
                 >
-                  <ArrowUpLeft className="size-3.5 text-muted-foreground group-hover:-translate-x-0.5 group-hover:-translate-y-0.5 transition-transform flex-shrink-0" />
-                  <span className="flex-1 min-w-0 truncate text-left">
-                    {threadContext.variant === 'fork' ? 'Fork of' : 'Sub-session of'}
-                    {' '}
-                    <span className="text-foreground/80 font-medium">{threadContext.parentTitle}</span>
+                  <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {threadContext.variant === 'fork' ? 'Fork of' : 'Sub-session of'}{' '}
+                    <span className="text-foreground/80 font-medium">
+                      {threadContext.parentTitle}
+                    </span>
                   </span>
                 </button>
               )}
@@ -2103,26 +2376,35 @@ export function SessionChatInput({
 
           {/* Staged command badge */}
           {stagedCommand && (
-            <div className="flex items-center gap-2 px-4 pt-3 pb-0 min-w-0">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/60 border border-border/50 shrink-0 max-w-full">
-                <Terminal className="size-3 text-muted-foreground" />
-                <span className="font-mono text-xs font-medium text-foreground whitespace-nowrap max-w-[220px] sm:max-w-[320px] truncate">/{stagedCommand.name}</span>
+            <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
+              <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+                <Terminal className="text-muted-foreground size-3" />
+                <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
+                  /{stagedCommand.name}
+                </span>
                 <button
                   type="button"
-                  onClick={() => { setStagedCommand(null); setText(''); }}
-                  className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={tHardcodedUi.raw('componentsSessionSessionChatInput.line2118JsxAttrAriaLabelCancelCommand')}
+                  onClick={() => {
+                    setStagedCommand(null);
+                    setText('');
+                  }}
+                  className="text-muted-foreground hover:text-foreground ml-0.5 transition-colors"
+                  aria-label={tHardcodedUi.raw(
+                    'componentsSessionSessionChatInput.line2118JsxAttrAriaLabelCancelCommand',
+                  )}
                 >
                   <X className="size-3" />
                 </button>
               </div>
-              {stagedCommand.description && <span className="text-xs text-muted-foreground truncate min-w-0">{stagedCommand.description}</span>}
+              {stagedCommand.description && (
+                <span className="text-muted-foreground min-w-0 truncate text-xs">
+                  {stagedCommand.description}
+                </span>
+              )}
             </div>
           )}
 
-          <div
-            className="flex flex-col gap-1 px-3.5 max-h-[320px] opacity-100 translate-y-0"
-          >
+          <div className="flex max-h-[320px] translate-y-0 flex-col gap-1 px-3.5 opacity-100">
             <div className="relative w-full">
               {/* Sending while the agent is busy already works — Enter (or the
                   send button) posts straight to the server, which queues it
@@ -2130,53 +2412,58 @@ export function SessionChatInput({
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] text-base sm:text-sm text-muted-foreground pointer-events-none overflow-hidden"
+                  className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForQuestion ? (
                     <div className="absolute inset-0">
                       {questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...'}
                     </div>
                   ) : (
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={`${placeholderIndex}:${placeholderVariants[placeholderIndex]}`}
-                      className="absolute inset-0"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                        transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
-                      }}
-                      exit={{
-                        opacity: 0,
-                        y: -8,
-                        transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] },
-                      }}
-                    >
-                      {placeholderVariants[placeholderIndex]}
-                    </motion.div>
-                  </AnimatePresence>
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.div
+                        key={`${placeholderIndex}:${placeholderVariants[placeholderIndex]}`}
+                        className="absolute inset-0"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+                        }}
+                        exit={{
+                          opacity: 0,
+                          y: -8,
+                          transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] },
+                        }}
+                      >
+                        {placeholderVariants[placeholderIndex]}
+                      </motion.div>
+                    </AnimatePresence>
                   )}
                 </div>
               )}
               {text.trim().length === 0 && stagedCommand && (
                 <div
                   aria-hidden
-                  className="absolute left-0.5 top-4 text-base sm:text-sm text-muted-foreground/50 pointer-events-none"
-                >{tHardcodedUi.raw('componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc')}</div>
+                  className="text-muted-foreground/50 pointer-events-none absolute top-4 left-0.5 text-base sm:text-sm"
+                >
+                  {tHardcodedUi.raw(
+                    'componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc',
+                  )}
+                </div>
               )}
               {/* Highlight overlay — mirrors textarea text with colored mention spans */}
               {highlightSegments && (
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="absolute inset-0 pointer-events-none px-0.5 pb-6 pt-4 text-base sm:text-sm whitespace-pre-wrap break-words leading-normal text-foreground"
+                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span
                       key={i}
                       className={cn(
-                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session') && 'border-b border-foreground/40 font-medium text-foreground/80',
+                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session') &&
+                          'border-foreground/40 text-foreground/80 border-b font-medium',
                       )}
                     >
                       {seg.text}
@@ -2189,6 +2476,7 @@ export function SessionChatInput({
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 onScroll={() => {
                   if (highlightRef.current && textareaRef.current) {
                     highlightRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -2198,7 +2486,7 @@ export function SessionChatInput({
                 rows={1}
                 disabled={disabled}
                 className={cn(
-                  'relative w-full bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px] text-base sm:text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2207,28 +2495,36 @@ export function SessionChatInput({
           </div>
 
           {/* Bottom toolbar */}
-          <div className="flex items-center justify-between mb-1.5 pl-2 pr-1.5 gap-1 overflow-visible">
+          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
             {/* LEFT: Attach + Agent + Model + Variant */}
-            <div className="flex items-center gap-0 min-w-0 overflow-visible">
+            <div className="flex min-w-0 items-center gap-0 overflow-visible">
               <input
                 ref={fileInputRef}
                 type="file"
-                accept={tHardcodedUi.raw('componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml')}
+                accept={tHardcodedUi.raw(
+                  'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+                )}
                 multiple
                 className="hidden"
                 onChange={handleFileSelect}
               />
-                <Tooltip>
+              <Tooltip>
                 <TooltipTrigger asChild>
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center justify-center h-8 w-8 rounded-full transition-colors text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
                   >
                     <Paperclip className="h-4 w-4" strokeWidth={2} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="top"><p>{tHardcodedUi.raw('componentsSessionSessionChatInput.line2252JsxTextAttachFiles')}</p></TooltipContent>
+                <TooltipContent side="top">
+                  <p>
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionChatInput.line2252JsxTextAttachFiles',
+                    )}
+                  </p>
+                </TooltipContent>
               </Tooltip>
 
               {primaryAgents.length > 0 && onAgentChange && (
@@ -2269,28 +2565,32 @@ export function SessionChatInput({
             </div>
 
             {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
-            <div className="flex items-center gap-0 shrink-0">
-              <TokenProgress messages={messages} models={models} selectedModel={selectedModel} onContextClick={onContextClick} />
-
-              <VoiceRecorder
-                onTranscription={handleTranscription}
-                disabled={disabled || isBusy}
+            <div className="flex shrink-0 items-center gap-0">
+              <TokenProgress
+                messages={messages}
+                models={models}
+                selectedModel={selectedModel}
+                onContextClick={onContextClick}
               />
+
+              {toolbarSlot}
+
+              <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
 
               {isBusy && onStop && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
-                    <div
-                      className="absolute bottom-full right-1/2 translate-x-1/2 mb-2 pointer-events-none animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-150"
-                    >
-                      <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap flex items-center gap-1.5">
-                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd>
+                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
+                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
+                          ESC
+                        </kbd>
                         <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
                       </div>
                       {/* Arrow matching TooltipContent */}
-                      <div className="flex justify-center -mt-px">
-                        <div className="bg-primary size-2.5 rotate-45 rounded-[2px] -translate-y-[calc(50%_-_2px)]" />
+                      <div className="-mt-px flex justify-center">
+                        <div className="bg-primary size-2.5 -translate-y-[calc(50%_-_2px)] rotate-45 rounded-[2px]" />
                       </div>
                     </div>
                   )}
@@ -2299,37 +2599,47 @@ export function SessionChatInput({
                       <Button
                         size="sm"
                         onClick={onStop}
-                        className="flex-shrink-0 h-8 w-8 rounded-full p-0"
+                        className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                       >
-                        <div className="w-3 h-3 rounded-[3px] bg-current" />
+                        <div className="h-3 w-3 rounded-[3px] bg-current" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
-                      <p>Stop <kbd className="ml-1 bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">ESC</kbd> ×3</p>
+                      <p>
+                        Stop{' '}
+                        <kbd className="bg-background/20 text-primary-foreground ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
+                          ESC
+                        </kbd>{' '}
+                        ×3
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
               )}
               {(!isBusy || lockForQuestion) && (
                 <div className="opacity-100">
-					{lockForQuestion && questionButtonLabel && !text.trim() ? (
-						<Button
-							size="sm"
-							disabled={!questionCanAct || disabled}
-							onClick={handleSubmit}
-							className="flex-shrink-0 h-8 rounded-full px-3.5 text-xs font-medium"
-						>
+                  {lockForQuestion && questionButtonLabel && !text.trim() ? (
+                    <Button
+                      size="sm"
+                      disabled={!questionCanAct || disabled}
+                      onClick={handleSubmit}
+                      className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
+                    >
                       {questionButtonLabel}
                     </Button>
                   ) : (
                     <Button
                       size="sm"
-                      disabled={lockForQuestion ? (!canSubmit && !questionCanAct) || disabled : !canSubmit || disabled}
+                      disabled={
+                        lockForQuestion
+                          ? (!canSubmit && !questionCanAct) || disabled
+                          : !canSubmit || disabled
+                      }
                       onClick={handleSubmit}
-                      className="flex-shrink-0 h-8 w-8 rounded-full p-0"
+                      className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                     >
                       {disabled ? (
-                        <div className="size-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
                       ) : (
                         <ArrowUp className="size-4" />
                       )}

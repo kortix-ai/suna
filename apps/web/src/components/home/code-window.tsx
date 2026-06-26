@@ -186,7 +186,7 @@ function AgentBody() {
       <Line>
         <span className={C.f}>model</span>:{' '}
         <span className={C.s}>
-          <HyperText>claude-opus-4-7</HyperText>
+          <HyperText>claude-opus-4.8</HyperText>
         </span>
       </Line>
       <Line>

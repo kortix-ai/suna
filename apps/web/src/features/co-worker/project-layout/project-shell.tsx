@@ -2,15 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
-import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { useSidebar } from '@/components/ui/sidebar';
 import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
+import { parseSidebarStateCookie } from '@/features/co-worker/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -18,9 +18,11 @@ import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { parseCustomizeSection } from '@/lib/customize-sections';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -37,8 +39,24 @@ interface ProjectShellProps {
   children: React.ReactNode;
 }
 
+/**
+ * Read the sidebar's persisted open/collapsed state from the `sidebar_state`
+ * cookie that {@link SidebarProvider} writes on every toggle. ProjectShell
+ * remounts on navigation (opening a session, ⌘J, switching sessions), so
+ * without re-seeding from the cookie the sidebar snaps back to its default
+ * (expanded) every time. Client-only — the shell is gated behind client auth,
+ * so the provider never renders during SSR and this can't cause a hydration
+ * mismatch.
+ */
+function readSidebarOpenCookie(): boolean | undefined {
+  if (typeof document === 'undefined') return undefined;
+  return parseSidebarStateCookie(document.cookie);
+}
+
 export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
+  const resolvedSidebarOpen = initialSidebarOpen ?? readSidebarOpenCookie();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();
 
   const { data: projectDetail } = useQuery({
@@ -52,6 +70,17 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
+
+  useEffect(() => {
+    const section = parseCustomizeSection(searchParams.get('customize'));
+    if (!section) return;
+    useCustomizeStore.getState().openCustomize(section);
+
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('customize');
+    const query = next.toString();
+    router.replace(`/projects/${projectId}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [projectId, router, searchParams]);
 
   useEffect(() => {
     try {
@@ -115,7 +144,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         showRightSidebar={false}
         showGlobalNewInstanceModal={false}
         showGlobalUserSettingsModal={false}
-        defaultSidebarOpen={initialSidebarOpen}
+        defaultSidebarOpen={resolvedSidebarOpen}
         sidebarContent={<ProjectSidebar projectId={projectId} />}
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -144,8 +173,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <CustomizeOverlay projectId={projectId} />
 
         <AppsOverlay projectId={projectId} />
-
-        <GatewayOverlay projectId={projectId} />
 
         <PersonalOnboardingWelcome projectId={projectId} />
       </AppProviders>
