@@ -140,14 +140,6 @@ const envSchema = z.object({
   // from the admin Providers panel (runtime-settings.ts → warmPoolEnabled()).
   // When OFF the allocator skips the claim path and every create cold-provisions.
   KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
-  // Master on/off for per-project warm-fork SNAPSHOTS (the ~2s warm start). The
-  // FALLBACK default read when the DB `warm_snapshot` row is absent OR the
-  // runtime-settings cache is still cold (fresh pod / DB hiccup). Previously this
-  // default was hardcoded ON in runtime-settings.ts, so a just-started pod ignored
-  // an operator's "off" for ~30s and could warm-fork a stale seed (the 2026-06-26
-  // opencode-wedge incident). Default ON (warm-fork is a latency win); the live
-  // control surface is the admin `warm_snapshot` toggle (warmSnapshotSetting()).
-  KORTIX_WARM_SNAPSHOT_ENABLED:    optBoolTrue,
   // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
   // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
   // base branch + warm the opencode project plugin AT PARK — so a claim only
@@ -597,7 +589,6 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
