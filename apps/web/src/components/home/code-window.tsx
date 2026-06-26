@@ -15,7 +15,7 @@ type TabId = 'toml' | 'agent' | 'deploy';
 const TABS: { id: TabId; label: string }[] = [
   { id: 'toml', label: 'kortix.toml' },
   { id: 'agent', label: 'support.md' },
-  { id: 'deploy', label: 'deploy' },
+  { id: 'deploy', label: 'ship' },
 ];
 
 const C = {
@@ -251,9 +251,7 @@ function DeployBody() {
   return (
     <motion.div initial="hidden" animate="visible" variants={deployReveal}>
       <Line variants={deployLine}>
-        <Line.Text className={C.c}>
-          {tHardcodedUi.raw('componentsHomeCodeWindow.line70JsxTextKortixDeploy')}
-        </Line.Text>
+        <Line.Text className={C.c}>$ kortix ship</Line.Text>
       </Line>
       <Line variants={deployLine} className="items-center justify-start gap-2">
         <span className={C.s}>

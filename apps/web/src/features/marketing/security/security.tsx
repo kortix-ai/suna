@@ -63,7 +63,7 @@ const Security = () => {
   const [activeId, setActiveId] = useState<string>(ACCORDION[0].id);
 
   return (
-    <section className="mx-auto max-w-6xl rounded-sm px-6 py-16 sm:py-24 lg:px-0">
+    <section id="security" className="mx-auto max-w-6xl rounded-sm px-6 py-16 sm:py-24 lg:px-0">
       <div className="mb-16 max-w-2xl space-y-3">
         <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
           {tHome('enterpriseEyebrow')}
@@ -121,7 +121,7 @@ const Security = () => {
             ))}
           </Accordion>
 
-          <div className="mt-auto px-4 pb-7">
+          <div className="mt-auto flex flex-wrap items-center gap-2 px-4 pb-7">
             <Button size="sm" className="w-fit" asChild>
               <Link href="/enterprise">{tHome('enterpriseLearnMore')}</Link>
             </Button>

@@ -5,11 +5,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { Separator } from '@/components/ui/separator';
+import { CompanyAsRepo } from '@/features/marketing/company-as-repo';
+// import { Compare } from '@/features/marketing/compare'; // hidden for now — restore to re-enable
+import { Faq } from '@/features/marketing/faq';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
+import { ModalitySwitcher } from '@/features/marketing/modality-switcher';
+import { RuntimeArchitecture } from '@/features/marketing/runtime-architecture';
 import Security from '@/features/marketing/security/security';
-import { OutcomeCardsSection, SurfacesSection } from '@/features/marketing/story-sections';
-import WhyKortix from '@/features/marketing/why-kortix';
+import { SkillsMemory } from '@/features/marketing/skills-memory';
+import { UseCasesByDepartment } from '@/features/marketing/use-cases-by-department';
+import { WhyItsAHire } from '@/features/marketing/why-its-a-hire';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useTranslations } from 'next-intl';
@@ -39,31 +45,62 @@ export default function Home() {
           <Separator />
         </div>
 
+        <UseCasesByDepartment />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <WhyItsAHire />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        {/* hidden for now — Compare section disabled; restore <Compare /> to re-enable. */}
+        {/* <Compare />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div> */}
+
+        <CompanyAsRepo />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <SkillsMemory />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <RuntimeArchitecture />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <ModalitySwitcher />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
         <HowItWorks />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
         </div>
 
-        <SurfacesSection />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <OutcomeCardsSection />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
-        <WhyKortix />
-
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
-
         <Security />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <Faq />
 
         <div className="mx-auto max-w-6xl">
           <Separator />

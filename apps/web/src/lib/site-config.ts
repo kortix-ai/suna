@@ -1,3 +1,8 @@
+// A nav link is either a direct href or a dropdown of sub-links. Typing it
+// explicitly keeps the dropdown branches valid even when every current entry
+// happens to be a direct link (e.g. while Compare is hidden).
+type NavLink = { id: number; name: string; href: string | { name: string; href: string }[] };
+
 export const siteConfig = {
   url:
     process.env.KORTIX_PUBLIC_APP_URL ||
@@ -9,29 +14,30 @@ export const siteConfig = {
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Pricing', href: '/pricing' },
       { id: 4, name: 'Docs', href: '/docs' },
-      {
-        id: 5,
-        name: 'Compare',
-        href: [
-          {
-            name: 'ChatGPT',
-            href: '/compare/chatgpt',
-          },
-          {
-            name: 'Zapier',
-            href: '/compare/zapier',
-          },
-          {
-            name: 'Viktor',
-            href: '/compare/viktor',
-          },
-          {
-            name: 'OpenClaw',
-            href: '/compare/openclaw',
-          },
-        ],
-      },
-    ],
+      // hidden for now — Compare nav dropdown disabled; restore to re-enable.
+      // {
+      //   id: 5,
+      //   name: 'Compare',
+      //   href: [
+      //     {
+      //       name: 'ChatGPT',
+      //       href: '/compare/chatgpt',
+      //     },
+      //     {
+      //       name: 'Zapier',
+      //       href: '/compare/zapier',
+      //     },
+      //     {
+      //       name: 'Viktor',
+      //       href: '/compare/viktor',
+      //     },
+      //     {
+      //       name: 'OpenClaw',
+      //       href: '/compare/openclaw',
+      //     },
+      //   ],
+      // },
+    ] as NavLink[],
   },
   hero: {
     description: 'Kortix – the open AI command center for your company.',
