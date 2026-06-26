@@ -197,6 +197,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter ./apps/web build
         env:
+          NODE_OPTIONS: --max-old-space-size=6144
           npm_config_engine_strict: "false"
           NEXT_PUBLIC_BACKEND_URL: https://api.kortix.com/v1
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
