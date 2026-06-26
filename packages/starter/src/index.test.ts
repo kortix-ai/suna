@@ -146,7 +146,8 @@ describe('getStarterFiles', () => {
 
   test('default starter does not ship general knowledge worker skills', () => {
     const files = getStarterFiles({ projectName: 'X' });
-    expect(files.some((f) => f.path.startsWith('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/'))).toBe(false);
+    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {

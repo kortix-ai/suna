@@ -24,9 +24,9 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // -worker skill pack). Ordered by `path.localeCompare` to match getStarterFiles'
 // stable sort. Regenerate from `packages/starter/templates/base` when the base
 // scaffold changes.
-// The starter floor ships only the core Kortix OpenCode files. Optional tools,
-// plugins, agent-browser, and general-knowledge-worker skills are marketplace
-// installable instead.
+// The starter floor ships the core Kortix OpenCode files plus default runtime
+// tools/plugins. Optional skills (agent-browser and knowledge-work skills) are
+// marketplace installable instead.
 const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
@@ -35,6 +35,17 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/constants.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/buffer.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/formatters.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/permissions.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/types.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/wildcard.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/plugin/types.ts',
+  '.kortix/opencode/plugins/opencode-pty/src/shared/constants.ts',
+  '.kortix/opencode/plugins/pty.ts',
   '.kortix/opencode/skills/kortix-computer/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/references/executor-sdk.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
@@ -55,7 +66,12 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
+  '.kortix/opencode/tools/image_search.ts',
+  '.kortix/opencode/tools/lib/get-env.ts',
+  '.kortix/opencode/tools/memory.ts',
+  '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
+  '.kortix/opencode/tools/web_search.ts',
   'kortix.toml',
   'README.md',
 ];
@@ -493,7 +509,8 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     expect(paths).toEqual(BASE_STARTER_PATHS);
-    expect(paths.some((path) => path.startsWith('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/'))).toBe(false);
+    expect(paths).not.toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
     expect(paths.some((path) => path.includes('/agent-tunnel/'))).toBe(false);
   });
@@ -507,10 +524,10 @@ describe('create-repo starter scaffold contract', () => {
     const paths = files.map((file) => file.path);
 
     for (const path of BASE_STARTER_PATHS) expect(paths).toContain(path);
-    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/brand-voice/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/audit-support/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/content-creation/SKILL.md');
+    expect(paths).toContain('.kortix/opencode/skills/brand-voice/SKILL.md');
     expect(new Set(paths).size).toBe(paths.length);
   });
 
@@ -696,7 +713,8 @@ describe('create-repo starter scaffold contract', () => {
 
     const committedPaths = commitCalls.map((call) => call.path);
     for (const path of BASE_STARTER_PATHS) expect(committedPaths).toContain(path);
-    expect(committedPaths.some((path) => path.startsWith('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/'))).toBe(false);
+    expect(committedPaths).not.toContain('.kortix/opencode/skills/account-research/SKILL.md');
+    expect(committedPaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);

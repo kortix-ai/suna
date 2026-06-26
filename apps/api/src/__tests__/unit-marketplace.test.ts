@@ -56,7 +56,17 @@ describe('marketplace catalog', () => {
     expect(all
       .filter((i) => i.defaultProjectInstall)
       .map((i) => i.name)
-      .sort()).toEqual(['agent-browser']);
+      .sort()).toEqual([
+        'agent-browser',
+        'deep-research',
+        'document-review',
+        'docx',
+        'pdf',
+        'pptx',
+        'research-report',
+        'website-building',
+        'xlsx',
+      ]);
     expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
   });
 

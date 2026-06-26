@@ -41,7 +41,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { MarketplaceItemAvatar } from '@/components/marketplace/marketplace-item-avatar';
 import { Icon } from '@/features/icon/icon';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
@@ -209,9 +208,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     [marketplaceDefaultsQuery.data?.items],
   );
   const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
-  const selectedMarketplaceItems = managedForm.watch('marketplaceItems');
-  const includedCount =
-    (includeGeneralKnowledgeSkills ? 1 : 0) + selectedMarketplaceItems.length;
+  const includedCount = includeGeneralKnowledgeSkills ? 1 : 0;
 
   useEffect(() => {
     if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
@@ -284,13 +281,12 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function handleCreate(values: ManagedProjectFormValues) {
     if (!accountId) return errorToast('Select an account first');
+    const defaultMarketplaceItems = marketplaceItems.map((item) => item.id);
     createMutation.mutate({
       account_id: accountId,
       name: values.name,
-      starter_template: values.includeGeneralKnowledgeSkills
-        ? 'general-knowledge-worker'
-        : 'minimal',
-      marketplace_items: values.marketplaceItems,
+      starter_template: 'minimal',
+      marketplace_items: values.includeGeneralKnowledgeSkills ? defaultMarketplaceItems : [],
     });
   }
 
@@ -401,52 +397,21 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                             <Boxes className="size-4" />
                           </span>
                         }
-                        title={tHardcodedUi.raw(
-                          'componentsProjectsProjectCreateModal.line273JsxTextGeneralKnowledgeWorkerSkills',
-                        )}
-                        badge="Starter pack"
-                        description={tHardcodedUi.raw(
-                          'componentsProjectsProjectCreateModal.line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand',
-                        )}
+                        title="Starter pack"
+                        description="Ready-made skills for research, writing, documents, slides, data, the web, and browser automation."
                         selected={includeGeneralKnowledgeSkills}
                         disabled={submitting}
-                        onToggle={(next) =>
+                        onToggle={(next) => {
                           managedForm.setValue('includeGeneralKnowledgeSkills', next, {
                             shouldDirty: true,
-                          })
-                        }
+                          });
+                          managedForm.setValue(
+                            'marketplaceItems',
+                            next ? marketplaceItems.map((item) => item.id) : [],
+                            { shouldDirty: true },
+                          );
+                        }}
                       />
-                      {marketplaceDefaultsQuery.isLoading ? (
-                        <div className="text-muted-foreground flex items-center gap-2 px-3.5 py-3 text-xs">
-                          <Loading />
-                          Loading recommended skills
-                        </div>
-                      ) : (
-                        marketplaceItems.map((item) => {
-                            const checked = selectedMarketplaceItems.includes(item.id);
-                            return (
-                              <SetupOptionRow
-                                key={item.id}
-                                icon={
-                                  <MarketplaceItemAvatar item={item} size="sm" showSource={false} />
-                                }
-                                title={item.title}
-                                description={item.description ?? item.name}
-                                selected={checked}
-                                disabled={submitting}
-                                onToggle={(next) =>
-                                  managedForm.setValue(
-                                    'marketplaceItems',
-                                    next
-                                      ? [...new Set([...selectedMarketplaceItems, item.id])]
-                                      : selectedMarketplaceItems.filter((value) => value !== item.id),
-                                    { shouldDirty: true },
-                                  )
-                                }
-                              />
-                            );
-                          })
-                      )}
                     </div>
                   </div>
 
@@ -469,7 +434,11 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={submitting || !accountId}
+                  disabled={
+                    submitting ||
+                    !accountId ||
+                    (includeGeneralKnowledgeSkills && marketplaceDefaultsQuery.isLoading)
+                  }
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(

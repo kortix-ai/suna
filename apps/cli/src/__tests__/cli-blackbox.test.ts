@@ -372,7 +372,7 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'GENERAL-KNOWLEDGE-WORKER', 'pdf', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(false);
   });
 
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {
@@ -388,7 +388,7 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'GENERAL-KNOWLEDGE-WORKER', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init can install selected bundled marketplace skills locally', async () => {

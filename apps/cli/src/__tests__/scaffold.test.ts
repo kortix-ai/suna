@@ -18,9 +18,9 @@ const REQUIRED_BASE_PATHS = [
 ];
 
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md',
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md',
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md',
+  '.kortix/opencode/skills/account-research/SKILL.md',
+  '.kortix/opencode/skills/audit-support/SKILL.md',
+  '.kortix/opencode/skills/content-creation/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {

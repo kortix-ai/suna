@@ -149,6 +149,10 @@ function ownerOf(marketplaceId: string): string | undefined {
 
 function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   const marketplaceId = marketplaceIdOf(e.registry);
+  const defaultProjectInstallOrder =
+    typeof e.item.meta?.defaultProjectInstallOrder === 'number'
+      ? e.item.meta.defaultProjectInstallOrder
+      : undefined;
   return {
     id: `${e.registry}:${e.item.name}`,
     registry: e.registry,
@@ -169,10 +173,7 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     managedBy: e.item.meta?.managedBy === 'kortix' ? 'kortix' : undefined,
     updatePolicy: e.item.meta?.updatePolicy === 'kortix-managed' ? 'kortix-managed' : undefined,
     defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
-    defaultProjectInstallOrder:
-      typeof e.item.meta?.defaultProjectInstallOrder === 'number'
-        ? e.item.meta.defaultProjectInstallOrder
-        : undefined,
+    defaultProjectInstallOrder,
     hidden: e.item.meta?.hidden === true,
   };
 }

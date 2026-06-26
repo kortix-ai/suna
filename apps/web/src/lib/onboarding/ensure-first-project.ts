@@ -53,6 +53,7 @@ export async function ensureFirstProject(
     return await provisionProject({
       account_id: accountId,
       name: 'My First Project',
+      starter_template: 'minimal',
       marketplace_items: marketplaceItems.map((item) => item.id),
     });
   } catch (err) {

@@ -78,8 +78,7 @@ export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
   return DEFAULT_STARTER_TEMPLATE_ID;
 }
 
-const GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX =
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/';
+const GENERAL_KNOWLEDGE_WORKER_SKILLS_PREFIX = '.kortix/opencode/skills/';
 
 export function listGeneralKnowledgeWorkerSkills(): string[] {
   const skillsDir = join(
@@ -87,7 +86,6 @@ export function listGeneralKnowledgeWorkerSkills(): string[] {
     '.kortix',
     'opencode',
     'skills',
-    'GENERAL-KNOWLEDGE-WORKER',
   );
   try {
     return readdirSync(skillsDir)

@@ -16,7 +16,7 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function openHarness(page: Page) {
-  await page.route('**/marketplace/items?source=kortix', async (route) => {
+  await page.route('**/marketplace/items**', async (route) => {
     assert(
       route.request().headers().authorization === 'Bearer debug-project-create-token',
       'marketplace request should include the debug bootstrap auth token',
@@ -29,19 +29,22 @@ async function openHarness(page: Page) {
         pending: 0,
         sources: [],
         items: [
-          defaultMarketplaceItem('agent-browser', 'Agent Browser', 10),
-          defaultMarketplaceItem('pty', 'PTY Sessions', 20),
-          defaultMarketplaceItem('kortix-simple-memory', 'Kortix Simple Memory', 30),
-          defaultMarketplaceItem('web_search', 'Web Search', 40),
-          defaultMarketplaceItem('scrape_webpage', 'Scrape Webpage', 50),
-          defaultMarketplaceItem('image_search', 'Image Search', 60),
+          defaultMarketplaceItem('deep-research', 'Deep Research', 10),
+          defaultMarketplaceItem('research-report', 'Research Report', 20),
+          defaultMarketplaceItem('document-review', 'Document Review', 30),
+          defaultMarketplaceItem('pdf', 'PDF', 40),
+          defaultMarketplaceItem('docx', 'DOCX', 50),
+          defaultMarketplaceItem('xlsx', 'XLSX', 60),
+          defaultMarketplaceItem('pptx', 'PPTX', 70),
+          defaultMarketplaceItem('website-building', 'Website Building', 80),
+          defaultMarketplaceItem('agent-browser', 'Agent Browser', 90),
         ],
       }),
     });
   });
   await page.goto(`${baseUrl}/debug/project-create-modal`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('dialog', { name: /new project/i }).waitFor({ state: 'visible', timeout: 30_000 });
-  await page.getByRole('switch', { name: /PTY Sessions/i }).waitFor({ state: 'visible', timeout: 30_000 });
+  await page.getByRole('checkbox', { name: /starter pack/i }).waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 function defaultMarketplaceItem(name: string, title: string, order: number) {
@@ -49,7 +52,7 @@ function defaultMarketplaceItem(name: string, title: string, order: number) {
     id: `kortix-starter:${name}`,
     registry: 'kortix-starter',
     name,
-    type: name === 'agent-browser' ? 'registry:skill' : 'registry:tool',
+    type: 'registry:skill',
     title,
     description: `${title} default marketplace item`,
     categories: ['kortix-runtime'],
@@ -68,7 +71,6 @@ async function submitProjectCreate(
   page: Page,
   name: string,
   toggleStarterSkills: boolean,
-  disableMarketplaceItem?: RegExp,
 ): Promise<ProvisionPayload> {
   let payload: ProvisionPayload | null = null;
   await page.route('**/projects/provision', async (route) => {
@@ -98,20 +100,23 @@ async function submitProjectCreate(
 
   await page.getByRole('textbox', { name: /project name/i }).fill(name);
   if (toggleStarterSkills) {
-    const namedSwitch = page.getByRole('switch', { name: /starter skills/i });
-    if (await namedSwitch.isVisible().catch(() => false)) {
-      await namedSwitch.click();
+    const starterPack = page.getByRole('checkbox', { name: /starter pack/i });
+    if (await starterPack.isVisible().catch(() => false)) {
+      await starterPack.click();
     } else {
-      await page.locator('[role="switch"]').first().click();
+      await page.locator('[role="checkbox"]').first().click();
     }
   }
-  if (disableMarketplaceItem) {
-    await page.getByRole('switch', { name: disableMarketplaceItem }).click();
-  }
-
   const request = page.waitForRequest((req) => req.url().includes('/projects/provision'));
   await page.getByRole('button', { name: /^create project$/i }).click();
   await request;
+  const projectPath = `/projects/proj_${name}`;
+  await page.waitForURL(
+    (url) =>
+      url.pathname === projectPath ||
+      (url.pathname === '/auth' && url.searchParams.get('redirect') === projectPath),
+    { timeout: 10_000 },
+  );
   await page.unroute('**/projects/provision');
   assert(payload, 'expected a /projects/provision request payload');
   return payload;
@@ -130,33 +135,26 @@ async function main() {
     assert(defaultPayload.starter_template === 'minimal', 'default payload should use minimal starter_template');
     assert(
       JSON.stringify(defaultPayload.marketplace_items) === JSON.stringify([
+        'kortix-starter:deep-research',
+        'kortix-starter:research-report',
+        'kortix-starter:document-review',
+        'kortix-starter:pdf',
+        'kortix-starter:docx',
+        'kortix-starter:xlsx',
+        'kortix-starter:pptx',
+        'kortix-starter:website-building',
         'kortix-starter:agent-browser',
-        'kortix-starter:pty',
-        'kortix-starter:kortix-simple-memory',
-        'kortix-starter:web_search',
-        'kortix-starter:scrape_webpage',
-        'kortix-starter:image_search',
       ]),
       'default payload should include registry-driven marketplace defaults',
     );
 
     await openHarness(page);
-    const optInPayload = await submitProjectCreate(page, 'with-starter-skills', true, /PTY Sessions/i);
-    assert(optInPayload.account_id === '00000000-0000-4000-a000-000000000101', 'opt-in payload account_id mismatch');
-    assert(optInPayload.name === 'with-starter-skills', 'opt-in payload name mismatch');
-    assert(optInPayload.seed_starter === true, 'opt-in payload should seed starter');
-    assert(
-      optInPayload.starter_template === 'general-knowledge-worker',
-      'opt-in payload should use general-knowledge-worker starter_template',
-    );
-    assert(
-      !optInPayload.marketplace_items?.includes('kortix-starter:pty'),
-      'disabled marketplace item should be omitted from provision payload',
-    );
-    assert(
-      optInPayload.marketplace_items?.includes('kortix-starter:web_search'),
-      'other selected marketplace items should remain in provision payload',
-    );
+    const optOutPayload = await submitProjectCreate(page, 'without-starter-pack', true);
+    assert(optOutPayload.account_id === '00000000-0000-4000-a000-000000000101', 'opt-out payload account_id mismatch');
+    assert(optOutPayload.name === 'without-starter-pack', 'opt-out payload name mismatch');
+    assert(optOutPayload.seed_starter === true, 'opt-out payload should seed starter');
+    assert(optOutPayload.starter_template === 'minimal', 'opt-out payload should still use minimal starter_template');
+    assert(JSON.stringify(optOutPayload.marketplace_items) === JSON.stringify([]), 'opt-out payload should omit starter pack skills');
 
     console.log('[project-create-modal] ok: starter template and marketplace item payloads verified');
   } finally {

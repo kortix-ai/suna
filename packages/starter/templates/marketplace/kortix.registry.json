@@ -17,7 +17,7 @@
       "meta": {
         "source": "kortix",
         "defaultProjectInstall": true,
-        "defaultProjectInstallOrder": 10,
+        "defaultProjectInstallOrder": 90,
         "capabilities": {
           "tools": ["agent-browser"]
         }
