@@ -25,7 +25,7 @@ import {
   deliverSlackFollowUpToSession,
   renderFollowUpPrompt,
 } from './session';
-import { postEphemeralLoginPrompt, resolveSlackActor } from './identity';
+import { postLoginPrompt, resolveSlackActor } from './identity';
 import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
 import {
   deleteTurn,
@@ -484,11 +484,10 @@ export async function spawnAgentTurn(
     const slackUserId = event.user ?? '';
     const actor = await resolveSlackActor(teamId, slackUserId, project.accountId);
     if ('reason' in actor) {
-      await postEphemeralLoginPrompt({
+      await postLoginPrompt({
         projectId,
         teamId,
         channel: event.channel,
-        threadTs: event.thread_ts ?? event.ts,
         slackUserId,
         reason: actor.reason,
       });
