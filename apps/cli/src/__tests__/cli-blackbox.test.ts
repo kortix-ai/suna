@@ -387,6 +387,29 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'GENERAL-KNOWLEDGE-WORKER', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
+  test('init can install selected bundled marketplace items locally', async () => {
+    const result = await runCli([
+      'init',
+      'marketplace-project',
+      '--yes',
+      '--no-git',
+      '--marketplace',
+      'pty,web_search',
+    ]);
+
+    expect(result.code).toBe(0);
+    const root = join(tmp, 'marketplace-project');
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'opencode-pty', 'src', 'plugin', 'constants.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'lib', 'get-env.ts'))).toBe(true);
+
+    const lock = JSON.parse(readFileSync(join(root, 'registry-lock.json'), 'utf8'));
+    expect(lock.version).toBe(2);
+    expect(Object.keys(lock.items).sort()).toEqual(['kortix-tool-env', 'pty', 'web_search']);
+  });
+
   test('E2E: CLI project setup plus marketplace install/status/update/remove lifecycle', async () => {
     const apiBase = startCliE2eServer();
     const configFile = writeConfig(apiBase);

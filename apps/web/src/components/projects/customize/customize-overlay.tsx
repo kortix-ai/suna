@@ -130,14 +130,13 @@ const GROUPS: readonly RailGroup[] = [
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
-// Experimental Marketplace — browse + install skills. Opt-in (Customize →
-// Settings → Experimental); slots into "Build" right after Commands.
+// Marketplace — browse + install skills, agents, commands, tools, and bundles.
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
 /** Build the rail groups for this project, injecting flag-gated entries. */
-function railGroups(tunnelEnabled: boolean, marketplaceEnabled: boolean): readonly RailGroup[] {
+function railGroups(tunnelEnabled: boolean): readonly RailGroup[] {
   return GROUPS.map((g) => {
-    if (g.label === 'Build' && marketplaceEnabled) {
+    if (g.label === 'Build') {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
     if (g.label === 'Connect' && tunnelEnabled) {
@@ -166,10 +165,9 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
-  const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled),
-    [tunnelEnabled, marketplaceEnabled],
+    () => railGroups(tunnelEnabled),
+    [tunnelEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 

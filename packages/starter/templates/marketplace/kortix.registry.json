@@ -16,6 +16,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 10,
         "capabilities": {
           "tools": ["agent-browser"]
         }
@@ -41,6 +43,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 20,
         "capabilities": {
           "tools": ["pty_spawn", "pty_write", "pty_read", "pty_list", "pty_kill"]
         }
@@ -79,6 +83,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 30,
         "capabilities": {
           "tools": ["memory"]
         }
@@ -104,6 +110,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 40,
         "capabilities": {
           "tools": ["web_search"],
           "network": ["api.tavily.com"]
@@ -130,6 +138,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 50,
         "capabilities": {
           "tools": ["scrape_webpage"],
           "network": ["api.firecrawl.dev"]
@@ -156,6 +166,8 @@
       ],
       "meta": {
         "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 60,
         "capabilities": {
           "tools": ["image_search"],
           "network": ["api.replicate.com"]

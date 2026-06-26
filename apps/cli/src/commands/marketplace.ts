@@ -26,6 +26,8 @@ interface CatalogItem {
   marketplaceLabel: string;
   managedBy?: 'kortix';
   updatePolicy?: 'kortix-managed';
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
 }
 
 interface CatalogResponse {

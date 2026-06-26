@@ -43,6 +43,7 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
+import { listMarketplaceItems, type MarketplaceItem } from '@/lib/marketplace-client';
 import {
   linkRepository,
   listGitHubInstallations,
@@ -66,6 +67,7 @@ const managedProjectSchema = z.object({
     .transform(sanitizeProjectName)
     .pipe(z.string().min(1, 'Project name is required')),
   includeGeneralKnowledgeSkills: z.boolean(),
+  marketplaceItems: z.array(z.string()),
 });
 
 const githubLinkSchema = z.object({
@@ -101,6 +103,12 @@ function upsertProject(projects: KortixProject[] | undefined, project: KortixPro
   return next;
 }
 
+function defaultProjectItems(items: MarketplaceItem[] | undefined): MarketplaceItem[] {
+  return (items ?? [])
+    .filter((item) => item.defaultProjectInstall)
+    .sort((a, b) => (a.defaultProjectInstallOrder ?? 999) - (b.defaultProjectInstallOrder ?? 999) || a.name.localeCompare(b.name));
+}
+
 export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCreateModalProps) => {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -109,12 +117,14 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
+  const [marketplaceDefaultsApplied, setMarketplaceDefaultsApplied] = useState(false);
 
   const managedForm = useForm<ManagedProjectFormValues>({
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
       includeGeneralKnowledgeSkills: false,
+      marketplaceItems: [],
     },
   });
 
@@ -132,6 +142,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   function resetAndClose() {
     setMode('managed');
+    setMarketplaceDefaultsApplied(false);
     managedForm.reset();
     githubForm.reset();
     onOpenChange(false);
@@ -188,6 +199,27 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     enabled: open && mode === 'github' && !!accountId,
     staleTime: 0,
   });
+
+  const marketplaceDefaultsQuery = useQuery({
+    queryKey: ['marketplace-default-project-items'],
+    queryFn: () => listMarketplaceItems({ source: 'kortix' }),
+    enabled: open && mode === 'managed',
+    staleTime: 60_000,
+  });
+  const marketplaceItems = useMemo(
+    () => defaultProjectItems(marketplaceDefaultsQuery.data?.items),
+    [marketplaceDefaultsQuery.data?.items],
+  );
+
+  useEffect(() => {
+    if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
+    managedForm.setValue('marketplaceItems', marketplaceItems.map((item) => item.id), {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+    setMarketplaceDefaultsApplied(true);
+  }, [managedForm, marketplaceDefaultsApplied, marketplaceItems, open]);
 
   const githubInstallations = useMemo(
     () => githubInstallationsQuery.data?.installations ?? [],
@@ -256,6 +288,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
       starter_template: values.includeGeneralKnowledgeSkills
         ? 'general-knowledge-worker'
         : 'minimal',
+      marketplace_items: values.marketplaceItems,
     });
   }
 
@@ -377,6 +410,54 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                           </FormControl>
                         </ItemActions>
                       </Item>
+                    )}
+                  />
+
+                  <FormField
+                    control={managedForm.control}
+                    name="marketplaceItems"
+                    render={({ field }) => (
+                      <div className="space-y-2">
+                        <FormLabel>Marketplace items</FormLabel>
+                        {marketplaceDefaultsQuery.isLoading ? (
+                          <div className="text-muted-foreground flex h-12 items-center gap-2 text-sm">
+                            <Loading />
+                            Loading marketplace defaults
+                          </div>
+                        ) : marketplaceItems.length > 0 ? (
+                          <div className="space-y-2">
+                            {marketplaceItems.map((item) => {
+                              const checked = field.value.includes(item.id);
+                              return (
+                                <Item key={item.id} variant="outline" className="items-start">
+                                  <ItemContent>
+                                    <ItemTitle>{item.title}</ItemTitle>
+                                    <ItemDescription>{item.description ?? item.name}</ItemDescription>
+                                  </ItemContent>
+                                  <ItemActions>
+                                    <Switch
+                                      checked={checked}
+                                      onCheckedChange={(next) => {
+                                        field.onChange(
+                                          next
+                                            ? [...new Set([...field.value, item.id])]
+                                            : field.value.filter((value) => value !== item.id),
+                                        );
+                                      }}
+                                      disabled={submitting}
+                                      aria-label={item.title}
+                                    />
+                                  </ItemActions>
+                                </Item>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-muted-foreground text-sm">
+                            No default marketplace items are configured.
+                          </div>
+                        )}
+                      </div>
                     )}
                   />
 

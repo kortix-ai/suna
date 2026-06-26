@@ -27,6 +27,8 @@ export interface MarketplaceItem {
   marketplaceLabel: string;
   owner?: string;
   sourceId?: string;
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
 }
 
 export interface DependencyItem {

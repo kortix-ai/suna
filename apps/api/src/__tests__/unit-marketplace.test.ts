@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 // (which would hit the network) unless a test explicitly opts in.
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 import {
+  DEFAULT_MARKETPLACES,
   assertAllowedSourceAddress,
   getCatalogItemDetail,
   githubLoaderOptions,
@@ -17,6 +18,14 @@ import { compareInstalled } from '@kortix/registry';
 import { buildInstall, resolveItemFiles } from '../marketplace/install-service';
 
 describe('marketplace catalog', () => {
+  test('default external sources are Anthropic only; Hermes stays opt-in', () => {
+    expect(DEFAULT_MARKETPLACES).toEqual([
+      'anthropics/skills',
+      'anthropics/knowledge-work-plugins',
+    ]);
+    expect(DEFAULT_MARKETPLACES).not.toContain('NousResearch/hermes-agent');
+  });
+
   test('lists the starter skill pack; bundles are hidden from browse', async () => {
     const all = await listCatalogItems();
     expect(all.length).toBeGreaterThan(50);
@@ -43,7 +52,19 @@ describe('marketplace catalog', () => {
       expect(item).toBeTruthy();
       expect(item!.marketplaceId).toBe('kortix');
       expect(item!.managedBy).toBeUndefined();
+      expect(item!.defaultProjectInstall).toBe(true);
     }
+    expect(all
+      .filter((i) => i.defaultProjectInstall)
+      .map((i) => i.name)
+      .sort()).toEqual([
+        'agent-browser',
+        'image_search',
+        'kortix-simple-memory',
+        'pty',
+        'scrape_webpage',
+        'web_search',
+      ]);
     expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
   });
 

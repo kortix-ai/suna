@@ -58,6 +58,8 @@ export interface CatalogItem {
   /** First-party runtime skill managed by Kortix, not an ordinary optional install. */
   managedBy?: 'kortix';
   updatePolicy?: 'kortix-managed';
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
   hidden?: boolean;
 }
 
@@ -166,6 +168,11 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     sourceId: e.sourceId,
     managedBy: e.item.meta?.managedBy === 'kortix' ? 'kortix' : undefined,
     updatePolicy: e.item.meta?.updatePolicy === 'kortix-managed' ? 'kortix-managed' : undefined,
+    defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
+    defaultProjectInstallOrder:
+      typeof e.item.meta?.defaultProjectInstallOrder === 'number'
+        ? e.item.meta.defaultProjectInstallOrder
+        : undefined,
     hidden: e.item.meta?.hidden === true,
   };
 }
@@ -343,7 +350,7 @@ function envSources(): string[] {
  */
 export const DEFAULT_MARKETPLACES: string[] = [
   'anthropics/skills', // official Anthropic Agent Skills (the anchor)
-  'NousResearch/hermes-agent', // Hermes, MIT, 174 skills
+  'anthropics/knowledge-work-plugins', // official Anthropic knowledge-work skills
 ];
 
 /** The defaults actually loaded — `KORTIX_DEFAULT_MARKETPLACES` overrides (set it
@@ -820,12 +827,18 @@ export async function listCatalogItemsLive(opts: ItemQuery = {}): Promise<Catalo
 }
 
 export async function getCatalogEntry(id: string): Promise<CatalogEntry | null> {
+  const base = getBaseCatalog();
+  const baseEntry = base.byId.get(id);
+  if (baseEntry) return baseEntry;
   // Install path — wait for the full catalog so an entry is never missed.
   return (await mergedCatalogComplete()).byId.get(id) ?? null;
 }
 
 export async function findCatalogEntryByName(name: string): Promise<CatalogEntry | null> {
   const slug = name.split('/').pop() ?? name;
+  for (const entry of getBaseCatalog().byId.values()) {
+    if (entry.item.name === slug) return entry;
+  }
   return (await mergedCatalogComplete()).byName?.get(slug) ?? null;
 }
 
