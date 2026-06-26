@@ -49,6 +49,7 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
+import { API_INSTANCE, API_STARTED_AT } from './shared/instance';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -333,11 +334,6 @@ const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 // the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
 // Lets the team verify precisely which code is live. 'unknown' for local dev.
 const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
-// When this process booted — confirms a deploy actually rolled fresh pods.
-const STARTED_AT = new Date().toISOString();
-// Which replica answered (pod name in k8s, task/container id in ECS).
-const API_INSTANCE = process.env.HOSTNAME || 'unknown';
-
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
 mountOpenApiDocs(app, API_VERSION);
@@ -377,7 +373,7 @@ const healthHandler = (c: any) =>
     commit: API_COMMIT,
     environment: config.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
-    started_at: STARTED_AT,
+    started_at: API_STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
     // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
     // the container's memory limit, without needing metrics-server/dashboards.
