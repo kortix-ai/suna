@@ -8,7 +8,7 @@ the change onto the cluster. There is no `kubectl apply` / `helm upgrade` in the
 hot path — the git commit *is* the deploy.
 
 - **`main`** = DEV. Every push auto-deploys to dev; direct pushes are allowed.
-- **`staging`** = release candidate. Advanced by **Promote Dev to Staging** or a targeted PR into `staging`; only production-ready code should land here.
+- **`staging`** = release candidate. Advanced by PR into `staging`; only production-ready code should land here.
 - **`prod`** = PROD. Advanced only by **Promote to Production** from `staging` + a reviewed PR.
 - **`VERSION`** (repo root) = one number for the whole platform.
 - **Retag, never rebuild** — prod ships the exact image bytes built and tested on staging.
@@ -64,25 +64,26 @@ curl -fsS https://dev-api-eks.kortix.com/v1/health | jq .version
 
 ---
 
-## 2. Promote DEV to STAGING
+## 2. Stage a release candidate (`main`/branch -> `staging`)
 
-Staging moves only when a dev commit is considered production-ready, or when a
-targeted release-candidate PR is merged directly into `staging`. A green dev
-deploy is useful evidence, but it is not a production gate until the same commit
-is deployed and verified in staging.
+Staging moves only by PR. Open `main` -> `staging` when the whole dev trunk is
+ready to be a release candidate, or open a targeted branch -> `staging` when only
+specific commits should be staged. A green dev deploy is useful evidence, but it
+is not a production gate until the same commit is deployed and verified in
+staging.
 
 ```
-Actions → "Promote Dev to Staging" (promote-staging.yml, workflow_dispatch)
-  pushes the selected dev ref to `staging`
+PR main→staging or targeted branch→staging
+  merge to `staging`
     └─► build-staging.yml builds staging-<sha8> images
     └─► deploy-staging.yml syncs the staging secret bundle, deploys EKS staging,
         wires Cloudflare, deploys staging.kortix.com, and verifies runtime config
     └─► qa-staging.yml runs browser/a11y/migration QA against staging URLs
 ```
 
-Direct PRs into `staging` are allowed for a staging-only release candidate, but
-the same rule applies: the branch is a production candidate, not a second dev
-trunk.
+Deploy-staging may add bot-authored `[skip ci]` GitOps pin commits to `staging`
+after the merge. Those commits record the deployed image tags; they are not a
+human code-promotion path.
 
 Verify staging:
 

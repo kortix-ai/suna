@@ -238,6 +238,14 @@ export async function saveAgentMailInstall(
       );
   }
   await db
+    .delete(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, "email"),
+        eq(chatInstalls.workspaceId, input.inboxId),
+      ),
+    );
+  await db
     .insert(chatInstalls)
     .values({ platform: "email", workspaceId: input.inboxId, projectId })
     .onConflictDoNothing({
@@ -389,6 +397,35 @@ export async function loadAgentMailApiKeyForProject(
   profileSlug?: string | null,
 ): Promise<string | null> {
   return readSecret(projectId, agentMailKeys(profileSlug).apiKey);
+}
+
+export async function loadAgentMailApiKeyForInbox(
+  projectId: string,
+  inboxId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        like(projectSecrets.name, `${AGENTMAIL_INBOX_ID}%`),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
+
+  for (const row of rows) {
+    let value: string | null = null;
+    try {
+      value = decryptProjectSecret(projectId, row.valueEnc);
+    } catch {
+      continue;
+    }
+    if (value !== inboxId) continue;
+    const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
+    return readSecret(projectId, `${AGENTMAIL_API_KEY}${suffix}`);
+  }
+  return null;
 }
 
 export async function loadAgentMailWebhookSecretForProject(

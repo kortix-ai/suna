@@ -230,6 +230,7 @@ const EMAIL: GatewayConnector = {
   connectorId: 'conn-email',
   slug: EMAIL_CHANNEL_CONNECTOR_SLUG,
   provider: 'channel',
+  platform: 'email',
   baseUrl: 'https://api.agentmail.to/v0',
   auth: { type: 'bearer', in: 'header', name: null, prefix: null },
   hasAuth: true,
@@ -417,6 +418,58 @@ describe('handleCall — channel (email)', () => {
     expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_1/messages/msg_1/reply');
     expect(call.method).toBe('POST');
     expect(call.headers.Authorization).toBe('Bearer am_project_token');
+    expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
+  });
+
+  test('email-originated sessions pin profile-specific calls to the active AgentMail inbox', async () => {
+    const staleProfileConnector: GatewayConnector = {
+      ...EMAIL,
+      connectorId: 'conn-email-stale-profile',
+      slug: 'email_old_profile',
+    };
+    const fetchCalls: Array<{
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async (_projectId, slug) =>
+        slug === 'email_old_profile' ? staleProfileConnector : null,
+      loadAction: async (connectorId, relPath) =>
+        connectorId === staleProfileConnector.connectorId && relPath === 'reply_message'
+          ? EMAIL_REPLY
+          : null,
+      resolveCredential: async () => 'am_stale_profile_token',
+      loadEmailSessionContext: async () => ({
+        inboxId: 'inb_active',
+        threadId: 'thr_active',
+        messageId: 'msg_active',
+      }),
+      resolveEmailCredentialForInbox: async (_projectId, inboxId) =>
+        inboxId === 'inb_active' ? 'am_active_inbox_token' : null,
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => {},
+      fetchImpl: async (url, init) => {
+        fetchCalls.push({ url, ...init });
+        return { status: 200, ok: true, text: async () => '{"message_id":"msg-reply"}' };
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      connectorSlug: 'email_old_profile',
+      actionPath: 'reply_message',
+      args: { inbox_id: 'inb_deleted', message_id: 'msg_deleted', text: 'Thanks' },
+    });
+
+    expect(res.status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+    const call = expectDefined(fetchCalls[0]);
+    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_active/messages/msg_active/reply');
+    expect(call.headers.Authorization).toBe('Bearer am_active_inbox_token');
     expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
   });
 });

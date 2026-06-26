@@ -29,7 +29,7 @@ emailWebhookApp.openapi(
     } catch {
       return c.json({ error: 'Invalid JSON' }, 400);
     }
-    if (event?.type !== 'event' || !event.event_type) return c.json({ ok: true });
+    if (!event?.event_type || !event.message?.inbox_id) return c.json({ ok: true });
 
     const projectId = event.message?.inbox_id
       ? await resolveProjectForAgentMailInbox(event.message.inbox_id)

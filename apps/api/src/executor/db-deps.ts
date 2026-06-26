@@ -14,6 +14,7 @@ import {
   executorExecutions,
   executorProjectPolicies,
   executorProjectSettings,
+  projectSessions,
   projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -43,6 +44,7 @@ import { syncProjectConnectors } from './sync';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
 import {
   loadAgentMailApiKeyForProject,
+  loadAgentMailApiKeyForInbox,
   loadAgentMailInstall,
   loadSlackInstall,
   loadSlackTokenForProject,
@@ -148,6 +150,7 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     connectorId: row.connectorId,
     slug: row.slug,
     provider: row.providerType,
+    platform: channelPlatform(row.config),
     baseUrl: baseUrlOf(row),
     auth,
     hasAuth,
@@ -203,6 +206,24 @@ function makeDbGatewayDeps(): GatewayDeps {
       }
       return resolveCredentialValue(connector.connectorId, userId);
     },
+    loadEmailSessionContext: async (projectId, sessionId) => {
+      const [row] = await db
+        .select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)))
+        .limit(1);
+      const email = (row?.metadata as Record<string, any> | undefined)?.email;
+      if (!email || typeof email !== 'object') return null;
+      const inboxId = typeof email.inbox_id === 'string' ? email.inbox_id : null;
+      if (!inboxId) return null;
+      return {
+        inboxId,
+        threadId: typeof email.thread_id === 'string' ? email.thread_id : null,
+        messageId: typeof email.message_id === 'string' ? email.message_id : null,
+      };
+    },
+    resolveEmailCredentialForInbox: async (projectId, inboxId) =>
+      resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,

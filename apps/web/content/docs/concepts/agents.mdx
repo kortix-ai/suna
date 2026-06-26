@@ -1,19 +1,31 @@
 ---
 title: Agents
-description: The agent runtime is OpenCode, configured from the repo's .kortix/opencode directory.
+description: The agent runtime is OpenCode, governed by kortix.toml and implemented through the repo's .kortix/opencode directory.
 ---
 
 The agent in every [session](/docs/concepts/sessions) is
 **[OpenCode](https://opencode.ai/docs/)**. The `kortix-agent` daemon runs it as
 `opencode serve` with its config dir pointed at the project's `.kortix/opencode/`.
 
-Everything about agent behavior lives there, in OpenCode's standard layout (the
-platform never reads it):
+OpenCode-native behavior lives there, in OpenCode's standard layout:
 
 - **Agents** — personas in `agents/`
 - **Skills** — on-demand `SKILL.md` know-how in `skills/`
 - **Commands, tools, plugins**
 - **Models, providers, MCP servers** — in `opencode.jsonc`
+
+`opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Kortix does not duplicate those settings in `kortix.toml`.
+
+Kortix-side launchability and authority live in `kortix.toml` `[[agents]]`.
+Legacy projects with no `[[agents]]` keep OpenCode-native discovery for backward
+compatibility. Projects that add `[[agents]]` opt into declarative, server-side
+agent discovery: chat inputs, trigger pickers, and channel pickers should list
+registered agents from the API, not from a sandbox-local OpenCode query. This
+does not mean every native file under `.kortix/opencode/agents/` must be
+registered; unregistered files can still exist for local experiments or runtime
+internals.
 
 Every project ships a default agent + the kortix-system skill, so it runs with no
 setup. Beyond reading/writing repo files, an agent can use external tools through

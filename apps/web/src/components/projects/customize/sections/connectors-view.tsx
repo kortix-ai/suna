@@ -1378,6 +1378,9 @@ function EmailConnectForm({
       .replace(/_[a-z0-9]{4}$/i, '')
       .replace(/_/g, '-'),
   );
+  const [attachExisting, setAttachExisting] = useState(false);
+  const [existingInboxId, setExistingInboxId] = useState('');
+  const [existingEmail, setExistingEmail] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [customKeyOpen, setCustomKeyOpen] = useState(false);
   const [restricted, setRestricted] = useState(false);
@@ -1396,6 +1399,10 @@ function EmailConnectForm({
       setError(
         'Managed Email is not configured on this deployment. Use a custom AgentMail key to continue.',
       );
+      return;
+    }
+    if (attachExisting && (!existingInboxId.trim() || !existingEmail.trim())) {
+      setError('Existing AgentMail inbox requires both inbox ID and email address.');
       return;
     }
     const sender_policy: EmailSenderPolicy = {
@@ -1418,7 +1425,9 @@ function EmailConnectForm({
         connector_slug: connectorSlug,
         api_key: useCustomKey ? apiKey.trim() : undefined,
         display_name: displayName.trim() || undefined,
-        username: username.trim() || undefined,
+        username: attachExisting ? undefined : username.trim() || undefined,
+        inbox_id: attachExisting ? existingInboxId.trim() : undefined,
+        email: attachExisting ? existingEmail.trim() : undefined,
         sender_policy,
       },
       {
@@ -1450,22 +1459,72 @@ function EmailConnectForm({
             placeholder="Kortix Agent"
           />
         </Field>
-        <Field label="Address prefix">
-          <Input
-            id="email-channel-username"
-            name="email-channel-username"
-            aria-label="Email address prefix"
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
-            placeholder="support"
-            autoComplete="off"
-            spellCheck={false}
+        {attachExisting ? (
+          <Field label="Existing inbox email">
+            <Input
+              id="email-channel-existing-email"
+              name="email-channel-existing-email"
+              aria-label="Existing AgentMail email"
+              value={existingEmail}
+              onChange={(e) => setExistingEmail(e.target.value.trim().toLowerCase())}
+              placeholder="support@agentmail.to"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </Field>
+        ) : (
+          <Field label="Address prefix">
+            <Input
+              id="email-channel-username"
+              name="email-channel-username"
+              aria-label="Email address prefix"
+              value={username}
+              onChange={(e) =>
+                setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))
+              }
+              placeholder="support"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="text-muted-foreground text-xs">
+              AgentMail will create this prefix when available, for example {username || 'support'}
+              @agentmail.to.
+            </p>
+          </Field>
+        )}
+      </div>
+      <div className="border-border/60 border-t pt-4">
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="email-channel-existing-inbox"
+            checked={attachExisting}
+            onCheckedChange={(checked) => setAttachExisting(Boolean(checked))}
+            className="mt-0.5"
           />
-          <p className="text-muted-foreground text-xs">
-            AgentMail will create this prefix when available, for example {username || 'support'}
-            @agentmail.
-          </p>
-        </Field>
+          <div className="min-w-0 flex-1 space-y-3">
+            <div>
+              <Label htmlFor="email-channel-existing-inbox">Attach existing AgentMail inbox</Label>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Use this when the mailbox already exists or the AgentMail account has reached its
+                inbox limit. Kortix will still create the webhook for this profile.
+              </p>
+            </div>
+            {attachExisting ? (
+              <Field label="Existing inbox ID">
+                <Input
+                  id="email-channel-existing-inbox-id"
+                  name="email-channel-existing-inbox-id"
+                  aria-label="Existing AgentMail inbox ID"
+                  value={existingInboxId}
+                  onChange={(e) => setExistingInboxId(e.target.value.trim())}
+                  placeholder="support@agentmail.to"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </Field>
+            ) : null}
+          </div>
+        </div>
       </div>
       <div className="space-y-3">
         <Button
