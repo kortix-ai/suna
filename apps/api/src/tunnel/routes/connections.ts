@@ -23,6 +23,15 @@ import { reconcileComputerConnectors } from '../../executor/sync';
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
 
+function serializeConnection(conn: typeof tunnelConnections.$inferSelect) {
+  const isLive = tunnelRelay.isConnected(conn.tunnelId);
+  return {
+    ...conn,
+    status: isLive ? 'online' : 'offline',
+    isLive,
+  };
+}
+
 export function createConnectionsRouter() {
   const router = makeOpenApiApp<AppEnv>();
 
@@ -49,14 +58,7 @@ export function createConnectionsRouter() {
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
 
-      const enriched = connections.map((conn) => {
-        const isLive = tunnelRelay.isConnected(conn.tunnelId);
-        return {
-          ...conn,
-          status: isLive ? 'online' : conn.status,
-          isLive,
-        };
-      });
+      const enriched = connections.map(serializeConnection);
 
       return c.json(enriched);
     },
@@ -150,10 +152,7 @@ export function createConnectionsRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      return c.json({
-        ...connection,
-        isLive: tunnelRelay.isConnected(connection.tunnelId),
-      });
+      return c.json(serializeConnection(connection));
     },
   );
 

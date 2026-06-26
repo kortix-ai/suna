@@ -124,15 +124,15 @@ function startTunnelService(): void {
 
   tunnelRelay.on('agent:connect', async ({ tunnelId, metadata }) => {
     const accountId = metadata?.accountId as string | undefined;
-    if (accountId) {
-      notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
-    }
 
     try {
-      db.update(tunnelConnections)
+      await db.update(tunnelConnections)
         .set({ status: 'online', lastHeartbeatAt: new Date(), updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
-        .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+
+      if (accountId) {
+        notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
+      }
 
       // Sync active permissions to the agent
       const activePerms = await db
@@ -163,19 +163,17 @@ function startTunnelService(): void {
     }
   });
 
-  tunnelRelay.on('agent:disconnect', async ({ tunnelId }) => {
-    const metadata = tunnelRelay.getAgentMetadata(tunnelId);
+  tunnelRelay.on('agent:disconnect', async ({ tunnelId, metadata }) => {
     const accountId = metadata?.accountId as string | undefined;
 
-    if (accountId) {
-      notifyTunnelEvent(accountId, 'tunnel_disconnected', { tunnelId });
-    }
-
     try {
-      db.update(tunnelConnections)
+      await db.update(tunnelConnections)
         .set({ status: 'offline', updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
-        .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+
+      if (accountId) {
+        notifyTunnelEvent(accountId, 'tunnel_disconnected', { tunnelId });
+      }
     } catch {}
   });
 

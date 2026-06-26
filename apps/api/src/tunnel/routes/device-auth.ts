@@ -26,6 +26,23 @@ import { reconcileComputerConnectors } from '../../executor/sync';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 
+const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
+  filesystem: [
+    { scope: 'files:read', operations: ['read', 'list'] },
+    { scope: 'files:write', operations: ['write'] },
+    { scope: 'files:delete', operations: ['delete'] },
+  ],
+  shell: [
+    { scope: 'shell:exec' },
+  ],
+  desktop: [
+    { scope: 'desktop:computer_use', features: ['computer_use'] },
+    { scope: 'desktop:apps', features: ['apps', 'windows'] },
+    { scope: 'desktop:observe', features: ['screenshot', 'windows', 'accessibility'] },
+    { scope: 'desktop:input', features: ['mouse', 'keyboard', 'accessibility'] },
+  ],
+};
+
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
 
@@ -308,17 +325,20 @@ export function createDeviceAuthRouter() {
         })
         .returning();
 
-      // Grant permissions for each selected capability
+      // Grant the same granular scopes shown in the Computers UI so approval
+      // state and the permission toggles start in sync.
       if (capabilities.length > 0) {
-        await db.insert(tunnelPermissions).values(
-          capabilities.map((cap: string) => ({
+        const grants = capabilities.flatMap((cap: string) => {
+          const scopes = DEFAULT_PERMISSION_SCOPES[cap] ?? [{}];
+          return scopes.map((scope) => ({
             tunnelId: connection.tunnelId,
             accountId,
             capability: cap as any,
-            scope: {},
+            scope,
             status: 'active' as const,
-          })),
-        );
+          }));
+        });
+        await db.insert(tunnelPermissions).values(grants);
       }
 
       // Update device auth row with approval + token

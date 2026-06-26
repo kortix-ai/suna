@@ -68,7 +68,16 @@ export class TunnelRelay extends EventEmitter {
     console.log(`[tunnel-relay] Agent registered: ${tunnelId} (total: ${this.agents.size})`);
   }
 
-  unregisterAgent(tunnelId: string): void {
+  unregisterAgent(tunnelId: string, ws?: WebSocket): boolean {
+    const existing = this.agents.get(tunnelId);
+    if (!existing) {
+      return false;
+    }
+    if (ws && existing && existing.ws !== ws) {
+      return false;
+    }
+
+    const metadata = existing?.metadata;
     this.agents.delete(tunnelId);
 
     for (const [requestId, pending] of this.pendingRPCs) {
@@ -82,8 +91,9 @@ export class TunnelRelay extends EventEmitter {
       }
     }
 
-    this.emitEvent('agent:disconnect', { tunnelId });
+    this.emitEvent('agent:disconnect', { tunnelId, metadata });
     console.log(`[tunnel-relay] Agent unregistered: ${tunnelId} (total: ${this.agents.size})`);
+    return true;
   }
 
   isConnected(tunnelId: string): boolean {
