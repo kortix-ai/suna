@@ -32,41 +32,47 @@ async function loadModelsDevPricing(): Promise<Map<string, ModelCostRates>> {
     });
     if (!res.ok) return new Map();
     const data = (await res.json()) as Record<string, ModelsDevProvider>;
-    const map = new Map<string, ModelCostRates>();
-
-    for (const [providerId, provider] of Object.entries(data)) {
-      if (!provider?.models) continue;
-      for (const [modelKey, model] of Object.entries(provider.models)) {
-        const input = model.cost?.input;
-        const output = model.cost?.output;
-        if (typeof input !== 'number' || typeof output !== 'number') continue;
-        if (input <= 0 && output <= 0) continue;
-
-        const entry: ModelCostRates = {
-          inputPer1M: input,
-          outputPer1M: output,
-          cacheReadPer1M: model.cost?.cache_read,
-        };
-        const modelId = model.id ?? modelKey;
-        const keys = new Set([
-          modelId,
-          normModelId(modelId),
-          `${providerId}/${modelId}`,
-          normModelId(`${providerId}/${modelId}`),
-          `${providerId}/${modelKey}`,
-          normModelId(`${providerId}/${modelKey}`),
-        ]);
-        for (const key of keys) {
-          if (key && !map.has(key)) map.set(key, entry);
-        }
-      }
-    }
-    return map;
+    return buildModelsDevPricingMap(data);
   } catch {
     return new Map();
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function buildModelsDevPricingMap(
+  data: Record<string, ModelsDevProvider>,
+): Map<string, ModelCostRates> {
+  const map = new Map<string, ModelCostRates>();
+
+  for (const [providerId, provider] of Object.entries(data)) {
+    if (!provider?.models) continue;
+    for (const [modelKey, model] of Object.entries(provider.models)) {
+      const input = model.cost?.input;
+      const output = model.cost?.output;
+      if (typeof input !== 'number' || typeof output !== 'number') continue;
+      if (input <= 0 && output <= 0) continue;
+
+      const entry: ModelCostRates = {
+        inputPer1M: input,
+        outputPer1M: output,
+        cacheReadPer1M: model.cost?.cache_read,
+      };
+      const modelId = model.id ?? modelKey;
+      const keys = new Set([
+        modelId,
+        normModelId(modelId),
+        `${providerId}/${modelId}`,
+        normModelId(`${providerId}/${modelId}`),
+        `${providerId}/${modelKey}`,
+        normModelId(`${providerId}/${modelKey}`),
+      ]);
+      for (const key of keys) {
+        if (key && !map.has(key)) map.set(key, entry);
+      }
+    }
+  }
+  return map;
 }
 
 export function prefetchModelPricing(): void {
@@ -77,24 +83,30 @@ export function prefetchModelPricing(): void {
   });
 }
 
-function lookupCachedPricing(providerID: string, modelID: string): ModelCostRates | null {
-  if (!pricingCache) return null;
+function lookupCachedPricing(
+  providerID: string,
+  modelID: string,
+  cache: ReadonlyMap<string, ModelCostRates> | null | undefined,
+): ModelCostRates | null {
+  if (!cache) return null;
   const candidates = [
     `${providerID}/${modelID}`,
     modelID,
     modelID.includes('/') ? modelID : `${providerID}/${modelID}`,
   ];
   for (const candidate of candidates) {
-    const hit = pricingCache.get(candidate) ?? pricingCache.get(normModelId(candidate));
+    const hit = cache.get(candidate) ?? cache.get(normModelId(candidate));
     if (hit) return hit;
   }
   const tail = modelID.split('/').pop() ?? modelID;
-  return pricingCache.get(tail) ?? pricingCache.get(normModelId(tail)) ?? null;
+  return cache.get(tail) ?? cache.get(normModelId(tail)) ?? null;
 }
 
 export function createModelPricingLookup(
   providers: ProviderListResponse | undefined,
+  cachedPricing?: ReadonlyMap<string, ModelCostRates>,
 ): ModelPricingLookup {
+  const cache = cachedPricing ?? pricingCache;
   return (providerID: string, modelID: string) => {
     const provider = providers?.all?.find((p) => p.id === providerID);
     const model = provider?.models?.[modelID] as
@@ -111,12 +123,12 @@ export function createModelPricingLookup(
     if (providerID === 'kortix') {
       const managed = getManagedModel(modelID);
       if (managed?.pricingRef) {
-        const fromRef = lookupCachedPricing('kortix', managed.pricingRef);
+        const fromRef = lookupCachedPricing('kortix', managed.pricingRef, cache);
         if (fromRef) return fromRef;
       }
     }
 
-    return lookupCachedPricing(providerID, modelID);
+    return lookupCachedPricing(providerID, modelID, cache);
   };
 }
 
