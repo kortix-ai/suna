@@ -4,6 +4,7 @@ import { describe, expect, it } from 'bun:test'
 
 import type { Config } from '../config'
 import type { Opencode } from '../opencode'
+import { createOpencodeSupervisor } from '../opencode'
 import { createProjectEnvStore } from '../project-env'
 import { buildOpencodeApp } from '../proxy'
 
@@ -117,5 +118,52 @@ describe('project env sync curl e2e', () => {
     } finally {
       server.stop(true)
     }
+  })
+})
+
+describe('opencode reloadConfig — inflight PATCH /config wire format', () => {
+  it('PATCHes /config?directory=<projectTarget> with the delta and returns true on 2xx', async () => {
+    const received: Array<{ method: string; path: string; directory: string | null; body: unknown }> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        received.push({
+          method: req.method,
+          path: url.pathname,
+          directory: url.searchParams.get('directory'),
+          body: await req.json().catch(() => null),
+        })
+        return new Response(JSON.stringify({}), { status: 200 })
+      },
+    })
+    try {
+      const cfg: Config = { ...baseConfig(), opencodeInternalPort: Number(server.port), projectTarget: '/workspace/app' }
+      const opencode = createOpencodeSupervisor(cfg, '/ephemeral/opencode')
+      const delta = { provider: { anthropic: { options: { apiKey: 'sk-ant' } } }, model: 'anthropic/claude-sonnet-4-6' }
+      const ok = await opencode.reloadConfig(delta)
+      expect(ok).toBe(true)
+      expect(received[0]).toMatchObject({ method: 'PATCH', path: '/config', directory: '/workspace/app' })
+      expect(received[0]?.body).toEqual(delta)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('returns false on a non-2xx response (caller falls back to restart)', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('nope', { status: 500 }) })
+    try {
+      const cfg: Config = { ...baseConfig(), opencodeInternalPort: Number(server.port) }
+      const opencode = createOpencodeSupervisor(cfg, '/ephemeral/opencode')
+      expect(await opencode.reloadConfig({ model: 'x' })).toBe(false)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('returns false for an empty delta without touching the network', async () => {
+    const cfg: Config = { ...baseConfig(), opencodeInternalPort: 1 }
+    const opencode = createOpencodeSupervisor(cfg, '/ephemeral/opencode')
+    expect(await opencode.reloadConfig({})).toBe(false)
   })
 })

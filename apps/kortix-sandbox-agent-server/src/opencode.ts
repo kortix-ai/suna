@@ -69,7 +69,12 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
   const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
-  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession) return undefined
+  // Optional default-model override. The env-sync API (POST /kortix/env) sets
+  // KORTIX_DEFAULT_MODEL on a default-model change and respawns opencode; we bake
+  // it as opencode's config `model` default so a changed default takes effect
+  // with no manual restart. Present on its own → still produce a config.
+  const defaultModelOverride = (env.KORTIX_DEFAULT_MODEL ?? '').trim() || undefined
+  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession && !defaultModelOverride) return undefined
 
   let base: Record<string, unknown> = {}
   if (env.OPENCODE_CONFIG_CONTENT) {
@@ -163,6 +168,14 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
         ? (out.permission as Record<string, unknown>)
         : {}
     out.permission = { ...permission, question: 'deny' }
+  }
+
+  // (4) Default-model override. A default-model change pushed via the env-sync
+  // API (POST /kortix/env → KORTIX_DEFAULT_MODEL) wins over the managed default
+  // and any baked `model`; small_model is left on the cheap default (it backs
+  // background ops like title generation). Applied last so it always overrides.
+  if (defaultModelOverride) {
+    out.model = defaultModelOverride
   }
 
   return JSON.stringify(out)
@@ -516,6 +529,15 @@ export type Opencode = {
   start(): Promise<void>
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
+  /**
+   * Apply a config delta to the RUNNING opencode instance via its native
+   * `PATCH /config` (mergeDeep onto the live config + mark-for-disposal → the
+   * next request rebuilds provider state). Used to light up a newly-added BYOK
+   * provider key or change the default model WITHOUT a process restart (no
+   * dropped session). Returns false on any failure so the caller can fall back
+   * to restart(). A `{}` delta is a no-op (returns false).
+   */
+  reloadConfig(delta: Record<string, unknown>): Promise<boolean>
   reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore): void
   getPid(): number | null
   getInternalUrl(): string
@@ -736,6 +758,41 @@ export function createOpencodeSupervisor(
       await this.stop('SIGTERM')
       restartDelayMs = 500
       await this.start()
+    },
+
+    async reloadConfig(delta: Record<string, unknown>): Promise<boolean> {
+      if (!delta || typeof delta !== 'object' || Object.keys(delta).length === 0) return false
+      // opencode is per-directory; target this sandbox's project instance the same
+      // way the readiness probe does. PATCH /config mergeDeeps the delta onto the
+      // live config and marks the instance for disposal → it rebuilds provider
+      // state (re-reading the merged config, so a config-delivered provider apiKey
+      // lights up that provider + its full models.dev list) on the next request.
+      const base = `http://127.0.0.1:${currentCfg.opencodeInternalPort}`
+      const url = `${base}/config?directory=${encodeURIComponent(currentCfg.projectTarget)}`
+      try {
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(delta),
+          signal: AbortSignal.timeout(5_000),
+        })
+        if (!res.ok) {
+          logger.warn('[opencode] PATCH /config failed; caller falls back to restart', {
+            status: res.status,
+            keys: Object.keys(delta),
+          })
+          return false
+        }
+        logger.info('[opencode] reloaded config inflight via PATCH /config (no restart)', {
+          keys: Object.keys(delta),
+        })
+        return true
+      } catch (err) {
+        logger.warn('[opencode] PATCH /config error; caller falls back to restart', {
+          err: (err as Error).message,
+        })
+        return false
+      }
     },
 
     reconfigure(nextCfg: Config, nextOpencodeConfigDir: string, nextProjectEnv?: ProjectEnvStore) {

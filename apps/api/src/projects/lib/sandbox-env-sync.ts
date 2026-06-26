@@ -77,6 +77,13 @@ async function postEnvToDaemon(args: {
   refreshModels?: boolean;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
+  /** Default-model override → opencode's config `model` default. A change here is
+   *  model-affecting: the daemon respawns opencode so the new default takes
+   *  effect with no manual restart. */
+  defaultModel?: string;
+  /** Scope the daemon reload to a session (informational; the daemon reload is
+   *  instance-wide). Threaded when the push originates from a session context. */
+  sessionId?: string;
 }): Promise<void> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -95,6 +102,8 @@ async function postEnvToDaemon(args: {
     body: JSON.stringify({
       ...args.snapshot,
       refreshModels: args.refreshModels ?? false,
+      ...(args.defaultModel !== undefined ? { defaultModel: args.defaultModel } : {}),
+      ...(args.sessionId ? { sessionId: args.sessionId } : {}),
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -128,6 +137,7 @@ export async function syncSandboxEnvForPrompt(args: {
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
+    sessionId: args.sessionId,
     llmGatewayEnabled,
     llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
   });
@@ -159,7 +169,14 @@ export async function propagateProjectSecretsToActiveSandboxes(
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
         const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
-        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        await postEnvToDaemon({
+          previewUrl: url,
+          previewToken: token,
+          serviceKey,
+          snapshot,
+          refreshModels: opts?.refreshModels,
+          sessionId: row.sessionId ?? undefined,
+        });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,

@@ -52,14 +52,20 @@ function baseConfig(over: Partial<Config> = {}): Config {
 
 function fakeOpencode(
   state: 'ok' | 'starting' | 'down' = 'starting',
-  hooks: { restart?: () => void } = {},
+  hooks: {
+    restart?: () => void
+    reloadConfig?: (delta: Record<string, unknown>) => boolean
+  } = {},
 ): Opencode {
-  // Loose cast — buildOpencodeApp only touches these three methods.
+  // Loose cast — buildOpencodeApp only touches these methods. reloadConfig
+  // defaults to inflight-success so tests that don't exercise it stay simple.
   return {
     getState: () => state,
     getPid: () => null,
     getInternalUrl: () => 'http://127.0.0.1:1', // unreachable on purpose
     restart: async () => hooks.restart?.(),
+    reloadConfig: async (delta: Record<string, unknown>) =>
+      hooks.reloadConfig ? hooks.reloadConfig(delta) : true,
   } as unknown as Opencode
 }
 
@@ -691,7 +697,7 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
+  it('applies llm gateway runtime env on toggle and never withholds BYOK provider keys', async () => {
     const saved = {
       key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
@@ -713,7 +719,10 @@ describe('daemon proxy auth gate', () => {
     )
 
     try {
-      // GATEWAY on: keys withheld from opencode via the injected deny-list.
+      // GATEWAY on: the managed kortix provider's runtime env is applied. BYOK
+      // provider keys are NEVER withheld (the dead deny-list strip is gone), so
+      // KORTIX_OPENCODE_DENY_ENV must remain unset even if a stale llmGatewayDenyEnv
+      // is sent — the daemon ignores it.
       const on = await app.request('/kortix/env', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -729,9 +738,10 @@ describe('daemon proxy auth gate', () => {
       })
       expect(on.status).toBe(200)
       expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+      expect(process.env.KORTIX_OPENCODE_DENY_ENV).toBeUndefined()
 
-      // DIRECT off: deny-list cleared so opencode sees native BYOK keys again.
+      // DIRECT off: the managed provider runtime env is cleared; deny-list stays unset.
       const off = await app.request('/kortix/env', {
         method: 'POST',
         headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
@@ -758,6 +768,150 @@ describe('daemon proxy auth gate', () => {
         else process.env[k] = v
       }
     }
+  })
+
+  it('reloads opencode config inflight (PATCH /config) on a default-model change; restart only to clear', async () => {
+    let restartCalls = 0
+    const reloadDeltas: Array<Record<string, unknown>> = []
+    const savedDefaultModel = process.env.KORTIX_DEFAULT_MODEL
+    delete process.env.KORTIX_DEFAULT_MODEL
+
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', {
+        restart: () => { restartCalls += 1 },
+        reloadConfig: (delta) => { reloadDeltas.push(delta); return true },
+      }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    try {
+      // Default-model change → inflight PATCH /config with { model } and NO restart.
+      const change = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-model-1',
+          env: {},
+          names: [],
+          defaultModel: 'anthropic/claude-sonnet-4-6',
+          sessionId: 'sess-1',
+        }),
+      })
+      expect(change.status).toBe(200)
+      expect(await change.json()).toMatchObject({ ok: true, default_model_changed: true, reload: 'config' })
+      expect(process.env.KORTIX_DEFAULT_MODEL as string | undefined).toBe('anthropic/claude-sonnet-4-6')
+      expect(reloadDeltas).toEqual([{ model: 'anthropic/claude-sonnet-4-6' }])
+      expect(restartCalls).toBe(0)
+
+      // Replaying the same default model → no change, no reload (idempotent).
+      const replay = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-model-2',
+          env: {},
+          names: [],
+          defaultModel: 'anthropic/claude-sonnet-4-6',
+        }),
+      })
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({ ok: true, default_model_changed: false, reload: 'none' })
+      expect(reloadDeltas.length).toBe(1)
+      expect(restartCalls).toBe(0)
+
+      // Clearing the default model can't be expressed as a mergeDeep PATCH → restart.
+      const clear = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-model-3',
+          env: {},
+          names: [],
+          defaultModel: null,
+        }),
+      })
+      expect(clear.status).toBe(200)
+      expect(await clear.json()).toMatchObject({ ok: true, default_model_changed: true, reload: 'restart' })
+      expect(process.env.KORTIX_DEFAULT_MODEL).toBeUndefined()
+      expect(reloadDeltas.length).toBe(1)
+      expect(restartCalls).toBe(1)
+    } finally {
+      if (savedDefaultModel === undefined) delete process.env.KORTIX_DEFAULT_MODEL
+      else process.env.KORTIX_DEFAULT_MODEL = savedDefaultModel
+    }
+  })
+
+  it('reloads opencode config inflight on a BYOK provider-key add; restarts as fallback / on key removal', async () => {
+    let restartCalls = 0
+    let reloadCalls = 0
+    const reloadDeltas: Array<Record<string, unknown>> = []
+    let reloadResult = true
+
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', {
+        restart: () => { restartCalls += 1 },
+        reloadConfig: (delta) => { reloadCalls += 1; reloadDeltas.push(delta); return reloadResult },
+      }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    // Adding a provider key → inflight PATCH /config { provider.anthropic.options.apiKey }.
+    const add = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        revision: 'rev-key-1',
+        env: { ANTHROPIC_API_KEY: 'sk-ant-123' },
+        names: ['ANTHROPIC_API_KEY'],
+        refreshModels: true,
+      }),
+    })
+    expect(add.status).toBe(200)
+    expect(await add.json()).toMatchObject({ ok: true, reload: 'config' })
+    expect(reloadDeltas).toEqual([{ provider: { anthropic: { options: { apiKey: 'sk-ant-123' } } } }])
+    expect(restartCalls).toBe(0)
+
+    // PATCH /config fails (opencode unreachable) → fall back to restart.
+    reloadResult = false
+    const fallback = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        revision: 'rev-key-2',
+        env: { ANTHROPIC_API_KEY: 'sk-ant-456' },
+        names: ['ANTHROPIC_API_KEY'],
+        refreshModels: true,
+      }),
+    })
+    expect(fallback.status).toBe(200)
+    expect(await fallback.json()).toMatchObject({ ok: true, reload: 'restart' })
+    expect(reloadCalls).toBe(2)
+    expect(restartCalls).toBe(1)
+
+    // Removing the key can't be expressed as a mergeDeep PATCH → restart, no PATCH.
+    reloadResult = true
+    const remove = await app.request('/kortix/env', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        revision: 'rev-key-3',
+        env: {},
+        names: [],
+        refreshModels: true,
+      }),
+    })
+    expect(remove.status).toBe(200)
+    expect(await remove.json()).toMatchObject({ ok: true, reload: 'restart' })
+    expect(reloadCalls).toBe(2) // unchanged — no PATCH attempted for a removal
+    expect(restartCalls).toBe(2)
   })
 
   it('does not restart opencode when env sync matches the boot revision and values', async () => {

@@ -12,11 +12,50 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
   'KORTIX_YOLO_API_KEY',
   'KORTIX_YOLO_URL',
-  // Gateway-only: the provider-key names opencode must never see. Flipped with the
-  // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
-  // a toggle to GATEWAY restores the strip on the next opencode restart.
-  'KORTIX_OPENCODE_DENY_ENV',
 ])
+
+// opencode's config-default model. A change is model-affecting: the respawned
+// opencode bakes it as its config `model`/`small_model` default (see
+// buildOpencodeConfigContent in opencode.ts), so changing it triggers a reload.
+const OPENCODE_DEFAULT_MODEL_ENV = 'KORTIX_DEFAULT_MODEL'
+
+// BYOK provider-key env name → opencode (models.dev) provider id. A provider
+// apiKey delivered via config (`provider.<id>.options.apiKey`) is mergeDeep'd
+// onto the models.dev catalog, lighting up that provider + its full model list —
+// so we can apply an ADDED/CHANGED key to the RUNNING opencode via PATCH /config
+// with no restart. Google's one provider has three accepted key names (the API
+// aliases the value across all three), all mapping to `google`.
+const PROVIDER_KEY_ENV_TO_ID: Record<string, string> = {
+  ANTHROPIC_API_KEY: 'anthropic',
+  OPENAI_API_KEY: 'openai',
+  OPENROUTER_API_KEY: 'openrouter',
+  GEMINI_API_KEY: 'google',
+  GOOGLE_GENERATIVE_AI_API_KEY: 'google',
+  GOOGLE_API_KEY: 'google',
+  GROQ_API_KEY: 'groq',
+  XAI_API_KEY: 'xai',
+  DEEPSEEK_API_KEY: 'deepseek',
+}
+
+// Subscription auth blobs (materialized into opencode's auth.json at spawn, not
+// expressible as a config provider apiKey). A change to one needs a respawn.
+const AUTH_BLOB_ENV_NAMES = ['CODEX_AUTH_JSON', 'OPENCODE_AUTH_JSON'] as const
+
+// Build the `provider.<id>.options.apiKey` config delta for every known BYOK key
+// PRESENT (non-empty) in the env snapshot. PATCH mergeDeep is additive, so this
+// applies an added/changed key inflight; the managed `kortix` provider block is
+// omitted (left intact by the merge). A removed key can't be expressed here (see
+// the restart fallback in the handler).
+function buildProviderApiKeyDelta(env: Record<string, string>): Record<string, unknown> {
+  const providers: Record<string, { options: { apiKey: string } }> = {}
+  for (const [name, id] of Object.entries(PROVIDER_KEY_ENV_TO_ID)) {
+    const value = env[name]
+    if (typeof value === 'string' && value.length > 0) {
+      providers[id] = { options: { apiKey: value } }
+    }
+  }
+  return providers
+}
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
@@ -69,7 +108,7 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknown): { changed: boolean; names: string[] } {
+function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
@@ -78,8 +117,6 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
       KORTIX_LLM_BASE_URL: null,
       KORTIX_YOLO_API_KEY: null,
       KORTIX_YOLO_URL: null,
-      // DIRECT/BYOK: stop withholding native provider keys from opencode.
-      KORTIX_OPENCODE_DENY_ENV: null,
     })
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
@@ -94,9 +131,28 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknow
     KORTIX_LLM_BASE_URL: baseUrl,
     KORTIX_YOLO_API_KEY: token,
     KORTIX_YOLO_URL: baseUrl,
-    // GATEWAY: restore the strip (names supplied by the API) on the next restart.
-    KORTIX_OPENCODE_DENY_ENV: typeof denyEnv === 'string' ? denyEnv : '',
   })
+}
+
+// Apply an optional default-model override onto the daemon's own env so the next
+// opencode (re)spawn bakes it as opencode's config `model`/`small_model` default.
+// `null`/empty clears the override (opencode falls back to its baked default).
+function applyDefaultModel(input: unknown): { changed: boolean } {
+  if (input === undefined) return { changed: false }
+  if (input === null || (typeof input === 'string' && input.trim() === '')) {
+    if (process.env[OPENCODE_DEFAULT_MODEL_ENV] !== undefined) {
+      delete process.env[OPENCODE_DEFAULT_MODEL_ENV]
+      return { changed: true }
+    }
+    return { changed: false }
+  }
+  if (typeof input !== 'string') throw new Error('defaultModel must be a string')
+  const next = input.trim()
+  if (process.env[OPENCODE_DEFAULT_MODEL_ENV] !== next) {
+    process.env[OPENCODE_DEFAULT_MODEL_ENV] = next
+    return { changed: true }
+  }
+  return { changed: false }
 }
 
 export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: ProjectEnvStore): Hono {
@@ -132,7 +188,8 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           opencodeEnv?: unknown
           llmGatewayEnabled?: unknown
           llmGatewayBaseUrl?: unknown
-          llmGatewayDenyEnv?: unknown
+          defaultModel?: unknown
+          sessionId?: unknown
         } | null
 
         if (!body || typeof body.revision !== 'string') {
@@ -142,15 +199,19 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           return c.json({ error: 'env object is required' }, 400)
         }
 
+        const before = projectEnv.snapshot()
         const result = projectEnv.apply({
           revision: body.revision,
           env: body.env as Record<string, unknown>,
           names: body.names,
         })
+        const after = projectEnv.snapshot()
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
+        const defaultModel = applyDefaultModel(body.defaultModel)
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined
 
         if (result.changed) {
           logger.info('[env] project env changed; refreshing live agent env file', {
@@ -159,13 +220,65 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           })
           writeAgentEnvFile(projectEnv)
         }
-        if (body.refreshModels === true && (result.changed || opencodeEnvChanged)) {
-          logger.info('[env] model-affecting env changed; restarting opencode', {
+        // Model-affecting change → make opencode pick up the new provider key(s)
+        // / default model. PREFER opencode's native inflight reload: PATCH /config
+        // mergeDeeps a config delta onto the RUNNING instance and rebuilds its
+        // provider state on the next request — a config-delivered provider apiKey
+        // lights up that provider + its full model list with NO process restart
+        // and no dropped session. opencode's env is frozen at spawn, so a key
+        // delivered ONLY via env stays invisible to the running process; routing
+        // the change through config is what makes it inflight-reloadable. The
+        // spawn-time env delivery (P2) is unchanged and still seeds cold boots.
+        //
+        // FALL BACK to a full restart() when the change can't be expressed as a
+        // mergeDeep PATCH: a managed-gateway runtime-env change (the `kortix`
+        // provider block + baked catalog rebuild at spawn), a REMOVED provider key
+        // or CLEARED default model (mergeDeep can't unset), a subscription auth
+        // blob change (auth.json is materialized at spawn), an empty delta, or a
+        // failed/unreachable PATCH. The user accepts the under-the-hood restart.
+        let reload: 'none' | 'config' | 'restart' = 'none'
+        const modelAffectingChanged =
+          (body.refreshModels === true && (result.changed || opencodeEnvChanged)) ||
+          defaultModel.changed
+        if (modelAffectingChanged) {
+          const removedProviderKey = Object.keys(PROVIDER_KEY_ENV_TO_ID).some(
+            (name) => !!before.env[name] && !after.env[name],
+          )
+          const authBlobChanged = AUTH_BLOB_ENV_NAMES.some(
+            (name) => before.env[name] !== after.env[name],
+          )
+          const defaultModelCleared =
+            defaultModel.changed && process.env[OPENCODE_DEFAULT_MODEL_ENV] === undefined
+
+          const delta: Record<string, unknown> = {}
+          const providers = buildProviderApiKeyDelta(after.env)
+          if (Object.keys(providers).length > 0) delta.provider = providers
+          if (defaultModel.changed && process.env[OPENCODE_DEFAULT_MODEL_ENV]) {
+            delta.model = process.env[OPENCODE_DEFAULT_MODEL_ENV]
+          }
+
+          const mustRestart =
+            opencodeEnvChanged ||
+            removedProviderKey ||
+            authBlobChanged ||
+            defaultModelCleared ||
+            Object.keys(delta).length === 0
+
+          if (!mustRestart && (await opencode.reloadConfig(delta))) {
+            reload = 'config'
+          } else {
+            await opencode.restart()
+            reload = 'restart'
+          }
+          logger.info('[env] model-affecting env changed', {
+            reload,
             projectRevision: result.revision,
             projectEnvChanged: result.changed,
             opencodeEnvNames,
+            providerIds: Object.keys(buildProviderApiKeyDelta(after.env)),
+            defaultModelChanged: defaultModel.changed,
+            sessionId,
           })
-          await opencode.restart()
         }
 
         return c.json({
@@ -175,6 +288,8 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           names: result.names,
           opencode_env_changed: opencodeEnvChanged,
           opencode_env_names: opencodeEnvNames,
+          default_model_changed: defaultModel.changed,
+          reload,
           opencode: opencode.getState(),
           opencode_pid: opencode.getPid(),
         })
