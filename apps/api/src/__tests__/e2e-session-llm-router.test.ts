@@ -47,6 +47,9 @@ mock.module('../router/services/billing', () => ({
 mock.module('../shared/usage-events', () => ({
   recordUsageEvent: async (input: Record<string, unknown>) => {
     usageEvents.push(input);
+    // Idempotent insert contract: { eventId, inserted }. Default inserted:true so
+    // the caller proceeds to debit (replay/dedup is covered by the DB unique index).
+    return { eventId: 'evt_test', inserted: true };
   },
 }));
 
@@ -184,7 +187,7 @@ describe('session-scoped LLM router', () => {
     expect(body.message).toContain('expired');
   });
 
-  test('returns models for a valid session token', async () => {
+  test('returns the managed catalog for a valid session token', async () => {
     const app = createApp();
     const res = await app.request('/v1/router/llm/models', {
       headers: { Authorization: `Bearer ${token()}` },
@@ -193,7 +196,11 @@ describe('session-scoped LLM router', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.object).toBe('list');
-    expect(body.data[0].id).toBe('anthropic/claude-sonnet-4.6');
+    const ids = body.data.map((m: { id: string }) => m.id);
+    // Managed-only catalog: managed Claude (Bedrock) + OpenRouter models, all owned_by kortix.
+    expect(ids).toContain('claude-opus-4.8');
+    expect(ids).toContain('fusion');
+    expect(body.data.every((m: { owned_by: string }) => m.owned_by === 'kortix')).toBe(true);
   });
 
   test('proxies chat with the project secret instead of exposing provider keys to the sandbox', async () => {
@@ -217,6 +224,8 @@ describe('session-scoped LLM router', () => {
     });
     expect(lastProxyCall?.apiKey).toBe('sk-project-openrouter');
     expect(lastProxyCall?.body.model).toBe('anthropic/claude-sonnet-4.6');
+    // Metering is backgrounded (record → debit-if-inserted); let it settle.
+    await Bun.sleep(0);
     expect(lastDeductCall?.[0]).toBe(ACCOUNT_ID);
     expect(lastDeductCall?.[5]).toBe(SESSION_ID);
     expect(usageEvents[0]).toMatchObject({

@@ -101,7 +101,7 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
  * internal billing is on and the route is billable (billingMode !== 'none').
  */
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
-  const usageEventId = await recordUsageEvent({
+  const { eventId: usageEventId, inserted } = await recordUsageEvent({
     accountId: event.accountId,
     actorUserId: event.actorUserId,
     projectId: event.projectId ?? null,
@@ -114,6 +114,8 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     cachedTokens: event.cachedTokens,
     costUsd: event.finalCost,
     streaming: event.streaming,
+    // request_id is the idempotency key (also kept in metadata for legacy/audit).
+    requestId: event.requestId,
     metadata: {
       upstreamCostUsd: event.upstreamCost,
       markup: llmPriceMarkup(),
@@ -123,6 +125,10 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   });
 
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED || event.billingMode === 'none') return;
+  // Idempotency: debit only when THIS call inserted the usage event. A replay
+  // (reconciler backfill or a retry of the same requestId) finds the existing
+  // row, inserted===false, and skips the debit — the original turn already paid.
+  if (!inserted) return;
   await deductForLlmUsage({
     accountId: event.accountId,
     costUsd: event.finalCost,

@@ -1721,6 +1721,13 @@ export const usageEvents = kortixSchema.table(
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
     streaming: boolean('streaming').default(false).notNull(),
     upstreamStatus: integer('upstream_status'),
+    // Idempotency key for billable usage events. Nullable: only metered turns
+    // (the slim managed endpoint / gateway) set it; non-metered events leave it
+    // NULL. A UNIQUE index makes the LLM debit idempotent — a replay (reconciler
+    // backfill or retry) hits the conflict, skips the second insert, and so skips
+    // the duplicate debit. NULLs are distinct in Postgres, so unset rows are
+    // unconstrained.
+    requestId: text('request_id'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1729,6 +1736,7 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    uniqueIndex('idx_usage_events_request_id').on(table.requestId),
   ],
 );
 

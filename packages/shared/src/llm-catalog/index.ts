@@ -60,6 +60,14 @@ export interface ManagedModel {
   // size the conversation and fire auto-compaction. This is the CANONICAL home —
   // it used to be backfilled from a hardcoded table in the sandbox agent server.
   limit: { context: number; output: number };
+  // Curated USD-per-1M-token pricing. Curated here (same reason as `vision`/
+  // `limit`): managed slugs don't reliably resolve on models.dev, and the
+  // provider-prefixed `pricingRef` never matches the bare models.dev keys, so a
+  // live lookup returns undefined — a billable managed turn would then price to
+  // $0 and silently leak (notably Bedrock/Claude, whose responses carry no cost
+  // hint). This is the managed metering source of truth; the slim endpoint bills
+  // managed turns from this table (NOT models.dev live pricing).
+  pricing: { input: number; output: number; cacheRead?: number };
 }
 
 // Managed model ids are single-segment (no `provider/` prefix). They are served
@@ -94,6 +102,8 @@ const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
     free: true,
     vision: false,
     limit: { context: 200_000, output: 128_000 },
+    // Free (billingMode 'none') — never billed; pricing recorded as $0.
+    pricing: { input: 0, output: 0 },
   },
   {
     id: "mimo-v2.5-free",
@@ -105,6 +115,7 @@ const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
     free: true,
     vision: true,
     limit: { context: 200_000, output: 32_000 },
+    pricing: { input: 0, output: 0 },
   },
   {
     id: "nemotron-3-ultra-free",
@@ -116,6 +127,7 @@ const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
     free: true,
     vision: false,
     limit: { context: 1_000_000, output: 128_000 },
+    pricing: { input: 0, output: 0 },
   },
   {
     id: "north-mini-code-free",
@@ -127,6 +139,7 @@ const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
     free: true,
     vision: false,
     limit: { context: 256_000, output: 64_000 },
+    pricing: { input: 0, output: 0 },
   },
 ];
 
@@ -140,6 +153,10 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "flagship",
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
+    // Bedrock/Claude responses carry NO cost hint, so this curated table is the
+    // sole pricing source — without it this turn priced to $0. cacheRead ≈ 10% of
+    // input (Anthropic prompt-cache read rate).
+    pricing: { input: 5, output: 25, cacheRead: 0.5 },
   },
   {
     id: "claude-sonnet-4.6",
@@ -150,6 +167,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: true,
     limit: { context: 1_000_000, output: 64_000 },
+    pricing: { input: 3, output: 15, cacheRead: 0.3 },
   },
   {
     id: "fusion",
@@ -160,6 +178,9 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: false,
     limit: { context: 1_000_000, output: 128_000 },
+    // OpenRouter returns a live usage.cost that takes precedence; this is the
+    // fallback used only if that hint is ever absent.
+    pricing: { input: 1, output: 3 },
   },
   {
     id: "qwen3.7-max",
@@ -170,6 +191,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
+    pricing: { input: 1.2, output: 6 },
   },
   {
     id: "deepseek-v4-pro",
@@ -180,6 +202,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
+    pricing: { input: 0.435, output: 0.87 },
   },
   {
     id: "deepseek-v4-flash",
@@ -190,6 +213,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     tier: "balanced",
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
+    pricing: { input: 0.0983, output: 0.1966 },
   },
   ...OPENCODE_ZEN_FREE_MODELS,
 ];

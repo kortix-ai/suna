@@ -1,14 +1,19 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
+import { config } from '../../config';
 import { verifySessionLlmToken } from '../../shared/session-llm-token';
 import { getProjectSecretValue } from '../../projects/secrets';
-import { proxyToOpenRouter, extractUsage, calculateCost, getModel, getAllModels } from '../services/llm';
+import { proxyToOpenRouter, extractUsage, calculateCost, getModel } from '../services/llm';
+import type { ModelConfig } from '../config/models';
+import type { UsageInfo } from '../services/llm';
+import { resolveManagedRoute, dispatchBedrock, dispatchZen } from '../services/managed-llm';
+import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { checkCredits, deductLLMCredits } from '../services/billing';
 import { recordUsageEvent } from '../../shared/usage-events';
 import { enforceRateLimit, sessionLlmLimiter } from '../../shared/rate-limit';
 import { resolveAccountTier, sessionLlmPolicyForTier } from '../../shared/account-limits';
-import { getTraceHeaders } from '../../lib/request-context';
+import { getTraceHeaders, getRequestContext } from '../../lib/request-context';
 import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 
 const sessionLlm = makeOpenApiApp<{ Variables: AppContext }>();
@@ -122,15 +127,54 @@ sessionLlm.openapi(
     throw new HTTPException(402, { message: creditCheck.message || 'Insufficient credits' });
   }
 
-  const apiKey = await resolveOpenRouterKey(ctx.projectId);
-  if (!apiKey) {
-    throw new HTTPException(503, { message: 'OPENROUTER_API_KEY project secret is not configured' });
-  }
-
-  const modelId = body.model;
-  const modelConfig = getModel(modelId);
+  // Route by model: managed Claude → Bedrock InvokeModel, free models → OpenCode
+  // Zen (no auth, unmetered), every other managed model + any legacy id →
+  // OpenRouter. A simple switch — no failover/breaker.
+  const route = resolveManagedRoute(body.model, body);
+  const provider =
+    route.upstream === 'bedrock' ? 'bedrock' : route.upstream === 'zen' ? 'opencode-zen' : 'openrouter';
+  const billingModel = route.billingModel;
+  // Free Zen turns are never billed (billingMode none); everything else meters.
+  const billable = route.upstream !== 'zen';
+  // Managed turns price from the curated per-1M catalog pricing (managed slugs
+  // don't resolve on models.dev → a live lookup would silently bill $0). A legacy
+  // non-managed id keeps the existing models.dev pricing path.
+  const modelConfig: ModelConfig = route.managed
+    ? {
+        openrouterId: route.managed.upstreamModelId,
+        inputPer1M: route.managed.pricing.input,
+        outputPer1M: route.managed.pricing.output,
+        cacheReadPer1M: route.managed.pricing.cacheRead,
+        contextWindow: route.managed.limit.context,
+        tier: route.managed.free ? 'free' : 'paid',
+      }
+    : getModel(billingModel);
   const isStreaming = body.stream === true;
-  const response = await proxyToOpenRouter(body, isStreaming, apiKey, getTraceHeaders());
+  const traceHeaders = getTraceHeaders();
+  const requestId = getRequestContext()?.requestId ?? null;
+
+  let response: Response;
+  if (route.upstream === 'bedrock') {
+    response = await dispatchBedrock(body, isStreaming, route.wireModel, traceHeaders);
+  } else if (route.upstream === 'zen') {
+    response = await dispatchZen(body, route.wireModel, traceHeaders);
+  } else {
+    // Managed models always run on Kortix's OpenRouter key (credits-billed);
+    // a legacy/non-managed id keeps using the project's own OPENROUTER_API_KEY.
+    const apiKey = route.managed
+      ? config.OPENROUTER_API_KEY
+      : await resolveOpenRouterKey(ctx.projectId);
+    if (!apiKey) {
+      throw new HTTPException(503, { message: 'OPENROUTER_API_KEY is not configured' });
+    }
+    response = await proxyToOpenRouter(
+      body,
+      isStreaming,
+      apiKey,
+      traceHeaders,
+      route.managed ? route.wireModel : undefined,
+    );
+  }
 
   if (!response.ok) {
     return new Response(await response.text(), {
@@ -145,15 +189,29 @@ sessionLlm.openapi(
       throw new HTTPException(502, { message: 'No response body from upstream' });
     }
 
+    // Free Zen turns aren't metered — stream straight through (no tee/usage parse).
+    if (!billable) {
+      return new Response(upstreamBody, {
+        status: response.status,
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
+
     const [clientStream, usageStream] = upstreamBody.tee();
     extractStreamingUsage(usageStream, {
       accountId: ctx.accountId,
       projectId: ctx.projectId,
       sessionId: ctx.sessionId,
       actorUserId: ctx.userId,
-      modelId,
+      provider,
+      modelId: billingModel,
       modelConfig,
       upstreamStatus: response.status,
+      requestId,
     });
 
     return new Response(clientStream, {
@@ -167,39 +225,23 @@ sessionLlm.openapi(
   }
 
   const responseBody = await response.json();
-  const usage = extractUsage(responseBody);
-  if (usage) {
-    const cost = calculateCost(
-      modelConfig,
-      usage.promptTokens,
-      usage.completionTokens,
-      usage.cachedTokens,
-      usage.cacheWriteTokens,
-    );
-    deductLLMCredits(
-      ctx.accountId,
-      modelId,
-      usage.promptTokens,
-      usage.completionTokens,
-      cost,
-      ctx.sessionId,
-    ).catch((err) => console.error('[session-llm] Failed to deduct credits:', err));
-    recordUsageEvent({
-      accountId: ctx.accountId,
-      projectId: ctx.projectId,
-      sessionId: ctx.sessionId,
-      actorUserId: ctx.userId,
-      provider: 'openrouter',
-      model: modelId,
-      route: '/v1/router/llm/chat/completions',
-      inputTokens: usage.promptTokens,
-      outputTokens: usage.completionTokens,
-      cachedTokens: usage.cachedTokens,
-      cacheWriteTokens: usage.cacheWriteTokens,
-      costUsd: cost,
-      streaming: false,
-      upstreamStatus: response.status,
-    }).catch((err) => console.error('[session-llm] Failed to record usage event:', err));
+  if (billable) {
+    const usage = extractUsage(responseBody);
+    if (usage) {
+      void meterManagedUsage({
+        accountId: ctx.accountId,
+        projectId: ctx.projectId,
+        sessionId: ctx.sessionId,
+        actorUserId: ctx.userId,
+        provider,
+        modelId: billingModel,
+        modelConfig,
+        usage,
+        streaming: false,
+        upstreamStatus: response.status,
+        requestId,
+      }).catch((err) => console.error('[session-llm] Failed to meter usage:', err));
+    }
   }
 
   return c.json(responseBody);
@@ -225,20 +267,79 @@ sessionLlm.openapi(
     // The 200 is a typed JSON response, so cast this early raw-Response return so
     // the handler signature stays json-typed without changing runtime behavior.
     if (limited) return limited as any;
+    // The managed catalog (Bedrock Claude + OpenRouter rest, managed-only) served
+    // as an OpenAI model list — this is what opencode's `kortix` provider lists.
+    const created = Math.floor(Date.now() / 1000);
     return c.json({
       object: 'list',
-      data: getAllModels().map((m) => ({
-        id: m.id,
+      data: Object.entries(gatewayModelCatalog(undefined)).map(([id, m]) => ({
+        id,
         object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: m.owned_by,
-        context_window: m.context_window,
-        pricing: m.pricing,
-        tier: m.tier,
+        created,
+        owned_by: 'kortix',
+        context_window: m.limit?.context,
       })),
     });
   },
 );
+
+interface MeterManagedUsageInput {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  actorUserId: string;
+  provider: string;
+  modelId: string;
+  modelConfig: ModelConfig;
+  usage: UsageInfo;
+  streaming: boolean;
+  upstreamStatus: number;
+  requestId: string | null;
+}
+
+/**
+ * Meter one billable managed turn: record the usage event (idempotent on
+ * request_id), THEN debit credits ONLY when THIS call inserted the row. A replay
+ * (reconciler backfill or a retry of the same request_id) finds the existing row
+ * (inserted:false) and skips the duplicate debit. A NULL request_id always
+ * inserts → always debits (legacy behavior). Cost is from the curated managed
+ * pricing carried in `modelConfig`.
+ */
+async function meterManagedUsage(input: MeterManagedUsageInput): Promise<void> {
+  const cost = calculateCost(
+    input.modelConfig,
+    input.usage.promptTokens,
+    input.usage.completionTokens,
+    input.usage.cachedTokens,
+    input.usage.cacheWriteTokens,
+  );
+  const { inserted } = await recordUsageEvent({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    actorUserId: input.actorUserId,
+    provider: input.provider,
+    model: input.modelId,
+    route: '/v1/router/llm/chat/completions',
+    inputTokens: input.usage.promptTokens,
+    outputTokens: input.usage.completionTokens,
+    cachedTokens: input.usage.cachedTokens,
+    cacheWriteTokens: input.usage.cacheWriteTokens,
+    costUsd: cost,
+    streaming: input.streaming,
+    upstreamStatus: input.upstreamStatus,
+    requestId: input.requestId,
+  });
+  if (!inserted) return;
+  await deductLLMCredits(
+    input.accountId,
+    input.modelId,
+    input.usage.promptTokens,
+    input.usage.completionTokens,
+    cost,
+    input.sessionId,
+  );
+}
 
 async function extractStreamingUsage(
   stream: ReadableStream<Uint8Array>,
@@ -247,21 +348,18 @@ async function extractStreamingUsage(
     projectId: string;
     sessionId: string;
     actorUserId: string;
+    provider: string;
     modelId: string;
-    modelConfig: ReturnType<typeof getModel>;
+    modelConfig: ModelConfig;
     upstreamStatus: number;
+    requestId: string | null;
   },
 ) {
   try {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let lastUsage: {
-      promptTokens: number;
-      completionTokens: number;
-      cachedTokens: number;
-      cacheWriteTokens: number;
-    } | null = null;
+    let lastUsage: UsageInfo | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -294,36 +392,18 @@ async function extractStreamingUsage(
       return;
     }
 
-    const cost = calculateCost(
-      input.modelConfig,
-      lastUsage.promptTokens,
-      lastUsage.completionTokens,
-      lastUsage.cachedTokens,
-      lastUsage.cacheWriteTokens,
-    );
-    await deductLLMCredits(
-      input.accountId,
-      input.modelId,
-      lastUsage.promptTokens,
-      lastUsage.completionTokens,
-      cost,
-      input.sessionId,
-    );
-    await recordUsageEvent({
+    await meterManagedUsage({
       accountId: input.accountId,
       projectId: input.projectId,
       sessionId: input.sessionId,
       actorUserId: input.actorUserId,
-      provider: 'openrouter',
-      model: input.modelId,
-      route: '/v1/router/llm/chat/completions',
-      inputTokens: lastUsage.promptTokens,
-      outputTokens: lastUsage.completionTokens,
-      cachedTokens: lastUsage.cachedTokens,
-      cacheWriteTokens: lastUsage.cacheWriteTokens,
-      costUsd: cost,
+      provider: input.provider,
+      modelId: input.modelId,
+      modelConfig: input.modelConfig,
+      usage: lastUsage,
       streaming: true,
       upstreamStatus: input.upstreamStatus,
+      requestId: input.requestId,
     });
   } catch (err) {
     console.error('[session-llm] Failed to extract streaming usage:', err);

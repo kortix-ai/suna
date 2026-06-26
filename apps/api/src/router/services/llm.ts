@@ -37,6 +37,10 @@ export function calculateCost(
  * Forward a chat completion request to OpenRouter as a 1:1 passthrough proxy.
  * Preserves the full request body (tools, tool_choice, response_format, etc).
  *
+ * @param resolvedModel - When provided, the exact OpenRouter slug to forward
+ *   (used by the managed endpoint, whose curated slugs like `openrouter/fusion`
+ *   must NOT go through `resolveOpenRouterId`'s legacy `openrouter/`-prefix strip).
+ *   Omit for the legacy passthrough so the requested id resolves as before.
  * @returns The raw fetch Response from OpenRouter (may be streaming or not).
  */
 export async function proxyToOpenRouter(
@@ -44,6 +48,7 @@ export async function proxyToOpenRouter(
   isStreaming: boolean,
   apiKey = config.OPENROUTER_API_KEY,
   traceHeaders: Record<string, string> = {},
+  resolvedModel?: string,
 ): Promise<Response> {
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'OpenRouter API key not configured' }), {
@@ -53,7 +58,7 @@ export async function proxyToOpenRouter(
   }
 
   const modelId = body.model as string;
-  const openrouterId = resolveOpenRouterId(modelId);
+  const openrouterId = resolvedModel ?? resolveOpenRouterId(modelId);
 
   // Rewrite the model field to the actual OpenRouter model ID
   const forwardBody = { ...body, model: openrouterId };
