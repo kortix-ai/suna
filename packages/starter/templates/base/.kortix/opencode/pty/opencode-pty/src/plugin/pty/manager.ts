@@ -1,4 +1,6 @@
 import type { OpencodeClient } from '@opencode-ai/sdk'
+import { accessSync, constants } from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { RingBuffer } from './buffer.ts'
 import { SessionLifecycleManager } from './session-lifecycle.ts'
 import type { PTYSession, PTYSessionInfo, ReadResult, SearchResult, SpawnOptions } from './types.ts'
@@ -79,6 +81,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`PTY backend ${init?.method ?? 'GET'} ${path} failed: ${res.status} ${body}`)
   }
   return (await res.json()) as T
+}
+
+function markBackendUnavailable(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  _backendAvailable = false
+  _backendLoadError = message
+  return message
+}
+
+function canExecute(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function resolveBackendCommand(command: string, env?: Record<string, string>): string {
+  if (!command || command.includes('/')) return command
+
+  const pathValue = env?.PATH ?? process.env.PATH ?? ''
+  const fallbackPaths = ['/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
+  const searchPaths = [...pathValue.split(delimiter), ...fallbackPaths]
+  const seen = new Set<string>()
+
+  for (const dir of searchPaths) {
+    if (!dir || seen.has(dir)) continue
+    seen.add(dir)
+    const candidate = join(dir, command)
+    if (canExecute(candidate)) return candidate
+  }
+
+  return command
 }
 
 function escapeXml(text: string): string {
@@ -198,69 +234,78 @@ class PTYManager {
     })
   }
 
+  private async spawnLocal(opts: SpawnOptions): Promise<PTYSessionInfo> {
+    const info = await this.localSessions.spawn(
+      opts,
+      (session, rawData) => {
+        notifyRawOutput(this.localSessions.toInfo(session), rawData)
+        notifySessionUpdate(this.localSessions.toInfo(session))
+      },
+      async (session) => {
+        notifySessionUpdate(this.localSessions.toInfo(session))
+        await this.sendExitNotification(session)
+      },
+    )
+    notifySessionUpdate(info)
+    return info
+  }
+
   async spawn(opts: SpawnOptions): Promise<PTYSessionInfo> {
     if (!_backendAvailable) {
       await this.probe()
     }
 
     if (!_backendAvailable) {
-      const info = await this.localSessions.spawn(
-        opts,
-        (session, rawData) => {
-          notifyRawOutput(this.localSessions.toInfo(session), rawData)
-          notifySessionUpdate(this.localSessions.toInfo(session))
-        },
-        async (session) => {
-          notifySessionUpdate(this.localSessions.toInfo(session))
-          await this.sendExitNotification(session)
-        },
-      )
-      notifySessionUpdate(info)
-      return info
+      return this.spawnLocal(opts)
     }
 
     const cwd = opts.workdir ?? _directory
-    const created = await request<BuiltinPtyInfo>('/pty', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        command: opts.command,
-        args: opts.args ?? [],
-        cwd,
-        title: opts.title,
-        env: opts.env,
-      }),
-    })
-
-    const session: PTYSession = {
-      id: created.id,
-      title: created.title,
-      description: opts.description,
-      command: created.command,
-      args: created.args,
-      workdir: created.cwd,
-      env: opts.env,
-      status: created.status,
-      pid: created.pid,
-      createdAt: new Date().toISOString(),
-      parentSessionId: opts.parentSessionId,
-      parentAgent: opts.parentAgent,
-      notifyOnExit: opts.notifyOnExit ?? false,
-      buffer: new RingBuffer(),
-      process: null,
-    }
-
-    this.sessions.set(session.id, session)
     try {
-      await this.connectSocket(session)
-    } catch (err) {
-      this.sessions.delete(session.id)
-      await request(`/pty/${session.id}`, { method: 'DELETE' }).catch(() => undefined)
-      throw err
-    }
+      const created = await request<BuiltinPtyInfo>('/pty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: resolveBackendCommand(opts.command, opts.env),
+          args: opts.args ?? [],
+          cwd,
+          title: opts.title,
+          env: opts.env,
+        }),
+      })
 
-    notifySessionUpdate(this.toInfo(session))
-    return this.toInfo(session)
+      const session: PTYSession = {
+        id: created.id,
+        title: created.title,
+        description: opts.description,
+        command: created.command,
+        args: created.args,
+        workdir: created.cwd,
+        env: opts.env,
+        status: created.status,
+        pid: created.pid,
+        createdAt: new Date().toISOString(),
+        parentSessionId: opts.parentSessionId,
+        parentAgent: opts.parentAgent,
+        notifyOnExit: opts.notifyOnExit ?? false,
+        buffer: new RingBuffer(),
+        process: null,
+      }
+
+      this.sessions.set(session.id, session)
+      try {
+        await this.connectSocket(session)
+      } catch (err) {
+        this.sessions.delete(session.id)
+        await request(`/pty/${session.id}`, { method: 'DELETE' }).catch(() => undefined)
+        throw err
+      }
+      notifySessionUpdate(this.toInfo(session))
+      return this.toInfo(session)
+    } catch (err) {
+      const message = markBackendUnavailable(err)
+      console.warn(`[PTY backend unavailable] spawn fell back to local PTY: ${message}`)
+      return this.spawnLocal(opts)
+    }
   }
 
   async write(id: string, data: string): Promise<boolean> {
