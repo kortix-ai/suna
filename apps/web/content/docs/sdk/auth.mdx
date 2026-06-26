@@ -1,22 +1,18 @@
 ---
 title: Authentication
-description: How the SDK authenticates — create an API key, scope a personal access token, or use a Supabase JWT.
+description: Two concepts only — an API key (account-wide or project-scoped) for anything programmatic, or a Supabase JWT for web apps.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Every SDK request carries `Authorization: Bearer <token>`. You supply that token
-through `getToken`; the SDK never stores keys. Three token types work — choose by
-where your code runs.
+Kortix has exactly two ways to authenticate: a **session** (you logged in) and an
+**API key** (everything programmatic — the SDK, the CLI, your backend, CI). The SDK
+takes one via `getToken`, which it sends as `Authorization: Bearer <token>`.
 
-## API key — the default
+## API key — the one programmatic credential
 
-For backends, scripts, CI, and automation, create a **Kortix API key** and use it
-as a static token.
-
-1. In your dashboard, open **Settings → API keys** → **Create API key**.
-2. Copy it once (shown only at creation) and store it as a secret, e.g. `KORTIX_API_KEY`.
-3. Return it from `getToken`:
+Create one in **Settings → API keys → Create key**. Name it, choose its scope, copy
+it once (shown only at creation), and store it as a secret.
 
 ```ts
 const kortix = createKortix({
@@ -25,24 +21,27 @@ const kortix = createKortix({
 });
 ```
 
-An API key acts as the account that created it and stays valid until you revoke it.
-Rotate by creating a new key and deleting the old one.
+### Scope — account-wide or one project
 
-## Personal access token — scoped automation
+Scope is a property of the key, picked at creation:
 
-A `kortix_pat_…` token can be **scoped to a single project** — ideal for CI that
-should only touch one repo. It acts as you and is used exactly like an API key:
+| scope | the key can touch | use it for |
+|---|---|---|
+| **Account** (default) | every project in your account | a backend managing your workspace |
+| **Project** | exactly one project — `403` everywhere else | CI/CD bound to one repo (least privilege) |
 
-```ts
-getToken: async () => process.env.KORTIX_PAT!,
-```
+Pick the narrowest scope that does the job. Rotate by creating a new key and
+revoking the old one.
 
-A project-scoped PAT is rejected (`403`) if it tries to act on a different project
-or call account-level routes — a tight blast radius for shared pipelines.
+<Callout>
+The **CLI** mints an API key for you — `kortix login` runs the browser authorize
+flow and stores the key locally. Same credential, nothing special — there's no
+separate "CLI token."
+</Callout>
 
-## Supabase JWT — web apps on Kortix auth
+## Supabase JWT — web apps on Kortix login
 
-Only if you're building a web app on Kortix's own login. Return the user's live
+Only if you're building a web app on Kortix's own auth. Return the user's live
 session token; it refreshes itself, so `getToken` re-reads it each call:
 
 ```ts
@@ -54,13 +53,12 @@ getToken: async () =>
 
 | you're building | use |
 |---|---|
-| a backend service or API | **API key** |
-| CI/CD for one project | **project-scoped PAT** |
-| a web app on Kortix login | **Supabase JWT** |
-| the Kortix CLI | a PAT (the CLI mints one for you) |
+| a backend, script, or CI | an **API key** (account-wide, or project-scoped for CI) |
+| the Kortix CLI | `kortix login` (mints an API key for you) |
+| a web app on Kortix login | a **Supabase JWT** |
 
 <Callout>
-Tokens are bearer credentials — treat them like passwords. Keep them in a secret
+API keys are bearer credentials — treat them like passwords. Keep them in a secret
 manager, never in client-side code or a committed file. `getToken` is called on
 demand, so the host owns storage, caching, and rotation.
 </Callout>
