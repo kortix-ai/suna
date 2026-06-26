@@ -183,18 +183,28 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
         </Dialog>
       )}
 
-      {created && <RevealKeyDialog created={created} onClose={() => setCreated(null)} />}
+      {created && (
+        <RevealKeyDialog
+          created={created}
+          gatewayUrl={data?.gateway_url ?? null}
+          onClose={() => setCreated(null)}
+        />
+      )}
     </div>
   );
 }
 
 function RevealKeyDialog({
   created,
+  gatewayUrl,
   onClose,
 }: {
   created: CreatedGatewayKey;
+  /** Env-correct public gateway origin (dev vs prod); falls back to prod. */
+  gatewayUrl: string | null;
   onClose: () => void;
 }) {
+  const base = gatewayUrl ?? 'https://gateway.kortix.com';
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(created.secret_key);
@@ -228,9 +238,9 @@ function RevealKeyDialog({
           <div>
             <div className="mb-1.5 text-xs font-medium text-muted-foreground">Use it</div>
             <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground">
-{`curl https://gateway.kortix.com/v1/chat/completions \\
-  -H "Authorization: Bearer ${created.key_prefix}…" \\
-  -d '{"model":"claude-sonnet-4.6","messages":[...]}'`}
+{`curl ${base}/v1/chat/completions \\
+  -H "Authorization: Bearer ${created.secret_key}" \\
+  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hello"}]}'`}
             </pre>
           </div>
         </div>

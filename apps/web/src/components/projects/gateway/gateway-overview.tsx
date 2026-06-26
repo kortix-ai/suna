@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
 
 import { SectionCard } from '@/components/ui/section-card';
 import { cn } from '@/lib/utils';
+import { listProjectSessions } from '@/lib/projects-client';
 import {
   useGatewayBreakdown,
   useGatewayErrors,
@@ -52,6 +54,26 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const { data: breakdown } = useGatewayBreakdown(projectId, days);
   const { data: sessionsData } = useGatewaySessions(projectId, days);
   const { data: errorData } = useGatewayErrors(projectId, days);
+
+  // Resolve session ids → human names so spend reads as "Fix login bug", not a
+  // raw uuid. Map both the kortix and opencode ids since the gateway may key on
+  // either.
+  const { data: projectSessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const sessionNames = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of projectSessions ?? []) {
+      const label = s.name ?? s.custom_name ?? null;
+      if (!label) continue;
+      m.set(s.session_id, label);
+      if (s.opencode_session_id) m.set(s.opencode_session_id, label);
+    }
+    return m;
+  }, [projectSessions]);
 
   const requests = overview?.requests ?? 0;
   const errors = overview?.errors ?? 0;
@@ -183,34 +205,53 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
               <p className="py-6 text-center text-sm text-muted-foreground">No sessions yet.</p>
             ) : (
               <div className="space-y-0.5">
-                {sessions.slice(0, 6).map((s, i) => (
-                  <MeterRow
-                    key={s.session_id}
-                    rank={i + 1}
-                    accent={modelAccent(s.session_id)}
-                    label={s.session_id.slice(0, 8)}
-                    value={<span className="font-semibold text-foreground">{fmtUsd(s.total_cost)}</span>}
-                    sub={
-                      <>
-                        <span className="inline-flex items-center gap-1">
-                          <Sparkles className="size-3 text-kortix-blue" />
-                          {fmtUsd(s.llm_cost)}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Cpu className="size-3 text-muted-foreground" />
-                          {fmtUsd(s.compute_cost)}
-                        </span>
-                        <span className="text-muted-foreground/50">
-                          {s.requests.toLocaleString()} req
-                        </span>
-                      </>
-                    }
-                    segments={[
-                      { pct: (s.llm_cost / maxSessionCost) * 100, color: 'var(--kortix-blue)' },
-                      { pct: (s.compute_cost / maxSessionCost) * 100, color: 'var(--muted-foreground)' },
-                    ]}
-                  />
-                ))}
+                {sessions.slice(0, 6).map((s, i) => {
+                  const name = sessionNames.get(s.session_id);
+                  return (
+                    <MeterRow
+                      key={s.session_id}
+                      rank={i + 1}
+                      accent={modelAccent(s.session_id)}
+                      label={
+                        name ? (
+                          <span className="font-sans">{name}</span>
+                        ) : (
+                          s.session_id.slice(0, 8)
+                        )
+                      }
+                      value={
+                        <span className="font-semibold text-foreground">{fmtUsd(s.total_cost)}</span>
+                      }
+                      sub={
+                        <>
+                          {name && (
+                            <span className="font-mono text-muted-foreground/40">
+                              {s.session_id.slice(0, 8)}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1">
+                            <Sparkles className="size-3 text-kortix-blue" />
+                            {fmtUsd(s.llm_cost)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Cpu className="size-3 text-muted-foreground" />
+                            {fmtUsd(s.compute_cost)}
+                          </span>
+                          <span className="text-muted-foreground/50">
+                            {s.requests.toLocaleString()} req
+                          </span>
+                        </>
+                      }
+                      segments={[
+                        { pct: (s.llm_cost / maxSessionCost) * 100, color: 'var(--kortix-blue)' },
+                        {
+                          pct: (s.compute_cost / maxSessionCost) * 100,
+                          color: 'var(--muted-foreground)',
+                        },
+                      ]}
+                    />
+                  );
+                })}
               </div>
             )}
           </SectionCard>

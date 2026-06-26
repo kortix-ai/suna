@@ -236,8 +236,14 @@ export async function deleteGatewayBudget(
   );
 }
 
-export async function getGatewayKeys(projectId: string): Promise<{ keys: GatewayKeyRow[] }> {
-  return unwrap(await backendApi.get<{ keys: GatewayKeyRow[] }>(`/projects/${projectId}/gateway/keys`));
+export async function getGatewayKeys(
+  projectId: string,
+): Promise<{ keys: GatewayKeyRow[]; gateway_url?: string | null }> {
+  return unwrap(
+    await backendApi.get<{ keys: GatewayKeyRow[]; gateway_url?: string | null }>(
+      `/projects/${projectId}/gateway/keys`,
+    ),
+  );
 }
 
 export async function createGatewayKey(
