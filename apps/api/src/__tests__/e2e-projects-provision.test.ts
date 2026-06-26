@@ -341,6 +341,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
         account_id: ACCOUNT_ID,
         name: 'Runtime Project',
         seed_starter: true,
+        starter_template: 'general-knowledge-worker',
         marketplace_items: ['kortix-starter:agent-browser'],
       }),
     });
@@ -359,9 +360,20 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
     expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toEqual(['agent-browser']);
+    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-computer');
+    expect(Object.keys(lock.items).sort()).toContain('account-research');
     expect(lock.items['agent-browser'].type).toBe('registry:skill');
+    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
+    expect(lock.items['agent-browser'].sourceType).toBe('local');
     expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
+    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(lock.items['account-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {
