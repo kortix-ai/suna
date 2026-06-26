@@ -30,6 +30,7 @@ import {
   FolderOpen,
   GitPullRequest,
   KeyRound,
+  Lock,
   MessageSquare,
   Monitor,
   Plug,
@@ -58,6 +59,7 @@ import { SkillsView } from '@/components/projects/customize/sections/skills-view
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { useIsMobile } from '@/hooks/utils';
 import { getProjectDetail } from '@/lib/projects-client';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
@@ -220,6 +222,14 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
+  // Once the probe has resolved, surface a subtle note when the role hides at
+  // least one section — so the shorter rail reads as intentional, not broken.
+  // Never shown while loading/optimistic or when nothing is hidden.
+  const hasHiddenSections = useMemo(
+    () => capsResolved && CUSTOMIZE_SECTION_READ_ACTIONS.some((action) => caps[action]?.allowed === false),
+    [capsResolved, caps],
+  );
+
   // If the active section is denied once the probe resolves (e.g. a bookmarked
   // deep-link into a section this role no longer grants), fall back to the
   // first permitted section so the user lands somewhere valid instead of an
@@ -338,6 +348,11 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                   </div>
                 ))}
               </div>
+              {hasHiddenSections && (
+                <div className="shrink-0 px-4 pb-3 pt-1 text-xs text-muted-foreground">
+                  Some sections are hidden by your role.
+                </div>
+              )}
             </nav>
           )}
 
@@ -352,9 +367,11 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                 // a permitted section; this is the guard for the interim frame
                 // (and the all-denied edge case).
                 <div className="flex h-full items-center justify-center p-6">
-                  <p className="text-sm text-muted-foreground">
-                    You don&apos;t have access to this section.
-                  </p>
+                  <EmptyState
+                    icon={Lock}
+                    title="You don't have access to this section"
+                    description="Your role doesn't include this capability. Ask an account admin to grant it."
+                  />
                 </div>
               ))}
           </main>

@@ -5,13 +5,14 @@
 // by omitting permissions), and the PolicyAssignments surface below it.
 //
 // Built-in roles are read-only; only custom (is_system === false) roles can be
-// edited or deleted, and only when canManage is true. The capability matrix
+// edited or deleted, and only when canManage is true. Built-ins can be
+// duplicated into a new custom role as a starting point. The capability matrix
 // filters the action catalog to the selected role's resource_type and groups
 // the actions by their capability prefix for readability.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -28,8 +29,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -60,6 +65,13 @@ interface RolesTabProps {
   canManage: boolean;
 }
 
+/** Prefill payload for opening the create dialog seeded from a built-in role. */
+interface RolePrefill {
+  name: string;
+  resourceType: ResourceType;
+  actions: string[];
+}
+
 export function RolesTab({ accountId, canManage }: RolesTabProps) {
   return (
     <div className="space-y-6">
@@ -73,6 +85,7 @@ export function RolesTab({ accountId, canManage }: RolesTabProps) {
 
 function RolesSection({ accountId, canManage }: RolesTabProps) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
   const [editTarget, setEditTarget] = useState<IamRole | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IamRole | null>(null);
 
@@ -84,41 +97,60 @@ function RolesSection({ accountId, canManage }: RolesTabProps) {
 
   const roles = rolesQuery.data ?? [];
 
-  return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Roles</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Custom roles deactivate capabilities by omitting their permissions.
-            </p>
-          </div>
-          {canManage && (
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              New role
-            </Button>
-          )}
-        </div>
-      </header>
+  function openCreate(prefill: RolePrefill | null) {
+    setCreatePrefill(prefill);
+    setCreateOpen(true);
+  }
 
-      <div className="px-6 py-4">
-        {rolesQuery.isLoading ? (
+  const newRoleButton = canManage && (
+    <Button size="sm" onClick={() => openCreate(null)} className="gap-1.5">
+      <Plus className="h-4 w-4" />
+      New role
+    </Button>
+  );
+
+  return (
+    <SectionCard
+      title="Roles"
+      description="Custom roles deactivate capabilities by omitting their permissions."
+      action={newRoleButton}
+      flush
+    >
+      {rolesQuery.isError ? (
+        <div className="px-6 py-5">
+          <InfoBanner
+            tone="destructive"
+            title="Failed to load roles"
+            action={
+              <Button variant="outline" size="sm" onClick={() => rolesQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(rolesQuery.error as Error)?.message}
+          </InfoBanner>
+        </div>
+      ) : rolesQuery.isLoading ? (
+        <div className="px-6 py-4">
           <Skeleton className="h-16 w-full" />
-        ) : roles.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No roles yet. Create a custom role to scope what a principal can do.
-          </p>
-        ) : (
+        </div>
+      ) : roles.length === 0 ? (
+        <EmptyState
+          icon={Shield}
+          title="No roles yet"
+          description="Create a custom role to scope what a member, group, or agent can do."
+          action={newRoleButton}
+        />
+      ) : (
+        <div className="overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                <th className="py-2 font-medium">Name</th>
-                <th className="py-2 font-medium">Type</th>
-                <th className="py-2 font-medium">Origin</th>
-                <th className="py-2 font-medium">Used by</th>
-                <th className="w-28 py-2" />
+              <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <th className="px-6 py-2.5 font-medium">Name</th>
+                <th className="px-3 py-2.5 font-medium">Type</th>
+                <th className="px-3 py-2.5 font-medium">Origin</th>
+                <th className="px-3 py-2.5 font-medium">Used by</th>
+                <th className="w-28 px-3 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -130,19 +162,24 @@ function RolesSection({ accountId, canManage }: RolesTabProps) {
                   canManage={canManage}
                   onEdit={() => setEditTarget(role)}
                   onDelete={() => setDeleteTarget(role)}
+                  onDuplicate={(prefill) => openCreate(prefill)}
                 />
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
 
       {createOpen && (
         <RoleDialog
           accountId={accountId}
           mode="create"
+          prefill={createPrefill}
           open={createOpen}
-          onOpenChange={setCreateOpen}
+          onOpenChange={(o) => {
+            setCreateOpen(o);
+            if (!o) setCreatePrefill(null);
+          }}
         />
       )}
 
@@ -165,7 +202,7 @@ function RolesSection({ accountId, canManage }: RolesTabProps) {
           onClose={() => setDeleteTarget(null)}
         />
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -175,14 +212,18 @@ function RoleRow({
   canManage,
   onEdit,
   onDelete,
+  onDuplicate,
 }: {
   accountId: string;
   role: IamRole;
   canManage: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onDuplicate: (prefill: RolePrefill) => void;
 }) {
   const isCustom = !role.is_system;
+  const queryClient = useQueryClient();
+  const [duplicating, setDuplicating] = useState(false);
 
   const usageQuery = useQuery({
     queryKey: ['iam-role-usage', accountId, role.role_id],
@@ -191,51 +232,111 @@ function RoleRow({
     enabled: isCustom,
   });
 
+  async function handleDuplicate() {
+    setDuplicating(true);
+    try {
+      const perms = await queryClient.fetchQuery({
+        queryKey: ['iam-role-permissions', accountId, role.role_id],
+        queryFn: () => getRolePermissions(accountId, role.role_id),
+        staleTime: 30_000,
+      });
+      onDuplicate({
+        name: `${role.name} copy`,
+        resourceType: role.resource_type,
+        actions: perms.actions,
+      });
+    } catch (err) {
+      toast.error((err as Error)?.message || 'Failed to load role permissions');
+    } finally {
+      setDuplicating(false);
+    }
+  }
+
   return (
     <tr className="hover:bg-muted/20">
-      <td className="py-2">
+      <td className="px-6 py-2">
         <div className="font-medium text-foreground">{role.name}</div>
-        <div className="font-mono text-[10px] text-muted-foreground">{role.key}</div>
+        <div className="font-mono text-xs text-muted-foreground">{role.key}</div>
         {role.description && (
-          <div className="mt-0.5 text-[11px] text-muted-foreground">{role.description}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{role.description}</div>
         )}
       </td>
-      <td className="py-2">
+      <td className="px-3 py-2">
         <Badge variant="outline" size="sm" className="font-normal capitalize">
           {role.resource_type}
         </Badge>
       </td>
-      <td className="py-2">
-        <Badge variant={role.is_system ? 'muted' : 'outline'} size="sm" className="font-normal">
-          {role.is_system ? 'Built-in' : 'Custom'}
-        </Badge>
+      <td className="px-3 py-2">
+        {role.is_system ? (
+          <Hint label="Built-in roles are managed by Kortix and can't be edited or deleted. Duplicate one to start a custom role." side="top">
+            <span className="inline-flex">
+              <Badge variant="muted" size="sm" className="gap-1 font-normal">
+                <Lock className="h-3 w-3" />
+                Built-in
+              </Badge>
+            </span>
+          </Hint>
+        ) : (
+          <Badge variant="outline" size="sm" className="font-normal">
+            Custom
+          </Badge>
+        )}
       </td>
-      <td className="py-2 text-xs text-muted-foreground">
-        {!isCustom ? '—' : usageQuery.isLoading ? '…' : (usageQuery.data?.policy_count ?? 0)}
+      <td className="px-3 py-2 text-xs text-muted-foreground">
+        {!isCustom
+          ? '—'
+          : usageQuery.isError
+            ? '—'
+            : usageQuery.isLoading
+              ? '…'
+              : (usageQuery.data?.policy_count ?? 0)}
       </td>
-      <td className="py-2 text-right">
-        {isCustom && canManage && (
+      <td className="px-3 py-2 text-right">
+        {canManage && (
           <div className="flex justify-end gap-1.5">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              onClick={onEdit}
-              aria-label="Edit"
-              title="Edit"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-              onClick={onDelete}
-              aria-label="Delete"
-              title="Delete"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {isCustom ? (
+              <>
+                <Hint label={`Edit role ${role.name}`} side="top">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={onEdit}
+                    aria-label={`Edit role ${role.name}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </Hint>
+                <Hint label={`Delete role ${role.name}`} side="top">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={onDelete}
+                    aria-label={`Delete role ${role.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </Hint>
+              </>
+            ) : (
+              <Hint label={`Duplicate ${role.name} into a new custom role`} side="top">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={handleDuplicate}
+                  disabled={duplicating}
+                  aria-label={`Duplicate role ${role.name}`}
+                >
+                  {duplicating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </Hint>
+            )}
           </div>
         )}
       </td>
@@ -259,26 +360,33 @@ function RoleDialog({
   accountId,
   mode,
   role,
+  prefill,
   open,
   onOpenChange,
 }: {
   accountId: string;
   mode: 'create' | 'edit';
   role?: IamRole;
+  prefill?: RolePrefill | null;
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const isEdit = mode === 'edit' && !!role;
 
-  const [name, setName] = useState(role?.name ?? '');
-  const [keyValue, setKeyValue] = useState(role?.key ?? '');
+  const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
+  const [keyValue, setKeyValue] = useState(
+    role?.key ?? (prefill ? slugifyKey(prefill.name) : ''),
+  );
   const [keyTouched, setKeyTouched] = useState(isEdit);
   const [description, setDescription] = useState(role?.description ?? '');
   const [resourceType, setResourceType] = useState<ResourceType>(
-    role?.resource_type ?? 'project',
+    role?.resource_type ?? prefill?.resourceType ?? 'project',
   );
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(prefill?.actions ?? []),
+  );
+  const [search, setSearch] = useState('');
 
   const actionsQuery = useQuery({
     queryKey: ['iam-actions', accountId],
@@ -294,12 +402,13 @@ function RoleDialog({
     enabled: isEdit,
   });
 
-  // Seed selected from loaded permissions once (edit mode).
-  const [seeded, setSeeded] = useState(false);
-  if (isEdit && !seeded && permsQuery.data) {
-    setSelected(new Set(permsQuery.data.actions));
-    setSeeded(true);
-  }
+  // Seed selected from loaded permissions (edit mode) once the query resolves.
+  // Keyed on the resolved data so we never toggle against a not-yet-seeded set.
+  useEffect(() => {
+    if (isEdit && permsQuery.data) {
+      setSelected(new Set(permsQuery.data.actions));
+    }
+  }, [isEdit, permsQuery.data]);
 
   const matrixActions = useMemo(
     () => (actionsQuery.data ?? []).filter((a) => a.resource_type === resourceType),
@@ -307,6 +416,20 @@ function RoleDialog({
   );
 
   const groups = useMemo(() => groupActions(matrixActions), [matrixActions]);
+
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return groups;
+    return groups
+      .map((group) => ({
+        label: group.label,
+        entries: group.entries.filter(
+          (e) =>
+            e.label.toLowerCase().includes(q) || e.action.toLowerCase().includes(q),
+        ),
+      }))
+      .filter((group) => group.entries.length > 0);
+  }, [groups, search]);
 
   const keyValid = KEY_RE.test(keyValue);
   const nameValid = name.trim().length > 0;
@@ -323,6 +446,17 @@ function RoleDialog({
       const next = new Set(prev);
       if (checked) next.add(action);
       else next.delete(action);
+      return next;
+    });
+  }
+
+  function setGroupSelected(entries: ActionCatalogEntry[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const entry of entries) {
+        if (on) next.add(entry.action);
+        else next.delete(entry.action);
+      }
       return next;
     });
   }
@@ -370,9 +504,13 @@ function RoleDialog({
   const mutation = isEdit ? updateMutation : createMutation;
   const isPending = mutation.isPending;
   const matrixLoading = actionsQuery.isLoading || (isEdit && permsQuery.isLoading);
+  const matrixError = actionsQuery.isError || (isEdit && permsQuery.isError);
+  // Guard the matrix until the edit-mode permissions seed has resolved, so an
+  // admin never toggles against an empty (not-yet-seeded) set.
+  const matrixDisabled = isPending || matrixLoading || matrixError;
 
   const submitDisabled =
-    isPending || !nameValid || (!isEdit && !keyValid) || matrixLoading;
+    isPending || !nameValid || (!isEdit && !keyValid) || matrixLoading || matrixError;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !isPending && onOpenChange(o)}>
@@ -388,8 +526,9 @@ function RoleDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label htmlFor="role-name">Name</Label>
               <Input
+                id="role-name"
                 value={name}
                 onChange={(e) => handleNameChange(e.target.value)}
                 placeholder="Deploy operator"
@@ -398,8 +537,9 @@ function RoleDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Key</Label>
+              <Label htmlFor="role-key">Key</Label>
               <Input
+                id="role-key"
                 value={keyValue}
                 onChange={(e) => {
                   setKeyTouched(true);
@@ -410,7 +550,7 @@ function RoleDialog({
                 className="font-mono"
               />
               {!isEdit && keyValue.length > 0 && !keyValid && (
-                <p className="text-[11px] text-destructive">
+                <p className="text-xs text-destructive">
                   Lowercase letters, digits and underscores, 2–64 chars.
                 </p>
               )}
@@ -418,8 +558,9 @@ function RoleDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Description (optional)</Label>
+            <Label htmlFor="role-description">Description (optional)</Label>
             <Textarea
+              id="role-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What this role is for"
@@ -428,7 +569,7 @@ function RoleDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Applies to</Label>
+            <Label htmlFor="role-resource-type">Applies to</Label>
             <Select
               value={resourceType}
               onValueChange={(v) => {
@@ -437,7 +578,7 @@ function RoleDialog({
               }}
               disabled={isPending || isEdit}
             >
-              <SelectTrigger className="w-48">
+              <SelectTrigger id="role-resource-type" className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -448,45 +589,94 @@ function RoleDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Capabilities</Label>
-            <div className="max-h-64 space-y-4 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
-              {matrixLoading ? (
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="role-capability-search">Capabilities</Label>
+              <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+            </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="role-capability-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search capabilities…"
+                className="h-9 pl-9"
+                disabled={matrixDisabled}
+              />
+            </div>
+            <div className="max-h-[420px] space-y-4 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+              {matrixError ? (
+                <InfoBanner
+                  tone="destructive"
+                  title="Failed to load capabilities"
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        actionsQuery.refetch();
+                        if (isEdit) permsQuery.refetch();
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  }
+                >
+                  {((actionsQuery.error || permsQuery.error) as Error)?.message}
+                </InfoBanner>
+              ) : matrixLoading ? (
                 <Skeleton className="h-24 w-full" />
               ) : matrixActions.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   No capabilities are available for this scope.
                 </p>
+              ) : filteredGroups.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No capabilities match your search.
+                </p>
               ) : (
-                groups.map((group) => (
-                  <div key={group.label} className="space-y-1.5">
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {group.label}
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                      {group.entries.map((entry) => (
-                        <label
-                          key={entry.action}
-                          className={cn(
-                            'flex cursor-pointer items-center gap-2 text-sm text-foreground',
-                            isPending && 'pointer-events-none opacity-60',
-                          )}
+                filteredGroups.map((group) => {
+                  const allOn = group.entries.every((e) => selected.has(e.action));
+                  return (
+                    <div key={group.label} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          {group.label}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => setGroupSelected(group.entries, !allOn)}
+                          disabled={matrixDisabled}
                         >
-                          <Checkbox
-                            checked={selected.has(entry.action)}
-                            onCheckedChange={(c) => toggle(entry.action, c === true)}
-                            disabled={isPending}
-                          />
-                          <span>{entry.label}</span>
-                        </label>
-                      ))}
+                          {allOn ? 'Clear' : 'Select all'}
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                        {group.entries.map((entry) => (
+                          <label
+                            key={entry.action}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-2 text-sm text-foreground',
+                              matrixDisabled && 'pointer-events-none opacity-60',
+                            )}
+                          >
+                            <Checkbox
+                              checked={selected.has(entry.action)}
+                              onCheckedChange={(c) => toggle(entry.action, c === true)}
+                              disabled={matrixDisabled}
+                            />
+                            <span>{entry.label}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              {selected.size} selected
-            </p>
           </div>
         </div>
 

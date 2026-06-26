@@ -21,8 +21,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -42,9 +46,11 @@ import {
   listPolicies,
   listRoles,
 } from '@/lib/iam-client';
-import { listAccountMembers } from '@/lib/projects-client';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import {
+  type KortixProject,
+  listAccountMembers,
+  listProjectsForAccount,
+} from '@/lib/projects-client';
 
 interface PolicyAssignmentsProps {
   accountId: string;
@@ -86,6 +92,12 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     staleTime: 30_000,
   });
 
+  const projectsQuery = useQuery({
+    queryKey: ['account-projects', accountId],
+    queryFn: () => listProjectsForAccount(accountId),
+    staleTime: 30_000,
+  });
+
   const roleNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of rolesQuery.data ?? []) map.set(r.role_id, r.name);
@@ -109,6 +121,12 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
     for (const a of agentsQuery.data ?? []) map.set(a.service_account_id, a.agent_name ?? a.name);
     return map;
   }, [agentsQuery.data]);
+
+  const projectNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projectsQuery.data ?? []) map.set(p.project_id, p.name);
+    return map;
+  }, [projectsQuery.data]);
 
   const deleteMutation = useMutation({
     mutationFn: (policyId: string) => deletePolicy(accountId, policyId),
@@ -136,46 +154,81 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
   function scopeLabel(p: IamPolicy): string {
     if (p.scope_type === 'account') return 'Whole account';
     if (p.scope_type === 'project') {
-      // Full id (not truncated) so an admin can copy-verify which project a
-      // project-scoped assignment targets.
-      return `Project ${p.scope_id ?? ''}`.trim();
+      // Resolve to the human project name; fall back to the raw id so an admin
+      // can still copy-verify which project a project-scoped assignment targets
+      // even if the projects list hasn't loaded (or the project is gone).
+      const id = p.scope_id ?? '';
+      const name = id ? projectNameById.get(id) : undefined;
+      return `Project ${name ?? id}`.trim();
     }
     return p.scope_type;
   }
 
-  return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <Shield className="h-4 w-4 text-muted-foreground" />
-              Assignments
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Bind a member or group to a custom role at a scope.
-            </p>
-          </div>
-          {canManage && (
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              New assignment
-            </Button>
-          )}
-        </div>
-      </header>
+  // The principal/role lookups feed both the table labels AND the create
+  // dialog's pickers. If any fail, the surface can't render trustworthy rows
+  // (a bare id everywhere) or offer a working create flow — so we treat the
+  // whole panel as errored and let one Retry refetch them all.
+  const lookupQueries = [
+    rolesQuery,
+    membersQuery,
+    groupsQuery,
+    agentsQuery,
+    projectsQuery,
+  ];
+  const hasError = policiesQuery.isError || lookupQueries.some((q) => q.isError);
+  const errorMessage =
+    (policiesQuery.error as Error | undefined)?.message ??
+    (lookupQueries.find((q) => q.isError)?.error as Error | undefined)?.message;
 
-      <div className="px-6 py-4">
-        {policiesQuery.isLoading ? (
+  function retryAll() {
+    policiesQuery.refetch();
+    for (const q of lookupQueries) q.refetch();
+  }
+
+  const newAssignmentButton = canManage ? (
+    <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+      <Plus className="h-4 w-4" />
+      New assignment
+    </Button>
+  ) : null;
+
+  return (
+    <SectionCard
+      title="Assignments"
+      description="Bind a member, group, or agent to a custom role at a scope."
+      action={!hasError ? newAssignmentButton : null}
+      flush
+    >
+      {hasError ? (
+        <div className="px-6 py-5">
+          <InfoBanner
+            tone="destructive"
+            title="Failed to load assignments"
+            action={
+              <Button variant="outline" size="sm" onClick={retryAll}>
+                Retry
+              </Button>
+            }
+          >
+            {errorMessage}
+          </InfoBanner>
+        </div>
+      ) : policiesQuery.isLoading ? (
+        <div className="px-6 py-5">
           <Skeleton className="h-16 w-full" />
-        ) : policies.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No assignments yet. Bind a member or group to a custom role to grant access.
-          </p>
-        ) : (
+        </div>
+      ) : policies.length === 0 ? (
+        <EmptyState
+          icon={Shield}
+          title="No assignments yet"
+          description="Bind a member, group, or agent to a custom role."
+          action={newAssignmentButton}
+        />
+      ) : (
+        <div className="overflow-hidden px-6 py-4">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border/60 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border/60 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 <th className="py-2 font-medium">Principal</th>
                 <th className="py-2 font-medium">Role</th>
                 <th className="py-2 font-medium">Scope</th>
@@ -207,16 +260,17 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
                     </td>
                     <td className="py-2 text-right">
                       {canManage && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteTarget(p)}
-                          aria-label="Remove assignment"
-                          title="Remove assignment"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <Hint label="Remove assignment">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={() => setDeleteTarget(p)}
+                            aria-label={`Remove assignment for ${principal.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </Hint>
                       )}
                     </td>
                   </tr>
@@ -224,8 +278,8 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
               })}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
 
       <CreateAssignmentDialog
         accountId={accountId}
@@ -236,6 +290,8 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
         members={membersQuery.data ?? []}
         groups={groupsQuery.data ?? []}
         agents={agentsQuery.data ?? []}
+        projects={projectsQuery.data ?? []}
+        projectsLoading={projectsQuery.isLoading}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
           setCreateOpen(false);
@@ -260,7 +316,7 @@ export function PolicyAssignments({ accountId, canManage }: PolicyAssignmentsPro
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
         }}
       />
-    </section>
+    </SectionCard>
   );
 }
 
@@ -278,6 +334,8 @@ function CreateAssignmentDialog({
   members,
   groups,
   agents,
+  projects,
+  projectsLoading,
   onCreated,
 }: {
   accountId: string;
@@ -288,6 +346,8 @@ function CreateAssignmentDialog({
   members: Array<{ user_id: string; email: string | null }>;
   groups: Array<{ group_id: string; name: string }>;
   agents: AgentIdentity[];
+  projects: KortixProject[];
+  projectsLoading: boolean;
   onCreated: () => void;
 }) {
   const [principalType, setPrincipalType] = useState<PrincipalType>('member');
@@ -333,9 +393,9 @@ function CreateAssignmentDialog({
   });
 
   const principalValid = !!principalId;
-  const projectIdTrimmed = projectId.trim();
-  const projectIdValid = UUID_RE.test(projectIdTrimmed);
-  const scopeValid = scopeType === 'account' || projectIdValid;
+  // The project is now chosen from a Select populated with real project ids,
+  // so "has a value" is sufficient — no UUID shape check needed.
+  const scopeValid = scopeType === 'account' || !!projectId;
   const isValid = principalValid && !!roleId && scopeValid;
 
   return (
@@ -357,7 +417,7 @@ function CreateAssignmentDialog({
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Principal type</Label>
+            <Label htmlFor="assignment-principal-type">Principal type</Label>
             <Select
               value={principalType}
               onValueChange={(v) => {
@@ -366,7 +426,7 @@ function CreateAssignmentDialog({
               }}
               disabled={mutation.isPending}
             >
-              <SelectTrigger>
+              <SelectTrigger id="assignment-principal-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -380,7 +440,9 @@ function CreateAssignmentDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>{principalType === 'member' ? 'Member' : principalType === 'group' ? 'Group' : 'Agent'}</Label>
+            <Label htmlFor="assignment-principal">
+              {principalType === 'member' ? 'Member' : principalType === 'group' ? 'Group' : 'Agent'}
+            </Label>
             <Select
               value={principalId}
               onValueChange={(id) => {
@@ -398,7 +460,7 @@ function CreateAssignmentDialog({
               }}
               disabled={mutation.isPending}
             >
-              <SelectTrigger>
+              <SelectTrigger id="assignment-principal">
                 <SelectValue
                   placeholder={
                     principalType === 'member'
@@ -434,14 +496,14 @@ function CreateAssignmentDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Role</Label>
+            <Label htmlFor="assignment-role">Role</Label>
             {rolesLoading ? (
               <p className="text-xs text-muted-foreground">Loading roles…</p>
             ) : customRoles.length === 0 ? (
               <p className="text-xs text-muted-foreground">Create a custom role first.</p>
             ) : (
               <Select value={roleId} onValueChange={setRoleId} disabled={mutation.isPending}>
-                <SelectTrigger>
+                <SelectTrigger id="assignment-role">
                   <SelectValue placeholder="Select a custom role" />
                 </SelectTrigger>
                 <SelectContent>
@@ -456,13 +518,20 @@ function CreateAssignmentDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label>Scope</Label>
+            <Label htmlFor="assignment-scope">Scope</Label>
             <Select
               value={scopeType}
-              onValueChange={(v) => setScopeType(v as ScopeType)}
+              onValueChange={(v) => {
+                const next = v as ScopeType;
+                setScopeType(next);
+                // Switching back to account scope clears any picked project so
+                // a stale id can't ride along (createPolicy nulls scopeId on
+                // account scope, but keep local state honest too).
+                if (next === 'account') setProjectId('');
+              }}
               disabled={mutation.isPending}
             >
-              <SelectTrigger>
+              <SelectTrigger id="assignment-scope">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -474,28 +543,41 @@ function CreateAssignmentDialog({
 
           {scopeType === 'project' && (
             <div className="space-y-1.5">
-              <Label>Project ID</Label>
-              <Input
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                placeholder="00000000-0000-0000-0000-000000000000"
-                disabled={mutation.isPending}
-              />
-              {projectIdTrimmed && !projectIdValid ? (
-                <p className="text-xs text-destructive">
-                  Enter a valid project ID (UUID).
+              <Label htmlFor="assignment-project">Project</Label>
+              {projectsLoading ? (
+                <p className="text-xs text-muted-foreground">Loading projects…</p>
+              ) : projects.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No projects in this account yet.
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  The project this role applies to.
-                </p>
+                <Select
+                  value={projectId}
+                  onValueChange={setProjectId}
+                  disabled={mutation.isPending}
+                >
+                  <SelectTrigger id="assignment-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.project_id} value={p.project_id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
+              <p className="text-xs text-muted-foreground">
+                The project this role applies to.
+              </p>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>Expires (optional)</Label>
+            <Label htmlFor="assignment-expires">Expires (optional)</Label>
             <Input
+              id="assignment-expires"
               type="date"
               value={expires}
               onChange={(e) => setExpires(e.target.value)}
