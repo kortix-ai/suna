@@ -183,7 +183,7 @@ jobs:
 
   dispatch-deploy:
     name: Dispatch staging deploy
-    needs: [build-api, build-gateway, build-frontend]
+    needs: [version, build-api, build-gateway, build-frontend]
     if: github.event_name == 'workflow_dispatch' && github.actor == 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -192,5 +192,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run deploy-staging.yml --ref main -f sha="${{ needs.version.outputs.sha }}"
+          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref main -f sha="${{ needs.version.outputs.sha }}"
           echo "Deploy Staging dispatched for ${{ needs.version.outputs.sha }}."
