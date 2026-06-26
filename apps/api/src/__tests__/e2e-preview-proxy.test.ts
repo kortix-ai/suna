@@ -200,6 +200,7 @@ mock.module('../platform/providers', () => ({
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
+    KORTIX_URL: 'https://test.kortix.local',
     KORTIX_LOCAL_DOCKER_HOST: 'host.docker.internal',
     isDaytonaEnabled: () => true,
     isLocalDockerEnabled: () => false,
@@ -594,15 +595,21 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['authorization']).toBe(`Bearer ${TEST_SERVICE_KEY}`);
     expect(mockFetchCalls[0].headers['content-type']).toBe('application/json');
     expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
-    expect(JSON.parse(mockFetchCalls[0].body ?? '{}')).toEqual({
-      env: {
-        OPENROUTER_API_KEY: 'sk-live',
-        SENTRY_DSN: 'https://example.test/1',
-      },
-      names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      refreshModels: false,
-      revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
+    const envSyncBody = JSON.parse(mockFetchCalls[0].body ?? '{}');
+    expect(envSyncBody.env).toEqual({
+      OPENROUTER_API_KEY: 'sk-live',
+      SENTRY_DSN: 'https://example.test/1',
     });
+    expect(envSyncBody.names).toEqual(['OPENROUTER_API_KEY', 'SENTRY_DSN']);
+    expect(envSyncBody.revision).toBe('rev-OPENROUTER_API_KEY-SENTRY_DSN');
+    // Gateway is the only LLM path: every env push asserts gateway mode on,
+    // points opencode at the gateway, and withholds native provider keys.
+    expect(envSyncBody.llmGatewayEnabled).toBe(true);
+    expect(envSyncBody.llmGatewayBaseUrl).toContain('/v1/llm');
+    expect(typeof envSyncBody.llmGatewayDenyEnv).toBe('string');
+    expect(envSyncBody.llmGatewayDenyEnv.length).toBeGreaterThan(0);
+    // refreshModels is gone — the gateway owns the model list now.
+    expect(envSyncBody.refreshModels).toBeUndefined();
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );

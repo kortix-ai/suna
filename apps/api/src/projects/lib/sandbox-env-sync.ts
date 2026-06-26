@@ -74,7 +74,6 @@ async function postEnvToDaemon(args: {
   previewToken: string | null;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
-  refreshModels?: boolean;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
@@ -95,7 +94,6 @@ async function postEnvToDaemon(args: {
     headers,
     body: JSON.stringify({
       ...args.snapshot,
-      refreshModels: args.refreshModels ?? false,
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -124,12 +122,13 @@ export async function syncSandboxEnvForPrompt(args: {
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
   if (!snapshot) return;
   // Gateway is the only LLM path: always push gateway mode on + the deny list.
+  // No refreshModels — opencode's model list comes from the gateway (static),
+  // not from native provider keys, so a secret change never reloads opencode.
   await postEnvToDaemon({
     previewUrl: args.previewUrl,
     previewToken: args.previewToken,
     serviceKey: args.serviceKey,
     snapshot,
-    refreshModels: true,
     llmGatewayEnabled: true,
     llmGatewayBaseUrl: resolveLlmGatewayBaseUrl(),
     llmGatewayDenyEnv: nativeProviderEnvNames().join(','),
@@ -139,7 +138,6 @@ export async function syncSandboxEnvForPrompt(args: {
 
 export async function propagateProjectSecretsToActiveSandboxes(
   projectId: string,
-  opts?: { refreshModels?: boolean },
 ): Promise<void> {
   try {
     const rows = await db
@@ -162,7 +160,7 @@ export async function propagateProjectSecretsToActiveSandboxes(
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
         const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
-        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
