@@ -609,6 +609,7 @@ export async function createProjectSession(input: {
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,
+        projectMetadata: project.metadata,
         gitProject: {
           projectId,
           repoUrl: project.repoUrl,

@@ -611,6 +611,86 @@ describe('daemon proxy auth gate', () => {
     expect(restartCalls).toBe(0)
   })
 
+  it('restarts opencode for model-affecting env sync and applies gateway runtime env', async () => {
+    let restartCalls = 0
+    const previousLlmKey = process.env.KORTIX_LLM_API_KEY
+    const previousLlmBase = process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_LLM_API_KEY
+    delete process.env.KORTIX_LLM_BASE_URL
+
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    try {
+      const enable = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-gateway-on',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: {
+            KORTIX_LLM_API_KEY: 'kortix_pat_refresh',
+            KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
+          },
+        }),
+      })
+
+      expect(enable.status).toBe(200)
+      expect(await enable.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+      })
+      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_refresh')
+      expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+      expect(restartCalls).toBe(1)
+
+      const disable = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-gateway-off',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: {
+            KORTIX_LLM_API_KEY: null,
+            KORTIX_LLM_BASE_URL: null,
+          },
+        }),
+      })
+
+      expect(disable.status).toBe(200)
+      expect(await disable.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+      })
+      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
+      expect(process.env.KORTIX_LLM_BASE_URL).toBeUndefined()
+      expect(restartCalls).toBe(2)
+    } finally {
+      if (previousLlmKey === undefined) delete process.env.KORTIX_LLM_API_KEY
+      else process.env.KORTIX_LLM_API_KEY = previousLlmKey
+      if (previousLlmBase === undefined) delete process.env.KORTIX_LLM_BASE_URL
+      else process.env.KORTIX_LLM_BASE_URL = previousLlmBase
+    }
+  })
+
   it('does not restart opencode when env sync matches the boot revision and values', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({

@@ -13,8 +13,15 @@
 
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import { featureFlags } from '@/lib/feature-flags';
+import { listProjectSecrets } from '@/lib/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import { useQuery } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  connectedGatewayProviderIdsFromSecretNames,
+  normalizeProviderList,
+} from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -123,6 +130,21 @@ export function formatModelString(model: ModelKey): string {
   return `${model.providerID}/${model.modelID}`;
 }
 
+export type ModelProviderMode = 'native' | 'gateway';
+
+export function modelProviderMode(providers: ProviderListResponse | undefined): ModelProviderMode {
+  if (!providers) return 'native';
+  const normalized = normalizeProviderList(providers);
+  return normalized.connected?.includes('kortix') ? 'gateway' : 'native';
+}
+
+export function scopedModelSelectionKey(
+  key: string | undefined,
+  mode: ModelProviderMode,
+): string | undefined {
+  return key ? `${mode}:${key}` : undefined;
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -136,17 +158,35 @@ export function useOpenCodeLocal({
   // ---- Flatten models from providers (shared with the chat input, so the
   // gateway-only allowlist applies here too — native providers never leak in) ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
+  const params = useParams();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  const secretsQuery = useQuery({
+    queryKey: ['project-secrets', projectId],
+    queryFn: () => listProjectSecrets(projectId as string),
+    enabled: !!projectId && providerMode === 'gateway',
+    staleTime: 10_000,
+  });
+  const connectedProviderIds = useMemo(() => {
+    if (providerMode !== 'gateway') return undefined;
+    const data = secretsQuery.data;
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
+    return connectedGatewayProviderIdsFromSecretNames(
+      new Set(items.map((secret: { name: string }) => secret.name)),
+    );
+  }, [providerMode, secretsQuery.data]);
 
   // ---- Model store (persisted: visibility, recent, variant) ----
-  const modelStore = useModelStore(flatModels);
+  const modelStore = useModelStore(flatModels, { connectedProviderIds });
 
   // ---- Model validation: a model is valid only if it's in the flattened list,
   // which is already filtered to connected + gateway-only providers. This keeps
   // default/recent resolution from ever selecting a native (bypass) model. ----
   const isModelValid = useCallback(
     (model: ModelKey): boolean =>
-      flatModels.some((m) => m.providerID === model.providerID && m.modelID === model.modelID),
-    [flatModels],
+      flatModels.some((m) => m.providerID === model.providerID && m.modelID === model.modelID) &&
+      modelStore.isVisible(model),
+    [flatModels, modelStore],
   );
 
   // ---- First valid model from a list of fallback sources ----
@@ -169,6 +209,11 @@ export function useOpenCodeLocal({
     [flatModels],
   );
 
+  const isModelDefaultVisible = useCallback(
+    (model: ModelKey): boolean => modelStore.isVisible(model),
+    [modelStore],
+  );
+
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
   // Project-only agents (orchestrator/project-maintainer/worker) are hidden
   // when the project paradigm is off; their bodies reference project
@@ -189,6 +234,10 @@ export function useOpenCodeLocal({
   //      reset to the first agent in the list.
   const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
   const currentAgentName = sessionAgentName ?? modelStore.lastAgentName;
+  const scopedSessionModelKey = useMemo(
+    () => scopedModelSelectionKey(sessionId, providerMode),
+    [sessionId, providerMode],
+  );
 
   const setCurrentAgentName = useCallback(
     (name: string | undefined) => {
@@ -250,17 +299,17 @@ export function useOpenCodeLocal({
         const configured = defaults[p.id];
         if (configured) {
           const key = { providerID: p.id, modelID: configured };
-          if (isModelValid(key)) return key;
+          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
         }
-        const firstModelID = Object.keys(p.models)[0];
-        if (!firstModelID) continue;
-        const key = { providerID: p.id, modelID: firstModelID };
-        if (isModelValid(key)) return key;
+        for (const modelID of Object.keys(p.models)) {
+          const key = { providerID: p.id, modelID };
+          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
+        }
       }
     }
 
     return undefined;
-  }, [config?.model, modelStore.recent, providers, isModelValid]);
+  }, [config?.model, modelStore.recent, providers, isModelValid, isModelDefaultVisible]);
 
   // ---- Current model resolution ----
   // Priority: per-session > per-agent > globalDefault > agent.model > fallback
@@ -271,8 +320,12 @@ export function useOpenCodeLocal({
     if (!currentAgent) return undefined;
     return getFirstValidModel(
       // 1. Per-session model (user's explicit choice in this session — survives reload)
+      () => (scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined),
+      // Back-compat: read the old unscoped slot only if it is valid in the
+      // current provider mode. New writes always go into the scoped slot below.
       () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
       // 2. Per-agent model (persisted across sessions for this agent)
+      () => modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`),
       () => modelStore.getSelectedModel(currentAgent.name),
       // 3. User's global default (set during onboarding or settings)
       () => modelStore.globalDefault,
@@ -281,7 +334,15 @@ export function useOpenCodeLocal({
       // 5. Global fallback (config.model > recent > first connected)
       () => fallbackModel,
     );
-  }, [currentAgent, sessionId, modelStore, getFirstValidModel, fallbackModel]);
+  }, [
+    currentAgent,
+    sessionId,
+    scopedSessionModelKey,
+    providerMode,
+    modelStore,
+    getFirstValidModel,
+    fallbackModel,
+  ]);
 
   const currentModel = useMemo<FlatModel | undefined>(
     () => (currentModelKey ? findModel(currentModelKey) : undefined),
@@ -305,11 +366,11 @@ export function useOpenCodeLocal({
 
       const next = model ?? fallbackModel;
       if (currentAgent && next) {
-        modelStore.setSelectedModel(currentAgent.name, next);
+        modelStore.setSelectedModel(`${providerMode}:${currentAgent.name}`, next);
       }
       // Also persist per-session so the selection survives page reload
-      if (sessionId && next) {
-        modelStore.setSessionModel(sessionId, next);
+      if (scopedSessionModelKey && next) {
+        modelStore.setSessionModel(scopedSessionModelKey, next);
       }
       if (model) {
         modelStore.setVisibility(model, true);
@@ -322,7 +383,7 @@ export function useOpenCodeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [currentAgent, sessionId, fallbackModel, modelStore, isModelValid],
+    [currentAgent, scopedSessionModelKey, providerMode, fallbackModel, modelStore, isModelValid],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -455,9 +516,9 @@ export function useOpenCodeLocal({
 
   // ---- Per-session model exists check ----
   const hasSessionModel = useMemo<boolean>(() => {
-    if (!sessionId) return false;
-    return !!modelStore.getSessionModel(sessionId);
-  }, [sessionId, modelStore]);
+    if (!scopedSessionModelKey) return false;
+    return !!modelStore.getSessionModel(scopedSessionModelKey);
+  }, [scopedSessionModelKey, modelStore]);
 
   // ---- Assemble return value ----
   return {

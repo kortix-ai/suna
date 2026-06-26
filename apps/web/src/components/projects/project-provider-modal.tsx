@@ -63,7 +63,9 @@ import {
   type SharingSelection,
 } from '@/features/co-worker/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import {
@@ -75,6 +77,7 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -91,8 +94,39 @@ import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
 function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';
+  if (provider.id === 'codex') return 'ChatGPT subscription';
+  if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
+}
+
+function buildCodexProvider(ocProviders: Awaited<ReturnType<typeof useOpenCodeProviders>>['data']): LlmProviderEntry {
+  const connectedIds = new Set(ocProviders?.connected ?? []);
+  const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
+  const models: LlmProviderModel[] =
+    kortix && connectedIds.has('kortix')
+      ? Object.entries(kortix.models ?? {})
+          .filter(([id]) => id.startsWith('codex/'))
+          .map(([id, m]) => ({
+            id: id.slice('codex/'.length),
+            name: (((m as { name?: string }).name || id).replace('(latest)', '').trim()).replace(
+              /\s*\(ChatGPT\)$/,
+              '',
+            ),
+            released: (m as { release_date?: string; released?: string }).release_date ??
+              (m as { released?: string }).released ??
+              null,
+          }))
+      : [];
+
+  return {
+    id: 'codex',
+    label: 'ChatGPT',
+    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    helpUrl: null,
+    hint: 'ChatGPT Plus or Pro subscription',
+    models,
+    featured: true,
+  };
 }
 
 type ActiveTab = 'connected' | 'catalog' | 'models';
@@ -122,6 +156,14 @@ export function ProjectProviderModal({
   allowedTabs,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 30_000,
+    enabled: open || asPanel,
+  });
+  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
   // like ModelSelector (so `<Dialog>` can animate in/out cleanly), and firing
   // this query on mount produces a noisy toast for users who can't manage the
@@ -139,12 +181,13 @@ export function ProjectProviderModal({
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // The managed Kortix gateway. It's injected into every sandbox by the
-  // platform (no API key, no connect step), so it never shows up via project
-  // secrets — we surface it here as an always-connected "Managed" provider,
-  // sourcing its model list from the live OpenCode provider list.
+  // The managed Kortix gateway exists only for projects that explicitly opt
+  // into the LLM Gateway. Native OpenCode projects should show only providers
+  // backed by project secrets, even if an old running sandbox still exposes a
+  // stale `kortix` provider.
   const { data: ocProviders } = useOpenCodeProviders();
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
+    if (!llmGatewayEnabled) return null;
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
@@ -165,23 +208,25 @@ export function ProjectProviderModal({
       featured: true,
       managed: true,
     };
-  }, [ocProviders]);
+  }, [llmGatewayEnabled, ocProviders]);
 
   // A provider is "connected" when its API-key route is fully wired (every
   // env var stored). Partial API-key state stays not-connected on purpose — a
   // half-configured provider would error at session start anyway. The managed
   // Kortix provider is always pinned first.
   const connectedProviders = useMemo(() => {
+    const hasCodexSubscription =
+      secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
+      secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
         p.id !== 'kortix' &&
-        ((p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
-          (p.id === 'openai' &&
-            (secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME)))),
+        p.envVars.length > 0 &&
+        p.envVars.every((v) => secretNames.has(v)),
     );
-    return kortixProvider ? [kortixProvider, ...byo] : byo;
-  }, [secretNames, kortixProvider]);
+    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
+    return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
+  }, [secretNames, kortixProvider, ocProviders]);
 
   const hasConnections = connectedProviders.length > 0;
 
@@ -317,7 +362,11 @@ export function ProjectProviderModal({
         )}
 
         {!secretsQuery.isLoading && activeTab === 'models' && (
-          <ModelsTab connectedProviders={connectedProviders} search={search} />
+          <ModelsTab
+            connectedProviders={connectedProviders}
+            search={search}
+            llmGatewayEnabled={llmGatewayEnabled}
+          />
         )}
       </div>
     </>
@@ -395,6 +444,7 @@ function ConnectedTab({
       toast.success(`${provider.label} disconnected`);
       setConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
   });
@@ -883,6 +933,7 @@ function ApiKeyConnectForm({
     onSuccess: () => {
       toast.success(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
@@ -1140,6 +1191,7 @@ function CustomProviderForm({
     onSuccess: (result) => {
       setSavedSnippet(result);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
   });
@@ -1464,51 +1516,71 @@ function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): string {
 function ModelsTab({
   connectedProviders,
   search,
+  llmGatewayEnabled,
 }: {
   connectedProviders: LlmProviderEntry[];
   search: string;
+  llmGatewayEnabled: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   // Visibility (show/hide per model in the picker) is a global, browser-level
   // preference shared with the session model selector — same store, same keys.
-  const flatModels = useMemo<FlatModel[]>(
+  const rows = useMemo(
     () =>
       connectedProviders.flatMap((p) =>
         p.models.map((m) => ({
-          providerID: p.id,
-          providerName: p.label,
-          modelID: m.id,
-          modelName: m.name,
-          releaseDate: m.released ?? undefined,
+          provider: p,
+          model: m,
+          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
         })),
       ),
-    [connectedProviders],
+    [connectedProviders, llmGatewayEnabled],
   );
-  const modelStore = useModelStore(flatModels);
+
+  const flatModels = useMemo<FlatModel[]>(
+    () =>
+      rows.map(({ provider, model, storeKey }) => ({
+        providerID: storeKey.providerID,
+        providerName: provider.label,
+        modelID: storeKey.modelID,
+        modelName: model.name,
+        releaseDate: model.released ?? undefined,
+      })),
+    [rows],
+  );
+  const connectedProviderIds = useMemo(() => {
+    if (!llmGatewayEnabled) return undefined;
+    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
+  }, [connectedProviders, llmGatewayEnabled]);
+  const modelStore = useModelStore(flatModels, {
+    connectedProviderIds,
+  });
 
   const enabledCount = useMemo(
-    () =>
-      flatModels.filter((m) =>
-        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
-      ).length,
-    [flatModels, modelStore],
+    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
+    [rows, modelStore],
   );
   const hasOverrides = modelStore.userPrefs.length > 0;
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return connectedProviders
-      .map((provider) => ({
-        provider,
-        models: provider.models.filter(
-          (model) =>
-            !q || model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((group) => group.models.length > 0);
-  }, [connectedProviders, search]);
+    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
+    for (const row of rows) {
+      if (
+        q &&
+        !row.model.name.toLowerCase().includes(q) &&
+        !row.model.id.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+      const existing = byProvider.get(row.provider.id);
+      if (existing) existing.rows.push(row);
+      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
+    }
+    return Array.from(byProvider.values());
+  }, [rows, search]);
 
   if (connectedProviders.length === 0) {
     return (
@@ -1557,19 +1629,18 @@ function ModelsTab({
         </div>
       )}
       <div className="space-y-3">
-        {grouped.map(({ provider, models }) => (
+        {grouped.map(({ provider, rows }) => (
           <div key={provider.id}>
             <div className="flex items-center gap-2 px-1 pb-1">
               <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
               <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
               </span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">{models.length}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{rows.length}</span>
             </div>
             <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
-              {models.map((model, i) => {
-                const key = { providerID: provider.id, modelID: model.id };
-                const visible = modelStore.isVisible(key);
+              {rows.map(({ model, storeKey }, i) => {
+                const visible = modelStore.isVisible(storeKey);
                 return (
                   <label
                     key={model.id}
@@ -1587,7 +1658,7 @@ function ModelsTab({
                     </div>
                     <Switch
                       checked={visible}
-                      onCheckedChange={(c) => modelStore.setVisibility(key, c)}
+                      onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
                     />
                   </label>
                 );
