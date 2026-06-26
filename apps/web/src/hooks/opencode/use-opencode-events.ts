@@ -407,6 +407,11 @@ export function useOpenCodeEventStream() {
     // or sustained >10s). Brief connect→drop loops keep backoff growth.
     let streamConnectedAt = 0;
 
+    // Handle to the current iteration's heartbeat aborter, exposed so the
+    // visibility handler can force an immediate reconnect when the tab is shown
+    // again after a hidden stretch (where reconnect timers were throttled).
+    let currentHeartbeatAbort: AbortController | null = null;
+
     // Event coalescing queue (like the SolidJS reference)
     let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -450,6 +455,19 @@ export function useOpenCodeEventStream() {
     };
 
     const schedule = () => {
+      // Hidden tab: background-tab throttling clamps setTimeout to >=1s (and
+      // >=1min after ~5min hidden), so a timer-based flush would back the queue
+      // up unboundedly while the agent streams. Apply synchronously instead —
+      // rendering is paused while hidden, so flushing per-batch is cheap and
+      // keeps the store current with zero reliance on throttled timers.
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = undefined;
+        }
+        flush();
+        return;
+      }
       if (flushTimer) return;
       const elapsed = Date.now() - lastFlush;
       flushTimer = setTimeout(flush, Math.max(0, 16 - elapsed));
@@ -478,9 +496,21 @@ export function useOpenCodeEventStream() {
           // reconciler, and visibility handler.
           const HEARTBEAT_MS = 15_000;
           const heartbeatAbort = new AbortController();
+          currentHeartbeatAbort = heartbeatAbort;
           const resetHeartbeat = () => {
             clearTimeout(heartbeatTimer);
             heartbeatTimer = setTimeout(() => {
+              // Never tear the stream down while the tab is hidden. Background
+              // throttling makes the reconnect backoff unreliable, and there's
+              // no UI to keep live — a forced reconnect here could leave the
+              // session disconnected until the user returns. While the network
+              // read loop is not throttled, the connection stays alive on its
+              // own; the visibility handler re-verifies and reconnects on
+              // return. Just reschedule the watchdog.
+              if (typeof document !== 'undefined' && document.hidden) {
+                resetHeartbeat();
+                return;
+              }
               logger.warn('SSE heartbeat timeout, forcing reconnect');
               heartbeatAbort.abort();
             }, HEARTBEAT_MS);
@@ -512,6 +542,12 @@ export function useOpenCodeEventStream() {
 
             if (Date.now() - yieldedAt < 8) continue;
             yieldedAt = Date.now();
+            // The yield exists only to keep the main thread responsive for
+            // rendering. When the tab is hidden there's nothing to render, and
+            // this setTimeout(0) would be clamped to >=1s (>=1min after ~5min
+            // hidden), parking the consume loop and stalling the stream. Skip
+            // it while hidden so events keep flowing at network speed.
+            if (typeof document !== 'undefined' && document.hidden) continue;
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
           }
 
@@ -547,6 +583,7 @@ export function useOpenCodeEventStream() {
           }
         } finally {
           clearTimeout(heartbeatTimer);
+          currentHeartbeatAbort = null;
           flush();
         }
 
@@ -590,6 +627,29 @@ export function useOpenCodeEventStream() {
         });
       }
     })();
+
+    // When the tab becomes visible again, snap the UI back to live state.
+    // While hidden the connection stays open and events are applied
+    // synchronously, but (a) a flush timer may have been mid-flight at the
+    // hidden→visible boundary, and (b) the connection could have genuinely
+    // dropped while hidden (where the heartbeat watchdog is suppressed and
+    // reconnect timers are throttled). So we drain the queue, force an
+    // immediate reconnect if the stream looks stale, and hydrate to fill any
+    // gap — instead of waiting out a throttled backoff.
+    const handleVisibilityChange = () => {
+      if (typeof document === 'undefined' || document.hidden) return;
+      if (abortController.signal.aborted) return;
+      flush();
+      const gap = Date.now() - lastStreamActivityTime;
+      if (gap > 10_000) {
+        // Stream went quiet while hidden — force a fresh connection now and
+        // backfill any missed events. abort() only ends the current iteration;
+        // the consume loop immediately reconnects.
+        currentHeartbeatAbort?.abort();
+        hydrateCore({ rehydrateMessages: true });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Helper: look up a session title from the React Query cache for notifications
     function getSessionTitle(sessionID: string): string | undefined {
@@ -1087,6 +1147,7 @@ export function useOpenCodeEventStream() {
       abortController.abort();
       abortRef.current = null;
       if (flushTimer) clearTimeout(flushTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
     // when the resolved activeServerUrl actually changes, which avoids

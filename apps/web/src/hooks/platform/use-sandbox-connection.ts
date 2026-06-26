@@ -209,7 +209,17 @@ export function useSandboxConnection() {
 
 			} catch (error) {
 				if (!alive) return;
-				if ((error as { immediateOffline?: boolean } | undefined)?.immediateOffline) {
+				// While the tab is hidden, health checks are throttled and their
+				// abort timers fire late, so a failure here is unreliable — it
+				// usually means the browser deprioritized the request, not that
+				// the sandbox died. Downgrading status now would tear down the
+				// live SSE stream (use-opencode-events gates on status/healthy)
+				// and stop the chat from streaming in the background. Keep the
+				// last-known-good state and re-verify the moment the tab is shown
+				// again (handleVisibility forces an immediate check).
+				if (typeof document !== "undefined" && document.hidden) {
+					// Skip downgrade bookkeeping entirely while hidden.
+				} else if ((error as { immediateOffline?: boolean } | undefined)?.immediateOffline) {
 					incrementSandboxFail();
 					setSandboxStatus("unreachable");
 				} else {
@@ -257,12 +267,30 @@ export function useSandboxConnection() {
 			timerRef.current = setTimeout(check, delay);
 		}
 
+		// When the tab regains focus, re-verify reachability immediately
+		// instead of waiting out a (possibly throttled) poll interval. This
+		// detects a sandbox that died while we were away right away, and
+		// confirms a still-healthy one so the SSE stream is never dropped on
+		// a stale read.
+		function handleVisibility() {
+			if (typeof document === "undefined" || document.hidden) return;
+			if (!alive) return;
+			if (timerRef.current) clearTimeout(timerRef.current);
+			check();
+		}
+
 		check();
+		if (typeof document !== "undefined") {
+			document.addEventListener("visibilitychange", handleVisibility);
+		}
 
 		return () => {
 			alive = false;
 			abortRef.current?.abort();
 			if (timerRef.current) clearTimeout(timerRef.current);
+			if (typeof document !== "undefined") {
+				document.removeEventListener("visibilitychange", handleVisibility);
+			}
 		};
 	}, [activeServerId, serverVersion]);
 }
