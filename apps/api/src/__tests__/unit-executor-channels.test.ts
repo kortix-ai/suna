@@ -128,6 +128,13 @@ describe('channelCatalog(email)', () => {
     expect(a.risk).toBe('write');
   });
 
+  test('profile-scoped actions do not require agents to supply inbox_id', () => {
+    expect(objectSchema(action('list_messages').inputSchema).required ?? []).not.toContain('inbox_id');
+    expect(objectSchema(action('list_threads').inputSchema).required ?? []).not.toContain('inbox_id');
+    expect(objectSchema(action('send_message').inputSchema).required ?? []).toEqual(['to']);
+    expect(objectSchema(action('reply_message').inputSchema).required ?? []).toEqual(['message_id']);
+  });
+
   test('api base + default slug', () => {
     expect(channelApiBase('email')).toBe('https://api.agentmail.to/v0');
     expect(channelDefaultSlug('email')).toBe(EMAIL_CHANNEL_CONNECTOR_SLUG);
@@ -262,6 +269,20 @@ const EMAIL_REPLY: GatewayAction = {
   },
   risk: 'write',
   binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/messages/{message_id}/reply' },
+};
+
+const EMAIL_LIST_MESSAGES: GatewayAction = {
+  path: 'email.list_messages',
+  relPath: 'list_messages',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      inbox_id: { 'x-in': 'path' },
+      limit: {},
+    },
+  },
+  risk: 'read',
+  binding: { kind: 'http', method: 'GET', path: '/inboxes/{inbox_id}/messages' },
 };
 
 function makeDeps(body: string, status = 200) {
@@ -471,5 +492,52 @@ describe('handleCall — channel (email)', () => {
     expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_active/messages/msg_active/reply');
     expect(call.headers.Authorization).toBe('Bearer am_active_inbox_token');
     expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
+  });
+
+  test('email profile connector calls use the installed inbox instead of caller-provided inbox_id', async () => {
+    const profileConnector: GatewayConnector = {
+      ...EMAIL,
+      connectorId: 'conn-email-profile',
+      slug: 'email_fabian_u7vq',
+    };
+    const fetchCalls: Array<{
+      url: string;
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    }> = [];
+    const deps: GatewayDeps = {
+      loadConnectorBySlug: async (_projectId, slug) =>
+        slug === 'email_fabian_u7vq' ? profileConnector : null,
+      loadAction: async (connectorId, relPath) =>
+        connectorId === profileConnector.connectorId && relPath === 'list_messages'
+          ? EMAIL_LIST_MESSAGES
+          : null,
+      resolveCredential: async () => 'am_profile_token',
+      loadEmailConnectorContext: async (_projectId, connectorSlug) =>
+        connectorSlug === 'email_fabian_u7vq' ? { inboxId: 'email-inbox@agentmail.to' } : null,
+      loadPolicies: async () => [],
+      loadProjectPolicies: async () => [],
+      loadDefaultMode: async () => 'allow_all',
+      recordExecution: async () => {},
+      fetchImpl: async (url, init) => {
+        fetchCalls.push({ url, ...init });
+        return { status: 200, ok: true, text: async () => '{"messages":[]}' };
+      },
+    };
+
+    const res = await handleCall(deps, {
+      ...input,
+      sessionId: null,
+      connectorSlug: 'email_fabian_u7vq',
+      actionPath: 'list_messages',
+      args: { inbox_id: 'email_fabian_u7vq', limit: 1 },
+    });
+
+    expect(res.status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+    const call = expectDefined(fetchCalls[0]);
+    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1');
+    expect(call.headers.Authorization).toBe('Bearer am_profile_token');
   });
 });

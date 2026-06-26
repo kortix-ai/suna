@@ -73,6 +73,10 @@ export interface EmailSessionContext {
   messageId?: string | null;
 }
 
+export interface EmailConnectorContext {
+  inboxId: string;
+}
+
 export interface GatewayDeps {
   loadConnectorBySlug(projectId: string, slug: string): Promise<GatewayConnector | null>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
@@ -85,6 +89,8 @@ export interface GatewayDeps {
   resolveCredential(connector: GatewayConnector, userId: string | null): Promise<string | null>;
   /** Email-originated sessions pin native Email channel calls to the inbound inbox/thread. */
   loadEmailSessionContext?(projectId: string, sessionId: string): Promise<EmailSessionContext | null>;
+  /** Email connector profiles represent one installed AgentMail inbox. */
+  loadEmailConnectorContext?(projectId: string, connectorSlug: string): Promise<EmailConnectorContext | null>;
   /** Resolve the AgentMail credential for the install that owns this inbox. */
   resolveEmailCredentialForInbox?(projectId: string, inboxId: string): Promise<string | null>;
   /** Connector-scoped policies (relative patterns over the connector's tool paths). */
@@ -218,35 +224,41 @@ async function resolveEmailExecutionContext(
   deps: GatewayDeps,
   input: CallInput,
   connector: GatewayConnector,
+  connectorSlug: string,
 ): Promise<{ args: Record<string, unknown>; secretOverride: string | null }> {
   const args = { ...(input.args ?? {}) };
   if (
     connector.provider !== 'channel' ||
     connector.platform !== 'email' ||
-    !EMAIL_CHANNEL_ACTIONS.has(input.actionPath) ||
-    !input.sessionId ||
-    !deps.loadEmailSessionContext
+    !EMAIL_CHANNEL_ACTIONS.has(input.actionPath)
   ) {
     return { args, secretOverride: null };
   }
 
-  const context = await deps.loadEmailSessionContext(input.projectId, input.sessionId);
+  const sessionContext = input.sessionId && deps.loadEmailSessionContext
+    ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
+    : null;
+  const connectorContext = !sessionContext?.inboxId && deps.loadEmailConnectorContext
+    ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
+    : null;
+  const context = sessionContext?.inboxId ? sessionContext : connectorContext;
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
-  if ((input.actionPath === 'get_thread') && context.threadId) {
+  if ('threadId' in context && (input.actionPath === 'get_thread') && context.threadId) {
     args.thread_id = context.threadId;
   }
   if (
     (input.actionPath === 'reply_message' ||
       input.actionPath === 'reply_all_message' ||
       input.actionPath === 'get_message') &&
+    'messageId' in context &&
     context.messageId
   ) {
     args.message_id = context.messageId;
   }
 
-  const secretOverride = deps.resolveEmailCredentialForInbox
+  const secretOverride = sessionContext?.inboxId && deps.resolveEmailCredentialForInbox
     ? await deps.resolveEmailCredentialForInbox(input.projectId, context.inboxId)
     : null;
   return { args, secretOverride };
@@ -269,7 +281,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
-  const emailExecution = await resolveEmailExecutionContext(deps, input, connector);
+  const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   const usable = await connectorUsable(
     deps,
     connector,
