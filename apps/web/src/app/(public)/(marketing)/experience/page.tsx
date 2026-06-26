@@ -501,14 +501,18 @@ export default function ExperiencePage() {
     };
   }, []);
 
+  // Keep a live ref to the current step so `go` can stay stable and read the
+  // latest step without a stale closure (used by wheel/keyboard/rail/buttons).
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
   const go = useCallback(
     (next: number) => {
       const clamped = Math.max(0, Math.min(total - 1, next));
-      setStep((s) => {
-        if (clamped === s) return s;
-        setDir(clamped > s ? 1 : -1);
-        return clamped;
-      });
+      const s = stepRef.current;
+      if (clamped === s) return;
+      setDir(clamped > s ? 1 : -1);
+      setStep(clamped);
     },
     [total],
   );
