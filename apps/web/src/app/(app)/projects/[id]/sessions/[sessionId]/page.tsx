@@ -10,6 +10,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
+import { latchChatRevealed, shouldRenderChat } from '@/features/session/chat-reveal';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -501,6 +502,15 @@ function ActiveSessionChat({
   if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
   const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
 
+  // Gate the FIRST reveal on runtime health (so the chat never flashes before
+  // opencode is ready — the original "opencode not ready" first-message bug),
+  // then LATCH it: once shown, SessionChat stays mounted across transient
+  // runtime-not-ready dips (reconnects / server switches flip runtimeReady
+  // false and back). It renders its own reconnect pill; unmounting it here on
+  // every health blip blanked the whole screen mid-session. Reset per route.
+  const revealRef = useRef<{ sid: string; shown: boolean }>({ sid: sessionId, shown: false });
+  if (revealRef.current.sid !== sessionId) revealRef.current = { sid: sessionId, shown: false };
+
   // Migrate the home-composer prompt onto SessionChat's consumer key DURING
   // RENDER — before SessionChat (a child) mounts — so its pending-prompt effect
   // always finds it, instead of racing a parent effect that runs AFTER the child.
@@ -647,7 +657,15 @@ function ActiveSessionChat({
   // Sandbox up + switched, still resolving runtime health + the canonical pin.
   // Render NOTHING here (not a second loader) — the page's single persistent
   // loader is on top and crossfades out once chatShowable flips onChatReady.
-  if (!runtimeReady || !chatSessionId) {
+  // The reveal is latched (see revealRef): we wait for runtimeReady the FIRST
+  // time, then keep rendering even if runtime health later dips, so SessionChat
+  // is never torn down mid-session (which left a blank screen).
+  revealRef.current.shown = latchChatRevealed(
+    revealRef.current.shown,
+    runtimeReady,
+    !!chatSessionId,
+  );
+  if (!chatSessionId || !shouldRenderChat(revealRef.current.shown, !!chatSessionId)) {
     return null;
   }
 
