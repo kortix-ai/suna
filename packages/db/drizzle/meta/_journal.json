@@ -141,6 +141,13 @@
       "when": 1782506655317,
       "tag": "20260626204415_add_gateway_breaker_state",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782507467638,
+      "tag": "20260626205747_add_user_model_preferences",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, gatewayBreakerState, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, gatewayBreakerState, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads, userModelPreferences } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -63,6 +63,8 @@ export type ChatInstall = typeof chatInstalls.$inferSelect;
 export type NewChatInstall = typeof chatInstalls.$inferInsert;
 export type ChatThread = typeof chatThreads.$inferSelect;
 export type NewChatThread = typeof chatThreads.$inferInsert;
+export type UserModelPreference = typeof userModelPreferences.$inferSelect;
+export type NewUserModelPreference = typeof userModelPreferences.$inferInsert;
 
 // Tunnel
 export type TunnelConnection = typeof tunnelConnections.$inferSelect;

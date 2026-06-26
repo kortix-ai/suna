@@ -288,7 +288,6 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
   "anthropic",
   "openai",
   "github-copilot",
-  "google",
   "openrouter",
   "vercel",
 ] as const;
@@ -297,7 +296,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   codex: "ChatGPT",
-  google: "Google",
   xai: "xAI",
   moonshotai: "Moonshot",
   "moonshotai-cn": "Moonshot",
@@ -333,7 +331,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "siliconflow-cn": "SiliconFlow",
   zhipuai: "ZhipuAI",
   "zhipuai-cn": "ZhipuAI",
-  "google-vertex": "Google Vertex",
   "google-vertex-anthropic": "Vertex Anthropic",
   "azure-cognitive-services": "Azure Cognitive",
   "cloudflare-ai-gateway": "Cloudflare Gateway",

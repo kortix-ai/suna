@@ -259,6 +259,30 @@ export const accountGithubInstallationStates = kortixSchema.table(
   ],
 );
 
+// ─── User model preferences ─────────────────────────────────────────────────
+// Server home for a human's LLM-picker preferences. Keyed by the AUTH USER
+// (auth.users.id — the person), NOT the basejump/kortix account, so the chosen
+// default model and the per-model show/hide pins follow the user across devices
+// and reinstalls instead of living only in browser localStorage (which stays as
+// an optimistic cache). Every column is nullable/defaulted so the migration is
+// zero-downtime and a missing row simply means "no server-side preference yet".
+export const userModelPreferences = kortixSchema.table('user_model_preferences', {
+  // auth.users.id. No FK — auth.users lives outside the kortix schema's
+  // migration domain (same convention as account_members.user_id et al.).
+  userId: uuid('user_id').primaryKey(),
+  // Preferred default model as "providerID/modelID" (e.g.
+  // "anthropic/claude-opus-4-8"). NULL = no explicit default; the client falls
+  // back to its managed flagship.
+  defaultModel: text('default_model'),
+  // Per-model visibility pins: [{ providerID, modelID, visibility:'show'|'hide' }].
+  // The picker's default visibility heuristic applies to any model not pinned here.
+  hiddenModels: jsonb('hidden_models')
+    .$type<Array<{ providerID: string; modelID: string; visibility: 'show' | 'hide' }>>()
+    .default([])
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 // New project-first model. A project is the Git-backed source of truth for a
 // company/repo. Legacy sandboxes remain below as compute/runtime state.

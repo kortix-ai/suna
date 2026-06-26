@@ -77,7 +77,6 @@ const RAW = catalog as RawCatalog;
 const FEATURED_IDS = new Set([
   'anthropic',
   'openai',
-  'google',
   'openrouter',
   'vercel',
   'github-copilot',
@@ -91,7 +90,6 @@ const FEATURED_IDS = new Set([
   'perplexity',
   'amazon-bedrock',
   'azure',
-  'google-vertex',
   'huggingface',
   'cohere',
   'cohere-platform',
@@ -106,7 +104,6 @@ const FEATURED_IDS = new Set([
 const HINT_OVERRIDES: Record<string, string> = {
   anthropic: 'Claude — Opus, Sonnet, Haiku',
   openai: 'GPT-5, GPT-4o, o-series',
-  google: 'Gemini 2.5 Pro, Flash',
   openrouter: 'Routes across many providers (used by the platform LLM router)',
   vercel: 'Vercel AI Gateway',
   'github-copilot': 'Reuse an existing Copilot plan',
@@ -120,7 +117,6 @@ const HINT_OVERRIDES: Record<string, string> = {
   perplexity: 'Web-grounded models',
   'amazon-bedrock': 'AWS Bedrock — Claude, Llama, Titan',
   azure: 'Azure OpenAI',
-  'google-vertex': 'Google Vertex AI',
   huggingface: 'Hugging Face Inference',
   cohere: 'Cohere — Command R',
   nvidia: 'NVIDIA NIM',

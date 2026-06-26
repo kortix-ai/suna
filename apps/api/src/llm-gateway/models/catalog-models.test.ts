@@ -1,7 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS } from '@kortix/shared/llm-catalog';
 
-import { gatewayModelCatalog } from './catalog-models';
+// catalog-models now imports the real ../../config to gate managed models on
+// their transport key (OpenRouter/Bedrock). The real config calls process.exit(1)
+// on an incomplete env (e.g. under `bun test`, where .env is dotenvx-encrypted),
+// so mock it with BOTH managed keys SET — matching production with keys present,
+// where the full managed lineup (Bedrock + OpenRouter + the synthetic `auto`)
+// is advertised.
+mock.module('../../config', () => ({
+  config: { OPENROUTER_API_KEY: 'test-openrouter', AWS_BEDROCK_API_KEY: 'test-bedrock' },
+}));
+
+const { gatewayModelCatalog } = await import('./catalog-models');
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -47,5 +57,12 @@ describe('gatewayModelCatalog — served catalog', () => {
 
   test('catalog is a memoized singleton (built once, not per call)', () => {
     expect(gatewayModelCatalog('proj')).toBe(full);
+  });
+
+  test('google (Gemini / Vertex) is dropped from the served catalog', () => {
+    const googleKeys = Object.keys(full).filter(
+      (id) => id.startsWith('google/') || id.startsWith('google-vertex/'),
+    );
+    expect(googleKeys).toEqual([]);
   });
 });

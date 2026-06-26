@@ -69,6 +69,7 @@ import { registerLegacyMigrationRoutes } from './projects/legacy-migration-route
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
 import { accountsRouter } from './accounts';
+import { meRouter } from './me/model-prefs';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
@@ -604,6 +605,9 @@ app.openapi(
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
+// /v1/me/* — per-USER (auth.users.id) state that is not account-scoped, e.g.
+// model-picker preferences (default model + visibility pins).
+app.route('/v1/me', meRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
 // events for login/logout/failed-login live in the auth middleware
 // + this router so SOC2 reviews see the full auth lifecycle.

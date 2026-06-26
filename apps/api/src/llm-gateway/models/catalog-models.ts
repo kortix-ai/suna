@@ -6,6 +6,7 @@ import {
   MANAGED_MODELS,
 } from "@kortix/shared/llm-catalog";
 import { codexModelIds } from "./codex-models";
+import { config } from "../../config";
 
 interface GatewayModel {
   name: string;
@@ -84,23 +85,38 @@ function capabilitiesOf(
   };
 }
 
+// A managed model is only routable when its upstream transport's key is set, so
+// hide (don't advertise) ones we can't actually serve — otherwise the picker
+// offers a model that 500s on send. OpenCode Zen (free) needs no key and is
+// always kept; OpenRouter + Bedrock are gated on their respective keys.
+function managedTransportEnabled(transport: string): boolean {
+  if (transport === "openrouter") return !!config.OPENROUTER_API_KEY;
+  if (transport === "bedrock") return !!config.AWS_BEDROCK_API_KEY;
+  return true; // opencode-zen
+}
+
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (Fusion) so OpenCode sizes conversations the same.
-  out[AUTO_MODEL_ID] = {
-    name: "Auto",
-    reasoning: false,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 128_000 },
-  };
+  // its default target (Fusion) so OpenCode sizes conversations the same. AUTO
+  // resolves to Fusion (OpenRouter) by default, so only offer it when OpenRouter
+  // is configured — otherwise it would resolve to an unroutable upstream.
+  if (config.OPENROUTER_API_KEY) {
+    out[AUTO_MODEL_ID] = {
+      name: "Auto",
+      reasoning: false,
+      tool_call: true,
+      attachment: true,
+      temperature: true,
+      limit: { context: 1_000_000, output: 128_000 },
+    };
+  }
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
   // on each model. All current managed models support reasoning/tools/temperature.
   for (const m of MANAGED_MODELS) {
+    if (!managedTransportEnabled(m.transport)) continue;
     out[m.id] = {
       name: m.name,
       free: m.free,
@@ -118,6 +134,8 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
     if (provider.id === "opencode") continue;
+    // Google (Gemini / Vertex) is intentionally dropped from the managed picker.
+    if (provider.id === "google" || provider.id === "google-vertex") continue;
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
