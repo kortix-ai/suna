@@ -28,7 +28,7 @@ import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDERS } from '@/lib/llm-providers';
 import { listProjectSecrets } from '@/lib/projects-client';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
+import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
@@ -108,7 +108,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // it (so the user can switch to a specific model) without turning AUTO off yet.
   const [expandManual, setExpandManual] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const openGateway = useGatewayOverlayStore((s) => s.openGateway);
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const baseModels = useMemo(
     () => (SHOW_OPENCODE_ZEN ? models : models.filter((m) => m.providerID !== 'opencode')),
     [models],
@@ -281,22 +281,22 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     (tab: ProviderModalTab) => {
       setOpen(false);
       if (projectId) {
-        openGateway({ section: tab === 'models' ? 'models' : 'providers' });
+        openCustomize('llm-providers');
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, openProviderModal, openGateway],
+    [projectId, openProviderModal, openCustomize],
   );
 
   const openConnectOpenAI = useCallback(() => {
     setOpen(false);
     if (projectId) {
-      openGateway({ section: 'providers' });
+      openCustomize('llm-providers');
       return;
     }
     openProviderModal('providers');
-  }, [projectId, openProviderModal, openGateway]);
+  }, [projectId, openProviderModal, openCustomize]);
 
   return (
     <>

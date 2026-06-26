@@ -15,7 +15,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { useGatewayLog, useGatewayLogs } from '@/hooks/projects/use-project-gateway';
 import type { GatewayLogRow } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 
 import { CopyButton, displayModel, modelAccent } from './_shared';
 
@@ -28,12 +27,6 @@ function fmtTime(iso: string) {
     minute: '2-digit',
     second: '2-digit',
   });
-}
-
-function latencyTone(ms: number): string {
-  if (ms < 800) return 'text-kortix-green';
-  if (ms < 2500) return 'text-muted-foreground';
-  return 'text-kortix-orange';
 }
 
 function StatusBadge({ ok, status }: { ok: boolean; status: number }) {
@@ -74,7 +67,7 @@ function LogRow({ row, onClick }: { row: GatewayLogRow; onClick: () => void }) {
           {!row.ok && row.error_code ? ` · ${row.error_code}` : ''}
         </div>
       </div>
-      <span className={cn('hidden text-xs tabular-nums sm:block', latencyTone(row.latency_ms))}>
+      <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
         {row.latency_ms}ms
       </span>
       <span className="hidden w-20 text-right text-xs tabular-nums text-muted-foreground md:block">
@@ -141,8 +134,15 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
   );
 }
 
-function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: string }) {
-  const selectLog = useGatewayOverlayStore((s) => s.selectLog);
+function GatewayLogDetail({
+  projectId,
+  logId,
+  onBack,
+}: {
+  projectId: string;
+  logId: string;
+  onBack: () => void;
+}) {
   const { data, isLoading } = useGatewayLog(projectId, logId);
 
   return (
@@ -150,7 +150,7 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/50 bg-background/95 px-4 py-2.5 backdrop-blur">
         <button
           type="button"
-          onClick={() => selectLog(null)}
+          onClick={onBack}
           className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ArrowLeft className="size-4" /> Logs
@@ -183,29 +183,22 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <StatTile
-              icon={Clock}
-              label="Latency"
-              value={`${data.latency_ms}ms`}
-              accent="var(--chart-2)"
-            />
+            <StatTile icon={Clock} label="Latency" value={`${data.latency_ms}ms`} />
             <StatTile
               icon={Coins}
               label="Tokens"
               value={(data.input_tokens + data.output_tokens).toLocaleString()}
-              accent="var(--chart-3)"
             />
             <StatTile
               icon={Activity}
               label="Provider cost"
               value={`$${data.upstream_cost.toFixed(4)}`}
-              accent="var(--chart-4)"
             />
             <StatTile
               icon={DollarSign}
               label="Billed"
               value={`$${data.final_cost.toFixed(4)}`}
-              accent="var(--chart-1)"
+              accent="var(--kortix-blue)"
             />
           </div>
 
@@ -248,8 +241,7 @@ function GatewayLogDetail({ projectId, logId }: { projectId: string; logId: stri
 }
 
 export function GatewayLogs({ projectId }: { projectId: string }) {
-  const selectedLogId = useGatewayOverlayStore((s) => s.selectedLogId);
-  const selectLog = useGatewayOverlayStore((s) => s.selectLog);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'ok' | 'err'>('all');
   const { data, isLoading } = useGatewayLogs(
     projectId,
@@ -257,7 +249,14 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
   );
   const logs = data?.logs ?? [];
 
-  if (selectedLogId) return <GatewayLogDetail projectId={projectId} logId={selectedLogId} />;
+  if (selectedLogId)
+    return (
+      <GatewayLogDetail
+        projectId={projectId}
+        logId={selectedLogId}
+        onBack={() => setSelectedLogId(null)}
+      />
+    );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -307,7 +306,7 @@ export function GatewayLogs({ projectId }: { projectId: string }) {
           />
         ) : (
           logs.map((row) => (
-            <LogRow key={row.log_id} row={row} onClick={() => selectLog(row.log_id)} />
+            <LogRow key={row.log_id} row={row} onClick={() => setSelectedLogId(row.log_id)} />
           ))
         )}
       </div>

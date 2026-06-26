@@ -151,16 +151,6 @@ export interface CreatedGatewayKey {
   secret_key: string;
 }
 
-export interface GatewayPlaygroundResult {
-  model: string;
-  ok: boolean;
-  latency_ms?: number;
-  output?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  error?: string;
-}
-
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }): T {
   if (!response.success || response.data === undefined) {
     throw response.error ?? new Error('Gateway request failed');
@@ -265,18 +255,5 @@ export async function revokeGatewayKey(
 ): Promise<{ ok: boolean }> {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/keys/${keyId}`),
-  );
-}
-
-export async function runGatewayPlayground(
-  projectId: string,
-  prompt: string,
-  models: string[],
-): Promise<{ results: GatewayPlaygroundResult[] }> {
-  return unwrap(
-    await backendApi.post<{ results: GatewayPlaygroundResult[] }>(
-      `/projects/${projectId}/gateway/playground`,
-      { prompt, models },
-    ),
   );
 }
