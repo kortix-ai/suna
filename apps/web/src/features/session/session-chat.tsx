@@ -3910,10 +3910,10 @@ export function SessionChat({
         // ignore
       }
 
-      // Send the message with retry. The useSendOpenCodeMessage hook already
-      // retries 3 times internally for transient errors. We add one additional
-      // outer retry (2 attempts total at this level) to cover cases where the
-      // SDK client itself fails to initialize or the server takes longer to start.
+      // Send the first message with retry. This path talks to opencode directly
+      // via client.session.promptAsync, so the retry on transient 5xx
+      // ("opencode not ready" while the sandbox is still booting) is implemented
+      // inline below, mirroring the manual handleSend path.
       const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
       const messageID = ascendingId('msg');
       const textPartId = ascendingId('prt');
@@ -3998,21 +3998,52 @@ export function SessionChat({
           return;
         }
 
-        try {
-          const res = await client.session.promptAsync({
-            sessionID: sessionId,
-            parts,
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: sendOpts.model }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          } as any);
+        // Sending the FIRST message races the sandbox's opencode coming up:
+        // the proxy returns 503 { error: "opencode not ready" } until the binary
+        // binds its port. A 5xx means the prompt was NEVER accepted (no turn
+        // started), so retry with backoff — the SAME policy the manual send path
+        // (handleSend) already uses — instead of surfacing a transient blip as a
+        // terminal error. Only non-transient (4xx) or exhausted retries fall
+        // through to handlePromptError.
+        const retryBackoffMs = [400, 800, 1500, 3000, 5000, 8000, 8000, 8000];
+        const maxAttempts = retryBackoffMs.length + 1;
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        for (let attempt = 1; ; attempt++) {
+          if (cancelled) return;
+          let res: Awaited<ReturnType<typeof client.session.promptAsync>> | undefined;
+          let thrown = false;
+          let thrownErr: unknown;
+          try {
+            res = await client.session.promptAsync({
+              sessionID: sessionId,
+              parts,
+              ...(session?.directory ? { directory: session.directory } : {}),
+              ...(sendOpts?.agent && { agent: sendOpts.agent }),
+              ...(sendOpts?.model && { model: sendOpts.model }),
+              ...(sendOpts?.variant && { variant: sendOpts.variant }),
+            } as any);
+          } catch (err) {
+            thrown = true;
+            thrownErr = err;
+          }
+
           // The SDK resolves (not rejects) on HTTP errors, returning
-          // { error: ... } instead of throwing. Handle this case so
-          // the UI doesn't stay stuck on "busy" forever.
-          if (res?.error) handlePromptError(res.error);
-        } catch (err) {
-          handlePromptError(err);
+          // { error, response } instead of throwing.
+          const errLike = thrown ? thrownErr : (res as { error?: unknown } | undefined)?.error;
+          if (!errLike) break; // accepted (204) — SSE streams the response
+
+          const status = thrown
+            ? undefined
+            : (res as { response?: Response } | undefined)?.response?.status;
+          const transient =
+            status === undefined || status >= 500 || status === 408 || status === 429;
+          if (transient && attempt < maxAttempts) {
+            setIsRetrying(true);
+            await sleep(retryBackoffMs[attempt - 1]);
+            continue;
+          }
+          handlePromptError(errLike);
+          break;
         }
       })();
     };

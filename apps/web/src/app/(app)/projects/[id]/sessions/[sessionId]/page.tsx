@@ -538,7 +538,7 @@ function ActiveSessionChat({
     if (sessionsListed) sessionMark(sessionId, 'opencode-listed');
   }, [sessionsListed, sessionId]);
   useEffect(() => {
-    if (!chatSessionId) return;
+    if (!chatSessionId || !runtimeReady) return;
     sessionMark(sessionId, 'chat-ready');
     const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
       'project',
@@ -547,7 +547,7 @@ function ActiveSessionChat({
       sessionId,
     ]);
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
-  }, [chatSessionId, sessionId, projectId, queryClient]);
+  }, [chatSessionId, runtimeReady, sessionId, projectId, queryClient]);
 
   // Tell the page to crossfade the chat in once it's genuinely showable — the
   // session id is resolved AND the runtime is healthy, OR an error card is about
@@ -647,7 +647,7 @@ function ActiveSessionChat({
   // Sandbox up + switched, still resolving runtime health + the canonical pin.
   // Render NOTHING here (not a second loader) — the page's single persistent
   // loader is on top and crossfades out once chatShowable flips onChatReady.
-  if (!chatSessionId) {
+  if (!runtimeReady || !chatSessionId) {
     return null;
   }
 
