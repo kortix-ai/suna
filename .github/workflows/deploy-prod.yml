@@ -109,8 +109,8 @@ jobs:
           set -euo pipefail
           # Prefer the image built from the EXACT promoted staging commit
           # (staging-<sha8>). This covers both paths into staging:
-          #   1. Promote Dev to Staging, where staging points at a dev commit.
-          #   2. A direct PR into staging, where the SHA may never exist on main.
+          #   1. main -> staging PR, where staging contains the full dev candidate.
+          #   2. targeted branch -> staging PR, where the SHA may never exist on main.
           # For legacy/manual releases, fall back to dev-<sha8>, then dev-latest.
           for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
             STAGING_TAG=""

@@ -16,9 +16,9 @@ The branch flow is:
 
 ```text
 main/dev
-  ├─ Promote Dev to Staging action
+  ├─ PR main directly into staging
   │     or
-  └─ targeted PR directly into staging
+  └─ targeted branch PR directly into staging
         ↓
 staging/pre-prod
         ↓ Promote to Production action opens reviewed release PR
@@ -42,10 +42,14 @@ This gives the team a free development lane where CI still reports failures but 
 ### `staging`
 
 `staging` is the pre-prod source of truth. Treat anything on staging as
-production-ready unless QA proves otherwise. It can move in two ways:
+production-ready unless QA proves otherwise. Human/code changes move in two ways:
 
-1. **Promote Dev to Staging**: a manual workflow moves `staging` to a chosen dev ref, usually `main`.
-2. **PR to Staging**: a release candidate, rollback candidate, or one-off selective patch can target `staging` directly.
+1. **PR main to Staging**: stage the full dev candidate.
+2. **PR targeted branch to Staging**: stage a release candidate, rollback candidate, or one-off selective patch without taking all of `main`.
+
+The staging deploy workflow may add `[skip ci]` GitOps pin commits after a PR
+merge so Argo CD can roll exact image tags. Those bot commits are deployment
+metadata, not a human promotion path.
 
 Every push to `staging` must build exact staging artifacts:
 
@@ -229,11 +233,11 @@ The production promotion button should remain fast to start but strict to merge:
 8. Configure GitHub vars/secrets for staging e2e.
 9. Set branch protections:
    - `main`: direct pushes allowed, no force/delete.
-   - `staging`: direct workflow promotion allowed, no force/delete.
+   - `staging`: PR-based human changes plus bot GitOps pin commits, no force/delete.
    - `prod`: reviewed PR plus `qa-release`.
 10. Run an end-to-end rehearsal:
     - push to `main`;
-    - promote dev to staging;
+    - merge a PR into staging;
     - confirm staging images and staging QA;
     - promote staging to production;
     - confirm prod health reports the released version and source commit.
@@ -242,4 +246,4 @@ The production promotion button should remain fast to start but strict to merge:
 
 1. Whether staging gets a completely separate Supabase project from day one. This is strongly recommended; without it, workers should remain disabled on staging.
 2. Whether staging should run in `us-west-2` for cost and operational parity with dev, or in prod's `eu-west-2` region to catch region-specific latency and IAM differences. Default recommendation: `us-west-2` first, `eu-west-2` only if prod-parity staging becomes necessary.
-3. Whether direct human pushes to `staging` are allowed. Default recommendation: allow the promotion workflow and normal PRs; do not encourage manual direct pushes.
+3. Whether direct human pushes to `staging` are allowed. Default recommendation: no; use normal PRs for human/code changes and allow only bot GitOps pin commits during deploy.

@@ -53,6 +53,7 @@ import {
   useOpenCodeSessionTodo,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { AnimatePresence, motion } from 'motion/react';
+import { extractClipboardFiles } from './clipboard-files';
 import { ModelSelector } from './model-selector';
 
 import {
@@ -1824,6 +1825,18 @@ export function SessionChatInput({
     [appendAttachedFiles, disabled, lockForQuestion, dragHasFiles],
   );
 
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (disabled || lockForQuestion) return;
+      const files = extractClipboardFiles(e.clipboardData);
+      // No files on the clipboard — let the browser handle the text paste.
+      if (files.length === 0) return;
+      e.preventDefault();
+      appendAttachedFiles(files);
+    },
+    [appendAttachedFiles, disabled, lockForQuestion],
+  );
+
   const removeAttachedFile = (index: number) => {
     setAttachedFiles((prev) => {
       const removed = prev[index];
@@ -2463,6 +2476,7 @@ export function SessionChatInput({
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 onScroll={() => {
                   if (highlightRef.current && textareaRef.current) {
                     highlightRef.current.scrollTop = textareaRef.current.scrollTop;

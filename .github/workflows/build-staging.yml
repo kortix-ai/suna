@@ -1,12 +1,14 @@
 name: Build Staging Artifacts
 
-# Staging is the pre-prod branch. It can advance either through the
-# "Promote Dev to Staging" workflow or by direct PRs into `staging`.
+# Staging is the pre-prod branch. Human/code changes advance it by PR only:
+# either `main` -> `staging` for the full dev candidate, or a targeted branch
+# -> `staging` for a selective release candidate.
 #
 # Build every releasable container on every staging push and tag it with the
 # exact staging commit (`staging-<sha8>`). That gives deploy-prod a precise image
-# source for both normal dev promotions and staging-only hotfix/release-candidate
-# PRs.
+# source for both full dev-candidate PRs and staging-only hotfix/release-candidate
+# PRs. The deploy workflow may add `[skip ci]` GitOps pin commits after this
+# build; those are deployment metadata, not code promotion.
 
 on:
   push:

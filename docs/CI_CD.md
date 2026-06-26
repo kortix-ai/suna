@@ -100,7 +100,7 @@ If a UI target var is unset, `qa-staging` **skips browser regression with a noti
 
 - **Secrets:** `DOTENV_PRIVATE_KEY` (api suite), `KE2E_*` (ke2e), `QA_REPORTS_ROLE_ARN`, `DRATA_IAC_PIPELINE_KEY`, `SLACK_BOT_TOKEN` + `SLACK_RELEASE_CHANNEL` (release/hotfix alerts), `SLACK_HOTFIX_CHANNEL` (optional dedicated incident channel; falls back to release channel), `PROD_HOTFIX_TOKEN` (optional, if branch protection blocks the bot push).
 - **Vars:** `QA_WEB_BASE_URL` (enables UI regression), `A11Y_CONTRAST_MAX`, `QA_REPORTS_BUCKET`, `QA_AWS_REGION`, `QA_REPORTS_PUBLIC_BASE_URL`, `MIN_COVERAGE`.
-- **Branch protection:** keep `main` push-friendly (no force/delete), keep `staging` as the pre-prod branch (promotion workflow or PRs), require `qa-release` on `prod`; create the `production-hotfix` environment with reviewers. See `docs/specs/2026-06-25-dev-staging-prod-release-topology.md`.
+- **Branch protection:** keep `main` push-friendly (no force/delete), keep `staging` as the pre-prod branch for PR-based human/code changes plus bot GitOps pin commits, require `qa-release` on `prod`; create the `production-hotfix` environment with reviewers. See `docs/specs/2026-06-25-dev-staging-prod-release-topology.md`.
 - **Staging DB isolation:** `deploy-staging.yml` must fail if `STAGING_DATABASE_URL`
   is missing; staging must not fall back to dev, KE2E, or prod Postgres for
   migrations or runtime.

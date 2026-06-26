@@ -491,5 +491,5 @@ jobs:
             echo "### Staging verified"
             echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
             echo "- Web: https://${WEB_HOST} serves staging runtime config"
-            echo "- GitOps: API ALB `${{ needs.deploy-k8s.outputs.api_alb }}`"
+            echo "- GitOps: API ALB ${{ needs.deploy-k8s.outputs.api_alb }}"
           } >> "$GITHUB_STEP_SUMMARY"
