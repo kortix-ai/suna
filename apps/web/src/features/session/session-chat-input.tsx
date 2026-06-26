@@ -47,14 +47,15 @@ import type {
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import {
-  GATEWAY_PROVIDER_IDS,
   useOpenCodeSessions,
   useOpenCodeSessionTodo,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { AnimatePresence, motion } from 'motion/react';
 import { extractClipboardFiles } from './clipboard-files';
 import { ModelSelector } from './model-selector';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 import {
   CommandGroup,
@@ -107,28 +108,42 @@ export interface FlatModel {
     input: number;
     output: number;
   };
+  /** True for zero-cost managed models exposed by the gateway. */
+  free?: boolean;
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
 }
 
+function catalogModelFor(providerID: string, modelID: string) {
+  let lookupProviderID = providerID;
+  let lookupModelID = modelID;
+  if (providerID === 'kortix') {
+    const slash = modelID.indexOf('/');
+    if (slash !== -1) {
+      lookupProviderID = modelID.slice(0, slash);
+      lookupModelID = modelID.slice(slash + 1);
+    }
+  }
+  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find((model) => model.id === lookupModelID);
+}
+
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
-  const all = Array.isArray(providers.all) ? providers.all : [];
-  const connected = Array.isArray(providers.connected) ? providers.connected : [];
+  const normalized = normalizeProviderList(providers);
+  const all = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   const result: FlatModel[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    // Defense in depth: the provider list is already source-filtered to the
-    // gateway, but never render a native (bypass) provider even if one slips in.
-    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models)) {
       const caps = (model as any).capabilities;
       const modalities = (model as any).modalities;
+      const catalogModel = catalogModelFor(p.id, modelID);
       result.push({
         providerID: p.id,
         providerName: p.name,
         modelID,
-        modelName: (model.name || modelID).replace('(latest)', '').trim(),
+        modelName: (model.name || catalogModel?.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
         capabilities: caps
           ? {
@@ -142,7 +157,8 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
               toolcall: (model as any).tool_call ?? false,
             },
         contextWindow: (model as any).limit?.context,
-        releaseDate: (model as any).release_date,
+        releaseDate:
+          (model as any).release_date ?? (model as any).released ?? catalogModel?.released ?? undefined,
         family: (model as any).family,
         cost: (model as any).cost
           ? {
@@ -150,6 +166,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
               output: (model as any).cost.output ?? 0,
             }
           : undefined,
+        free: (model as any).free === true,
         providerSource: (p as any).source,
       });
     }
@@ -1403,6 +1420,12 @@ export interface SessionChatInputProps {
   ) => void | Promise<void>;
   isBusy?: boolean;
   onStop?: () => void;
+  /**
+   * Render the stop button in its disabled state even without an `onStop` — used
+   * by the instant session shell while the computer is still booting, so the
+   * busy input shows a (non-clickable) stop button instead of nothing at all.
+   */
+  stopDisabled?: boolean;
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -1495,6 +1518,7 @@ export function SessionChatInput({
   onSend,
   isBusy = false,
   onStop,
+  stopDisabled = false,
   agents = [],
   selectedAgent = null,
   onAgentChange,
@@ -2577,7 +2601,7 @@ export function SessionChatInput({
 
               <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
 
-              {isBusy && onStop && !lockForQuestion && (
+              {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
@@ -2599,6 +2623,7 @@ export function SessionChatInput({
                       <Button
                         size="sm"
                         onClick={onStop}
+                        disabled={stopDisabled || !onStop}
                         className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                       >
                         <div className="h-3 w-3 rounded-[3px] bg-current" />

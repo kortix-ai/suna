@@ -8,6 +8,7 @@ import {
   persistGatewayTrace,
   recordGatewayUsage,
 } from './hooks';
+import { matchesInternalToken } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
@@ -21,7 +22,7 @@ export function createInternalGatewayRoutes() {
 
   app.use('*', async (c, next) => {
     if (!internalToken) return c.json({ error: 'internal gateway disabled' }, 503);
-    if (c.req.header('authorization') !== `Bearer ${internalToken}`) {
+    if (!matchesInternalToken(c.req.header('authorization'), internalToken)) {
       return c.json({ error: 'unauthorized' }, 401);
     }
     return next();

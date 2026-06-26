@@ -105,6 +105,7 @@ export {
   tunnelPermissions,
   tunnelPermissionRequests,
   tunnelAuditLogs,
+  tunnelRpcForwards,
   tunnelDeviceAuthStatusEnum,
   tunnelDeviceAuthRequests,
   tunnelConnectionsRelations,

@@ -4,11 +4,13 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -66,13 +68,21 @@ export function InstantSessionShell({
 
   // A pending prompt may already be staged (home composer send) → show the
   // booting view immediately in that case.
-  const [submitted, setSubmitted] = useState<string | null>(() => {
+  const [submission, setSubmission] = useState<{
+    text: string;
+    files: AttachedFile[];
+  } | null>(() => {
     if (typeof window === 'undefined') return null;
-    return (
+    const text =
       sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ??
-      sessionStorage.getItem(`project_pending_prompt:${sessionId}`)
-    );
+      sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+    if (!text) return null;
+    return {
+      text,
+      files: usePendingFilesStore.getState().files,
+    };
   });
+  const submitted = submission?.text ?? null;
 
   const handleSend = useCallback(
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
@@ -91,7 +101,7 @@ export function InstantSessionShell({
         usePendingFilesStore.getState().setPendingFiles(files);
       }
 
-      setSubmitted(text);
+      setSubmission({ text, files: files ?? [] });
       onSubmit?.();
     },
     [sessionId, submitted, onSubmit],
@@ -135,7 +145,7 @@ export function InstantSessionShell({
       <div className="relative z-10 min-h-0 flex-1">
         <div className="scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto px-4 py-4">
           <div className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6">
-            {submitted && (
+            {submission && (
               <div className="flex min-w-0 flex-col">
                 {/* Optimistic turn — the EXACT same DOM shape + spacing as
                     SessionChat's optimistic block (turn wrapper → justify-end
@@ -144,8 +154,24 @@ export function InstantSessionShell({
                 <div className="mt-12 first:mt-0">
                   <div className="flex justify-end">
                     <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
+                      {submission.files.length > 0 && (
+                        <div className="flex flex-wrap gap-2 p-3 pb-0">
+                          {submission.files.map((file, i) => {
+                            const ref = optimisticUploadedFileRef(file);
+                            return (
+                              <div key={`${ref.path}-${i}`} onClick={(e) => e.stopPropagation()}>
+                                <GridFileCard
+                                  filePath={ref.path}
+                                  fileName={ref.path.split('/').pop() || ref.path}
+                                  deferPreview
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                       <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-                        {submitted}
+                        {submission.text}
                       </p>
                     </div>
                   </div>
@@ -172,8 +198,13 @@ export function InstantSessionShell({
         onCommand={handleCommand}
         sessionId={sessionId}
         projectId={projectId}
+        // While the computer boots after the first send the input stays fully
+        // normal (typeable) — only the send button flips to a stop button. The
+        // stop is disabled because there's nothing running to stop yet; the real
+        // chat's live stop takes over the instant it crossfades in. (A duplicate
+        // send is harmless — handleSend ignores it while `submitted` is set.)
         isBusy={!!submitted}
-        disabled={!!submitted}
+        stopDisabled={!!submitted}
         autoFocus
       />
     </div>

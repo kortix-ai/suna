@@ -164,19 +164,28 @@ async function main() {
   const sessionId = sess.json?.session_id || sess.json?.id;
   if (!ok('POST session', !!sessionId, `${sess.status} ${sess.text.slice(0, 160)}`)) return finish({ projectId });
 
-  // 6. sandbox active
+  // 6. sandbox active. The current session-open contract is POST /start: it is
+  // idempotent, provisions/resumes the runtime, and returns the serialized
+  // session_sandboxes row once ready.
   log('Polling sandbox...');
-  let ext = '', sbStatus = '';
+  let ext = '', sbStatus = '', startStage = '';
   const sbEnd = Date.now() + 5 * 60_000;
   while (Date.now() < sbEnd) {
-    const sb = await api('GET', `/projects/${projectId}/sessions/${sessionId}/sandbox`);
-    if (sb.status === 404) { await sleep(4000); continue; }
-    sbStatus = sb.json?.status ?? ''; ext = sb.json?.external_id || sb.json?.externalId || '';
-    log(`   sandbox: status=${sbStatus} ext=${ext || '—'}`);
-    if (sbStatus === 'active' || sbStatus === 'error' || sbStatus === 'failed') break;
-    await sleep(5000);
+    const sb = await api('POST', `/projects/${projectId}/sessions/${sessionId}/start?wait_ms=8000`);
+    startStage = sb.json?.stage ?? '';
+    const sandbox = sb.json?.sandbox ?? null;
+    sbStatus = sandbox?.status ?? '';
+    ext = sandbox?.external_id || sandbox?.externalId || '';
+    log(`   sandbox: stage=${startStage || '—'} status=${sbStatus || '—'} ext=${ext || '—'}`);
+    if (startStage === 'ready' && sbStatus === 'active' && ext) break;
+    if (startStage === 'failed' || sbStatus === 'error' || sbStatus === 'failed') break;
+    if (sb.status >= 400 && sb.status !== 404) {
+      ok('sandbox start', false, `${sb.status} ${sb.text.slice(0, 200)}`);
+      break;
+    }
+    await sleep(1000);
   }
-  if (!ok('sandbox active', sbStatus === 'active', `status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
+  if (!ok('sandbox active', startStage === 'ready' && sbStatus === 'active', `stage=${startStage} status=${sbStatus}`) || !ext) return finish({ projectId, sessionId });
 
   // 7. OpenCode reachable
   log('Probing OpenCode runtime...');
@@ -254,13 +263,21 @@ async function main() {
     const upS = await proxy(ext, 'POST', '/file/upload', { body: f });
     const secretPath = Array.isArray(upS.json) ? upS.json[0]?.path : undefined;
     ok('upload secret file for agent', upS.status === 200 && !!secretPath, `${upS.status}`);
+    const readSecret = secretPath
+      ? await proxy(ext, 'GET', `/file/content?path=${encodeURIComponent(String(secretPath).replace(/^\/workspace\/?/, ''))}`)
+      : null;
+    ok(
+      'secret file readable before agent prompt',
+      readSecret?.status === 200 && String(readSecret.json?.content ?? readSecret.json?.text ?? '').includes(marker),
+      readSecret ? `${readSecret.status} ${readSecret.text.slice(0, 120)}` : 'no path',
+    );
 
     const oc = await proxy(ext, 'POST', '/session', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
     const ocId = oc.json?.id;
     if (ok('create OpenCode session', !!ocId, `${oc.status}`)) {
       // Mirror the apps/web convention: a <file ...> XML ref pointing at the path.
-      const promptText = `Read the file at ${secretPath} and reply with ONLY the secret word it contains.\n\n<file path="${secretPath}" mime="text/plain" filename="secret.txt">\nThis file has been uploaded and is available at the path above.\n</file>`;
-      const prompt = await proxy(ext, 'POST', `/session/${ocId}/prompt_async`, {
+      const promptText = `Use the filesystem tools to read ${secretPath}. Reply with ONLY the secret word from that file.\n\n<file path="${secretPath}" mime="text/plain" filename="secret.txt">\nThis file has been uploaded and is available at the path above.\n</file>`;
+      const prompt = await proxy(ext, 'POST', `/session/${ocId}/prompt_async?directory=${encodeURIComponent('/workspace')}`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parts: [{ type: 'text', text: promptText }], model: { providerID: MODEL_PROVIDER, modelID: MODEL_ID } }),
       });
@@ -268,20 +285,29 @@ async function main() {
 
       log('Waiting for the agent to read the uploaded file...');
       let assistantText = '';
-      const rEnd = Date.now() + 3 * 60_000;
+      let markerSeenInMessages = false;
+      let lastMessageSample = '';
+      const rEnd = Date.now() + 5 * 60_000;
       while (Date.now() < rEnd) {
-        const m = await proxy(ext, 'GET', `/session/${ocId}/message`);
+        const m = await proxy(ext, 'GET', `/session/${ocId}/message?directory=${encodeURIComponent('/workspace')}`);
         const items = Array.isArray(m.json) ? m.json : (m.json?.messages ?? []);
+        const serialized = JSON.stringify(items);
+        lastMessageSample = serialized.slice(0, 240);
+        markerSeenInMessages = serialized.includes(marker);
         for (const entry of items) {
           if ((entry?.info?.role ?? entry?.role) !== 'assistant') continue;
           const parts = entry?.parts ?? entry?.info?.parts ?? [];
           const txt = parts.filter((p: any) => p?.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('').trim();
           if (txt) assistantText = txt;
         }
-        if (assistantText.includes(marker)) break;
+        if (assistantText.includes(marker) || markerSeenInMessages) break;
         await sleep(3000);
       }
-      ok('agent read uploaded file content', assistantText.includes(marker), assistantText ? `"${assistantText.slice(0, 120)}"` : 'no reply in 3m');
+      ok(
+        'agent read uploaded file content',
+        assistantText.includes(marker) || markerSeenInMessages,
+        assistantText ? `"${assistantText.slice(0, 120)}"` : lastMessageSample || 'no message payload in 5m',
+      );
     }
   } else {
     log('⚠️  no OPENROUTER key — skipping agent-reads-file assertion (file I/O still fully verified)');

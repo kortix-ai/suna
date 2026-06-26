@@ -646,10 +646,121 @@ app.openapi(
 app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
-  // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
-  // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
-  const { mountLlmGateway } = await import('./llm-gateway/wire');
-  mountLlmGateway(app);
+  const { createLlmGateway } = await import('./llm-gateway');
+  const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
+  const { validateAccountToken } = await import('./repositories/account-tokens');
+  const { assertBillingActive } = await import('./billing/services/billing-gate');
+  const { deductForLlmUsage } = await import('./billing/services/credits');
+  const { recordUsageEvent } = await import('./shared/usage-events');
+  const { llmPriceMarkup } = await import('./billing/services/tiers');
+
+  app.route(
+    '/v1/llm',
+    createLlmGateway(
+      {
+        enabled: config.LLM_GATEWAY_ENABLED,
+        openrouterApiKey: config.OPENROUTER_API_KEY,
+        markup: llmPriceMarkup(),
+        appName: 'Kortix',
+        appReferer: config.KORTIX_URL,
+      },
+      {
+        authenticateToken: async (token) => {
+          // Legacy per-member YOLO token (prod per-seat path) takes priority.
+          const yolo = await attributeYoloToken(token);
+          if (yolo) return yolo;
+          // YOLO is discontinued; sandboxes now present their account token
+          // (a kortix_pat_ minted at provision). Resolve it to {userId, accountId}
+          // so the managed gateway works for self-hosted / billing-off deploys.
+          const acct = await validateAccountToken(token);
+          if (acct.isValid && acct.userId && acct.accountId) {
+            // projectId/sessionId attribute LLM usage to the calling session
+            // (sandbox executor token is minted per-session with session_id =
+            // sandbox_id) — the reaper's reliable activity signal + precise
+            // per-session billing.
+            return {
+              userId: acct.userId,
+              accountId: acct.accountId,
+              projectId: acct.projectId ?? null,
+              sessionId: acct.sessionId ?? null,
+            };
+          }
+          return null;
+        },
+        assertBillingActive,
+        recordUsage: async (event) => {
+          // Always record usage_events for observability (token counts, model,
+          // request id) — useful in self-hosted for debugging even with no
+          // wallet deduction.
+          const usageEventId = await recordUsageEvent({
+            accountId: event.accountId,
+            actorUserId: event.actorUserId,
+            projectId: event.projectId ?? null,
+            sessionId: event.sessionId ?? null,
+            provider: event.provider,
+            model: event.model,
+            route: '/v1/llm/chat/completions',
+            inputTokens: event.promptTokens,
+            outputTokens: event.completionTokens,
+            cachedTokens: event.cachedTokens,
+            costUsd: event.finalCost,
+            streaming: event.streaming,
+            metadata: {
+              upstreamCostUsd: event.upstreamCost,
+              markup: llmPriceMarkup(),
+              requestId: event.requestId,
+            },
+          });
+          // Hard gate: never debit the wallet when billing is disabled.
+          if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
+          await deductForLlmUsage({
+            accountId: event.accountId,
+            costUsd: event.finalCost,
+            model: event.model,
+            provider: event.provider,
+            actorUserId: event.actorUserId,
+            usageEventId,
+            upstreamCostUsd: event.upstreamCost,
+            markup: llmPriceMarkup(),
+          });
+        },
+      },
+    ),
+  );
+
+  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
+  app.route('/internal/gateway', createInternalGatewayRoutes());
+
+  if (
+    config.LLM_GATEWAY_ENABLED &&
+    !config.LLM_GATEWAY_BASE_URL &&
+    !config.LLM_GATEWAY_PROXY_PORT &&
+    !config.LLM_GATEWAY_PROXY_TARGET
+  ) {
+    appLogger.error(
+      '[gateway] LLM_GATEWAY_BASE_URL is unset and no proxy is configured — sandboxes will fall back to the in-API /v1/llm passthrough (OpenRouter-only, wrong catalog shape → single-model picker). Set LLM_GATEWAY_BASE_URL to the standalone gateway URL (e.g. https://gateway.kortix.com/v1/llm).',
+    );
+  }
+
+  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+    const proxyBase = (
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+    ).replace(/\/+$/, '');
+    app.all('/v1/llm-gateway/*', async (c) => {
+      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+      const target = `${proxyBase}${tail}`;
+      const init: RequestInit & { duplex?: 'half' } = {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+      };
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        init.body = c.req.raw.body;
+        init.duplex = 'half';
+      }
+      const upstream = await fetch(target, init);
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    });
+  }
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -680,11 +791,9 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
-app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — raw AgentMail events
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
@@ -874,6 +983,15 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
+  // toggles (warm_snapshot / warm_pool / provider_fallback) are honored from
+  // request #1. Without this a fresh pod serves the cold-cache defaults for the
+  // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
+  // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
+  // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
+  await import('./platform/services/runtime-settings')
+    .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
@@ -1012,12 +1130,10 @@ export default {
       server.timeout(req, 0);
     }
 
-    // LLM chat completions stream SSE — both the in-API /v1/llm pipeline and the
-    // /v1/llm-gateway reverse proxy to the standalone pod. Let the gateway's own
-    // keep-alive / upstream timeout govern them instead of Bun closing the client
-    // socket at idleTimeout with an empty reply. (startsWith('/v1/llm') covers
-    // both /v1/llm and /v1/llm-gateway.)
-    if (url.pathname.startsWith('/v1/llm')) {
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
       server.timeout(req, 0);
     }
 
@@ -1143,7 +1259,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
+        tunnelWsHandlers.onClose(ws.data.tunnelId);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

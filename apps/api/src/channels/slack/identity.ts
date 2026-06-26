@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
-import { postEphemeral } from '../slack-api';
+import { openDmChannel, postBlocks } from '../slack-api';
 import { buildSlackLoginUrl } from './login';
 
 const PLATFORM = 'slack';
@@ -110,41 +110,41 @@ export async function revokeSlackIdentity(teamId: string, slackUserId: string): 
 }
 
 // Nudge an unlinked / non-member sender to connect their own Kortix account.
-// Ephemeral, so it never leaks the prompt to the rest of the channel.
-export async function postEphemeralLoginPrompt(input: {
+// Sent as a DM — it pushes a notification and persists, so the user actually
+// sees it (an ephemeral in the channel/thread is silent and easy to miss). The
+// `<#channel>` link gives them context for where they triggered it.
+export async function postLoginPrompt(input: {
   projectId: string;
   teamId: string;
   channel?: string;
-  threadTs?: string;
   slackUserId: string;
   reason: 'unlinked' | 'not_member';
 }): Promise<void> {
-  if (!input.channel) return;
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
+  const dm = await openDmChannel(token, input.slackUserId);
+  if (!dm) return;
 
   const url = buildSlackLoginUrl({ teamId: input.teamId, slackUserId: input.slackUserId });
+  const where = input.channel ? ` in <#${input.channel}>` : '';
   const text =
     input.reason === 'not_member'
-      ? "You're signed in, but that Kortix account isn't a member of this workspace's project. Ask an admin to add you, then connect again."
-      : 'Kortix now runs as *your own* Kortix account — connect it once to continue.';
+      ? `You messaged Kortix${where}, but that Kortix account isn't a member of this workspace's project. Ask an admin to add you, then connect again.`
+      : `You messaged Kortix${where}. Kortix runs as *your own* Kortix account — connect it once to continue.`;
 
-  await postEphemeral(token, input.channel, input.slackUserId, text, {
-    threadTs: input.threadTs,
-    blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text } },
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: 'Connect my Kortix account', emoji: true },
-            style: 'primary',
-            url,
-            action_id: 'slack_login_connect',
-          },
-        ],
-      },
-    ],
-  });
+  await postBlocks(token, dm, text, [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Connect my Kortix account', emoji: true },
+          style: 'primary',
+          url,
+          action_id: 'slack_login_connect',
+        },
+      ],
+    },
+  ]);
 }

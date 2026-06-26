@@ -9,6 +9,7 @@ interface GridFileCardProps {
   fileName: string;
   onClick?: () => void;
   className?: string;
+  deferPreview?: boolean;
 }
 
 /**
@@ -16,7 +17,13 @@ interface GridFileCardProps {
  * This is the universal file card used everywhere in the app.
  * Matches the /files page grid view cards.
  */
-export function GridFileCard({ filePath, fileName, onClick, className }: GridFileCardProps) {
+export function GridFileCard({
+  filePath,
+  fileName,
+  onClick,
+  className,
+  deferPreview,
+}: GridFileCardProps) {
   return (
     <div
       onClick={onClick}
@@ -34,6 +41,7 @@ export function GridFileCard({ filePath, fileName, onClick, className }: GridFil
         filePath={filePath}
         fileName={fileName}
         className="h-[100px]"
+        deferPreview={deferPreview}
       />
 
       {/* Name area */}

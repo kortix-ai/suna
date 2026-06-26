@@ -309,6 +309,14 @@ export async function handleChatCompletions(
       descriptor.pricing,
     );
 
+    // A billable request that priced to $0 means we have no pricing for the
+    // resolved model (stale catalog) — surface it so it can't silently leak.
+    if (markup > 0 && upstreamCost === 0 && counts.promptTokens + counts.completionTokens > 0) {
+      logger.warn(
+        `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${descriptor.provider}`,
+      );
+    }
+
     if (counts.promptTokens + counts.completionTokens > 0) {
       const event: UsageEvent = {
         ...counts,

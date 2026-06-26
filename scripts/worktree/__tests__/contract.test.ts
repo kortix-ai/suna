@@ -59,7 +59,7 @@ describe('DEPS are well-formed', () => {
       expect(typeof d.check).toBe('function');
       expect(d.installMac.length).toBeGreaterThan(0);
       expect(d.installLinux.length).toBeGreaterThan(0);
-      expect(['always', 'tunnel']).toContain(d.needed);
+      expect(['always', 'database', 'isolated-db', 'tunnel']).toContain(d.needed);
     }
   });
 });

@@ -472,12 +472,11 @@ async function runPoolMode(
 
   // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful/warm-pool
   // only — this whole function is the warm path; cold + Daytona never run it).
-  // Start TWO localhost credential proxies (LLM gateway + executor MCP) and point
-  // opencode's baked config at them, so the SEED bakes a SESSION-INDEPENDENT
-  // config (placeholder tokens + proxied URLs) and CLAIM can inject the real
-  // per-session tokens live, skipping the ~8s opencode restart. Best-effort: a
-  // bind failure leaves the *_PROXY_URL unset → that contributor bakes nothing
-  // session-independent and claim falls back to the restart path.
+  // Start the localhost LLM credential proxy, and optionally the Executor proxy
+  // used by the compatibility MCP face. The agent-facing Executor path is the
+  // `kortix executor` CLI, which reads live env on each shell command and does
+  // not need an OpenCode restart. Best-effort: a bind failure leaves the
+  // *_PROXY_URL unset and claim falls back to the restart path where needed.
   const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
   if (llmHotswap) {
     const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
@@ -492,11 +491,11 @@ async function runPoolMode(
     const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
     const exUrl = startExecutorProxy(exPort)
     if (exUrl) {
-      // Seen by buildOpencodeConfigContent → mcp.kortix-executor.KORTIX_API_URL
-      // routes through the proxy, so the tokenless seed bakes a working MCP.
+      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
+      // The proxy is harmless when unused; the CLI remains the primary path.
       process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
       bootMark('pool-executor-proxy-started')
-      logger.info('[pool] executor hot-swap proxy up; seed bakes proxied executor MCP', { exUrl })
+      logger.info('[pool] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -612,20 +611,18 @@ async function runPoolMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
-        // Executor MCP: the seed baked the MCP pointing at the executor proxy, so
-        // the running MCP already exposes the tools; injecting the real token here
-        // makes the first tool call work — no restart. Best-effort: a session with
-        // no executor token leaves the proxy un-tokened (the MCP stays exposed but
-        // 503s a tool call, exactly like a no-executor session).
+        // Optional Executor MCP compatibility: if the seed enabled that face,
+        // the running MCP points at this proxy. The CLI path does not need this;
+        // it reads the live session env through BASH_ENV on every command.
         if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
           setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
         }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('claim-opencode-hotswapped')
-          // Observability: confirms the executor proxy has a live token, i.e.
-          // tools are callable on this hot-swapped claim (not just exposed).
-          if (executorProxyReady()) bootMark('claim-executor-tools-ready')
+          // Observability only: this confirms the optional executor proxy has a
+          // live token. It does not assert that OpenCode registered MCP tools.
+          if (executorProxyReady()) bootMark('claim-executor-proxy-ready')
           logger.info('[pool] claim hot-swap: per-session tokens injected via proxies, opencode NOT restarted', {
             executorReady: executorProxyReady(),
           })

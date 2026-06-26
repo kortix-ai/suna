@@ -22,17 +22,21 @@
  *   └──────────┴────────────────────────────────────┘
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
+  Boxes,
   Container,
   FolderOpen,
+  Gauge,
   GitPullRequest,
   KeyRound,
+  KeySquare,
   MessageSquare,
   Monitor,
   Plug,
+  ScrollText,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -40,6 +44,7 @@ import {
   Terminal,
   Timer,
   Users,
+  Wallet,
   Webhook,
   X,
   type LucideIcon,
@@ -50,6 +55,13 @@ import { ChannelsView } from '@/components/projects/customize/sections/channels-
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
+import {
+  LlmBudgetsView,
+  LlmKeysView,
+  LlmLogsView,
+  LlmOverviewView,
+  LlmProvidersView,
+} from '@/components/projects/customize/sections/gateway-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -60,7 +72,7 @@ import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';
 import { getProjectDetail } from '@/lib/projects-client';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -126,6 +138,17 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
+const LLM_GROUP: RailGroup = {
+  label: 'LLM',
+  items: [
+    { section: 'llm-overview', label: 'Overview', icon: Gauge },
+    { section: 'llm-providers', label: 'Providers', icon: Boxes },
+    { section: 'llm-logs', label: 'Logs', icon: ScrollText },
+    { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
+    { section: 'llm-keys', label: 'Keys', icon: KeySquare },
+  ],
+};
+
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
@@ -135,16 +158,25 @@ const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', ico
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
 /** Build the rail groups for this project, injecting flag-gated entries. */
-function railGroups(tunnelEnabled: boolean, marketplaceEnabled: boolean): readonly RailGroup[] {
-  return GROUPS.map((g) => {
+function railGroups(
+  tunnelEnabled: boolean,
+  marketplaceEnabled: boolean,
+  llmGatewayEnabled: boolean,
+): readonly RailGroup[] {
+  const groups: RailGroup[] = [];
+  for (const g of GROUPS) {
     if (g.label === 'Build' && marketplaceEnabled) {
-      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
+      groups.push({ ...g, items: [...g.items, MARKETPLACE_ITEM] });
+    } else if (g.label === 'Connect' && tunnelEnabled) {
+      groups.push({ ...g, items: [...g.items, COMPUTERS_ITEM] });
+    } else {
+      groups.push(g);
     }
-    if (g.label === 'Connect' && tunnelEnabled) {
-      return { ...g, items: [...g.items, COMPUTERS_ITEM] };
+    if (g.label === 'Connect' && llmGatewayEnabled) {
+      groups.push(LLM_GROUP);
     }
-    return g;
-  });
+  }
+  return groups;
 }
 
 export function CustomizeOverlay({ projectId }: { projectId: string }) {
@@ -167,11 +199,19 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
+  const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled),
-    [tunnelEnabled, marketplaceEnabled],
+    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayEnabled),
+    [tunnelEnabled, marketplaceEnabled, llmGatewayEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const sectionVisible = allItems.some((item) => item.section === section);
+
+  useEffect(() => {
+    if (open && !sectionVisible) {
+      setSection(DEFAULT_CUSTOMIZE_SECTION);
+    }
+  }, [open, sectionVisible, setSection]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -281,7 +321,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           )}
 
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-            {open && <SectionContent section={section} projectId={projectId} />}
+            {open && sectionVisible && (
+              <SectionContent
+                section={section}
+                projectId={projectId}
+                llmGatewayEnabled={llmGatewayEnabled}
+              />
+            )}
           </main>
         </div>
       </DialogContent>
@@ -343,10 +389,16 @@ function RailButton({
 function SectionContent({
   section,
   projectId,
+  llmGatewayEnabled,
 }: {
   section: CustomizeSection;
   projectId: string;
+  llmGatewayEnabled: boolean;
 }) {
+  if (section.startsWith('llm-') && !llmGatewayEnabled) {
+    return null;
+  }
+
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).
@@ -367,6 +419,16 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
+    case 'llm-overview':
+      return <LlmOverviewView projectId={projectId} />;
+    case 'llm-providers':
+      return <LlmProvidersView projectId={projectId} />;
+    case 'llm-logs':
+      return <LlmLogsView projectId={projectId} />;
+    case 'llm-budgets':
+      return <LlmBudgetsView projectId={projectId} />;
+    case 'llm-keys':
+      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'members':

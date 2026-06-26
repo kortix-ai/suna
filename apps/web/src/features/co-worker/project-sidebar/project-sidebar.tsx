@@ -1,10 +1,6 @@
 'use client';
 
 import {
-  ProjectGatewayNavItem,
-  ProjectGatewayRailItem,
-} from '@/components/projects/gateway/gateway-nav';
-import {
   matchesSessionFilter,
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
@@ -268,7 +264,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectChatGptConnectRailItem projectId={projectId} />
-            <ProjectGatewayRailItem />
             <ProjectCustomizeRailItem />
             <SidebarUpgradeRailItem accountId={accountId} />
           </div>
@@ -364,7 +359,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
-              <ProjectGatewayNavItem />
               <ProjectCustomizeNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
               <SidebarUpgradeButton accountId={accountId} />

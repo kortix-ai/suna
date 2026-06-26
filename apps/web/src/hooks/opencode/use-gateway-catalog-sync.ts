@@ -3,8 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listProjectSecrets } from '@/lib/projects-client';
-import { opencodeKeys } from './use-opencode-sessions';
-import { configKeys } from './use-opencode-config';
+import { refreshProjectProviderState } from './provider-refresh';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 
 const REFETCH_DELAYS_MS = [0, 1200, 3000, 6000];
@@ -39,8 +38,7 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
 
     const timers = REFETCH_DELAYS_MS.map((delay) =>
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
-        queryClient.invalidateQueries({ queryKey: configKeys.all });
+        refreshProjectProviderState(queryClient, projectId);
       }, delay),
     );
     return () => timers.forEach(clearTimeout);

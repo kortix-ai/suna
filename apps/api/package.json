@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- bun run --hot src/index.ts",
-    "dev:dev-env": "dotenvx run -f .env.dev -- bun run --hot src/index.ts",
-    "dev:prod-env": "dotenvx run -f .env.prod -- bun run --hot src/index.ts",
+    "dev:dev-env": "dotenvx run --overload -f .env.dev -- bun run --hot src/index.ts",
+    "dev:staging-env": "dotenvx run --overload -f .env.staging -- bun run --hot src/index.ts",
+    "dev:prod-env": "dotenvx run --overload -f .env.prod -- bun run --hot src/index.ts",
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
     "start": "dotenvx run -- bun run src/index.ts",
     "migration:legacy-sandboxes": "dotenvx run -- bun run src/scripts/migrate-legacy-sandboxes.ts",
