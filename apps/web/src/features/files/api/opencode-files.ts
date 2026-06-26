@@ -287,6 +287,74 @@ export interface UploadResult {
   size: number;
 }
 
+const UPLOAD_RETRY_DELAYS_MS = [400, 1200];
+
+function isTransientUploadStatus(status: number): boolean {
+  return status === 408 || status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function uploadErrorMessage(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '');
+  let parsed: any = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    // not JSON
+  }
+
+  const jsonMessage = parsed?.error || parsed?.message || parsed?.data?.message;
+  if (typeof jsonMessage === 'string' && jsonMessage.trim()) return jsonMessage.trim();
+
+  const contentType = res.headers.get('content-type') || '';
+  const htmlTitle = text
+    .match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+    ?.replace(/\s+/g, ' ')
+    .trim();
+  if (contentType.includes('text/html') || /<html[\s>]/i.test(text)) {
+    const gateway = res.status === 502 || /bad gateway/i.test(text);
+    if (gateway) return 'Bad gateway while reaching the sandbox upload service. Please retry.';
+    return htmlTitle || res.statusText || `HTTP ${res.status}`;
+  }
+
+  const compact = text.replace(/\s+/g, ' ').trim();
+  return compact.slice(0, 500) || res.statusText || `HTTP ${res.status}`;
+}
+
+async function uploadWithRetry(
+  buildForm: () => FormData,
+  send: (form: FormData) => Promise<Response>,
+): Promise<UploadResult[]> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= UPLOAD_RETRY_DELAYS_MS.length; attempt++) {
+    let res: Response;
+    try {
+      res = await send(buildForm());
+    } catch (err) {
+      lastError = err;
+      if (attempt === UPLOAD_RETRY_DELAYS_MS.length) break;
+      await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
+      continue;
+    }
+
+    if (res.ok) return res.json();
+
+    const message = await uploadErrorMessage(res);
+    lastError = new Error(`Upload failed (${res.status}): ${message}`);
+    if (!isTransientUploadStatus(res.status) || attempt === UPLOAD_RETRY_DELAYS_MS.length) {
+      throw lastError;
+    }
+    await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
+  }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError || 'request failed');
+  throw new Error(`Upload failed: ${message}`);
+}
+
 /**
  * Upload a file to the project.
  *
@@ -296,28 +364,28 @@ export interface UploadResult {
 export async function uploadFile(
   file: File | Blob,
   targetPath?: string,
+  filename?: string,
 ): Promise<UploadResult[]> {
   const baseUrl = getActiveOpenCodeUrl();
 
-  const form = new FormData();
-  const rawPath = (targetPath ?? '').trim();
-  if (rawPath) {
-    const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-    form.append('path', normalizedPath);
-  }
-  form.append('file', file);
-
-  const res = await authenticatedFetch(`${baseUrl}/file/upload`, {
-    method: 'POST',
-    body: form,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Upload failed (${res.status}): ${text || res.statusText}`);
-  }
-
-  return res.json();
+  return uploadWithRetry(
+    () => {
+      const form = new FormData();
+      const rawPath = (targetPath ?? '').trim();
+      if (rawPath) {
+        const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+        form.append('path', normalizedPath);
+      }
+      if (filename) form.append('file', file, filename);
+      else form.append('file', file);
+      return form;
+    },
+    (form) =>
+      authenticatedFetch(`${baseUrl}/file/upload`, {
+        method: 'POST',
+        body: form,
+      }),
+  );
 }
 
 /**
@@ -370,28 +438,27 @@ async function uploadToPath(
 ): Promise<UploadResult[]> {
   const baseUrl = getActiveOpenCodeUrl();
 
-  const form = new FormData();
-  const fileName = filePath.split('/').pop() || 'file';
-  form.append(filePath, content, fileName);
+  return uploadWithRetry(
+    () => {
+      const form = new FormData();
+      const fileName = filePath.split('/').pop() || 'file';
+      form.append(filePath, content, fileName);
+      return form;
+    },
+    async (form) => {
+      const headers: Record<string, string> = {};
+      const token = await getAuthToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
 
-  const headers: Record<string, string> = {};
-  const token = await getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${baseUrl}/file/upload`, {
-    method: 'POST',
-    body: form,
-    headers,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Upload failed (${res.status}): ${text || res.statusText}`);
-  }
-
-  return res.json();
+      return fetch(`${baseUrl}/file/upload`, {
+        method: 'POST',
+        body: form,
+        headers,
+      });
+    },
+  );
 }
 
 /**

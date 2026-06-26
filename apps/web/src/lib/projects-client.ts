@@ -2092,10 +2092,12 @@ export async function createProjectSession(
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
+  options?: { showErrors?: boolean },
 ) {
   return unwrap(
     await backendApi.get<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
+      { showErrors: options?.showErrors },
     ),
   );
 }
