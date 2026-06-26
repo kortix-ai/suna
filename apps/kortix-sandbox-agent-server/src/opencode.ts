@@ -32,9 +32,9 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has three
 // independent contributors, any of which may apply:
-//   1. the Kortix Executor MCP server   (when KORTIX_EXECUTOR_TOKEN + API url)
-//   2. the Kortix LLM gateway provider  (when KORTIX_LLM_* env)
-//   3. a Slack permission override      (when this is a Slack session)
+//   1. the optional Kortix Executor MCP server (KORTIX_EXECUTOR_MCP_ENABLED=1)
+//   2. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
+//   3. a Slack permission override            (when this is a Slack session)
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
@@ -52,23 +52,24 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
-  // Same trick for the executor MCP: when the daemon runs the executor proxy it
-  // exports KORTIX_EXECUTOR_PROXY_URL; the MCP's KORTIX_API_URL points at the
-  // proxy with a placeholder token so the tokenless warm seed can bake a working
-  // kortix-executor MCP (tools exposed; the proxy injects the real per-session
-  // token on the first tool call after claim — no opencode restart).
+  // Optional MCP compatibility face. The agent-facing default is the
+  // `kortix executor` CLI, so we only inject this MCP server when explicitly
+  // enabled. In proxy mode its KORTIX_API_URL points at the local executor proxy
+  // with a placeholder token; otherwise it receives the real session token.
   const executorProxyUrl = env.KORTIX_EXECUTOR_PROXY_URL
   const executorProxyMode = !!executorProxyUrl
+  const executorMcpEnabled = ['1', 'true', 'yes', 'on'].includes(
+    (env.KORTIX_EXECUTOR_MCP_ENABLED ?? '').trim().toLowerCase(),
+  )
 
-  // Direct mode needs both token+url; proxy mode needs only the proxy URL (the
-  // per-session token arrives live at request time via the proxy).
-  const hasExecutor = executorProxyMode || (!!executorToken && !!apiUrl)
+  // Direct mode needs both token+url; proxy mode needs only the proxy URL.
+  const hasExecutorMcp = executorMcpEnabled && (executorProxyMode || (!!executorToken && !!apiUrl))
   const hasLlmGateway = proxyMode || (!!llmBaseUrl && !!llmApiKey)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
   // CLI uses to post back to the thread). Contributor #3 keys off it.
   const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
-  if (!hasExecutor && !hasLlmGateway && !isSlackSession) return undefined
+  if (!hasExecutorMcp && !hasLlmGateway && !isSlackSession) return undefined
 
   let base: Record<string, unknown> = {}
   if (env.OPENCODE_CONFIG_CONTENT) {
@@ -82,8 +83,8 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   }
   const out: Record<string, unknown> = { ...base }
 
-  // (1) Kortix Executor MCP server.
-  if (hasExecutor) {
+  // (1) Optional Kortix Executor MCP server. CLI remains the primary agent path.
+  if (hasExecutorMcp) {
     const mcp =
       out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)
         ? (out.mcp as Record<string, unknown>)
@@ -92,9 +93,9 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
       ...mcp,
       'kortix-executor': {
         type: 'local',
-        // The Executor MCP server is a face of the unified `kortix` CLI
-        // (`kortix executor mcp`), baked onto PATH in every sandbox image.
-        command: ['kortix', 'executor', 'mcp'],
+        // Use the absolute path so OpenCode's MCP launcher does not depend on
+        // PATH propagation. The normal agent path is still `kortix executor`.
+        command: ['/usr/local/bin/kortix', 'executor', 'mcp'],
         enabled: true,
         environment: {
           // Proxy mode: the MCP talks to the localhost executor proxy with a
@@ -103,6 +104,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
           // claim). Direct mode (cold/Daytona): the real token + api url, as before.
           KORTIX_EXECUTOR_TOKEN: executorProxyMode ? EXECUTOR_PROXY_PLACEHOLDER_KEY : executorToken!,
           KORTIX_API_URL: executorProxyMode ? executorProxyUrl! : apiUrl!,
+          PATH: '/usr/local/bin:/usr/bin:/bin',
           // Lets the CLI target the project-explicit gateway route. Optional —
           // the session token also pins the project for the legacy flat route,
           // so this is belt-and-suspenders. Project id is session-independent so
