@@ -13,6 +13,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/co-worker/project-sidebar/modal/session-delete-modal';
@@ -87,7 +88,17 @@ export function SessionSiteHeader({
     <>
       <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
         <div className="flex items-center justify-between p-2 pb-0">
-          <div className="pointer-events-auto flex items-center gap-0.5">{leadingAction}</div>
+          <div className="pointer-events-auto flex items-center gap-0.5">
+            {isProjectSession && (
+              <SidebarTrigger
+                className="size-8 md:hidden"
+                aria-label={tI18nHardcoded.raw(
+                  'autoFeaturesCoWorkerProjectHeaderProjectTopBarJsxAttr9a2fb75f',
+                )}
+              />
+            )}
+            {leadingAction}
+          </div>
 
           <div className="pointer-events-auto flex items-center gap-1.5">
             <SessionChangesIndicator sessionId={sessionId} />
