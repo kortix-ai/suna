@@ -15,6 +15,7 @@ import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
 import { reconcileComputerConnectors } from '../../executor/sync';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1107,7 +1108,7 @@ projectsApp.openapi(
       void reconcileComputerConnectors(row.accountId);
     }
     if (feature === 'llm_gateway') {
-      void propagateLlmGatewayModeToActiveSandboxes(projectId, enabled === true);
+      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
     }
     return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },

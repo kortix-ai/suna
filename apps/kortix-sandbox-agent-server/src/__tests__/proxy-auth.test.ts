@@ -691,6 +691,75 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
+    const saved = {
+      key: process.env.KORTIX_LLM_API_KEY,
+      base: process.env.KORTIX_LLM_BASE_URL,
+      deny: process.env.KORTIX_OPENCODE_DENY_ENV,
+      exec: process.env.KORTIX_EXECUTOR_TOKEN,
+    }
+    delete process.env.KORTIX_LLM_API_KEY
+    delete process.env.KORTIX_LLM_BASE_URL
+    delete process.env.KORTIX_OPENCODE_DENY_ENV
+    process.env.KORTIX_EXECUTOR_TOKEN = 'kortix_pat_exec'
+
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => {} }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+    )
+
+    try {
+      // GATEWAY on: keys withheld from opencode via the injected deny-list.
+      const on = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-on',
+          env: {},
+          names: [],
+          refreshModels: true,
+          llmGatewayEnabled: true,
+          llmGatewayBaseUrl: 'https://api.kortix.test/v1/llm',
+          llmGatewayDenyEnv: 'ANTHROPIC_API_KEY,OPENAI_API_KEY',
+        }),
+      })
+      expect(on.status).toBe(200)
+      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
+      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
+
+      // DIRECT off: deny-list cleared so opencode sees native BYOK keys again.
+      const off = await app.request('/kortix/env', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          revision: 'rev-off',
+          env: {},
+          names: [],
+          refreshModels: true,
+          llmGatewayEnabled: false,
+          llmGatewayDenyEnv: '',
+        }),
+      })
+      expect(off.status).toBe(200)
+      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
+      expect(process.env.KORTIX_OPENCODE_DENY_ENV).toBeUndefined()
+    } finally {
+      for (const [k, v] of Object.entries({
+        KORTIX_LLM_API_KEY: saved.key,
+        KORTIX_LLM_BASE_URL: saved.base,
+        KORTIX_OPENCODE_DENY_ENV: saved.deny,
+        KORTIX_EXECUTOR_TOKEN: saved.exec,
+      })) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  })
+
   it('does not restart opencode when env sync matches the boot revision and values', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({

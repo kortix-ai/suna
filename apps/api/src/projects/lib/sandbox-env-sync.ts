@@ -5,6 +5,7 @@ import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolveShareSubject } from '../../executor/share';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import {
   listProjectSecretsForUser,
   projectSecretsRevision,
@@ -77,6 +78,7 @@ async function postEnvToDaemon(args: {
   refreshModels?: boolean;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
+  llmGatewayDenyEnv?: string;
 }): Promise<void> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
@@ -99,6 +101,7 @@ async function postEnvToDaemon(args: {
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
             ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
+            llmGatewayDenyEnv: args.llmGatewayDenyEnv ?? '',
           }
         : {}),
     }),
@@ -130,6 +133,7 @@ export async function syncSandboxEnvForPrompt(args: {
     refreshModels: true,
     llmGatewayEnabled,
     llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
+    llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
 }
@@ -210,6 +214,7 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
           refreshModels: true,
           llmGatewayEnabled: enabled,
           llmGatewayBaseUrl: enabled ? llmGatewayBaseUrl : undefined,
+          llmGatewayDenyEnv: enabled ? nativeProviderEnvNames().join(',') : '',
         });
         await markSandboxLlmGatewayMode(row.sessionId, enabled);
       } catch (err) {

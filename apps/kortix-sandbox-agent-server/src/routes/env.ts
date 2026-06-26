@@ -12,6 +12,10 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
   'KORTIX_YOLO_API_KEY',
   'KORTIX_YOLO_URL',
+  // Gateway-only: the provider-key names opencode must never see. Flipped with the
+  // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
+  // a toggle to GATEWAY restores the strip on the next opencode restart.
+  'KORTIX_OPENCODE_DENY_ENV',
 ])
 
 function bearerToken(header: string | undefined): string | null {
@@ -65,7 +69,7 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
+function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
@@ -74,6 +78,8 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
       KORTIX_LLM_BASE_URL: null,
       KORTIX_YOLO_API_KEY: null,
       KORTIX_YOLO_URL: null,
+      // DIRECT/BYOK: stop withholding native provider keys from opencode.
+      KORTIX_OPENCODE_DENY_ENV: null,
     })
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
@@ -88,6 +94,8 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
     KORTIX_LLM_BASE_URL: baseUrl,
     KORTIX_YOLO_API_KEY: token,
     KORTIX_YOLO_URL: baseUrl,
+    // GATEWAY: restore the strip (names supplied by the API) on the next restart.
+    KORTIX_OPENCODE_DENY_ENV: typeof denyEnv === 'string' ? denyEnv : '',
   })
 }
 
@@ -124,6 +132,7 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           opencodeEnv?: unknown
           llmGatewayEnabled?: unknown
           llmGatewayBaseUrl?: unknown
+          llmGatewayDenyEnv?: unknown
         } | null
 
         if (!body || typeof body.revision !== 'string') {
@@ -139,7 +148,7 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           names: body.names,
         })
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
+        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
         const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
         const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
 

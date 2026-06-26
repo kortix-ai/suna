@@ -10,6 +10,7 @@ import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
@@ -170,6 +171,11 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
+   *  opencode is locked to the gateway and native provider keys are withheld;
+   *  OFF (default) → native BYOK providers must reach opencode, so the deny
+   *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
+  llmGatewayEnabled: boolean;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -230,7 +236,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // a NATIVE provider and bypass the gateway. The daemon withholds exactly
     // these names from the opencode process (Codex/OpenCode auth is excluded —
     // that one is an intentional native provider).
-    KORTIX_OPENCODE_DENY_ENV: nativeProviderEnvNames().join(','),
+    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: '1',
     // Force a FULL clone (no blobless partial clone). The blobless default
     // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
@@ -539,6 +545,7 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           opencodeModel,
+          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,
         }),
