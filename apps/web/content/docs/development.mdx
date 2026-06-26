@@ -47,7 +47,7 @@ Each environment is a [dotenvx](https://dotenvx.com)-encrypted file, committed t
 | staging | `apps/api/.env.staging` | `DOTENV_PRIVATE_KEY_STAGING` |
 | prod | `apps/api/.env.prod` | `DOTENV_PRIVATE_KEY_PROD` |
 
-Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts sits in the file and is safe to commit; the **private key** that decrypts never touches git — it lives off your machine in [Dotenv Armor](https://dotenvx.com/armor). At runtime `dotenvx run -f <file>` decrypts **in memory** and injects the vars — nothing plaintext is ever written to disk.
+Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts sits in the file and is safe to commit; the **private key** that decrypts never touches git — it lives off your machine in [Dotenv Armor](https://dotenvx.com/armor). At runtime `dotenvx run --overload -f <file>` decrypts **in memory** and injects the vars — nothing plaintext is ever written to disk. `--overload` is intentional for env-specific runs so exported local cloud credentials cannot override the selected profile.
 
 <Callout type="info">
 These encrypted files are **only for local development**. The actual deployed **production** environment does **not** read them — the prod infra loads its env from **AWS Secrets Manager** at runtime. So `apps/api/.env.prod` is just for running locally against the prod backend; changing it does not change what production runs.

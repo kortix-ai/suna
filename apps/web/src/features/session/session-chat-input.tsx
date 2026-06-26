@@ -1403,6 +1403,12 @@ export interface SessionChatInputProps {
   ) => void | Promise<void>;
   isBusy?: boolean;
   onStop?: () => void;
+  /**
+   * Render the stop button in its disabled state even without an `onStop` — used
+   * by the instant session shell while the computer is still booting, so the
+   * busy input shows a (non-clickable) stop button instead of nothing at all.
+   */
+  stopDisabled?: boolean;
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -1495,6 +1501,7 @@ export function SessionChatInput({
   onSend,
   isBusy = false,
   onStop,
+  stopDisabled = false,
   agents = [],
   selectedAgent = null,
   onAgentChange,
@@ -2577,7 +2584,7 @@ export function SessionChatInput({
 
               <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
 
-              {isBusy && onStop && !lockForQuestion && (
+              {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
@@ -2599,6 +2606,7 @@ export function SessionChatInput({
                       <Button
                         size="sm"
                         onClick={onStop}
+                        disabled={stopDisabled || !onStop}
                         className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                       >
                         <div className="h-3 w-3 rounded-[3px] bg-current" />
