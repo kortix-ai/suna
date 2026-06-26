@@ -277,6 +277,19 @@ export async function updateMarketplaceItem(
   );
 }
 
+export async function updateAllMarketplaceItems(
+  projectId: string,
+): Promise<{ ok: boolean; updated: string[]; commit_sha: string | null; file_count: number }> {
+  return unwrap(
+    await backendApi.post<{
+      ok: boolean;
+      updated: string[];
+      commit_sha: string | null;
+      file_count: number;
+    }>(`/projects/${projectId}/marketplace/update-all`),
+  );
+}
+
 export async function uninstallMarketplaceItem(
   projectId: string,
   name: string,

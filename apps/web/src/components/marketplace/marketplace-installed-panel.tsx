@@ -20,6 +20,7 @@ import {
   useMarketplaceItems,
   useRegistryUpdates,
   useUninstallMarketplaceItem,
+  useUpdateAllMarketplaceItems,
   useUpdateMarketplaceItem,
 } from '@/hooks/marketplace';
 import type { InstalledItem } from '@/lib/marketplace-client';
@@ -49,13 +50,15 @@ export function MarketplaceInstalledPanel({
   const updates = useRegistryUpdates(projectId);
   const catalog = useMarketplaceItems({});
   const updateMut = useUpdateMarketplaceItem();
+  const updateAllMut = useUpdateAllMarketplaceItems();
   const uninstallMut = useUninstallMarketplaceItem();
 
   const items = installed.data ?? [];
   const statusByName = new Map((updates.data?.updates ?? []).map((u) => [u.name, u.status]));
   const catalogByName = new Map((catalog.data?.items ?? []).map((i) => [i.name, i]));
-  const updateCount = updates.data?.update_available.length ?? 0;
-  const busy = updateMut.isPending || uninstallMut.isPending;
+  const updateNames = updates.data?.update_available ?? [];
+  const updateCount = updateNames.length;
+  const busy = updateMut.isPending || updateAllMut.isPending || uninstallMut.isPending;
 
   const onUpdate = async (it: InstalledItem) => {
     try {
@@ -65,6 +68,21 @@ export function MarketplaceInstalledPanel({
       });
     } catch (e) {
       errorToast('Update failed', { description: (e as Error).message });
+    }
+  };
+
+  const onUpdateAll = async () => {
+    if (updateNames.length === 0) return;
+    try {
+      const res = await updateAllMut.mutateAsync({ projectId });
+      successToast(`Updated ${res.updated.length} item${res.updated.length === 1 ? '' : 's'}`, {
+        description:
+          res.updated.length > 0
+            ? 'Re-committed the latest marketplace files in one commit — live next session.'
+            : 'Everything is already up to date.',
+      });
+    } catch (e) {
+      errorToast('Update all failed', { description: (e as Error).message });
     }
   };
 
@@ -112,25 +130,33 @@ export function MarketplaceInstalledPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        {items.length} installed
-        {updateCount > 0 && (
-          <>
-            {' · '}
-            <span className="text-foreground font-medium">
-              {updateCount} update{updateCount === 1 ? '' : 's'} available
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-muted-foreground text-sm">
+          {items.length} installed
+          {updateCount > 0 && (
+            <>
+              {' · '}
+              <span className="text-foreground font-medium">
+                {updateCount} update{updateCount === 1 ? '' : 's'} available
+              </span>
+            </>
+          )}
+          {updates.isLoading && (
+            <span className="text-muted-foreground/60">
+              {' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextCheckingForUpdatese5306763',
+              )}
             </span>
-          </>
+          )}
+        </p>
+        {updateCount > 0 && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={onUpdateAll}>
+            <RefreshCw className="size-3.5" />
+            {updateAllMut.isPending ? 'Updating...' : 'Update all'}
+          </Button>
         )}
-        {updates.isLoading && (
-          <span className="text-muted-foreground/60">
-            {' '}
-            {tI18nHardcoded.raw(
-              'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextCheckingForUpdatese5306763',
-            )}
-          </span>
-        )}
-      </p>
+      </div>
 
       <div className="space-y-2.5">
         {items.map((it) => {

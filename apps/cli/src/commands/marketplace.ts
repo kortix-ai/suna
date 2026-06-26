@@ -60,12 +60,22 @@ interface WriteResponse {
   removed?: string;
 }
 
+interface UpdateAllResponse {
+  ok: boolean;
+  updated: string[];
+  commit_sha: string | null;
+  branch: string | null;
+  file_count: number;
+  installed: Array<{ name: string; type: string }>;
+}
+
 interface MarketplaceFlags {
   host?: string;
   query?: string;
   type?: string;
   source?: string;
   project?: string;
+  all: boolean;
   json: boolean;
   dryRun: boolean;
 }
@@ -82,6 +92,7 @@ Subcommands:
   status               List installed marketplace items for a project.
   updates              List installed items with available updates.
   update <name>        Update one installed marketplace item.
+  update --all         Update all outdated marketplace items in one commit.
   remove <name>        Remove one installed marketplace item.
 
 Options:
@@ -91,6 +102,7 @@ Options:
   --project <id>       Project for install/status/update/remove.
   --host <name>        Use a configured Kortix host.
   --dry-run            install: show what would be installed.
+  --all                update: update all outdated items.
   --json               Machine-readable output.
   -h, --help           Show this help.
 `;
@@ -102,6 +114,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
     project: takeFlagValue(argv, ['--project']),
+    all: takeFlagBool(argv, ['--all']),
     dryRun: takeFlagBool(argv, ['--dry-run']),
     json: takeFlagBool(argv, ['--json']),
   };
@@ -298,8 +311,9 @@ async function marketplaceUpdates(flags: MarketplaceFlags): Promise<number> {
 
 async function marketplaceUpdate(argv: string[], flags: MarketplaceFlags): Promise<number> {
   const name = argv.find((a) => !a.startsWith('-'));
+  if (flags.all || name === 'all') return marketplaceUpdateAll(flags);
   if (!name) {
-    process.stderr.write(`${status.err('pass an item name: kortix marketplace update pdf')}\n`);
+    process.stderr.write(`${status.err('pass an item name or --all: kortix marketplace update pdf')}\n`);
     return 2;
   }
   const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
@@ -315,6 +329,30 @@ async function marketplaceUpdate(argv: string[], flags: MarketplaceFlags): Promi
     return 0;
   }
   process.stdout.write(`${status.ok(`Updated ${C.bold}${res.updated ?? name}${C.reset}`)}\n`);
+  process.stdout.write(`  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch}\n`);
+  return 0;
+}
+
+async function marketplaceUpdateAll(flags: MarketplaceFlags): Promise<number> {
+  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  if (!ctx) return 1;
+  let res: UpdateAllResponse;
+  try {
+    res = await ctx.client.post<UpdateAllResponse>(`/projects/${ctx.projectId}/marketplace/update-all`);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (flags.json) {
+    emitJson(res);
+    return 0;
+  }
+  const count = res.updated.length;
+  if (count === 0) {
+    process.stdout.write(`${status.ok('All marketplace items are up to date.')}\n`);
+    return 0;
+  }
+  process.stdout.write(`${status.ok(`Updated ${C.bold}${count}${C.reset} marketplace item${count === 1 ? '' : 's'}`)}\n`);
+  process.stdout.write(`  ${C.dim}items${C.reset} ${res.updated.join(', ')}\n`);
   process.stdout.write(`  ${C.dim}commit${C.reset} ${C.cyan}${res.commit_sha?.slice(0, 8)}${C.reset} ${C.dim}on${C.reset} ${res.branch}\n`);
   return 0;
 }

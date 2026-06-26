@@ -89,11 +89,35 @@ async function installRoutes(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        updates: [{ name: 'pdf', type: 'registry:skill', status: 'up-to-date', changed: 0 }],
-        update_available: [],
+        updates: [{ name: 'pdf', type: 'registry:skill', status: 'update-available', changed: 1 }],
+        update_available: ['pdf'],
       }),
     });
   });
+
+  await page.route(
+    '**/projects/debug-marketplace-project/marketplace/update-all',
+    async (route) => {
+      updateAllCalls += 1;
+      assert(route.request().method() === 'POST', 'update-all should use POST');
+      assert(
+        route.request().headers().authorization === 'Bearer debug-marketplace-token',
+        'update-all request should include the debug bootstrap auth token',
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          updated: ['pdf'],
+          commit_sha: 'abc12345',
+          branch: 'main',
+          file_count: 2,
+          installed: [{ name: 'pdf', type: 'registry:skill' }],
+        }),
+      });
+    },
+  );
 
   await page.route('**/projects/debug-marketplace-project/registry', async (route) => {
     assert(
@@ -116,6 +140,10 @@ async function installRoutes(page: Page) {
       }),
     });
   });
+
+  return {
+    updateAllCalls: () => updateAllCalls,
+  };
 }
 
 async function avatarStyle(page: Page, sectionTestId: string, name: string) {
@@ -138,7 +166,7 @@ async function main() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await installRoutes(page);
+    const routes = await installRoutes(page);
     await page.goto(`${baseUrl}/debug/marketplace`, { waitUntil: 'domcontentloaded' });
 
     const grid = page.getByTestId('marketplace-explore').locator('[data-marketplace-grid]').first();
@@ -160,9 +188,13 @@ async function main() {
     );
     assert(exploreAvatar.svg === installedAvatar.svg, 'installed avatar icon should match Explore');
 
-    console.log(
-      '[marketplace-render] ok: 3-column grid and installed/explore avatar parity verified',
+    await page.getByRole('button', { name: /^update all$/i }).click();
+    assert(
+      routes.updateAllCalls() === 1,
+      'Update all should call the batch update endpoint exactly once',
     );
+
+    console.log('[marketplace-render] ok: 3-column grid, avatar parity, and update-all verified');
   } finally {
     await browser.close();
   }
@@ -172,3 +204,4 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+let updateAllCalls = 0;

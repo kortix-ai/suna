@@ -269,6 +269,63 @@ describe('kortix marketplace', () => {
     expect(stderr).toBe('');
   });
 
+  test('updates all outdated marketplace items for a project in one request', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, authorization: String(init?.headers && (init.headers as Record<string, string>).Authorization) });
+      expect(url).toBe('https://api.test/v1/projects/proj_1/marketplace/update-all');
+      expect(init?.method).toBe('POST');
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updated: ['pdf', 'docx'],
+          commit_sha: 'abc12345',
+          branch: 'main',
+          file_count: 4,
+          installed: [
+            { name: 'pdf', type: 'registry:skill' },
+            { name: 'docx', type: 'registry:skill' },
+          ],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const code = await runMarketplace(['update', '--all', '--project', 'proj_1', '--json']);
+
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].authorization).toBe('Bearer tok_test');
+    expect(JSON.parse(stdout).updated).toEqual(['pdf', 'docx']);
+    expect(stderr).toBe('');
+  });
+
+  test('accepts update all as an alias for update --all', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push({ url, authorization: null });
+      expect(url).toBe('https://api.test/v1/projects/proj_1/marketplace/update-all');
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          updated: [],
+          commit_sha: null,
+          branch: null,
+          file_count: 0,
+          installed: [],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const code = await runMarketplace(['update', 'all', '--project', 'proj_1']);
+
+    expect(code).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(stdout).toContain('up to date');
+    expect(stderr).toBe('');
+  });
+
   test('removes an installed marketplace item for a project', async () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

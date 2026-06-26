@@ -15,7 +15,7 @@ import {
   _resetExternalCache,
 } from '../marketplace/catalog';
 import { compareInstalled } from '@kortix/registry';
-import { buildInstall, resolveItemFiles } from '../marketplace/install-service';
+import { buildInstall, buildInstallBatch, resolveItemFiles } from '../marketplace/install-service';
 
 describe('marketplace catalog', () => {
   test('default external sources are Anthropic only; Hermes stays opt-in', () => {
@@ -231,6 +231,25 @@ describe('marketplace catalog', () => {
     const lock = JSON.parse(built.files.find((f) => f.path === 'registry-lock.json')!.content);
     expect(lock.items['prior-skill']).toBeTruthy();
     expect(lock.items.pdf).toBeTruthy();
+  });
+
+  test('buildInstallBatch updates multiple items into one combined lock write', async () => {
+    const catalog = await listCatalogItems({ source: 'kortix' });
+    const pdf = catalog.find((i) => i.name === 'pdf')!;
+    const docx = catalog.find((i) => i.name === 'docx')!;
+    const built = await buildInstallBatch({
+      ids: [pdf.id, docx.id],
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+    });
+    const lockWrites = built.files.filter((f) => f.path === 'registry-lock.json');
+    expect(lockWrites).toHaveLength(1);
+    const lock = JSON.parse(lockWrites[0]!.content);
+    expect(lock.items.pdf.type).toBe('registry:skill');
+    expect(lock.items.docx.type).toBe('registry:skill');
+    expect(built.installed.map((i) => i.name).sort()).toEqual(['docx', 'pdf']);
   });
 });
 

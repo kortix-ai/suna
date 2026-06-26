@@ -15,9 +15,9 @@ import {
   listRegistryUpdates,
   removeMarketplaceSource,
   uninstallMarketplaceItem,
+  updateAllMarketplaceItems,
   updateMarketplaceItem,
   type AddSourceInput,
-  type MarketplaceItem,
 } from '@/lib/marketplace-client';
 
 export function useMarketplaceItems(params: {
@@ -105,6 +105,18 @@ export function useUpdateMarketplaceItem() {
   return useMutation({
     mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
       updateMarketplaceItem(projectId, name),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+  });
+}
+
+export function useUpdateAllMarketplaceItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId }: { projectId: string }) => updateAllMarketplaceItems(projectId),
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
       qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
