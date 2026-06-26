@@ -215,12 +215,8 @@ const envSchema = z.object({
   // — consolidated onto this one var.
   OPENROUTER_API_KEY:          optStr,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
-  // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
-  LLM_GATEWAY_ENABLED:         optBoolFalse,
-  // Fleet default for projects with no explicit per-project override. The
-  // master switch above still wins: LLM_GATEWAY_ENABLED=false forces native
-  // OpenCode for everyone regardless of this value.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolFalse,
+  // sandbox model call here. Always on (the only LLM path). Managed models need
+  // OPENROUTER_API_KEY / AWS_BEDROCK_API_KEY; BYOK works with the user's own key.
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
@@ -484,10 +480,7 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   // ── Warnings (non-fatal but worth knowing) ─────────────────────────────
   if (!raw.OPENROUTER_API_KEY) {
-    issues.push({ var: 'OPENROUTER_API_KEY', message: 'Not set — primary LLM route will fail with silent 401 errors', level: 'warn' });
-    if (raw.LLM_GATEWAY_ENABLED === 'true') {
-      issues.push({ var: 'LLM_GATEWAY_ENABLED', message: 'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"', level: 'warn' });
-    }
+    issues.push({ var: 'OPENROUTER_API_KEY', message: 'Not set — managed OpenRouter models will 500 "openrouterApiKey missing" (BYOK + Bedrock unaffected)', level: 'warn' });
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -623,8 +616,6 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
-  LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,

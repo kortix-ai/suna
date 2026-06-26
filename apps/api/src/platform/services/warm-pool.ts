@@ -34,7 +34,6 @@ import { getProvider } from '../providers';
 import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { warmPoolSetting } from './runtime-settings';
@@ -43,7 +42,6 @@ import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { randomUUID } from 'node:crypto';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting/parked longer than this → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
@@ -536,9 +534,9 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }
-    const llmGatewayEnabled = projectLlmGatewayEnabled(input.projectMetadata);
-    const gatewayEntitled = llmGatewayEnabled ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
-    const gatewayLlmKey = llmGatewayEnabled && gatewayEntitled ? executorToken : null;
+    // Gateway is the only LLM path: always wire the executor token + base URL.
+    // Per-request tier/affordability is enforced inside the gateway, not here.
+    const gatewayLlmKey = executorToken;
     const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
     const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
     const llmBaseUrl =

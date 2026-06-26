@@ -17,27 +17,24 @@ import { createInternalGatewayRoutes } from './internal-routes';
 //   /internal/gateway  Control-plane RPC the out-of-process gateway pod calls.
 //   /v1/llm-gateway/*  Reverse proxy to the standalone gateway (when configured).
 export function mountLlmGateway(app: OpenAPIHono): void {
-  if (!config.LLM_GATEWAY_ENABLED) {
-    app.all('/v1/llm/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));
-  } else {
-    // One gateway instance per process — its circuit breakers are long-lived.
-    const gateway = createGateway(createInProcessGatewayHooks(), {
-      captureBodies: true,
-      autoRouter: pickAutoModel,
-    });
-    const llm = new Hono();
-    llm.get('/health', (c) =>
-      c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
-    );
-    llm.post('/chat/completions', async (c) =>
-      gateway.chatCompletions({
-        authorization: c.req.header('authorization'),
-        rawBody: await c.req.text(),
-      }),
-    );
-    llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
-    app.route('/v1/llm', llm);
-  }
+  // One gateway instance per process — its circuit breakers are long-lived.
+  // The gateway is the only LLM path; it always mounts.
+  const gateway = createGateway(createInProcessGatewayHooks(), {
+    captureBodies: true,
+    autoRouter: pickAutoModel,
+  });
+  const llm = new Hono();
+  llm.get('/health', (c) =>
+    c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
+  );
+  llm.post('/chat/completions', async (c) =>
+    gateway.chatCompletions({
+      authorization: c.req.header('authorization'),
+      rawBody: await c.req.text(),
+    }),
+  );
+  llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
+  app.route('/v1/llm', llm);
 
   app.route('/internal/gateway', createInternalGatewayRoutes());
 

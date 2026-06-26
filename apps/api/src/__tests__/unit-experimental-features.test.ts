@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { config } from '../config';
 import {
   applyExperimentalOverride,
   buildExperimentalCatalog,
@@ -8,7 +7,6 @@ import {
   resolveExperimentalFeature,
   resolveExperimentalFeatures,
 } from '../experimental/features';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 function findCatalogFeature(key: string) {
   const feature = buildExperimentalCatalog({}).find((f) => f.key === key);
@@ -21,7 +19,6 @@ describe('isExperimentalFeatureKey', () => {
     expect(isExperimentalFeatureKey('apps')).toBe(true);
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
     expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
-    expect(isExperimentalFeatureKey('llm_gateway')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -63,44 +60,6 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(
       resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email'),
     ).toBe(false);
-  });
-
-  test('llm_gateway is platform-gated and explicit opt-in', () => {
-    const available = findCatalogFeature('llm_gateway').available;
-    expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
-    expect(resolveExperimentalFeature({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
-    );
-    expect(
-      resolveExperimentalFeature({ experimental: { llm_gateway: false } }, 'llm_gateway'),
-    ).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default can roll all projects on while preserving kill switch and project off override', () => {
-    const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
-    try {
-      config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
-
-      config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(
-        resolveExperimentalFeature({ experimental: { llm_gateway: false } }, 'llm_gateway'),
-      ).toBe(false);
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-    } finally {
-      config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
-    }
   });
 
   test('null/empty metadata falls back to the operator default (no throw)', () => {
@@ -152,11 +111,6 @@ describe('applyExperimentalOverride', () => {
   test('sets a boolean into metadata.experimental', () => {
     const next = applyExperimentalOverride({}, 'agent_tunnel', true);
     expect(next).toEqual({ experimental: { agent_tunnel: true } });
-  });
-
-  test('sets the llm_gateway override into metadata.experimental', () => {
-    const next = applyExperimentalOverride({}, 'llm_gateway', true);
-    expect(next).toEqual({ experimental: { llm_gateway: true } });
   });
 
   test('merges with existing overrides without clobbering', () => {

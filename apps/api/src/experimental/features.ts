@@ -28,8 +28,7 @@ export type ExperimentalFeatureKey =
   | 'apps'
   | 'agent_tunnel'
   | 'marketplace'
-  | 'agentmail_email'
-  | 'llm_gateway';
+  | 'agentmail_email';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
 type ExperimentalStability = 'experimental' | 'beta';
@@ -99,20 +98,6 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
     platformDefault: () => false,
-  },
-  {
-    key: 'llm_gateway',
-    name: 'LLM Gateway',
-    description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
-    stability: 'experimental',
-    // Master kill switch: when off, the feature disappears and every project
-    // falls back to native OpenCode provider behavior.
-    available: () => config.LLM_GATEWAY_ENABLED,
-    // Fleet rollout switch. Operators can default the gateway on for every
-    // project, while explicit project overrides still win and the master
-    // availability gate above remains the emergency kill switch.
-    platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
   },
 ];
 

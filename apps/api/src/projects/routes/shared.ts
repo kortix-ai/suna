@@ -7,7 +7,6 @@ import { auth, json } from '../../openapi';
 import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
@@ -260,7 +259,6 @@ export async function allocateRuntimeOnOpen(
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         opencodeModel,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitAuthToken: async () =>
       (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,

@@ -31,7 +31,6 @@ import {
 } from "../../channels/slack-webhook";
 import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
 import { auth, errors, json } from "../../openapi";
-import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
@@ -1240,7 +1239,8 @@ projectsApp.openapi(
     const apiKeyType = c.get("apiKeyType") as string | undefined;
     const accountId = c.get("accountId") as string | undefined;
     const sandboxId = c.get("sandboxId") as string | undefined;
-    let projectMetadata: unknown;
+    // Auth/existence checks below; the catalog itself is the same for every
+    // caller with access (the gateway is always on).
     if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
@@ -1261,22 +1261,14 @@ projectsApp.openapi(
         );
       }
       const [project] = await db
-        .select({ metadata: projects.metadata })
+        .select({ projectId: projects.projectId })
         .from(projects)
         .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
         .limit(1);
       if (!project) return c.json({ error: "Not found" }, 404);
-      projectMetadata = project.metadata;
     } else {
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
-      projectMetadata = loaded.row.metadata;
-    }
-    if (!projectLlmGatewayEnabled(projectMetadata)) {
-      return c.json(
-        { error: "LLM gateway is disabled for this project", code: "llm_gateway_disabled" },
-        404,
-      );
     }
     const models = gatewayModelCatalog(projectId);
     return c.json({ models });

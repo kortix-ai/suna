@@ -30,7 +30,6 @@ async function resolveCachedAccountTier(accountId: string): Promise<string> {
 // model. managedCandidates() is itself empty when no managed key is set, so a
 // self-host with no Bedrock/OpenRouter key naturally has no fallback.
 function byokFallbackCandidates(): UpstreamDescriptor[] {
-  if (!config.LLM_GATEWAY_ENABLED) return [];
   const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
   if (!fallbackId) return [];
   const managed = getManagedModel(fallbackId);
@@ -87,7 +86,7 @@ export async function resolveCandidates(
   // falls through here. A non-managed, non-connected model yields no candidate →
   // clear "model not available" error.
   const managed = getManagedModel(effectiveModel);
-  if (managed && config.LLM_GATEWAY_ENABLED) {
+  if (managed) {
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
       if (!managed.free && !tierGrantsAllModels(tier)) return [];
