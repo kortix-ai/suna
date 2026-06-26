@@ -1,7 +1,6 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { restrictedAuthDecision } from '@/lib/auth/nonprod-access';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -144,19 +143,6 @@ export async function GET(request: NextRequest) {
       let authMethod = 'email';
 
       if (data.user) {
-        const accessDecision = restrictedAuthDecision({
-          email: data.user.email,
-          origin: request.nextUrl.origin,
-          appUrl: runtimeEnv.APP_URL,
-        });
-        if (!accessDecision.allowed) {
-          await supabase.auth.signOut();
-          const restrictedUrl = new URL(`${baseUrl}/auth`);
-          restrictedUrl.searchParams.set('error', 'restricted_environment');
-          if (next) restrictedUrl.searchParams.set('returnUrl', next);
-          return NextResponse.redirect(restrictedUrl);
-        }
-
         // Determine if this is a new user (for analytics tracking)
         const createdAt = new Date(data.user.created_at).getTime();
         const now = Date.now();
