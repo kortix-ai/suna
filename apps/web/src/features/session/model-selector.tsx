@@ -26,6 +26,7 @@ import { ProjectProviderModal } from '@/features/workspace/customize/sections/ll
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
@@ -117,7 +118,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     enabled: !!projectId,
     staleTime: 30_000,
   });
-  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);

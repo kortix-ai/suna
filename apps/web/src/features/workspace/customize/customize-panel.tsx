@@ -27,7 +27,8 @@ import { SettingsView } from '@/features/workspace/customize/sections/view/setti
 import { SkillsView } from '@/features/workspace/customize/sections/view/skills-view';
 import { useIsMobile } from '@/hooks/utils';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
-import { getProjectDetail, type KortixProject } from '@/lib/projects-client';
+import { isLlmGatewayAvailable, isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useCustomizeStore } from '@/stores/customize-store';
@@ -113,23 +114,6 @@ const LLM_GROUP: RailGroup = {
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
-
-function isLlmGatewayEnabled(project: KortixProject | undefined): boolean {
-  if (!project) return false;
-  if (project.experimental?.llm_gateway === true) return true;
-  return (
-    project.experimental_features?.some((feature) => feature.key === 'llm_gateway' && feature.enabled) ??
-    false
-  );
-}
-
-function isLlmGatewayAvailable(project: KortixProject | undefined): boolean {
-  return (
-    project?.experimental_features?.some(
-      (feature) => feature.key === 'llm_gateway' && feature.available,
-    ) ?? false
-  );
-}
 
 function railGroups(
   tunnelEnabled: boolean,

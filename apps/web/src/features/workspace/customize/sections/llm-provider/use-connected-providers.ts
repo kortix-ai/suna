@@ -2,6 +2,7 @@
 
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -20,7 +21,7 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     staleTime: 30_000,
     enabled,
   });
-  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],

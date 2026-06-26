@@ -68,6 +68,7 @@ import {
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import {
@@ -119,8 +120,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
     queryFn: () => getProjectDetail(projectId),
     staleTime: 30_000,
   });
-  const llmGatewayEnabled =
-    projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
