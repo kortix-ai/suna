@@ -202,6 +202,10 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(true);
+    // connector.write MUST be gated — the executor connector-admin fold depends
+    // on it (a regression adding it to AGENT_GRANT_EXEMPT_ACTIONS would reopen
+    // the scoped-agent connector-admin bypass).
+    expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE)).toBe(true);
     // exempt — these are membership-tier gates a leaf-scoped agent must still pass
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_READ)).toBe(false);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);

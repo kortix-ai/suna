@@ -548,11 +548,17 @@ iamRouter.openapi(
     // Re-validate the scope/role/effect/expiry using the same rules as create,
     // re-using the existing principal (PATCH never moves a policy to a new
     // principal — delete + create for that).
-    const parsed = await parsePolicyInput(accountId, {
-      ...body,
-      principalType: existing.principalType,
-      principalId: existing.principalId,
-    });
+    const parsed = await parsePolicyInput(
+      accountId,
+      {
+        ...body,
+        principalType: existing.principalType,
+        principalId: existing.principalId,
+      },
+      // The principal is immutable on PATCH — don't re-validate its account
+      // membership (a since-removed member must not 404 a scope/role/expiry edit).
+      { validatePrincipal: false },
+    );
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
     const [row] = await db
@@ -662,10 +668,15 @@ iamRouter.openapi(
 async function parsePolicyInput(
   accountId: string,
   body: Record<string, unknown>,
+  // PATCH re-runs this with the EXISTING (immutable) principal, so it must not
+  // re-validate principal ownership — a member who later left the account would
+  // otherwise 404 a legitimate scope/role/expiry edit of an already-bound policy.
+  opts: { validatePrincipal?: boolean } = {},
 ): Promise<
   | { ok: true; value: { principalType: string; principalId: string; roleId: string; scopeType: string; scopeId: string | null; expiresAt: Date | null } }
   | { ok: false; status: 400 | 404; error: string }
 > {
+  const validatePrincipal = opts.validatePrincipal !== false;
   const principalType = String(body.principalType ?? '');
   // 'token' = a service-account (machine identity) principal. The engine now
   // resolves these (engine-v2 resolveActorV2 → service_accounts branch), so an
@@ -679,7 +690,7 @@ async function parsePolicyInput(
   // A token principal must be an active service account in THIS account — else
   // the policy is a dangling no-op (or a cross-account reference). Mirrors the
   // project scopeId ownership check below.
-  if (principalType === 'token') {
+  if (validatePrincipal && principalType === 'token') {
     const [sa] = await db
       .select({ id: serviceAccounts.serviceAccountId })
       .from(serviceAccounts)
@@ -697,7 +708,7 @@ async function parsePolicyInput(
   // Ownership parity for member/group principals: binding a foreign user/group id
   // creates an inert policy (the engine resolves by account membership) — reject
   // it with a clear error instead, matching the token + project ownership checks.
-  if (principalType === 'member') {
+  if (validatePrincipal && principalType === 'member') {
     const [m] = await db
       .select({ id: accountMembers.userId })
       .from(accountMembers)
@@ -705,7 +716,7 @@ async function parsePolicyInput(
       .limit(1);
     if (!m) return { ok: false, status: 404, error: 'principalId is not a member of this account' };
   }
-  if (principalType === 'group') {
+  if (validatePrincipal && principalType === 'group') {
     const [g] = await db
       .select({ id: accountGroups.groupId })
       .from(accountGroups)
