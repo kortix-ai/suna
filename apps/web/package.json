@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --turbopack --port ${WEB_PORT:-3000}",
+    "dev:staging-env": "NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --overload -f .env.staging -- next dev --turbopack --port ${WEB_PORT:-3000}",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

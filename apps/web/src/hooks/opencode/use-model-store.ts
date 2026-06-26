@@ -102,15 +102,15 @@ function getStore(): ModelStore {
 }
 
 function setStore(next: ModelStore) {
-  next = {
+  const capped = {
     ...next,
     sessionModel: capSessionMap(next.sessionModel),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
-  _store = next;
+  _store = capped;
   // Shared never-throw write — degrades gracefully and reclaims quota from
   // disposable caches instead of throwing if the bucket is full.
-  safeSetItem(STORE_KEY, JSON.stringify(next));
+  safeSetItem(STORE_KEY, JSON.stringify(capped));
   for (const fn of _listeners) fn();
 }
 
@@ -191,7 +191,7 @@ function isWithinMonths(dateStr: string | undefined, months: number): boolean {
   if (!dateStr) return false;
   try {
     const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return false;
+    if (Number.isNaN(date.getTime())) return false;
     const now = new Date();
     const diffMs = Math.abs(now.getTime() - date.getTime());
     const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
@@ -205,7 +205,7 @@ function isWithinMonths(dateStr: string | undefined, months: number): boolean {
  * Compute "latest" models: models released within 6 months,
  * grouped by provider then family, newest per family wins.
  */
-function computeLatestSet(models: FlatModel[]): Set<string> {
+export function computeLatestSet(models: FlatModel[]): Set<string> {
   // Filter to recent models (within 6 months)
   const recent = models.filter((m) => isWithinMonths(m.releaseDate, 6));
 
@@ -251,7 +251,9 @@ function computeLatestSet(models: FlatModel[]): Set<string> {
 
 export function useModelStore(
   allModels: FlatModel[],
-  opts?: { connectedProviderIds?: Set<string> },
+  opts?: {
+    connectedProviderIds?: Set<string>;
+  },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
@@ -274,8 +276,6 @@ export function useModelStore(
       const key = `${model.providerID}:${model.modelID}`;
       const state = visibilityMap.get(key);
       if (state === 'hide') return false;
-      // OpenCode Zen free models — always offered (native route, never billed).
-      if (model.providerID === 'opencode') return true;
       // Gateway (kortix) models. The catalog is namespaced `<provider>/<model>`,
       // and connection is AUTHORITATIVE — it overrides any stale `show` pin, so a
       // disconnected provider's models disappear (even ones you'd used) and a
@@ -287,10 +287,25 @@ export function useModelStore(
         const sub = subProviderOf(model.modelID);
         // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
         // gate its display on the subscription being connected.
-        if (sub === SUBSCRIPTION_PROVIDER_ID)
-          return connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false;
+        const connected =
+          sub === SUBSCRIPTION_PROVIDER_ID
+            ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
+            : (connectedProviderIds?.has(sub) ?? false);
         if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
-        return connectedProviderIds?.has(sub) ?? false;
+        if (!connected) return false;
+        if (state === 'show') return true;
+        if (latestSet.has(key)) return true;
+        const m = allModels.find(
+          (x) => x.providerID === model.providerID && x.modelID === model.modelID,
+        );
+        if (!m?.releaseDate) return isDefaultVisible(model);
+        try {
+          const d = new Date(m.releaseDate);
+          if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
+        } catch {
+          return isDefaultVisible(model);
+        }
+        return false;
       }
       if (state === 'show') return true;
       if (latestSet.has(key)) return true;
@@ -304,7 +319,7 @@ export function useModelStore(
       if (!m?.releaseDate) return isDefaultVisible(model);
       try {
         const d = new Date(m.releaseDate);
-        if (isNaN(d.getTime())) return isDefaultVisible(model);
+        if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
       } catch {
         return isDefaultVisible(model);
       }

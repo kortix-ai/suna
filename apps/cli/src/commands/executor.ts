@@ -4,9 +4,9 @@
  * `executor` shim into the one kortix CLI.
  *
  * Three faces over ONE core (see ../executor/gateway.ts):
- *   - this CLI        (`kortix executor call …`)
- *   - the MCP server  (`kortix executor mcp`, the agent's PRIMARY path)
- *   - the SDK         (`@kortix/executor-sdk`, the TypeScript framework)
+ *   - this CLI        (`kortix executor call …`, the agent's primary path)
+ *   - the SDK         (`@kortix/executor-sdk`, durable TypeScript workflows)
+ *   - the MCP server  (`kortix executor mcp`, optional compatibility face)
  *
  * Thin client: it never holds a third-party credential. Every tool call goes to
  * the Kortix Executor Gateway (/v1/executor/*), which checks sharing, resolves
@@ -161,7 +161,7 @@ async function dispatch(command: string, args: string[], flags: Record<string, s
           add: 'kortix executor add <slug> --provider pipedream --app <app> — add a connector NOW (no CR), then connect',
           rm: 'kortix executor rm <slug> — remove a connector from the project',
           connect: 'kortix executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',
-          mcp: 'kortix executor mcp — run the Executor as a stdio MCP server (opencode auto-loads this)',
+          mcp: 'kortix executor mcp — run the optional stdio MCP compatibility server',
         },
       });
   }

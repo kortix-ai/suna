@@ -31,10 +31,12 @@ const STRIP_REQUEST_HEADERS = new Set([
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
 const PTY_WS_PATH_RE = /^\/pty\/[^/]+\/connect\/?$/
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 type OpencodeWsData = {
   type: 'opencode-pty'
   url: string
+  headers?: Record<string, string>
   upstream?: WebSocket
   ready?: boolean
   queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>
@@ -52,6 +54,16 @@ function sanitizeCloseCode(code: number | undefined): number {
   if (code === 1000) return 1000
   if (code >= 3000 && code <= 4999) return code
   return 1000
+}
+
+function redactWsUrl(input: string): string {
+  try {
+    const url = new URL(input)
+    if (url.searchParams.has('ticket')) url.searchParams.set('ticket', '[redacted]')
+    return url.toString()
+  } catch {
+    return input.replace(/([?&]ticket=)[^&]+/i, '$1[redacted]')
+  }
 }
 
 async function prepareOpencodePtyWsUpgrade(
@@ -76,7 +88,7 @@ async function prepareOpencodePtyWsUpgrade(
     }
   }
 
-  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER)
+  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
   const auth = verifyKortixUserContext(header, cfg.sandboxToken)
   if (!auth.ok) {
     logger.warn('[proxy] reject websocket', { reason: auth.reason, path: url.pathname })
@@ -129,11 +141,49 @@ async function prepareOpencodePtyWsUpgrade(
     }
   }
 
+  url.searchParams.delete(KORTIX_USER_CONTEXT_QUERY_PARAM)
+
+  const upstreamUrl = new URL(`${opencode.getInternalUrl()}${url.pathname}${url.search}`.replace(/^http:/i, 'ws:'))
+  const httpUrl = new URL(upstreamUrl.toString().replace(/^ws:/i, 'http:'))
+  const headers = { 'x-opencode-directory': cfg.projectTarget || cfg.workspace }
+
+  try {
+    const tokenUrl = new URL(httpUrl.toString())
+    tokenUrl.pathname = tokenUrl.pathname.replace(/\/connect\/?$/, '/connect-token')
+    tokenUrl.search = ''
+    const tokenRes = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        ...headers,
+        'x-opencode-ticket': '1',
+      },
+    })
+    if (tokenRes.ok) {
+      const body = await tokenRes.json().catch(() => null) as { ticket?: unknown } | null
+      if (typeof body?.ticket === 'string' && body.ticket.length > 0) {
+        upstreamUrl.searchParams.set('ticket', body.ticket)
+        if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '-1')
+      }
+    } else if (tokenRes.status !== 404) {
+      const detail = (await tokenRes.text().catch(() => '')).slice(0, 200)
+      logger.warn('[proxy] opencode pty ticket mint failed; falling back to direct websocket', {
+        status: tokenRes.status,
+        path: tokenUrl.pathname,
+        detail,
+      })
+    }
+  } catch (err) {
+    logger.warn('[proxy] opencode pty ticket mint threw; falling back to direct websocket', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+
   return {
     ok: true,
     data: {
       type: 'opencode-pty',
-      url: `${opencode.getInternalUrl()}${url.pathname}${url.search}`.replace(/^http:/i, 'ws:'),
+      url: upstreamUrl.toString(),
+      headers,
     },
   }
 }
@@ -378,10 +428,11 @@ export function startProxy(
 
         let upstream: WebSocket
         try {
-          upstream = new WebSocket(state.url)
+          upstream = new WebSocket(state.url, { headers: state.headers ?? {} } as any)
         } catch (err) {
           logger.warn('[proxy] opencode websocket connect threw', {
             err: err instanceof Error ? err.message : String(err),
+            url: redactWsUrl(state.url),
           })
           try { ws.close(1011, 'upstream connect failed') } catch {}
           return
@@ -404,10 +455,19 @@ export function startProxy(
         }
 
         upstream.onclose = (event: CloseEvent) => {
+          if (!state.ready || event.code !== 1000 || event.reason) {
+            logger.warn('[proxy] opencode websocket closed', {
+              code: event.code,
+              reason: event.reason,
+              ready: state.ready,
+              url: redactWsUrl(state.url),
+            })
+          }
           try { ws.close(sanitizeCloseCode(event.code), (event.reason || '').slice(0, 120)) } catch {}
         }
 
         upstream.onerror = () => {
+          logger.warn('[proxy] opencode websocket error', { url: redactWsUrl(state.url) })
           try { ws.close(1011, 'upstream error') } catch {}
         }
       },

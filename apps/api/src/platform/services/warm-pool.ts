@@ -43,6 +43,7 @@ import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { randomUUID } from 'node:crypto';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting/parked longer than this → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
@@ -421,6 +422,7 @@ async function bindClaimedSpare(input: {
   projectId: string;
   provider: SandboxProviderName;
   sessionMetadata: Record<string, unknown>;
+  llmGatewayEnabled: boolean;
 }): Promise<boolean> {
   // The session may have been deleted mid-claim — don't bind a doomed session.
   const [session] = await db.select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, input.sessionId)).limit(1);
@@ -460,7 +462,10 @@ async function bindClaimedSpare(input: {
         // hibernates poolState IS NULL).
         status: 'active',
         poolState: null,
-        config: { serviceKey: input.spare.serviceKey }, // PARK key — the box keeps authenticating with it
+        config: {
+          serviceKey: input.spare.serviceKey, // PARK key — the box keeps authenticating with it
+          llmGatewayEnabled: input.llmGatewayEnabled,
+        },
         metadata: { ...input.sessionMetadata, claimed_from_spare: input.spare.spareSandboxId },
         lastUsedAt: new Date(),
       });
@@ -506,6 +511,8 @@ export interface ClaimSpareForSessionInput {
   /** The exact env the cold path would inject (buildSessionSandboxEnvVars output). */
   builtEnvVars: Record<string, string>;
   sessionMetadata: Record<string, unknown>;
+  /** Project metadata, used for per-project experimental gates. */
+  projectMetadata?: unknown;
 }
 
 /**
@@ -529,8 +536,9 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }
-    const gatewayEntitled = config.LLM_GATEWAY_ENABLED ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
-    const gatewayLlmKey = config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
+    const llmGatewayEnabled = projectLlmGatewayEnabled(input.projectMetadata);
+    const gatewayEntitled = llmGatewayEnabled ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
+    const gatewayLlmKey = llmGatewayEnabled && gatewayEntitled ? executorToken : null;
     const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
     const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
     const llmBaseUrl =
@@ -549,7 +557,15 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
       await releaseSpare(spare.spareSandboxId, 'parked');
       return null;
     }
-    const bound = await bindClaimedSpare({ spare, sessionId: input.sessionId, accountId: input.accountId, projectId: input.projectId, provider: input.provider, sessionMetadata: input.sessionMetadata });
+    const bound = await bindClaimedSpare({
+      spare,
+      sessionId: input.sessionId,
+      accountId: input.accountId,
+      projectId: input.projectId,
+      provider: input.provider,
+      sessionMetadata: input.sessionMetadata,
+      llmGatewayEnabled: !!gatewayLlmKey,
+    });
     if (!bound) return null;
     console.log(`[warm-pool] claimed spare ${spare.spareSandboxId.slice(0, 8)} → session ${input.sessionId.slice(0, 8)}`);
     return { externalId: spare.externalId };

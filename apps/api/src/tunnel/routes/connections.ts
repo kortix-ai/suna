@@ -19,12 +19,13 @@ import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { reconcileComputerConnectors } from '../../executor/sync';
+import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
 
 function serializeConnection(conn: typeof tunnelConnections.$inferSelect) {
-  const isLive = tunnelRelay.isConnected(conn.tunnelId);
+  const isLive = isTunnelConnectionLive(conn);
   return {
     ...conn,
     status: isLive ? 'online' : 'offline',

@@ -24,5 +24,6 @@ export interface UpstreamDescriptor {
   appReferer?: string;
   resolvedModel?: string;
   headers?: Record<string, string>;
+  omitAuthorization?: boolean;
   pricing?: UpstreamPricing;
 }

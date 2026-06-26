@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Copy, KeyRound } from 'lucide-react';
+import { Check, Copy, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -11,11 +12,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
+import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
-import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import {
   useCreateGatewayKey,
@@ -66,6 +75,7 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl space-y-4 p-5">
         <SectionCard
+          flush
           title="API keys"
           count={keys.length}
           description="Project-scoped keys for calling the gateway from external apps — every request is logged and billed here"
@@ -83,61 +93,63 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
               action={<Button size="sm" onClick={() => setCreating(true)}>Create key</Button>}
             />
           ) : (
-            <div className="-mx-2 divide-y divide-border/40">
+            <List>
               {keys.map((k) => {
                 const active = k.status === 'active';
                 return (
-                  <div
+                  <ListRow
                     key={k.key_id}
-                    className="group flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-muted/40"
-                  >
-                    <span
-                      className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                        active ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-                      )}
-                    >
-                      <KeyRound className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-foreground">{k.name}</span>
-                        <span
-                          className={cn(
-                            'shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium capitalize',
-                            active
-                              ? 'bg-kortix-green/12 text-kortix-green'
-                              : 'bg-muted text-muted-foreground',
-                          )}
-                        >
-                          {k.status}
-                        </span>
-                      </div>
-                      <div className="truncate font-mono text-xs text-muted-foreground">
-                        {k.key_prefix}… · last used {fmtDate(k.last_used_at)}
-                      </div>
-                    </div>
-                    {active ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={revokeKey.isPending}
-                        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={() =>
-                          revokeKey.mutate(k.key_id, {
-                            onSuccess: () => toast.success('Key revoked'),
-                            onError: (e) =>
-                              toast.error(e instanceof Error ? e.message : 'Could not revoke'),
-                          })
-                        }
-                      >
-                        Revoke
-                      </Button>
-                    ) : null}
-                  </div>
+                    compact
+                    leading={<EntityAvatar icon={KeyRound} size="sm" />}
+                    title={
+                      <span className="truncate text-sm font-medium text-foreground">{k.name}</span>
+                    }
+                    badges={
+                      <Badge size="sm" variant={active ? 'success' : 'secondary'} className="capitalize">
+                        {k.status}
+                      </Badge>
+                    }
+                    subtitle={
+                      <InlineMeta>
+                        <code className="font-mono">{k.key_prefix}…</code>
+                        <span>last used {fmtDate(k.last_used_at)}</span>
+                      </InlineMeta>
+                    }
+                    trailing={
+                      active ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              aria-label="Key actions"
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() =>
+                                revokeKey.mutate(k.key_id, {
+                                  onSuccess: () => toast.success('Key revoked'),
+                                  onError: (e) =>
+                                    toast.error(e instanceof Error ? e.message : 'Could not revoke'),
+                                })
+                              }
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Revoke key
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null
+                    }
+                  />
                 );
               })}
-            </div>
+            </List>
           )}
         </SectionCard>
       </div>
@@ -171,18 +183,28 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
         </Dialog>
       )}
 
-      {created && <RevealKeyDialog created={created} onClose={() => setCreated(null)} />}
+      {created && (
+        <RevealKeyDialog
+          created={created}
+          gatewayUrl={data?.gateway_url ?? null}
+          onClose={() => setCreated(null)}
+        />
+      )}
     </div>
   );
 }
 
 function RevealKeyDialog({
   created,
+  gatewayUrl,
   onClose,
 }: {
   created: CreatedGatewayKey;
+  /** Env-correct public gateway origin (dev vs prod); falls back to prod. */
+  gatewayUrl: string | null;
   onClose: () => void;
 }) {
+  const base = gatewayUrl ?? 'https://gateway.kortix.com';
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard.writeText(created.secret_key);
@@ -216,9 +238,9 @@ function RevealKeyDialog({
           <div>
             <div className="mb-1.5 text-xs font-medium text-muted-foreground">Use it</div>
             <pre className="overflow-x-auto rounded-xl border border-border/60 bg-muted/30 p-3 font-mono text-xs leading-relaxed text-foreground">
-{`curl https://gateway.kortix.com/v1/chat/completions \\
-  -H "Authorization: Bearer ${created.key_prefix}…" \\
-  -d '{"model":"claude-sonnet-4.6","messages":[...]}'`}
+{`curl ${base}/v1/chat/completions \\
+  -H "Authorization: Bearer ${created.secret_key}" \\
+  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hello"}]}'`}
             </pre>
           </div>
         </div>

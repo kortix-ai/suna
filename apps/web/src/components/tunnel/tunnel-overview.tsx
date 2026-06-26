@@ -4,14 +4,15 @@ import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Cable, Plus, Monitor, Trash2, Search, X, Terminal, Copy, Check } from 'lucide-react';
+import { Cable, Plus, Monitor, Trash2, Terminal, Copy, Check, ShieldCheck } from 'lucide-react';
 import { getEnv } from '@/lib/env-config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { Ripple } from '@/components/ui/ripple';
 import { PageHeader } from '@/components/ui/page-header';
 import {
   Dialog,
@@ -34,7 +35,8 @@ import { useTunnelConnections, useDeleteTunnelConnection, type TunnelConnection 
 import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
 import { TunnelSettingsDialog } from './tunnel-settings-dialog';
 import { TunnelPermissionRequestDialog } from './tunnel-permission-request-dialog';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
 // ─── Connection card ─────────────────────────────────────────────────────────
 
@@ -82,7 +84,7 @@ function ConnectionItem({
           >
             <div className="flex items-center gap-3 mb-3">
               <div className="relative">
-                <div className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-muted border border-border/50 shrink-0">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted">
                   <Monitor className="h-4.5 w-4.5 text-foreground" />
                 </div>
                 {isOnline && (
@@ -95,10 +97,7 @@ function ConnectionItem({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-foreground truncate">{connection.name}</h3>
-                  <Badge
-                    variant={isOnline ? 'highlight' : 'secondary'}
-                    className="text-xs shrink-0"
-                  >
+                  <Badge variant={isOnline ? 'success' : 'outline'} size="sm" className="shrink-0">
                     {isOnline ? 'Online' : 'Offline'}
                   </Badge>
                 </div>
@@ -122,7 +121,7 @@ function ConnectionItem({
             <div className="flex justify-end gap-1">
               <Button
                 variant="ghost"
-                className="text-muted-foreground hover:text-destructive h-8 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                className="text-muted-foreground h-8 px-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation();
                   setDeleteOpen(true);
@@ -186,10 +185,10 @@ function ConnectButton() {
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-9 h-9 rounded-[10px] bg-muted border border-border/50">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted">
                 <Terminal className="h-4.5 w-4.5 text-foreground" />
               </div>
               <div>
@@ -198,26 +197,29 @@ function ConnectButton() {
               </div>
             </div>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
+          <div className="space-y-4 px-6 py-5">
             <button
               onClick={handleCopy}
-              className="group flex items-center gap-2 w-full bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-2xl px-3 py-2.5 transition-colors cursor-pointer"
+              className="group flex w-full cursor-pointer items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2.5 transition-colors hover:bg-primary/[0.05]"
             >
-              <code className="text-xs font-mono text-foreground/80 flex-1 text-left break-all">
+              <code className="flex-1 break-all text-left font-mono text-xs text-foreground/80">
                 {command}
               </code>
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                <Check className="h-3.5 w-3.5 shrink-0 text-kortix-green" />
               ) : (
-                <Copy className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               )}
             </button>
-            <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground/60">
+            <InfoBanner tone="info" icon={ShieldCheck} title="Interactive setup">
+              After approval, the terminal asks whether this computer should stay
+              always online in the background, then separately whether Kortix
+              should keep it awake.
+            </InfoBanner>
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
               <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line203JsxTextText1RunTheCommand')}</span>
-              <span className="text-foreground/10">|</span>
               <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line205JsxTextText2ApproveInBrowser')}</span>
-              <span className="text-foreground/10">|</span>
-              <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line207JsxTextText3Connected')}</span>
+              <span>Choose background options</span>
             </div>
           </div>
         </DialogContent>
@@ -238,38 +240,28 @@ function ConnectGuide() {
   };
 
   return (
-    <div className="relative bg-muted/20 rounded-3xl border border-dashed border-border/50 flex flex-col items-center justify-center py-16 px-4 overflow-hidden">
-      <Ripple mainCircleSize={160} mainCircleOpacity={0.12} numCircles={6} />
-      <div className="relative z-10 flex flex-col items-center max-w-lg">
-        <div className="w-16 h-16 bg-muted border rounded-2xl flex items-center justify-center mb-4">
-          <Cable className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line234JsxTextConnectYourMachine')}</h3>
-        <p className="text-sm text-muted-foreground text-center leading-relaxed mb-6">{tHardcodedUi.raw('componentsTunnelTunnelOverview.line236JsxTextRunThisCommandOnAnyMachineToConnect')}</p>
-
-        <button
-          onClick={handleCopy}
-          className="group flex items-center gap-3 bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-2xl px-5 py-3.5 transition-colors w-full max-w-sm"
-        >
-          <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
-          <code className="text-sm font-mono text-foreground/80 flex-1 text-left truncate">
-            {command}
-          </code>
-          {copied ? (
-            <Check className="h-4 w-4 text-emerald-500 shrink-0" />
-          ) : (
-            <Copy className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-          )}
-        </button>
-
-        <div className="flex items-center gap-6 mt-6 text-xs text-muted-foreground/60">
-          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line255JsxTextText1RunTheCommand')}</span>
-          <span className="text-foreground/10">|</span>
-          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line257JsxTextText2ApproveInBrowser')}</span>
-          <span className="text-foreground/10">|</span>
-          <span>{tHardcodedUi.raw('componentsTunnelTunnelOverview.line259JsxTextText3Connected')}</span>
-        </div>
-      </div>
+    <div className="rounded-2xl border border-dashed border-border bg-card">
+      <EmptyState
+        icon={Cable}
+        title={tHardcodedUi.raw('componentsTunnelTunnelOverview.line234JsxTextConnectYourMachine')}
+        description="Run the command on any Mac, Windows, or Linux machine. The terminal guides device approval, always-online service setup, and the separate keep-awake option."
+        action={
+          <button
+            onClick={handleCopy}
+            className="group flex w-full max-w-sm items-center gap-3 rounded-2xl border border-border bg-background px-5 py-3.5 transition-colors hover:bg-primary/[0.05]"
+          >
+            <Terminal className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <code className="flex-1 truncate text-left font-mono text-sm text-foreground/80">
+              {command}
+            </code>
+            {copied ? (
+              <Check className="h-4 w-4 shrink-0 text-kortix-green" />
+            ) : (
+              <Copy className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+            )}
+          </button>
+        }
+      />
     </div>
   );
 }
@@ -282,7 +274,7 @@ function LoadingSkeleton() {
       {[1, 2, 3, 4].map((i) => (
         <div key={i} className="rounded-2xl border dark:bg-card p-4 sm:p-5">
           <div className="flex items-center gap-3 mb-3">
-            <Skeleton className="h-9 w-9 rounded-[10px]" />
+            <Skeleton className="h-9 w-9 rounded-lg" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-3 w-32" />
@@ -323,13 +315,13 @@ export function TunnelOverview() {
   const handleDelete = async (tunnelId: string) => {
     try {
       await deleteMutation.mutateAsync(tunnelId);
-      toast.success('Tunnel deleted');
+      successToast('Tunnel deleted');
       if (selectedTunnel?.tunnelId === tunnelId) {
         setSelectedTunnel(null);
         setSettingsOpen(false);
       }
     } catch {
-      toast.error('Failed to delete tunnel');
+      errorToast('Failed to delete tunnel');
     }
   };
 
@@ -425,10 +417,11 @@ export function TunnelOverview() {
  * runs off-host.
  */
 function getConnectCommand(): string {
-  const backend = (getEnv().BACKEND_URL || '').replace(/\/+$/, '');
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const absolute = /^https?:\/\//i.test(backend) ? backend : `${origin}${backend}`;
-  return `npx @kortix/agent-tunnel connect --api-url ${absolute}/tunnel`;
+  return buildTunnelConnectCommand({
+    backendUrl: getEnv().BACKEND_URL || '',
+    origin,
+  });
 }
 
 function formatRelative(dateStr: string): string {

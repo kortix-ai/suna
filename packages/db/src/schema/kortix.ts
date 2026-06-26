@@ -2133,6 +2133,10 @@ export const tunnelConnections = kortixSchema.table(
     status: tunnelStatusEnum('status').default('offline').notNull(),
     capabilities: jsonb('capabilities').default([]).$type<string[]>(),
     machineInfo: jsonb('machine_info').default({}).$type<TunnelMachineInfo>(),
+    relayOwnerId: varchar('relay_owner_id', { length: 255 }),
+    relayOwnerInstance: varchar('relay_owner_instance', { length: 255 }),
+    relayOwnerStartedAt: timestamp('relay_owner_started_at', { withTimezone: true }),
+    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', { withTimezone: true }),
     setupTokenHash: varchar('setup_token_hash', { length: 128 }),
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2142,6 +2146,32 @@ export const tunnelConnections = kortixSchema.table(
     index('idx_tunnel_connections_account').on(table.accountId),
     index('idx_tunnel_connections_sandbox').on(table.sandboxId),
     index('idx_tunnel_connections_status').on(table.status),
+    index('idx_tunnel_connections_relay_owner').on(table.relayOwnerId),
+  ],
+);
+
+export const tunnelRpcForwards = kortixSchema.table(
+  'tunnel_rpc_forwards',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    tunnelId: uuid('tunnel_id').notNull().references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    requesterRelayOwnerId: varchar('requester_relay_owner_id', { length: 255 }),
+    targetRelayOwnerId: varchar('target_relay_owner_id', { length: 255 }).notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    method: varchar('method', { length: 255 }).notNull(),
+    params: jsonb('params').default({}).$type<Record<string, unknown>>(),
+    result: jsonb('result'),
+    error: jsonb('error').$type<{ code?: number; message?: string; data?: unknown } | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_tunnel_rpc_forwards_target_status').on(table.targetRelayOwnerId, table.status, table.expiresAt),
+    index('idx_tunnel_rpc_forwards_expiry').on(table.expiresAt),
+    index('idx_tunnel_rpc_forwards_tunnel').on(table.tunnelId),
   ],
 );
 

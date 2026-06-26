@@ -369,7 +369,12 @@ describe('Preview proxy: websocket upstream resolution', () => {
     expect(upstream.ok).toBe(true);
     expect(mockResolvedPreviewPorts).toEqual([8000]);
     if (upstream.ok) {
-      expect(upstream.url).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      const url = new URL(upstream.url);
+      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      const queryContext = url.searchParams.get('__kortix_user_context');
+      expect(queryContext).toBeTruthy();
+      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
+      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
     }
   });
 });
@@ -595,6 +600,7 @@ describe('Preview proxy: forwarding', () => {
         SENTRY_DSN: 'https://example.test/1',
       },
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      refreshModels: false,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(

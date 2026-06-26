@@ -94,9 +94,58 @@ function startEchoUpstream() {
   })
 }
 
-async function expectEcho(proxyPort: number) {
-  const ws = new WebSocket(`ws://127.0.0.1:${proxyPort}/pty/pty_test/connect`, {
-    headers: { [KORTIX_USER_CONTEXT_HEADER]: signCtx() },
+function startTicketedEchoUpstream() {
+  const tickets = new Set<string>()
+  let sawDirectoryHeader = false
+  let sawPrivateAuthParam = false
+
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req, server) {
+      const url = new URL(req.url)
+      if (url.pathname === '/pty/pty_test/connect-token' && req.method === 'POST') {
+        if (req.headers.get('x-opencode-ticket') !== '1') {
+          return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+        }
+        sawDirectoryHeader = req.headers.get('x-opencode-directory') === '/workspace'
+        const ticket = 'ticket_123'
+        tickets.add(ticket)
+        return Response.json({ ticket, expires_in: 60 })
+      }
+      if (url.pathname === '/pty/pty_test/connect' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+        sawPrivateAuthParam = url.searchParams.has('__kortix_user_context')
+        if (!tickets.delete(url.searchParams.get('ticket') ?? '')) {
+          return new Response('forbidden', { status: 403 })
+        }
+        if (url.searchParams.get('cursor') !== '-1') {
+          return new Response('missing cursor', { status: 400 })
+        }
+        if (req.headers.get('x-opencode-directory') !== '/workspace') {
+          return new Response('missing directory', { status: 400 })
+        }
+        const upgraded = server.upgrade(req)
+        if (upgraded) return undefined
+        return new Response('upgrade failed', { status: 500 })
+      }
+      return new Response('not found', { status: 404 })
+    },
+    websocket: {
+      message(ws, message) {
+        ws.send(`echo:${String(message)}`)
+      },
+    },
+  })
+
+  return {
+    server,
+    sawDirectoryHeader: () => sawDirectoryHeader,
+    sawPrivateAuthParam: () => sawPrivateAuthParam,
+  }
+}
+
+async function expectEcho(proxyPort: number, opts: { query?: string; headers?: Record<string, string> } = {}) {
+  const ws = new WebSocket(`ws://127.0.0.1:${proxyPort}/pty/pty_test/connect${opts.query ?? ''}`, {
+    headers: opts.headers ?? { [KORTIX_USER_CONTEXT_HEADER]: signCtx() },
   } as any)
 
   await waitForOpen(ws)
@@ -122,6 +171,49 @@ describe('daemon PTY websocket bridge', () => {
     } finally {
       await proxy.stop()
       upstream.stop(true)
+    }
+  })
+
+  it('mints and consumes opencode PTY websocket tickets when supported', async () => {
+    const upstream = startTicketedEchoUpstream()
+
+    const proxy = startProxy(
+      baseConfig(),
+      fakeOpencode(`http://127.0.0.1:${upstream.server.port}`),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+    )
+
+    try {
+      await expectEcho(proxy.port)
+      expect(upstream.sawDirectoryHeader()).toBe(true)
+      expect(upstream.sawPrivateAuthParam()).toBe(false)
+    } finally {
+      await proxy.stop()
+      upstream.server.stop(true)
+    }
+  })
+
+  it('accepts signed user context in the websocket query for Platinum edge upgrades', async () => {
+    const upstream = startTicketedEchoUpstream()
+
+    const proxy = startProxy(
+      baseConfig(),
+      fakeOpencode(`http://127.0.0.1:${upstream.server.port}`),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+    )
+
+    try {
+      await expectEcho(proxy.port, {
+        query: `?__kortix_user_context=${encodeURIComponent(signCtx())}`,
+        headers: {},
+      })
+      expect(upstream.sawDirectoryHeader()).toBe(true)
+      expect(upstream.sawPrivateAuthParam()).toBe(false)
+    } finally {
+      await proxy.stop()
+      upstream.server.stop(true)
     }
   })
 
