@@ -71,6 +71,7 @@ export const AccountTokenSchema = z
   .object({
     token_id: z.string(),
     name: z.string(),
+    project_id: z.string().nullable().optional(),
     public_key: z.string(),
     status: z.string(),
     expires_at: z.string().nullable(),
