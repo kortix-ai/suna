@@ -442,6 +442,16 @@ async function applyPostCreateActions(input: {
           .onConflictDoNothing({
             target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId],
           });
+      } else if (action.type === 'deliver_prompt') {
+        const outcome = await continueSession({
+          source: action.source,
+          sessionId: input.sessionId,
+          text: action.text,
+          userId: action.userId ?? undefined,
+        });
+        if (outcome !== 'delivered') {
+          return { ok: false, error: `initial prompt delivery ${outcome}` };
+        }
       }
     }
     return { ok: true };

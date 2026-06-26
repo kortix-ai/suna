@@ -174,6 +174,7 @@ async function createThreadSession(
     return;
   }
 
+  const initialPrompt = renderAgentPrompt(event, revived);
   const result = await emailSessionLifecycle.createSession({
     source: "email",
     project,
@@ -181,7 +182,6 @@ async function createThreadSession(
     body: {
       base_ref: project.defaultBranch,
       agent_name: "default",
-      initial_prompt: renderAgentPrompt(event, revived),
     },
     enforceAccountCap: false,
     queuePolicy: "on_backpressure",
@@ -192,6 +192,12 @@ async function createThreadSession(
         platform: "email",
         workspaceId: inboxId,
         threadId,
+      },
+      {
+        type: "deliver_prompt",
+        source: "email",
+        text: initialPrompt,
+        userId,
       },
     ],
     visibility: "project",

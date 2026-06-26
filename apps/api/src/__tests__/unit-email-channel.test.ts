@@ -204,9 +204,15 @@ describe("dispatchAgentMailEvent", () => {
         workspaceId: "inb-1",
         threadId: "thr-1",
       },
+      expect.objectContaining({
+        type: "deliver_prompt",
+        source: "email",
+        userId: "user-1",
+      }),
     ]);
+    expect(createCalls[0].postCreate[1].text).toContain("Need help");
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe("inb-1");
-    expect(createCalls[0].body.initial_prompt).toContain("Need help");
+    expect(createCalls[0].body.initial_prompt).toBeUndefined();
   });
 
   test("accepts AgentMail's unwrapped message.received payload without top-level thread metadata", async () => {
@@ -242,7 +248,7 @@ describe("dispatchAgentMailEvent", () => {
 
     expect(createCalls).toHaveLength(1);
     expect(createCalls[0].metadata.email.subject).toBe("Actual AgentMail payload");
-    expect(createCalls[0].body.initial_prompt).toContain("Thread ID:  thr-unwrapped");
+    expect(createCalls[0].postCreate[1].text).toContain("Thread ID:  thr-unwrapped");
   });
 
   test("routes unauthenticated inbound mail through the same sender policy and session path", async () => {
