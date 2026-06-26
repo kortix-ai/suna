@@ -13,6 +13,7 @@ export {
 } from './resilience';
 export type {
   BreakerBinding,
+  BreakerSignalStore,
   BreakerState,
   CircuitBreakerOptions,
   RetryOptions,

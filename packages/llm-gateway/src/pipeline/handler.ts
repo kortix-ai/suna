@@ -8,7 +8,7 @@ import type {
   UsageEvent,
 } from '../domain';
 import type { FetchImpl } from '../http';
-import type { CircuitBreaker } from '../resilience';
+import type { BreakerSignalStore, CircuitBreaker } from '../resilience';
 import { type ExtractedUsage, calculateCost, extractUsageFromJson } from '../usage';
 import { runFailover } from './failover';
 import { relayStream } from './streaming';
@@ -22,6 +22,11 @@ export interface ChatCompletionRequest {
 export interface GatewayDeps {
   fetchImpl?: FetchImpl;
   logger?: GatewayLogger;
+  // Optional fleet-wide breaker signal. When provided, each provider's in-memory
+  // breaker also adopts a SHARED open verdict (aggregated by the host from a store
+  // like Postgres), so a tripped provider fails over across every replica — not
+  // just the one that locally observed the failure burst.
+  breakerSignal?: BreakerSignalStore;
 }
 
 export interface HandlerRuntime {
@@ -150,255 +155,296 @@ export async function handleChatCompletions(
       ...fields,
     });
 
-  step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
+  // Tracks the authenticated principal so a throw AFTER auth (resolveUpstream, a
+  // secret fetch, a tier lookup) still emits a trace attributed to the account.
+  let tracedPrincipal: AuthedPrincipal | undefined;
 
-  const token = bearer(req.authorization);
-  if (!token) {
-    step('reject_no_token');
-    emit({ status: 401, ok: false, errorCode: 'missing_token' });
-    return json({ error: 'Missing bearer token' }, 401);
-  }
-
-  // Pre-dispatch gate: authenticate + billing + budget. When the host provides a
-  // combined `authorize` hook (the standalone gateway, folding three sequential
-  // cross-process RPCs into one), use it; otherwise run the granular hooks (the
-  // in-process mount, where the three direct calls are free). Both yield the same
-  // outcome: a principal, or a 401/402 denial with the same response + trace.
-  const gate = await admit(hooks, token, lap, step);
-  if (!gate.ok) {
-    const denyId = gate.principal ? idOf(gate.principal) : {};
-    emit({
-      ...denyId,
-      status: gate.status,
-      ok: false,
-      errorCode: gate.errorCode,
-      errorMessage: gate.message,
-    });
-    const message = gate.message ?? 'Unauthorized';
-    return json({ error: message, message, code: gate.errorCode }, gate.status);
-  }
-  const principal = gate.principal;
-  step('authenticated', {
-    ms: lap(),
-    accountId: principal.accountId,
-    projectId: principal.projectId,
-    userId: principal.userId,
-    keyId: principal.keyId,
-  });
-
-  const id = idOf(principal);
-
-  let body: Record<string, unknown>;
+  // The whole dispatch is wrapped so a control-plane hook that THROWS (rather than
+  // returns) — admit()/resolveUpstream()/secret-fetch — can't escape as an opaque
+  // 500 with no trace. The catch emits a 503 trace + returns a clean JSON 503.
   try {
-    body = JSON.parse(req.rawBody) as Record<string, unknown>;
-  } catch {
-    step('invalid_json');
-    emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
-    return json({ error: 'Invalid JSON body' }, 400);
-  }
+    step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
 
-  const requestedModel = typeof body.model === 'string' ? body.model : '';
-  // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
-  // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
-  const routedModel = config.autoRouter?.(requestedModel, body) ?? requestedModel;
-  if (routedModel !== requestedModel) {
-    body.model = routedModel;
-  }
-  step('body_parsed', {
-    model: requestedModel,
-    routedModel,
-    stream: body.stream === true,
-    messages: Array.isArray(body.messages) ? body.messages.length : 0,
-    tools: Array.isArray(body.tools) ? body.tools.length : 0,
-  });
-  const metadata =
-    body.metadata && typeof body.metadata === 'object'
-      ? (body.metadata as Record<string, unknown>)
-      : {};
+    const token = bearer(req.authorization);
+    if (!token) {
+      step('reject_no_token');
+      emit({ status: 401, ok: false, errorCode: 'missing_token' });
+      return json({ error: 'Missing bearer token' }, 401);
+    }
 
-  logger.info(
-    `[gateway] → ${requestId} ${requestedModel || '(no model)'}${routedModel !== requestedModel ? ` →${routedModel}` : ''}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
-  );
-
-  const candidates = await hooks.resolveUpstream(principal, routedModel);
-  step('resolved_candidates', {
-    ms: lap(),
-    count: candidates.length,
-    candidates: candidates.map((c) => ({
-      provider: c.provider,
-      kind: c.kind,
-      resolvedModel: c.resolvedModel,
-      billingMode: c.billingMode,
-    })),
-  });
-  if (!candidates.length) {
-    step('model_unavailable', { model: requestedModel, routedModel });
-    emit({
-      ...id,
-      requestedModel,
-      resolvedModel: routedModel,
-      status: 400,
-      ok: false,
-      errorCode: 'model_unavailable',
-      request: capture(body),
-      metadata,
+    // Pre-dispatch gate: authenticate + billing + budget. When the host provides a
+    // combined `authorize` hook (the standalone gateway, folding three sequential
+    // cross-process RPCs into one), use it; otherwise run the granular hooks (the
+    // in-process mount, where the three direct calls are free). Both yield the same
+    // outcome: a principal, or a 401/402 denial with the same response + trace.
+    const gate = await admit(hooks, token, lap, step);
+    if (!gate.ok) {
+      const denyId = gate.principal ? idOf(gate.principal) : {};
+      emit({
+        ...denyId,
+        status: gate.status,
+        ok: false,
+        errorCode: gate.errorCode,
+        errorMessage: gate.message,
+      });
+      const message = gate.message ?? 'Unauthorized';
+      return json({ error: message, message, code: gate.errorCode }, gate.status);
+    }
+    const principal = gate.principal;
+    tracedPrincipal = principal;
+    step('authenticated', {
+      ms: lap(),
+      accountId: principal.accountId,
+      projectId: principal.projectId,
+      userId: principal.userId,
+      keyId: principal.keyId,
     });
-    return json(
-      { error: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable' },
-      400,
-    );
-  }
 
-  const streaming = body.stream === true;
-  // Client-supplied reasoning/thinking passes through verbatim (honored by the
-  // openai-compat and openai-responses transports). The gateway does NOT force a
-  // default reasoning effort: it's the client's (opencode's) decision, it costs
-  // reasoning tokens, and the Bedrock/Anthropic transports build their own
-  // payloads and would silently ignore a top-level `reasoning` field anyway.
-  const payload = streaming
-    ? { ...body, stream: true, stream_options: { include_usage: true } }
-    : body;
+    const id = idOf(principal);
 
-  step('dispatch_upstream', { streaming, candidateCount: candidates.length });
-  const result = await runFailover({
-    candidates,
-    payload,
-    config,
-    fetchImpl,
-    breakerFor,
-    emit,
-    logger,
-    requestId,
-    trace: { ...id, requestedModel, streaming, metadata },
-    capturedRequest: capture(payload),
-  });
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(req.rawBody) as Record<string, unknown>;
+    } catch {
+      step('invalid_json');
+      emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
+      return json({ error: 'Invalid JSON body' }, 400);
+    }
 
-  if (result.kind === 'response') {
-    step('upstream_failed', { ms: lap(), status: result.response.status });
-    return result.response;
-  }
+    const requestedModel = typeof body.model === 'string' ? body.model : '';
+    // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
+    // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
+    const routedModel = config.autoRouter?.(requestedModel, body) ?? requestedModel;
+    if (routedModel !== requestedModel) {
+      body.model = routedModel;
+    }
+    step('body_parsed', {
+      model: requestedModel,
+      routedModel,
+      stream: body.stream === true,
+      messages: Array.isArray(body.messages) ? body.messages.length : 0,
+      tools: Array.isArray(body.tools) ? body.tools.length : 0,
+    });
+    const metadata =
+      body.metadata && typeof body.metadata === 'object'
+        ? (body.metadata as Record<string, unknown>)
+        : {};
 
-  const { upstream, chosen: descriptor, tried, attempts } = result.value;
-  step('upstream_ok', {
-    ms: lap(),
-    provider: descriptor.provider,
-    resolvedModel: descriptor.resolvedModel,
-    upstreamStatus: upstream.status,
-    attempts,
-    tried,
-  });
-
-  const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
-    const usedModel = (
-      usage?.model ??
-      descriptor.resolvedModel ??
-      requestedModel ??
-      'unknown'
-    ).toString();
-    const counts: TokenCounts = {
-      promptTokens: usage?.promptTokens ?? 0,
-      completionTokens: usage?.completionTokens ?? 0,
-      cachedTokens: usage?.cachedTokens ?? 0,
-    };
-    const markup = descriptor.billingMode === 'none' ? 0 : descriptor.markup;
-    const { upstreamCost, finalCost } = calculateCost(
-      usedModel,
-      counts,
-      markup,
-      usage?.upstreamCostHint,
-      descriptor.pricing,
+    logger.info(
+      `[gateway] → ${requestId} ${requestedModel || '(no model)'}${routedModel !== requestedModel ? ` →${routedModel}` : ''}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
     );
 
-    // A billable request that priced to $0 means we have no pricing for the
-    // resolved model (stale catalog) — surface it so it can't silently leak.
-    if (markup > 0 && upstreamCost === 0 && counts.promptTokens + counts.completionTokens > 0) {
-      logger.warn(
-        `[llm-gateway] billable request priced at $0 — missing pricing? ${requestId} model=${usedModel} provider=${descriptor.provider}`,
+    const candidates = await hooks.resolveUpstream(principal, routedModel);
+    step('resolved_candidates', {
+      ms: lap(),
+      count: candidates.length,
+      candidates: candidates.map((c) => ({
+        provider: c.provider,
+        kind: c.kind,
+        resolvedModel: c.resolvedModel,
+        billingMode: c.billingMode,
+      })),
+    });
+    if (!candidates.length) {
+      step('model_unavailable', { model: requestedModel, routedModel });
+      emit({
+        ...id,
+        requestedModel,
+        resolvedModel: routedModel,
+        status: 400,
+        ok: false,
+        errorCode: 'model_unavailable',
+        request: capture(body),
+        metadata,
+      });
+      return json(
+        { error: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable' },
+        400,
       );
     }
 
-    if (counts.promptTokens + counts.completionTokens > 0) {
-      const event: UsageEvent = {
-        ...counts,
-        accountId: principal.accountId,
-        actorUserId: principal.userId,
-        projectId: principal.projectId,
-        sessionId: principal.sessionId,
-        provider: descriptor.provider,
-        model: usedModel,
-        upstreamCost,
-        finalCost,
-        billingMode: descriptor.billingMode,
-        streaming,
-        requestId,
-      };
-      try {
-        await hooks.recordUsage(event);
-      } catch (err) {
-        logger.warn(`[llm-gateway] recordUsage failed for ${requestId}:`, err);
-      }
+    const streaming = body.stream === true;
+    // Client-supplied reasoning/thinking passes through verbatim (honored by the
+    // openai-compat and openai-responses transports). The gateway does NOT force a
+    // default reasoning effort: it's the client's (opencode's) decision, it costs
+    // reasoning tokens, and the Bedrock/Anthropic transports build their own
+    // payloads and would silently ignore a top-level `reasoning` field anyway.
+    const payload = streaming
+      ? { ...body, stream: true, stream_options: { include_usage: true } }
+      : body;
+
+    step('dispatch_upstream', { streaming, candidateCount: candidates.length });
+    const result = await runFailover({
+      candidates,
+      payload,
+      config,
+      fetchImpl,
+      breakerFor,
+      emit,
+      logger,
+      requestId,
+      trace: { ...id, requestedModel, streaming, metadata },
+      capturedRequest: capture(payload),
+    });
+
+    if (result.kind === 'response') {
+      step('upstream_failed', { ms: lap(), status: result.response.status });
+      return result.response;
     }
 
-    step('settled', {
-      resolvedModel: usedModel,
+    const { upstream, chosen: descriptor, tried, attempts } = result.value;
+    step('upstream_ok', {
+      ms: lap(),
       provider: descriptor.provider,
-      promptTokens: counts.promptTokens,
-      completionTokens: counts.completionTokens,
-      cachedTokens: counts.cachedTokens,
-      upstreamCost,
-      finalCost,
-      streaming,
-    });
-
-    emit({
-      ...id,
-      requestedModel,
-      resolvedModel: usedModel,
-      provider: descriptor.provider,
-      billingMode: descriptor.billingMode,
-      streaming,
-      status: 200,
-      ok: true,
+      resolvedModel: descriptor.resolvedModel,
+      upstreamStatus: upstream.status,
       attempts,
-      candidatesTried: tried,
-      usage: counts,
-      upstreamCost,
-      finalCost,
-      request: capture(payload),
-      response: capture(response),
-      metadata,
+      tried,
     });
-  };
 
-  if (!streaming) {
-    const data = await upstream.json();
-    step('non_stream_body', { ms: lap() });
-    void settle(extractUsageFromJson(data), data);
-    return json(data);
+    const settle = async (usage: ExtractedUsage | null, response: unknown): Promise<void> => {
+      const usedModel = (
+        usage?.model ??
+        descriptor.resolvedModel ??
+        requestedModel ??
+        'unknown'
+      ).toString();
+      const counts: TokenCounts = {
+        promptTokens: usage?.promptTokens ?? 0,
+        completionTokens: usage?.completionTokens ?? 0,
+        cachedTokens: usage?.cachedTokens ?? 0,
+      };
+      const markup = descriptor.billingMode === 'none' ? 0 : descriptor.markup;
+      const { upstreamCost, finalCost } = calculateCost(
+        usedModel,
+        counts,
+        markup,
+        usage?.upstreamCostHint,
+        descriptor.pricing,
+      );
+
+      // Fail-closed pricing: a BILLABLE turn (credits or platform-fee) that priced
+      // to $0 means we have NO pricing for the resolved model (managed pricingRef
+      // miss / stale catalog). It used to silently complete a $0 debit and leak
+      // revenue; now it's a hard error — logged at ERROR and flagged on the usage
+      // row + trace as needs-backfill so it surfaces instead of vanishing.
+      const tokensSeen = counts.promptTokens + counts.completionTokens;
+      const unpriced = descriptor.billingMode !== 'none' && upstreamCost === 0 && tokensSeen > 0;
+      if (unpriced) {
+        logger.error(
+          `[llm-gateway] UNPRICED billable turn ${requestId} model=${usedModel} provider=${descriptor.provider} billingMode=${descriptor.billingMode} tokens=${tokensSeen} — missing pricing, recorded for backfill`,
+        );
+      }
+
+      if (tokensSeen > 0) {
+        const event: UsageEvent = {
+          ...counts,
+          accountId: principal.accountId,
+          actorUserId: principal.userId,
+          projectId: principal.projectId,
+          sessionId: principal.sessionId,
+          provider: descriptor.provider,
+          model: usedModel,
+          upstreamCost,
+          finalCost,
+          billingMode: descriptor.billingMode,
+          streaming,
+          requestId,
+          unpriced,
+        };
+        try {
+          await hooks.recordUsage(event);
+        } catch (err) {
+          // ERROR, not warn: a swallowed recordUsage is lost billing. The
+          // usage-reconciler backstops it from gateway_request_logs, but it must
+          // be loud, not silent.
+          logger.error(`[llm-gateway] recordUsage failed for ${requestId}:`, err);
+        }
+      }
+
+      step('settled', {
+        resolvedModel: usedModel,
+        provider: descriptor.provider,
+        promptTokens: counts.promptTokens,
+        completionTokens: counts.completionTokens,
+        cachedTokens: counts.cachedTokens,
+        upstreamCost,
+        finalCost,
+        streaming,
+        unpriced,
+      });
+
+      emit({
+        ...id,
+        requestedModel,
+        resolvedModel: usedModel,
+        provider: descriptor.provider,
+        billingMode: descriptor.billingMode,
+        streaming,
+        status: 200,
+        ok: true,
+        attempts,
+        candidatesTried: tried,
+        usage: counts,
+        upstreamCost,
+        finalCost,
+        request: capture(payload),
+        response: capture(response),
+        metadata: unpriced ? { ...metadata, unpriced: true } : metadata,
+      });
+    };
+
+    if (!streaming) {
+      const data = await upstream.json();
+      step('non_stream_body', { ms: lap() });
+      void settle(extractUsageFromJson(data), data);
+      return json(data);
+    }
+
+    if (!upstream.body) {
+      step('empty_stream');
+      void settle(null, null);
+      return json({ error: 'Upstream returned an empty stream' }, 502);
+    }
+
+    step('stream_begin');
+
+    const readable = relayStream({
+      upstreamBody: upstream.body,
+      captureBodies,
+      requestId,
+      logger,
+      settle,
+    });
+
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      },
+    });
+  } catch (err) {
+    // A control-plane hook threw rather than returned (admit / resolveUpstream /
+    // secret-fetch / tier lookup, or an upstream-body parse). Without this the
+    // exception escaped as an opaque 500 with NO gateway_request_logs row. Emit a
+    // 503 trace (attributed to the principal when auth already succeeded —
+    // persistGatewayTrace early-returns on a pre-auth throw with no accountId) and
+    // return a clean JSON 503 in the same shape as the other error returns.
+    const message = errorMessage(err);
+    step('control_plane_error', { error: message });
+    logger.error(`[gateway] ✗ ${requestId} control-plane error: ${message}`, err);
+    emit({
+      ...(tracedPrincipal ? idOf(tracedPrincipal) : {}),
+      status: 503,
+      ok: false,
+      errorCode: 'control_plane_error',
+      errorMessage: message,
+    });
+    return json(
+      { error: 'Gateway temporarily unavailable', message, code: 'control_plane_error' },
+      503,
+    );
   }
-
-  if (!upstream.body) {
-    step('empty_stream');
-    void settle(null, null);
-    return json({ error: 'Upstream returned an empty stream' }, 502);
-  }
-
-  step('stream_begin');
-
-  const readable = relayStream({
-    upstreamBody: upstream.body,
-    captureBodies,
-    requestId,
-    logger,
-    settle,
-  });
-
-  return new Response(readable, {
-    status: 200,
-    headers: {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive',
-    },
-  });
 }

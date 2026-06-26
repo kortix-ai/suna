@@ -915,6 +915,18 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // Durable-billing backstop: replay any successful, billable gateway turns whose
+  // fire-and-forget settle() lost its usage_events row (crash between the trace
+  // write and the debit). Idempotent via the usage_events.request_id UNIQUE index,
+  // so it can never double-charge. Leader-gated like the rest of these workers.
+  const { startUsageReconciler } = await import('./billing/services/usage-reconciler');
+  startUsageReconciler();
+  // Aggregate recent gateway upstream-down failures into the shared
+  // gateway_breaker_state table so a tripped circuit opens FLEET-WIDE (every API
+  // replica's in-memory breaker reads this snapshot), not just on the one replica
+  // that saw the burst. Leader-run, idempotent. See llm-gateway/breaker-store.ts.
+  const { startGatewayBreakerReconciler } = await import('./llm-gateway/breaker-reconciler');
+  startGatewayBreakerReconciler();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -925,6 +937,10 @@ async function stopSingletonWorkers() {
   stopSunaMigrationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopUsageReconciler } = await import('./billing/services/usage-reconciler');
+  stopUsageReconciler();
+  const { stopGatewayBreakerReconciler } = await import('./llm-gateway/breaker-reconciler');
+  stopGatewayBreakerReconciler();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

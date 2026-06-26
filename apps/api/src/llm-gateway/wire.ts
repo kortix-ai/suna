@@ -3,6 +3,8 @@ import { createGateway } from '@kortix/llm-gateway';
 import { pickAutoModel } from '@kortix/shared/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
+import { hasDatabase } from '../shared/db';
+import { createBreakerSignalStore } from './breaker-store';
 import { createInProcessGatewayHooks } from './hooks';
 import { createInternalGatewayRoutes } from './internal-routes';
 
@@ -19,20 +21,40 @@ import { createInternalGatewayRoutes } from './internal-routes';
 export function mountLlmGateway(app: OpenAPIHono): void {
   // One gateway instance per process — its circuit breakers are long-lived.
   // The gateway is the only LLM path; it always mounts.
-  const gateway = createGateway(createInProcessGatewayHooks(), {
-    captureBodies: true,
-    autoRouter: pickAutoModel,
-  });
+  const gateway = createGateway(
+    createInProcessGatewayHooks(),
+    {
+      captureBodies: true,
+      autoRouter: pickAutoModel,
+    },
+    {
+      // Fleet-wide breaker signal: each provider's in-memory breaker also adopts
+      // the SHARED open verdict maintained by the leader's breaker-reconciler, so
+      // a tripped provider fails over across every replica. Only with a DB (the
+      // shared store lives there); self-host single-process relies on the local
+      // breaker alone.
+      breakerSignal: hasDatabase ? createBreakerSignalStore() : undefined,
+    },
+  );
   const llm = new Hono();
   llm.get('/health', (c) =>
     c.json({ status: 'ok', service: 'kortix-llm-gateway', mode: 'in-process' }),
   );
-  llm.post('/chat/completions', async (c) =>
-    gateway.chatCompletions({
-      authorization: c.req.header('authorization'),
-      rawBody: await c.req.text(),
-    }),
-  );
+  llm.post('/chat/completions', async (c) => {
+    try {
+      return await gateway.chatCompletions({
+        authorization: c.req.header('authorization'),
+        rawBody: await c.req.text(),
+      });
+    } catch (err) {
+      // Backstop mirroring the reverse-proxy guard below: the handler already
+      // wraps its body in try/catch, so reaching here means a throw OUTSIDE it
+      // (e.g. reading the request body). Return a clean 503 instead of letting
+      // the exception surface as an opaque 500.
+      console.error('[gateway] in-process chat/completions handler crashed:', err);
+      return c.json({ error: 'gateway unavailable', code: 'control_plane_error' }, 503);
+    }
+  });
   llm.get('/models', (c) => gateway.listModels(c.req.header('authorization')));
   app.route('/v1/llm', llm);
 

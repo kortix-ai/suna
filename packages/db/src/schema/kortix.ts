@@ -1721,6 +1721,13 @@ export const usageEvents = kortixSchema.table(
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
     streaming: boolean('streaming').default(false).notNull(),
     upstreamStatus: integer('upstream_status'),
+    // Gateway request id (also kept in metadata for legacy rows). Nullable: only
+    // gateway-billed events carry it; non-gateway usage events leave it NULL.
+    // A UNIQUE index on it makes the LLM debit idempotent — a replay (reconciler
+    // backfill or retry) hits the conflict, skips the second insert, and so skips
+    // a duplicate debit. NULLs are distinct in Postgres, so non-gateway rows are
+    // unconstrained.
+    requestId: text('request_id'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1729,6 +1736,7 @@ export const usageEvents = kortixSchema.table(
     index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
     index('idx_usage_events_session').on(table.sessionId),
     index('idx_usage_events_model').on(table.provider, table.model),
+    uniqueIndex('idx_usage_events_request_id').on(table.requestId),
   ],
 );
 
@@ -1777,6 +1785,24 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
   ],
 );
+
+// Shared, fleet-wide circuit-breaker state per upstream provider. The in-memory
+// breaker in each API replica is per-process, so a failure burst only opens the
+// replica that saw it. A leader-run reconciler aggregates recent upstream-down
+// failures from gateway_request_logs into this table; every replica polls it (a
+// short-TTL cached snapshot) so a tripped provider fails over FLEET-WIDE.
+export const gatewayBreakerState = kortixSchema.table('gateway_breaker_state', {
+  // Upstream provider id (e.g. 'bedrock', 'openrouter') — one row per provider.
+  provider: text('provider').primaryKey(),
+  // 'open' = treated as down fleet-wide; 'closed' = healthy. (half-open is a
+  // per-process notion; the shared store only carries the open/closed verdict.)
+  state: text('state').default('closed').notNull(),
+  // When the current open verdict began (for cooldown/observability). NULL closed.
+  openedAt: timestamp('opened_at', { withTimezone: true }),
+  // Failures counted in the reconciler's window that produced this verdict.
+  failureCount: integer('failure_count').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const gatewayApiKeys = kortixSchema.table(
   'gateway_api_keys',

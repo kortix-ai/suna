@@ -20,7 +20,9 @@ export function createGateway(
   const breakerFor = (provider: string): CircuitBreaker => {
     const existing = breakers.get(provider);
     if (existing) return existing;
-    const created = new CircuitBreaker(config.breaker);
+    // Wire the per-provider in-memory breaker to the optional fleet-wide signal so
+    // a shared open verdict (host-aggregated) opens it on every replica.
+    const created = new CircuitBreaker(config.breaker, provider, deps.breakerSignal);
     breakers.set(provider, created);
     return created;
   };

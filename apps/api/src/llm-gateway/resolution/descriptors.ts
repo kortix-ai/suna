@@ -23,6 +23,21 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
   };
 }
 
+// Pricing for a MANAGED model. Prefers the curated per-model table on the catalog
+// entry (the bare-vs-prefixed `pricingRef` mismatch makes models.dev miss, so a
+// live lookup returns undefined → a billable managed turn would price to $0).
+// Falls back to models.dev only if curated pricing is somehow absent.
+export function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
+  if (managed.pricing) {
+    return {
+      inputPerMillion: managed.pricing.input,
+      outputPerMillion: managed.pricing.output,
+      cachedInputPerMillion: managed.pricing.cacheRead,
+    };
+  }
+  return livePricing(managed.pricingRef);
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
   return {
@@ -35,7 +50,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appName: 'Kortix',
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
+    pricing: managedPricing(managed),
   };
 }
 
@@ -50,7 +65,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
+    pricing: managedPricing(managed),
   };
 }
 

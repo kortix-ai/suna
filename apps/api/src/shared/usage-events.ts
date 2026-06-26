@@ -1,4 +1,5 @@
 import { usageEvents } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { db } from './db';
 
 export interface UsageEventInput {
@@ -16,15 +17,26 @@ export interface UsageEventInput {
   costUsd?: number;
   streaming?: boolean;
   upstreamStatus?: number | null;
+  // Gateway request id — the idempotency key. When set, a UNIQUE index makes a
+  // replay a no-op (onConflictDoNothing) so the caller can skip a duplicate debit.
+  requestId?: string | null;
   metadata?: Record<string, unknown>;
+}
+
+export interface RecordUsageEventResult {
+  /** The event id — of the newly-inserted row, or the pre-existing one on conflict. */
+  eventId: string | null;
+  /** True only when THIS call inserted the row. False = a duplicate request_id existed. */
+  inserted: boolean;
 }
 
 function positiveInteger(value: number | undefined) {
   return Number.isFinite(value) && value && value > 0 ? Math.floor(value) : 0;
 }
 
-export async function recordUsageEvent(input: UsageEventInput): Promise<string | null> {
-  const [row] = await db
+export async function recordUsageEvent(input: UsageEventInput): Promise<RecordUsageEventResult> {
+  const requestId = input.requestId || null;
+  const rows = await db
     .insert(usageEvents)
     .values({
       accountId: input.accountId,
@@ -41,8 +53,26 @@ export async function recordUsageEvent(input: UsageEventInput): Promise<string |
       costUsd: String(input.costUsd ?? 0),
       streaming: input.streaming ?? false,
       upstreamStatus: input.upstreamStatus ?? null,
+      requestId,
       metadata: input.metadata ?? {},
     })
+    // Idempotent on request_id. NULL request_ids never conflict (Postgres treats
+    // NULLs as distinct), so non-gateway events always insert.
+    .onConflictDoNothing({ target: usageEvents.requestId })
     .returning({ eventId: usageEvents.eventId });
-  return row?.eventId ?? null;
+
+  const inserted = rows[0];
+  if (inserted) return { eventId: inserted.eventId, inserted: true };
+
+  // Conflict: a row with this request_id already exists. Return its id (for audit
+  // linkage) and inserted:false so the caller skips re-debiting.
+  if (requestId) {
+    const [existing] = await db
+      .select({ eventId: usageEvents.eventId })
+      .from(usageEvents)
+      .where(eq(usageEvents.requestId, requestId))
+      .limit(1);
+    return { eventId: existing?.eventId ?? null, inserted: false };
+  }
+  return { eventId: null, inserted: false };
 }

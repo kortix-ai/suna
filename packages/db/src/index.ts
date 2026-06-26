@@ -32,6 +32,7 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewayBreakerState,
   // Kortix tables
   projects,
   projectGitConnections,
@@ -237,4 +238,6 @@ export type {
   NewGatewayApiKey,
   GatewayBudget,
   NewGatewayBudget,
+  GatewayBreakerState,
+  NewGatewayBreakerState,
 } from './types';

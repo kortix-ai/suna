@@ -33,10 +33,16 @@ export function calculateCost(
 ): CostBreakdown {
   let upstreamCost: number;
 
-  if (pricingOverride) {
-    upstreamCost = priceFromTable(pricingOverride, usage);
-  } else if (typeof upstreamCostHint === 'number' && upstreamCostHint > 0) {
+  // Precedence: a live upstream-reported cost (e.g. OpenRouter's usage.cost) is
+  // the most accurate signal, so it wins. Only when the upstream reports nothing
+  // (Bedrock/Claude, most native BYOK) do we fall back to the curated/live price
+  // table — which is exactly the case the table exists to cover. The table is now
+  // a FALLBACK, not an override; that's what lets curated managed pricing fix the
+  // Bedrock $0 leak without overriding an accurate OpenRouter cost hint.
+  if (typeof upstreamCostHint === 'number' && upstreamCostHint > 0) {
     upstreamCost = upstreamCostHint;
+  } else if (pricingOverride) {
+    upstreamCost = priceFromTable(pricingOverride, usage);
   } else {
     upstreamCost = 0;
   }

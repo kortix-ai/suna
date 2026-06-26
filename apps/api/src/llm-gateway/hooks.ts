@@ -101,7 +101,7 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
  * internal billing is on and the route is billable (billingMode !== 'none').
  */
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
-  const usageEventId = await recordUsageEvent({
+  const { eventId: usageEventId, inserted } = await recordUsageEvent({
     accountId: event.accountId,
     actorUserId: event.actorUserId,
     projectId: event.projectId ?? null,
@@ -114,15 +114,25 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     cachedTokens: event.cachedTokens,
     costUsd: event.finalCost,
     streaming: event.streaming,
+    // request_id is the idempotency key (also kept in metadata for legacy/audit).
+    requestId: event.requestId,
     metadata: {
       upstreamCostUsd: event.upstreamCost,
       markup: llmPriceMarkup(),
       requestId: event.requestId,
       billingMode: event.billingMode,
+      // Flag an unpriced ($0) billable turn so the leak is queryable for backfill.
+      ...(event.unpriced ? { unpriced: true } : {}),
     },
   });
 
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED || event.billingMode === 'none') return;
+  // Idempotency: only debit when THIS call inserted the usage event. A replay
+  // (the usage-reconciler backfill, or a retry of the same requestId) finds the
+  // existing row, inserted===false, and skips the debit — the original turn
+  // already debited. This is the application-level guard that keeps the wallet
+  // safe without touching the atomic_use_credits RPC.
+  if (!inserted) return;
   await deductForLlmUsage({
     accountId: event.accountId,
     costUsd: event.finalCost,

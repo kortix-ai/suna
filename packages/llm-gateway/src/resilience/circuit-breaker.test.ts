@@ -98,3 +98,67 @@ describe('withResilience — breaker tripping', () => {
     expect(called).toBe(false);
   });
 });
+
+describe('CircuitBreaker — single-probe half-open gate', () => {
+  test('half-open admits exactly one probe; concurrent callers fast-fail', () => {
+    let t = 0;
+    const b = new CircuitBreaker({ failureThreshold: 1, cooldownMs: 100, now: () => t });
+    b.onFailure(); // closed → open (threshold 1)
+    expect(b.current).toBe('open');
+    expect(b.canRequest()).toBe(false); // still in cooldown
+
+    t = 100; // cooldown elapsed
+    expect(b.canRequest()).toBe(true); // first probe claims the single slot → half-open
+    expect(b.current).toBe('half-open');
+    expect(b.canRequest()).toBe(false); // a second concurrent caller is rejected
+
+    b.onSuccess(); // probe succeeded → closed, slot freed
+    expect(b.current).toBe('closed');
+    expect(b.canRequest()).toBe(true);
+  });
+
+  test('a failed half-open probe re-opens and re-arms the cooldown', () => {
+    let t = 0;
+    const b = new CircuitBreaker({ failureThreshold: 1, cooldownMs: 100, now: () => t });
+    b.onFailure();
+    t = 100;
+    expect(b.canRequest()).toBe(true); // probe
+    b.onFailure(); // probe fails → re-open
+    expect(b.current).toBe('open');
+    expect(b.canRequest()).toBe(false); // back in cooldown, no probe yet
+  });
+
+  test('onProbeReleased frees the slot without closing (reachable-but-rejected)', () => {
+    let t = 0;
+    const b = new CircuitBreaker({ failureThreshold: 1, cooldownMs: 100, now: () => t });
+    b.onFailure();
+    t = 100;
+    expect(b.canRequest()).toBe(true); // probe 1 claims the slot
+    expect(b.canRequest()).toBe(false); // slot taken
+    b.onProbeReleased(); // e.g. a 429 reached the host → free slot, stay half-open
+    expect(b.current).toBe('half-open');
+    expect(b.canRequest()).toBe(true); // next probe allowed
+  });
+});
+
+describe('CircuitBreaker — fleet-wide signal adoption', () => {
+  test('a closed breaker adopts a fleet-wide open verdict and fails fast', () => {
+    let t = 0;
+    const b = new CircuitBreaker({ cooldownMs: 100, now: () => t }, 'bedrock', {
+      isOpenFleetWide: (p) => p === 'bedrock',
+    });
+    // No local failures, but the shared store says bedrock is down fleet-wide.
+    expect(b.canRequest()).toBe(false);
+    expect(b.current).toBe('open');
+    // After cooldown a single local probe is still admitted so recovery isn't blocked.
+    t = 100;
+    expect(b.canRequest()).toBe(true);
+    expect(b.current).toBe('half-open');
+  });
+
+  test('a closed signal leaves a healthy breaker untouched', () => {
+    const b = new CircuitBreaker({}, 'bedrock', { isOpenFleetWide: () => false });
+    expect(b.canRequest()).toBe(true);
+    expect(b.current).toBe('closed');
+  });
+});
