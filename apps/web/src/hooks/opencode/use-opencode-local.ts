@@ -317,7 +317,10 @@ export function useOpenCodeLocal({
   // explicit per-conversation choices are respected. globalDefault is the user's
   // chosen default for NEW conversations (set during onboarding or settings).
   const currentModelKey = useMemo<ModelKey | undefined>(() => {
-    if (!currentAgent) return undefined;
+    // Model selection must NOT depend on a loaded agent: the session/global/
+    // fallback slots resolve fine without one, and the agent roster can be empty
+    // (e.g. a project with no configured agents, or `enableProjects` off). The
+    // agent-keyed slots are simply skipped when there's no current agent.
     return getFirstValidModel(
       // 1. Per-session model (user's explicit choice in this session — survives reload)
       () => (scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined),
@@ -325,12 +328,12 @@ export function useOpenCodeLocal({
       // current provider mode. New writes always go into the scoped slot below.
       () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
       // 2. Per-agent model (persisted across sessions for this agent)
-      () => modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`),
-      () => modelStore.getSelectedModel(currentAgent.name),
+      () => (currentAgent ? modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`) : undefined),
+      () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
       // 3. User's global default (set during onboarding or settings)
       () => modelStore.globalDefault,
       // 4. Agent's configured default model
-      () => currentAgent.model as ModelKey | undefined,
+      () => (currentAgent?.model as ModelKey | undefined),
       // 5. Global fallback (config.model > recent > first connected)
       () => fallbackModel,
     );
