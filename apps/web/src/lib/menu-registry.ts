@@ -490,18 +490,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'openProviderModal',
   },
-  {
-    id: 'api-keys-quick',
-    label: 'API',
-    icon: Cable,
-    group: 'quickActions',
-    subGroup: 'security',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabId: 'settings:api-keys',
-    tabType: 'settings',
-  },
 
   // ──────────────────────────────────────────────────────────────────────────
   // NAVIGATION — Main pages
@@ -666,16 +654,6 @@ export const menuRegistry: MenuItemDef[] = [
   // SETTINGS PAGES (navigate to route)
   // ──────────────────────────────────────────────────────────────────────────
   {
-    id: 'api-keys',
-    label: 'API Keys',
-    icon: CogOneSolid,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/api-keys',
-    tabType: 'settings',
-  },
-  {
     id: 'llm-providers',
     label: 'LLM Providers',
     icon: Bot,
@@ -768,13 +746,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'CLI tokens',
+    label: 'API keys',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'tokens',
-    keywords: 'cli tokens personal access pat command line authentication',
+    keywords: 'api keys tokens personal access pat cli command line authentication',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -926,7 +904,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCardSolid },
     { id: 'transactions', label: 'Credits ledger', icon: Receipt },
-    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
+    { id: 'tokens', label: 'API keys', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

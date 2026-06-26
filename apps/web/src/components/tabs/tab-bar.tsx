@@ -104,7 +104,6 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     '/commands': { title: 'Commands', type: 'page' },
     '/files': { title: 'Files', type: 'page' },
     '/configuration': { title: 'Workspace', type: 'page' },
-    '/settings/api-keys': { title: 'API Keys', type: 'settings' },
     '/credits-explained': { title: 'Credits', type: 'page' },
     '/support': { title: 'Support', type: 'page' },
     '/admin/analytics': { title: 'Analytics', type: 'page' },

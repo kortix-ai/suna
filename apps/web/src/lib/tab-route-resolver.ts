@@ -109,12 +109,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/credits-explained',
   },
-  '/settings/api-keys': {
-    id: 'page:/settings/api-keys',
-    title: 'API Keys',
-    type: 'settings',
-    href: '/settings/api-keys',
-  },
   '/settings/providers': {
     id: 'page:/settings/providers',
     title: 'Providers',

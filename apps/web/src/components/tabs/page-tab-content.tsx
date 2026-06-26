@@ -16,10 +16,6 @@ const DashboardContent = lazy(() =>
 	})),
 );
 
-const ApiKeysPage = lazy(() =>
-	import('@/components/pages/settings/api-keys/page'),
-);
-
 const ProvidersPage = lazy(() =>
 	import('@/components/pages/settings/providers/page'),
 );
@@ -76,7 +72,6 @@ const LegacyThreadPage = lazy(() =>
 const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/dashboard': DashboardContent,
 	'/configuration': WorkspacePage,
-	'/settings/api-keys': ApiKeysPage,
 	'/settings/providers': ProvidersPage,
 	'/credits-explained': CreditsPage,
 	'/changelog': ChangelogPage,
