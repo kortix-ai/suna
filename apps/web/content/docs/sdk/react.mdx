@@ -212,6 +212,13 @@ function PermissionToggle() {
 
 ## MCP servers
 
+<Callout type="warn">
+**Being retired.** Tools/connectors are moving to the **Executor connectors**
+model — manage them via [`kortix.project(id).connectors`](/docs/sdk/the-client#p-connectors),
+not these runtime MCP hooks. They're documented for the current runtime but will be
+removed; prefer connectors for new code.
+</Callout>
+
 Manage the runtime's [Model Context Protocol](/docs/concepts/connections) servers
 — list status, add/connect/disconnect, and run the OAuth flow. All status writes
 are optimistic and reconciled by SSE.

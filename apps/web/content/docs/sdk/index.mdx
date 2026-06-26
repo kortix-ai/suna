@@ -16,8 +16,7 @@ import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
   backendUrl: 'https://api.kortix.com/v1',
-  getToken: () =>
-    supabase.auth.getSession().then((s) => s.data.session?.access_token ?? null),
+  getToken: async () => process.env.KORTIX_API_KEY!, // your Kortix API key
 });
 
 const projects = await kortix.projects.list();
