@@ -53,6 +53,28 @@ mock.module('../shared/usage-events', () => ({
   },
 }));
 
+// The slim endpoint ALSO accepts the per-session executor PAT (the credential
+// the sandbox already carries). Default: a session PAT that resolves to the same
+// account/project/session as the HMAC token, so both auth paths attribute usage
+// identically.
+let lastValidatedPat: string | null = null;
+let patValidation: Record<string, unknown> = {
+  isValid: true,
+  accountId: ACCOUNT_ID,
+  userId: USER_ID,
+  projectId: PROJECT_ID,
+  sessionId: SESSION_ID,
+};
+mock.module('../repositories/account-tokens', () => ({
+  validateAccountToken: async (secretKey: string) => {
+    lastValidatedPat = secretKey;
+    // Mirror the real validator: only a kortix_pat_ PAT can resolve; anything
+    // else (a malformed/expired HMAC token) is not a PAT and is rejected.
+    if (!secretKey.startsWith('kortix_pat_')) return { isValid: false };
+    return patValidation;
+  },
+}));
+
 mock.module('../router/services/llm', () => ({
   proxyToOpenRouter: async (
     body: Record<string, unknown>,
@@ -161,6 +183,14 @@ beforeEach(() => {
   lastProxyCall = null;
   lastDeductCall = null;
   usageEvents = [];
+  lastValidatedPat = null;
+  patValidation = {
+    isValid: true,
+    accountId: ACCOUNT_ID,
+    userId: USER_ID,
+    projectId: PROJECT_ID,
+    sessionId: SESSION_ID,
+  };
 });
 
 describe('session-scoped LLM router', () => {
@@ -241,6 +271,42 @@ describe('session-scoped LLM router', () => {
       streaming: false,
       upstreamStatus: 200,
     });
+  });
+
+  test('authenticates a session executor PAT and meters to its account/project/session', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/router/llm/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer kortix_pat_session_executor_token',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'anthropic/claude-sonnet-4.6',
+        messages: [{ role: 'user', content: 'hello' }],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    // The PAT (not an HMAC token) was resolved via validateAccountToken.
+    expect(lastValidatedPat).toBe('kortix_pat_session_executor_token');
+    await Bun.sleep(0);
+    expect(lastDeductCall?.[0]).toBe(ACCOUNT_ID);
+    expect(usageEvents[0]).toMatchObject({
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: USER_ID,
+    });
+  });
+
+  test('rejects an executor PAT lacking a project/session binding', async () => {
+    patValidation = { isValid: true, accountId: ACCOUNT_ID, userId: USER_ID, projectId: null, sessionId: null };
+    const app = createApp();
+    const res = await app.request('/v1/router/llm/models', {
+      headers: { Authorization: 'Bearer kortix_pat_unscoped' },
+    });
+    expect(res.status).toBe(401);
   });
 
   test('falls back to process OPENROUTER_API_KEY only when no project secret exists', async () => {

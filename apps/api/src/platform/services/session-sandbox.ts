@@ -348,10 +348,12 @@ export async function provisionSessionSandbox(opts: {
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  const llmBaseUrl =
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+  // The `kortix` opencode provider now targets the SLIM managed endpoint mounted
+  // on apps/api itself (`/v1/router/llm` → OpenAI-compatible /chat/completions +
+  // /models). It authenticates with the per-session executor PAT (gatewayLlmKey
+  // below), which the slim endpoint accepts via resolveLlmContext. (The heavy
+  // gateway base + its proxy mode are being retired in a later phase.)
+  const llmBaseUrl = `${kortixOrigin}/v1/router/llm`;
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen

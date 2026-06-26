@@ -540,10 +540,8 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     const gatewayEntitled = llmGatewayEnabled ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
     const gatewayLlmKey = llmGatewayEnabled && gatewayEntitled ? executorToken : null;
     const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-    const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-    const llmBaseUrl =
-      config.LLM_GATEWAY_BASE_URL ||
-      (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+    // Slim managed endpoint on apps/api (see session-sandbox.ts for the rationale).
+    const llmBaseUrl = `${kortixOrigin}/v1/router/llm`;
 
     const fullEnv: Record<string, string> = {
       ...input.builtEnvVars,

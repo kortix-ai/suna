@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
 import { config } from '../../config';
 import { verifySessionLlmToken } from '../../shared/session-llm-token';
+import { validateAccountToken } from '../../repositories/account-tokens';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { proxyToOpenRouter, extractUsage, calculateCost, getModel } from '../services/llm';
 import type { ModelConfig } from '../config/models';
@@ -41,12 +42,46 @@ function bearerToken(c: any): string | null {
   return header.slice('Bearer '.length).trim() || null;
 }
 
-async function resolveLlmContext(c: any) {
-  const verified = verifySessionLlmToken(bearerToken(c));
-  if (!verified.ok) {
-    throw new HTTPException(401, { message: `Invalid LLM token: ${verified.reason}` });
+interface ResolvedLlmContext {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  userId: string;
+}
+
+/**
+ * Authenticate a slim-endpoint call. Two credential shapes are accepted, tried
+ * cheapest-first:
+ *   1. A session-LLM HMAC token (`encodeSessionLlmToken`) — stateless, no DB hit.
+ *   2. The per-session EXECUTOR PAT (`kortix_pat_…`) — the credential already
+ *      minted by `mintExecutorToken` and injected into the sandbox as
+ *      `KORTIX_LLM_API_KEY`, so opencode's `kortix` provider authenticates with
+ *      the token it already has (no new mint/inject rail, no TTL/refresh — the
+ *      project-scoped PAT lives as long as the sandbox). The slim endpoint is
+ *      session-scoped, so the PAT must carry both a project and a session;
+ *      `validateAccountToken` resolves account/user/project/session for metering.
+ */
+async function resolveLlmContext(c: any): Promise<ResolvedLlmContext> {
+  const token = bearerToken(c);
+  const verified = verifySessionLlmToken(token);
+  if (verified.ok) {
+    const { accountId, projectId, sessionId, userId } = verified.context;
+    return { accountId, projectId, sessionId, userId };
   }
-  return verified.context;
+
+  if (token) {
+    const pat = await validateAccountToken(token);
+    if (pat.isValid && pat.accountId && pat.userId && pat.projectId && pat.sessionId) {
+      return {
+        accountId: pat.accountId,
+        projectId: pat.projectId,
+        sessionId: pat.sessionId,
+        userId: pat.userId,
+      };
+    }
+  }
+
+  throw new HTTPException(401, { message: `Invalid LLM token: ${verified.reason}` });
 }
 
 async function resolveOpenRouterKey(projectId: string): Promise<string | null> {

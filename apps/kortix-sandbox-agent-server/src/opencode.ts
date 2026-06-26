@@ -143,16 +143,11 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
       out.small_model = DEFAULT_KORTIX_MODEL
     }
-    // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
-    // allowlist — opencode loads ONLY these and ignores every provider it would
-    // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,
-    // OPENAI_API_KEY → openai), so a leaked key can't open a native path that
-    // bypasses budgets/logging/spend. This is the robust complement to the env
-    // deny-strip in spawnChild (which can be defeated if a key reaches opencode
-    // by some path the deny-list didn't enumerate). Gateway mode is a hard cut:
-    // even project-scoped Codex/OpenCode subscription auth.json must not expose a
-    // native provider here, otherwise usage bypasses gateway logs/budgets.
-    out.enabled_providers = ['kortix']
+    // NB: we intentionally do NOT set `enabled_providers`. opencode-native is now
+    // the BYOK path — a provider API key in the sandbox env (ANTHROPIC_API_KEY,
+    // OPENAI_API_KEY, …) must light up its native provider directly. The `kortix`
+    // provider above is just the managed-models route (slim endpoint), one
+    // provider among the auto-detected natives, not an exclusive allowlist.
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
@@ -236,6 +231,34 @@ const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000]
 // job once /models is fast (it is uncached + ~400KB today).
 const GATEWAY_MODELS_TIMEOUT_MS = 6_000
 
+/**
+ * Normalize a `/models` response into the daemon's `{ id → model }` map. Two
+ * shapes are accepted:
+ *   • the slim managed endpoint (now the provider's baseURL): OpenAI-compatible
+ *     `{ object:'list', data:[{ id, context_window? }] }`.
+ *   • the legacy gateway: `{ models: { id → {...} } }`.
+ */
+function parseModelsResponse(body: unknown): Record<string, KortixGatewayModel> {
+  if (!body || typeof body !== 'object') return {}
+  const b = body as {
+    models?: Record<string, KortixGatewayModel>
+    data?: Array<{ id?: unknown; context_window?: unknown; name?: unknown }>
+  }
+  if (Array.isArray(b.data)) {
+    const out: Record<string, KortixGatewayModel> = {}
+    for (const m of b.data) {
+      if (!m || typeof m.id !== 'string') continue
+      const context = typeof m.context_window === 'number' ? m.context_window : undefined
+      out[m.id] = {
+        name: typeof m.name === 'string' ? m.name : m.id,
+        ...(context ? { limit: { context } } : {}),
+      }
+    }
+    return out
+  }
+  return b.models ?? {}
+}
+
 async function fetchGatewayModels(
   baseUrl: string,
   apiKey: string,
@@ -253,8 +276,7 @@ async function fetchGatewayModels(
         const detail = (await res.text().catch(() => '')).slice(0, 200)
         throw new Error(`HTTP ${res.status}${detail ? ` ${detail}` : ''}`)
       }
-      const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
-      const models = body.models ?? {}
+      const models = parseModelsResponse(await res.json())
       if (Object.keys(models).length === 0) throw new Error('gateway returned an empty catalog')
       logger.info(`[opencode] fetched ${Object.keys(models).length} gateway models from ${url}`)
       return models
@@ -569,25 +591,12 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
-    // Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from the
-    // opencode process. With any such key in its env, opencode auto-connects a
-    // NATIVE provider and calls it directly — bypassing the gateway (no logs /
-    // spend / budgets) and leaving stale models that survive a BYOK disconnect.
-    // The gateway must be the only LLM path, so the API hands us the exact names
-    // to strip (Codex/OpenCode subscription auth is excluded — it's already been
-    // consumed into auth.json by materializeOpencodeAuth above). This only touches
-    // the opencode process env; it doesn't change what the container itself holds.
-    const denyEnv = (env.KORTIX_OPENCODE_DENY_ENV || '').split(',').map((n) => n.trim()).filter(Boolean)
-    let withheld = 0
-    for (const name of denyEnv) {
-      if (name in env) {
-        delete env[name]
-        withheld++
-      }
-    }
-    if (withheld > 0) {
-      logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-    }
+    // BYOK is opencode-native now: provider API keys (ANTHROPIC_API_KEY,
+    // OPENAI_API_KEY, …) are deliberately LEFT in opencode's env so it
+    // auto-detects each native provider and lists its full models.dev catalog.
+    // (Previously these were withheld via KORTIX_OPENCODE_DENY_ENV to force the
+    // gateway as the sole LLM path — that strip is gone. Managed models still
+    // route through the `kortix` provider's slim endpoint; the two coexist.)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited

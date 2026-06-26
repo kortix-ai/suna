@@ -9,7 +9,6 @@ import { notifySessionProvisioningFailed } from '../../shared/session-failure-no
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -218,6 +217,11 @@ export async function buildSessionSandboxEnvVars(input: {
       `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
     );
   }
+  // Provider keys now reach opencode unmodified so it auto-detects each native
+  // (BYOK) provider. The one canonical-name mismatch is Google's Gemini provider:
+  // alias the key across its recognized env names so it lights up regardless of
+  // which name the user stored it under.
+  aliasGoogleProviderKey(runtimeSecrets);
   // Restore the session's channel binding on EVERY (re)provision. A session
   // created from a chat channel (e.g. Slack) persists its binding in
   // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
@@ -231,12 +235,6 @@ export async function buildSessionSandboxEnvVars(input: {
     ...channelEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
-    // Provider API keys reach the sandbox (the agent's own code may use them),
-    // but opencode must NOT — a provider key in opencode's env makes it connect
-    // a NATIVE provider and bypass the gateway. The daemon withholds exactly
-    // these names from the opencode process (Codex/OpenCode auth is excluded —
-    // that one is an intentional native provider).
-    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: '1',
     // Force a FULL clone (no blobless partial clone). The blobless default
     // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
@@ -304,6 +302,37 @@ export function buildSpareSandboxEnvVars(input: {
 
 export function deriveKortixApiBase(): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
+}
+
+// Google's Gemini provider is the one BYOK key whose canonical env name differs
+// from what users typically set: opencode (models.dev) reads GEMINI_API_KEY,
+// @ai-sdk/google reads GOOGLE_GENERATIVE_AI_API_KEY, and many users store
+// GOOGLE_API_KEY. Every other provider's canonical name already matches opencode
+// (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GROQ_API_KEY /
+// XAI_API_KEY / DEEPSEEK_API_KEY), so only Google needs aliasing.
+const GOOGLE_PROVIDER_ENV_ALIASES = [
+  'GEMINI_API_KEY',
+  'GOOGLE_GENERATIVE_AI_API_KEY',
+  'GOOGLE_API_KEY',
+] as const;
+
+/**
+ * If a Google/Gemini key is present under ANY recognized name, mirror it to the
+ * others (in both the env map and the secret-names list) so opencode's native
+ * `google` provider lights up regardless of which name was used. No-op when no
+ * Google key is set.
+ */
+function aliasGoogleProviderKey(snapshot: { env: Record<string, string>; names: string[] }): void {
+  const value = GOOGLE_PROVIDER_ENV_ALIASES.map((n) => snapshot.env[n]).find(
+    (v) => typeof v === 'string' && v.length > 0,
+  );
+  if (!value) return;
+  const names = new Set(snapshot.names);
+  for (const name of GOOGLE_PROVIDER_ENV_ALIASES) {
+    if (!snapshot.env[name]) snapshot.env[name] = value;
+    names.add(name);
+  }
+  snapshot.names = [...names].sort();
 }
 
 /**
