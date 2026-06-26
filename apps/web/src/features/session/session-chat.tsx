@@ -63,11 +63,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
+import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
@@ -102,6 +102,7 @@ import { getClient } from '@/lib/opencode-sdk';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   buildAgentRefsBlock,
@@ -127,7 +128,6 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
@@ -5437,7 +5437,7 @@ export function SessionChat({
   return (
     <div
       className={cn(
-        'relative flex h-full flex-col pt-10 md:pt-0',
+        'relative flex h-full flex-col pt-10',
         // Transparent in the welcome state so the root-level full-bleed wallpaper
         // (portaled into SessionLayout) reads through; solid once real content
         // takes over. Same base color either way, so non-welcome is unchanged.
@@ -5575,7 +5575,10 @@ export function SessionChat({
                       status={
                         isRetrying ? (
                           <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                            {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
+                            {tHardcodedUi.raw(
+                              'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
+                            )}
+                          </span>
                         ) : undefined
                       }
                     />
@@ -5673,9 +5676,7 @@ export function SessionChat({
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && (
-                  <TurnErrorDisplay errorText={commandError} className="mt-2" />
-                )}
+                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of
