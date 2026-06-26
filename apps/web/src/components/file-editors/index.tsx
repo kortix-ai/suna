@@ -223,8 +223,8 @@ export function EditableFileRenderer({
         <ImageRenderer url={binaryUrl} />
       ) : fileType === 'video' && binaryUrl ? (
         <VideoRenderer url={binaryUrl} />
-      ) : fileType === 'pdf' && binaryUrl ? (
-        <PdfRenderer url={binaryUrl} />
+      ) : fileType === 'pdf' && (content || binaryUrl) ? (
+        <PdfRenderer fileContent={content} url={binaryUrl} className="h-full w-full" />
       ) : fileType === 'csv' || fileType === 'xlsx' ? (
         <SpreadsheetViewer
           filePath={filePath}

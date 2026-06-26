@@ -20,7 +20,9 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import type { MessageWithParts } from '@/ui/types';
-import { COST_MARKUP, childMapByParent, allDescendantIds } from '@/ui/turns';
+import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '@/ui/turns';
+import type { ModelPricingLookup } from '@/ui/turns';
+import { useModelPricingLookup } from '@/lib/model-pricing';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import type { Session, AssistantMessage, Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
@@ -54,15 +56,18 @@ function tokenTotal(msg: AssistantMessage) {
   return (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + ((t.cache?.read ?? 0) + (t.cache?.write ?? 0));
 }
 
-function getSessionContextMetrics(messages: Message[], providers: ProviderListResponse | undefined): Metrics {
-  // Apply COST_MARKUP (1.2×) so the displayed total matches actual billed credits.
-  // Raw msg.cost is provider cost; billing deducts cost × COST_MARKUP.
-  const totalCost = messages.reduce((sum, msg) => sum + (msg.role === 'assistant' ? (msg.cost ?? 0) : 0), 0) * COST_MARKUP;
+function getSessionContextMetrics(
+  messages: MessageWithParts[],
+  providers: ProviderListResponse | undefined,
+  pricingLookup: ModelPricingLookup,
+): Metrics {
+  const totalCost = getSessionCost(messages, pricingLookup);
+  const rawMessages = messages.map((m) => m.info);
 
   // Find last assistant with tokens
   let last: AssistantMessage | undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
+  for (let i = rawMessages.length - 1; i >= 0; i--) {
+    const msg = rawMessages[i];
     if (msg.role !== 'assistant') continue;
     if (tokenTotal(msg) <= 0) continue;
     last = msg;
@@ -226,7 +231,7 @@ function Stat({ label, value }: { label: string; value: string | React.ReactNode
   return (
     <div className="flex flex-col gap-1">
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xs font-medium text-foreground">{value}</div>
+      <div className="text-xs font-medium text-foreground tabular-nums">{value}</div>
     </div>
   );
 }
@@ -292,11 +297,16 @@ function computeSubSessionCost(
   sessionId: string,
   title: string,
   storeMessages: Record<string, Message[]>,
+  storeParts: Record<string, Part[]>,
   childMap: Map<string, string[]>,
   allSessions: Session[],
+  pricingLookup: ModelPricingLookup,
 ): SubSessionCostInfo {
   const msgs = storeMessages[sessionId] ?? [];
-  const cost = msgs.reduce((sum, msg) => sum + (msg.role === 'assistant' ? (msg.cost ?? 0) : 0), 0) * COST_MARKUP;
+  const cost = getSessionCost(
+    msgs.map((info) => ({ info, parts: storeParts[info.id] ?? [] })),
+    pricingLookup,
+  );
 
   // Sum tokens across all assistant messages (cumulative, not just last)
   let inputTokens = 0;
@@ -322,8 +332,10 @@ function computeSubSessionCost(
       childId,
       childSession?.title ?? childId.slice(0, 12),
       storeMessages,
+      storeParts,
       childMap,
       allSessions,
+      pricingLookup,
     );
   });
 
@@ -379,11 +391,9 @@ function sumTreeCosts(node: SubSessionCostInfo): {
 
 function SubSessionTreeNode({
   node,
-  usd,
   depth = 0,
 }: {
   node: SubSessionCostInfo;
-  usd: Intl.NumberFormat;
   depth?: number;
 }) {
   const [expanded, setExpanded] = useState(depth < 1);
@@ -407,11 +417,11 @@ function SubSessionTreeNode({
         )}
         <span className="truncate font-medium text-foreground min-w-0">{node.title}</span>
         <span className="shrink-0 text-muted-foreground ml-auto tabular-nums">
-          {usd.format(node.cost)}
+          {formatCost(node.cost)}
         </span>
         {hasChildren && (
           <span className="shrink-0 text-muted-foreground/50 text-xs tabular-nums">
-            (tree: {usd.format(totals.cost)})
+            (tree: {formatCost(totals.cost)})
           </span>
         )}
         <span className="shrink-0 text-muted-foreground/60 text-xs">
@@ -421,7 +431,7 @@ function SubSessionTreeNode({
       {expanded && hasChildren && (
         <div className="flex flex-col">
           {node.children.map((child) => (
-            <SubSessionTreeNode key={child.id} node={child} usd={usd} depth={depth + 1} />
+            <SubSessionTreeNode key={child.id} node={child} depth={depth + 1} />
           ))}
         </div>
       )}
@@ -452,6 +462,7 @@ export function SessionContextModal({
 }: SessionContextModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copiedAll, setCopiedAll] = useState(false);
+  const pricingLookup = useModelPricingLookup(providers);
 
   const rawMessages = useMemo(
     () => (messages ?? []).map((m) => m.info),
@@ -459,17 +470,12 @@ export function SessionContextModal({
   );
 
   const metrics = useMemo(
-    () => getSessionContextMetrics(rawMessages, providers),
-    [rawMessages, providers],
+    () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
+    [messages, providers, pricingLookup],
   );
 
   const ctx = metrics.context;
   const fmt = useMemo(() => createFormatter(), []);
-
-  const usd = useMemo(
-    () => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }),
-    [],
-  );
 
   const counts = useMemo(() => {
     const all = rawMessages;
@@ -485,6 +491,7 @@ export function SessionContextModal({
 
   // ---- Sub-session aggregation ----
   const storeMessages = useSyncStore((s) => s.messages);
+  const storeParts = useSyncStore((s) => s.parts);
 
   const childMap = useMemo(
     () => (allSessions ? childMapByParent(allSessions) : new Map<string, string[]>()),
@@ -500,8 +507,16 @@ export function SessionContextModal({
 
   const subSessionTree = useMemo(() => {
     if (!session || !hasSubSessions || !allSessions) return null;
-    return computeSubSessionCost(session.id, session.title ?? session.id, storeMessages, childMap, allSessions);
-  }, [session, hasSubSessions, allSessions, storeMessages, childMap]);
+    return computeSubSessionCost(
+      session.id,
+      session.title ?? session.id,
+      storeMessages,
+      storeParts,
+      childMap,
+      allSessions,
+      pricingLookup,
+    );
+  }, [session, hasSubSessions, allSessions, storeMessages, storeParts, childMap, pricingLookup]);
 
   const aggregateTotals = useMemo(() => {
     if (!subSessionTree) return null;
@@ -522,10 +537,10 @@ export function SessionContextModal({
     { label: 'Cache Tokens', value: `${fmt.number(ctx?.cacheRead)} / ${fmt.number(ctx?.cacheWrite)}` },
     { label: 'User Messages', value: counts.user.toLocaleString() },
     { label: 'Assistant Messages', value: counts.assistant.toLocaleString() },
-    { label: 'Total Cost', value: usd.format(metrics.totalCost) },
+    { label: 'Total Cost', value: formatCost(metrics.totalCost) },
     { label: 'Session Created', value: fmt.time(session?.time?.created) },
     { label: 'Last Activity', value: fmt.time(ctx?.message?.time?.created) },
-  ], [session, counts, ctx, fmt, usd, metrics.totalCost]);
+  ], [session, counts, ctx, fmt, metrics.totalCost]);
 
   const handleCopyAll = () => {
     navigator.clipboard.writeText(JSON.stringify(messages, null, 2));
@@ -563,7 +578,7 @@ export function SessionContextModal({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line565JsxAttrLabelTotalCost')} value={
-                  <span className="text-primary font-semibold">{usd.format(aggregateTotals.cost)}</span>
+                  <span className="text-primary font-semibold">{formatCost(aggregateTotals.cost)}</span>
                 } />
                 <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line568JsxAttrLabelTotalMessages')} value={aggregateTotals.messages.toLocaleString()} />
                 <Stat label={tHardcodedUi.raw('componentsSessionSessionContextModal.line569JsxAttrLabelInputTokens')} value={fmt.number(aggregateTotals.inputTokens)} />
@@ -617,7 +632,7 @@ export function SessionContextModal({
               <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionSessionContextModal.line619JsxTextSubSessionBreakdown')}</div>
               <div className="border rounded-2xl p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
-                  <SubSessionTreeNode key={child.id} node={child} usd={usd} />
+                  <SubSessionTreeNode key={child.id} node={child} />
                 ))}
               </div>
             </div>

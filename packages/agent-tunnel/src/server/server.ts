@@ -97,7 +97,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
         wsHandlers.onMessage(ws.data.tunnelId, message);
       },
       close(ws: any) {
-        wsHandlers.onClose(ws.data.tunnelId);
+        wsHandlers.onClose(ws.data.tunnelId, ws);
       },
     },
   });

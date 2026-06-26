@@ -68,6 +68,31 @@ function buildPtyOutput(
   return `<kortix_system type="pty-output" source="opencode-pty">\n${inner}\n</kortix_system>`
 }
 
+function escapeXml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function buildPtyFailure(type: string, err: unknown): string {
+  const message = escapeXml(errorMessage(err))
+  return `<kortix_system type="${type}" source="opencode-pty">\n<pty_failed>\n${message}\n</pty_failed>\n</kortix_system>`
+}
+
+async function recoverPtyTool(type: string, action: () => Promise<string>): Promise<string> {
+  try {
+    return await action()
+  } catch (err) {
+    console.warn(`[pty-tools] ${type} failed: ${errorMessage(err)}`)
+    return buildPtyFailure(type, err)
+  }
+}
+
 const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
   console.log('[pty-tools] plugin init')
   initPermissions(client, directory)
@@ -88,28 +113,30 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           notifyOnExit: tool.schema.boolean().optional().describe('Notify when the process exits'),
         },
         async execute(args, ctx) {
-          await checkCommandPermission(args.command, args.args ?? [])
-          if (args.workdir) await checkWorkdirPermission(args.workdir)
-          const info = await manager.spawn({
-            command: args.command,
-            args: args.args,
-            workdir: args.workdir,
-            env: args.env,
-            title: args.title,
-            description: args.description,
-            parentSessionId: ctx.sessionID,
-            parentAgent: ctx.agent,
-            notifyOnExit: args.notifyOnExit,
+          return recoverPtyTool('pty-spawn', async () => {
+            await checkCommandPermission(args.command, args.args ?? [])
+            if (args.workdir) await checkWorkdirPermission(args.workdir)
+            const info = await manager.spawn({
+              command: args.command,
+              args: args.args,
+              workdir: args.workdir,
+              env: args.env,
+              title: args.title,
+              description: args.description,
+              parentSessionId: ctx.sessionID,
+              parentAgent: ctx.agent,
+              notifyOnExit: args.notifyOnExit,
+            })
+            const inner = [
+              'ID: ' + info.id,
+              'Title: ' + info.title,
+              `Command: ${info.command} ${info.args.join(' ')}`,
+              'Workdir: ' + info.workdir,
+              'PID: ' + info.pid,
+              'Status: ' + info.status,
+            ].join('\n')
+            return `<kortix_system type="pty-spawn" source="opencode-pty">\n<pty_spawned>\n${inner}\n</pty_spawned>\n</kortix_system>`
           })
-          const inner = [
-            'ID: ' + info.id,
-            'Title: ' + info.title,
-            `Command: ${info.command} ${info.args.join(' ')}`,
-            'Workdir: ' + info.workdir,
-            'PID: ' + info.pid,
-            'Status: ' + info.status,
-          ].join('\n')
-          return `<kortix_system type="pty-spawn" source="opencode-pty">\n<pty_spawned>\n${inner}\n</pty_spawned>\n</kortix_system>`
         },
       }),
 
@@ -120,25 +147,27 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           data: tool.schema.string().describe('Input data to send to the PTY'),
         },
         async execute(args) {
-          const session = manager.get(args.id)
-          if (!session) throw notFound(args.id)
-          if (session.status !== 'running') {
-            throw new Error(`Cannot write to PTY '${args.id}' - session status is '${session.status}'.`)
-          }
-          const parsedData = parseEscapeSequences(args.data)
-          for (const commandLine of extractCommands(parsedData)) {
-            const { command, args: cmdArgs } = parseCommand(commandLine)
-            if (command) await checkCommandPermission(command, cmdArgs)
-          }
-          const success = await manager.write(args.id, parsedData)
-          if (!success) throw new Error(`Failed to write to PTY '${args.id}'.`)
-          const preview = args.data.length > 50 ? `${args.data.slice(0, 50)}...` : args.data
-          const displayPreview = preview
-            .replace(new RegExp(ETX, 'g'), '^C')
-            .replace(new RegExp(EOT, 'g'), '^D')
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r')
-          return `<kortix_system type="pty-write" source="opencode-pty">\nSent ${args.data.length} bytes to ${args.id}: "${displayPreview}"\n</kortix_system>`
+          return recoverPtyTool('pty-write', async () => {
+            const session = manager.get(args.id)
+            if (!session) throw notFound(args.id)
+            if (session.status !== 'running') {
+              throw new Error(`Cannot write to PTY '${args.id}' - session status is '${session.status}'.`)
+            }
+            const parsedData = parseEscapeSequences(args.data)
+            for (const commandLine of extractCommands(parsedData)) {
+              const { command, args: cmdArgs } = parseCommand(commandLine)
+              if (command) await checkCommandPermission(command, cmdArgs)
+            }
+            const success = await manager.write(args.id, parsedData)
+            if (!success) throw new Error(`Failed to write to PTY '${args.id}'.`)
+            const preview = args.data.length > 50 ? `${args.data.slice(0, 50)}...` : args.data
+            const displayPreview = preview
+              .replace(new RegExp(ETX, 'g'), '^C')
+              .replace(new RegExp(EOT, 'g'), '^D')
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+            return `<kortix_system type="pty-write" source="opencode-pty">\nSent ${args.data.length} bytes to ${args.id}: "${displayPreview}"\n</kortix_system>`
+          })
         },
       }),
 
@@ -152,38 +181,40 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           ignoreCase: tool.schema.boolean().optional().describe('Case-insensitive regex matching'),
         },
         async execute(args) {
-          const session = manager.get(args.id)
-          if (!session) throw notFound(args.id)
-          const offset = args.offset ?? 0
-          const limit = args.limit ?? DEFAULT_READ_LIMIT
+          return recoverPtyTool('pty-output', async () => {
+            const session = manager.get(args.id)
+            if (!session) throw notFound(args.id)
+            const offset = args.offset ?? 0
+            const limit = args.limit ?? DEFAULT_READ_LIMIT
 
-          if (args.pattern) {
-            if (!validateRegex(args.pattern)) {
-              throw new Error(`Potentially dangerous regex pattern rejected: '${args.pattern}'. Please use a safer pattern.`)
+            if (args.pattern) {
+              if (!validateRegex(args.pattern)) {
+                throw new Error(`Potentially dangerous regex pattern rejected: '${args.pattern}'. Please use a safer pattern.`)
+              }
+              const regex = new RegExp(args.pattern, args.ignoreCase ? 'i' : '')
+              const result = manager.search(args.id, regex, offset, limit)
+              if (!result) throw notFound(args.id)
+              if (result.matches.length === 0) {
+                return `<kortix_system type="pty-output" source="opencode-pty">\n<pty_output id="${args.id}" status="${session.status}" pattern="${args.pattern}">\nNo lines matched the pattern '${args.pattern}'.\nTotal lines in buffer: ${result.totalLines}\n</pty_output>\n</kortix_system>`
+              }
+              const lines = result.matches.map((match) => formatLine(match.text, match.lineNumber, MAX_LINE_LENGTH))
+              const footer = result.hasMore
+                ? `(${result.matches.length} of ${result.totalMatches} matches shown. Use offset=${offset + result.matches.length} to see more.)`
+                : `(${result.totalMatches} match${result.totalMatches === 1 ? '' : 'es'} from ${result.totalLines} total lines)`
+              return buildPtyOutput(args.id, session.status, lines, footer, args.pattern)
             }
-            const regex = new RegExp(args.pattern, args.ignoreCase ? 'i' : '')
-            const result = manager.search(args.id, regex, offset, limit)
+
+            const result = manager.read(args.id, offset, limit)
             if (!result) throw notFound(args.id)
-            if (result.matches.length === 0) {
-              return `<kortix_system type="pty-output" source="opencode-pty">\n<pty_output id="${args.id}" status="${session.status}" pattern="${args.pattern}">\nNo lines matched the pattern '${args.pattern}'.\nTotal lines in buffer: ${result.totalLines}\n</pty_output>\n</kortix_system>`
+            if (result.lines.length === 0) {
+              return `<kortix_system type="pty-output" source="opencode-pty">\n<pty_output id="${args.id}" status="${session.status}">\n(No output available - buffer is empty)\nTotal lines: ${result.totalLines}\n</pty_output>\n</kortix_system>`
             }
-            const lines = result.matches.map((match) => formatLine(match.text, match.lineNumber, MAX_LINE_LENGTH))
+            const lines = result.lines.map((line, index) => formatLine(line, result.offset + index + 1, MAX_LINE_LENGTH))
             const footer = result.hasMore
-              ? `(${result.matches.length} of ${result.totalMatches} matches shown. Use offset=${offset + result.matches.length} to see more.)`
-              : `(${result.totalMatches} match${result.totalMatches === 1 ? '' : 'es'} from ${result.totalLines} total lines)`
-            return buildPtyOutput(args.id, session.status, lines, footer, args.pattern)
-          }
-
-          const result = manager.read(args.id, offset, limit)
-          if (!result) throw notFound(args.id)
-          if (result.lines.length === 0) {
-            return `<kortix_system type="pty-output" source="opencode-pty">\n<pty_output id="${args.id}" status="${session.status}">\n(No output available - buffer is empty)\nTotal lines: ${result.totalLines}\n</pty_output>\n</kortix_system>`
-          }
-          const lines = result.lines.map((line, index) => formatLine(line, result.offset + index + 1, MAX_LINE_LENGTH))
-          const footer = result.hasMore
-            ? `(Buffer has more lines. Use offset=${result.offset + result.lines.length} to read beyond line ${result.offset + result.lines.length})`
-            : `(End of buffer - total ${result.totalLines} lines)`
-          return buildPtyOutput(args.id, session.status, lines, footer)
+              ? `(Buffer has more lines. Use offset=${result.offset + result.lines.length} to read beyond line ${result.offset + result.lines.length})`
+              : `(End of buffer - total ${result.totalLines} lines)`
+            return buildPtyOutput(args.id, session.status, lines, footer)
+          })
         },
       }),
 
@@ -191,12 +222,14 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
         description: 'List active PTY sessions.',
         args: {},
         async execute() {
-          const sessions = await manager.list()
-          if (sessions.length === 0) {
-            return `<kortix_system type="pty-list" source="opencode-pty">\n<pty_list>\nNo active PTY sessions.\n</pty_list>\n</kortix_system>`
-          }
-          const inner = ['<pty_list>', ...sessions.flatMap((session) => formatSessionInfo(session)), `Total: ${sessions.length} session(s)`, '</pty_list>'].join('\n')
-          return `<kortix_system type="pty-list" source="opencode-pty">\n${inner}\n</kortix_system>`
+          return recoverPtyTool('pty-list', async () => {
+            const sessions = await manager.list()
+            if (sessions.length === 0) {
+              return `<kortix_system type="pty-list" source="opencode-pty">\n<pty_list>\nNo active PTY sessions.\n</pty_list>\n</kortix_system>`
+            }
+            const inner = ['<pty_list>', ...sessions.flatMap((session) => formatSessionInfo(session)), `Total: ${sessions.length} session(s)`, '</pty_list>'].join('\n')
+            return `<kortix_system type="pty-list" source="opencode-pty">\n${inner}\n</kortix_system>`
+          })
         },
       }),
 
@@ -207,23 +240,25 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           cleanup: tool.schema.boolean().optional().describe('If true, remove the cached session data too'),
         },
         async execute(args) {
-          const session = manager.get(args.id)
-          if (!session) throw notFound(args.id)
-          const wasRunning = session.status === 'running'
-          const cleanup = args.cleanup ?? false
-          const success = await manager.kill(args.id, cleanup)
-          if (!success) throw new Error(`Failed to kill PTY session '${args.id}'.`)
-          const action = wasRunning ? 'Killed' : 'Cleaned up'
-          const cleanupNote = cleanup ? ' (session removed)' : ' (session retained for log access)'
-          const inner = [
-            '<pty_killed>',
-            `${action}: ${args.id}${cleanupNote}`,
-            `Title: ${session.title}`,
-            `Command: ${session.command} ${session.args.join(' ')}`,
-            `Final line count: ${session.lineCount}`,
-            '</pty_killed>',
-          ].join('\n')
-          return `<kortix_system type="pty-kill" source="opencode-pty">\n${inner}\n</kortix_system>`
+          return recoverPtyTool('pty-kill', async () => {
+            const session = manager.get(args.id)
+            if (!session) throw notFound(args.id)
+            const wasRunning = session.status === 'running'
+            const cleanup = args.cleanup ?? false
+            const success = await manager.kill(args.id, cleanup)
+            if (!success) throw new Error(`Failed to kill PTY session '${args.id}'.`)
+            const action = wasRunning ? 'Killed' : 'Cleaned up'
+            const cleanupNote = cleanup ? ' (session removed)' : ' (session retained for log access)'
+            const inner = [
+              '<pty_killed>',
+              `${action}: ${args.id}${cleanupNote}`,
+              `Title: ${session.title}`,
+              `Command: ${session.command} ${session.args.join(' ')}`,
+              `Final line count: ${session.lineCount}`,
+              '</pty_killed>',
+            ].join('\n')
+            return `<kortix_system type="pty-kill" source="opencode-pty">\n${inner}\n</kortix_system>`
+          })
         },
       }),
     },

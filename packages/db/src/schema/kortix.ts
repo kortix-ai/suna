@@ -782,6 +782,35 @@ export const chatThreads = kortixSchema.table(
   ],
 );
 
+// Per-user identity binding: maps a chat-platform user (e.g. a Slack user in a
+// given workspace) to the Kortix user they authenticated as via `/login`. The
+// inbound gate resolves the sender through this table and runs the agent as that
+// Kortix user — so each member acts under their OWN credentials/secrets, never
+// the installer's. No row = unlinked = blocked until they log in. revokedAt set
+// = `/logout`, treated as unlinked. Membership against a project's account is
+// re-checked at run time, so this mapping is intentionally workspace-scoped, not
+// account-scoped (one workspace can map to multiple projects/accounts).
+export const chatUserIdentities = kortixSchema.table(
+  'chat_user_identities',
+  {
+    identityId: uuid('identity_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    userId: uuid('user_id').notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_user_identities_platform_user').on(
+      table.platform,
+      table.workspaceId,
+      table.platformUserId,
+    ),
+    index('idx_chat_user_identities_user').on(table.userId),
+  ],
+);
+
 // Live Slack turn-stream state, shared across API replicas. The agent's
 // `slack step` / `slack send` relays land on ANY instance behind the load
 // balancer, so the stream handle (which Slack message to update, the steps so
@@ -997,6 +1026,15 @@ export const sandboxTemplates = kortixSchema.table(
      * Dockerfile change drifted the identity.
      */
     builtFromCommit: text('built_from_commit'),
+    /**
+     * Agent-swap eligibility key of the last build: user image + spec + NON-agent
+     * runtime layer (everything the kortix-agent CAS swap does NOT touch). The
+     * builder swaps the agent in place of a full rebuild ONLY when the new
+     * identity's swapKey equals this stored value — i.e. the agent binary is the
+     * sole delta. NULL for rows built before this column / the platform default
+     * until first build → those rebuild. See snapshots/builder.ts maybeSwapAgent.
+     */
+    swapKey: text('swap_key'),
     /** Provider-side snapshot name (e.g. `kortix-default-…`, `kortix-tpl-…`). */
     providerSnapshotName: text('provider_snapshot_name'),
     /** Last-known provider state: 'active' | 'building' | 'pulling' | 'error' | 'missing'. */
@@ -2112,6 +2150,10 @@ export const tunnelConnections = kortixSchema.table(
     status: tunnelStatusEnum('status').default('offline').notNull(),
     capabilities: jsonb('capabilities').default([]).$type<string[]>(),
     machineInfo: jsonb('machine_info').default({}).$type<TunnelMachineInfo>(),
+    relayOwnerId: varchar('relay_owner_id', { length: 255 }),
+    relayOwnerInstance: varchar('relay_owner_instance', { length: 255 }),
+    relayOwnerStartedAt: timestamp('relay_owner_started_at', { withTimezone: true }),
+    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', { withTimezone: true }),
     setupTokenHash: varchar('setup_token_hash', { length: 128 }),
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2121,6 +2163,32 @@ export const tunnelConnections = kortixSchema.table(
     index('idx_tunnel_connections_account').on(table.accountId),
     index('idx_tunnel_connections_sandbox').on(table.sandboxId),
     index('idx_tunnel_connections_status').on(table.status),
+    index('idx_tunnel_connections_relay_owner').on(table.relayOwnerId),
+  ],
+);
+
+export const tunnelRpcForwards = kortixSchema.table(
+  'tunnel_rpc_forwards',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    tunnelId: uuid('tunnel_id').notNull().references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    requesterRelayOwnerId: varchar('requester_relay_owner_id', { length: 255 }),
+    targetRelayOwnerId: varchar('target_relay_owner_id', { length: 255 }).notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    method: varchar('method', { length: 255 }).notNull(),
+    params: jsonb('params').default({}).$type<Record<string, unknown>>(),
+    result: jsonb('result'),
+    error: jsonb('error').$type<{ code?: number; message?: string; data?: unknown } | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_tunnel_rpc_forwards_target_status').on(table.targetRelayOwnerId, table.status, table.expiresAt),
+    index('idx_tunnel_rpc_forwards_expiry').on(table.expiresAt),
+    index('idx_tunnel_rpc_forwards_tunnel').on(table.tunnelId),
   ],
 );
 

@@ -1,73 +1,104 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   getManagedModel,
   isManagedModelId,
-} from './index';
+} from "./index";
 
-describe('managed catalog', () => {
-  test('exposes the expected passthrough lineup', () => {
+describe("managed catalog", () => {
+  test("exposes the managed lineup", () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
-      'claude-opus-4.8',
-      'claude-sonnet-4.6',
-      'deepseek-v3.2',
-      'qwen3-max',
-      'glm-4.6',
-      'kimi-k2',
+      "claude-opus-4.8",
+      "claude-sonnet-4.6",
+      "fusion",
+      "qwen3.7-max",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
     ]);
   });
 
-  test('the haiku/sonnet branded ids are gone from the served catalog', () => {
-    expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('kortix-power');
-    expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('kortix-basic');
+  test("the haiku/sonnet branded ids are gone from the served catalog", () => {
+    expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain("kortix-power");
+    expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain("kortix-basic");
   });
 
-  test('Opus is the single flagship', () => {
-    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('claude-opus-4.8');
-    expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
+  test("Opus is the single flagship", () => {
+    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe("claude-opus-4.8");
+    expect(MANAGED_MODELS.filter((m) => m.tier === "flagship")).toHaveLength(1);
   });
 
-  test('only Anthropic models carry a Bedrock id; Chinese models route via OpenRouter', () => {
+  test("every model has an upstream id, transport, and pricing ref", () => {
     for (const m of MANAGED_MODELS) {
-      expect(m.openRouterModelId.length).toBeGreaterThan(0);
-      if (m.openRouterModelId.startsWith('anthropic/')) {
-        expect(m.bedrockModelId, `${m.id} should be Bedrock-routable`).toBeDefined();
-      } else {
-        expect(m.bedrockModelId, `${m.id} (non-Anthropic) must not claim a Bedrock id`).toBeUndefined();
-      }
+      expect(
+        m.upstreamModelId.length,
+        `${m.id} needs an upstream id`,
+      ).toBeGreaterThan(0);
+      expect(
+        m.pricingRef.length,
+        `${m.id} needs a pricing ref`,
+      ).toBeGreaterThan(0);
+      expect(["bedrock", "openrouter"]).toContain(m.transport);
     }
   });
 
-  test('every Bedrock id is an Anthropic inference profile (our Bedrock transport is Anthropic-only)', () => {
+  test("transport matches the upstream id shape", () => {
     for (const m of MANAGED_MODELS) {
-      if (m.bedrockModelId) expect(m.bedrockModelId).toContain('anthropic.claude');
+      if (m.transport === "bedrock") {
+        // Bedrock managed models are Claude via the Anthropic InvokeModel transport.
+        expect(m.upstreamModelId, `${m.id} (Bedrock) → Anthropic`).toContain(
+          "anthropic.claude",
+        );
+      } else {
+        // OpenRouter slugs are provider/model.
+        expect(m.transport, `${m.id} transport`).toBe("openrouter");
+        expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain("/");
+      }
     }
   });
 });
 
-describe('managed resolution + back-compat aliases', () => {
-  test('resolves current ids', () => {
-    expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('kimi-k2')?.openRouterModelId).toBe('moonshotai/kimi-k2');
+describe("managed resolution + back-compat aliases", () => {
+  test("resolves current ids", () => {
+    expect(getManagedModel("claude-opus-4.8")?.name).toBe("Claude Opus 4.8");
+    expect(getManagedModel("claude-opus-4.8")?.transport).toBe("bedrock");
+    expect(getManagedModel("fusion")?.transport).toBe("openrouter");
+    expect(getManagedModel("fusion")?.upstreamModelId).toBe(
+      "openrouter/fusion",
+    );
+    expect(getManagedModel("qwen3.7-max")?.upstreamModelId).toBe(
+      "qwen/qwen3.7-max",
+    );
+    expect(getManagedModel("deepseek-v4-pro")?.upstreamModelId).toBe(
+      "deepseek/deepseek-v4-pro",
+    );
   });
 
-  test('retired branded ids still resolve (to the nearest current model) so stored configs do not break', () => {
-    expect(getManagedModel('kortix-power')?.id).toBe('claude-sonnet-4.6');
-    expect(getManagedModel('kortix-basic')?.id).toBe('claude-sonnet-4.6');
-    expect(isManagedModelId('kortix-power')).toBe(true);
-    expect(isManagedModelId('kortix-basic')).toBe(true);
+  test("retired / superseded model ids no longer resolve (aliases removed)", () => {
+    for (const old of [
+      "kortix-power",
+      "kortix-basic",
+      "glm-4.6",
+      "glm-5.1",
+      "glm-5.2",
+      "qwen3-max",
+      "minimax-m2.5",
+      "kimi-k2",
+    ]) {
+      expect(getManagedModel(old), `${old} should be gone`).toBeUndefined();
+      expect(isManagedModelId(old), `${old} should be gone`).toBe(false);
+    }
   });
 
-  test('a BYOK provider/model string is never treated as managed', () => {
-    expect(isManagedModelId('anthropic/claude-opus-4.8')).toBe(false);
-    expect(getManagedModel('anthropic/claude-opus-4.8')).toBeUndefined();
-    expect(isManagedModelId('deepseek/deepseek-v3.2')).toBe(false);
+  test("a BYOK provider/model string is never treated as managed", () => {
+    expect(isManagedModelId("anthropic/claude-opus-4.8")).toBe(false);
+    expect(getManagedModel("anthropic/claude-opus-4.8")).toBeUndefined();
+    expect(isManagedModelId("deepseek/deepseek-v3.2")).toBe(false);
   });
 
-  test('unknown ids do not resolve', () => {
-    expect(getManagedModel('nope')).toBeUndefined();
-    expect(isManagedModelId('nope')).toBe(false);
+  test("unknown ids do not resolve", () => {
+    expect(getManagedModel("nope")).toBeUndefined();
+    expect(isManagedModelId("nope")).toBe(false);
   });
 });

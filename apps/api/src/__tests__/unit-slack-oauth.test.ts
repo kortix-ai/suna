@@ -17,12 +17,14 @@ function makeSelectChain(): any {
 }
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => makeSelectChain(),
   },
 }));
 
 mock.module('../config', () => ({
+  SANDBOX_VERSION: 'test',
   config: {
     SLACK_SIGNING_SECRET: 'state-secret',
     SLACK_CLIENT_ID: 'client-id',
@@ -38,6 +40,10 @@ mock.module('../channels/install-store', () => ({
     saveCalls.push(input);
     if (saveError) throw saveError;
   },
+}));
+
+mock.module('../executor/sync', () => ({
+  reconcileChannelConnectors: async () => undefined,
 }));
 
 const realFetch = globalThis.fetch;
@@ -78,12 +84,12 @@ function redirectLocation(res: Response): string {
 }
 
 describe('Slack OAuth callback', () => {
-  test('saves a project-scoped install and redirects to the project channels page', async () => {
+  test('saves a project-scoped install and redirects to the project connectors page', async () => {
     const res = await slackOauthApp.request(`/callback?code=code-1&state=${stateFromInstallUrl()}`);
 
     expect(res.status).toBe(302);
     expect(redirectLocation(res)).toBe(
-      `https://dev.kortix.com/projects/${PROJECT_ID}/customize?projectId=${PROJECT_ID}&success=1&section=channels`,
+      `https://dev.kortix.com/projects/${PROJECT_ID}?projectId=${PROJECT_ID}&success=1&customize=connectors`,
     );
     expect(saveCalls).toEqual([{
       projectId: PROJECT_ID,
@@ -101,7 +107,7 @@ describe('Slack OAuth callback', () => {
 
     expect(res.status).toBe(302);
     expect(redirectLocation(res)).toBe(
-      `https://dev.kortix.com/projects/${PROJECT_ID}/customize?projectId=${PROJECT_ID}&error=slack_install_save_failed&section=channels`,
+      `https://dev.kortix.com/projects/${PROJECT_ID}?projectId=${PROJECT_ID}&error=slack_install_save_failed&customize=connectors`,
     );
     expect(saveCalls).toHaveLength(1);
   });
@@ -115,7 +121,23 @@ describe('Slack OAuth callback', () => {
 
     expect(res.status).toBe(302);
     expect(redirectLocation(res)).toBe(
-      `https://dev.kortix.com/projects/${PROJECT_ID}/customize?projectId=${PROJECT_ID}&error=oauth_exchange_failed&section=channels`,
+      `https://dev.kortix.com/projects/${PROJECT_ID}?projectId=${PROJECT_ID}&error=oauth_exchange_failed&customize=connectors`,
+    );
+    expect(saveCalls).toHaveLength(0);
+  });
+
+  test('redirects to the project when Slack rejects the authorization code', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ok: false, error: 'invalid_code' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as any;
+
+    const res = await slackOauthApp.request(`/callback?code=code-4&state=${stateFromInstallUrl()}`);
+
+    expect(res.status).toBe(302);
+    expect(redirectLocation(res)).toBe(
+      `https://dev.kortix.com/projects/${PROJECT_ID}?projectId=${PROJECT_ID}&error=invalid_code&customize=connectors`,
     );
     expect(saveCalls).toHaveLength(0);
   });

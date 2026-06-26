@@ -12,6 +12,8 @@ import { loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import { createGatewayKey, listGatewayKeys, revokeGatewayKey } from '../../llm-gateway/gateway-keys';
+import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
+import { config } from '../../config';
 
 async function canDo(c: any, projectId: string, accountId: string, action: string): Promise<boolean> {
   const verdict = await authorize(
@@ -686,6 +688,9 @@ projectsApp.openapi(
     }
     const keys = await listGatewayKeys(projectId);
     return c.json({
+      // Env-correct public host (dev vs prod) so the UI's curl example points at
+      // the right gateway instead of a hardcoded one.
+      gateway_url: publicGatewayBaseUrl(config.LLM_GATEWAY_BASE_URL),
       keys: keys.map((k) => ({
         key_id: k.keyId,
         name: k.name,

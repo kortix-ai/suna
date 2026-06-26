@@ -49,6 +49,7 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
+import { API_INSTANCE, API_STARTED_AT } from './shared/instance';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -333,11 +334,6 @@ const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 // the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
 // Lets the team verify precisely which code is live. 'unknown' for local dev.
 const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
-// When this process booted — confirms a deploy actually rolled fresh pods.
-const STARTED_AT = new Date().toISOString();
-// Which replica answered (pod name in k8s, task/container id in ECS).
-const API_INSTANCE = process.env.HOSTNAME || 'unknown';
-
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
 mountOpenApiDocs(app, API_VERSION);
@@ -377,7 +373,7 @@ const healthHandler = (c: any) =>
     commit: API_COMMIT,
     environment: config.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
-    started_at: STARTED_AT,
+    started_at: API_STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
     // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
     // the container's memory limit, without needing metrics-server/dashboards.
@@ -646,121 +642,10 @@ app.openapi(
 app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
-  const { createLlmGateway } = await import('./llm-gateway');
-  const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
-  const { validateAccountToken } = await import('./repositories/account-tokens');
-  const { assertBillingActive } = await import('./billing/services/billing-gate');
-  const { deductForLlmUsage } = await import('./billing/services/credits');
-  const { recordUsageEvent } = await import('./shared/usage-events');
-  const { llmPriceMarkup } = await import('./billing/services/tiers');
-
-  app.route(
-    '/v1/llm',
-    createLlmGateway(
-      {
-        enabled: config.LLM_GATEWAY_ENABLED,
-        openrouterApiKey: config.OPENROUTER_API_KEY,
-        markup: llmPriceMarkup(),
-        appName: 'Kortix',
-        appReferer: config.KORTIX_URL,
-      },
-      {
-        authenticateToken: async (token) => {
-          // Legacy per-member YOLO token (prod per-seat path) takes priority.
-          const yolo = await attributeYoloToken(token);
-          if (yolo) return yolo;
-          // YOLO is discontinued; sandboxes now present their account token
-          // (a kortix_pat_ minted at provision). Resolve it to {userId, accountId}
-          // so the managed gateway works for self-hosted / billing-off deploys.
-          const acct = await validateAccountToken(token);
-          if (acct.isValid && acct.userId && acct.accountId) {
-            // projectId/sessionId attribute LLM usage to the calling session
-            // (sandbox executor token is minted per-session with session_id =
-            // sandbox_id) — the reaper's reliable activity signal + precise
-            // per-session billing.
-            return {
-              userId: acct.userId,
-              accountId: acct.accountId,
-              projectId: acct.projectId ?? null,
-              sessionId: acct.sessionId ?? null,
-            };
-          }
-          return null;
-        },
-        assertBillingActive,
-        recordUsage: async (event) => {
-          // Always record usage_events for observability (token counts, model,
-          // request id) — useful in self-hosted for debugging even with no
-          // wallet deduction.
-          const usageEventId = await recordUsageEvent({
-            accountId: event.accountId,
-            actorUserId: event.actorUserId,
-            projectId: event.projectId ?? null,
-            sessionId: event.sessionId ?? null,
-            provider: event.provider,
-            model: event.model,
-            route: '/v1/llm/chat/completions',
-            inputTokens: event.promptTokens,
-            outputTokens: event.completionTokens,
-            cachedTokens: event.cachedTokens,
-            costUsd: event.finalCost,
-            streaming: event.streaming,
-            metadata: {
-              upstreamCostUsd: event.upstreamCost,
-              markup: llmPriceMarkup(),
-              requestId: event.requestId,
-            },
-          });
-          // Hard gate: never debit the wallet when billing is disabled.
-          if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
-          await deductForLlmUsage({
-            accountId: event.accountId,
-            costUsd: event.finalCost,
-            model: event.model,
-            provider: event.provider,
-            actorUserId: event.actorUserId,
-            usageEventId,
-            upstreamCostUsd: event.upstreamCost,
-            markup: llmPriceMarkup(),
-          });
-        },
-      },
-    ),
-  );
-
-  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
-  app.route('/internal/gateway', createInternalGatewayRoutes());
-
-  if (
-    config.LLM_GATEWAY_ENABLED &&
-    !config.LLM_GATEWAY_BASE_URL &&
-    !config.LLM_GATEWAY_PROXY_PORT &&
-    !config.LLM_GATEWAY_PROXY_TARGET
-  ) {
-    appLogger.error(
-      '[gateway] LLM_GATEWAY_BASE_URL is unset and no proxy is configured — sandboxes will fall back to the in-API /v1/llm passthrough (OpenRouter-only, wrong catalog shape → single-model picker). Set LLM_GATEWAY_BASE_URL to the standalone gateway URL (e.g. https://gateway.kortix.com/v1/llm).',
-    );
-  }
-
-  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
-    const proxyBase = (
-      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
-    ).replace(/\/+$/, '');
-    app.all('/v1/llm-gateway/*', async (c) => {
-      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-      const target = `${proxyBase}${tail}`;
-      const init: RequestInit & { duplex?: 'half' } = {
-        method: c.req.method,
-        headers: c.req.raw.headers,
-      };
-      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-        init.body = c.req.raw.body;
-        init.duplex = 'half';
-      }
-      const upstream = await fetch(target, init);
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    });
-  }
+  // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
+  // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
+  const { mountLlmGateway } = await import('./llm-gateway/wire');
+  mountLlmGateway(app);
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -791,9 +676,11 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — raw AgentMail events
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
@@ -1007,8 +894,8 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
-  // + DAYTONA_WARM_TARGET are set; best-effort.
+  // session can boot from it (~1.3s). No-op unless the warm_snapshot admin toggle
+  // is on + DAYTONA_WARM_TARGET is set; best-effort.
   kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
@@ -1121,10 +1008,12 @@ export default {
       server.timeout(req, 0);
     }
 
-    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
-    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
-    // closing the client socket at idleTimeout with an empty reply.
-    if (url.pathname.startsWith('/v1/llm-gateway')) {
+    // LLM chat completions stream SSE — both the in-API /v1/llm pipeline and the
+    // /v1/llm-gateway reverse proxy to the standalone pod. Let the gateway's own
+    // keep-alive / upstream timeout govern them instead of Bun closing the client
+    // socket at idleTimeout with an empty reply. (startsWith('/v1/llm') covers
+    // both /v1/llm and /v1/llm-gateway.)
+    if (url.pathname.startsWith('/v1/llm')) {
       server.timeout(req, 0);
     }
 
@@ -1250,7 +1139,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId);
+        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

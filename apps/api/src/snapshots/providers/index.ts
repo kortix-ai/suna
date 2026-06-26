@@ -78,6 +78,14 @@ export interface SandboxProviderAdapter {
   /** Delete the snapshot (no-op if missing). */
   deleteSnapshot(snapshotName: string): Promise<void>;
 
+  /**
+   * Optional agent-only fast path: produce `newSnapshotName` from a predecessor
+   * `sourceSnapshotName` by swapping ONLY the kortix-agent binary (no rebuild).
+   * Implemented by providers that control the host filesystem (Platinum). Absent
+   * on providers without a rootfs handle (Daytona) — callers fall back to build.
+   */
+  swapAgent?(newSnapshotName: string, sourceSnapshotName: string): Promise<void>;
+
   /** True iff the platform is wired up for this provider in the current env. */
   isConfigured(): boolean;
 }

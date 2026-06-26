@@ -63,62 +63,66 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     const daytona = getDaytona();
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
-    try {
-      const resources = {
-        cpu: input.spec.cpu ?? DEFAULT_CPU,
-        memory: input.spec.memoryGb ?? DEFAULT_MEMORY_GB,
-        disk: input.spec.diskGb ?? DEFAULT_DISK_GB,
-      };
-      console.info(
-        `[snapshots] ${input.snapshotName}: building (slug="${input.slug}", provider=daytona, spec=${JSON.stringify(resources)})`,
-      );
+    const resources = {
+      cpu: input.spec.cpu ?? DEFAULT_CPU,
+      memory: input.spec.memoryGb ?? DEFAULT_MEMORY_GB,
+      disk: input.spec.diskGb ?? DEFAULT_DISK_GB,
+    };
+    console.info(
+      `[snapshots] ${input.snapshotName}: building (slug="${input.slug}", provider=daytona, spec=${JSON.stringify(resources)})`,
+    );
 
-      let lastErr: unknown;
-      for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
-        const buildLogs: string[] = [];
-        try {
-          await daytona.snapshot.create(
-            {
-              name: input.snapshotName,
-              image: Image.fromDockerfile(ctx.composedPath),
-              entrypoint: input.entrypoint ?? [KORTIX_ENTRYPOINT],
-              resources,
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      // Re-stage a FRESH build context each attempt. The staged temp dir can be
+      // disturbed between staging and the SDK's context upload (e.g. an API
+      // restart mid-build on a fast-deploying env, or a tmp sweep), which the SDK
+      // reports as "Path does not exist: …/scaffold.git". Re-staging self-heals
+      // it so the auto/background build recovers on its own instead of needing a
+      // manual rebuild (the "always have to manually start" symptom).
+      const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
+      const buildLogs: string[] = [];
+      try {
+        await daytona.snapshot.create(
+          {
+            name: input.snapshotName,
+            image: Image.fromDockerfile(ctx.composedPath),
+            entrypoint: input.entrypoint ?? [KORTIX_ENTRYPOINT],
+            resources,
+          },
+          {
+            timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
+            onLogs: (chunk) => {
+              const line = chunk.trim();
+              if (!line) return;
+              buildLogs.push(line);
+              if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
+                buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
+              }
+              console.info(`[snapshots] ${input.snapshotName}: ${line}`);
+              tap?.onLine?.(line);
             },
-            {
-              timeout: Math.floor(BUILD_TIMEOUT_MS / 1000),
-              onLogs: (chunk) => {
-                const line = chunk.trim();
-                if (!line) return;
-                buildLogs.push(line);
-                if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
-                  buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
-                }
-                console.info(`[snapshots] ${input.snapshotName}: ${line}`);
-                tap?.onLine?.(line);
-              },
-            },
-          );
-          await this.waitForActive(input.snapshotName);
-          return;
-        } catch (err) {
-          lastErr = err;
-          const settled = await this.waitForSettle(input.snapshotName, POST_FAILURE_SETTLE_TIMEOUT_MS);
-          if (settled === 'active') return;
-          if (!isTransientDaytonaError(err) || attempt === BUILD_ATTEMPTS) {
-            throw new Error(`Snapshot build failed: ${err instanceof Error ? err.message : String(err)}`);
-          }
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(
-            `[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed transiently — retrying: ${msg.slice(0, 120)}`,
-          );
-          await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
+          },
+        );
+        await this.waitForActive(input.snapshotName);
+        return;
+      } catch (err) {
+        lastErr = err;
+        const settled = await this.waitForSettle(input.snapshotName, POST_FAILURE_SETTLE_TIMEOUT_MS);
+        if (settled === 'active') return;
+        if (!isRetryableBuildError(err) || attempt === BUILD_ATTEMPTS) {
+          throw new Error(`Snapshot build failed: ${err instanceof Error ? err.message : String(err)}`);
         }
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[snapshots] build attempt ${attempt}/${BUILD_ATTEMPTS} for ${input.snapshotName} failed — re-staging + retrying: ${msg.slice(0, 120)}`,
+        );
+        await new Promise((r) => setTimeout(r, BUILD_RETRY_BASE_MS * attempt));
+      } finally {
+        await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       }
-      throw lastErr;
-    } finally {
-      await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
     }
+    throw lastErr;
   }
 
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
@@ -244,6 +248,28 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('not found') ||
     m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
   );
+}
+
+/**
+ * A build context can be disturbed AFTER staging but before the SDK uploads it
+ * (API restart mid-build on a fast-deploying env, or a tmp sweep), surfacing as
+ * a missing COPY source ("Path does not exist: …/scaffold.git") or our own
+ * "staging incomplete" guard. Treat as retryable so the next attempt re-stages a
+ * fresh context — this is what makes auto/background builds self-heal instead of
+ * permanently failing until a manual rebuild.
+ */
+function isStaleContextError(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes('does not exist') ||
+    m.includes('staging incomplete') ||
+    m.includes('scaffold') ||
+    m.includes('no such file')
+  );
+}
+
+function isRetryableBuildError(err: unknown): boolean {
+  return isTransientDaytonaError(err) || isStaleContextError(err);
 }
 
 export const daytonaProvider = new DaytonaAdapter();

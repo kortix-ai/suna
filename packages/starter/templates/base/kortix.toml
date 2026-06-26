@@ -49,8 +49,10 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
 # OpenCode runtime config dir. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
-# under this folder. Defaults to `.kortix/opencode` — relocate if you
-# want to share a single opencode config across multiple Kortix repos.
+# under this folder. `opencode.jsonc` remains OpenCode's native registry
+# for plugins, MCP servers, providers, models, and runtime defaults.
+# Defaults to `.kortix/opencode` — relocate if you want to share a
+# single opencode config across multiple Kortix repos.
 [opencode]
 config_dir = ".kortix/opencode"
 
@@ -89,7 +91,7 @@ nothing is worth changing.
 # slug = "daily-digest"
 # name = "Daily digest"
 # type = "cron"
-# agent = "kortix"                # any agent under [opencode] config_dir
+# agent = "kortix"                # legacy: any OpenCode agent; with [[agents]], a registered platform agent
 # enabled = true
 # cron = "0 0 9 * * 1-5"          # 09:00 Mon–Fri
 # timezone = "America/Los_Angeles"
@@ -162,8 +164,9 @@ nothing is worth changing.
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"
 
-# ─── Per-agent authorization (optional) ───────────────────────────
-# Scope what each agent can touch — TWO knobs OpenCode's agent .md can't express:
+# ─── Per-agent governance (optional) ──────────────────────────────
+# Declare the agents Kortix should treat as platform-launchable and scope what
+# each one can touch — TWO knobs OpenCode's agent .md can't express:
 #   • kortix_cli — what it may do to Kortix via the CLI/API (open/merge CRs,
 #       deploy, manage triggers/secrets, spawn sessions). "all" = everything the
 #       LAUNCHING USER can do (an agent is always capped at its launcher) | a list
@@ -172,9 +175,11 @@ nothing is worth changing.
 #
 # DEFAULT: with NO [[agents]] section, every agent gets FULL access — so your
 # default `kortix` agent can already merge / deploy / spawn sub-agents (all capped
-# at the launching user). Adding ANY [[agents]] entry opts you into governance:
-# from then on, list EVERY agent you want to run (including your default) or an
-# unlisted one is denied. Canonical setup = default agent "all" + scoped specialists:
+# at the launching user), and legacy UI/runtime paths may discover agents from
+# OpenCode directly. Adding ANY [[agents]] entry opts into declarative, server-side
+# agent governance: the product should expose registered agents, while unregistered
+# native OpenCode files can still exist for local experiments/runtime internals.
+# Canonical setup = default agent "all" + scoped specialists:
 #
 # [[agents]]
 # name       = "kortix"            # your default general-purpose agent

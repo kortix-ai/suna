@@ -83,7 +83,7 @@ function ensureWorkspacePath(filePath: string): string {
 }
 
 /** Categories that need a blob fetched via readFileAsBlob */
-const BLOB_CATEGORIES = ['pdf', 'docx', 'video', 'audio', 'pptx'] as const;
+const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
 
 export type FileCategory =
@@ -475,7 +475,8 @@ export function FileContentRenderer({
     [fileDiagnostics],
   );
 
-  // Binary blob for PDF, DOCX, video, audio, PPTX — AND HEIC images
+  // Binary blob for DOCX, video, audio, PPTX — AND HEIC images.
+  // PDFs intentionally use /file/content base64 so PdfRenderer can create a Blob URL from the string.
   const blobPath = isBlobCategory(fileCategory) || isHeicImage ? filePath : null;
   const {
     blobUrl,
@@ -508,7 +509,7 @@ export function FileContentRenderer({
     // HTML files always default to preview mode
     setIsHtmlPreview(true);
     latestContentRef.current = '';
-  }, [filePath]);
+  }, [filePath, setIsMarkdownPreview]);
 
   // Notify parent of unsaved state changes
   useEffect(() => {
@@ -873,9 +874,9 @@ export function FileContentRenderer({
           )}
 
           {/* PDF preview */}
-          {isContentReady && fileCategory === 'pdf' && rawBlob && (
+          {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer blob={rawBlob} className="h-full" />
+              <PdfRenderer fileContent={fileContent.content} className="h-full" />
             </Suspense>
           )}
 

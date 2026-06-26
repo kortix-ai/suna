@@ -19,6 +19,7 @@ import {
 } from '@/hooks/tunnel/use-tunnel';
 import { SCOPE_REGISTRY, EXPIRY_OPTIONS, getExpiresAt } from './types';
 import type { ScopeInfo } from './types';
+import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
 
 interface TunnelScopeTogglesProps {
   tunnelId: string;
@@ -33,6 +34,27 @@ function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
   return result;
 }
 
+export function buildActiveScopeMap(permissions: TunnelPermission[] | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!permissions) return map;
+  for (const p of permissions) {
+    if (p.status !== 'active') continue;
+    const scopeKey = (p.scope as Record<string, unknown>)?.scope as string | undefined;
+    if (scopeKey) {
+      map.set(scopeKey, p.permissionId);
+      continue;
+    }
+    if (!p.scope || Object.keys(p.scope as Record<string, unknown>).length === 0) {
+      for (const scope of SCOPE_REGISTRY) {
+        if (scope.capability === p.capability && !map.has(scope.key)) {
+          map.set(scope.key, p.permissionId);
+        }
+      }
+    }
+  }
+  return map;
+}
+
 export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: permissions, isLoading } = useTunnelPermissions(tunnelId);
@@ -42,18 +64,7 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
 
   const groups = useMemo(() => groupBy(SCOPE_REGISTRY, (s) => s.category), []);
 
-  const activeScopeMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!permissions) return map;
-    for (const p of permissions) {
-      if (p.status !== 'active') continue;
-      const scopeKey = (p.scope as Record<string, unknown>)?.scope as string | undefined;
-      if (scopeKey) {
-        map.set(scopeKey, p.permissionId);
-      }
-    }
-    return map;
-  }, [permissions]);
+  const activeScopeMap = useMemo(() => buildActiveScopeMap(permissions), [permissions]);
 
   const handleToggle = async (scope: ScopeInfo, isCurrentlyActive: boolean) => {
     if (isCurrentlyActive) {

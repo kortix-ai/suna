@@ -5,21 +5,24 @@
  * Interactive: run `pnpm worktree` for a menu, or `pnpm worktree create` for a
  * guided wizard. Non-interactive (CI/scripts):
  *
- *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--no-start] [--yes]
+ *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--db] [--no-start] [--yes]
  *   pnpm worktree start|stop|nuke|status <feat>
  *   pnpm worktree list · doctor
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
- * ports, isolated Supabase, install, prereqs + node-pg-migrate) and boots the stack. Many
- * worktrees run at once with zero collisions; the primary `pnpm dev` is untouched.
+ * ports, install, optional isolated Supabase, prereqs + node-pg-migrate) and boots the stack. Many
+ * worktrees run at once with zero collisions; the primary `pnpm dev` is untouched except
+ * when the default shared-DB mode deliberately uses its standard local Supabase.
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
-  startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts,
+  startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
+  ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
+  type DbMode,
 } from './lib';
 import { existsSync, rmSync } from 'node:fs';
 import * as clack from '@clack/prompts';
@@ -110,13 +113,14 @@ function usage(): never {
 ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev worktrees')}
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
-  ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--no-tunnel])')}
+  ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
   ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
-its own Supabase project, and its own node_modules. State in ${pc.dim(WT_HOME)}.
+shares the primary Supabase DB by default, and gets its own node_modules. Pass ${pc.cyan('--db')}
+to opt into a separate Supabase project. State in ${pc.dim(WT_HOME)}.
 The primary ${pc.bold('pnpm dev')} (3000/8008) is never touched.`);
   process.exit(2);
 }
@@ -129,6 +133,14 @@ function need(name: string | undefined): string {
 function portsLine(p: Ports): string {
   return `${pc.bold('web')} ${pc.green(String(p.web))} ${pc.dim('·')} ${pc.bold('api')} ${pc.green(String(p.api))} ` +
     `${pc.dim('·')} db ${pc.green(String(p.sbDb))} ${pc.dim('·')} studio ${pc.green(String(p.sbStudio))} ${pc.dim('·')} inbucket ${pc.green(String(p.sbInbucket))}`;
+}
+function dbModeFromFlags(flags: Record<string, string | boolean>): DbMode {
+  if (flags.db || flags['with-db'] || flags['isolated-db']) return 'isolated';
+  if (flags['no-db'] || flags['shared-db']) return 'shared';
+  return 'shared';
+}
+function dbLabel(mode: DbMode): string {
+  return mode === 'isolated' ? 'isolated Supabase' : 'shared primary Supabase';
 }
 
 function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'main'; }
@@ -189,8 +201,10 @@ async function promptCreate(): Promise<Args | null> {
   }
   const start = await clack.confirm({ message: 'Boot the dev servers when it’s ready?', initialValue: true });
   if (cancelled(start)) return null;
+  const isolatedDb = await clack.confirm({ message: 'Create a separate Supabase database for this worktree?', initialValue: false });
+  if (cancelled(isolatedDb)) return null;
   const stripe = start ? await confirmStripe() : false;
-  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
+  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(isolatedDb ? { db: true } : {}), ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
 }
 
 async function pickWorktree(action: string): Promise<string | null> {
@@ -239,9 +253,13 @@ async function cmdCreate(a: Args) {
   const name = need(a.name);
   const tunnel = !a.flags['no-tunnel'];
   const install = !!a.flags.yes;
+  const requestedDbMode = dbModeFromFlags(a.flags);
+  const startsNow = !a.flags['no-start'];
+  const needsDatabaseTooling = requestedDbMode === 'isolated' || startsNow;
+  const needsIsolatedDatabaseTooling = requestedDbMode === 'isolated';
 
   step('Preflight: toolchain');
-  if (!(await ensureDeps({ tunnel, install }))) {
+  if (!(await ensureDeps({ database: needsDatabaseTooling, isolatedDatabase: needsIsolatedDatabaseTooling, tunnel, install }))) {
     die('Missing dependencies above. Re-run with --yes to auto-install, or install them and retry.');
   }
 
@@ -258,7 +276,15 @@ async function cmdCreate(a: Args) {
   let isNew = false;
   const entry = await withLock<SlotEntry>(() => {
     const reg = loadRegistry();
-    if (reg.slots[name]) { sub(`resuming existing worktree "${name}" (slot ${reg.slots[name].slot})`); return reg.slots[name]; }
+    if (reg.slots[name]) {
+      const existing = reg.slots[name];
+      const existingMode = dbModeOf(existing);
+      if (existingMode !== requestedDbMode && (a.flags.db || a.flags['with-db'] || a.flags['isolated-db'] || a.flags['no-db'] || a.flags['shared-db'])) {
+        throw new Error(`worktree "${name}" already uses ${dbLabel(existingMode)}; nuke/recreate it to switch database modes`);
+      }
+      sub(`resuming existing worktree "${name}" (slot ${existing.slot}, ${dbLabel(existingMode)})`);
+      return existing;
+    }
     isNew = true;
     let slot = lowestFreeSlot(reg);
     for (let tries = 0; tries < 6; tries++) {
@@ -270,12 +296,19 @@ async function cmdCreate(a: Args) {
       if (tries === 5) die('could not find a free port block after 6 slots');
     }
     const ports = computePorts(slot);
-    const e: SlotEntry = { slot, projectId: `kortix-wt-${name}`, path: wtPath, branch, ports, createdAt: new Date().toISOString(), status: 'created' };
+    const e: SlotEntry = { slot, projectId: `kortix-wt-${name}`, path: wtPath, branch, ports, dbMode: requestedDbMode, createdAt: new Date().toISOString(), status: 'created' };
     reg.slots[name] = e; saveRegistry(reg);
     return e;
   });
 
-  step(`Slot ${entry.slot} — ${portsLine(entry.ports)}`);
+  const dbMode = dbModeOf(entry);
+  if (dbMode === 'isolated' && !needsDatabaseTooling) {
+    step('Preflight: database tooling');
+    if (!(await ensureDeps({ database: true, isolatedDatabase: true, install }))) {
+      die('Missing database dependencies above. Re-run with --yes to auto-install, or install them and retry.');
+    }
+  }
+  step(`Slot ${entry.slot} — ${portsLine(entry.ports)} — ${dbLabel(dbMode)}`);
 
   const failCreate = async (msg: string): Promise<never> => {
     if (isNew) await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
@@ -296,21 +329,25 @@ async function cmdCreate(a: Args) {
     sub(`created branch "${branch}" from ${from}`);
   }
 
-  step(`Rendering isolated Supabase project ${pc.dim('('+entry.projectId+')')}`);
-  renderSupabaseProject(name, wtPath, entry.projectId, entry.ports);
-
   step('Installing dependencies (own pnpm store)');
   if (await run(['pnpm', 'install', '--store-dir', pnpmStore(name)], { cwd: wtPath }) !== 0) die(`pnpm install failed — fix and re-run \`pnpm worktree create --name ${name}\``);
 
-  step(`Starting isolated Postgres on db ${entry.ports.sbDb}`);
-  if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
+  if (dbMode === 'isolated') {
+    step(`Rendering isolated Supabase project ${pc.dim('('+entry.projectId+')')}`);
+    renderSupabaseProject(name, wtPath, entry.projectId, entry.ports);
 
-  step('Building schema (prereqs + pnpm migrate)');
-  if (await runMigrate(wtPath, entry.ports) !== 0) die(`migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
-  if (!hasKortixSchema(entry.ports)) die(`schema not built — \`pnpm migrate\` produced no kortix schema on branch "${branch}".\n  Check packages/db/migrations/*.sql exist on this branch and the Supabase prereqs applied (psql + Basejump).`);
+    step(`Starting isolated Postgres on db ${entry.ports.sbDb}`);
+    if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
 
-  step(`Starting isolated Supabase on api ${entry.ports.sbApi}`);
-  if (await startSupabaseFullStack(name, entry.ports) !== 0) die('supabase start failed');
+    step('Building schema (prereqs + pnpm migrate)');
+    if (await runMigrate(wtPath, entry.ports) !== 0) die(`migrate failed — fix and re-run \`pnpm worktree create --name ${name}\``);
+    if (!hasKortixSchema(entry.ports)) die(`schema not built — \`pnpm migrate\` produced no kortix schema on branch "${branch}".\n  Check packages/db/migrations/*.sql exist on this branch and the Supabase prereqs applied (psql + Basejump).`);
+
+    step(`Starting isolated Supabase on api ${entry.ports.sbApi}`);
+    if (await startSupabaseFullStack(name, entry.ports) !== 0) die('supabase start failed');
+  } else {
+    sub(`database mode: shared — skips Supabase project creation; start uses the primary checkout's standard local Supabase`);
+  }
 
   step('Building runtime artifacts');
   if (await ensureRuntimeArtifacts(wtPath) !== 0) die('runtime artifact build failed');
@@ -322,7 +359,9 @@ async function cmdCreate(a: Args) {
     `${pc.dim('path')}    ${wtPath}\n` +
     `${pc.dim('web')}     ${url('http://localhost:' + entry.ports.web)}\n` +
     `${pc.dim('api')}     http://localhost:${entry.ports.api}\n` +
-    `${pc.dim('studio')}  http://localhost:${entry.ports.sbStudio}`,
+    (dbMode === 'isolated'
+      ? `${pc.dim('studio')}  http://localhost:${entry.ports.sbStudio}`
+      : `${pc.dim('db')}      shared primary Supabase (${SHARED_SUPABASE_PORTS.sbApi}/${SHARED_SUPABASE_PORTS.sbDb})`),
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
@@ -335,8 +374,12 @@ async function cmdStart(a: Args) {
   const entry = reg.slots[name];
   if (!entry) die(`unknown worktree "${name}" — create it first`);
   if (!existsSync(entry!.path)) die(`worktree dir missing (${entry!.path}); run \`pnpm worktree nuke ${name}\` then recreate`);
+  if (!(await ensureDeps({ database: true, isolatedDatabase: dbModeOf(entry) === 'isolated', tunnel: !a.flags['no-tunnel'], install: false }))) {
+    die('Missing dependencies above. Install them and retry.');
+  }
   if (!sh(['docker', 'info']).ok) die('Docker daemon not running — start Docker and retry');
   const e = entry!;
+  const dbMode = dbModeOf(e);
 
   // Heal a stale ports cache. The registry stores a denormalized copy of
   // computePorts(slot), so a worktree created before a port was added to BASE
@@ -352,22 +395,37 @@ async function cmdStart(a: Args) {
     sub(`refreshed slot ${e.slot} ports from BASE (${added.join(', ')}) → gateway :${freshPorts.gateway}`);
   }
 
-  renderSupabaseProject(name, e.path, e.projectId, e.ports);
-  step(`Starting Postgres for "${name}"`);
-  if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
-  step('Applying pending migrations (pnpm migrate)');
-  if (await runMigrate(e.path, e.ports) !== 0) die('migrate failed');
-  if (!hasKortixSchema(e.ports)) die(`schema not built for "${name}"`);
-  if (!sh(['supabase', '--workdir', supaWorkdir(name), 'status']).ok) {
-    step(`Starting Supabase for "${name}"`);
-    if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
-  } else if (!portInUse(e.ports.sbApi).inUse) {
-    step(`Starting Supabase services for "${name}"`);
-    if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
+  let creds;
+  if (dbMode === 'isolated') {
+    renderSupabaseProject(name, e.path, e.projectId, e.ports);
+    step(`Starting Postgres for "${name}"`);
+    if (await startSupabaseDb(name) !== 0) die('supabase db start failed');
+    step('Applying pending migrations (pnpm migrate)');
+    if (await runMigrate(e.path, e.ports) !== 0) die('migrate failed');
+    if (!hasKortixSchema(e.ports)) die(`schema not built for "${name}"`);
+    if (!sh(['supabase', '--workdir', supaWorkdir(name), 'status']).ok) {
+      step(`Starting Supabase for "${name}"`);
+      if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
+    } else if (!portInUse(e.ports.sbApi).inUse) {
+      step(`Starting Supabase services for "${name}"`);
+      if (await startSupabaseFullStack(name, e.ports) !== 0) die('supabase start failed');
+    }
+    creds = slotCredsFromStatus(e.ports, supaStatusEnv(name));
+  } else {
+    step('Using shared primary Supabase');
+    const env = await ensurePrimarySupabase(repoRoot());
+    creds = primaryCredsFromStatus(env);
+    if (!creds.supabaseUrl || !creds.dbUrl || !creds.serviceRoleKey || !creds.anonKey) {
+      die('primary Supabase credentials are unavailable. Start the primary local stack once with `pnpm dev`, or recreate this worktree with `--db` for an isolated database.');
+    }
+    const sharedSchemaPorts = { ...e.ports, ...SHARED_SUPABASE_PORTS };
+    if (!hasKortixSchema(sharedSchemaPorts)) {
+      die('the shared primary Supabase DB does not have the kortix schema. Run the primary stack once to initialize it, or recreate this worktree with `--db` for an isolated database.');
+    }
+    sub(`${creds.supabaseUrl} · ${creds.dbUrl}`);
   }
   step('Building runtime artifacts');
   if (await ensureRuntimeArtifacts(e.path) !== 0) die('runtime artifact build failed');
-  const creds = slotCredsFromStatus(e.ports, supaStatusEnv(name));
 
   for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'running'; saveRegistry(r); } });
@@ -390,7 +448,7 @@ async function cmdStart(a: Args) {
 
   await freeSlotPorts(e.ports);
 
-  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
+  console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim('shared primary Supabase')}`}`);
   console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
@@ -426,7 +484,8 @@ async function cmdStop(a: Args) {
   if (!e) die(`unknown worktree "${name}"`);
   step(`Stopping "${name}"`);
   for (const port of [e!.ports.web, e!.ports.api, e!.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  sh(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+  if (dbModeOf(e!) === 'isolated') sh(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+  else sub('shared primary Supabase left running');
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'stopped'; saveRegistry(r); } });
   ok(`stopped (data preserved). Restart with ${pc.cyan('pnpm worktree start ' + name)}.`);
 }
@@ -437,11 +496,16 @@ async function cmdNuke(a: Args) {
   const e = reg.slots[name];
   if (!e) die(`unknown worktree "${name}"`);
   const pid = e!.projectId;
-  step(`Nuking "${name}" ${pc.dim('(project ' + pid + ')')}`);
-  for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
-  await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
-  await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+  const dbMode = dbModeOf(e!);
+  step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
+  for (const port of [e!.ports.web, e!.ports.api, e!.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
+  if (dbMode === 'isolated') {
+    await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+    await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
+    await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+  } else {
+    sub('shared primary Supabase left untouched');
+  }
   const root = repoRoot();
   const force = a.flags.force ? ['--force'] : [];
   if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
@@ -462,13 +526,16 @@ function cmdList() {
   const names = Object.keys(reg.slots);
   if (!names.length) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
   const statusColor: Record<string, (s: string) => string> = { running: pc.green, stopped: pc.dim, created: pc.yellow };
-  console.log('\n  ' + pc.dim('NAME'.padEnd(20) + 'SLOT  STATUS    BRANCH'.padEnd(30) + 'WEB    API    DB     STUDIO'));
+  console.log('\n  ' + pc.dim('NAME'.padEnd(20) + 'SLOT  STATUS    DB MODE     BRANCH'.padEnd(42) + 'WEB    API    DB     STUDIO'));
   for (const n of names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot)) {
     const e = reg.slots[n];
     const col = statusColor[e.status] ?? ((s: string) => s);
+    const dbMode = dbModeOf(e);
     console.log('  ' +
-      pc.bold(n.padEnd(20)) + pc.dim(String(e.slot).padEnd(6)) + col(e.status.padEnd(10)) + e.branch.slice(0, 20).padEnd(22) +
-      pc.green(String(e.ports.web).padEnd(7)) + pc.green(String(e.ports.api).padEnd(7)) + String(e.ports.sbDb).padEnd(7) + String(e.ports.sbStudio));
+      pc.bold(n.padEnd(20)) + pc.dim(String(e.slot).padEnd(6)) + col(e.status.padEnd(10)) + dbMode.padEnd(12) + e.branch.slice(0, 20).padEnd(22) +
+      pc.green(String(e.ports.web).padEnd(7)) + pc.green(String(e.ports.api).padEnd(7)) +
+      String(dbMode === 'isolated' ? e.ports.sbDb : SHARED_SUPABASE_PORTS.sbDb).padEnd(7) +
+      String(dbMode === 'isolated' ? e.ports.sbStudio : SHARED_SUPABASE_PORTS.sbStudio));
   }
   console.log('');
 }
@@ -480,17 +547,21 @@ function cmdStatus(a: Args) {
   for (const n of names) {
     const e = reg.slots[n];
     if (!e) { warn(`${n}: unknown`); continue; }
-    const sb = sh(['supabase', '--workdir', supaWorkdir(n), 'status']).ok;
-    console.log(`\n${pc.bold(n)}  ${pc.dim(`(slot ${e.slot} · ${e.status})`)}  ${pc.dim(e.path)}`);
+    const dbMode = dbModeOf(e);
+    const sb = dbMode === 'isolated'
+      ? sh(['supabase', '--workdir', supaWorkdir(n), 'status']).ok
+      : portInUse(SHARED_SUPABASE_PORTS.sbApi).inUse;
+    console.log(`\n${pc.bold(n)}  ${pc.dim(`(slot ${e.slot} · ${e.status} · ${dbMode})`)}  ${pc.dim(e.path)}`);
     console.log(`  web    ${dot(portInUse(e.ports.web).inUse)} :${e.ports.web}    api ${dot(portInUse(e.ports.api).inUse)} :${e.ports.api}`);
-    console.log(`  supa   ${dot(sb)} db :${e.ports.sbDb}  studio :${e.ports.sbStudio}  inbucket :${e.ports.sbInbucket}`);
+    if (dbMode === 'isolated') console.log(`  supa   ${dot(sb)} db :${e.ports.sbDb}  studio :${e.ports.sbStudio}  inbucket :${e.ports.sbInbucket}`);
+    else console.log(`  supa   ${dot(sb)} shared db :${SHARED_SUPABASE_PORTS.sbDb}  studio :${SHARED_SUPABASE_PORTS.sbStudio}  inbucket :${SHARED_SUPABASE_PORTS.sbInbucket}`);
   }
   console.log('');
 }
 
 async function cmdDoctor(a: Args) {
   step('Toolchain');
-  await ensureDeps({ tunnel: true, install: !!a.flags.yes });
+  await ensureDeps({ database: true, isolatedDatabase: true, tunnel: true, install: !!a.flags.yes });
   step('Worktree integrity');
   const reg = loadRegistry();
   const root = repoRoot();
@@ -499,8 +570,11 @@ async function cmdDoctor(a: Args) {
     const issues: string[] = [];
     if (!existsSync(e.path)) issues.push('worktree dir missing');
     else if (!wts.includes(`worktree ${e.path}`)) issues.push('not a registered git worktree');
-    const orphan = sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.projectId}$" | head -1`]).stdout.trim();
-    console.log(`  ${issues.length ? pc.red('✗') : pc.green('✓')} ${n}${issues.length ? ' ' + pc.red(issues.join('; ')) : ''}${orphan ? pc.dim(' (containers present)') : ''}`);
+    const dbMode = dbModeOf(e);
+    const orphan = dbMode === 'isolated'
+      ? sh(['bash', '-lc', `docker ps -aq --filter "name=_${e.projectId}$" | head -1`]).stdout.trim()
+      : '';
+    console.log(`  ${issues.length ? pc.red('✗') : pc.green('✓')} ${n} ${pc.dim('(' + dbMode + ')')}${issues.length ? ' ' + pc.red(issues.join('; ')) : ''}${orphan ? pc.dim(' (containers present)') : ''}`);
   }
   console.log(`\n  ${pc.dim('registry: ' + REGISTRY_PATH)}`);
 }

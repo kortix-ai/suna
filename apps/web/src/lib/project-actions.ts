@@ -85,6 +85,14 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   files: { read: PROJECT_ACTIONS.PROJECT_FILE_READ, write: PROJECT_ACTIONS.PROJECT_FILE_WRITE },
   members: { read: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, write: PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE },
   marketplace: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_GITOPS_PUSH },
+  // LLM gateway sections — visible to any project member; the backend enforces
+  // the specific gateway capability (logs/spend.read, routing.edit, budget.set,
+  // keys.manage) on each mutation route, so visibility gates on project.read.
+  'llm-overview': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  'llm-providers': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  'llm-logs': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  'llm-budgets': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
+  'llm-keys': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   sandbox: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
   dev: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   settings: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },

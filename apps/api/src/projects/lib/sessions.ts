@@ -5,6 +5,7 @@ import { auth, json } from '../../openapi';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
@@ -677,6 +678,9 @@ export async function createProjectSession(input: {
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }
+      // Surface the failure to the originating channel (Slack) so the thread
+      // doesn't sit on a ⏳ until the 30-min GC. No-op for non-channel sessions.
+      notifySessionProvisioningFailed(sessionId, message);
     }
   })();
 

@@ -1,0 +1,29 @@
+# Staging values for the kortix-gateway chart. Runs in the same namespace as
+# kortix-api (`kortix-staging`) and is promoted only from release-candidate code.
+
+image:
+  tag: "staging-latest"
+
+replicas: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+pdb:
+  enabled: true
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+ingress:
+  enabled: true
+  host: gateway-staging.kortix.com
+  # us-west-2 wildcard cert for *.kortix.com.
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755
+  cloudflareProxied: true

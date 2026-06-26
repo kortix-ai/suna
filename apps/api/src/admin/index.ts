@@ -484,6 +484,44 @@ adminApp.openapi(
   },
 );
 
+// ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
+// GET the warm-snapshot toggle. Master switch for the per-project warm-fork
+// (Platinum + Daytona); per-provider sub-gates still apply (daytona warm target,
+// platinum host). Default ON — pure upside (a failed bake degrades to cold).
+adminApp.openapi(
+  createRoute({
+    method: 'get', path: '/api/warm-snapshot-config', tags: ['admin'],
+    summary: 'Get warm snapshot config', ...auth,
+    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const { warmSnapshotSetting } = await import('../platform/services/runtime-settings');
+    return c.json(warmSnapshotSetting());
+  },
+);
+
+// PUT warm-snapshot toggle ({ enabled }). OFF = every session cold-clones its repo.
+adminApp.openapi(
+  createRoute({
+    method: 'put', path: '/api/warm-snapshot-config', tags: ['admin'],
+    summary: 'Set warm snapshot config', ...auth,
+    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
+    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    const value = { enabled: body?.enabled === true };
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { WARM_SNAPSHOT_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
+    await db.insert(platformSettings).values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
+    invalidateRuntimeSettings();
+    await refreshRuntimeSettings();
+    return c.json({ ok: true, ...value });
+  },
+);
+
 // ── Provider failover (one-shot, on session init; DB-backed, not env) ────────
 // GET current failover toggle. When ON, a provider that fails to provision a
 // session at birth hands off once to the next allowed provider. Default OFF.

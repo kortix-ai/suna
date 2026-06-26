@@ -120,7 +120,10 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       resolveGitAuthToken: async () => gitAuthPromise,
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
-      projectWarmSnapshot: readProjectWarmPointer(input.project.metadata)?.name ?? null,
+      projectWarmSnapshot: (() => {
+        const p = readProjectWarmPointer(input.project.metadata);
+        return p ? { name: p.name, provider: p.provider } : null;
+      })(),
       beforeActive: input.beforeActive,
     });
 

@@ -3,7 +3,6 @@
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowUp,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -26,9 +25,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import Loading from '@/components/ui/loading';
 import { Icon } from '@/features/icon/icon';
+import {
+  ComposerChatInput,
+  type ComposerOptions,
+} from '@/features/session/composer-chat-input';
+import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
+import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   getProjectDetail,
@@ -47,7 +51,7 @@ import { HiOutlineViewGrid } from 'react-icons/hi';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
-export interface ProjectHomeSendOptions {
+export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
 }
 
@@ -57,7 +61,11 @@ export function ProjectHome({
   busy,
 }: {
   projectId: string;
-  onSend: (text: string, options?: ProjectHomeSendOptions) => void;
+  onSend: (
+    text: string,
+    files: AttachedFile[] | undefined,
+    options?: ProjectHomeSendOptions,
+  ) => void;
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -69,9 +77,8 @@ export function ProjectHome({
   const name = detail.data?.project?.name ?? '';
   const displayName = name.trim() || 'this project';
 
-  const [text, setText] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],
@@ -87,40 +94,31 @@ export function ProjectHome({
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
-  const resize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, []);
-
-  useEffect(() => {
-    resize();
-  }, [text, resize]);
-
   useEffect(() => {
     if (!pendingPrefill) return;
     consumePrefill(projectId);
-    setText(pendingPrefill);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      const len = pendingPrefill.length;
-      textareaRef.current?.setSelectionRange(len, len);
-    });
+    setPrefill({ text: pendingPrefill, id: Date.now() });
   }, [pendingPrefill, projectId, consumePrefill]);
 
-  const submit = () => {
-    const t = text.trim();
-    if (!t || busy) return;
-    onSend(t, { sandbox_slug: activeSlug });
-  };
+  const handleSend = useCallback(
+    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
+      onSend(text, files, {
+        ...options,
+        sandbox_slug: activeSlug,
+      });
+    },
+    [activeSlug, onSend],
+  );
+
+  const handleCommand = useCallback(
+    (cmd: Command, args: string | undefined, options: ComposerOptions) => {
+      handleSend(`/${cmd.name}${args ? ` ${args}` : ''}`, undefined, options);
+    },
+    [handleSend],
+  );
 
   const applySuggestion = (s: string) => {
-    setText(s);
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      resize();
-    });
+    setPrefill({ text: s, id: Date.now() });
   };
 
   return (
@@ -145,58 +143,30 @@ export function ProjectHome({
       </div>
 
       <div className="relative z-10 shrink-0">
-        <div className="mx-auto mb-4 w-full max-w-3xl space-y-4">
+        <div className="mx-auto mb-4 w-full max-w-[52rem] px-2 sm:px-4">
           <StarterPromptsCarousel onPick={applySuggestion} />
-
-          <div className={cn('bg-card border-border w-full overflow-visible rounded-lg border')}>
-            <div className="px-3.5">
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submit();
-                  }
-                }}
-                placeholder={tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
-                )}
-                autoFocus
-                rows={1}
-                className="placeholder:text-muted-foreground relative max-h-[200px] min-h-[62px] w-full resize-none overflow-y-auto border-none bg-transparent py-3 text-base leading-relaxed outline-none sm:text-sm"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 p-3 pt-1">
-              <div className="flex min-w-0 items-center gap-2">
-                {showSandboxPicker ? (
-                  <SandboxPicker
-                    items={sandboxItems}
-                    activeSlug={activeSlug}
-                    onSelect={setSelectedSlug}
-                  />
-                ) : null}
-              </div>
-              <Button
-                size="icon"
-                onClick={submit}
-                disabled={busy || !text.trim()}
-                aria-label={tI18nHardcoded.raw(
-                  'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria3e2a363b',
-                )}
-                className="rounded-full"
-              >
-                {busy ? (
-                  <Loading />
-                ) : (
-                  <ArrowUp className="text-background size-4.5" strokeWidth={2.5} />
-                )}
-              </Button>
-            </div>
-          </div>
         </div>
+        <ComposerChatInput
+          onSend={handleSend}
+          onCommand={handleCommand}
+          projectId={projectId}
+          isBusy={busy}
+          disabled={busy}
+          autoFocus
+          placeholder={tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrPlaceholder115e6c2d',
+          )}
+          prefill={prefill}
+          toolbarSlot={
+            showSandboxPicker ? (
+              <SandboxPicker
+                items={sandboxItems}
+                activeSlug={activeSlug}
+                onSelect={setSelectedSlug}
+              />
+            ) : null
+          }
+        />
       </div>
     </div>
   );
@@ -352,18 +322,17 @@ function SandboxPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
+        <button
           type="button"
           aria-label={tI18nHardcoded.raw(
             'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
           )}
-          variant="secondary"
-          size="sm"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
         >
-          <ActiveIcon className="size-3.5" />
-          <span className="max-w-[10rem] truncate">{active.name}</span>
-          <span className={cn('size-1.5 rounded-full', activeStateTone)} />
-        </Button>
+          <ActiveIcon className="size-3.5 shrink-0" />
+          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className={cn('size-1.5 shrink-0 rounded-full', activeStateTone)} />
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
         <DropdownMenuLabel>

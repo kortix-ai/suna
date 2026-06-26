@@ -7,17 +7,22 @@ branches, one version number, four artifacts.
 
 ## TL;DR
 
-- **`main`** = DEV. Every push auto-deploys to dev.
-- **`prod`** = PROD. Only advanced by the **Promote** button + reviewed release PR; deploys EKS by GitOps.
+- **`main`** = DEV. Default branch, direct pushes allowed, every push auto-deploys to dev.
+- **`staging`** = PRE-PROD. Advanced by PRs into staging; builds exact staging artifacts and runs heavier e2e.
+- **`prod`** = PROD. Only advanced by the **Promote to Production** button + reviewed release PR; deploys EKS by GitOps.
 - **`VERSION`** file (repo root) = one number for the whole platform.
 - A release = one `vX.Y.Z` GitHub Release bundling **API + Frontend + CLI + Desktop**.
-- **Retag, don't rebuild**: prod ships the exact image bytes tested on dev.
+- **Retag, don't rebuild**: prod ships the exact image bytes deployed and tested on staging.
 
 ```
 PR ─► ci · codeql · secret-scan
  │ merge
  ▼
-main (DEV) ──push──► dev-api.kortix.com (Worker → EKS) + dev.kortix.com (Vercel) + CLI dev-latest
+main (DEV) ──push──► dev-api.kortix.com (Worker → EKS/ECS) + dev.kortix.com (Vercel) + CLI dev-latest
+ │
+ │  PR main→staging, or targeted PR directly into staging
+ ▼
+staging (PRE-PROD) ──push──► staging-api.kortix.com (Worker → EKS/ECS) + staging.kortix.com
  │
  │  "Promote to Production"  (open release/vX.Y.Z PR into prod; nothing publishes yet)
  ▼
@@ -73,12 +78,15 @@ There is no per-component version.
 
 | File              | Trigger                              | Does                                                                 |
 | ----------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| `ci.yml`          | PR → main/prod                       | typecheck · web build · sandbox/cli/desktop smoke                   |
-| `codeql.yml`      | push/PR main+prod, weekly            | SAST                                                                |
-| `secret-scan.yml` | PR → main/prod                       | gitleaks                                                            |
+| `ci.yml`          | PR → main/staging/prod               | typecheck · web build · sandbox/cli/desktop smoke                   |
+| `codeql.yml`      | push/PR main+staging+prod, weekly    | SAST                                                                |
+| `secret-scan.yml` | PR → main/staging/prod               | gitleaks                                                            |
 | `deploy-dev.yml`  | push → `main`                        | build+push dev API/frontend images, run dev DB migrations, bump EKS GitOps values, publish CLI `dev-latest` |
+| `build-staging.yml` | push → `staging`                   | build exact staging API/gateway/frontend images tagged `staging-<sha8>` |
+| `deploy-staging.yml` | build-staging success / manual    | deploy staging API/gateway, wire staging Cloudflare/Vercel, and verify staging runtime config |
+| `qa-staging.yml`  | push → `staging`                     | e2e · visual · a11y · migration report against staging target        |
 | `desktop.yml`     | push → main (`apps/desktop/**`) / dispatch | signed desktop installers → `desktop-dev-latest`              |
-| `promote.yml`     | manual dispatch                      | open a reviewed `release/vX.Y.Z` PR into `prod`; no tag/release/deploy until merge |
+| `promote.yml`     | manual dispatch                      | promote `staging` by default; open a reviewed `release/vX.Y.Z` PR into `prod`; no tag/release/deploy until merge |
 | `deploy-prod.yml` | push → `prod`                        | retag images → `:X.Y.Z`+`:latest`, run prod DB migrations, cut Release, watch EKS GitOps rollout |
 
 ### Path-filtering (deploy-dev)
@@ -113,12 +121,13 @@ best-effort. Desktop can never block or delay a release.
 
 ## How to release (promote)
 
-1. Actions → **Promote to Production** → Run workflow.
-2. Pick a `bump` (patch/minor/major) — or set an explicit `version`.
-3. It freezes `release/vX.Y.Z`, stamps `VERSION` / `RELEASE_NOTES.md` /
+1. Make sure the release candidate is on `staging` via a PR into `staging` (`main` -> `staging` for the full dev candidate, or a targeted branch -> `staging` for a selective release).
+2. Actions → **Promote to Production** → Run workflow.
+3. Pick a `bump` (patch/minor/major) — or set an explicit `version`.
+4. It freezes `release/vX.Y.Z`, stamps `VERSION` / `RELEASE_NOTES.md` /
    `RELEASE_SOURCE_SHA`, bumps prod GitOps values, and opens a PR into `prod`.
-4. A reviewer merges the PR. The push to `prod` triggers `deploy-prod.yml`:
-   - retag dev images → `:X.Y.Z` + `:latest` (no rebuild)
+5. A reviewer merges the PR. The push to `prod` triggers `deploy-prod.yml`:
+   - retag staging images → `:X.Y.Z` + `:latest` (no rebuild)
    - build prod CLI (clean version) → cut **GitHub Release `vX.Y.Z`**
    - run node-pg-migrate against prod before pods roll
    - watch Argo CD roll `kortix-prod` on EKS (api reports the clean version)
@@ -135,8 +144,9 @@ release; `KORTIX_CHANNEL=dev` → `dev-latest` prerelease.
 
 | Env  | Branch | Frontend                | Public API                         |
 | ---- | ------ | ----------------------- | ---------------------------------- |
-| DEV  | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → EKS `kortix-dev` |
-| PROD | `prod` | kortix.com (Vercel)     | api.kortix.com → Worker → EKS `kortix-prod` |
+| DEV | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → Worker → EKS `kortix-dev` |
+| STAGING | `staging` | staging.kortix.com (Vercel) | staging-api.kortix.com → Worker → EKS namespace `kortix-staging` |
+| PROD | `prod` | kortix.com (Vercel) | api.kortix.com → Worker → EKS `kortix-prod` |
 
 AWS: account `935064898258`; dev EKS runs in `us-west-2`, prod EKS in
 `eu-west-2`. Terraform state lives in S3 (`kortix-terraform-state` + DynamoDB
@@ -164,7 +174,7 @@ header on `/v1/health`. ECS stays available as standby; EKS is the primary path.
 
 - **`SANDBOX_VERSION` ≠ app version.** It hashes sandbox snapshots; changing it
   rebuilds every project's image. App version uses `KORTIX_VERSION`.
-- **Retag, never rebuild** between dev and prod — what you tested is what ships.
+- **Retag, never rebuild** between staging and prod — what you tested on staging is what ships.
 - **OIDC role perms**: the EKS deploy roles (`kortix-gha-eks-deploy-dev` /
   `kortix-gha-eks-deploy`) need cluster read/watch access plus contents write
   where the workflow pushes GitOps value changes.

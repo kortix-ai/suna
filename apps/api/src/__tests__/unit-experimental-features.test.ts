@@ -12,6 +12,7 @@ describe('isExperimentalFeatureKey', () => {
   test('accepts known keys, rejects others', () => {
     expect(isExperimentalFeatureKey('apps')).toBe(true);
     expect(isExperimentalFeatureKey('agent_tunnel')).toBe(true);
+    expect(isExperimentalFeatureKey('agentmail_email')).toBe(true);
     expect(isExperimentalFeatureKey('nope')).toBe(false);
     expect(isExperimentalFeatureKey(undefined)).toBe(false);
     expect(isExperimentalFeatureKey(42)).toBe(false);
@@ -38,6 +39,12 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
   test('agent_tunnel respects explicit per-project choice', () => {
     expect(resolveExperimentalFeature({ experimental: { agent_tunnel: true } }, 'agent_tunnel')).toBe(true);
     expect(resolveExperimentalFeature({ experimental: { agent_tunnel: false } }, 'agent_tunnel')).toBe(false);
+  });
+
+  test('agentmail_email is explicit opt-in', () => {
+    expect(resolveExperimentalFeature({}, 'agentmail_email')).toBe(false);
+    expect(resolveExperimentalFeature({ experimental: { agentmail_email: true } }, 'agentmail_email')).toBe(true);
+    expect(resolveExperimentalFeature({ experimental: { agentmail_email: false } }, 'agentmail_email')).toBe(false);
   });
 
   test('null/empty metadata falls back to the operator default (no throw)', () => {

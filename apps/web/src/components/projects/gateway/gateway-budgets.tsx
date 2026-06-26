@@ -42,18 +42,14 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
+// Calm by default, red only when over the cap. The 80% "approaching" warning
+// is carried by the InfoBanner, not by painting the bar amber.
 function meterTone(pct: number): string {
-  if (pct >= 100) return 'bg-destructive';
-  if (pct >= 90) return 'bg-kortix-orange';
-  if (pct >= 75) return 'bg-kortix-yellow';
-  return 'bg-kortix-green';
+  return pct >= 100 ? 'bg-destructive' : 'bg-kortix-blue';
 }
 
 function meterTextTone(pct: number): string {
-  if (pct >= 100) return 'text-destructive';
-  if (pct >= 90) return 'text-kortix-orange';
-  if (pct >= 75) return 'text-kortix-yellow';
-  return 'text-kortix-green';
+  return pct >= 100 ? 'text-destructive' : 'text-foreground';
 }
 
 function Meter({ spent, limit, className }: { spent: number; limit: number; className?: string }) {

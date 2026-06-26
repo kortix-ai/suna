@@ -195,6 +195,18 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
+  // Feature flag for per-Slack-user identity. OFF (default): every Slack message
+  // runs as the account owner (legacy behavior). ON: each sender must link their
+  // own Kortix account via `/kortix login` (a member of the project's account)
+  // and the agent runs AS them; unlinked senders are blocked. `/kortix login`
+  // and the bind endpoint stay available regardless, so users can pre-link
+  // before the flag is flipped on.
+  SLACK_REQUIRE_USER_IDENTITY: optBoolFalse,
+
+  // ── Channels — AgentMail email adapter (optional) ────────────────────────
+  AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
+  AGENTMAIL_API_KEY:           optStr,
+  AGENTMAIL_WEBHOOK_SECRET:    optStr,
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
@@ -208,6 +220,10 @@ const envSchema = z.object({
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
+  // billing error (429/402/403), fall over to THIS managed model (billed as
+  // Kortix credits) so the turn survives instead of erroring. Empty disables.
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT:      optInt(0),
@@ -252,13 +268,13 @@ const envSchema = z.object({
   DAYTONA_WEBHOOK_SECRET:      optStr,
 
   // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
-  // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
+  // The MASTER on/off switch is the DB-backed admin toggle (warm_snapshot,
+  // runtime-settings.ts, default ON) — NOT an env var. When it's on AND
   // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
   // sessions can boot from a snapshot baked with services already running in
   // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
   // The warm snapshot is baked imperatively off a stock base snapshot — the
   // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
-  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   DAYTONA_WARM_TARGET:         optStr,
   DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
   // Pool spawns default to warm snapshots (fast refills, but Daytona caps warm
@@ -316,7 +332,7 @@ const envSchema = z.object({
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
@@ -593,12 +609,19 @@ export const config = {
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
+  SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
+
+  // ─── Channels (AgentMail email) ──────────────────────────────────────────
+  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
+  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
+  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
@@ -625,7 +648,6 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { readFileAsBlob } from '../api/opencode-files';
+import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
@@ -55,13 +56,8 @@ export function useBinaryBlob(filePath: string | null): {
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error: Error) => {
-      // Don't retry permanent failures (not found, access denied)
-      const msg = error.message.toLowerCase();
-      if (msg.includes('404') || msg.includes('403') || msg.includes('not found') || msg.includes('access denied')) return false;
-      return failureCount < 3;
-    },
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
+    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
+    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
   });
 
   const cachedBlob = query.data ?? null;

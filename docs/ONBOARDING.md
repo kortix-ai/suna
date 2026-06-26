@@ -9,6 +9,7 @@ path.
 | Env | Branch | Cluster | Region | API host |
 |---|---|---|---|---|
 | dev | `main` | `kortix-dev-eks` | us-west-2 | dev-api.kortix.com |
+| staging | `staging` | `kortix-dev-eks` namespace `kortix-staging` | us-west-2 | staging-api.kortix.com |
 | prod | `prod` | `kortix-prod-eks` | eu-west-2 | api.kortix.com |
 
 ---
@@ -140,8 +141,11 @@ ApplicationSet (`infra/k8s/argocd/applicationsets/preview.yaml`).
    `infra/k8s/envs/dev/values.yaml`, and Argo rolls dev. Removing the label /
    closing the PR prunes the preview namespace.
 
-That's your first deploy: PR → preview → merge → dev. Promoting to **prod** is a
-separate, reviewed flow — see `docs/runbooks/deployment-procedure.md`.
+That's your first deploy: PR → preview → merge → dev. Production candidates then
+go to **staging** via PR into `staging` (`main` -> `staging` for the full dev
+candidate, or a targeted branch -> `staging` for a selective release).
+Promoting to **prod** is a separate, reviewed flow — see
+`docs/runbooks/deployment-procedure.md`.
 
 ---
 

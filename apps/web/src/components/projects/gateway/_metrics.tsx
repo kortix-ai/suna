@@ -11,10 +11,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
-import { useGatewayOverlayStore } from '@/stores/gateway-overlay-store';
 import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
-
-import { tint } from './_shared';
 
 export const RANGES = [
   { days: 7, label: '7d' },
@@ -22,15 +19,17 @@ export const RANGES = [
   { days: 90, label: '90d' },
 ];
 
+// Monochrome + one accent: kortix-blue carries the signal, neutrals carry the
+// secondary series, red is only ever "errors". No yellow/amber/brown chart ramp.
 export const chartConfig = {
-  cost: { label: 'Spend', color: 'var(--chart-1)' },
-  requests: { label: 'Requests', color: 'var(--chart-2)' },
-  errors: { label: 'Errors', color: 'var(--chart-4)' },
-  input_tokens: { label: 'Input', color: 'var(--chart-3)' },
-  output_tokens: { label: 'Output', color: 'var(--chart-1)' },
-  p50: { label: 'p50', color: 'var(--chart-3)' },
-  p95: { label: 'p95', color: 'var(--chart-2)' },
-  p99: { label: 'p99', color: 'var(--chart-4)' },
+  cost: { label: 'Spend', color: 'var(--kortix-blue)' },
+  requests: { label: 'Requests', color: 'var(--kortix-blue)' },
+  errors: { label: 'Errors', color: 'var(--destructive)' },
+  input_tokens: { label: 'Input', color: 'var(--kortix-blue)' },
+  output_tokens: { label: 'Output', color: 'var(--muted-foreground)' },
+  p50: { label: 'p50', color: 'var(--muted-foreground)' },
+  p95: { label: 'p95', color: 'color-mix(in oklch, var(--kortix-blue) 55%, var(--muted-foreground))' },
+  p99: { label: 'p99', color: 'var(--kortix-blue)' },
 } satisfies ChartConfig;
 
 export function fmtDay(value: string): string {
@@ -50,31 +49,30 @@ export function fmtCompact(n: number): string {
   return n.toLocaleString();
 }
 
-export function useGatewayRange() {
-  const days = useGatewayOverlayStore((s) => s.days);
-  const setDays = useGatewayOverlayStore((s) => s.setDays);
-  return { days, setDays };
-}
-
-export function RangeSelector() {
-  const { days, setDays } = useGatewayRange();
+export function RangeSelector({
+  days,
+  setDays,
+  className,
+}: {
+  days: number;
+  setDays: (days: number) => void;
+  className?: string;
+}) {
   return (
-    <div className="flex items-center justify-end">
-      <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5">
-        {RANGES.map((r) => (
-          <button
-            key={r.days}
-            type="button"
-            onClick={() => setDays(r.days)}
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              days === r.days ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+    <div className={cn('flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5', className)}>
+      {RANGES.map((r) => (
+        <button
+          key={r.days}
+          type="button"
+          onClick={() => setDays(r.days)}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            days === r.days ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {r.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -134,10 +132,7 @@ export function StatCard({
     >
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <div
-          className="flex size-6 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110"
-          style={{ backgroundColor: tint(accent, 12), color: accent }}
-        >
+        <div className="flex size-6 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-transform duration-200 group-hover:scale-110">
           <Icon className="size-3.5" />
         </div>
       </div>

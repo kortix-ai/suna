@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  EMAIL_RESERVED_SLUG,
   extractConnectors,
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
@@ -30,8 +31,11 @@ function parse(body: string) {
 describe('reserved kortix_slack slug', () => {
   test('the reserved set + canonical slug are what the rest of the code keys on', () => {
     expect(SLACK_RESERVED_SLUG).toBe('kortix_slack');
+    expect(EMAIL_RESERVED_SLUG).toBe('kortix_email');
     expect(RESERVED_CONNECTOR_SLUGS.has('slack')).toBe(true);
+    expect(RESERVED_CONNECTOR_SLUGS.has('email')).toBe(true);
     expect(RESERVED_CONNECTOR_SLUGS.has('kortix_slack')).toBe(true);
+    expect(RESERVED_CONNECTOR_SLUGS.has('kortix_email')).toBe(true);
   });
 
   test('a non-channel connector may NOT claim kortix_slack', () => {
@@ -54,6 +58,28 @@ platform = "slack"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({ slug: 'kortix_slack', provider: 'channel', platform: 'slack' });
+  });
+
+  test('the email channel connector itself CAN use kortix_email', () => {
+    const { specs, errors } = parse(`
+[[connectors]]
+slug = "kortix_email"
+provider = "channel"
+platform = "email"
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]).toMatchObject({ slug: 'kortix_email', provider: 'channel', platform: 'email' });
+  });
+
+  test('a non-channel connector may NOT claim kortix_email', () => {
+    const { specs, errors } = parse(`
+[[connectors]]
+slug = "kortix_email"
+provider = "http"
+base_url = "https://example.com"
+`);
+    expect(specs.find((s) => s.slug === 'kortix_email')).toBeUndefined();
+    expect(errors[0]?.error).toMatch(/reserved/i);
   });
 
   test('a user `slack` connector still parses (kept working, just hidden from the list)', () => {
@@ -160,6 +186,28 @@ describe('withChannelDeclaration', () => {
       { slug: 'kortix_slack', provider: 'channel', platform: 'slack' },
     ]);
   });
+
+  test('adds the reserved email channel declaration with display name', () => {
+    const { connectors, changed } = withChannelDeclaration([], 'email', EMAIL_RESERVED_SLUG, 'Email');
+    expect(changed).toBe(true);
+    expect(connectors).toEqual([
+      { slug: 'kortix_email', provider: 'channel', platform: 'email', name: 'Email' },
+    ]);
+  });
+
+  test('does not collapse named email inbox profiles onto the reserved slug', () => {
+    const profiles = [
+      { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
+      { slug: 'email_sales', provider: 'channel', platform: 'email', name: 'Sales email' },
+    ];
+    const { connectors, changed } = withChannelDeclaration(profiles, 'email', EMAIL_RESERVED_SLUG, 'Email');
+    expect(changed).toBe(true);
+    expect(connectors).toEqual([
+      { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
+      { slug: 'email_sales', provider: 'channel', platform: 'email', name: 'Sales email' },
+      { slug: 'kortix_email', provider: 'channel', platform: 'email', name: 'Email' },
+    ]);
+  });
 });
 
 describe('withoutChannelDeclaration', () => {
@@ -180,5 +228,29 @@ describe('withoutChannelDeclaration', () => {
       SLACK_RESERVED_SLUG,
     );
     expect(changed).toBe(false);
+  });
+
+  test('removes the email channel declaration and keeps unrelated connectors', () => {
+    const list = [
+      { slug: 'gmail', provider: 'pipedream' },
+      { slug: 'kortix_email', provider: 'channel', platform: 'email' },
+    ];
+    const { connectors, changed } = withoutChannelDeclaration(list, 'email', EMAIL_RESERVED_SLUG);
+    expect(changed).toBe(true);
+    expect(connectors).toEqual([{ slug: 'gmail', provider: 'pipedream' }]);
+  });
+
+  test('removes only the reserved email channel declaration and keeps named inbox profiles', () => {
+    const list = [
+      { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
+      { slug: 'kortix_email', provider: 'channel', platform: 'email', name: 'Email' },
+      { slug: 'email_sales', provider: 'channel', platform: 'email', name: 'Sales email' },
+    ];
+    const { connectors, changed } = withoutChannelDeclaration(list, 'email', EMAIL_RESERVED_SLUG);
+    expect(changed).toBe(true);
+    expect(connectors).toEqual([
+      { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
+      { slug: 'email_sales', provider: 'channel', platform: 'email', name: 'Sales email' },
+    ]);
   });
 });

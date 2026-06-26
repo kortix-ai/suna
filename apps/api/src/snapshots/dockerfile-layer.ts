@@ -107,6 +107,13 @@ export interface BuildLayeredDockerfileOpts {
    * path. Optional — omit to skip the instance warm-up.
    */
   opencodeConfigPath?: string;
+  /**
+   * Path (in the build context) to the baked full gateway model catalog JSON.
+   * COPY'd into the image so the no-restart warm seed — which has no sandbox
+   * token / projectId to fetch the catalog at PARK — gets the full model picker
+   * instead of the daemon's minimal fallback. Optional; omit to skip.
+   */
+  catalogPath?: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -120,6 +127,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     slackCliPath,
     executorSdkPath,
     opencodeConfigPath,
+    catalogPath,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
@@ -289,6 +297,9 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    // Full gateway model catalog, baked at build so the token-less no-restart
+    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
+    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).
