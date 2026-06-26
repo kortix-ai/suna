@@ -13,6 +13,15 @@ import {
 	createOpencodeClient,
 	type OpencodeClient,
 } from "@opencode-ai/sdk/v2/client";
+
+// Re-export the ENTIRE opencode v2 type surface through the SDK, so a host app
+// imports `Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, … from
+// `@kortix/sdk/opencode-client` and NEVER from `@opencode-ai/sdk` directly. This
+// also pins everyone to the SDK's single opencode-sdk version (kills the
+// 1.17.9-vs-1.14.28 type skew). The SDK is the sole owner of that dependency.
+export type * from "@opencode-ai/sdk/v2/client";
+export type { OpencodeClient };
+
 import { authenticatedFetch } from "../platform/auth";
 import { platformConfig } from "../platform/config";
 import { getActiveOpenCodeUrl, registerClientResetter } from "../state/server-store";

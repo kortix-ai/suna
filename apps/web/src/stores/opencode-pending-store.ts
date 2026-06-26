@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import type { PermissionRequest, QuestionRequest } from '@opencode-ai/sdk/v2/client';
+import type { PermissionRequest, QuestionRequest } from '@kortix/sdk/opencode-client';
 
 interface OpenCodePendingState {
   permissions: Record<string, PermissionRequest>;

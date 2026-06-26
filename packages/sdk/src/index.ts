@@ -28,3 +28,7 @@ export {
  * opencode surface — so a host app imports ONLY from `@kortix/sdk`.
  */
 export { createKortix, type Kortix } from './kortix';
+
+/** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
+export { files } from './files/client';
+export type * from './files/types';

@@ -37,7 +37,8 @@
     "./api-client": "./src/platform/api-client.ts",
     "./projects-client": "./src/platform/projects-client/index.ts",
     "./server-store": "./src/state/server-store.ts",
-    "./sync-store": "./src/state/sync-store.ts"
+    "./sync-store": "./src/state/sync-store.ts",
+    "./files": "./src/files/client.ts"
   },
   "files": ["dist", "src", "README.md"],
   "scripts": {

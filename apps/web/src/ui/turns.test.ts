@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AssistantMessage, StepFinishPart } from '@opencode-ai/sdk/v2/client';
+import type { AssistantMessage, StepFinishPart } from '@kortix/sdk/opencode-client';
 
 import {
   COST_MARKUP,

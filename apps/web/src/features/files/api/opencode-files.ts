@@ -2,7 +2,7 @@
  * OpenCode File API — filesystem access via the SDK client + kortix-master.
  *
  * Read endpoints (list, read, status, find) go through the upstream
- * `@opencode-ai/sdk` client singleton which proxies to OpenCode.
+ * `@kortix/sdk/opencode-client` client singleton which proxies to OpenCode.
  *
  * Write endpoints (upload, delete, mkdir, rename) and binary downloads
  * use `authenticatedFetch()` to hit kortix-master's /file/* routes
