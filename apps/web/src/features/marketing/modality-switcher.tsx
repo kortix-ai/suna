@@ -4,7 +4,6 @@ import { CliDemo } from '@/components/home/cli-demo';
 import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
 import { Reveal } from '@/components/home/reveal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
@@ -20,7 +19,9 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-const sectionShell = 'mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0';
+// Flows straight out of the hero: no top padding / heading, so the surface
+// tabs sit tight under the hero CTAs as one continuous top-of-page block.
+const sectionShell = 'mx-auto max-w-6xl px-6 pt-2 pb-16 sm:pb-24 lg:px-0';
 
 const MARKO_AVATAR = 'https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png';
 
@@ -359,21 +360,6 @@ export function ModalitySwitcher() {
   return (
     <section id="surfaces" className={sectionShell}>
       <Reveal>
-        <div className="mb-10 max-w-2xl space-y-3">
-          <Badge variant="kortix" className="rounded">
-            Where it works
-          </Badge>
-          <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-            Meet Kortix where you already work.
-          </h2>
-          <p className="text-muted-foreground text-base leading-relaxed">
-            The same agents, the same repo — reachable from the web/desktop app, Slack, Teams, your
-            phone, or the CLI. Ask in a message; get the work back.
-          </p>
-        </div>
-      </Reveal>
-
-      <Reveal delay={0.05}>
         <Tabs defaultValue="webdesktop" className="gap-6">
           <div className="-mx-6 overflow-x-auto px-6 lg:mx-0 lg:px-0">
             <TabsList variant="secondary" className="h-auto w-max gap-1 rounded-full p-1">
