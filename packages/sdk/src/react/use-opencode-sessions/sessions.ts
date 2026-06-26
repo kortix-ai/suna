@@ -8,7 +8,7 @@ import { useOpenCodeCompactionStore } from '../../state/opencode-compaction-stor
 import { useServerStore } from '../../state/server-store';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_SESSIONS } from './shared';
+import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
 
 // ============================================================================
 // Session Hooks
@@ -53,6 +53,7 @@ export function useOpenCodeSessions() {
 export function useOpenCodeSession(sessionId: string) {
   const queryClient = useQueryClient();
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery<Session>({
     queryKey: opencodeKeys.session(sessionId),
     queryFn: async () => {
@@ -60,7 +61,7 @@ export function useOpenCodeSession(sessionId: string) {
       const result = await client.session.get({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
@@ -187,6 +188,7 @@ export function useUpdateOpenCodeSession() {
 
 export function useOpenCodeSessionDiff(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-diff', sessionId],
     queryFn: async () => {
@@ -194,13 +196,14 @@ export function useOpenCodeSessionDiff(sessionId: string) {
       const result = await client.session.diff({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
   });
 }
 
 export function useOpenCodeSessionTodo(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-todo', sessionId],
     queryFn: async () => {
@@ -209,7 +212,7 @@ export function useOpenCodeSessionTodo(sessionId: string) {
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
   });
 }

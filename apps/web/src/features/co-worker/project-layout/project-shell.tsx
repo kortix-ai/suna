@@ -1,15 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { useSidebar } from '@/components/ui/sidebar';
-import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
 import { parseSidebarStateCookie } from '@/features/co-worker/project-layout/sidebar-cookie';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
@@ -17,15 +15,12 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useIsMobile } from '@/hooks/use-mobile';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useIsSwitchingProject } from '@/stores/project-switch-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 const CommandPalette = lazy(() =>
   import('@/components/command-palette').then((mod) => ({
@@ -117,21 +112,11 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const params = useParams<{ sessionId?: string }>();
   const activeSessionId = params?.sessionId ?? null;
 
-  const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
-  const openTabIds = useMemo(() => tabsByProject[projectId] ?? [], [tabsByProject, projectId]);
-  const isMobile = useIsMobile();
-  const disableTabSelector = useUserPreferencesStore(
-    (s) => s.preferences.disableTabSelector ?? false,
-  );
 
   useLayoutEffect(() => {
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
-
-  const hasOpenTabs = openTabIds.length > 0;
-  const showProjectHeader = !isMobile ? hasOpenTabs : hasOpenTabs || activeSessionId !== null;
-  const isSwitchingProject = useIsSwitchingProject();
 
   if (authLoading || !user) {
     return <div className="bg-background min-h-screen" />;
@@ -152,22 +137,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             <CommandPalette />
           </Suspense>
 
-          <AnimatePresence initial={false}>
-            {showProjectHeader ? (
-              <motion.div
-                key="project-tab-bar"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <ProjectTopBar projectId={projectId} hideTabSelector={disableTabSelector} />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          <ProjectSheelLayout showProjectHeader={showProjectHeader}>{children}</ProjectSheelLayout>
+          <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>
 
         <CustomizeOverlay projectId={projectId} />
@@ -180,13 +150,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   );
 }
 
-const ProjectSheelLayout = ({
-  showProjectHeader,
-  children,
-}: {
-  showProjectHeader: boolean;
-  children: React.ReactNode;
-}) => {
+const ProjectSheelLayout = ({ children }: { children: React.ReactNode }) => {
   const { state } = useSidebar();
   const isExpanded = state === 'expanded';
   return (
@@ -194,9 +158,6 @@ const ProjectSheelLayout = ({
       className={cn(
         'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
         !isExpanded && 'ml-0.5',
-        showProjectHeader
-          ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none'
-          : '',
       )}
     >
       {children}

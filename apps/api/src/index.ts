@@ -49,7 +49,6 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
-import { API_INSTANCE, API_STARTED_AT } from './shared/instance';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -334,6 +333,11 @@ const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 // the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
 // Lets the team verify precisely which code is live. 'unknown' for local dev.
 const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+// When this process booted — confirms a deploy actually rolled fresh pods.
+const STARTED_AT = new Date().toISOString();
+// Which replica answered (pod name in k8s, task/container id in ECS).
+const API_INSTANCE = process.env.HOSTNAME || 'unknown';
+
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
 mountOpenApiDocs(app, API_VERSION);
@@ -373,7 +377,7 @@ const healthHandler = (c: any) =>
     commit: API_COMMIT,
     environment: config.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
-    started_at: API_STARTED_AT,
+    started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
     // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
     // the container's memory limit, without needing metrics-server/dashboards.
@@ -676,11 +680,9 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp } = await import('./channels');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
-app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — raw AgentMail events
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
@@ -870,6 +872,15 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
+  // toggles (warm_snapshot / warm_pool / provider_fallback) are honored from
+  // request #1. Without this a fresh pod serves the cold-cache defaults for the
+  // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
+  // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
+  // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
+  await import('./platform/services/runtime-settings')
+    .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
@@ -1008,12 +1019,10 @@ export default {
       server.timeout(req, 0);
     }
 
-    // LLM chat completions stream SSE — both the in-API /v1/llm pipeline and the
-    // /v1/llm-gateway reverse proxy to the standalone pod. Let the gateway's own
-    // keep-alive / upstream timeout govern them instead of Bun closing the client
-    // socket at idleTimeout with an empty reply. (startsWith('/v1/llm') covers
-    // both /v1/llm and /v1/llm-gateway.)
-    if (url.pathname.startsWith('/v1/llm')) {
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
       server.timeout(req, 0);
     }
 
@@ -1139,7 +1148,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
+        tunnelWsHandlers.onClose(ws.data.tunnelId);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

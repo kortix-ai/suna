@@ -7,78 +7,52 @@ import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
+  getProjectDetail,
   getProjectLlmCatalog,
-  type ProjectLlmCatalogResponse,
+  listProjectSecrets,
 } from '../../platform/projects-client';
+import {
+  filterToGatewayProviders,
+  filterToNativeProviders,
+  GATEWAY_PROVIDER_IDS,
+  LLM_PROVIDER_CREDENTIALS,
+  mergeProjectSecretConnectedProviders,
+  normalizeProviderList,
+  projectLlmCatalogToProviderList,
+  providerListHasModels,
+} from '../provider-selection';
 
 // ============================================================================
 // Provider Hooks
 // ============================================================================
 
-/**
- * True when a provider-list response actually carries usable models — i.e. at
- * least one CONNECTED provider that exposes ≥1 model. A response failing this
- * is a transient boot state, not a real answer (see useOpenCodeProviders).
- */
-function providerListHasModels(providers: ProviderListResponse | undefined): boolean {
-  const all = Array.isArray(providers?.all) ? providers!.all : [];
-  const connected = Array.isArray(providers?.connected) ? providers!.connected : [];
-  if (connected.length === 0) return false;
-  return all.some(
-    (p) =>
-      connected.includes(p.id) &&
-      p.models &&
-      Object.keys(p.models).length > 0,
-  );
-}
-
-// Every LLM call must go through the Kortix gateway, which opencode exposes as
-// the single `kortix` provider (Codex included, as `codex/<id>` models). Any
-// OTHER provider opencode reports is a NATIVE one (a leaked `anthropic`/`openai`
-// key) that talks to the provider directly and bypasses the gateway. Drop them
-// HERE, at the source, so they never reach the cache or any consumer. `opencode`
-// (Zen) is the deliberate exception: its free models route natively too, but
-// that's the point — they're free and never touch gateway billing.
-export const GATEWAY_PROVIDER_IDS = new Set(['kortix', 'opencode']);
-
-function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
-  const all = Array.isArray(providers.all) ? providers.all : [];
-  const connected = Array.isArray(providers.connected) ? providers.connected : [];
-  return {
-    ...providers,
-    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
-  };
-}
-
-function projectLlmCatalogToProviderList(
-  catalog: ProjectLlmCatalogResponse,
-): ProviderListResponse {
-  const models = catalog.models ?? {};
-  return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
-    connected: ['kortix'],
-    all: [{
-      id: 'kortix',
-      name: 'Kortix',
-      source: 'gateway',
-      models,
-    }],
-  } as unknown as ProviderListResponse;
-}
+export { GATEWAY_PROVIDER_IDS };
 
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const projectGatewayEnabled =
+    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
+  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
   // BYOK makes the connected model set project-specific (a provider connected
   // in one project must NOT leak into another, nor linger after removal), so
   // the persisted placeholder is scoped per project — not the old global scope.
-  const cacheScope = projectId ? `proj:${projectId}` : CACHE_SCOPE_GLOBAL;
+  const cacheScope = projectId
+    ? `proj:${projectId}:${projectGatewayEnabled ? 'gateway' : 'native'}`
+    : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
-    queryKey: projectId ? ['project-llm-catalog', projectId] : opencodeKeys.providers(),
+    queryKey: projectId
+      ? ['project-providers', projectId, projectGatewayEnabled ? 'gateway' : 'native']
+      : opencodeKeys.providers(),
     queryFn: async () => {
-      if (projectId) {
+      if (projectId && projectGatewayEnabled) {
         const catalog = await getProjectLlmCatalog(projectId);
         const providers = projectLlmCatalogToProviderList(catalog);
         setLSCache(LS_PROVIDERS, providers, cacheScope);
@@ -86,7 +60,18 @@ export function useOpenCodeProviders() {
       }
       const client = getClient();
       const result = await client.provider.list();
-      const providers = filterToGatewayProviders(unwrap(result));
+      let rawProviders = normalizeProviderList(unwrap(result));
+      if (projectId) {
+        const secrets = await listProjectSecrets(projectId);
+        const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
+        const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
+        rawProviders = mergeProjectSecretConnectedProviders(
+          rawProviders,
+          secretNames,
+          LLM_PROVIDER_CREDENTIALS,
+        );
+      }
+      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
@@ -115,11 +100,20 @@ export function useOpenCodeProviders() {
     placeholderData: () => {
       const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, cacheScope);
       if (!providerListHasModels(cached)) return undefined;
-      // Old caches may have been persisted before the source filter — clean them
-      // on read so a poisoned cache never paints a native provider.
-      return filterToGatewayProviders(cached as ProviderListResponse);
+      // Old gateway caches may have been persisted before the source filter —
+      // clean them on read, but native-mode projects must see the runtime's
+      // actual provider list for v0.9.68/backward-compatible fallback.
+      if (projectGatewayEnabled) {
+        const gatewayProviders = filterToGatewayProviders(cached as ProviderListResponse);
+        return providerListHasModels(gatewayProviders) ? gatewayProviders : undefined;
+      }
+      if (projectId && !projectGatewayEnabled) {
+        const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
+        return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
+      }
+      return cached;
     },
-    enabled: projectId ? true : runtimeReady,
+    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep

@@ -196,11 +196,11 @@ describe('buildOpencodeConfigContent — gateway is the sole LLM path (enabled_p
     expect(config.enabled_providers).toEqual(['kortix'])
   })
 
-  test('keeps providers a connected Codex/OpenCode subscription declares in auth.json', async () => {
+  test('ignores connected Codex/OpenCode subscription providers while gateway is active', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const authJson = JSON.stringify({ openai: { type: 'oauth', access: 'x' }, opencode: { key: 'y' } })
     const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, CODEX_AUTH_JSON: authJson }))!)
-    expect(new Set(config.enabled_providers)).toEqual(new Set(['kortix', 'openai', 'opencode']))
+    expect(config.enabled_providers).toEqual(['kortix'])
   })
 
   test('ignores malformed auth.json and still locks to kortix', async () => {

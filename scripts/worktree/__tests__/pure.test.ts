@@ -5,10 +5,13 @@ import {
   STRIDE,
   apiLaunchEnv,
   computePorts,
+  dbModeOf,
   gatewayLaunchEnv,
   lowestFreeSlot,
+  primaryCredsFromStatus,
   rewriteConfigToml,
   sanitizeName,
+  SHARED_SUPABASE_PORTS,
   slotCredsFromStatus,
   webLaunchEnv,
   type Ports,
@@ -73,6 +76,16 @@ describe('lowestFreeSlot', () => {
   });
 });
 
+describe('dbModeOf', () => {
+  test('defaults old registry entries to isolated for backward compatibility', () => {
+    expect(dbModeOf({})).toBe('isolated');
+  });
+
+  test('preserves explicit shared mode for new default worktrees', () => {
+    expect(dbModeOf({ dbMode: 'shared' })).toBe('shared');
+  });
+});
+
 describe('rewriteConfigToml', () => {
   const toml = [
     'project_id = "kortix-local"',
@@ -131,6 +144,12 @@ describe('launch envs', () => {
     const env = webLaunchEnv(ports, creds);
     expect(env.WEB_PORT).toBe(String(ports.web));
     expect(env.KORTIX_API_PROXY_TARGET).toBe(`http://localhost:${ports.api}`);
+  });
+
+  test('shared primary Supabase creds use standard local ports when status is unavailable', () => {
+    const creds = primaryCredsFromStatus({});
+    expect(creds.dbUrl).toContain(`127.0.0.1:${SHARED_SUPABASE_PORTS.sbDb}`);
+    expect(creds.supabaseUrl).toBe(`http://127.0.0.1:${SHARED_SUPABASE_PORTS.sbApi}`);
   });
 
   test('no launch-env value is ever the string "undefined" (a missing port stringifies to "undefined")', () => {

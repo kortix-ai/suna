@@ -45,7 +45,9 @@ import {
   updateProject,
   type ExperimentalFeatureView,
   type KortixProject,
+  type ProjectDetail,
 } from '@/lib/projects-client';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 
 export function SettingsView({ projectId }: { projectId: string }) {
   return (
@@ -371,10 +373,17 @@ function ExperimentalFeatureRow({
     mutationFn: (next: boolean) => updateExperimentalFeature(projectId, feature.key, next),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', projectId], updated);
+      queryClient.setQueryData<ProjectDetail | undefined>(
+        ['project-detail', projectId],
+        (current) => (current ? { ...current, project: updated } : current),
+      );
       // Sidebar shortcuts gate off these same values via a separate
       // 'project-detail' query — refresh so surfaces appear/disappear.
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      if (feature.key === 'llm_gateway') {
+        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
+      }
     },
     onError: (error: Error) => toast.error(error.message || `Failed to update ${feature.name}`),
   });

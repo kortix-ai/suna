@@ -27,3 +27,4 @@ export * from './use-session-prefetch';
 export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
 export * from './use-visible-agents';
+export * from './provider-refresh';

@@ -32,7 +32,11 @@ import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
-import { useOpenCodeSessions, opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
+import {
+  canQueryOpenCodeSession,
+  opencodeKeys,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { useServerStore } from '@/stores/server-store';
 import { childMapByParent } from '@/ui';
 import { getClient } from '@/lib/opencode-sdk';
@@ -678,6 +682,7 @@ export function TabBar() {
     for (const id of tabOrder) {
       const tab = tabs[id];
       if (tab?.type !== 'session' || id === activeTabId) continue;
+      if (!canQueryOpenCodeSession(id)) continue;
       queryClient.prefetchQuery({
         queryKey: opencodeKeys.session(id),
         queryFn: async () => {

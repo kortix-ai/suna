@@ -374,7 +374,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
       const queryContext = url.searchParams.get('__kortix_user_context');
       expect(queryContext).toBeTruthy();
       expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
-      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext);
+      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
     }
   });
 });

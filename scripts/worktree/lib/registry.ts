@@ -6,6 +6,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Ports } from './ports';
 
+export type DbMode = 'shared' | 'isolated';
+
 export const KORTIX_HOME = process.env.KORTIX_HOME || join(homedir(), '.kortix');
 export const WT_HOME = join(KORTIX_HOME, 'worktrees');
 export const REGISTRY_PATH = join(WT_HOME, 'registry.json');
@@ -17,6 +19,14 @@ export interface SlotEntry {
   path: string;
   branch: string;
   ports: Ports;
+  /**
+   * shared: use the primary checkout's standard local Supabase project.
+   * isolated: provision this worktree's own Supabase project/containers/volumes.
+   *
+   * Optional for backward compatibility with registry entries created before
+   * the flag existed; those entries were always isolated.
+   */
+  dbMode?: DbMode;
   createdAt: string;
   status: 'created' | 'running' | 'stopped';
 }
@@ -83,4 +93,8 @@ export function pnpmStore(name: string): string { return join(slotDir(name), 'pn
 
 export function writeMarker(worktreePath: string, entry: SlotEntry) {
   writeFileSync(join(worktreePath, '.kortix-worktree.json'), JSON.stringify(entry, null, 2));
+}
+
+export function dbModeOf(entry: Pick<SlotEntry, 'dbMode'>): DbMode {
+  return entry.dbMode ?? 'isolated';
 }
