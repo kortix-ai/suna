@@ -24,6 +24,9 @@ export type ServiceAccount = {
   description: string | null;
   publicPrefix: string;
   status: 'active' | 'disabled';
+  /** Set for an auto-provisioned agent identity (system-managed, not a
+   *  human bearer SA). Null for a manually-created service account. */
+  agentName: string | null;
   lastUsedAt: Date | null;
   expiresAt: Date | null;
   createdBy: string | null;
@@ -45,6 +48,7 @@ function mapRow(r: typeof serviceAccounts.$inferSelect): ServiceAccount {
     description: r.description,
     publicPrefix: r.publicPrefix,
     status: r.status as 'active' | 'disabled',
+    agentName: r.agentName,
     lastUsedAt: r.lastUsedAt,
     expiresAt: r.expiresAt,
     createdBy: r.createdBy,

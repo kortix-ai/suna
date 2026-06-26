@@ -1,5 +1,4 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
-import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds } from '../../snapshots/builder';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
@@ -9,7 +8,7 @@ import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from 
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
-import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
@@ -573,9 +572,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: rebuilding snapshots/templates re-provisions infra. A
-  // scoped agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: { slug?: unknown; sandbox_slug?: unknown } = {};
   try {
@@ -636,9 +636,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: rebuilding snapshots/templates re-provisions infra. A
-  // scoped agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
@@ -764,9 +765,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: rebuilding snapshots/templates re-provisions infra. A
-  // scoped agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
@@ -845,9 +847,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: rebuilding snapshots/templates re-provisions infra. A
-  // scoped agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
@@ -900,9 +903,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: rebuilding snapshots/templates re-provisions infra. A
-  // scoped agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);

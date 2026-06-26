@@ -129,6 +129,13 @@ type ResolvedActorV2 = {
    *  identity (service_accounts row) whose ONLY authority is its own iam_policies
    *  (principal_type='token') — no built-in role, no membership baseline. */
   kind: 'member' | 'service_account';
+  /** For a service account: does it have ANY policy binding (even to a
+   *  zero-action role)? This is the standing-identity activation signal — an
+   *  admin "activates" an agent by binding it to a role. Distinct from
+   *  customActions (empty both for "unbound" AND "bound to an empty role"), so
+   *  an admin CAN pin an agent to deny-by-default by binding a minimal role.
+   *  Always false for members (they don't use this path). */
+  activated: boolean;
   isSuperAdmin: boolean;
   accountRole: AccountRole | null;
   groupIds: string[];
@@ -203,6 +210,7 @@ async function resolveActorV2Uncached(
   if (member) {
     return {
       kind: 'member',
+      activated: false, // n/a for members
       isSuperAdmin: member.isSuperAdmin,
       accountRole: (member.accountRole as AccountRole | null) ?? null,
       groupIds: groups.map((g) => g.groupId),
@@ -228,8 +236,24 @@ async function resolveActorV2Uncached(
     )
     .limit(1);
   if (saRows[0]) {
+    // Activation = the SA has ANY policy binding (even to a zero-action role).
+    // This is what lets the agent-session opt-in switch flip ON, and lets an
+    // admin pin an agent to deny-by-default (bind a minimal role) vs. leaving it
+    // unmanaged (no binding → the session falls back to the launching user).
+    const bindingRows = await db
+      .select({ id: iamPolicies.policyId })
+      .from(iamPolicies)
+      .where(
+        and(
+          eq(iamPolicies.principalType, 'token'),
+          eq(iamPolicies.principalId, userId),
+          eq(iamPolicies.accountId, accountId),
+        ),
+      )
+      .limit(1);
     return {
       kind: 'service_account',
+      activated: bindingRows.length > 0,
       isSuperAdmin: false,
       accountRole: null,
       groupIds: [],
@@ -445,10 +469,13 @@ async function resolveActingActor(
 ): Promise<{ actor: ResolvedActorV2 | null; principalId: string }> {
   if (binding?.serviceAccountId) {
     const sa = await resolveActorV2(binding.serviceAccountId, accountId);
-    if (sa && sa.kind === 'service_account' && sa.customActions.length > 0) {
+    if (sa && sa.kind === 'service_account' && sa.activated) {
+      // Activated (has a role binding) → authorize AS the SA. An empty role here
+      // correctly DENIES (deny-by-default), which is how an admin locks an agent
+      // down — distinct from "unbound", which falls back below.
       return { actor: sa, principalId: binding.serviceAccountId };
     }
-    // Agent SA not activated (no role) or unresolved → authorize as the launcher.
+    // Unmanaged agent SA (no binding) or unresolved → authorize as the launcher.
     return { actor: await resolveActorV2(userId, accountId), principalId: userId };
   }
   return { actor: await resolveActorV2(userId, accountId), principalId: userId };

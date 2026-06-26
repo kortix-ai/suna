@@ -674,14 +674,27 @@ async function parsePolicyInput(
     const [sa] = await db
       .select({ id: serviceAccounts.serviceAccountId })
       .from(serviceAccounts)
-      .where(and(eq(serviceAccounts.serviceAccountId, principalId), eq(serviceAccounts.accountId, accountId)))
+      .where(
+        and(
+          eq(serviceAccounts.serviceAccountId, principalId),
+          eq(serviceAccounts.accountId, accountId),
+          eq(serviceAccounts.status, 'active'),
+        ),
+      )
       .limit(1);
-    if (!sa) return { ok: false, status: 404, error: 'principalId does not match a service account in this account' };
+    if (!sa) return { ok: false, status: 404, error: 'principalId does not match an active service account in this account' };
   }
 
   const scopeType = String(body.scopeType ?? '');
   if (!['account', 'project'].includes(scopeType)) {
     return { ok: false, status: 400, error: 'scopeType must be account or project' };
+  }
+  // An agent / service-account identity is project-bound by nature. An
+  // ACCOUNT-scoped role on it would grant account-wide powers the per-session
+  // agent-grant fold does NOT narrow (the fold only gates project scope) — a
+  // standing-identity escalation surface. Keep token principals project-scoped.
+  if (principalType === 'token' && scopeType === 'account') {
+    return { ok: false, status: 400, error: 'service-account (agent) policies must be project-scoped' };
   }
   const scopeId = typeof body.scopeId === 'string' && body.scopeId ? body.scopeId : null;
   if (scopeType === 'project' && !scopeId) {

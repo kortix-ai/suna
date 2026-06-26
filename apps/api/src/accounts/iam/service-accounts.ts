@@ -141,6 +141,11 @@ iamRouter.openapi(
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
+  // Agent identities are system-managed (governed via the Roles UI). Disabling
+  // one here would silently break that agent's sessions; refuse.
+  if (before.agentName) {
+    return c.json({ error: 'Agent identities are managed via Roles, not here' }, 409);
+  }
   const ok = await disableServiceAccount({
     accountId,
     serviceAccountId: saId,
@@ -186,6 +191,11 @@ iamRouter.openapi(
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
+  // Agent identities are system-managed; deleting one CASCADE-kills its live
+  // sessions. Refuse here — they're governed via the Roles UI.
+  if (before.agentName) {
+    return c.json({ error: 'Agent identities are managed via Roles, not here' }, 409);
+  }
   await deleteServiceAccount(accountId, saId);
   // Same immediate-revoke bust as disable (a deleted SA must stop authorizing now,
   // not after the 15s cache TTL).

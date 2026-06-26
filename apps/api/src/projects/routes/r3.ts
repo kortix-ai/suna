@@ -1,6 +1,6 @@
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayUseEnv, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
+import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
@@ -40,9 +40,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Per-agent gate: building a sandbox template provisions infra. A scoped
-  // agent token must hold project.customize.write (no-op for humans/PATs).
-  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Capability gate: building a sandbox template provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);
@@ -708,9 +709,15 @@ projectsApp.openapi(
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
     }
   }
-  // A shared credential needs manage; a private (owner-only) one just needs read.
-  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  // A shared credential is a project SECRET WRITE (the device flow persists it
+  // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
+  // withhold it and the agent-grant fold applies — closing the gap where the
+  // flow wrote a shared credential behind only loadProjectForUser('read'). A
+  // private (owner-only) credential is the member's own, so read still suffices.
+  // The poll step is reachable only with the project-key-encrypted flow handle
+  // minted here, so gating start transitively protects the write on poll.
+  if (sharing?.mode !== 'private') {
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
   // Request a device code straight from OpenAI — a couple HTTPS calls, no
