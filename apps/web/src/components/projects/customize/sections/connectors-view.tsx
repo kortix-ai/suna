@@ -124,6 +124,7 @@ import {
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { appSearchQueryFromSlug, pickAppIconBySlug } from './pipedream-app-icon';
 
 const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
   pipedream: Zap,
@@ -650,11 +651,11 @@ function ConnectorAppIcon({
   const enabled = connector.provider === 'pipedream' && !!projectId && !!connector.slug;
   const appQuery = useQuery({
     queryKey: ['pipedream-app-icon', projectId, connector.slug],
-    queryFn: () => listPipedreamApps(projectId, connector.slug),
+    queryFn: () => listPipedreamApps(projectId, appSearchQueryFromSlug(connector.slug)),
     enabled,
     staleTime: 24 * 60 * 60 * 1000,
   });
-  const imgSrc = appQuery.data?.apps.find((a) => a.slug === connector.slug)?.imgSrc ?? null;
+  const imgSrc = pickAppIconBySlug(appQuery.data?.apps, connector.slug);
 
   if (enabled && imgSrc) {
     return (
