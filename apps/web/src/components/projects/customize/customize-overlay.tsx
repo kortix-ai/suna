@@ -153,19 +153,17 @@ const LLM_GROUP: RailGroup = {
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
-// Experimental Marketplace — browse + install skills. Opt-in (Customize →
-// Settings → Experimental); slots into "Build" right after Commands.
+// Marketplace — browse + install skills, agents, commands, tools, and bundles.
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
 /** Build the rail groups for this project, injecting flag-gated entries. */
 function railGroups(
   tunnelEnabled: boolean,
-  marketplaceEnabled: boolean,
   llmGatewayEnabled: boolean,
 ): readonly RailGroup[] {
   const groups: RailGroup[] = [];
   for (const g of GROUPS) {
-    if (g.label === 'Build' && marketplaceEnabled) {
+    if (g.label === 'Build') {
       groups.push({ ...g, items: [...g.items, MARKETPLACE_ITEM] });
     } else if (g.label === 'Connect' && tunnelEnabled) {
       groups.push({ ...g, items: [...g.items, COMPUTERS_ITEM] });
@@ -198,11 +196,10 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
-  const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
   const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayEnabled),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayEnabled],
+    () => railGroups(tunnelEnabled, llmGatewayEnabled),
+    [tunnelEnabled, llmGatewayEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const sectionVisible = allItems.some((item) => item.section === section);

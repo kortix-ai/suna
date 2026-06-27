@@ -59,24 +59,14 @@ export function TypeTile({
   );
 }
 
-// Full type taxonomy. The browser shows only the filters/sections that actually
-// have items (adaptive), so a skills-only catalog simply renders fewer tabs —
-// the moment agents / commands land, their tabs appear automatically. (Bundles
-// are hidden until they have real install/preview UX — also server-filtered.)
+// Launch scope: marketplace browsing is the skill library. Keep the visual type
+// taxonomy above for detail/legacy data, but only expose skill filters here.
 export const TYPE_FILTERS: Array<{ value: string; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'skill', label: 'Skills' },
-  { value: 'agent', label: 'Agents' },
-  { value: 'command', label: 'Commands' },
-  { value: 'tool', label: 'Tools' },
 ];
 
 /** Section order + labels for the grouped (filter=All) gallery view. */
 export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:skill', label: 'Skills' },
-  { type: 'registry:agent', label: 'Agents' },
-  { type: 'registry:command', label: 'Commands' },
-  { type: 'registry:tool', label: 'Tools' },
-  { type: 'registry:rules', label: 'Rules & files' },
-  { type: 'registry:file', label: 'Rules & files' },
 ];

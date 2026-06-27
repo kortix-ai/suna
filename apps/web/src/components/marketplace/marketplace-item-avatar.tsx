@@ -23,8 +23,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
+import { cn } from '@/lib/utils';
 import { MarketplaceAvatar } from './marketplace-avatar';
 
 // A curated, "capability"-flavored icon pool. Every skill is assigned one mark
@@ -65,7 +65,7 @@ function hashOf(s: string): number {
   return h;
 }
 
-type ItemLike = Pick<
+export type MarketplaceItemAvatarItem = Pick<
   MarketplaceItem,
   'name' | 'id' | 'marketplaceId' | 'marketplaceLabel' | 'owner' | 'sourceUrl'
 >;
@@ -83,7 +83,7 @@ export function MarketplaceItemAvatar({
   showSource = true,
   className,
 }: {
-  item: ItemLike;
+  item: MarketplaceItemAvatarItem;
   size?: keyof typeof SIZES;
   /** Render the source favicon corner badge (hide when already browsing one source). */
   showSource?: boolean;
@@ -98,7 +98,10 @@ export function MarketplaceItemAvatar({
   const hasSource = !!(item.owner || item.sourceUrl);
 
   return (
-    <span className={cn('relative inline-flex shrink-0', className)}>
+    <span
+      className={cn('relative inline-flex shrink-0', className)}
+      data-marketplace-avatar-name={item.name}
+    >
       <span
         className={cn('inline-flex items-center justify-center', s.box)}
         style={{ backgroundColor: `hsl(${hue} 64% 50% / 0.14)`, color: `hsl(${hue} 52% 52%)` }}

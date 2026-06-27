@@ -11,6 +11,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
 
+process.env.KORTIX_DEFAULT_MARKETPLACES = '';
+
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
@@ -22,6 +24,9 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
+let seedFilePaths: string[];
+let seedBaseFilePaths: string[];
+let seedFilesByPath: Map<string, string>;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -70,7 +75,12 @@ const stubBackend = {
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
   buildUpstream: (ref: any) => ({ url: ref.upstreamUrl, headers: {} }),
-  seedFiles: async () => { backendCalls.push('seedFiles'); },
+  seedFiles: async (_ref: any, _token: string, files: Array<{ path: string; content: string }>, opts: { baseFiles?: Array<{ path: string; content: string }> }) => {
+    backendCalls.push('seedFiles');
+    seedFilePaths = files.map((file) => file.path).sort();
+    seedBaseFilePaths = (opts.baseFiles ?? []).map((file) => file.path).sort();
+    seedFilesByPath = new Map(files.map((file) => [file.path, file.content] as const));
+  },
 };
 
 mock.module('../projects/git-backends', () => ({
@@ -179,6 +189,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
+  upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
 
@@ -264,6 +275,9 @@ describe('POST /v1/projects/provision (managed git)', () => {
     setTestAuth();
     insertedProject = null;
     grantedProjectRole = null;
+    seedFilePaths = [];
+    seedBaseFilePaths = [];
+    seedFilesByPath = new Map();
     backendCalls.length = 0;
     backendConfigured = true;
   });
@@ -316,6 +330,57 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+  });
+
+  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Runtime Project',
+        seed_starter: true,
+        starter_template: 'minimal',
+        marketplace_items: [
+          'kortix-starter:agent-browser',
+          'kortix-starter:deep-research',
+          'kortix-starter:pdf',
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
+
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).toContain('registry-lock.json');
+
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
+    expect(seedBaseFilePaths).not.toContain('registry-lock.json');
+
+    const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
+    expect(lock.version).toBe(2);
+    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
+    expect(Object.keys(lock.items).sort()).toContain('deep-research');
+    expect(Object.keys(lock.items).sort()).toContain('pdf');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-computer');
+    expect(Object.keys(lock.items).sort()).not.toContain('account-research');
+    expect(lock.items['agent-browser'].type).toBe('registry:skill');
+    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
+    expect(lock.items['agent-browser'].sourceType).toBe('local');
+    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
+    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(lock.items['deep-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/deep-research/SKILL.md');
+    expect(lock.items['pdf'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/pdf/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {

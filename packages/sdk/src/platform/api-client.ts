@@ -96,6 +96,10 @@ async function makeRequest<T = any>(
       ...fetchOptions,
       headers,
       signal: controller.signal,
+      // API auth is bearer-token based. Don't send browser cookies to the
+      // same-origin /v1 proxy; large localhost cookie jars can trip HTTP 431
+      // before the request reaches the API.
+      credentials: fetchOptions.credentials ?? 'omit',
     });
 
     if (timeoutId) {
