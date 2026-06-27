@@ -345,6 +345,20 @@ projectsApp.openapi(
   // Per-agent gate: starting a session provisions compute. A scoped agent token
   // must hold project.session.start (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  // Per-RESOURCE scoping: a member/department can only launch agents they're
+  // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
+  // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
+  const launchAgent = normalizeString(body.agent_name ?? body.agentName);
+  if (launchAgent) {
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      { type: 'agent', id: launchAgent },
+    );
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,

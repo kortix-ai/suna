@@ -272,10 +272,21 @@ export async function assertProjectCapability(
   accountId: string,
   projectId: string,
   action: string,
+  // Optional per-RESOURCE narrowing: when supplied, the verdict is additionally
+  // intersected with iam_resource_grants for this specific agent/skill (see
+  // resource-grants.ts). Used by the agent/skill launch gates.
+  resource?: { type: 'agent' | 'skill'; id: string },
 ): Promise<void> {
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
-  await assertAuthorized(userId, accountId, action, { type: 'project', id: projectId }, actingTokenId, deriveRequestContext(c));
+  await assertAuthorized(
+    userId,
+    accountId,
+    action,
+    { type: 'project', id: projectId, ...(resource ? { resource } : {}) },
+    actingTokenId,
+    deriveRequestContext(c),
+  );
 }
 
 
