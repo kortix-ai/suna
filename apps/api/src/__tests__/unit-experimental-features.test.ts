@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { config } from '../config';
 import {
   applyExperimentalOverride,
   buildExperimentalCatalog,
@@ -8,7 +7,6 @@ import {
   resolveExperimentalFeature,
   resolveExperimentalFeatures,
 } from '../experimental/features';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 function findCatalogFeature(key: string) {
   const feature = buildExperimentalCatalog({}).find((f) => f.key === key);
@@ -65,42 +63,18 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('llm_gateway is platform-gated and explicit opt-in', () => {
-    const available = findCatalogFeature('llm_gateway').available;
-    expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
+  test('llm_gateway (managed models) is always available and on by default', () => {
+    // Managed models are always-on now (the heavy gateway is gone; the slim
+    // endpoint enforces entitlement per-request). Available + default true, with
+    // an explicit per-project off override still honored.
+    expect(findCatalogFeature('llm_gateway').available).toBe(true);
+    expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(true);
     expect(resolveExperimentalFeature({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
+      true,
     );
     expect(
       resolveExperimentalFeature({ experimental: { llm_gateway: false } }, 'llm_gateway'),
     ).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default can roll all projects on while preserving kill switch and project off override', () => {
-    const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
-    try {
-      config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
-
-      config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveExperimentalFeature({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(
-        resolveExperimentalFeature({ experimental: { llm_gateway: false } }, 'llm_gateway'),
-      ).toBe(false);
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-    } finally {
-      config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
-    }
   });
 
   test('null/empty metadata falls back to the operator default (no throw)', () => {

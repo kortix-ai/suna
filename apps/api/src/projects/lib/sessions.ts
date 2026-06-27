@@ -9,7 +9,6 @@ import { notifySessionProvisioningFailed } from '../../shared/session-failure-no
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
@@ -170,11 +169,6 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
-  /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
-   *  opencode is locked to the gateway and native provider keys are withheld;
-   *  OFF (default) → native BYOK providers must reach opencode, so the deny
-   *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
-  llmGatewayEnabled: boolean;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -574,7 +568,6 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           opencodeModel,
-          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,
         }),

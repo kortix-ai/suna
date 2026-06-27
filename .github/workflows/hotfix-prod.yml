@@ -35,9 +35,9 @@ on:
         required: true
         type: string
       surfaces:
-        description: "Comma list of images to rebuild: api,gateway,frontend. Default builds all."
+        description: "Comma list of images to rebuild: api,frontend. Default builds all."
         required: false
-        default: api,gateway,frontend
+        default: api,frontend
         type: string
       run_integration:
         description: "Run Docker-backed integration tests before deploy"
@@ -175,20 +175,6 @@ jobs:
           tags: |
             kortix/kortix-api:dev-${{ steps.rel.outputs.sha8 }}
 
-      - name: Build exact gateway image
-        if: contains(inputs.surfaces, 'gateway')
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/llm-gateway/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            KORTIX_VERSION=${{ steps.rel.outputs.version }}
-            KORTIX_COMMIT=${{ steps.rel.outputs.source_sha }}
-          tags: |
-            kortix/kortix-gateway:dev-${{ steps.rel.outputs.sha8 }}
-
       - name: Build frontend standalone output
         if: contains(inputs.surfaces, 'frontend')
         run: |
@@ -239,13 +225,9 @@ jobs:
           if [ -f infra/k8s/envs/prod/values.yaml ]; then
             VERSION="$VERSION" yq -i '.image.tag = strenv(VERSION) | .kortixVersion = strenv(VERSION)' infra/k8s/envs/prod/values.yaml
           fi
-          if [ -f infra/k8s/envs/prod/gateway-values.yaml ]; then
-            VERSION="$VERSION" yq -i '.image.tag = strenv(VERSION)' infra/k8s/envs/prod/gateway-values.yaml
-          fi
 
           git add VERSION RELEASE_NOTES.md RELEASE_SOURCE_SHA
           git add infra/k8s/envs/prod/values.yaml 2>/dev/null || true
-          git add infra/k8s/envs/prod/gateway-values.yaml 2>/dev/null || true
           git commit -m "hotfix: $TAG"
 
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"

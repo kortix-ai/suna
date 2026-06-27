@@ -29,14 +29,11 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  Gauge,
   GitPullRequest,
   KeyRound,
-  KeySquare,
   MessageSquare,
   Monitor,
   Plug,
-  ScrollText,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -44,7 +41,6 @@ import {
   Terminal,
   Timer,
   Users,
-  Wallet,
   Webhook,
   X,
   type LucideIcon,
@@ -55,13 +51,7 @@ import { ChannelsView } from '@/components/projects/customize/sections/channels-
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
-import {
-  LlmBudgetsView,
-  LlmKeysView,
-  LlmLogsView,
-  LlmOverviewView,
-  LlmProvidersView,
-} from '@/components/projects/customize/sections/gateway-view';
+import { LlmProvidersView } from '@/components/projects/customize/sections/providers-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -138,15 +128,12 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
+// Managed models are always on, and BYOK provider keys work natively alongside
+// them. This single "Providers" section lets a user connect their own keys. (The
+// gateway "product" sections — Overview / Logs / Budgets / Keys — were removed.)
 const LLM_GROUP: RailGroup = {
-  label: 'LLM',
-  items: [
-    { section: 'llm-overview', label: 'Overview', icon: Gauge },
-    { section: 'llm-providers', label: 'Providers', icon: Boxes },
-    { section: 'llm-logs', label: 'Logs', icon: ScrollText },
-    { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
-    { section: 'llm-keys', label: 'Keys', icon: KeySquare },
-  ],
+  label: 'Models',
+  items: [{ section: 'llm-providers', label: 'Providers', icon: Boxes }],
 };
 
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
@@ -161,7 +148,6 @@ const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace
 function railGroups(
   tunnelEnabled: boolean,
   marketplaceEnabled: boolean,
-  llmGatewayEnabled: boolean,
 ): readonly RailGroup[] {
   const groups: RailGroup[] = [];
   for (const g of GROUPS) {
@@ -172,7 +158,7 @@ function railGroups(
     } else {
       groups.push(g);
     }
-    if (g.label === 'Connect' && llmGatewayEnabled) {
+    if (g.label === 'Connect') {
       groups.push(LLM_GROUP);
     }
   }
@@ -199,10 +185,9 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
   const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
-  const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
   const groups = useMemo(
-    () => railGroups(tunnelEnabled, marketplaceEnabled, llmGatewayEnabled),
-    [tunnelEnabled, marketplaceEnabled, llmGatewayEnabled],
+    () => railGroups(tunnelEnabled, marketplaceEnabled),
+    [tunnelEnabled, marketplaceEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   const sectionVisible = allItems.some((item) => item.section === section);
@@ -325,7 +310,6 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
               <SectionContent
                 section={section}
                 projectId={projectId}
-                llmGatewayEnabled={llmGatewayEnabled}
               />
             )}
           </main>
@@ -389,16 +373,10 @@ function RailButton({
 function SectionContent({
   section,
   projectId,
-  llmGatewayEnabled,
 }: {
   section: CustomizeSection;
   projectId: string;
-  llmGatewayEnabled: boolean;
 }) {
-  if (section.startsWith('llm-') && !llmGatewayEnabled) {
-    return null;
-  }
-
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).
@@ -419,16 +397,8 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
-    case 'llm-overview':
-      return <LlmOverviewView projectId={projectId} />;
     case 'llm-providers':
       return <LlmProvidersView projectId={projectId} />;
-    case 'llm-logs':
-      return <LlmLogsView projectId={projectId} />;
-    case 'llm-budgets':
-      return <LlmBudgetsView projectId={projectId} />;
-    case 'llm-keys':
-      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'members':

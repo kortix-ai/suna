@@ -6,16 +6,9 @@ SUPABASE_DIR="$ROOT_DIR/supabase"
 
 FRONTEND_PID=""
 API_PID=""
-GATEWAY_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
 STRIPE_PID=""
-
-# Standalone LLM gateway: a single fixed port (laptop dev is single-instance,
-# unlike worktrees which stride per-slot) and a fixed shared internal token the
-# API and gateway both carry so the gateway authenticates back to the API.
-GATEWAY_PORT="${GATEWAY_PORT:-8090}"
-DEV_GATEWAY_INTERNAL_TOKEN="${GATEWAY_INTERNAL_TOKEN:-dev-local-gateway-internal-token}"
 
 # Build mode: `dev-local.sh --build` (a.k.a. `pnpm preview`) runs the EXACT same
 # laptop diligence as `pnpm dev` — decrypt env, clear ports, Docker/Supabase,
@@ -82,16 +75,9 @@ load_local_env() {
   export KORTIX_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export BACKEND_URL="http://localhost:8008/v1"
 
-  # Route sandbox model calls through the local standalone gateway. Proxy mode
-  # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway,
-  # and sandboxes reach it via the API's tunnel origin. Exported AFTER the .env
-  # decrypt so they override whatever the committed apps/api/.env carries.
-  if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
-    export LLM_GATEWAY_ENABLED=true
-    export LLM_GATEWAY_BASE_URL=""
-    export LLM_GATEWAY_PROXY_PORT="$GATEWAY_PORT"
-    export GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN"
-  fi
+  # Managed ("kortix/*") models are served by the API's own slim endpoint
+  # (/v1/router/llm) — managed Claude → AWS Bedrock, the rest → OpenRouter.
+  # No standalone gateway to wire up.
 
   # Personal per-machine overrides — sourced LAST so they beat both the shared
   # encrypted env and the defaults above. Gitignored plaintext KEY=VALUE files
@@ -266,25 +252,6 @@ ensure_stripe_listen() {
   STRIPE_PID=$!
 }
 
-# Start the standalone LLM gateway (apps/llm-gateway) so the API routes sandbox
-# model calls through it (proxy mode, wired in load_local_env) instead of
-# falling back to the in-API /v1/llm OpenRouter passthrough. Background process,
-# cleaned up on exit. Opt out with KORTIX_DEV_GATEWAY=0.
-ensure_dev_gateway() {
-  [[ "${KORTIX_DEV_GATEWAY:-auto}" == "0" ]] && return 0
-  local api_port="${PORT:-8008}"
-  echo "[dev] Starting LLM gateway → :${GATEWAY_PORT} (API at http://localhost:${api_port})"
-  (
-    cd "$ROOT_DIR"
-    PORT="$GATEWAY_PORT" \
-      KORTIX_API_URL="http://localhost:${api_port}" \
-      GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
-      GATEWAY_API_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
-      pnpm --filter @kortix/llm-gateway-server dev 2>&1 | sed 's/^/[gateway] /'
-  ) &
-  GATEWAY_PID=$!
-}
-
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
 # `pnpm dev` always bakes the latest daemon into new snapshots. Lazy: only
 # rebuilds when a source file is newer than the existing binary (or it's
@@ -422,11 +389,6 @@ cleanup() {
   if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
     kill "$API_PID" 2>/dev/null || true
     wait "$API_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${GATEWAY_PID:-}" ]] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    wait "$GATEWAY_PID" 2>/dev/null || true
   fi
 
   if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
@@ -608,7 +570,7 @@ if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
 fi
 
 load_local_env
-kill_dev_ports 3000 8008 "${PORT:-8008}" "$GATEWAY_PORT"
+kill_dev_ports 3000 8008 "${PORT:-8008}"
 
 echo "[dev] Checking Supabase configuration..."
 if ! docker info >/dev/null 2>&1; then
@@ -669,7 +631,6 @@ ensure_agent_binary
 ensure_cli_binary
 ensure_dev_tunnel
 ensure_stripe_listen
-ensure_dev_gateway
 
 if [[ "$BUILD_MODE" == "1" ]]; then
   # The API needs no build step, so boot it in the BACKGROUND now and let it

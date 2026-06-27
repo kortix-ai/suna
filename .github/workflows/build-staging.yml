@@ -100,41 +100,6 @@ jobs:
             --tag "kortix/kortix-api:staging-${{ needs.version.outputs.sha8 }}" \
             "kortix/kortix-api:staging-${{ needs.version.outputs.sha }}"
 
-  build-gateway:
-    name: Build gateway image (staging)
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.sha }}
-          submodules: false
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push staging gateway
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/llm-gateway/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: |
-            KORTIX_VERSION=${{ needs.version.outputs.version }}
-            KORTIX_COMMIT=${{ needs.version.outputs.sha }}
-          tags: |
-            kortix/kortix-gateway:staging-${{ needs.version.outputs.sha }}
-            kortix/kortix-gateway:staging-latest
-      - name: Retag gateway staging-<sha8>
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create \
-            --tag "kortix/kortix-gateway:staging-${{ needs.version.outputs.sha8 }}" \
-            "kortix/kortix-gateway:staging-${{ needs.version.outputs.sha }}"
-
   build-frontend:
     name: Build frontend image (staging)
     needs: version
@@ -186,7 +151,7 @@ jobs:
 
   dispatch-deploy:
     name: Dispatch staging deploy
-    needs: [version, build-api, build-gateway, build-frontend]
+    needs: [version, build-api, build-frontend]
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:

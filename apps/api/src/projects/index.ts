@@ -30,7 +30,6 @@ import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
 import './routes/r10';
-import './routes/gateway';
 
 // The wired Hono app instances (all routes registered above via side-effect).
 export { projectsApp, projectWebhooksApp } from './lib/app';

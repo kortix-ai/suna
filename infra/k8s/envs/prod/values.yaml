@@ -11,15 +11,6 @@ kortixVersion: "0.9.38"
 env:
   internalKortixEnv: prod
 
-# Explicit container env (overrides the kortix-prod-env secret bundle — k8s env
-# wins over envFrom).
-extraEnv:
-  # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
-  # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
-  # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
-  # catalog shape) and the model picker collapses to a single model.
-  LLM_GATEWAY_BASE_URL: "https://gateway.kortix.com/v1/llm"
-
 # CUTOVER COMPLETE (2026-06-21): api.kortix.com is served by api-eks, and EKS now
 # OWNS the singleton workers (cron scheduler, project maintenance, migrations).
 # ECS Fargate is scaled to 0 — it had held the worker lease while running stale

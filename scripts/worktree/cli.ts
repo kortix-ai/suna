@@ -17,7 +17,7 @@
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
-  renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
+  renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
   writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
@@ -30,7 +30,6 @@ import pc from 'picocolors';
 
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
-const GATEWAY_FILTER = '@kortix/llm-gateway-server';
 
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
@@ -47,15 +46,14 @@ const link = (href: string, text: string) =>
   process.stdout.isTTY ? `\x1b]8;;${href}\x07${text}\x1b]8;;\x07` : text;
 
 // Free any stale process still holding this slot's ports — a previous `up` that
-// didn't shut down cleanly, or a gateway that crashed but left the port bound.
-// Without this the fresh gateway hits EADDRINUSE on its slot port; and because
-// `bun --hot` stays alive after a startup throw (it keeps the reload watcher
-// running), it would never actually listen, yet `Promise.race([...exited])`
-// can't see it — so the API would silently fall back to the single-model
-// passthrough. We only ever touch this worktree's own slot ports.
+// didn't shut down cleanly. Without this the fresh process hits EADDRINUSE on
+// its slot port; and because `bun --hot` stays alive after a startup throw (it
+// keeps the reload watcher running), it would never actually listen, yet
+// `Promise.race([...exited])` can't see it. We only ever touch this worktree's
+// own slot ports.
 async function freeSlotPorts(ports: Ports): Promise<void> {
   let freed = 0;
-  for (const [label, port] of [['web', ports.web], ['api', ports.api], ['gateway', ports.gateway]] as const) {
+  for (const [label, port] of [['web', ports.web], ['api', ports.api]] as const) {
     const u = portInUse(port);
     if (u.inUse && u.pid) {
       sub(`freeing stale ${label} process on :${port} (pid ${u.pid})`);
@@ -66,25 +64,6 @@ async function freeSlotPorts(ports: Ports): Promise<void> {
   if (freed) await Bun.sleep(400);
 }
 
-// Gate on the gateway actually listening. The API proxies sandbox LLM traffic to
-// it, so a dead gateway silently degrades sandboxes to the single-model
-// passthrough (wrong catalog). `bun --hot` swallows a startup crash, so the
-// exit-race never fires — poll the readiness endpoint and say so plainly.
-async function waitForGateway(port: number, proc: ReturnType<typeof Bun.spawn>): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (proc.exitCode !== null) {
-      warn(`llm gateway exited (code ${proc.exitCode}) before it came up — the API will fall back to the single-model passthrough. See the gateway logs above.`);
-      return;
-    }
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/health/live`, { signal: AbortSignal.timeout(1000) });
-      if (r.ok) { ok(`llm gateway ready on :${port}`); return; }
-    } catch {}
-    await Bun.sleep(500);
-  }
-  warn(`llm gateway never became healthy on :${port} (30s) — the API will fall back to the single-model passthrough (wrong catalog). Is :${port} already in use? Check the gateway logs above.`);
-}
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
 async function spin(label: string, cmd: string[]): Promise<void> {
@@ -389,17 +368,15 @@ async function cmdStart(a: Args) {
   const dbMode = dbModeOf(e);
 
   // Heal a stale ports cache. The registry stores a denormalized copy of
-  // computePorts(slot), so a worktree created before a port was added to BASE
-  // (e.g. the standalone gateway) has that field missing — String(undefined)
-  // then makes the gateway fall back to its default 8090 and the API lose its
-  // proxy (LLM_GATEWAY_PROXY_PORT="undefined"). The slot is the source of truth:
+  // computePorts(slot), so a worktree created before a port was added to (or
+  // removed from) BASE has a mismatched map. The slot is the source of truth:
   // recompute every port from it, and persist so the entry is fixed for good.
   const freshPorts = computePorts(e.slot);
   if (JSON.stringify(freshPorts) !== JSON.stringify(e.ports)) {
     const added = (Object.keys(freshPorts) as (keyof typeof freshPorts)[]).filter((k) => e.ports[k] !== freshPorts[k]);
     e.ports = freshPorts;
     await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].ports = freshPorts; saveRegistry(r); } });
-    sub(`refreshed slot ${e.slot} ports from BASE (${added.join(', ')}) → gateway :${freshPorts.gateway}`);
+    sub(`refreshed slot ${e.slot} ports from BASE (${added.join(', ')})`);
   }
 
   let creds;
@@ -456,23 +433,20 @@ async function cmdStart(a: Args) {
   await freeSlotPorts(e.ports);
 
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim('shared primary Supabase')}`}`);
-  console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
   const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
-  const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
-  void waitForGateway(e.ports.gateway, gateway);
-  const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api, e.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
+  const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
-    try { api.kill(); } catch {} try { gateway.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
+    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
     killListeners('');
-    await Promise.race([Promise.all([api.exited, gateway.exited, web.exited]), Bun.sleep(6000)]);
+    await Promise.race([Promise.all([api.exited, web.exited]), Bun.sleep(6000)]);
     killListeners('-9');
     await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'stopped'; saveRegistry(r); } });
     ok('stopped.');
@@ -480,7 +454,7 @@ async function cmdStart(a: Args) {
   };
   process.on('SIGINT', () => { void shutdown(); });
   process.on('SIGTERM', () => { void shutdown(); });
-  await Promise.race([api.exited, gateway.exited, web.exited]);
+  await Promise.race([api.exited, web.exited]);
   await shutdown();
 }
 
@@ -490,7 +464,7 @@ async function cmdStop(a: Args) {
   const e = reg.slots[name];
   if (!e) die(`unknown worktree "${name}"`);
   step(`Stopping "${name}"`);
-  for (const port of [e!.ports.web, e!.ports.api, e!.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
+  for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   if (dbModeOf(e!) === 'isolated') sh(['supabase', '--workdir', supaWorkdir(name), 'stop']);
   else sub('shared primary Supabase left running');
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'stopped'; saveRegistry(r); } });
@@ -505,7 +479,7 @@ async function cmdNuke(a: Args) {
   const pid = e!.projectId;
   const dbMode = dbModeOf(e!);
   step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
-  for (const port of [e!.ports.web, e!.ports.api, e!.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
+  for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   if (dbMode === 'isolated') {
     await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
     await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);

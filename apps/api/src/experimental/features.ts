@@ -102,17 +102,16 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
   },
   {
     key: 'llm_gateway',
-    name: 'LLM Gateway',
+    name: 'Managed Models',
     description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
-    stability: 'experimental',
-    // Master kill switch: when off, the feature disappears and every project
-    // falls back to native OpenCode provider behavior.
-    available: () => config.LLM_GATEWAY_ENABLED,
-    // Fleet rollout switch. Operators can default the gateway on for every
-    // project, while explicit project overrides still win and the master
-    // availability gate above remains the emergency kill switch.
-    platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
+      "Show Kortix's managed models (Claude, GPT, Gemini, …) in the model picker. Always available — your own provider keys (BYOK) work natively alongside them.",
+    stability: 'beta',
+    // Managed models are always available now — the gateway product is gone and
+    // the slim managed endpoint enforces entitlement per-request (credit check),
+    // not at provision time. The flag stays only to gate the picker UI until the
+    // model-picker reads opencode's native provider list (P5).
+    available: () => true,
+    platformDefault: () => true,
   },
 ];
 

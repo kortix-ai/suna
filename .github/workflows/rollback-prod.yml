@@ -12,10 +12,6 @@ name: Rollback Production
 #   * BACKEND api  (EKS/Argo): opens a review-gated PR into `prod` setting
 #     image.tag + kortixVersion in infra/k8s/envs/prod/values.yaml → Argo CD
 #     (auto-sync + selfHeal) pulls the existing :X.Y.Z image on merge.
-#   * BACKEND gateway (EKS/Argo): same, in gateway-values.yaml — BUT only if a
-#     :X.Y.Z gateway image exists (the gateway entered prod at v0.9.72, so older
-#     targets have no gateway image; it's left untouched rather than pointed at a
-#     missing tag, which would wedge Argo on ImagePullBackOff).
 #   * FRONTEND (Vercel): finds the production deployment built for vX.Y.Z and
 #     PROMOTES it back to production via the Vercel API — instant, no rebuild.
 #
@@ -47,9 +43,9 @@ on:
         required: true
         type: string
       surfaces:
-        description: "Comma list of surfaces to roll: api,gateway,frontend"
+        description: "Comma list of surfaces to roll: api,frontend"
         required: false
-        default: "api,gateway,frontend"
+        default: "api,frontend"
         type: string
       confirm:
         description: "Type ROLLBACK PROD to confirm"
@@ -98,12 +94,9 @@ jobs:
           want() { case "$SURF" in *",$1,"*) return 0;; *) return 1;; esac; }
           img_exists() { [ "$(curl -s -o /dev/null -w '%{http_code}' "https://hub.docker.com/v2/repositories/kortix/$1/tags/$TARGET/")" = "200" ]; }
 
-          ROLL_API=no; ROLL_GW=no; ROLL_FE=no
+          ROLL_API=no; ROLL_FE=no
           if want api; then
             if img_exists kortix-api; then ROLL_API=yes; else echo "::warning::kortix-api:$TARGET missing — skipping api."; fi
-          fi
-          if want gateway; then
-            if img_exists kortix-gateway; then ROLL_GW=yes; else echo "::warning::kortix-gateway:$TARGET missing (gateway likely didn't exist at $TARGET) — leaving gateway untouched."; fi
           fi
           if want frontend; then
             if [ -n "${VERCEL_TOKEN:-}" ]; then ROLL_FE=yes; else echo "::warning::No VERCEL_TOKEN — skipping frontend (do it via Vercel Instant Rollback)."; fi
@@ -111,19 +104,18 @@ jobs:
 
           {
             echo "target=$TARGET"; echo "current=$CUR"
-            echo "roll_api=$ROLL_API"; echo "roll_gw=$ROLL_GW"; echo "roll_fe=$ROLL_FE"
+            echo "roll_api=$ROLL_API"; echo "roll_fe=$ROLL_FE"
           } >> "$GITHUB_OUTPUT"
-          echo "Plan → target=$TARGET current=$CUR | api=$ROLL_API gateway=$ROLL_GW frontend=$ROLL_FE"
+          echo "Plan → target=$TARGET current=$CUR | api=$ROLL_API frontend=$ROLL_FE"
 
       - name: Backend — open review-gated rollback PR into prod
         id: backend
-        if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes'
+        if: steps.plan.outputs.roll_api == 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ steps.plan.outputs.target }}
           CURRENT: ${{ steps.plan.outputs.current }}
           ROLL_API: ${{ steps.plan.outputs.roll_api }}
-          ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
           IN_REASON: ${{ inputs.reason }}
         run: |
           set -euo pipefail
@@ -136,10 +128,6 @@ jobs:
           if [ "$ROLL_API" = yes ]; then
             yq -i '.image.tag = strenv(TARGET) | .kortixVersion = strenv(TARGET)' infra/k8s/envs/prod/values.yaml
             git add infra/k8s/envs/prod/values.yaml; ROLLED="api"
-          fi
-          if [ "$ROLL_GW" = yes ]; then
-            yq -i '.image.tag = strenv(TARGET)' infra/k8s/envs/prod/gateway-values.yaml
-            git add infra/k8s/envs/prod/gateway-values.yaml; ROLLED="${ROLLED:+$ROLLED+}gateway"
           fi
 
           git commit -m "revert(prod): roll EKS $ROLLED back to v$TARGET" -m "$IN_REASON"
@@ -199,7 +187,6 @@ jobs:
           TARGET: ${{ steps.plan.outputs.target }}
           CURRENT: ${{ steps.plan.outputs.current }}
           ROLL_API: ${{ steps.plan.outputs.roll_api }}
-          ROLL_GW: ${{ steps.plan.outputs.roll_gw }}
           ROLL_FE: ${{ steps.plan.outputs.roll_fe }}
           PR: ${{ steps.backend.outputs.pr }}
         run: |
@@ -209,7 +196,6 @@ jobs:
             echo "| Surface | Rolled | How |"
             echo "|---|---|---|"
             echo "| api | ${ROLL_API:-no} | merge the backend PR → Argo |"
-            echo "| gateway | ${ROLL_GW:-no} | merge the backend PR → Argo (skipped if no :$TARGET image) |"
             echo "| frontend | ${ROLL_FE:-no} | promoted now via Vercel API |"
             echo ""
             [ -n "${PR:-}" ] && echo "- Backend PR: $PR"

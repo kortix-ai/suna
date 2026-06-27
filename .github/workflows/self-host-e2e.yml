@@ -7,7 +7,7 @@ name: Self-host E2E (full, nightly)
 #
 # This is the nightly counterpart to the always-on `self-host-schema` job in
 # ci.yml (which runs the fast schema-bootstrap gate on every PR that touches
-# api/db/cli). Building the frontend + gateway + sandbox images is too slow for
+# api/db/cli). Building the frontend + sandbox images is too slow for
 # every-PR CI, so the full session + update coverage runs here on a schedule.
 # Trigger manually any time via the Actions tab.
 
@@ -51,5 +51,4 @@ jobs:
           KORTIX_LOCAL_IMAGES: 'true'
           FRONTEND_IMAGE: kortix/kortix-frontend:selfhost-local
           API_IMAGE: kortix/kortix-api:selfhost-local
-          GATEWAY_IMAGE: kortix/kortix-gateway:selfhost-local
           SANDBOX_IMAGE: kortix/kortix-sandbox:selfhost-local

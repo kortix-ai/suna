@@ -30,13 +30,10 @@ env:
   NAMESPACE: kortix-staging
   STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
-  GATEWAY_APP: kortix-gateway
   API_HOST: staging-api-eks.kortix.com
-  GATEWAY_HOST: gateway-staging.kortix.com
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
   VALUES: infra/k8s/envs/staging/values.yaml
-  GATEWAY_VALUES: infra/k8s/envs/staging/gateway-values.yaml
   ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-staging
 
 jobs:
@@ -88,7 +85,7 @@ jobs:
           SHA8: ${{ steps.ref.outputs.sha8 }}
         run: |
           set -euo pipefail
-          for image in kortix/kortix-api kortix/kortix-gateway; do
+          for image in kortix/kortix-api; do
             docker buildx imagetools inspect "${image}:staging-${SHA8}" >/dev/null
             echo "found ${image}:staging-${SHA8}"
           done
@@ -154,7 +151,6 @@ jobs:
             --arg admin "$STAGING_KORTIX_ADMIN_API_KEY" \
             --arg frontend "https://${WEB_HOST}" \
             --arg api "https://${PUBLIC_API_HOST}" \
-            --arg gateway "https://${GATEWAY_HOST}/v1/llm" \
             '$base + {
               INTERNAL_KORTIX_ENV: "staging",
               DATABASE_URL: $database,
@@ -166,7 +162,6 @@ jobs:
               FRONTEND_URL: $frontend,
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
-              LLM_GATEWAY_BASE_URL: $gateway,
               ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
               KORTIX_WARM_SNAPSHOT_ENABLED: "false"
             }')"
@@ -218,7 +213,7 @@ jobs:
           pnpm --filter @kortix/db migrate
 
   deploy-k8s:
-    name: Deploy API and gateway to staging
+    name: Deploy API to staging
     needs: [preflight, sync-secret, migrate-db]
     runs-on: ubuntu-latest
     steps:
@@ -242,13 +237,12 @@ jobs:
           git fetch origin staging:refs/remotes/origin/staging --quiet
           git checkout -B staging origin/staging
           yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
-          yq -i '.image.tag = strenv(TAG)' "$GATEWAY_VALUES"
-          if git diff --quiet -- "$VALUES" "$GATEWAY_VALUES"; then
+          if git diff --quiet -- "$VALUES"; then
             echo "staging GitOps values already pinned to ${TAG}."
           else
             git config user.name "kortix-ci[bot]"
             git config user.email "kortix-ci[bot]@users.noreply.github.com"
-            git add "$VALUES" "$GATEWAY_VALUES"
+            git add "$VALUES"
             git commit -m "chore(staging): deploy ${TAG} [skip ci]"
             git push origin HEAD:staging
           fi
@@ -262,9 +256,7 @@ jobs:
         run: |
           set -euo pipefail
           kubectl apply -f infra/k8s/argocd/applications/staging.yaml
-          kubectl apply -f infra/k8s/argocd/applications/gateway-staging.yaml
           kubectl -n argocd annotate application kortix-staging argocd.argoproj.io/refresh=hard --overwrite
-          kubectl -n argocd annotate application kortix-gateway-staging argocd.argoproj.io/refresh=hard --overwrite
       - name: Wait for staging deployments
         env:
           TAG: staging-${{ needs.preflight.outputs.sha8 }}
@@ -272,16 +264,11 @@ jobs:
           set -euo pipefail
           for i in $(seq 1 80); do
             api_img="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gw_img="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
             api_avail="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
-            gw_avail="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
             api_desired="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            gw_desired="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            echo "($i/80) api=${api_img:-?} ${api_avail:-0}/${api_desired}; gateway=${gw_img:-?} ${gw_avail:-0}/${gw_desired}"
+            echo "($i/80) api=${api_img:-?} ${api_avail:-0}/${api_desired}"
             if printf '%s' "$api_img" | grep -q ":${TAG}$" \
-               && printf '%s' "$gw_img" | grep -q ":${TAG}$" \
-               && [ "${api_avail:-0}" = "$api_desired" ] \
-               && [ "${gw_avail:-0}" = "$gw_desired" ]; then
+               && [ "${api_avail:-0}" = "$api_desired" ]; then
               exit 0
             fi
             sleep 15
@@ -294,13 +281,10 @@ jobs:
         run: |
           set -euo pipefail
           api_alb="$(kubectl -n "$NAMESPACE" get ingress "$API_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          gateway_alb="$(kubectl -n "$NAMESPACE" get ingress "$GATEWAY_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          [ -n "$api_alb" ] && [ -n "$gateway_alb" ]
+          [ -n "$api_alb" ]
           echo "api_alb=$api_alb" >> "$GITHUB_OUTPUT"
-          echo "gateway_alb=$gateway_alb" >> "$GITHUB_OUTPUT"
     outputs:
       api_alb: ${{ steps.ing.outputs.api_alb }}
-      gateway_alb: ${{ steps.ing.outputs.gateway_alb }}
 
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
@@ -319,7 +303,6 @@ jobs:
       - name: Upsert proxied CNAME records
         env:
           API_ALB: ${{ needs.deploy-k8s.outputs.api_alb }}
-          GATEWAY_ALB: ${{ needs.deploy-k8s.outputs.gateway_alb }}
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
@@ -352,7 +335,6 @@ jobs:
             echo "wired ${name}"
           }
           upsert "$API_HOST" "$API_ALB"
-          upsert "$GATEWAY_HOST" "$GATEWAY_ALB"
       - name: Deploy staging API router Worker
         working-directory: infra/cloudflare/workers/api-router
         env:

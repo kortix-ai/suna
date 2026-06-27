@@ -1,4 +1,3 @@
-import { resolveCatalogUpstream } from "@kortix/llm-gateway";
 import {
   AUTO_MODEL_ID,
   CATALOG,
@@ -6,6 +5,65 @@ import {
   MANAGED_MODELS,
 } from "@kortix/shared/llm-catalog";
 import { codexModelIds } from "./codex-models";
+
+// ── Catalog upstream resolution (inlined) ───────────────────────────────────
+// Whether a models.dev catalog provider can be served as a BYOK provider in the
+// served catalog: it needs a recognized SDK kind (anthropic or openai-compat), a
+// resolvable base URL, and an API-key env var. Inlined from the retired
+// @kortix/llm-gateway package — the slim managed endpoint no longer depends on
+// the gateway, and this is the only bit catalog-models needs.
+const OPENAI_COMPATIBLE_NPM = new Set([
+  "@ai-sdk/openai-compatible",
+  "@ai-sdk/openai",
+  "@ai-sdk/azure",
+  "@ai-sdk/groq",
+  "@ai-sdk/mistral",
+  "@ai-sdk/xai",
+  "@ai-sdk/cerebras",
+  "@ai-sdk/togetherai",
+  "@ai-sdk/deepinfra",
+  "@ai-sdk/perplexity",
+  "@ai-sdk/vercel",
+  "@ai-sdk/gateway",
+  "@openrouter/ai-sdk-provider",
+]);
+const ANTHROPIC_NPM = "@ai-sdk/anthropic";
+const ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
+const BASE_URL_FALLBACKS: Record<string, string> = {
+  openai: "https://api.openai.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  "x-ai": "https://api.x.ai/v1",
+  xai: "https://api.x.ai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  deepseek: "https://api.deepseek.com/v1",
+  perplexity: "https://api.perplexity.ai",
+  cerebras: "https://api.cerebras.ai/v1",
+  vercel: "https://ai-gateway.vercel.sh/v1",
+  v0: "https://api.v0.dev/v1",
+  deepinfra: "https://api.deepinfra.com/v1/openai",
+  togetherai: "https://api.together.xyz/v1",
+};
+
+function providerKind(npm: string | null | undefined): "anthropic" | "openai-compat" | null {
+  if (!npm) return null;
+  if (npm === ANTHROPIC_NPM) return "anthropic";
+  if (OPENAI_COMPATIBLE_NPM.has(npm)) return "openai-compat";
+  return null;
+}
+
+function canServeCatalogProvider(provider: {
+  id: string;
+  npm?: string | null;
+  api?: string | null;
+  env?: string[];
+}): boolean {
+  const kind = providerKind(provider.npm);
+  if (!kind) return false;
+  const baseUrl =
+    kind === "anthropic" ? ANTHROPIC_BASE_URL : provider.api || BASE_URL_FALLBACKS[provider.id];
+  if (!baseUrl) return false;
+  return !!provider.env?.[0];
+}
 
 interface GatewayModel {
   name: string;
@@ -118,7 +176,7 @@ export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
     if (provider.id === "opencode") continue;
-    if (!resolveCatalogUpstream(provider.id)) continue;
+    if (!canServeCatalogProvider(provider)) continue;
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
       out[`${provider.id}/${model.id}`] = {

@@ -18,7 +18,6 @@ const DEFAULT_PUBLIC_URL = 'http://localhost:13737';
 const DEFAULT_API_URL = 'http://localhost:13738';
 const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
-const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 const LOCAL_SOURCE_TAG = 'selfhost-local';
 
@@ -78,11 +77,9 @@ interface SelfHostEnv {
   POSTGRES_PORT: string;
   FRONTEND_IMAGE: string;
   API_IMAGE: string;
-  GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
   KORTIX_LOCAL_IMAGES: string;
   KORTIX_PUBLIC_AUTH_METHODS: string;
-  GATEWAY_INTERNAL_TOKEN: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
   SUPABASE_JWT_SECRET: string;
@@ -204,9 +201,6 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   }
   if (!existing || existing.API_IMAGE === `${DEFAULT_API_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
     env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`;
-  }
-  if (!existing || existing.GATEWAY_IMAGE === `${DEFAULT_GATEWAY_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
-    env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`;
   }
   if (!existing || existing.SANDBOX_IMAGE === `${DEFAULT_SANDBOX_IMAGE_REPO}:${existing.KORTIX_VERSION}`) {
     env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`;
@@ -344,7 +338,6 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   env.KORTIX_VERSION = targetTag;
   env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${targetTag}`;
   env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${targetTag}`;
-  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${targetTag}`;
   env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${targetTag}`;
   writeEnv(flags.instance, env);
   writeCompose(flags.instance);
@@ -434,7 +427,6 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`\n  ${C.dim}images${C.reset}\n`);
   process.stdout.write(`  ${C.dim}  api      ${C.reset}${env.API_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  frontend ${C.reset}${env.FRONTEND_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}  gateway  ${C.reset}${env.GATEWAY_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}  sandbox  ${C.reset}${env.SANDBOX_IMAGE}\n\n`);
   process.stdout.write(`  ${C.dim}Update: ${C.reset}${C.cyan}kortix self-host update${C.reset}${C.dim} (latest) or ${C.reset}${C.cyan}--tag <version>${C.reset}\n\n`);
   return 0;
@@ -694,7 +686,6 @@ function shouldUseLocalSourceImages(flags: GlobalFlags): boolean {
 function applyLocalSourceImages(env: SelfHostEnv): void {
   env.FRONTEND_IMAGE = `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.API_IMAGE = `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
-  env.GATEWAY_IMAGE = `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.SANDBOX_IMAGE = `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`;
   env.KORTIX_LOCAL_IMAGES = 'true';
 }
@@ -703,7 +694,6 @@ function ensureLocalSourceImages(): void {
   const images = [
     `${DEFAULT_FRONTEND_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
     `${DEFAULT_API_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
-    `${DEFAULT_GATEWAY_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
     `${DEFAULT_SANDBOX_IMAGE_REPO}:${LOCAL_SOURCE_TAG}`,
   ];
   const missing = images.filter((image) => !dockerImageExists(image));
@@ -854,11 +844,9 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     POSTGRES_PORT: '13741',
     FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`,
     API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`,
-    GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`,
     SANDBOX_IMAGE: `${DEFAULT_SANDBOX_IMAGE_REPO}:${flags.tag}`,
     KORTIX_LOCAL_IMAGES: 'false',
     KORTIX_PUBLIC_AUTH_METHODS: 'password',
-    GATEWAY_INTERNAL_TOKEN: token(32),
     OPENROUTER_API_KEY: '',
     POSTGRES_PASSWORD: token(32),
     SUPABASE_JWT_SECRET: jwtSecret,
@@ -1073,9 +1061,6 @@ function writeCompose(instance: string): void {
       KORTIX_LOCAL_IMAGES: \${KORTIX_LOCAL_IMAGES}
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
       KORTIX_BILLING_INTERNAL_ENABLED: "false"
-      LLM_GATEWAY_ENABLED: "true"
-      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
-      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: \${OPENROUTER_API_KEY}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -1086,19 +1071,6 @@ function writeCompose(instance: string): void {
         condition: service_started
       kortix-migrate:
         condition: service_completed_successfully
-    restart: unless-stopped
-
-  llm-gateway:
-    image: \${GATEWAY_IMAGE}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      PORT: "8090"
-      KORTIX_API_URL: http://kortix-api:8008
-      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
-    depends_on:
-      kortix-api:
-        condition: service_started
     restart: unless-stopped
 
 volumes:

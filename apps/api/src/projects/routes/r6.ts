@@ -14,8 +14,6 @@ import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
 import { reconcileComputerConnectors } from '../../executor/sync';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -1106,9 +1104,6 @@ projectsApp.openapi(
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     if (feature === 'agent_tunnel') {
       void reconcileComputerConnectors(row.accountId);
-    }
-    if (feature === 'llm_gateway') {
-      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
     }
     return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },

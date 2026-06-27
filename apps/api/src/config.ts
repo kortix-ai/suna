@@ -214,28 +214,6 @@ const envSchema = z.object({
   // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
   // — consolidated onto this one var.
   OPENROUTER_API_KEY:          optStr,
-  // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
-  // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
-  LLM_GATEWAY_ENABLED:         optBoolFalse,
-  // Fleet default for projects with no explicit per-project override. The
-  // master switch above still wins: LLM_GATEWAY_ENABLED=false forces native
-  // OpenCode for everyone regardless of this value.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolFalse,
-  // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
-  // gateway's public base (…/v1/llm) to route every sandbox model call there.
-  LLM_GATEWAY_BASE_URL:        optStr,
-  // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
-  // billing error (429/402/403), fall over to THIS managed model (billed as
-  // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
-  // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
-  // so sandboxes reach it through the API's own tunnel (no separate tunnel).
-  LLM_GATEWAY_PROXY_PORT:      optInt(0),
-  // Where the /v1/llm-gateway/* reverse-proxy forwards. Defaults to
-  // 127.0.0.1:LLM_GATEWAY_PROXY_PORT (local, gateway same host). In K8s set to
-  // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
-  // gateway stays internal and sandboxes reach it via the API's public origin.
-  LLM_GATEWAY_PROXY_TARGET:    optStr,
   // AWS Bedrock — the managed ("Kortix") models route here via a Bedrock API key
   // (bearer). Region selects the bedrock-runtime endpoint; the key is an IAM
   // service-specific credential for bedrock.amazonaws.com.
@@ -485,9 +463,6 @@ function validateEnv(): z.infer<typeof envSchema> {
   // ── Warnings (non-fatal but worth knowing) ─────────────────────────────
   if (!raw.OPENROUTER_API_KEY) {
     issues.push({ var: 'OPENROUTER_API_KEY', message: 'Not set — primary LLM route will fail with silent 401 errors', level: 'warn' });
-    if (raw.LLM_GATEWAY_ENABLED === 'true') {
-      issues.push({ var: 'LLM_GATEWAY_ENABLED', message: 'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"', level: 'warn' });
-    }
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -623,12 +598,6 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
-  LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
-  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
-  LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
-  LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
-  LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,

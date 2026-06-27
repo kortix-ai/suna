@@ -89,51 +89,6 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: boolean; names: string[] } {
-  const changedNames: string[] = []
-  for (const [name, value] of Object.entries(next)) {
-    if (!OPENCODE_RUNTIME_ENV_NAMES.has(name)) continue
-    if (value === null) {
-      if (process.env[name] !== undefined) {
-        delete process.env[name]
-        changedNames.push(name)
-      }
-      continue
-    }
-    if (process.env[name] !== value) {
-      process.env[name] = value
-      changedNames.push(name)
-    }
-  }
-  return { changed: changedNames.length > 0, names: changedNames.sort() }
-}
-
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
-  if (enabled === undefined) return { changed: false, names: [] }
-  if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
-  if (!enabled) {
-    return setOpencodeRuntimeEnv({
-      KORTIX_LLM_API_KEY: null,
-      KORTIX_LLM_BASE_URL: null,
-      KORTIX_YOLO_API_KEY: null,
-      KORTIX_YOLO_URL: null,
-    })
-  }
-  if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
-    throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
-  }
-  const token = process.env.KORTIX_EXECUTOR_TOKEN || process.env.KORTIX_CLI_TOKEN
-  if (!token) {
-    throw new Error('KORTIX_EXECUTOR_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
-  }
-  return setOpencodeRuntimeEnv({
-    KORTIX_LLM_API_KEY: token,
-    KORTIX_LLM_BASE_URL: baseUrl,
-    KORTIX_YOLO_API_KEY: token,
-    KORTIX_YOLO_URL: baseUrl,
-  })
-}
-
 // Apply an optional default-model override onto the daemon's own env so the next
 // opencode (re)spawn bakes it as opencode's config `model`/`small_model` default.
 // `null`/empty clears the override (opencode falls back to its baked default).
@@ -186,8 +141,6 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
           names?: unknown
           refreshModels?: unknown
           opencodeEnv?: unknown
-          llmGatewayEnabled?: unknown
-          llmGatewayBaseUrl?: unknown
           defaultModel?: unknown
           sessionId?: unknown
         } | null
@@ -207,10 +160,9 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
         })
         const after = projectEnv.snapshot()
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
         const defaultModel = applyDefaultModel(body.defaultModel)
-        const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
-        const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
+        const opencodeEnvChanged = opencodeEnv.changed
+        const opencodeEnvNames = opencodeEnv.names
         const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined
 
         if (result.changed) {

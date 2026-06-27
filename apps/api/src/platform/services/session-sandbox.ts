@@ -46,10 +46,8 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
 // Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
@@ -295,8 +293,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
-  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sandboxKey, executorToken] = await Promise.all([
     db
       .insert(sessionSandboxes)
       .values({
@@ -334,45 +331,24 @@ export async function provisionSessionSandbox(opts: {
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    llmGatewayEnabled
-      ? accountEntitledToLlmGateway(accountId).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-            err instanceof Error ? err.message : String(err),
-          );
-          return false;
-        })
-      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  // The `kortix` opencode provider now targets the SLIM managed endpoint mounted
-  // on apps/api itself (`/v1/router/llm` → OpenAI-compatible /chat/completions +
+  // The `kortix` opencode provider targets the SLIM managed endpoint mounted on
+  // apps/api itself (`/v1/router/llm` → OpenAI-compatible /chat/completions +
   // /models). It authenticates with the per-session executor PAT (gatewayLlmKey
-  // below), which the slim endpoint accepts via resolveLlmContext. (The heavy
-  // gateway base + its proxy mode are being retired in a later phase.)
+  // below), which the slim endpoint accepts via resolveLlmContext.
   const llmBaseUrl = `${kortixOrigin}/v1/router/llm`;
 
-  // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
-  // injected (otherwise OpenCode falls back to showing only its built-in Zen
-  // catalog). It authenticates the gateway with the per-session executor PAT,
-  // which the gateway resolves via validateAccountToken and meters.
-  //
-  // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
-  // path was a single row per member, re-minted on every provision, so concurrent
-  // boots clobbered each other and left older sandboxes with a stale token the
-  // gateway rejects (401). The PAT is per-session and stable.
-  //
-  // Enablement is a three-part gate: operator availability, per-project
-  // experimental opt-in, and account entitlement. If any part is off we inject
-  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
-  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
-  // so legacy paying customers are no longer wrongly stripped to the Zen-only
-  // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayLlmKey: string | null =
-    llmGatewayEnabled && gatewayEntitled ? executorToken : null;
+  // Managed models are ALWAYS available: the sandbox's OpenCode `kortix` provider
+  // mounts whenever KORTIX_LLM_* is injected, so we always inject the per-session
+  // executor PAT as its credential. There is no provisioning-time entitlement
+  // gate — per-request affordability (active sub / wallet balance) is enforced by
+  // the slim endpoint's own credit check. BYOK provider keys coexist natively.
+  // (YOLO mirrors the same token/base for back-compat with daemons that read it.)
+  const gatewayLlmKey: string | null = executorToken ?? null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,

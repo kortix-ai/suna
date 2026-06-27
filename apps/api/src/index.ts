@@ -643,14 +643,7 @@ app.openapi(
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
-
-{
-  // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
-  // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
-  const { mountLlmGateway } = await import('./llm-gateway/wire');
-  mountLlmGateway(app);
-}
+app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, /v1/router/llm/* (slim managed endpoint), etc.
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
@@ -1019,10 +1012,10 @@ export default {
       server.timeout(req, 0);
     }
 
-    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
-    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
-    // closing the client socket at idleTimeout with an empty reply.
-    if (url.pathname.startsWith('/v1/llm-gateway')) {
+    // The slim managed LLM endpoint streams chat completions (SSE) to the
+    // sandbox's `kortix` provider. Let the upstream's own keep-alive govern it
+    // instead of Bun closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/router/llm')) {
       server.timeout(req, 0);
     }
 

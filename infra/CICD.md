@@ -82,8 +82,8 @@ There is no per-component version.
 | `codeql.yml`      | push/PR main+staging+prod, weekly    | SAST                                                                |
 | `secret-scan.yml` | PR → main/staging/prod               | gitleaks                                                            |
 | `deploy-dev.yml`  | push → `main`                        | build+push dev API/frontend images, run dev DB migrations, bump EKS GitOps values, publish CLI `dev-latest` |
-| `build-staging.yml` | push → `staging`                   | build exact staging API/gateway/frontend images tagged `staging-<sha8>` |
-| `deploy-staging.yml` | build-staging success / manual    | deploy staging API/gateway, wire staging Cloudflare/Vercel, and verify staging runtime config |
+| `build-staging.yml` | push → `staging`                   | build exact staging API/frontend images tagged `staging-<sha8>` |
+| `deploy-staging.yml` | build-staging success / manual    | deploy staging API, wire staging Cloudflare/Vercel, and verify staging runtime config |
 | `qa-staging.yml`  | push → `staging`                     | e2e · visual · a11y · migration report against staging target        |
 | `desktop.yml`     | push → main (`apps/desktop/**`) / dispatch | signed desktop installers → `desktop-dev-latest`              |
 | `promote.yml`     | manual dispatch                      | promote `staging` by default; open a reviewed `release/vX.Y.Z` PR into `prod`; no tag/release/deploy until merge |

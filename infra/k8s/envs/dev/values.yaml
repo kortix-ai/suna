@@ -17,11 +17,6 @@ env:
 # wins over envFrom). Flip back to "true" only once Daytona stabilizes the
 # experimental region.
 extraEnv:
-  # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
-  # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
-  # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
-  # catalog shape) and the model picker collapses to a single model.
-  LLM_GATEWAY_BASE_URL: "https://gateway-dev.kortix.com/v1/llm"
   # NOTE: warm-template (warm_snapshot) is NOT an env — it's the admin Providers
   # panel toggle (DB row), default OFF / opt-in. Don't reintroduce an env knob.
   # Idle auto-stop for sandboxes (Daytona AND Platinum honor this now — Platinum

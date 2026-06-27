@@ -9,7 +9,12 @@ case "$mode" in
     exec dotenvx run -- bun test src/__tests__/integration-*.test.ts
     ;;
   live)
-    exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test src/llm-gateway/__tests__/gateway.live.test.ts
+    files=$(find src -name '*.live.test.ts' | sort)
+    if [ -z "$files" ]; then
+      echo "no live tests found" >&2
+      exit 0
+    fi
+    exec env RUN_LIVE_LLM_TESTS=1 dotenvx run -- bun test $files
     ;;
   default)
     files=$(find src -name '*.test.ts' ! -name 'integration-*' ! -name '*.live.test.ts' | sort)

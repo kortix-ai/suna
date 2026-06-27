@@ -1,12 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
   BASE,
-  DEV_GATEWAY_INTERNAL_TOKEN,
   STRIDE,
   apiLaunchEnv,
   computePorts,
   dbModeOf,
-  gatewayLaunchEnv,
   lowestFreeSlot,
   primaryCredsFromStatus,
   rewriteConfigToml,
@@ -117,12 +115,9 @@ describe('launch envs', () => {
   const ports = computePorts(1);
   const creds = slotCredsFromStatus(ports, {});
 
-  test('api routes sandbox LLM through the local gateway proxy port', () => {
+  test('api launch env pins the worktree api port; billing off by default', () => {
     const env = apiLaunchEnv(ports, creds);
     expect(env.PORT).toBe(String(ports.api));
-    expect(env.LLM_GATEWAY_ENABLED).toBe('true');
-    expect(env.LLM_GATEWAY_PROXY_PORT).toBe(String(ports.gateway));
-    expect(env.GATEWAY_INTERNAL_TOKEN).toBe(DEV_GATEWAY_INTERNAL_TOKEN);
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
   });
 
@@ -130,14 +125,6 @@ describe('launch envs', () => {
     const env = apiLaunchEnv(ports, creds, { stripeWebhookSecret: 'whsec_x' });
     expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
     expect(env.STRIPE_WEBHOOK_SECRET).toBe('whsec_x');
-  });
-
-  test('api and gateway share the SAME internal token (mutual auth invariant)', () => {
-    const api = apiLaunchEnv(ports, creds);
-    const gw = gatewayLaunchEnv(ports);
-    expect(gw.GATEWAY_INTERNAL_TOKEN).toBe(api.GATEWAY_INTERNAL_TOKEN);
-    expect(gw.PORT).toBe(String(ports.gateway));
-    expect(gw.KORTIX_API_URL).toBe(`http://localhost:${ports.api}`);
   });
 
   test('web proxies to the worktree api, not the shared 8008', () => {
@@ -156,19 +143,12 @@ describe('launch envs', () => {
     for (let slot = 0; slot < 6; slot++) {
       const p = computePorts(slot);
       const c = slotCredsFromStatus(p, {});
-      const envs = [apiLaunchEnv(p, c), gatewayLaunchEnv(p), webLaunchEnv(p, c)];
+      const envs = [apiLaunchEnv(p, c), webLaunchEnv(p, c)];
       for (const env of envs) {
         for (const [k, v] of Object.entries(env)) {
           expect(v, `slot ${slot} ${k}="${v}"`).not.toContain('undefined');
         }
       }
-    }
-  });
-
-  test('computePorts(slot) always carries the gateway port (the field whose absence caused the 8090 fallback)', () => {
-    for (let slot = 0; slot < 6; slot++) {
-      expect(typeof computePorts(slot).gateway).toBe('number');
-      expect(gatewayLaunchEnv(computePorts(slot)).PORT).toMatch(/^\d+$/);
     }
   });
 });

@@ -34,7 +34,6 @@ import { getProvider } from '../providers';
 import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
-import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { warmPoolSetting } from './runtime-settings';
@@ -43,7 +42,6 @@ import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { randomUUID } from 'node:crypto';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting/parked longer than this → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
@@ -422,7 +420,6 @@ async function bindClaimedSpare(input: {
   projectId: string;
   provider: SandboxProviderName;
   sessionMetadata: Record<string, unknown>;
-  llmGatewayEnabled: boolean;
 }): Promise<boolean> {
   // The session may have been deleted mid-claim — don't bind a doomed session.
   const [session] = await db.select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, input.sessionId)).limit(1);
@@ -464,7 +461,7 @@ async function bindClaimedSpare(input: {
         poolState: null,
         config: {
           serviceKey: input.spare.serviceKey, // PARK key — the box keeps authenticating with it
-          llmGatewayEnabled: input.llmGatewayEnabled,
+          llmGatewayEnabled: true, // managed models are always available
         },
         metadata: { ...input.sessionMetadata, claimed_from_spare: input.spare.spareSandboxId },
         lastUsedAt: new Date(),
@@ -536,9 +533,10 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }
-    const llmGatewayEnabled = projectLlmGatewayEnabled(input.projectMetadata);
-    const gatewayEntitled = llmGatewayEnabled ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
-    const gatewayLlmKey = llmGatewayEnabled && gatewayEntitled ? executorToken : null;
+    // Managed models are always available: inject the per-session executor PAT
+    // as the `kortix` provider credential whenever we minted one. Entitlement is
+    // enforced per-request by the slim endpoint's credit check, not here.
+    const gatewayLlmKey = executorToken ?? null;
     const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
     // Slim managed endpoint on apps/api (see session-sandbox.ts for the rationale).
     const llmBaseUrl = `${kortixOrigin}/v1/router/llm`;
@@ -562,7 +560,6 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
       projectId: input.projectId,
       provider: input.provider,
       sessionMetadata: input.sessionMetadata,
-      llmGatewayEnabled: !!gatewayLlmKey,
     });
     if (!bound) return null;
     console.log(`[warm-pool] claimed spare ${spare.spareSandboxId.slice(0, 8)} → session ${input.sessionId.slice(0, 8)}`);

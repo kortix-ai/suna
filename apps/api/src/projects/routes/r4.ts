@@ -31,7 +31,6 @@ import {
 } from "../../channels/slack-webhook";
 import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
 import { auth, errors, json } from "../../openapi";
-import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
@@ -1272,12 +1271,9 @@ projectsApp.openapi(
       if (!loaded) return c.json({ error: "Not found" }, 404);
       projectMetadata = loaded.row.metadata;
     }
-    if (!projectLlmGatewayEnabled(projectMetadata)) {
-      return c.json(
-        { error: "LLM gateway is disabled for this project", code: "llm_gateway_disabled" },
-        404,
-      );
-    }
+    // Managed models are always available — the slim endpoint enforces
+    // entitlement per-request via its credit check, so there's no gate here.
+    void projectMetadata;
     const models = gatewayModelCatalog(projectId);
     return c.json({ models });
   },
