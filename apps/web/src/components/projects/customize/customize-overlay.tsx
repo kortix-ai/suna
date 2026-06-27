@@ -29,14 +29,11 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  Gauge,
   GitPullRequest,
   KeyRound,
-  KeySquare,
   MessageSquare,
   Monitor,
   Plug,
-  ScrollText,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -44,7 +41,6 @@ import {
   Terminal,
   Timer,
   Users,
-  Wallet,
   Webhook,
   X,
   type LucideIcon,
@@ -55,13 +51,7 @@ import { ChannelsView } from '@/components/projects/customize/sections/channels-
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
-import {
-  LlmBudgetsView,
-  LlmKeysView,
-  LlmLogsView,
-  LlmOverviewView,
-  LlmProvidersView,
-} from '@/components/projects/customize/sections/gateway-view';
+import { LlmManagementView } from '@/components/projects/customize/sections/gateway-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -139,14 +129,7 @@ const GROUPS: readonly RailGroup[] = [
 ];
 
 const LLM_GROUP: RailGroup = {
-  label: 'LLM',
-  items: [
-    { section: 'llm-overview', label: 'Overview', icon: Gauge },
-    { section: 'llm-providers', label: 'Providers', icon: Boxes },
-    { section: 'llm-logs', label: 'Logs', icon: ScrollText },
-    { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
-    { section: 'llm-keys', label: 'Keys', icon: KeySquare },
-  ],
+  items: [{ section: 'llm-management', label: 'LLM Management', icon: Boxes }],
 };
 
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
@@ -305,7 +288,11 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                         <li key={item.section}>
                           <RailButton
                             item={item}
-                            active={section === item.section}
+                            active={
+                              item.section === 'llm-management'
+                                ? section.startsWith('llm-')
+                                : section === item.section
+                            }
                             onClick={() => setSection(item.section)}
                           />
                         </li>
@@ -396,6 +383,12 @@ function SectionContent({
     return null;
   }
 
+  // All LLM surfaces live behind one section with its own sub-rail. The active
+  // tab is derived from the `llm-*` section, so deep-links keep working.
+  if (section.startsWith('llm-')) {
+    return <LlmManagementView projectId={projectId} />;
+  }
+
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).
@@ -416,16 +409,6 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
-    case 'llm-overview':
-      return <LlmOverviewView projectId={projectId} />;
-    case 'llm-providers':
-      return <LlmProvidersView projectId={projectId} />;
-    case 'llm-logs':
-      return <LlmLogsView projectId={projectId} />;
-    case 'llm-budgets':
-      return <LlmBudgetsView projectId={projectId} />;
-    case 'llm-keys':
-      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'members':
