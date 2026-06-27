@@ -185,7 +185,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
           />
         )}
 
-        {project?.account_id && (
+        {canManage && project?.account_id && (
           <ResourceAccessCard
             projectId={projectId}
             accountId={project.account_id}
@@ -1865,6 +1865,16 @@ function ResourceAccessCard({
                     <Badge variant="outline" size="sm" className="capitalize">
                       {g.resource_type}
                     </Badge>
+                    {g.orphaned && (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400"
+                        title={`This ${g.resource_type} no longer exists (renamed or deleted). The grant is inert — the restriction has lapsed. Remove it or re-grant the current ${g.resource_type}.`}
+                      >
+                        renamed / removed
+                      </Badge>
+                    )}
                   </span>
                 }
                 subtitle={

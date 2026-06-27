@@ -17,7 +17,7 @@ import { roleAllows } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
+import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
@@ -800,21 +800,37 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
+    // catalogue + granted-member emails, so it must NOT be readable by a scoped
+    // member (who'd otherwise enumerate exactly what they were scoped away from).
+    // Gate identical to the POST/DELETE siblings below.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
-    let resources = { agents: [] as unknown[], skills: [] as unknown[] };
+    let resources: { agents: { id: string }[]; skills: { id: string }[] } = { agents: [], skills: [] };
+    let configLoaded = false;
     try {
       const config = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
       resources = projectResourcesFromConfig(config);
+      configLoaded = true;
     } catch (err) {
       console.warn('[resource-grants] config load failed', {
         projectId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    // Grants key on the agent NAME / skill SLUG (file-based ids). A rename or
+    // delete of the underlying agent/skill leaves the grant ORPHANED — and since
+    // an unscoped resource is project-wide, the restriction silently evaporates.
+    // Flag orphaned grants so the manager gets a SIGNAL to re-grant (only when the
+    // config actually loaded — a transient repo failure must not mass-flag).
+    const liveAgentIds = new Set(resources.agents.map((r) => r.id));
+    const liveSkillIds = new Set(resources.skills.map((r) => r.id));
+    const isOrphan = (type: string, id: string) =>
+      configLoaded && (type === 'agent' ? !liveAgentIds.has(id) : type === 'skill' ? !liveSkillIds.has(id) : false);
 
     const grants = await listResourceGrants(projectId);
 
@@ -846,6 +862,9 @@ projectsApp.openapi(
         granted_by: g.grantedBy,
         created_at: g.createdAt.toISOString(),
         expires_at: g.expiresAt?.toISOString() ?? null,
+        // true = the agent/skill this grant scopes no longer exists (renamed or
+        // deleted); the grant is inert and should be removed or re-pointed.
+        orphaned: isOrphan(g.resourceType, g.resourceId),
       })),
     });
   },
@@ -886,6 +905,9 @@ projectsApp.openapi(
       return c.json({ error: 'principal_type must be member or group' }, 400);
     }
     if (!principalId) return c.json({ error: 'principal_id is required' }, 400);
+    // principal_id flows into a uuid column — validate the shape first so a
+    // malformed value is a clean 400, not a 22P02 500.
+    if (!isUuid(principalId)) return c.json({ error: 'principal_id must be a valid id' }, 400);
     const expires = parseExpiresAtBody(body.expires_at);
     if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -947,6 +969,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const grantId = c.req.param('grantId');
+    // grant_id is a uuid column — a malformed id is a clean 404 (same as missing),
+    // not a 22P02 500.
+    if (!isUuid(grantId)) return c.json({ error: 'grant not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);

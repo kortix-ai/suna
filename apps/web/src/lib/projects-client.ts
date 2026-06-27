@@ -832,6 +832,9 @@ export interface ProjectResourceGrant {
   granted_by: string | null;
   created_at: string;
   expires_at: string | null;
+  /** true = the scoped agent/skill no longer exists (renamed/deleted) — the
+   *  grant is inert and the restriction has lapsed; remove or re-point it. */
+  orphaned?: boolean;
 }
 
 export interface ProjectResourceGrantsResponse {
