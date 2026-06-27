@@ -338,6 +338,14 @@ recording the full path. The SSE-lists + billing work are their own future PRs.
   + render. Deleted: the `/start` query, the switch effect, `SessionRuntime`, `useChat`, and
   the `useCanonicalOpenCodeSession` gate. White-label typecheck green. This **proves the
   collapse end-to-end.**
+- **§3 / §7 (partial) — the web's connection store unified + the SDK poller deleted.**
+  `apps/web`'s `sandbox-connection-store` was a byte-identical *separate* fork; it now
+  re-exports the SDK's (`@kortix/sdk/sandbox-connection-store`) — ONE store instance shared by
+  the web's poller/gates AND the SDK's `useSessionSync`/event-stream/`useSession`, removing a
+  latent split-brain (two stores held together only by a shared sessionStorage flag +
+  connSwitchReset registration order). The SDK's own `useSandboxConnection` poller hook is
+  **deleted** (dead — white-label uses `useSession`, the web uses its own local poller), so the
+  SDK's active surface is now poller-free. Web typecheck clean; SDK + white-label green.
 
 ### Staged (deliberately NOT big-banged here)
 
@@ -348,14 +356,18 @@ recording the full path. The SSE-lists + billing work are their own future PRs.
   web; the web kept its originals). Replacing that stack with `useSession` is a large, staged,
   **runtime-tested** migration — a green typecheck would NOT prove the gating/streaming still
   work, and breaking production chat is unacceptable. So:
-  - The SDK's now-dormant `use-sandbox-connection` poller + the plumbing exports are **kept**
-    (Phase 7 make-internal stays deferred) so nothing breaks mid-migration — the web still
-    imports `@kortix/sdk/server-store` and friends.
-  - The recommended staging: (a) converge the web's forked stores/hooks onto the SDK's by
-    re-export (the pattern `apps/web/src/stores/server-store.ts` already uses), verifying the
-    build at each step; (b) swap the session page's 7-step mount for `useSession`; (c) replace
-    the 31 `healthy` gate sites with `s.phase`/`runtimePhase`; (d) delete the web's forks +
-    the poller; (e) `§6` per-session-client + `§7` make-internal last.
+  - The SDK's plumbing exports (`server-store`, `OpenCodeEventStreamProvider`,
+    `useCanonicalOpenCodeSession`, raw stores) are **kept** (Phase 7 make-internal stays
+    deferred) so nothing breaks mid-migration — the web still imports them directly. (The SDK's
+    own poller hook IS deleted; the web uses a separate LOCAL poller it still needs for
+    mid-session reconnect detection.)
+  - Staging progress: (a) ✅ the connection store is converged onto the SDK (shipped above) —
+    `pending-store` is still a local fork (diverged: web 86 vs sdk 65 lines) and is the next
+    converge target; (b) swap the session page's 7-step mount for `useSession` (the delicate
+    part — crossfade / instant-shell / fresh-session / pending-prompt UX, ~250 lines); (c)
+    replace the 31 `healthy` gate sites with `s.phase`/`runtimePhase`; (d) replace the web's
+    LOCAL poller's reconnect-detection role with SSE-disconnect liveness, then delete it; (e)
+    `§6` per-session-client + `§7` make-internal last.
 - **§6 per-session client** — `getClientForUrl(runtime_url)` is wired through the type but the
   live path still routes through the global active-server; the swap (kills the
   no-concurrent-sessions limit) lands with the web migration since it touches the same stores.

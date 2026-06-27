@@ -23,7 +23,11 @@ export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-model-hydration';
 export * from './use-session-sync';
-export * from './use-sandbox-connection';
+// The client health poller (useSandboxConnection) was REMOVED — readiness is now
+// server-truth via `useSession` (/start `stage==='ready'`, seeded into the
+// connection store), so there is no poll loop to halt (the old first-load
+// 503-halt bug is structurally impossible). The connection STORE is still
+// exported below for hosts that drive readiness themselves.
 // The live pending-request store. The SSE event stream writes agent QUESTIONS
 // and PERMISSION requests here (keyed by request id, each carrying sessionID);
 // `useSessionSync` does NOT surface them, so a host that renders interactive
