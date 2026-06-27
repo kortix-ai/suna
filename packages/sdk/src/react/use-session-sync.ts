@@ -3,8 +3,6 @@
 import type {
 	Message,
 	Part,
-	PermissionRequest,
-	QuestionRequest,
 	SessionStatus,
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
@@ -26,8 +24,6 @@ import { loadSessionFromIDB, saveSessionToIDB } from "../state/idb-sync-cache";
 import { canQueryOpenCodeSession } from "./use-opencode-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];
-const EMPTY_PERMS: PermissionRequest[] = [];
-const EMPTY_QUES: QuestionRequest[] = [];
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: "idle" } as SessionStatus;
@@ -408,12 +404,6 @@ export function useSessionSync(sessionId: string) {
 	const status = useSyncStore(
 		(s) => s.sessionStatus[sessionId] ?? IDLE_STATUS,
 	) as SessionStatus;
-	const permissions = useSyncStore((s) => s.permissions[sessionId]) as
-		| PermissionRequest[]
-		| undefined;
-	const questions = useSyncStore((s) => s.questions[sessionId]) as
-		| QuestionRequest[]
-		| undefined;
 	const diffs = useSyncStore((s) => s.diffs[sessionId]) as
 		| FileDiff[]
 		| undefined;
@@ -427,8 +417,6 @@ export function useSessionSync(sessionId: string) {
 		status,
 		isBusy,
 		isLoading,
-		permissions: permissions ?? EMPTY_PERMS,
-		questions: questions ?? EMPTY_QUES,
 		diffs: diffs ?? EMPTY_DIFFS,
 		todos: todos ?? EMPTY_TODOS,
 	};

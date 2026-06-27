@@ -4,8 +4,6 @@ import type {
 	Message,
 	Event as OpenCodeEvent,
 	Part,
-	PermissionRequest,
-	QuestionRequest,
 	SessionStatus,
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
@@ -31,8 +29,6 @@ interface SyncState {
 	messages: Record<string, Message[]>;
 	parts: Record<string, Part[]>;
 	sessionStatus: Record<string, SessionStatus>;
-	permissions: Record<string, PermissionRequest[]>;
-	questions: Record<string, QuestionRequest[]>;
 	diffs: Record<string, FileDiff[]>;
 	todos: Record<string, Todo[]>;
 
@@ -49,10 +45,6 @@ interface SyncState {
 		delta: string,
 	) => void;
 	setStatus: (sessionID: string, status: SessionStatus) => void;
-	addPermission: (permission: PermissionRequest) => void;
-	removePermission: (sessionID: string, permissionID: string) => void;
-	addQuestion: (question: QuestionRequest) => void;
-	removeQuestion: (sessionID: string, questionID: string) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	optimisticAdd: (
@@ -104,8 +96,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
 	parts: {},
 	sessionStatus: {},
-	permissions: {},
-	questions: {},
 	diffs: {},
 	todos: {},
 
@@ -293,56 +283,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 		})),
 
-	addPermission: (permission) =>
-		set((s) => {
-			const sessionID = permission.sessionID;
-			const list = s.permissions[sessionID] ?? [];
-			const result = Binary.search(list, permission.id, (p) => p.id);
-			const next = [...list];
-			if (result.found) {
-				next[result.index] = permission;
-			} else {
-				next.splice(result.index, 0, permission);
-			}
-			return { permissions: { ...s.permissions, [sessionID]: next } };
-		}),
-
-	removePermission: (sessionID, permissionID) =>
-		set((s) => {
-			const list = s.permissions[sessionID];
-			if (!list) return s;
-			const result = Binary.search(list, permissionID, (p) => p.id);
-			if (!result.found) return s;
-			const next = [...list];
-			next.splice(result.index, 1);
-			return { permissions: { ...s.permissions, [sessionID]: next } };
-		}),
-
-	addQuestion: (question) =>
-		set((s) => {
-			const sessionID = question.sessionID;
-			const list = s.questions[sessionID] ?? [];
-			const result = Binary.search(list, question.id, (q) => q.id);
-			const next = [...list];
-			if (result.found) {
-				next[result.index] = question;
-			} else {
-				next.splice(result.index, 0, question);
-			}
-			return { questions: { ...s.questions, [sessionID]: next } };
-		}),
-
-	removeQuestion: (sessionID, questionID) =>
-		set((s) => {
-			const list = s.questions[sessionID];
-			if (!list) return s;
-			const result = Binary.search(list, questionID, (q) => q.id);
-			if (!result.found) return s;
-			const next = [...list];
-			next.splice(result.index, 1);
-			return { questions: { ...s.questions, [sessionID]: next } };
-		}),
-
 	setDiff: (sessionID, diffs) =>
 		set((s) => ({
 			diffs: { ...s.diffs, [sessionID]: diffs },
@@ -420,8 +360,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
-				permissions: { ...s.permissions, [sessionID]: [] },
-				questions: { ...s.questions, [sessionID]: [] },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 			};
@@ -588,8 +526,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			messages: {},
 			parts: {},
 			sessionStatus: {},
-			permissions: {},
-			questions: {},
 			diffs: {},
 			todos: {},
 		});
@@ -884,36 +820,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "todo.updated": {
 				const props = event.properties as { sessionID: string; todos: Todo[] };
 				if (props.sessionID) store.setTodo(props.sessionID, props.todos);
-				return;
-			}
-			case "permission.asked": {
-				const permission = event.properties as PermissionRequest;
-				if (permission?.id && permission?.sessionID)
-					store.addPermission(permission);
-				return;
-			}
-			case "permission.replied": {
-				const props = event.properties as {
-					sessionID: string;
-					requestID: string;
-				};
-				if (props.sessionID && props.requestID)
-					store.removePermission(props.sessionID, props.requestID);
-				return;
-			}
-			case "question.asked": {
-				const question = event.properties as QuestionRequest;
-				if (question?.id && question?.sessionID) store.addQuestion(question);
-				return;
-			}
-			case "question.replied":
-			case "question.rejected": {
-				const props = event.properties as {
-					sessionID: string;
-					requestID: string;
-				};
-				if (props.sessionID && props.requestID)
-					store.removeQuestion(props.sessionID, props.requestID);
 				return;
 			}
 			default:
