@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
@@ -59,24 +58,9 @@ describe("managed catalog", () => {
     }
   });
 
-  test("curated OpenCode Zen free ids are native session models, not managed Kortix models", () => {
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).toEqual([
-      "deepseek-v4-flash-free",
-      "mimo-v2.5-free",
-      "nemotron-3-ultra-free",
-      "north-mini-code-free",
-    ]);
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain("big-pickle");
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
-      "qwen3.6-plus-free",
-    );
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
-      "minimax-m3-free",
-    );
-
-    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      const model = getManagedModel(id);
-      expect(model, `${id} should not resolve as managed`).toBeUndefined();
+  test("OpenRouter free slugs are not managed Kortix defaults", () => {
+    for (const id of ["north-mini-code-free", "nemotron-3-ultra-free"]) {
+      expect(getManagedModel(id), `${id} should not resolve`).toBeUndefined();
       expect(isManagedModelId(id), `${id} should not be managed`).toBe(false);
     }
   });

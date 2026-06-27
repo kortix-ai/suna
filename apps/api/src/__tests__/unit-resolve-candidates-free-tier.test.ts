@@ -84,7 +84,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
     resolvedModel: model.replace(/^codex\//, ''),
   }),
   livePricing: () => undefined,
-  managedCandidates: (managed: { id: string }) => [
+  managedCandidates: (managed: { id: string; upstreamModelId?: string }) => [
     {
       provider: 'openrouter',
       kind: 'openai-chat',
@@ -92,7 +92,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
       apiKey: 'managed-key',
       billingMode: 'credits',
       markup: 1.2,
-      resolvedModel: managed.id,
+      resolvedModel: managed.upstreamModelId ?? managed.id,
     },
   ],
 }));
@@ -138,13 +138,11 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-auto'), 'auto');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.provider).toBe('openrouter');
-    expect(candidates[0]?.resolvedModel).toBe('glm-5.2');
+    expect(candidates[0]?.resolvedModel).toBe('z-ai/glm-5.2');
     expect(accountTierCalls).toBe(1);
   });
 
-  test('does not resolve raw auto to a gateway upstream for free accounts', async () => {
-    // Free Zen models are native sandbox models now. A stale gateway caller that
-    // asks for raw `auto` must not silently route Zen through the gateway IP.
+  test('resolves raw auto to no managed candidate for free accounts', async () => {
     accountTier = 'free';
     const candidates = await resolveCandidates(
       { ...principal('free-auto'), freeModelsOnly: true },

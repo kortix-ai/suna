@@ -18,7 +18,6 @@ import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/shared/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
@@ -157,9 +156,6 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
  * "Manage models".
  */
 const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
-const DEFAULT_VISIBLE_NATIVE_OPENCODE_MODEL_IDS = new Set<string>(
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
-);
 
 /**
  * Provider id of the managed Kortix LLM gateway (see the sandbox's
@@ -188,12 +184,6 @@ function subProviderOf(modelID: string): string {
 }
 
 export function isDefaultVisible(model: ModelKey): boolean {
-  if (
-    model.providerID === 'opencode' &&
-    DEFAULT_VISIBLE_NATIVE_OPENCODE_MODEL_IDS.has(model.modelID)
-  ) {
-    return true;
-  }
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 
@@ -263,7 +253,7 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
-    // Free tier (no active paid sub): hides Kortix managed paid/AUTO models.
+    // Free tier (no active paid sub): hides every Kortix managed model.
     freeTier?: boolean;
   },
 ) {
@@ -305,8 +295,6 @@ export function useModelStore(
             ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
             : (connectedProviderIds?.has(sub) ?? false);
         if (MANAGED_MODEL_IDS.has(model.modelID)) {
-          // Free tier cannot use Kortix managed paid models or synthetic AUTO.
-          // Zen free models are native `opencode` session models now.
           if (freeTier) return false;
           return true;
         }

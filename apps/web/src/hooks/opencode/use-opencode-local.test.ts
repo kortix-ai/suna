@@ -5,6 +5,7 @@ import {
   formatPromptModel,
   modelProviderMode,
   parseModelKey,
+  resolveHiddenAutoModel,
   scopedModelSelectionKey,
 } from './use-opencode-local';
 
@@ -34,14 +35,11 @@ describe('OpenCode local model selection scoping', () => {
     ).toBe('native');
   });
 
-  test('parses bare OpenCode Zen free model ids as native opencode models', () => {
-    expect(parseModelKey('deepseek-v4-flash-free')).toEqual({
-      providerID: 'opencode',
-      modelID: 'deepseek-v4-flash-free',
-    });
+  test('does not guess a provider for bare model ids', () => {
+    expect(parseModelKey('deepseek-v4-flash-free')).toBeUndefined();
   });
 
-  test('formats native OpenCode Zen models correctly for command and prompt calls', () => {
+  test('formats native OpenCode models correctly for command and prompt calls', () => {
     const model = { providerID: 'opencode', modelID: 'deepseek-v4-flash-free' };
     expect(formatModelString(model)).toBe('deepseek-v4-flash-free');
     expect(formatPromptModel(model)).toEqual(model);
@@ -54,5 +52,41 @@ describe('OpenCode local model selection scoping', () => {
     expect(formatPromptModel(managed)).toEqual(managed);
     expect(formatModelString(byok)).toBe('kortix/anthropic/claude-sonnet-4-6');
     expect(formatPromptModel(byok)).toEqual(byok);
+  });
+
+  test('does not fall back to synthetic AUTO when AUTO is hidden and the explicit default is unavailable', () => {
+    expect(
+      resolveHiddenAutoModel(
+        { providerID: 'kortix', modelID: 'auto' },
+        {
+          enableAutoModel: false,
+          isModelValid: () => false,
+        },
+      ),
+    ).toBeUndefined();
+  });
+
+  test('substitutes hidden AUTO with the explicit managed default when available', () => {
+    expect(
+      resolveHiddenAutoModel(
+        { providerID: 'kortix', modelID: 'auto' },
+        {
+          enableAutoModel: false,
+          isModelValid: (model) => model.providerID === 'kortix' && model.modelID === 'glm-5.2',
+        },
+      ),
+    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
+  });
+
+  test('keeps AUTO only when the feature is explicitly enabled', () => {
+    expect(
+      resolveHiddenAutoModel(
+        { providerID: 'kortix', modelID: 'auto' },
+        {
+          enableAutoModel: true,
+          isModelValid: () => false,
+        },
+      ),
+    ).toEqual({ providerID: 'kortix', modelID: 'auto' });
   });
 });

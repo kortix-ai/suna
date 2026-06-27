@@ -48,6 +48,7 @@ import {
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
@@ -3950,7 +3951,7 @@ export function SessionChat({
           retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
           return;
         }
-        setCommandError('No model is available for this session yet. Change model or try again.');
+        setCommandError(NO_MODEL_AVAILABLE_MESSAGE);
         return;
       }
 
@@ -5848,6 +5849,7 @@ export function SessionChat({
           sessionId={sessionId}
           onFileSearch={handleFileSearch}
           providers={providers}
+          modelRequired
           threadContext={threadContext}
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}

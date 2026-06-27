@@ -6,11 +6,6 @@ import { LLM_PROVIDERS } from '@/lib/llm-providers';
 export type ProviderListResponse = SdkProviderListResponse;
 
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
-export const SESSION_NATIVE_PROVIDER_IDS = new Set(['opencode']);
-export const GATEWAY_SESSION_PROVIDER_IDS = new Set([
-  ...GATEWAY_PROVIDER_IDS,
-  ...SESSION_NATIVE_PROVIDER_IDS,
-]);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
 export function normalizeProviderList(
@@ -77,8 +72,8 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
-    all: all.filter((p) => GATEWAY_SESSION_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => GATEWAY_SESSION_PROVIDER_IDS.has(id)),
+    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
+    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
   };
 }
 
@@ -165,8 +160,9 @@ export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
   const models = catalog.models ?? {};
+  const firstModelId = Object.keys(models)[0];
   return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    default: firstModelId ? { kortix: models.auto ? 'auto' : firstModelId } : {},
     connected: ['kortix'],
     all: [{
       id: 'kortix',

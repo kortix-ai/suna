@@ -23,10 +23,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
-      // Tier-aware: free accounts do not get a gateway AUTO target; their free
-      // Zen default is the sandbox-native `opencode` provider.
-      autoRouter: (model, body, principal) =>
-        pickAutoModel(model, body, { free: !!principal.freeModelsOnly }),
+      autoRouter: pickAutoModel,
     });
     const llm = new Hono();
     llm.get('/health', (c) =>

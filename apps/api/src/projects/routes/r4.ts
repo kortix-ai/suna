@@ -1330,9 +1330,9 @@ projectsApp.openapi(
         404,
       );
     }
-    // Free-tier accounts do not see Kortix managed paid/AUTO gateway models.
-    // Their own BYOK-connected models still show; OpenCode Zen free models come
-    // from the running sandbox's native provider, not this project catalog.
+    // Free-tier accounts see only managed models explicitly marked free plus
+    // their own BYOK/Codex-connected catalog entries. Paid managed models and
+    // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
         ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))

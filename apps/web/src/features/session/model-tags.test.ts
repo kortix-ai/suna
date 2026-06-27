@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { modelVisibilityKeyForProviderModel, shouldShowFreeTag } from './model-tags';
 
 describe('shouldShowFreeTag', () => {
-  test('uses the managed catalog free marker', () => {
+  test('uses an explicit free marker when a provider sends one', () => {
     expect(
       shouldShowFreeTag({
         free: true,

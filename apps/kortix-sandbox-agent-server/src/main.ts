@@ -38,7 +38,7 @@ import { startStaticWebServer } from './static-web'
 // prompts into the same opencode conversation instead of opening a fresh
 // session with no context.
 export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
-const OPENCODE_ZEN_FREE_MODELS = new Set([
+const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
   'mimo-v2.5-free',
   'nemotron-3-ultra-free',
@@ -1243,11 +1243,11 @@ async function isRootOpencodeSession(
 
 /** Per-session model override from KORTIX_OPENCODE_MODEL. Most models use
  *  provider/model form and are returned in OpenCode's `{ providerID, modelID }`
- *  shape. Bare native Zen ids are normalized onto the OpenCode provider so the
- *  boot prompt uses the schema accepted by `prompt_async`. */
+ *  shape. Bare legacy Zen ids are normalized onto the OpenCode provider so old
+ *  queued boot prompts keep using the schema accepted by `prompt_async`. */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
-  if (OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
+  if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
   const slash = raw.indexOf('/')
   if (slash <= 0 || slash === raw.length - 1) return undefined
   const providerID = raw.slice(0, slash)

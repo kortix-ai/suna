@@ -143,12 +143,11 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
       out.small_model = DEFAULT_KORTIX_MODEL
     }
-    // Gateway mode still allowlists providers so leaked provider keys cannot
-    // open native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets,
-    // logs, and BYOK handling. The one intentional native session provider is
-    // OpenCode Zen: its free models should egress from the sandbox instead of the
-    // Kortix gateway IP.
-    out.enabled_providers = ['kortix', 'opencode']
+    // Gateway mode allowlists providers so leaked provider keys cannot open
+    // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
+    // and BYOK handling. Free models are managed gateway models too, so the
+    // selector has one stable catalog before the sandbox has booted.
+    out.enabled_providers = ['kortix']
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread

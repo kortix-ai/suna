@@ -11,9 +11,10 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-react';
+import { Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -30,6 +31,7 @@ import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
@@ -81,14 +83,6 @@ import { Tag } from '@/components/ui/tag';
 // toggle is hidden.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
-// Free-tier (no active paid sub) cannot use the Kortix managed paid lineup or
-// synthetic AUTO. The fallback free model lives under OpenCode's native provider
-// once a session sandbox has loaded it.
-const FREE_DEFAULT_MODEL = {
-  providerID: 'opencode',
-  modelID: 'deepseek-v4-flash-free',
-};
-
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
 // back out: platform-managed defaults stay under the "Kortix" group, while every
@@ -120,6 +114,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [expandManual, setExpandManual] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   // When mounted under /projects/[id]/..., route the action buttons to the
   // per-project provider modal so credentials land in `project_secrets`. On
@@ -166,8 +161,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   }, [llmGatewayEnabled, secretNames]);
 
   // Free tier (free/no plan AND no active subscription) hides Kortix managed
-  // paid/AUTO models. Native OpenCode Zen and connected BYOK providers remain
-  // available through their own routing.
+  // paid/AUTO models. Managed free models and connected BYOK providers remain.
   const { data: accountState } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
@@ -183,7 +177,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || baseModels[0]?.modelName || 'Model';
+  const displayName = current?.modelName || 'No model';
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -256,30 +250,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [baseModels, llmGatewayEnabled, freeTier],
   );
 
-  // Free tier can't use gateway `auto` or paid managed models. If one is
-  // selected and the session-native OpenCode Zen provider is available, switch
-  // to the native free default so the first message never routes through the
-  // gateway Zen path.
-  const freeDefaultModel = useMemo(
-    () =>
-      baseModels.find(
-        (m) =>
-          m.providerID === FREE_DEFAULT_MODEL.providerID &&
-          m.modelID === FREE_DEFAULT_MODEL.modelID,
-      ),
-    [baseModels],
-  );
-  useEffect(() => {
-    if (!freeTier || !llmGatewayEnabled || !freeDefaultModel) return;
-    const sel = selectedModel;
-    const disallowed =
-      !!sel &&
-      sel.providerID === 'kortix' &&
-      MANAGED_MODEL_IDS.has(sel.modelID);
-    if (disallowed) {
-      onSelect({ providerID: freeDefaultModel.providerID, modelID: freeDefaultModel.modelID });
-    }
-  }, [freeTier, llmGatewayEnabled, freeDefaultModel, selectedModel, onSelect]);
   const isAutoSelected =
     featureFlags.enableAutoModel &&
     selectedModel?.providerID === 'kortix' &&
@@ -329,9 +299,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
   );
 
-  if (!autoModel && visibleModels.length === 0) {
-    return null;
-  }
+  const handleUpgrade = useCallback(() => {
+    setOpen(false);
+    openUpgradeDialog({
+      reason: 'subscription_required',
+      accountId: projectDetailQuery.data?.project.account_id,
+    });
+  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
 
   return (
     <>
@@ -503,8 +477,26 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     ))}
                   </>
                 ) : (
-                  <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                    {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
+                  <div className="px-3 py-5 text-center">
+                    <div className="text-foreground text-sm font-medium">No models available</div>
+                    <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+                      Upgrade or connect your own provider to start using this session.
+                    </p>
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <Button type="button" size="xs" onClick={handleUpgrade}>
+                        <CreditCard className="size-3.5" />
+                        Upgrade
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleOpenProviderModal('providers')}
+                      >
+                        <KeyRound className="size-3.5" />
+                        Connect provider
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CommandList>

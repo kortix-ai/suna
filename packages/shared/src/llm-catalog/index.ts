@@ -47,8 +47,7 @@ export interface ManagedModel {
   transport: "bedrock" | "openrouter";
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
-  tier: "flagship" | "balanced" | "fast" | "free";
-  free?: boolean;
+  tier: "flagship" | "balanced" | "fast";
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
   // unlike BYOK models these can't derive it from the generated catalog.
@@ -70,17 +69,7 @@ export interface ManagedModel {
 // Every managed model runs through OUR keys and is billed as Kortix credits with
 // markup, so the gateway enforces budgets/logging/spend on all of them. Claude
 // runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else goes via OpenRouter. OpenCode Zen free models are intentionally
-// NOT managed here: running sessions expose them through OpenCode's native
-// `opencode` provider so their traffic originates from the sandbox, not the
-// Kortix gateway.
-export const DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS = [
-  "deepseek-v4-flash-free",
-  "mimo-v2.5-free",
-  "nemotron-3-ultra-free",
-  "north-mini-code-free",
-] as const;
-
+// everything else goes via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: "claude-opus-4.8",
@@ -221,14 +210,10 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 export function pickAutoModel(
   model: string,
   body: Record<string, unknown>,
-  opts?: { free?: boolean },
 ): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
     return null;
   const hasImage = requestHasImage(body);
-  if (opts?.free) {
-    return null;
-  }
   return hasImage ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
 }
 

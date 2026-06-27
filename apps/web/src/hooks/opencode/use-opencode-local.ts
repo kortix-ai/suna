@@ -17,7 +17,6 @@ import { featureFlags } from '@/lib/feature-flags';
 import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/shared/llm-catalog';
 import { listProjectSecrets } from '@/lib/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
-import { DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -118,9 +117,6 @@ export function parseModelKey(model: unknown): ModelKey | undefined {
     }
   }
   if (typeof model === 'string') {
-    if ((DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS as readonly string[]).includes(model)) {
-      return { providerID: 'opencode', modelID: model };
-    }
     const idx = model.indexOf('/');
     if (idx > 0 && idx < model.length - 1) {
       return { providerID: model.slice(0, idx), modelID: model.slice(idx + 1) };
@@ -130,9 +126,8 @@ export function parseModelKey(model: unknown): ModelKey | undefined {
 }
 
 /**
- * Format a ModelKey as OpenCode's string model override. Native OpenCode Zen
- * models are bare ids; prefixing them with `opencode/` is forwarded upstream and
- * Zen rejects it as an unknown model.
+ * Format a ModelKey as OpenCode's string model override. Native OpenCode models
+ * are bare ids; provider-prefixed managed/BYOK models keep provider/model form.
  */
 export function formatModelString(model: ModelKey): string {
   if (model.providerID === 'opencode') return model.modelID;
@@ -141,6 +136,28 @@ export function formatModelString(model: ModelKey): string {
 
 export function formatPromptModel(model: ModelKey): ModelKey {
   return model;
+}
+
+export function resolveHiddenAutoModel(
+  resolved: ModelKey | undefined,
+  {
+    enableAutoModel,
+    isModelValid,
+  }: {
+    enableAutoModel: boolean;
+    isModelValid: (model: ModelKey) => boolean;
+  },
+): ModelKey | undefined {
+  if (
+    enableAutoModel ||
+    resolved?.providerID !== 'kortix' ||
+    resolved.modelID !== AUTO_MODEL_ID
+  ) {
+    return resolved;
+  }
+
+  const explicit = { providerID: 'kortix', modelID: AUTO_DEFAULT_MODEL_ID };
+  return isModelValid(explicit) ? explicit : undefined;
 }
 
 export type ModelProviderMode = 'native' | 'gateway';
@@ -168,8 +185,7 @@ export function useOpenCodeLocal({
   config,
   sessionId,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input). Gateway
-  // sessions include Kortix plus the native OpenCode Zen provider. ----
+  // ---- Flatten models from providers (shared with the chat input). ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
@@ -323,17 +339,7 @@ export function useOpenCodeLocal({
           const key = { providerID: p.id, modelID: configured };
           if (isModelValid(key) && isModelDefaultVisible(key)) return key;
         }
-        const modelIDs =
-          p.id === 'opencode'
-            ? [
-                ...DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS.filter((modelID) => modelID in p.models),
-                ...Object.keys(p.models).filter(
-                  (modelID) =>
-                    !(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS as readonly string[]).includes(modelID),
-                ),
-              ]
-            : Object.keys(p.models);
-        for (const modelID of modelIDs) {
+        for (const modelID of Object.keys(p.models)) {
           const key = { providerID: p.id, modelID };
           if (isModelValid(key) && isModelDefaultVisible(key)) return key;
         }
@@ -369,22 +375,14 @@ export function useOpenCodeLocal({
       // 5. Global fallback (config.model > recent > first connected)
       () => fallbackModel,
     );
-    // AUTO is hidden from the picker (see featureFlags.enableAutoModel): never
-    // surface it as the selected model. The sandbox/agent/config still defaults to
-    // `kortix/auto`, so the chain above legitimately resolves to it — substitute
-    // the explicit default model (GLM 5.2) so the picker reflects a concrete,
-    // opt-in model and the request carries it directly. Skipped if that model
-    // isn't available (e.g. non-gateway instance, or a free-tier catalog that
-    // doesn't serve it), which falls back to the resolved value.
-    if (
-      !featureFlags.enableAutoModel &&
-      resolved?.providerID === 'kortix' &&
-      resolved.modelID === AUTO_MODEL_ID
-    ) {
-      const explicit = { providerID: 'kortix', modelID: AUTO_DEFAULT_MODEL_ID };
-      if (isModelValid(explicit)) return explicit;
-    }
-    return resolved;
+    // AUTO is synthetic. When the feature is hidden, never surface or send it as a
+    // concrete selected model. Prefer the explicit managed default if available;
+    // otherwise report "no model" so callers wait/block instead of falling through
+    // to OpenCode's `kortix/auto` server default.
+    return resolveHiddenAutoModel(resolved, {
+      enableAutoModel: featureFlags.enableAutoModel,
+      isModelValid,
+    });
   }, [
     currentAgent,
     sessionId,

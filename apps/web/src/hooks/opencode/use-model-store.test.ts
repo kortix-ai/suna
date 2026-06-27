@@ -52,10 +52,10 @@ describe('model-store visibility policy', () => {
     expect(latest.has('anthropic:claude-legacy')).toBe(false);
   });
 
-  test('native OpenCode Zen free models are visible without release metadata', () => {
+  test('native OpenCode Zen models are not special-cased as defaults', () => {
     expect(
       isDefaultVisible({ providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }),
-    ).toBe(true);
+    ).toBe(false);
     expect(isDefaultVisible({ providerID: 'opencode', modelID: 'paid-model' })).toBe(false);
   });
 });

@@ -55,8 +55,8 @@ describe('provider-selection', () => {
   test('keeps gateway providers only when the running runtime exposes kortix', () => {
     const mixed = providers(['kortix', 'opencode', 'anthropic']);
     expect(providerListHasGateway(mixed)).toBe(true);
-    expect(filterToGatewayProviders(mixed).connected).toEqual(['kortix', 'opencode']);
-    expect(filterToGatewayProviders(mixed).all?.map((p) => p.id)).toEqual(['kortix', 'opencode']);
+    expect(filterToGatewayProviders(mixed).connected).toEqual(['kortix']);
+    expect(filterToGatewayProviders(mixed).all?.map((p) => p.id)).toEqual(['kortix']);
 
     const native = providers(['anthropic', 'openai']);
     expect(providerListHasGateway(native)).toBe(false);
@@ -112,7 +112,15 @@ describe('provider-selection', () => {
     expect((list.all?.[0]?.models as any)?.['deepseek-v4-flash-free']).toBeUndefined();
   });
 
-  test('merges project gateway catalog with session-native OpenCode Zen provider', () => {
+  test('does not invent a kortix/auto default for an empty project catalog', () => {
+    const list = projectLlmCatalogToProviderList({ models: {} });
+
+    expect(list.connected).toEqual(['kortix']);
+    expect(list.default).toEqual({});
+    expect(list.all?.[0]?.models).toEqual({});
+  });
+
+  test('does not merge session-native providers into gateway catalog', () => {
     const project = projectLlmCatalogToProviderList({
       models: {
         auto: { name: 'Auto' },
@@ -121,8 +129,8 @@ describe('provider-selection', () => {
     const session = filterToGatewayProviders(providers(['opencode', 'anthropic']));
     const merged = mergeProviderLists(project, session);
 
-    expect(merged.connected).toEqual(['kortix', 'opencode']);
-    expect(merged.all?.map((p) => p.id)).toEqual(['kortix', 'opencode']);
-    expect((merged.all?.find((p) => p.id === 'opencode')?.models as any)?.['opencode-model']).toBeDefined();
+    expect(merged.connected).toEqual(['kortix']);
+    expect(merged.all?.map((p) => p.id)).toEqual(['kortix']);
+    expect(merged.all?.find((p) => p.id === 'opencode')).toBeUndefined();
   });
 });
