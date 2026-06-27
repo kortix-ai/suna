@@ -1839,6 +1839,9 @@ export async function mergeChangeRequest(
     await backendApi.post<ChangeRequestMergeResponse>(
       `/projects/${projectId}/change-requests/${crId}/merge`,
       input ?? {},
+      // Surface merge failures via the CR dialog's own UI (the manifest-blocked
+      // banner offers a "Fix with agent" path) instead of a generic global toast.
+      { showErrors: false },
     ),
   );
 }

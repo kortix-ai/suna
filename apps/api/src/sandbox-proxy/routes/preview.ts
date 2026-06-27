@@ -13,6 +13,7 @@ import {
   resolvePreviewLink,
   wakeSandbox,
 } from '../backend';
+import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
 
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
@@ -347,7 +348,13 @@ export async function forwardToSandbox(
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
 
+  // Wall-clock budget so a cold/dead sandbox returns our friendly page BEFORE
+  // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
+  const proxyStartedAt = Date.now();
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
+    if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
       const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
@@ -448,7 +455,7 @@ export async function forwardToSandbox(
         // instead of hanging the whole proxy. `body` is buffered (line ~576, not
         // a stream) so aborting only kills the in-flight attempt, never truncates
         // an upload mid-stream.
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
         // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
         decompress: false,
         duplex: 'half',
