@@ -645,6 +645,28 @@ export function getChildSessionId(part: ToolPart): string | undefined {
 }
 
 /**
+ * Extract the error message from a child (sub-agent) session's raw messages.
+ *
+ * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
+ * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
+ * lives on the child session and never reaches the parent's turn renderer.
+ * Scans newest-first so the most recent failure wins.
+ */
+export function getChildSessionError(
+  childMessages: MessageWithParts[] | undefined,
+): string | undefined {
+  if (!childMessages) return undefined;
+  for (let i = childMessages.length - 1; i >= 0; i--) {
+    const info = childMessages[i]?.info as AssistantMessage | undefined;
+    if (info?.role === 'assistant' && info.error) {
+      return unwrapError(info.error);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Collect all tool parts from a child session's assistant messages.
  * Matches SolidJS getSessionToolParts — message-part.tsx:160-174
  */

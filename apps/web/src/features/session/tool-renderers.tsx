@@ -13,6 +13,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import {
+  SessionRetryDisplay,
+  TurnErrorDisplay,
+} from '@/features/session/session-error-banner';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   cleanResultSnippet,
@@ -42,6 +46,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
@@ -115,12 +120,16 @@ import React, {
 
 import {
   type Diagnostic,
+  getChildSessionError,
   getChildSessionId,
   getChildSessionToolParts,
   getDiagnostics,
   getDirectory,
   getFilename,
+  getRetryInfo,
+  getRetryMessage,
   getToolInfo,
+  type MessageWithParts,
   PERMISSION_LABELS,
   type PermissionRequest,
   type QuestionRequest,
@@ -5475,6 +5484,67 @@ function SubAgentActivity({
   );
 }
 
+/**
+ * Surfaces a sub-agent's failure/retry state up into the parent thread.
+ *
+ * A child (sub-agent) session runs its own LLM turn and streams its own
+ * `session.status` (retry) and `session.error` events. Those reach the browser
+ * on the shared per-server SSE stream and are stored keyed by the CHILD session
+ * id — but the parent's spawn card only ever rendered child *tool activity*. So
+ * when a sub-agent died mid-LLM-call (e.g. "Free usage exceeded, subscribe to
+ * Go") before running any tool, the parent card showed nothing and the thread
+ * looked stuck/collapsed. This banner reads the child's live retry status and
+ * persisted error and renders them inline so the failure is always visible.
+ */
+function SubAgentStatusBanner({
+  childSessionId,
+  childMessages,
+}: {
+  childSessionId?: string;
+  childMessages?: MessageWithParts[];
+}) {
+  // Live status for the child session (retry / busy / idle), keyed by child id.
+  const childStatus = useSyncStore((s) =>
+    childSessionId ? s.sessionStatus[childSessionId] : undefined,
+  );
+  const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
+  const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
+  const childError = useMemo(() => getChildSessionError(childMessages), [childMessages]);
+
+  // Live countdown for the retry banner (mirrors session-chat's per-second tick).
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  useEffect(() => {
+    if (!retryInfo) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () =>
+      setSecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [retryInfo]);
+
+  // A live retry takes precedence — it's the actionable "still trying" signal.
+  if (retryInfo && retryMessage) {
+    return (
+      <SessionRetryDisplay
+        message={retryMessage}
+        attempt={retryInfo.attempt}
+        secondsLeft={secondsLeft}
+        className="mt-2"
+      />
+    );
+  }
+
+  // Otherwise surface the terminal error so it stays visible after the child idles.
+  if (childError) {
+    return <TurnErrorDisplay errorText={childError} className="mt-2" />;
+  }
+
+  return null;
+}
+
 function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
@@ -5530,6 +5600,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5604,6 +5675,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -6527,6 +6599,12 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
             <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
           </div>
         )}
+
+        {/* Sub-agent retry/error — always visible so a failed worker never
+            looks like a silently-stuck/empty card. */}
+        <div className="px-3 pb-3 empty:hidden">
+          <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+        </div>
       </div>
 
       {hasSession && (
