@@ -2,7 +2,9 @@
 
 /**
  * LLM — one Customize section that consolidates the per-project gateway surfaces
- * (Providers, Overview, Logs, Budgets, API keys) behind a single clean tab bar.
+ * (Providers, Overview, Logs, Budgets, API keys) behind a single FilterBar — the
+ * same pill-tab style the provider panel uses, so the whole section reads as one
+ * consistent surface (no competing tab styles).
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
  * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
@@ -11,7 +13,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Boxes, Gauge, KeyRound, ScrollText, Wallet, type LucideIcon } from 'lucide-react';
+import { Boxes } from 'lucide-react';
 
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { GatewayBudgets } from '@/components/projects/gateway/gateway-budgets';
@@ -19,18 +21,18 @@ import { GatewayKeys } from '@/components/projects/gateway/gateway-keys';
 import { GatewayLogs } from '@/components/projects/gateway/gateway-logs';
 import { GatewayOverview } from '@/components/projects/gateway/gateway-overview';
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 type LlmTab = 'providers' | 'overview' | 'logs' | 'budgets' | 'keys';
 
-const LLM_TABS: { id: LlmTab; label: string; icon: LucideIcon }[] = [
-  { id: 'providers', label: 'Providers', icon: Boxes },
-  { id: 'overview', label: 'Overview', icon: Gauge },
-  { id: 'logs', label: 'Logs', icon: ScrollText },
-  { id: 'budgets', label: 'Budgets', icon: Wallet },
-  { id: 'keys', label: 'API keys', icon: KeyRound },
+const LLM_TABS: { id: LlmTab; label: string }[] = [
+  { id: 'providers', label: 'Providers' },
+  { id: 'overview', label: 'Overview' },
+  { id: 'logs', label: 'Logs' },
+  { id: 'budgets', label: 'Budgets' },
+  { id: 'keys', label: 'API keys' },
 ];
 
 const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
@@ -40,8 +42,6 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
   'llm-budgets': 'budgets',
   'llm-keys': 'keys',
 };
-
-const PANEL_CLASS = 'mt-0 flex min-h-0 flex-1 flex-col overflow-hidden';
 
 export function LlmManagementView({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
@@ -58,26 +58,23 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
       <CustomizeSectionHeader icon={Boxes} title="LLM" />
-      <Tabs
-        value={tab}
-        onValueChange={(v) => setTab(v as LlmTab)}
-        className="flex min-h-0 flex-1 flex-col gap-0"
-      >
-        <div className="border-border/60 flex shrink-0 items-center border-b px-4 py-2">
-          <TabsList variant="secondary" size="sm">
-            {LLM_TABS.map((t) => {
-              const Icon = t.icon;
-              return (
-                <TabsTrigger key={t.id} value={t.id} className="gap-1.5 px-3">
-                  <Icon className="size-3.5" />
-                  {t.label}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </div>
+      <div className="border-border/60 flex shrink-0 items-center border-b px-5 py-3">
+        <FilterBar>
+          {LLM_TABS.map((t) => (
+            <FilterBarItem
+              key={t.id}
+              data-state={tab === t.id ? 'active' : 'inactive'}
+              onClick={() => setTab(t.id)}
+              className="text-xs"
+            >
+              {t.label}
+            </FilterBarItem>
+          ))}
+        </FilterBar>
+      </div>
 
-        <TabsContent value="providers" className={PANEL_CLASS}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {tab === 'providers' && (
           <ProjectProviderModal
             asPanel
             projectId={projectId}
@@ -85,20 +82,12 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
             onOpenChange={() => {}}
             defaultTab="connected"
           />
-        </TabsContent>
-        <TabsContent value="overview" className={PANEL_CLASS}>
-          <GatewayOverview projectId={projectId} />
-        </TabsContent>
-        <TabsContent value="logs" className={PANEL_CLASS}>
-          <GatewayLogs projectId={projectId} />
-        </TabsContent>
-        <TabsContent value="budgets" className={PANEL_CLASS}>
-          <GatewayBudgets projectId={projectId} />
-        </TabsContent>
-        <TabsContent value="keys" className={PANEL_CLASS}>
-          <GatewayKeys projectId={projectId} />
-        </TabsContent>
-      </Tabs>
+        )}
+        {tab === 'overview' && <GatewayOverview projectId={projectId} />}
+        {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+        {tab === 'budgets' && <GatewayBudgets projectId={projectId} />}
+        {tab === 'keys' && <GatewayKeys projectId={projectId} />}
+      </div>
     </div>
   );
 }
