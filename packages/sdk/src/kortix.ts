@@ -22,7 +22,8 @@ import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
-import { getActiveSandboxId, switchToSessionSandboxAsync } from './state/server-store';
+import { getActiveSandboxId, getSandboxUrlForExternalId } from './state/server-store';
+import { setCurrentRuntime } from './state/current-runtime';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };
@@ -229,7 +230,9 @@ export function createKortix(config: KortixPlatformConfig) {
       ) {
         throw new Error(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`);
       }
-      await switchToSessionSandboxAsync(projectId, sessionId, started.sandbox);
+      // Point the app's runtime at this session's box — no global "switch".
+      const externalId = (started.sandbox as { external_id?: string | null }).external_id;
+      if (externalId) setCurrentRuntime(getSandboxUrlForExternalId(externalId), externalId);
       _ready = { opencodeSessionId: started.opencode_session_id };
       return _ready;
     }
