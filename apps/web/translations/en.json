@@ -7491,7 +7491,7 @@
     "autoComponentsIamPermissionsHelpPopoverJsxTextWhatAPerson42f41e4a": "What a person can do across the whole account.",
     "autoComponentsIamPermissionsHelpPopoverJsxTextProjectRoles38d48ed3": "Project roles",
     "autoComponentsIamPermissionsHelpPopoverJsxTextWhatAPerson5b13fd4a": "What a person can do on a specific project.",
-    "autoComponentsIamPermissionsHelpPopoverJsxTextBundleMembersAnd26d406ea": "Bundle members and attach the whole group to a project at a role. Every group member inherits that role. A user picks up the highest role ac",
+    "autoComponentsIamPermissionsHelpPopoverJsxTextBundleMembersAndd44ada52": "Bundle members and attach the whole group to a project at a role. Every group member inherits that role. A user picks up the highest role across their direct and group grants.",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOverrideRule60f7c767": "Override rule",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOwnersAndAdmins9e16f219": "Owners and admins always have",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryProject7532e737": "on every project, regardless of group attachments. To limit someone to specific projects, change their account role to",

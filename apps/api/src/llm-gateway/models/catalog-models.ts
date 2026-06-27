@@ -84,11 +84,15 @@ function capabilitiesOf(
   };
 }
 
-export function managedModels(): Record<string, GatewayModel> {
+export function managedModels(opts?: {
+  freeOnly?: boolean;
+}): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (Fusion) so OpenCode sizes conversations the same.
+  // its default target (Fusion) so OpenCode sizes conversations the same. It stays
+  // available to every tier — for a free account it resolves to a free model
+  // (see pickAutoModel), so the default still works without exposing paid ones.
   out[AUTO_MODEL_ID] = {
     name: "Auto",
     reasoning: false,
@@ -100,7 +104,10 @@ export function managedModels(): Record<string, GatewayModel> {
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
   // on each model. All current managed models support reasoning/tools/temperature.
+  // `freeOnly` drops the paid managed models so a free-tier account only ever sees
+  // the free OpenCode-Zen lineup through the Kortix gateway.
   for (const m of MANAGED_MODELS) {
+    if (opts?.freeOnly && !m.free) continue;
     out[m.id] = {
       name: m.name,
       free: m.free,
@@ -155,20 +162,38 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
 }
 
 // The served catalog depends only on the committed CATALOG snapshot and process
-// env (codex ids) — never on the caller. So the two shapes are each built ONCE,
-// at module load, instead of rebuilt (iterating ~5k models) on every /models
-// request and sandbox boot.
+// env (codex ids) — never on the caller. So the shapes are each built ONCE, at
+// module load, instead of rebuilt (iterating ~5k models) on every /models
+// request and sandbox boot. The `*_FREE` variants drop paid managed models for
+// free-tier accounts; BYOK/codex are unchanged (a free user's own connected
+// keys keep working).
 const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
-const FULL_CATALOG: Record<string, GatewayModel> = {
-  ...MANAGED_ONLY,
+const MANAGED_FREE_ONLY: Record<string, GatewayModel> = managedModels({
+  freeOnly: true,
+});
+const BYOK_AND_CODEX: Record<string, GatewayModel> = {
   ...gatewayModelsAll(),
   ...gatewayCodexModels(),
 };
+const FULL_CATALOG: Record<string, GatewayModel> = {
+  ...MANAGED_ONLY,
+  ...BYOK_AND_CODEX,
+};
+const FREE_FULL_CATALOG: Record<string, GatewayModel> = {
+  ...MANAGED_FREE_ONLY,
+  ...BYOK_AND_CODEX,
+};
 
-// `projectId` gates BYOK/codex visibility (anonymous callers see managed only) —
-// it is NOT a per-project filter, so both shapes are shared singletons.
+// `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
+// `freeManagedOnly` (a free-tier account with internal billing on) hides paid
+// managed models so the picker + sandbox only ever surface free models through
+// the Kortix gateway. All four shapes are shared singletons — no per-call build.
 export function gatewayModelCatalog(
   projectId: string | undefined,
+  opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
+  if (opts?.freeManagedOnly) {
+    return projectId ? FREE_FULL_CATALOG : MANAGED_FREE_ONLY;
+  }
   return projectId ? FULL_CATALOG : MANAGED_ONLY;
 }

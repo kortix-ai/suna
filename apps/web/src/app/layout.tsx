@@ -61,6 +61,11 @@ const LocalhostLinkInterceptor = lazy(() =>
     default: mod.LocalhostLinkInterceptor,
   })),
 );
+const MaintenanceBannerHost = lazy(() =>
+  import('@/components/announcements/maintenance-banner-host').then((mod) => ({
+    default: mod.MaintenanceBannerHost,
+  })),
+);
 
 export const viewport: Viewport = {
   themeColor: [
@@ -372,6 +377,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 <ReactQueryProvider>
                   <Toaster />
                   {children}
+                  {/* Global maintenance/incident banner (info/warning/critical).
+                      Needs the query client, so it mounts inside ReactQueryProvider. */}
+                  <Suspense fallback={null}>
+                    <MaintenanceBannerHost />
+                  </Suspense>
                 </ReactQueryProvider>
                 {/* Analytics - lazy loaded to not block FCP */}
                 <Suspense fallback={null}>

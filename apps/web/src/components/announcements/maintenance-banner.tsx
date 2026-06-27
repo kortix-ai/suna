@@ -59,12 +59,12 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   const [countdown, setCountdown] = useState<string>('');
   const pathname = normalizeAppPathname(usePathname());
 
-  const isDashboardPage =
-    pathname?.startsWith('/agents') ||
-    pathname?.startsWith('/workspace') ||
-    pathname?.startsWith('/projects') ||
-    pathname?.startsWith('/settings') ||
-    pathname === '/';
+  // Show the banner app-wide (dashboard + marketing) so a system notice reaches
+  // everyone, not just a handful of routes. Only suppress it where it would be
+  // redundant or in the way: the dedicated /maintenance lockdown page and the
+  // auth flow. `blocking` already redirects to /maintenance via middleware.
+  const isSuppressedPath =
+    !!pathname && (pathname.startsWith('/maintenance') || pathname.startsWith('/auth'));
 
   const level = config.level;
   const lc = level !== 'none' && level !== 'blocking' ? levelConfig[level] : null;
@@ -122,8 +122,8 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
     return () => clearInterval(interval);
   }, [config.startTime, config.endTime]);
 
-  // Don't render for none, blocking, or non-dashboard pages
-  if (!lc || !isMounted || !isDashboardPage) return null;
+  // Don't render for none/blocking levels, before mount, or on suppressed paths.
+  if (!lc || !isMounted || isSuppressedPath) return null;
   if (isDismissed && lc.dismissible) return null;
 
   const Icon = lc.icon;

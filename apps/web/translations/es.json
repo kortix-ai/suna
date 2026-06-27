@@ -7572,7 +7572,7 @@
     "autoComponentsIamPermissionsHelpPopoverJsxTextWhatAPerson42f41e4a": "Lo que una persona puede hacer en toda la cuenta.",
     "autoComponentsIamPermissionsHelpPopoverJsxTextProjectRoles38d48ed3": "Roles del proyecto",
     "autoComponentsIamPermissionsHelpPopoverJsxTextWhatAPerson5b13fd4a": "Lo que una persona puede hacer en un proyecto específico.",
-    "autoComponentsIamPermissionsHelpPopoverJsxTextBundleMembersAnd26d406ea": "Agrupe a los miembros y vincule a todo el grupo a un proyecto en un rol. Cada miembro del grupo hereda ese rol. Un usuario asume el rol más alto ac",
+    "autoComponentsIamPermissionsHelpPopoverJsxTextBundleMembersAndd44ada52": "Agrupe a los miembros y vincule a todo el grupo a un proyecto en un rol. Cada miembro del grupo hereda ese rol. Un usuario asume el rol más alto ac",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOverrideRule60f7c767": "Anular regla",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOwnersAndAdmins9e16f219": "Los propietarios y administradores siempre tienen",
     "autoComponentsIamPermissionsHelpPopoverJsxTextOnEveryProject7532e737": "en cada proyecto, independientemente de los vínculos grupales. Para limitar a alguien a proyectos específicos, cambie su función de cuenta a",

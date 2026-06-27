@@ -30,7 +30,12 @@ import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import {
+  AUTO_MODEL_ID,
+  DEFAULT_MANAGED_MODEL_IDS,
+  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
+} from '@kortix/shared/llm-catalog';
+import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
 import { shouldShowFreeTag } from './model-tags';
@@ -72,6 +77,11 @@ import { Tag } from '@/components/ui/tag';
 // `auto` is a synthetic managed entry (not a real upstream model): grouped under
 // Kortix and always shown, but rendered as a special "smart routing" affordance.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
+
+// Free-tier (no active paid sub) only gets the free Kortix-managed models. `auto`
+// and the paid managed models are hidden, and the default lands on a free model.
+const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
+const FREE_DEFAULT_MODEL_ID = 'deepseek-v4-flash-free';
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
@@ -149,8 +159,18 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretNames]);
 
+  // Free tier (free/no plan AND no active subscription) only sees free managed
+  // models through the Kortix gateway. BYOK/connected providers are unaffected.
+  const { data: accountState } = useAccountState();
+  const freeTier = useMemo(() => {
+    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
+    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
+    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
+  }, [accountState]);
+
   const modelStore = useModelStore(baseModels, {
     connectedProviderIds,
+    freeTier: llmGatewayEnabled && freeTier,
   });
 
   const current = baseModels.find(
@@ -223,11 +243,31 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // the manual model list is hidden unless the user expands it.
   const autoModel = useMemo(
     () =>
-      llmGatewayEnabled
+      llmGatewayEnabled && !freeTier
         ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
         : undefined,
-    [baseModels, llmGatewayEnabled],
+    [baseModels, llmGatewayEnabled, freeTier],
   );
+
+  // Free tier can't use `auto` or paid managed models — if one is selected (the
+  // inherited default), switch to the free default so the first message doesn't
+  // 400 with "no upstream configured for model fusion".
+  const freeDefaultModel = useMemo(
+    () => baseModels.find((m) => m.providerID === 'kortix' && m.modelID === FREE_DEFAULT_MODEL_ID),
+    [baseModels],
+  );
+  useEffect(() => {
+    if (!freeTier || !llmGatewayEnabled || !freeDefaultModel) return;
+    const sel = selectedModel;
+    const disallowed =
+      !!sel &&
+      sel.providerID === 'kortix' &&
+      MANAGED_MODEL_IDS.has(sel.modelID) &&
+      !FREE_MANAGED_MODEL_IDS.has(sel.modelID);
+    if (disallowed) {
+      onSelect({ providerID: freeDefaultModel.providerID, modelID: freeDefaultModel.modelID });
+    }
+  }, [freeTier, llmGatewayEnabled, freeDefaultModel, selectedModel, onSelect]);
   const isAutoSelected =
     selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
   // "On" is the collapsed active view; expanding the manual list to pick a

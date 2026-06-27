@@ -572,8 +572,16 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
 }
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
+  // Project access/error UX is owned by <ProjectAccessBoundary>, which renders the
+  // not-found / forbidden / retry states. Every other consumer fetches this same
+  // ['project-detail', id] query behind that boundary, so a stale or cross-account
+  // 404/403 must stay silent here — otherwise a background refetch dumps a loud
+  // "API Error: 404" to the console (and toasts). Callers can opt back in via options.
   return unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 

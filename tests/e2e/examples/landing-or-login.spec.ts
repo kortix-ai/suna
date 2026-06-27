@@ -17,13 +17,6 @@ test.describe('Example — landing or login flow', () => {
   test('a sign-in affordance is reachable from the entry point', async ({ page }) => {
     await page.goto('/');
 
-    const protectedDeployment = page
-      .getByText(/single sign-on|sso|vercel|authentication required|deployment protection/i)
-      .first();
-    if (await protectedDeployment.isVisible().catch(() => false)) {
-      test.skip(true, 'Deployment is protected by an upstream access gate');
-    }
-
     const signIn = page
       .getByRole('link', { name: /sign in|log ?in|get started/i })
       .or(page.getByRole('button', { name: /sign in|log ?in|get started/i }))
