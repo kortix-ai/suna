@@ -17,6 +17,14 @@ env:
 # wins over envFrom). Flip back to "true" only once Daytona stabilizes the
 # experimental region.
 extraEnv:
+  # Identity gate OFF on dev. With it on, an @mention from anyone whose Kortix
+  # account isn't a member of this workspace's project is blocked (nudged to
+  # connect / request access) instead of running — which makes dogfooding in dev
+  # painful (you get no agent reply until you're added). Off → @mentions run as
+  # the project owner, like prod-lite. Rendered as explicit k8s env so it
+  # OVERRIDES the synced kortix-dev-env secret bundle. Flip to "true" to exercise
+  # the per-user identity / request-access flow. (Prod/staging keep it on.)
+  SLACK_REQUIRE_USER_IDENTITY: "false"
   # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
   # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong

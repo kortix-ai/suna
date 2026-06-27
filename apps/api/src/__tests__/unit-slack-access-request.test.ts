@@ -26,13 +26,38 @@ mock.module('../projects/lib/access', () => ({
   lookupEmailsByUserIds: async () => new Map<string, string | null>(),
 }));
 
-const { connectAccountBlocks, requestAccessBlocks, createSlackAccessRequest } = await import(
-  '../channels/slack/identity'
-);
+// Capture what postIdentityPrompt sends. The fix sends BOTH an in-thread
+// ephemeral AND a DM so the nudge is never missed.
+let ephemeralCalls = 0;
+let postBlocksCalls = 0;
+let openDmCalls = 0;
+mock.module('../channels/slack-api', () => ({
+  postEphemeral: async () => {
+    ephemeralCalls++;
+    return true;
+  },
+  openDmChannel: async () => {
+    openDmCalls++;
+    return 'D1';
+  },
+  postBlocks: async () => {
+    postBlocksCalls++;
+    return 'ts';
+  },
+}));
+mock.module('../channels/install-store', () => ({
+  loadSlackTokenForProject: async () => 'xoxb-test',
+}));
+
+const { connectAccountBlocks, requestAccessBlocks, createSlackAccessRequest, postIdentityPrompt } =
+  await import('../channels/slack/identity');
 
 afterAll(() => mock.restore());
 beforeEach(() => {
   dbResults = [];
+  ephemeralCalls = 0;
+  postBlocksCalls = 0;
+  openDmCalls = 0;
 });
 
 // Pull the first button out of an actions block.
@@ -51,6 +76,33 @@ describe('access nudge blocks — the action_id contract the router relies on', 
     expect(btn.action_id).toBe('slack_request_access');
     expect(JSON.parse(btn.value)).toEqual({ projectId: 'proj-1' });
     expect(btn.url).toBeUndefined(); // it's an action button, not a link
+  });
+});
+
+describe('postIdentityPrompt — never invisible: in-thread ephemeral AND a DM', () => {
+  test('not_member prompt posts BOTH an ephemeral and a DM', async () => {
+    await postIdentityPrompt({
+      projectId: 'proj-1',
+      teamId: 'T1',
+      channel: 'C1',
+      threadTs: '90.0',
+      slackUserId: 'U1',
+      reason: 'not_member',
+    });
+    expect(ephemeralCalls).toBe(1); // in-thread notice
+    expect(openDmCalls).toBe(1);
+    expect(postBlocksCalls).toBe(1); // the DM (the part you can't miss)
+  });
+
+  test('still DMs even with no channel to post the ephemeral into', async () => {
+    await postIdentityPrompt({
+      projectId: 'proj-1',
+      teamId: 'T1',
+      slackUserId: 'U1',
+      reason: 'not_member',
+    });
+    expect(ephemeralCalls).toBe(0);
+    expect(postBlocksCalls).toBe(1);
   });
 });
 
