@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 mock.module('@/lib/auth-token', () => ({
+  getSupabaseAccessToken: async () => 'test-access-token',
   getSupabaseAccessTokenWithRetry: async () => 'test-access-token',
+  getAuthToken: async () => 'test-access-token',
+  getAuthTokenWithRetry: async () => 'test-access-token',
+  invalidateTokenCache: () => {},
+  setBootstrapAuthToken: () => {},
+  setCachedAuthToken: () => {},
   authenticatedFetch: async (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
 }));
 
