@@ -142,17 +142,16 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(1);
   });
 
-  test('resolves raw auto to a FREE managed upstream for free accounts', async () => {
-    // A free account's `auto` must NOT land on the paid fusion target (which it
-    // has no upstream for) — it resolves to a free model and yields a candidate.
+  test('does not resolve raw auto to a gateway upstream for free accounts', async () => {
+    // Free Zen models are native sandbox models now. A stale gateway caller that
+    // asks for raw `auto` must not silently route Zen through the gateway IP.
     accountTier = 'free';
     const candidates = await resolveCandidates(
       { ...principal('free-auto'), freeModelsOnly: true },
       'auto',
     );
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.resolvedModel).toBe('deepseek-v4-flash-free');
-    expect(accountTierCalls).toBe(1);
+    expect(candidates).toEqual([]);
+    expect(accountTierCalls).toBe(0);
   });
 
   test('waives BYOK platform fee and disables managed fallback for free accounts', async () => {

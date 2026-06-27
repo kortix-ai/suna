@@ -27,10 +27,9 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(managedOnly).length);
   });
 
-  test('OpenCode Zen free models are managed, not leaked as native opencode catalog entries', () => {
+  test('OpenCode Zen free models are not served by the gateway catalog', () => {
     for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      expect(full[id], id).toBeDefined();
-      expect(full[id]?.free, id).toBe(true);
+      expect(full[id], id).toBeUndefined();
       expect(full[`opencode/${id}`], `opencode/${id}`).toBeUndefined();
     }
     expect(full['big-pickle']).toBeUndefined();
@@ -53,15 +52,11 @@ describe('gatewayModelCatalog — served catalog', () => {
 describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
 
-  test('free tier sees ONLY free managed models (paid managed hidden)', () => {
-    // Every free OpenCode-Zen model present...
+  test('free tier sees no managed gateway models', () => {
     for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      expect(freeFull[id], id).toBeDefined();
-      expect(freeFull[id]?.free, id).toBe(true);
+      expect(freeFull[id], id).toBeUndefined();
     }
-    // ...and AUTO stays (it resolves to a free model for free accounts)...
-    expect(freeFull.auto).toBeDefined();
-    // ...but every paid managed model is gone.
+    expect(freeFull.auto).toBeUndefined();
     for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'fusion', 'qwen3.7-max']) {
       expect(freeFull[id], id).toBeUndefined();
     }
@@ -71,9 +66,10 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = free managed lineup with no BYOK', () => {
+  test('anonymous + free-only = empty managed catalog with no BYOK', () => {
     const managedFree = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(managedFree.auto).toBeDefined();
+    expect(Object.keys(managedFree)).toEqual([]);
+    expect(managedFree.auto).toBeUndefined();
     expect(managedFree['fusion']).toBeUndefined();
     expect(managedFree['anthropic/claude-opus-4-8']).toBeUndefined();
   });

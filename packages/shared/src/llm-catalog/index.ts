@@ -40,13 +40,11 @@ export interface ManagedModel {
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
   //   'openrouter'   → an OpenRouter slug (`openrouter/fusion`)
-  //   'opencode-zen' → an OpenCode Zen public model id (`deepseek-v4-flash-free`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  //   'opencode-zen' → OpenCode Zen openai-compatible chat completions (no auth)
-  transport: "bedrock" | "openrouter" | "opencode-zen";
+  transport: "bedrock" | "openrouter";
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
   tier: "flagship" | "balanced" | "fast" | "free";
@@ -69,66 +67,19 @@ export interface ManagedModel {
 // (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
-// Every managed paid model runs through OUR keys and is billed as Kortix credits
-// with markup, so the gateway enforces budgets/logging/spend on all of them.
-// Claude runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else paid (GLM, Qwen, DeepSeek) goes via OpenRouter. The curated
-// OpenCode Zen free set is also managed here: it is exposed under the `kortix`
-// provider and recorded by the gateway, not shown as a separate native
-// `opencode` provider in the gateway picker.
+// Every managed model runs through OUR keys and is billed as Kortix credits with
+// markup, so the gateway enforces budgets/logging/spend on all of them. Claude
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
+// everything else goes via OpenRouter. OpenCode Zen free models are intentionally
+// NOT managed here: running sessions expose them through OpenCode's native
+// `opencode` provider so their traffic originates from the sandbox, not the
+// Kortix gateway.
 export const DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS = [
   "deepseek-v4-flash-free",
   "mimo-v2.5-free",
   "nemotron-3-ultra-free",
   "north-mini-code-free",
 ] as const;
-
-const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
-  {
-    id: "deepseek-v4-flash-free",
-    name: "DeepSeek V4 Flash Free",
-    upstreamModelId: "deepseek-v4-flash-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/deepseek-v4-flash-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 200_000, output: 128_000 },
-  },
-  {
-    id: "mimo-v2.5-free",
-    name: "MiMo V2.5 Free",
-    upstreamModelId: "mimo-v2.5-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/mimo-v2.5-free",
-    tier: "free",
-    free: true,
-    vision: true,
-    limit: { context: 200_000, output: 32_000 },
-  },
-  {
-    id: "nemotron-3-ultra-free",
-    name: "Nemotron 3 Ultra Free",
-    upstreamModelId: "nemotron-3-ultra-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/nemotron-3-ultra-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 1_000_000, output: 128_000 },
-  },
-  {
-    id: "north-mini-code-free",
-    name: "North Mini Code Free",
-    upstreamModelId: "north-mini-code-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/north-mini-code-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 256_000, output: 64_000 },
-  },
-];
 
 export const MANAGED_MODELS: ManagedModel[] = [
   {
@@ -191,7 +142,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
-  ...OPENCODE_ZEN_FREE_MODELS,
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
@@ -224,13 +174,6 @@ export const AUTO_MODEL_ID = "auto";
 
 const AUTO_TARGET_MODEL = "fusion"; // text-only default
 const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
-
-// Free-tier AUTO targets. A free account can't route to the paid targets above
-// (they'd 400 with "no upstream configured"), so AUTO resolves to the curated
-// free OpenCode-Zen lineup instead: a text default + the single free vision
-// model, so even image requests stay on a model the account can actually use.
-const AUTO_FREE_MODEL = "deepseek-v4-flash-free"; // free text default
-const AUTO_FREE_VISION_MODEL = "mimo-v2.5-free"; // the only free vision model
 
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -266,13 +209,14 @@ export function pickAutoModel(
     return null;
   const hasImage = requestHasImage(body);
   if (opts?.free) {
-    return hasImage ? AUTO_FREE_VISION_MODEL : AUTO_FREE_MODEL;
+    return null;
   }
   return hasImage ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   "kortix",
+  "opencode",
   "anthropic",
   "openai",
   "github-copilot",

@@ -47,7 +47,7 @@ describe('modelVisibilityKeyForProviderModel', () => {
 
   test('keeps managed kortix model ids bare in gateway mode', () => {
     expect(
-      modelVisibilityKeyForProviderModel('kortix', 'deepseek-v4-flash-free', true),
-    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4-flash-free' });
+      modelVisibilityKeyForProviderModel('kortix', 'claude-opus-4.8', true),
+    ).toEqual({ providerID: 'kortix', modelID: 'claude-opus-4.8' });
   });
 });
