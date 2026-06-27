@@ -182,6 +182,7 @@ export function createKortix(config: KortixPlatformConfig) {
     // chosen model so `send` carries it.
     let _ready: { opencodeSessionId: string } | null = null;
     let _model: SessionModel | undefined;
+    let _agent: string | undefined;
 
     /**
      * Make this session's runtime reachable and return its OpenCode session id.
@@ -240,13 +241,24 @@ export function createKortix(config: KortixPlatformConfig) {
       setModel: (model: SessionModel | undefined) => {
         _model = model;
       },
-      /** Provision/resume if needed, then send a text prompt to the agent. */
-      send: async (text: string) => {
+      /** Pick the agent `send` will use for subsequent prompts (until changed). */
+      setAgent: (agent: string | undefined) => {
+        _agent = agent;
+      },
+      /**
+       * Provision/resume if needed, then send a text prompt to the agent. A
+       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
+       * choices for this message only.
+       */
+      send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
         const { opencodeSessionId } = await ensureReady();
+        const model = opts?.model ?? _model;
+        const agent = opts?.agent ?? _agent;
         return runtime().session.prompt({
           sessionID: opencodeSessionId,
           parts: [{ type: 'text', text }],
-          ...(_model ? { model: _model } : {}),
+          ...(model ? { model } : {}),
+          ...(agent ? { agent } : {}),
         });
       },
       /** Abort the agent's current run in this session. */

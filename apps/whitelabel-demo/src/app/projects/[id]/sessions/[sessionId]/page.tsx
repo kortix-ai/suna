@@ -1,5 +1,6 @@
 'use client';
 
+import { AgentPicker } from '@/components/chat/agent-picker';
 import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
@@ -30,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { kortix } from '@/lib/kortix';
 import { SessionRuntime, useRuntimePhase } from '@/lib/runtime';
 import { invalidateSessions, qk } from '@/lib/query-keys';
+import { clearStartStash, readStartStash } from '@/lib/session-start';
 import { cn } from '@/lib/utils';
 import {
   useAbortOpenCodeSession,
@@ -416,13 +418,25 @@ function Thread({
   const sending = !!pending;
   const busy = isBusy || sending;
 
-  const handleSend = (text: string) => {
+  const handleSend = (
+    text: string,
+    override?: { model?: { providerID: string; modelID: string } | null; agent?: string | null },
+  ) => {
     setPending(text);
+    // Every message carries the selected model AND agent (the SDK send hook
+    // forwards both to the runtime). Overrides win (used for the opening turn);
+    // otherwise we read the live picker selections. Omit either for the default.
+    const model = override?.model ?? local.model.currentKey;
+    const agentName = override?.agent ?? local.agent.current?.name;
+    const options = {
+      ...(model ? { model } : {}),
+      ...(agentName ? { agent: agentName } : {}),
+    };
     send.mutate(
       {
         sessionId: ocSessionId,
         parts: [{ type: 'text', text }],
-        ...(local.model.currentKey ? { options: { model: local.model.currentKey } } : {}),
+        ...(Object.keys(options).length ? { options } : {}),
       },
       {
         onError: () => {
@@ -432,6 +446,27 @@ function Thread({
       },
     );
   };
+
+  // Replay the "new session" hand-off: once the runtime is ready and the thread
+  // is empty, send the stashed prompt with the chosen model + agent so they
+  // apply to the opening turn. Runs exactly once per session.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current || phase !== 'ready' || isLoading) return;
+    const stash = readStartStash(sessionId);
+    if (!stash) return;
+    if (messages.length > 0) {
+      clearStartStash(sessionId);
+      startedRef.current = true;
+      return;
+    }
+    startedRef.current = true;
+    clearStartStash(sessionId);
+    if (stash.model) local.model.set(stash.model, { recent: true });
+    if (stash.agent) local.agent.set(stash.agent);
+    handleSend(stash.prompt, { model: stash.model, agent: stash.agent });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, isLoading, messages.length, sessionId]);
 
   // The one true "cancel": abort the run AND drop any pending prompts so the UI
   // never wedges waiting on a server-side answer.
@@ -513,7 +548,12 @@ function Thread({
             busy={busy}
             disabled={phase !== 'ready'}
             placeholder={phase === 'ready' ? 'Message the agent…' : 'Waiting for the runtime…'}
-            toolbar={<ModelPicker model={local.model} />}
+            toolbar={
+              <div className="flex items-center gap-0.5">
+                <ModelPicker model={local.model} />
+                <AgentPicker agent={local.agent} />
+              </div>
+            }
           />
         </div>
       </div>

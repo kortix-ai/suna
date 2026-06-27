@@ -38,3 +38,9 @@ export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
 export * from './use-visible-agents';
 export * from './provider-refresh';
+// Runtime-free model catalog → selectable model list. Lets a host build a model
+// picker BEFORE a session runtime exists (e.g. on a "new session" screen) by
+// feeding `project(id).llmCatalog()` through these, with correct provider/model
+// ids — no guessing the gateway-vs-BYOK key format.
+export { flattenModels, type FlatModel } from './model-flatten';
+export { projectLlmCatalogToProviderList } from './provider-selection';
