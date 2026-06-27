@@ -2,14 +2,19 @@
 
 import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
+import { ModelPicker } from '@/components/chat/model-picker';
 import { Button, Spinner } from '@/components/ui';
 import { kortix } from '@/lib/kortix';
 import { SessionRuntime, useRuntimePhase } from '@/lib/runtime';
 import {
   useAbortOpenCodeSession,
   useCanonicalOpenCodeSession,
+  useOpenCodeConfig,
+  useOpenCodeLocal,
+  useOpenCodeProviders,
   useSendOpenCodeMessage,
   useSessionSync,
+  useVisibleAgents,
 } from '@kortix/sdk/react';
 import { switchToSessionSandboxAsync } from '@kortix/sdk/server-store';
 import { useQuery } from '@tanstack/react-query';
@@ -178,6 +183,19 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
   const phase = useRuntimePhase();
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // The SDK's own model layer: providers/agents/config feed useOpenCodeLocal,
+  // which resolves the selectable list + the current selection. We pass the
+  // chosen key straight to send(); omitting it lets the agent use its default.
+  const providers = useOpenCodeProviders();
+  const config = useOpenCodeConfig();
+  const agents = useVisibleAgents();
+  const local = useOpenCodeLocal({
+    agents,
+    providers: providers.data,
+    config: config.data,
+    sessionId: ocSessionId,
+  });
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight });
@@ -213,10 +231,17 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
         </div>
       </div>
       <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-bg)]">
-        <div className="mx-auto max-w-3xl px-5 py-4">
+        <div className="mx-auto max-w-3xl space-y-2 px-5 py-4">
+          <ModelPicker model={local.model} />
           <Composer
             onSend={(text) =>
-              send.mutate({ sessionId: ocSessionId, parts: [{ type: 'text', text }] })
+              send.mutate({
+                sessionId: ocSessionId,
+                parts: [{ type: 'text', text }],
+                ...(local.model.currentKey
+                  ? { options: { model: local.model.currentKey } }
+                  : {}),
+              })
             }
             onStop={() => abort.mutate(ocSessionId)}
             busy={isBusy}

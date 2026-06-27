@@ -67,9 +67,14 @@ start() ─ready─▶ switchToSessionSandboxAsync
                        useSendOpenCodeMessage / useAbortOpenCodeSession
 ```
 
-Sending omits the model, so the agent uses the session's configured default —
-pass `options.model: { providerID, modelID }` to `useSendOpenCodeMessage` to
-override per message.
+**Model selection** uses the SDK's own model layer rather than reimplementing
+the catalog rules (mixed gateway/BYOK key formats, per-family "latest",
+connected-provider gating are all subtle). `useOpenCodeProviders()` +
+`useVisibleAgents()` + `useOpenCodeConfig()` feed `useOpenCodeLocal()`, which
+resolves `model.list` (selectable models) and `model.current` / `model.currentKey`.
+The picker `set()`s the choice; the workbench passes `model.currentKey` to
+`useSendOpenCodeMessage({ options: { model } })`. Omit it and the agent uses its
+configured default. See `src/components/chat/model-picker.tsx`.
 
 ## Run it
 
