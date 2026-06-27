@@ -43,8 +43,5 @@ export interface ServerStore {
   getActiveServerUrl: () => string;
 }
 
-export const DEFAULT_SERVER_ID = 'default';
-export const CLOUD_SANDBOX_SERVER_ID = 'cloud-sandbox';
-
 export const PATH_PROXY_URL_REGEX =
   /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;

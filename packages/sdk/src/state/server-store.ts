@@ -17,7 +17,7 @@ import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from './current-runt
 // Re-export the public surface that lives in sibling modules so importers of
 // '../state/server-store' (and '@kortix/sdk/server-store') stay unchanged.
 export type { SandboxProvider, ServerEntry };
-export { getSandboxUrlForExternalId, resolveServerUrl } from './server-store/url-helpers';
+export { getSandboxUrlForExternalId } from './server-store/url-helpers';
 
 /**
  * server-store — a thin, read-only view over the per-session runtime.

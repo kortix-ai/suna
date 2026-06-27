@@ -1,9 +1,5 @@
 import { platformConfig } from '../../platform/config';
-import {
-  DEFAULT_SERVER_ID,
-  PATH_PROXY_URL_REGEX,
-  type ServerEntry,
-} from './types';
+import { PATH_PROXY_URL_REGEX } from './types';
 
 /**
  * The default sandbox URL routes through the backend's unified preview proxy.
@@ -20,26 +16,12 @@ export function getDefaultSandboxUrl(): string {
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
 }
 
-export function getServersApi(): string {
-  return `${getBackendUrl()}/servers`;
-}
-
 /**
- * Derive the proxy URL for a managed sandbox entry.
+ * Derive the proxy URL for a managed sandbox by its provider sandbox id.
  * Always computed fresh — never persisted — so route renames can't go stale.
  */
 export function getSandboxServerUrl(sandboxId: string): string {
   return `${getBackendUrl()}/p/${sandboxId}/8000`;
-}
-
-/**
- * Resolve the effective URL for any server entry.
- * Sandbox entries store url='' — their URL is derived from sandboxId.
- * Custom entries use the user-provided URL directly.
- */
-export function resolveServerUrl(server: ServerEntry): string {
-  if (server.sandboxId) return getSandboxServerUrl(server.sandboxId);
-  return server.url || getDefaultSandboxUrl();
 }
 
 /**
@@ -80,14 +62,3 @@ export function deriveProxyBaseFromServerUrl(url: string): { sandboxId: string; 
   return null;
 }
 
-export function generateId(): string {
-  return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export const createDefaultServer = (): ServerEntry => ({
-  id: DEFAULT_SERVER_ID,
-  label: 'Local Sandbox',
-  url: getDefaultSandboxUrl(),
-  isDefault: true,
-  provider: 'local_docker',
-});
