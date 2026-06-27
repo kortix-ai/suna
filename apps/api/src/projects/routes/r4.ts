@@ -1330,8 +1330,9 @@ projectsApp.openapi(
         404,
       );
     }
-    // Free-tier accounts only see free managed models in the picker (their own
-    // BYOK-connected models still show). Mirrors the gateway's resolve-time gate.
+    // Free-tier accounts see only managed models explicitly marked free plus
+    // their own BYOK/Codex-connected catalog entries. Paid managed models and
+    // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
         ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))

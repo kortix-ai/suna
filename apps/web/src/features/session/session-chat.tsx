@@ -48,6 +48,7 @@ import {
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
@@ -84,8 +85,10 @@ import {
 } from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
+  formatPromptModel,
   formatModelString,
   parseModelKey,
+  type ModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
 import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
@@ -3780,6 +3783,12 @@ export function SessionChat({
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useOpenCodeLocal({ agents, providers, config, sessionId });
+  const localAgentSet = local.agent.set;
+  const localModelCurrentKey = local.model.currentKey;
+  const localModelList = local.model.list;
+  const localModelSet = local.model.set;
+  const localModelVisible = local.model.visible;
+  const localVariantSet = local.model.variant.set;
 
   // Default the agent picker to whichever agent owns the latest assistant
   // turn in this session. Catches PM onboarding sessions (first turn was PM),
@@ -3899,15 +3908,13 @@ export function SessionChat({
         // Exhausted retries — no pending prompt
         return;
       }
-      pendingPromptHandled.current = true;
-      setPollingActive(true);
-      setPendingSendInFlight(true);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-      sessionStorage.removeItem(`opencode_pending_prompt:${sessionId}`);
-      sessionStorage.removeItem(`opencode_pending_send_failed:${sessionId}`);
-
       // Restore agent/model/variant selections from the dashboard
       const options: Record<string, unknown> = {};
+      let selectedModelForSend: ModelKey | undefined;
+      const isSelectableModel = (model: ModelKey): boolean =>
+        localModelList.some(
+          (m) => m.providerID === model.providerID && m.modelID === model.modelID,
+        ) && localModelVisible(model);
       try {
         const raw = sessionStorage.getItem(`opencode_pending_options:${sessionId}`);
         if (raw) {
@@ -3915,23 +3922,45 @@ export function SessionChat({
           sessionStorage.removeItem(`opencode_pending_options:${sessionId}`);
           if (pendingOptions?.agent) {
             options.agent = pendingOptions.agent;
-            local.agent.set(pendingOptions.agent as string);
+            localAgentSet(pendingOptions.agent as string);
           }
           if (pendingOptions?.model) {
             const parsedPendingModel = parseModelKey(pendingOptions.model);
-            if (parsedPendingModel) {
+            if (parsedPendingModel && isSelectableModel(parsedPendingModel)) {
               options.model = parsedPendingModel;
-              local.model.set(parsedPendingModel);
+              selectedModelForSend = parsedPendingModel;
+              localModelSet(parsedPendingModel);
             }
           }
           if (pendingOptions?.variant) {
             options.variant = pendingOptions.variant;
-            local.model.variant.set(pendingOptions.variant as string);
+            localVariantSet(pendingOptions.variant as string);
           }
         }
       } catch {
         // ignore
       }
+
+      if (!selectedModelForSend && localModelCurrentKey) {
+        options.model = localModelCurrentKey;
+        selectedModelForSend = localModelCurrentKey;
+      }
+
+      if (!selectedModelForSend) {
+        if (attempt < 120) {
+          retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
+          return;
+        }
+        setCommandError(NO_MODEL_AVAILABLE_MESSAGE);
+        return;
+      }
+
+      pendingPromptHandled.current = true;
+      setPollingActive(true);
+      setPendingSendInFlight(true);
+      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      sessionStorage.removeItem(`opencode_pending_prompt:${sessionId}`);
+      sessionStorage.removeItem(`opencode_pending_send_failed:${sessionId}`);
 
       // Send the message with retry. The useSendOpenCodeMessage hook already
       // retries 3 times internally for transient errors. We add one additional
@@ -4026,7 +4055,7 @@ export function SessionChat({
           parts,
           ...(session?.directory ? { directory: session.directory } : {}),
           ...(sendOpts?.agent && { agent: sendOpts.agent }),
-          ...(sendOpts?.model && { model: sendOpts.model }),
+          ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model as ModelKey) }),
           ...(sendOpts?.variant && { variant: sendOpts.variant }),
         } as any;
 
@@ -4068,8 +4097,18 @@ export function SessionChat({
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, addOptimisticUserMessage, removeOptimisticUserMessage]);
+  }, [
+    sessionId,
+    addOptimisticUserMessage,
+    removeOptimisticUserMessage,
+    localAgentSet,
+    localModelCurrentKey,
+    localModelList,
+    localModelSet,
+    localModelVisible,
+    localVariantSet,
+    session?.directory,
+  ]);
 
   // Clear optimistic prompt once real messages arrive
   useEffect(() => {
@@ -5032,7 +5071,7 @@ export function SessionChat({
         // when the user picked a project agent from the picker.
         ...(session?.directory ? { directory: session.directory } : {}),
         ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-        ...(sendOpts?.model ? { model: sendOpts.model } : {}),
+        ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
         ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
       } as any;
 
@@ -5810,6 +5849,7 @@ export function SessionChat({
           sessionId={sessionId}
           onFileSearch={handleFileSearch}
           providers={providers}
+          modelRequired
           threadContext={threadContext}
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}

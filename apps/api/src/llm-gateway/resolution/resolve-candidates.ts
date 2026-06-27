@@ -43,9 +43,10 @@ export async function resolveCandidates(
 ): Promise<UpstreamDescriptor[]> {
   // The gateway package normally applies pickAutoModel before calling this hook.
   // Keep the same fallback here so a stale standalone gateway that asks the API
-  // to resolve raw "auto" still gets a concrete upstream instead of 400ing —
-  // tier-aware, so a free account's raw "auto" resolves to a free model.
-  const effectiveModel = pickAutoModel(model, {}, { free: !!principal.freeModelsOnly }) ?? model;
+  // to resolve raw "auto" still gets a concrete upstream instead of 400ing.
+  // Free-tier principals cannot use managed Kortix models, so stale AUTO below
+  // resolves to no candidates rather than a paid/default upstream.
+  const effectiveModel = pickAutoModel(model, {}) ?? model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -89,9 +90,10 @@ export async function resolveCandidates(
   // clear "model not available" error.
   const managed = getManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED) {
+    if (principal.freeModelsOnly) return [];
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
-      if (!managed.free && !tierGrantsAllModels(tier)) return [];
+      if (!tierGrantsAllModels(tier)) return [];
     }
     return managedCandidates(managed);
   }

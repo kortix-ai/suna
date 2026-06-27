@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS } from '@kortix/shared/llm-catalog';
 
 import { gatewayModelCatalog } from './catalog-models';
 
@@ -20,6 +19,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   test('AUTO + managed lineup present; anonymous callers get managed-only', () => {
     expect(full.auto).toBeDefined();
     expect(full['claude-opus-4.8']).toBeDefined();
+    expect(full['glm-5.2']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
     expect(managedOnly.auto).toBeDefined();
@@ -27,12 +27,12 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(managedOnly).length);
   });
 
-  test('OpenCode Zen free models are managed, not leaked as native opencode catalog entries', () => {
-    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      expect(full[id], id).toBeDefined();
-      expect(full[id]?.free, id).toBe(true);
+  test('native OpenCode Zen free models are not served by the gateway catalog', () => {
+    for (const id of ['deepseek-v4-flash-free', 'mimo-v2.5-free']) {
       expect(full[`opencode/${id}`], `opencode/${id}`).toBeUndefined();
     }
+    expect(full['north-mini-code-free']).toBeUndefined();
+    expect(full['nemotron-3-ultra-free']).toBeUndefined();
     expect(full['big-pickle']).toBeUndefined();
     expect(full['opencode/big-pickle']).toBeUndefined();
   });
@@ -53,16 +53,9 @@ describe('gatewayModelCatalog — served catalog', () => {
 describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
 
-  test('free tier sees ONLY free managed models (paid managed hidden)', () => {
-    // Every free OpenCode-Zen model present...
-    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      expect(freeFull[id], id).toBeDefined();
-      expect(freeFull[id]?.free, id).toBe(true);
-    }
-    // ...and AUTO stays (it resolves to a free model for free accounts)...
-    expect(freeFull.auto).toBeDefined();
-    // ...but every paid managed model is gone.
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'fusion', 'qwen3.7-max']) {
+  test('free tier sees no managed Kortix models', () => {
+    expect(freeFull.auto).toBeUndefined();
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'qwen3.7-max', 'deepseek-v4-flash']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });
@@ -71,11 +64,9 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = free managed lineup with no BYOK', () => {
-    const managedFree = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(managedFree.auto).toBeDefined();
-    expect(managedFree['fusion']).toBeUndefined();
-    expect(managedFree['anthropic/claude-opus-4-8']).toBeUndefined();
+  test('anonymous + free-only = empty catalog', () => {
+    const empty = gatewayModelCatalog(undefined, { freeManagedOnly: true });
+    expect(empty).toEqual({});
   });
 
   test('free-tier catalog is its own memoized singleton', () => {

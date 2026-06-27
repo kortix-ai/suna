@@ -13,6 +13,7 @@ import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
+import { createPresentationRouter } from './routes/presentation'
 import webProxyRouter from './routes/web-proxy'
 import type { ProjectEnvStore } from './project-env'
 import {
@@ -275,6 +276,12 @@ export function buildOpencodeApp(
   // /find/* — daemon-served search (file-by-name + ripgrep text search), also
   // formerly forwarded to OpenCode.
   app.route('/find', createFindRouter(cfg))
+
+  // /presentation/* — on-demand PDF/PPTX export for the slide-deck viewer's
+  // download buttons. Runs the conversion in the background and answers each
+  // poll fast (202 while generating, 200 + the file when ready) so it never
+  // trips the apps/api preview-proxy's per-attempt timeout. See the router doc.
+  app.route('/presentation', createPresentationRouter(cfg))
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of

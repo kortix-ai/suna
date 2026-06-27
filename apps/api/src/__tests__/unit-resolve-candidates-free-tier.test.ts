@@ -84,7 +84,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
     resolvedModel: model.replace(/^codex\//, ''),
   }),
   livePricing: () => undefined,
-  managedCandidates: (managed: { id: string }) => [
+  managedCandidates: (managed: { id: string; upstreamModelId?: string }) => [
     {
       provider: 'openrouter',
       kind: 'openai-chat',
@@ -92,7 +92,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
       apiKey: 'managed-key',
       billingMode: 'credits',
       markup: 1.2,
-      resolvedModel: managed.id,
+      resolvedModel: managed.upstreamModelId ?? managed.id,
     },
   ],
 }));
@@ -138,21 +138,18 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-auto'), 'auto');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.provider).toBe('openrouter');
-    expect(candidates[0]?.resolvedModel).toBe('fusion');
+    expect(candidates[0]?.resolvedModel).toBe('z-ai/glm-5.2');
     expect(accountTierCalls).toBe(1);
   });
 
-  test('resolves raw auto to a FREE managed upstream for free accounts', async () => {
-    // A free account's `auto` must NOT land on the paid fusion target (which it
-    // has no upstream for) — it resolves to a free model and yields a candidate.
+  test('resolves raw auto to no managed candidate for free accounts', async () => {
     accountTier = 'free';
     const candidates = await resolveCandidates(
       { ...principal('free-auto'), freeModelsOnly: true },
       'auto',
     );
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.resolvedModel).toBe('deepseek-v4-flash-free');
-    expect(accountTierCalls).toBe(1);
+    expect(candidates).toEqual([]);
+    expect(accountTierCalls).toBe(0);
   });
 
   test('waives BYOK platform fee and disables managed fallback for free accounts', async () => {

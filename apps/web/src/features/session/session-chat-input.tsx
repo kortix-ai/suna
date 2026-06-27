@@ -54,6 +54,11 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { AnimatePresence, motion } from 'motion/react';
 import { extractClipboardFiles } from './clipboard-files';
+import {
+  NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+  isModelRequiredButUnavailable,
+  NO_MODEL_AVAILABLE_MESSAGE,
+} from './model-availability';
 import { ModelSelector } from './model-selector';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
@@ -1442,6 +1447,8 @@ export interface SessionChatInputProps {
   sessionId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
+  /** If true, a concrete model must be selected before a chat/command send. */
+  modelRequired?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1533,6 +1540,7 @@ export function SessionChatInput({
   messages,
   sessionId,
   disabled = false,
+  modelRequired = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1989,9 +1997,22 @@ export function SessionChatInput({
     }
   }, [mentionItems.length]);
 
+  const modelUnavailable = isModelRequiredButUnavailable({
+    modelRequired,
+    selectedModel,
+    lockForQuestion,
+  });
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
+  const submitDisabled = disabled || modelUnavailable;
 
   const handleSubmit = useCallback(async () => {
+    if (modelUnavailable) {
+      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
+        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+      });
+      return;
+    }
+
     // If a command is staged, execute it with the current text as args
     if (stagedCommand) {
       const args = text.trim();
@@ -2027,7 +2048,7 @@ export function SessionChatInput({
     }
 
     const trimmed = text.trim();
-    if ((!trimmed && attachedFiles.length === 0) || disabled) return;
+    if ((!trimmed && attachedFiles.length === 0) || submitDisabled) return;
 
     /* AutoContinue — commented out
     // AutoContinue intercept: when a mode is armed, route through the
@@ -2087,7 +2108,8 @@ export function SessionChatInput({
     }
   }, [
     text,
-    disabled,
+    submitDisabled,
+    modelUnavailable,
     onSend,
     onCommand,
     stagedCommand,
@@ -2558,7 +2580,7 @@ export function SessionChatInput({
                   onSelect={onAgentChange}
                 />
               )}
-              {models.length > 0 && onModelChange && (
+              {(models.length > 0 || modelRequired) && onModelChange && (
                 <ModelSelector
                   models={models}
                   selectedModel={selectedModel}
@@ -2599,7 +2621,7 @@ export function SessionChatInput({
 
               {toolbarSlot}
 
-              <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
+              <VoiceRecorder onTranscription={handleTranscription} disabled={submitDisabled || isBusy} />
 
               {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
@@ -2653,22 +2675,38 @@ export function SessionChatInput({
                       {questionButtonLabel}
                     </Button>
                   ) : (
-                    <Button
-                      size="sm"
-                      disabled={
-                        lockForQuestion
-                          ? (!canSubmit && !questionCanAct) || disabled
-                          : !canSubmit || disabled
-                      }
-                      onClick={handleSubmit}
-                      className="h-8 w-8 flex-shrink-0 rounded-full p-0"
-                    >
-                      {disabled ? (
-                        <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      ) : (
-                        <ArrowUp className="size-4" />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex rounded-full">
+                          <Button
+                            size="sm"
+                            disabled={
+                              lockForQuestion
+                                ? (!canSubmit && !questionCanAct) || disabled
+                                : !canSubmit || submitDisabled
+                            }
+                            onClick={handleSubmit}
+                            aria-label={
+                              modelUnavailable
+                                ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
+                                : 'Send message'
+                            }
+                            className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+                          >
+                            {disabled ? (
+                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <ArrowUp className="size-4" />
+                            )}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {modelUnavailable && (
+                        <TooltipContent side="top" className="max-w-[260px] text-xs">
+                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
+                        </TooltipContent>
                       )}
-                    </Button>
+                    </Tooltip>
                   )}
                 </div>
               )}

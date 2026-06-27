@@ -1,7 +1,7 @@
-import { backendApi } from "@/lib/api-client";
-import { createClient } from "@/lib/supabase/client";
-import { getEnv } from "@/lib/env-config";
-import { toast } from "@/lib/toast";
+import { backendApi } from '@/lib/api-client';
+import { getEnv } from '@/lib/env-config';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from '@/lib/toast';
 
 export enum DownloadFormat {
   PDF = 'pdf',
@@ -56,7 +56,7 @@ export function parsePresentationSlidePath(filePath: string | null): {
     return {
       isValid: true,
       presentationName: match[1],
-      slideNumber: parseInt(match[2], 10)
+      slideNumber: parseInt(match[2], 10),
     };
   }
 
@@ -73,7 +73,7 @@ export function parsePresentationSlidePath(filePath: string | null): {
 export function createPresentationViewerToolContent(
   presentationName: string,
   filePath: string,
-  slideNumber: number
+  slideNumber: number,
 ): string {
   // PresentationViewer expects presentation_path to be the directory, not the file
   // e.g., "presentations/mypresentation" not "presentations/mypresentation/slide_01.html"
@@ -86,147 +86,110 @@ export function createPresentationViewerToolContent(
     slide_number: slideNumber,
     slide_file: filePath,
     presentation_title: presentationName,
-    message: `Slide ${slideNumber} edited successfully`
+    message: `Slide ${slideNumber} edited successfully`,
   };
 
   return JSON.stringify(toolOutput);
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Trigger a browser "save as" for a generated blob. */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 /**
- * Downloads a presentation as PDF or PPTX
+ * Downloads a presentation as PDF or PPTX.
+ *
+ * The sandbox endpoint runs the (slow) conversion in the background and answers
+ * each POST fast — 200 + the file when it's ready, 202 while it's still
+ * generating — so it never trips the preview-proxy's per-attempt timeout. We
+ * poll until the file is ready (or a hard timeout), then save it.
+ *
+ * @param format - The format to download the presentation as
  * @param sandboxUrl - The sandbox URL for the API endpoint
  * @param presentationPath - The path to the presentation in the workspace
  * @param presentationName - The name of the presentation for the downloaded file
- * @param format - The format to download the presentation as
- * @returns Promise that resolves when download is complete
+ * @returns Promise that resolves when the download has started
  */
 export async function downloadPresentation(
   format: DownloadFormat,
   sandboxUrl: string,
   presentationPath: string,
-  presentationName: string
+  presentationName: string,
 ): Promise<void> {
+  const endpoint = `${sandboxUrl}/presentation/convert-to-${format}`;
+  const POLL_INTERVAL_MS = 2500;
+  const MAX_WAIT_MS = 4 * 60_000;
+  const startedAt = Date.now();
+  let notifiedGenerating = false;
+
   try {
-    const endpoint = `${sandboxUrl}/presentation/convert-to-${format}`;
-    console.log(`[downloadPresentation] Requesting download:`, {
-      endpoint,
-      format,
-      presentationPath,
-      presentationName,
-      sandboxUrl
-    });
+    // Poll the background conversion until the file is ready.
+    for (;;) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ presentation_path: presentationPath, download: true }),
+      });
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        presentation_path: presentationPath,
-        download: true
-      })
-    });
+      const contentType = response.headers.get('content-type') || '';
+      const isFile =
+        response.ok &&
+        (contentType.includes('pdf') ||
+          contentType.includes('presentation') ||
+          contentType.includes('octet-stream'));
 
-    console.log(`[downloadPresentation] Response status:`, {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      headers: Object.fromEntries(response.headers.entries())
-    });
-
-    if (!response.ok) {
-      // Try to get error details from response
-      let errorMessage = `Failed to download ${format}`;
-      let errorDetail = '';
-
-      try {
-        const errorText = await response.text();
-        console.error(`[downloadPresentation] Error response body:`, errorText);
-
-        // Try to parse as JSON
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorDetail = errorJson.detail || errorJson.message || errorText;
-        } catch {
-          errorDetail = errorText || response.statusText;
-        }
-      } catch (e) {
-        console.error(`[downloadPresentation] Failed to read error response:`, e);
-        errorDetail = response.statusText;
+      if (isFile) {
+        const blob = await response.blob();
+        if (blob.size === 0) throw new Error('Downloaded file is empty');
+        saveBlob(blob, `${presentationName}.${format}`);
+        toast.success(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
+          duration: 8000,
+        });
+        return;
       }
 
-      errorMessage = errorDetail
-        ? `${errorMessage}: ${errorDetail} (HTTP ${response.status})`
-        : `${errorMessage} (HTTP ${response.status})`;
+      // 202 => still generating in the background; keep polling.
+      if (response.status === 202) {
+        if (!notifiedGenerating) {
+          notifiedGenerating = true;
+          toast.info(`Generating ${format.toUpperCase()}… this can take a moment for large decks`, {
+            duration: 6000,
+          });
+        }
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          throw new Error(`Timed out waiting for the ${format.toUpperCase()} to generate`);
+        }
+        await sleep(POLL_INTERVAL_MS);
+        continue;
+      }
 
-      console.error(`[downloadPresentation] Error:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorDetail,
-        errorMessage
-      });
-
-      toast.error(errorMessage, {
-        duration: 10000,
-      });
-
-      throw new Error(errorMessage);
-    }
-
-    // Check if response is actually a PDF/PPTX blob
-    const contentType = response.headers.get('content-type');
-    console.log(`[downloadPresentation] Response content type:`, contentType);
-
-    if (!contentType || (!contentType.includes('pdf') && !contentType.includes('presentation'))) {
-      // If not a binary file, might be an error JSON response
-      const text = await response.text();
-      console.error(`[downloadPresentation] Unexpected content type, response:`, text);
-
+      // Anything else is an error — surface the server's detail.
+      const text = await response.text().catch(() => '');
+      let detail = response.statusText;
       try {
         const json = JSON.parse(text);
-        const errorMsg = json.detail || json.message || `Unexpected response format`;
-        toast.error(`Download failed: ${errorMsg}`, {
-          duration: 10000,
-        });
-        throw new Error(errorMsg);
+        detail = json.error || json.detail || json.message || detail;
       } catch {
-        throw new Error(`Unexpected response format. Expected PDF/PPTX but got ${contentType}`);
+        if (text) detail = text;
       }
+      throw new Error(
+        `Failed to download ${format.toUpperCase()}: ${detail} (HTTP ${response.status})`,
+      );
     }
-
-    const blob = await response.blob();
-    console.log(`[downloadPresentation] Blob created:`, {
-      size: blob.size,
-      type: blob.type
-    });
-
-    if (blob.size === 0) {
-      throw new Error(`Downloaded file is empty`);
-    }
-
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${presentationName}.${format}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
-
-    console.log(`[downloadPresentation] Download completed successfully`);
-    toast.success(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
-      duration: 8000,
-    });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[downloadPresentation] Error downloading ${format}:`, error);
-
-    // Only show toast if it's not already shown (to avoid duplicate toasts)
-    if (error instanceof Error && !error.message.includes('Failed to download')) {
-      toast.error(`Failed to download ${format.toUpperCase()}: ${error.message}`, {
-        duration: 10000,
-      });
-    }
-
+    toast.error(message, { duration: 10000 });
     throw error; // Re-throw to allow calling code to handle
   }
 }
@@ -234,10 +197,13 @@ export async function downloadPresentation(
 export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: string) => {
   try {
     // Store intent to upload to Google Slides after OAuth
-    sessionStorage.setItem('google_slides_upload_intent', JSON.stringify({
-      presentation_path: presentationPath,
-      sandbox_url: sandboxUrl
-    }));
+    sessionStorage.setItem(
+      'google_slides_upload_intent',
+      JSON.stringify({
+        presentation_path: presentationPath,
+        sandbox_url: sandboxUrl,
+      }),
+    );
 
     // Pass the current URL to the backend so it can be included in the OAuth state
     const currentUrl = encodeURIComponent(window.location.href);
@@ -259,7 +225,6 @@ export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: str
   }
 };
 
-
 export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationPath: string) => {
   if (!sandboxUrl || !presentationPath) {
     throw new Error('Missing required parameters');
@@ -267,18 +232,24 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
 
   try {
     const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
     // Use proper backend API client with authentication and extended timeout for PPTX generation
-    const response = await backendApi.post('/presentation-tools/convert-and-upload-to-slides', {
-      presentation_path: presentationPath,
-      sandbox_url: sandboxUrl,
-    }, {
-      headers: {
-        'Authorization': `Bearer ${session!.access_token}`,
+    const response = await backendApi.post(
+      '/presentation-tools/convert-and-upload-to-slides',
+      {
+        presentation_path: presentationPath,
+        sandbox_url: sandboxUrl,
       },
-      timeout: 180000, // 3 minutes timeout for PPTX generation (longer than backend's 2 minute timeout)
-    });
+      {
+        headers: {
+          Authorization: `Bearer ${session!.access_token}`,
+        },
+        timeout: 180000, // 3 minutes timeout for PPTX generation (longer than backend's 2 minute timeout)
+      },
+    );
 
     if (!response.success) {
       throw new Error('Failed to upload to Google Slides');
@@ -294,7 +265,7 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
       return {
         success: false,
         redirected_to_auth: true,
-        message: 'Redirecting to Google authentication'
+        message: 'Redirecting to Google authentication',
       };
     }
 
@@ -314,13 +285,12 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
       return {
         success: true,
         google_slides_url: result.google_slides_url,
-        message: `"${presentationName}" uploaded successfully`
+        message: `"${presentationName}" uploaded successfully`,
       };
     }
 
     // Only throw error if no Google Slides URL was returned
     throw new Error(result.message || 'No Google Slides URL returned');
-
   } catch (error) {
     console.error('Error uploading to Google Slides:', error);
 

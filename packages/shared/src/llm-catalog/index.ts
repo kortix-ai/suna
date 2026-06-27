@@ -39,18 +39,15 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`openrouter/fusion`)
-  //   'opencode-zen' → an OpenCode Zen public model id (`deepseek-v4-flash-free`)
+  //   'openrouter'   → an OpenRouter slug (`z-ai/glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  //   'opencode-zen' → OpenCode Zen openai-compatible chat completions (no auth)
-  transport: "bedrock" | "openrouter" | "opencode-zen";
+  transport: "bedrock" | "openrouter";
   // models.dev id for live pricing — upstream ids don't always match the catalog.
   pricingRef: string;
-  tier: "flagship" | "balanced" | "fast" | "free";
-  free?: boolean;
+  tier: "flagship" | "balanced" | "fast";
   // Vision (image input). Curated explicitly: managed slugs don't all exist on
   // models.dev (z-ai≠zhipuai, qwen≠alibaba, dotted vs dashed Claude ids), so
   // unlike BYOK models these can't derive it from the generated catalog.
@@ -69,67 +66,10 @@ export interface ManagedModel {
 // (`claude-opus-4.8` → our keys, credits-billed) apart from a BYOK one
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
-// Every managed paid model runs through OUR keys and is billed as Kortix credits
-// with markup, so the gateway enforces budgets/logging/spend on all of them.
-// Claude runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
-// everything else paid (GLM, Qwen, DeepSeek) goes via OpenRouter. The curated
-// OpenCode Zen free set is also managed here: it is exposed under the `kortix`
-// provider and recorded by the gateway, not shown as a separate native
-// `opencode` provider in the gateway picker.
-export const DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS = [
-  "deepseek-v4-flash-free",
-  "mimo-v2.5-free",
-  "nemotron-3-ultra-free",
-  "north-mini-code-free",
-] as const;
-
-const OPENCODE_ZEN_FREE_MODELS: ManagedModel[] = [
-  {
-    id: "deepseek-v4-flash-free",
-    name: "DeepSeek V4 Flash Free",
-    upstreamModelId: "deepseek-v4-flash-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/deepseek-v4-flash-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 200_000, output: 128_000 },
-  },
-  {
-    id: "mimo-v2.5-free",
-    name: "MiMo V2.5 Free",
-    upstreamModelId: "mimo-v2.5-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/mimo-v2.5-free",
-    tier: "free",
-    free: true,
-    vision: true,
-    limit: { context: 200_000, output: 32_000 },
-  },
-  {
-    id: "nemotron-3-ultra-free",
-    name: "Nemotron 3 Ultra Free",
-    upstreamModelId: "nemotron-3-ultra-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/nemotron-3-ultra-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 1_000_000, output: 128_000 },
-  },
-  {
-    id: "north-mini-code-free",
-    name: "North Mini Code Free",
-    upstreamModelId: "north-mini-code-free",
-    transport: "opencode-zen",
-    pricingRef: "opencode/north-mini-code-free",
-    tier: "free",
-    free: true,
-    vision: false,
-    limit: { context: 256_000, output: 64_000 },
-  },
-];
-
+// Every managed model runs through OUR keys and is billed as Kortix credits with
+// markup, so the gateway enforces budgets/logging/spend on all of them. Claude
+// runs on Bedrock (the proven Anthropic-payload InvokeModel transport);
+// everything else goes via OpenRouter.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     id: "claude-opus-4.8",
@@ -152,14 +92,14 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: "fusion",
-    name: "Fusion",
-    upstreamModelId: "openrouter/fusion",
+    id: "glm-5.2",
+    name: "GLM 5.2",
+    upstreamModelId: "z-ai/glm-5.2",
     transport: "openrouter",
-    pricingRef: "openrouter/fusion",
+    pricingRef: "z-ai/glm-5.2",
     tier: "balanced",
     vision: false,
-    limit: { context: 1_000_000, output: 128_000 },
+    limit: { context: 1_000_000, output: 131_072 },
   },
   {
     id: "qwen3.7-max",
@@ -191,7 +131,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
     vision: false,
     limit: { context: 1_048_576, output: 64_000 },
   },
-  ...OPENCODE_ZEN_FREE_MODELS,
 ];
 
 const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
@@ -216,21 +155,32 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // request asks for it, the gateway resolves it to a concrete managed model and
 // bills it as the resolved model.
 //
-// For now AUTO is Fusion (OpenRouter's multi-model router) except a request that
-// carries images is routed to a vision-capable model so attachments aren't
-// silently ignored (Fusion is text-only). The `autoRouter` hook and this single
-// indirection point are where a future, more sophisticated per-task handler plugs in.
+// AUTO resolves to GLM 5.2 (text) except a request that carries images, which is
+// routed to a vision-capable model so attachments aren't silently ignored (GLM is
+// text-only). The `autoRouter` hook and this single indirection point are where a
+// future, more sophisticated per-task handler plugs in.
+//
+// AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
+// explicitly opts into a concrete model. The resolution path below stays fully
+// intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
+// and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
+// the toggle is a one-line flip.
 export const AUTO_MODEL_ID = "auto";
 
-const AUTO_TARGET_MODEL = "fusion"; // text-only default
-const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
+// Whether AUTO is exposed in the model picker. Off for now: we want an explicit
+// opt-in on which model to use, and will bring AUTO back later. The web app reads
+// this through `featureFlags.enableAutoModel`, which can override it per-deploy via
+// NEXT_PUBLIC_ENABLE_AUTO_MODEL. The server keeps serving + resolving `auto`
+// regardless, so this only gates the UI.
+export const AUTO_MODEL_ENABLED = false;
 
-// Free-tier AUTO targets. A free account can't route to the paid targets above
-// (they'd 400 with "no upstream configured"), so AUTO resolves to the curated
-// free OpenCode-Zen lineup instead: a text default + the single free vision
-// model, so even image requests stay on a model the account can actually use.
-const AUTO_FREE_MODEL = "deepseek-v4-flash-free"; // free text default
-const AUTO_FREE_VISION_MODEL = "mimo-v2.5-free"; // the only free vision model
+// The single "what to choose for auto" knob: the model AUTO routes text requests
+// to, AND the concrete model a fresh session defaults to while AUTO is hidden.
+// Change this one constant to re-point both.
+export const AUTO_DEFAULT_MODEL_ID = "glm-5.2";
+
+const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID; // text-only default
+const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
 
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -260,19 +210,16 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 export function pickAutoModel(
   model: string,
   body: Record<string, unknown>,
-  opts?: { free?: boolean },
 ): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
     return null;
   const hasImage = requestHasImage(body);
-  if (opts?.free) {
-    return hasImage ? AUTO_FREE_VISION_MODEL : AUTO_FREE_MODEL;
-  }
   return hasImage ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   "kortix",
+  "opencode",
   "anthropic",
   "openai",
   "github-copilot",

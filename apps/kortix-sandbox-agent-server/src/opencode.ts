@@ -143,15 +143,10 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
       out.small_model = DEFAULT_KORTIX_MODEL
     }
-    // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
-    // allowlist — opencode loads ONLY these and ignores every provider it would
-    // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,
-    // OPENAI_API_KEY → openai), so a leaked key can't open a native path that
-    // bypasses budgets/logging/spend. This is the robust complement to the env
-    // deny-strip in spawnChild (which can be defeated if a key reaches opencode
-    // by some path the deny-list didn't enumerate). Gateway mode is a hard cut:
-    // even project-scoped Codex/OpenCode subscription auth.json must not expose a
-    // native provider here, otherwise usage bypasses gateway logs/budgets.
+    // Gateway mode allowlists providers so leaked provider keys cannot open
+    // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
+    // and BYOK handling. Free models are managed gateway models too, so the
+    // selector has one stable catalog before the sandbox has booted.
     out.enabled_providers = ['kortix']
   }
 
@@ -316,6 +311,16 @@ const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: true,
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
+  },
+  // Managed default (AUTO's text target + the explicit default a fresh session
+  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  'glm-5.2': {
+    name: 'GLM 5.2',
+    reasoning: true,
+    tool_call: true,
+    attachment: false,
+    temperature: true,
+    limit: { context: 1_000_000, output: 131_072 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
