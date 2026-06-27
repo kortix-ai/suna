@@ -14,7 +14,9 @@ import { useSessionPicks } from '@/lib/session-picks';
 import { clearStartStash, readStartStash } from '@/lib/session-start';
 import {
   useAbortOpenCodeSession,
+  useExecuteOpenCodeCommand,
   useOpenCodePendingStore,
+  useProjectConfig,
   useProjectModels,
   useSendOpenCodeMessage,
   useSessionSync,
@@ -36,6 +38,7 @@ export function useChat({
   const { messages, isBusy, isLoading } = useSessionSync(ocSessionId);
   const send = useSendOpenCodeMessage();
   const abort = useAbortOpenCodeSession();
+  const execCommand = useExecuteOpenCodeCommand();
   const phase = useRuntimePhase();
 
   // Interactive prompts live in the pending store (the SSE stream writes them
@@ -53,9 +56,11 @@ export function useChat({
     [permissionMap, ocSessionId],
   );
 
-  // Server-side model/agent sources + the per-session selection.
+  // Server-side capabilities (models/agents/commands/default agent) + the
+  // per-session selection. All pre-runtime; the runtime is only for messages.
   const models = useProjectModels(projectId);
   const agents = useVisibleAgents({ projectId });
+  const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
   // Mirror the selected model onto the session handle (facade setModel).
@@ -98,6 +103,15 @@ export function useChat({
     );
   };
 
+  // Run a project slash-command (server-side `/command` endpoint), distinct from
+  // a text prompt. Output streams back over SSE like any turn.
+  const runCommand = (command: string, args: string) => {
+    execCommand.mutate(
+      { sessionId: ocSessionId, command, args },
+      { onError: () => toast.error(`Could not run /${command}`) },
+    );
+  };
+
   // The one true cancel: abort the run AND drop any pending prompt.
   const cancel = () => {
     abort.mutate(ocSessionId);
@@ -136,9 +150,12 @@ export function useChat({
     removePermission,
     models,
     agents,
+    defaultAgent: config?.open_code_default_agent ?? null,
+    commands: config?.commands ?? [],
     picks,
     hasPending,
     sendMessage,
+    runCommand,
     cancel,
   };
 }

@@ -14,7 +14,12 @@ import {
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { startStashKey, type StartStash } from '@/lib/session-start';
-import { useProjectModels, useVisibleAgents, type ModelKey } from '@kortix/sdk/react';
+import {
+  useProjectConfig,
+  useProjectModels,
+  useVisibleAgents,
+  type ModelKey,
+} from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Loader2, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -54,6 +59,7 @@ function ProjectHome() {
   // Every picker is a server-side fetch — no runtime needed on this screen.
   const models = useProjectModels(projectId);
   const agents = useVisibleAgents({ projectId });
+  const config = useProjectConfig(projectId);
   const templates = useQuery({
     queryKey: ['project-sandbox-templates', projectId],
     queryFn: () => kortix.projects.sandboxTemplates(projectId),
@@ -121,7 +127,12 @@ function ProjectHome() {
           />
           <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5">
             <ModelPicker models={models} value={model} onChange={setModel} />
-            <AgentPicker agents={agents} value={agent} onChange={setAgent} />
+            <AgentPicker
+              agents={agents}
+              value={agent}
+              onChange={setAgent}
+              defaultName={config?.open_code_default_agent}
+            />
             {templateList.length > 1 && (
               <Select value={template} onValueChange={setTemplate}>
                 <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent text-xs text-muted-foreground shadow-none">

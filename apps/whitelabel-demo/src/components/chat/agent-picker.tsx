@@ -21,10 +21,13 @@ export function AgentPicker({
   agents,
   value,
   onChange,
+  defaultName,
 }: {
   agents: Agent[];
   value: string | null;
   onChange: (name: string | null) => void;
+  /** The project's configured default agent — shown when nothing is picked. */
+  defaultName?: string | null;
 }) {
   if (agents.length === 0) return null;
 
@@ -33,13 +36,15 @@ export function AgentPicker({
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 max-w-[150px] gap-1 px-2 text-xs text-muted-foreground">
           <Bot className="size-3.5 shrink-0" />
-          <span className="truncate capitalize">{value ?? 'Default agent'}</span>
+          <span className="truncate capitalize">{value ?? defaultName ?? 'Default agent'}</span>
           <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuItem onClick={() => onChange(null)}>
-          <span className="flex-1 text-sm">Default agent</span>
+          <span className="flex-1 text-sm capitalize">
+            {defaultName ? `${defaultName} (default)` : 'Default agent'}
+          </span>
           {!value && <Check className="size-4 shrink-0 text-brand" />}
         </DropdownMenuItem>
         {agents.map((a) => (

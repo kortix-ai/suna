@@ -1,6 +1,7 @@
 'use client';
 
 import { ProjectShell } from '@/components/project-shell';
+import { CapabilitiesTab } from '@/components/settings/capabilities-tab';
 import { ConnectorsTab } from '@/components/settings/connectors-tab';
 import { MembersTab } from '@/components/settings/members-tab';
 import { PoliciesTab } from '@/components/settings/policies-tab';
@@ -19,7 +20,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-const TABS = ['general', 'secrets', 'members', 'connectors', 'triggers', 'policies'] as const;
+const TABS = [
+  'general',
+  'capabilities',
+  'secrets',
+  'members',
+  'connectors',
+  'triggers',
+  'policies',
+] as const;
 
 export default function SettingsPage() {
   const projectId = String(useParams().id);
@@ -38,6 +47,9 @@ export default function SettingsPage() {
             </TabsList>
             <TabsContent value="general" className="mt-5">
               <GeneralTab />
+            </TabsContent>
+            <TabsContent value="capabilities" className="mt-5">
+              <CapabilitiesTab projectId={projectId} />
             </TabsContent>
             <TabsContent value="secrets" className="mt-5">
               <SecretsTab projectId={projectId} />

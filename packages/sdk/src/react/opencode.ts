@@ -45,3 +45,5 @@ export * from './provider-refresh';
 export { flattenModels, type FlatModel } from './model-flatten';
 export { projectLlmCatalogToProviderList } from './provider-selection';
 export { useProjectModels } from './use-project-models';
+export { useProjectConfig } from './use-project-config';
+export type { ProjectConfigSummary } from '../platform/projects-client';
