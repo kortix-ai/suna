@@ -12,6 +12,7 @@ const ENV_KEYS = [
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
   'BASH_ENV',
+  'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
   'KORTIX_AUTH_FILE',
 ] as const;
@@ -24,6 +25,7 @@ beforeEach(() => {
     saved[key] = process.env[key];
     delete process.env[key];
   }
+  process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
 });
 
 afterEach(() => {

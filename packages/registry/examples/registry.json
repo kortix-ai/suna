@@ -14,7 +14,7 @@
           "path": "hello/SKILL.md",
           "type": "registry:file",
           "target": "@skills/hello/SKILL.md",
-          "content": "---\nname: hello\ndescription: Say hello. A minimal example skill installed from the Kortix registry.\n---\n\n# Hello\n\nWhen asked to say hello, respond warmly and mention you were installed via `kortix add`.\n"
+          "content": "---\nname: hello\ndescription: Say hello. A minimal example skill installed from the Kortix marketplace.\n---\n\n# Hello\n\nWhen asked to say hello, respond warmly and mention you were installed via `kortix marketplace install`.\n"
         }
       ],
       "meta": { "source": "kortix-examples", "primitive": "skill" }

@@ -12,7 +12,7 @@
  * catalog entry → plan → files to commit) lives in `install-service.ts`.
  */
 
-import { getStarterFiles } from '@kortix/starter';
+import { getMarketplaceFiles, getStarterFiles, isKortixManagedSkillName } from '@kortix/starter';
 import {
   buildRegistry,
   describeRegistry,
@@ -55,6 +55,12 @@ export interface CatalogItem {
   owner?: string;
   /** The user-added source row this came from (for exact Remove matching); absent for base/env. */
   sourceId?: string;
+  /** First-party runtime skill managed by Kortix, not an ordinary optional install. */
+  managedBy?: 'kortix';
+  updatePolicy?: 'kortix-managed';
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
+  hidden?: boolean;
 }
 
 export interface DependencyItem {
@@ -143,6 +149,10 @@ function ownerOf(marketplaceId: string): string | undefined {
 
 function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   const marketplaceId = marketplaceIdOf(e.registry);
+  const defaultProjectInstallOrder =
+    typeof e.item.meta?.defaultProjectInstallOrder === 'number'
+      ? e.item.meta.defaultProjectInstallOrder
+      : undefined;
   return {
     id: `${e.registry}:${e.item.name}`,
     registry: e.registry,
@@ -160,6 +170,11 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     marketplaceLabel: marketplaceLabelOf(e.registry),
     owner: ownerOf(marketplaceId),
     sourceId: e.sourceId,
+    managedBy: e.item.meta?.managedBy === 'kortix' ? 'kortix' : undefined,
+    updatePolicy: e.item.meta?.updatePolicy === 'kortix-managed' ? 'kortix-managed' : undefined,
+    defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
+    defaultProjectInstallOrder,
+    hidden: e.item.meta?.hidden === true,
   };
 }
 
@@ -192,10 +207,21 @@ function memSource(map: Map<string, string>): BuildSource {
 }
 
 function buildStarterRegistry(): RegistryJson {
-  const files = getStarterFiles({ projectName: 'Kortix Starter', template: 'general-knowledge-worker' });
+  const files = [
+    ...getStarterFiles({ projectName: 'Kortix Starter', template: 'general-knowledge-worker' }),
+    ...getMarketplaceFiles(),
+  ];
   const map = new Map(files.map((f) => [f.path, f.content] as const));
   const { registry } = buildRegistry({ name: 'kortix-starter', source: memSource(map) });
   for (const item of registry.items ?? []) {
+    if (item.type === 'registry:skill' && isKortixManagedSkillName(item.name)) {
+      item.categories = [...new Set([...(item.categories ?? []), 'kortix-managed'])];
+      item.meta = {
+        ...(item.meta ?? {}),
+        managedBy: 'kortix',
+        updatePolicy: 'kortix-managed',
+      };
+    }
     for (const f of item.files ?? []) {
       const content = map.get(f.path);
       if (content != null) f.content = content;
@@ -227,9 +253,9 @@ const CURATED_BUNDLES: RegistryItem[] = [
     name: 'documents-pack',
     type: 'registry:bundle',
     title: 'Documents Pack',
-    description: 'Read and write real office files: PDF, Word, Excel, and PowerPoint.',
+    description: 'Read and write real office files: PDF, Word, Excel, and presentations.',
     categories: ['bundle', 'documents'],
-    registryDependencies: ['pdf', 'docx', 'xlsx', 'pptx'],
+    registryDependencies: ['pdf', 'docx', 'xlsx', 'presentations'],
     meta: { source: 'kortix' },
   },
 ];
@@ -325,7 +351,7 @@ function envSources(): string[] {
  */
 export const DEFAULT_MARKETPLACES: string[] = [
   'anthropics/skills', // official Anthropic Agent Skills (the anchor)
-  'NousResearch/hermes-agent', // Hermes, MIT, 174 skills
+  'anthropics/knowledge-work-plugins', // official Anthropic knowledge-work skills
 ];
 
 /** The defaults actually loaded — `KORTIX_DEFAULT_MARKETPLACES` overrides (set it
@@ -620,7 +646,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
   const { items } = await mergedCatalog();
   const by = new Map<string, MarketplaceFacet>();
   for (const it of items) {
-    if (UI_HIDDEN_TYPES.has(it.type)) continue; // bundles hidden until supported
+    if (!isBrowseableCatalogItem(it)) continue;
     const id = it.marketplaceId;
     let m = by.get(id);
     if (!m) {
@@ -771,17 +797,21 @@ export async function listFeaturedMarketplaces(): Promise<Array<FeaturedMarketpl
 // ── public read API ────────────────────────────────────────────────────────
 type ItemQuery = { query?: string; type?: string; source?: string };
 
-// Types we don't yet support end-to-end in the UI, so we hide them from browse
-// + facet counts. `registry:bundle` (a marketplace.json group) has no proper
-// install/preview UX yet — re-enable here once it does.
-const UI_HIDDEN_TYPES = new Set<string>(['registry:bundle']);
+// Launch scope: the marketplace is the skill library. Agents, commands, tools,
+// bundles, and support files may still exist in registries for compatibility
+// and dependency resolution, but they are not browse/install choices.
+const MARKETPLACE_VISIBLE_TYPES = new Set<string>(['registry:skill']);
+
+function isBrowseableCatalogItem(it: CatalogItem): boolean {
+  return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
+}
 
 function filterCatalogItems(items: CatalogItem[], opts: ItemQuery): CatalogItem[] {
   const q = (opts.query ?? '').trim().toLowerCase();
   const type = opts.type?.trim();
   const source = opts.source?.trim();
   return items.filter((it) => {
-    if (UI_HIDDEN_TYPES.has(it.type)) return false;
+    if (!isBrowseableCatalogItem(it)) return false;
     if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
     if (source && source !== 'all' && marketplaceIdOf(it.registry) !== source) return false;
     if (!q) return true;
@@ -802,12 +832,18 @@ export async function listCatalogItemsLive(opts: ItemQuery = {}): Promise<Catalo
 }
 
 export async function getCatalogEntry(id: string): Promise<CatalogEntry | null> {
+  const base = getBaseCatalog();
+  const baseEntry = base.byId.get(id);
+  if (baseEntry) return baseEntry;
   // Install path — wait for the full catalog so an entry is never missed.
   return (await mergedCatalogComplete()).byId.get(id) ?? null;
 }
 
 export async function findCatalogEntryByName(name: string): Promise<CatalogEntry | null> {
   const slug = name.split('/').pop() ?? name;
+  for (const entry of getBaseCatalog().byId.values()) {
+    if (entry.item.name === slug) return entry;
+  }
   return (await mergedCatalogComplete()).byName?.get(slug) ?? null;
 }
 
@@ -848,6 +884,7 @@ export async function getCatalogItemDetail(id: string): Promise<CatalogItemDetai
   const entry = byId.get(id);
   if (!entry) return null;
   const base = items.find((i) => i.id === id)!;
+  if (!isBrowseableCatalogItem(base)) return null;
 
   // Files come straight from the cached catalog entry — no re-fetch, so the full
   // file tree previews instantly even for a 174-skill source.

@@ -80,26 +80,20 @@ project's layout (the OpenCode config dir comes from `[opencode] config_dir` in
 ## The CLI
 
 ```bash
-# Author: turn this repo into a registry (scans skills/agents/commands/tools)
-kortix registry build --name my-org/my-repo
-
-# Browse a registry (GitHub repo, URL, or local path)
-kortix registry list   kortix-ai/skills
-kortix registry search kortix-ai/skills --query pdf
-kortix registry view   kortix-ai/skills/pdf
-
-# 1-click install an item (skill / agent / command / file / folder / bundle)
-kortix add kortix-ai/skills/pdf            # GitHub registry item
-kortix add github:kortix-ai/skills@v1/pdf  # pinned ref
-kortix add @kortix/pdf                     # namespaced registry
-kortix add ./local/registry.json#pdf       # a local registry
-kortix add https://host/r/pdf.json         # a direct item URL
-kortix add kortix-ai/skills/pdf --dry-run  # preview, write nothing
+# Browse and install marketplace items.
+kortix marketplace search pdf
+kortix marketplace show pdf
+kortix marketplace install pdf --project <project-id>
+kortix marketplace status --project <project-id>
 ```
 
 Installing writes the files into `.kortix/` and records them (with content
 hashes) in `registry-lock.json`. Then `git commit && kortix ship` makes them
 live — or use `--project <id>` to commit straight into a linked cloud project.
+
+`kortix add` has been removed from the user-facing CLI. `kortix registry`
+remains a developer authoring command for local registry work, but normal users
+and agents should use `kortix marketplace`.
 
 Publish *anything* (arbitrary files, whole folders, a project bundle) by
 hand-writing a partial registry in `kortix.registry.json`; `kortix registry
@@ -109,7 +103,8 @@ build` merges it and expands any folder `path` into per-file entries.
 
 The same registry format at three visibility levels:
 
-1. **Repo** — a project's own `registry.json`; install with `kortix add owner/repo/item`.
+1. **Repo** — a project's own `registry.json`; install through the marketplace
+   engine.
 2. **Company** — an org registry repo (e.g. `kortix-ai/skills`) shown in
    **Customize → Add**, behind Kortix auth for private repos.
 3. **Global** — a Kortix-hosted gallery (`/marketplace`) aggregating curated +
@@ -136,10 +131,10 @@ instead of writing to a working tree.
 ## Status
 
 - ✅ Format + types, validation, address parsing, GitHub/URL/local fetch with
-  `include`, build, install planner + lock, `kortix add` + `kortix registry`,
-  unit tests, proven end-to-end on the 69-skill starter pack.
-- 🚧 `kortix add --project <id>` → commit into a linked cloud project's repo
-  (via a `POST /projects/:id/files/commit` endpoint reusing `commitFileToBranch`).
-- 🔜 API list/install endpoints + the web `/marketplace` gallery (the 3-scope UI).
-- 🔜 Make `kortix init` emit a `registry.json` so every new project ships as a
-  registry out of the box.
+  `include`, build, install planner + lock, `kortix marketplace`, unit tests,
+  and black-box CLI/API coverage.
+- ✅ `kortix marketplace install --project <id>` commits into a linked cloud
+  project's repo through the API marketplace install path.
+- ✅ API marketplace list/detail/install endpoints.
+- 🔜 Web `/marketplace` gallery.
+- 🔜 Kortix-managed update CR workflow.

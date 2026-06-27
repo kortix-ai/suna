@@ -13,10 +13,12 @@
 //   3. POST /oauth/token (authorization_code grant, with the server-issued PKCE
 //        code_verifier) → {access_token, refresh_token, expires_in, id_token}
 
+import { OPENCODE_USER_AGENT } from '@kortix/shared';
+
 const OPENAI_AUTH_BASE = 'https://auth.openai.com';
 const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 // OpenAI ties acceptance to the Codex client; present as that client.
-const USER_AGENT = 'opencode/1.14.28';
+const USER_AGENT = OPENCODE_USER_AGENT;
 const REDIRECT_URI = `${OPENAI_AUTH_BASE}/deviceauth/callback`;
 
 export type CodexDeviceChallenge = {

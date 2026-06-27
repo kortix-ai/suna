@@ -6,8 +6,9 @@
  * disk (`loadItem`), plan an install with transitive dependencies
  * (`planInstall`), and apply it while tracking a lock file (`applyInstall`).
  *
- * The `kortix` CLI uses this today (`kortix add`, `kortix registry`); the API
- * and the web marketplace are intended to build on the very same engine.
+ * The `kortix` CLI and API use this engine behind the marketplace install
+ * surface. `kortix registry` remains a developer authoring entrypoint; normal
+ * users should use `kortix marketplace`.
  */
 
 export * from './schema';

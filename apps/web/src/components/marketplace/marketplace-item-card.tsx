@@ -82,18 +82,18 @@ export function MarketplaceItemCard({
           )}
         </div>
       </div>
-      {onAdd && (
+      {onAdd && !installed && (
         <Button
-          variant={installed ? 'outline' : 'ghost'}
+          variant="ghost"
           size="icon-sm"
           className="shrink-0"
           onClick={(e) => {
             e.stopPropagation();
             onAdd(item);
           }}
-          aria-label={installed ? 'Re-add' : 'Add'}
+          aria-label="Add"
         >
-          {installed ? <Check className="size-4" /> : <Plus className="size-4" />}
+          <Plus className="size-4" />
         </Button>
       )}
     </div>

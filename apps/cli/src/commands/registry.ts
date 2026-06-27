@@ -1,5 +1,5 @@
 /**
- * `kortix registry <subcommand>` — author + browse registries.
+ * `kortix registry <subcommand>` — author and inspect registry.json files.
  *
  *   kortix registry build      Scan this repo → registry.json (now it's a registry)
  *   kortix registry validate   Validate a registry.json
@@ -8,8 +8,8 @@
  *   kortix registry search <reg> --query <q>
  *
  * The format is shadcn-compatible (registry.json / registry-item.json), so any
- * Kortix repo with a registry.json is "just a registry" — installable with
- * `kortix add owner/repo/item` (and readable by shadcn tooling for plain files).
+ * Kortix repo with a registry.json is marketplace-addressable and readable by
+ * shadcn tooling for plain files.
  */
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -32,10 +32,10 @@ import { C, status } from '../style.ts';
 
 const HELP = `Usage: kortix registry <subcommand> [options]
 
-Author and browse Kortix registries (shadcn-compatible registry.json).
+Author and inspect Kortix registries (shadcn-compatible registry.json).
 
 Subcommands:
-  build               Scan this repo and write a registry.json (publish it).
+  build               Scan this repo and write a registry.json.
   validate [path]     Validate a registry.json (default: ./registry.json).
   list <registry>     List items in a registry (owner/repo, URL, or ./path).
   view <item>         Show one item (owner/repo/item, URL, or ./path#item).
@@ -144,7 +144,7 @@ function registryBuild(argv: string[], json: boolean): number {
       '\n',
   );
   process.stdout.write(
-    `  ${C.dim}Commit it and others can${C.reset} ${C.cyan}kortix add ${registry.name}/<item>${C.reset}\n`,
+    `  ${C.dim}Commit it and others can${C.reset} ${C.cyan}kortix marketplace install ${registry.name}/<item>${C.reset}\n`,
   );
   return 0;
 }
@@ -269,7 +269,7 @@ async function registryView(argv: string[], json: boolean): Promise<number> {
   }
   const envKeys = Object.keys(it.envVars ?? {});
   if (envKeys.length) process.stdout.write(`\n  ${C.dim}Secrets:${C.reset} ${envKeys.join(', ')}\n`);
-  process.stdout.write(`\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix add ${address}${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix marketplace install ${address}${C.reset}\n`);
   return 0;
 }
 
@@ -291,7 +291,7 @@ function registryInstalled(argv: string[], json: boolean): number {
   }
   if (items.length === 0) {
     process.stdout.write(`${status.info('No registry items installed in this project.')}\n`);
-    process.stdout.write(`  ${C.dim}Add one with${C.reset} ${C.cyan}kortix add <item>${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}Add one with${C.reset} ${C.cyan}kortix marketplace install <item>${C.reset}\n`);
     return 0;
   }
   process.stdout.write(`\n  ${C.bold}Installed${C.reset} ${C.faded}— ${items.length} items${C.reset}\n\n`);
@@ -381,5 +381,5 @@ function printItemTable(registryName: string, items: RegistryItem[]): void {
       `  ${C.cyan}${it.name.padEnd(nameWidth)}${C.reset}  ${C.faded}${kind.padEnd(8)}${C.reset}  ${C.dim}${trimmed}${C.reset}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}Install one with${C.reset} ${C.cyan}kortix add ${registryName}/<name>${C.reset}\n`);
+  process.stdout.write(`\n  ${C.dim}Install one with${C.reset} ${C.cyan}kortix marketplace install ${registryName}/<name>${C.reset}\n`);
 }

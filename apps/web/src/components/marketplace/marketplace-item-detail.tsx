@@ -5,8 +5,7 @@ import { useTranslations } from 'next-intl';
  * Full-page detail for a marketplace item, modeled on Customize → Skills:
  *   • a fixed top bar (back · identity · install actions),
  *   • a left column with the item's metadata + a clickable recursive file tree,
- *   • a right column that renders the selected file — the README by default, any
- *     other file fetched on demand (markdown rendered, code shown verbatim).
+ *   • a right column that renders the selected file on demand.
  * It fills its container edge-to-edge so it matches the rest of the surface.
  */
 
@@ -21,7 +20,7 @@ import {
   Trash2,
   Wrench,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
 import { UnifiedMarkdown } from '@/components/markdown';
@@ -92,7 +91,6 @@ const LANG: Record<string, string> = {
 };
 const extOf = (p: string) => p.split('.').pop()?.toLowerCase() ?? '';
 const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
-const isReadmePath = (p: string | null) => !p || /(^|\/)(SKILL|README)\.md$/i.test(p);
 
 /** Render one file's content — markdown rendered, code syntax-highlighted via a
  *  fenced block (falls back to a plain mono block when that isn't safe). */
@@ -100,7 +98,7 @@ function FileContent({ path, content }: { path: string; content: string }) {
   if (isMarkdown(path)) {
     return (
       <div className="px-6 py-5">
-        <UnifiedMarkdown content={content} allowHtml={false} />
+        <UnifiedMarkdown content={stripFrontmatter(content)} allowHtml={false} />
       </div>
     );
   }
@@ -138,14 +136,17 @@ export function MarketplaceItemDetail({
   const tm = data ? typeMeta(data.type) : null;
   const caps = data?.capabilities;
   const hasCaps = !!caps && caps.secrets.length + caps.connectors.length + caps.tools.length > 0;
-  const readme = data?.readme ? stripFrontmatter(data.readme) : '';
   const isInstalled = !!(data && installedNames?.has(data.name));
   const categories = (data?.categories ?? []).filter((c) => c !== 'general-knowledge-worker');
 
   // File tree — folders open by default; we only track explicit collapses.
-  const fileTree = useMemo(
-    () => buildFileTree((data?.files ?? []).map((f) => displayPath(f.target))),
+  const displayFiles = useMemo(
+    () => (data?.files ?? []).map((f) => displayPath(f.target)),
     [data?.files],
+  );
+  const fileTree = useMemo(
+    () => buildFileTree(displayFiles),
+    [displayFiles],
   );
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (path: string) =>
@@ -160,19 +161,30 @@ export function MarketplaceItemDetail({
   // Selection: FileTree gives back the display path (no rootPath). Map it to the
   // original install target so we can fetch its content.
   const [selected, setSelected] = useState<string | null>(null);
+  useEffect(() => {
+    if (displayFiles.length === 0) {
+      setSelected(null);
+      return;
+    }
+    if (selected && displayFiles.includes(selected)) return;
+    setSelected(displayFiles[0] ?? null);
+  }, [displayFiles, selected]);
   const selectedTarget = useMemo(() => {
     if (!selected || !data) return null;
     return data.files.find((f) => displayPath(f.target) === selected)?.target ?? null;
   }, [selected, data]);
 
-  const showReadme = isReadmePath(selected);
   const fileQuery = useMarketplaceItemFile(
-    !showReadme && openId ? openId : null,
-    !showReadme ? selectedTarget : null,
+    openId,
+    selectedTarget,
   );
 
   const actions = !data ? null : isInstalled ? (
     <div className="flex shrink-0 items-center gap-1.5">
+      <Badge variant="new" size="sm" className="gap-1">
+        <Check className="size-3" />
+        Installed
+      </Badge>
       {onRemove && (
         <Button
           variant="ghost"
@@ -184,10 +196,6 @@ export function MarketplaceItemDetail({
           Remove
         </Button>
       )}
-      <Button variant="outline" size="sm" onClick={() => onAdd(data)}>
-        <Check className="size-4" />
-        Re-add
-      </Button>
     </div>
   ) : (
     <Button size="sm" className="shrink-0" onClick={() => onAdd(data)}>
@@ -347,22 +355,6 @@ export function MarketplaceItemDetail({
               <Skeleton className="h-6 w-1/3 rounded-lg" />
               <Skeleton className="h-40 w-full rounded-2xl" />
             </div>
-          ) : showReadme ? (
-            readme ? (
-              <div className="px-6 py-5">
-                <UnifiedMarkdown content={readme} allowHtml={false} />
-              </div>
-            ) : (
-              <EmptyState
-                icon={FileText}
-                title={tI18nHardcoded.raw(
-                  'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrTitleNoREADME4966916b',
-                )}
-                description={tI18nHardcoded.raw(
-                  'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrDescriptionThisSkill2316ce31',
-                )}
-              />
-            )
           ) : fileQuery.isLoading ? (
             <div className="space-y-3 p-6">
               <Skeleton className="h-5 w-1/4 rounded" />
@@ -373,12 +365,8 @@ export function MarketplaceItemDetail({
           ) : (
             <EmptyState
               icon={FileText}
-              title={tI18nHardcoded.raw(
-                'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrTitleCouldnT6f110527',
-              )}
-              description={tI18nHardcoded.raw(
-                'autoComponentsMarketplaceMarketplaceItemDetailJsxAttrDescriptionItWill4708a76f',
-              )}
+              title="Preview unavailable"
+              description="This file cannot be previewed from the marketplace source."
             />
           )}
         </section>
