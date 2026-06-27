@@ -335,7 +335,7 @@ export async function maybeHandleDmCommand(
   return true;
 }
 
-async function classifyEvent(
+export async function classifyEvent(
   teamId: string,
   event: SlackEvent,
   botUserId: string | null,
@@ -343,7 +343,17 @@ async function classifyEvent(
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
   if (event.subtype) return 'ignore';
-  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'ignore';
+  // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
+  // deliver an `app_mention` for a mention made INSIDE an existing thread —
+  // notably a thread that predates the bot joining the channel — there it arrives
+  // ONLY as a `message` (with `thread_ts`) via our `message.channels` /
+  // `message.groups` subscription. Treating it as a mention is what lets the bot
+  // answer when it's re-tagged in an old thread instead of going silent until you
+  // start a fresh one. When Slack DOES send both siblings (the common top-level
+  // case), the exactly-once `inboundMessageKey` gate — keyed on the shared
+  // (team, channel, ts) — collapses them into a single run, so this never
+  // double-answers.
+  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'mention';
   if (event.channel_type === 'im') return 'dm';
   if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts))) return 'follow_up';
   return 'ignore';
