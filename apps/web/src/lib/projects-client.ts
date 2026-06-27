@@ -265,6 +265,22 @@ export interface ProjectLlmCatalogResponse {
   }>;
 }
 
+/** One per-model visibility pin (server-backed model preferences). */
+export interface ModelVisibilityEntry {
+  providerID: string;
+  modelID: string;
+  visibility: 'show' | 'hide';
+}
+
+/**
+ * The caller's server-side model-picker preferences (per auth user, not
+ * project-scoped). `default` is "providerID/modelID" or null.
+ */
+export interface ModelPreferencesResponse {
+  default: string | null;
+  hidden: ModelVisibilityEntry[];
+}
+
 export interface ProjectInput {
   account_id?: string;
   name?: string;
@@ -582,6 +598,52 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
       showErrors: false,
       ...options,
     }),
+  );
+}
+
+// ─── Per-user model preferences (server home for the LLM picker) ────────────
+// Keyed by the auth user, NOT a project — these follow the human across
+// devices. The localStorage model store stays as an optimistic cache.
+
+export async function getModelPreferences(options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ModelPreferencesResponse>('/me/model-preferences', {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
+export async function putModelDefault(model: string | null) {
+  return unwrap(
+    await backendApi.put<{ default: string | null }>(
+      '/me/model-preferences/default',
+      { model },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function putModelVisibility(
+  providerID: string,
+  modelID: string,
+  visibility: 'show' | 'hide',
+) {
+  return unwrap(
+    await backendApi.put<{ hidden: ModelVisibilityEntry[] }>(
+      '/me/model-preferences/visibility',
+      { providerID, modelID, visibility },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function resetModelVisibility() {
+  return unwrap(
+    await backendApi.delete<{ hidden: ModelVisibilityEntry[] }>(
+      '/me/model-preferences/visibility',
+      { showErrors: false },
+    ),
   );
 }
 

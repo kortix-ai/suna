@@ -72,6 +72,7 @@ import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
+import { meRouter } from './me/model-prefs';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
 import { adminApp } from './admin';
@@ -614,6 +615,10 @@ app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
 app.route('/v1/account-invites', accountInvitesRouter);
+
+// /v1/me/* — per-USER (auth.users.id) state that is not account-scoped, e.g.
+// the cross-device model-picker preferences (default model + visibility pins).
+app.route('/v1/me', meRouter);
 
 app.route('/v1/ops', opsApp);
 

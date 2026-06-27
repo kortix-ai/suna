@@ -33,21 +33,24 @@ describe('shouldShowFreeTag', () => {
 });
 
 describe('modelVisibilityKeyForProviderModel', () => {
-  test('keeps native provider keys unchanged', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', false),
-    ).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
+  test('keeps native BYOK provider keys unchanged', () => {
+    expect(modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6')).toEqual({
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-6',
+    });
   });
 
-  test('maps gateway BYOK provider models onto the kortix provider namespace', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('anthropic', 'claude-sonnet-4-6', true),
-    ).toEqual({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' });
+  test('keeps managed kortix model ids on the kortix provider', () => {
+    expect(modelVisibilityKeyForProviderModel('kortix', 'deepseek-v4-flash-free')).toEqual({
+      providerID: 'kortix',
+      modelID: 'deepseek-v4-flash-free',
+    });
   });
 
-  test('keeps managed kortix model ids bare in gateway mode', () => {
-    expect(
-      modelVisibilityKeyForProviderModel('kortix', 'deepseek-v4-flash-free', true),
-    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4-flash-free' });
+  test('maps ChatGPT (codex) rows back to the kortix codex namespace', () => {
+    expect(modelVisibilityKeyForProviderModel('codex', 'gpt-5')).toEqual({
+      providerID: 'kortix',
+      modelID: 'codex/gpt-5',
+    });
   });
 });

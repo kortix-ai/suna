@@ -3091,6 +3091,29 @@ export const executorExecutions = kortixSchema.table(
   ],
 );
 
+// Per-user model-picker preferences — the server home for the LLM picker's
+// cross-device state. Keyed by the AUTH USER (auth.users.id) only — NOT
+// project/account scoped — so the chosen default model and the per-model
+// show/hide pins follow the human everywhere they sign in. The browser
+// localStorage model store stays an optimistic cache; this is its durable
+// backing store. Surfaced via /v1/me/model-preferences.
+export const userModelPreferences = kortixSchema.table('user_model_preferences', {
+  // auth.users.id. No FK — auth.users lives outside the kortix schema's
+  // migration domain (same convention as account_members.user_id et al.).
+  userId: uuid('user_id').primaryKey(),
+  // Preferred default model as "providerID/modelID" (e.g.
+  // "anthropic/claude-opus-4-8"). NULL = no explicit default; the client falls
+  // back to its managed flagship.
+  defaultModel: text('default_model'),
+  // Per-model visibility pins: [{ providerID, modelID, visibility:'show'|'hide' }].
+  // The picker's default visibility heuristic applies to any model not pinned here.
+  hiddenModels: jsonb('hidden_models')
+    .$type<Array<{ providerID: string; modelID: string; visibility: 'show' | 'hide' }>>()
+    .default([])
+    .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const executorConnectorsRelations = relations(executorConnectors, ({ one, many }) => ({
   project: one(projects, {
     fields: [executorConnectors.projectId],

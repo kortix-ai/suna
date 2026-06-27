@@ -17,7 +17,6 @@ import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
@@ -26,7 +25,7 @@ import {
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
+import { listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
@@ -111,20 +110,10 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // the legacy GlobalProviderModal that writes to the active sandbox.
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
-  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
-  const baseModels = useMemo(() => {
-    return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
-  }, [models, llmGatewayEnabled]);
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
+  // opencode-native: the model list already reconciles the always-on managed
+  // `kortix` catalog + every connected BYOK provider (see flattenModels), so the
+  // picker renders it verbatim — no gateway/native fork, nothing to strip.
+  const baseModels = models;
 
   // Track project secrets whenever we're in a project (not only while the picker
   // is open) so connecting/disconnecting a provider flips model visibility live —
@@ -133,7 +122,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
+    enabled: !!projectId,
     staleTime: 10_000,
   });
   const secretNames = useMemo(() => {
@@ -141,13 +130,14 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     const items = Array.isArray(data) ? data : (data?.items ?? []);
     return new Set(items.map((secret: { name: string }) => secret.name));
   }, [secretsQuery.data]);
-  // Providers whose key(s) are present — drives which of the gateway's full
-  // baked catalog is shown by default in the picker (connected providers light
-  // up the instant their secret lands; everything else stays search-only).
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return new Set<string>();
-    return connectedGatewayProviderIdsFromSecretNames(secretNames);
-  }, [llmGatewayEnabled, secretNames]);
+  // Connected subscriptions (notably ChatGPT/codex) — gates the ChatGPT models
+  // the managed `kortix` provider serves under `codex/<id>` so they only show
+  // once the subscription is linked. BYOK providers list natively now, so this
+  // no longer needs to gate them.
+  const connectedProviderIds = useMemo(
+    () => connectedGatewayProviderIdsFromSecretNames(secretNames),
+    [secretNames],
+  );
 
   const modelStore = useModelStore(baseModels, {
     connectedProviderIds,
@@ -195,7 +185,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
     for (const m of visibleModels) {
-      const groupID = llmGatewayEnabled ? pickerGroupId(m) : m.providerID;
+      // Managed models stay under "Kortix"; ChatGPT (codex/<id>) splits into its
+      // own group; native BYOK providers group by their real id.
+      const groupID = pickerGroupId(m);
       const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
@@ -217,16 +209,14 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       return a.providerName.localeCompare(b.providerName);
     });
     return entries;
-  }, [visibleModels, llmGatewayEnabled]);
+  }, [visibleModels]);
 
   // AUTO lives outside the provider groups — a standalone toggle. When it's on,
-  // the manual model list is hidden unless the user expands it.
+  // the manual model list is hidden unless the user expands it. It's the managed
+  // smart-router (`kortix/auto`), always present in the managed catalog.
   const autoModel = useMemo(
-    () =>
-      llmGatewayEnabled
-        ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
-        : undefined,
-    [baseModels, llmGatewayEnabled],
+    () => baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID),
+    [baseModels],
   );
   const isAutoSelected =
     selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
@@ -257,30 +247,20 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const handleOpenProviderModal = useCallback(
     (tab: ProviderModalTab) => {
       setOpen(false);
+      // In a project, the BYOK connect surface is the Providers customize panel
+      // (providers-view). Elsewhere (dashboard / instance), fall back to the
+      // global provider modal.
       if (projectId) {
-        if (llmGatewayEnabled) {
-          openCustomize('llm-providers');
-        } else {
-          setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-          setProjectModalOpen(true);
-        }
+        openCustomize('llm-providers');
         return;
       }
       openProviderModal(tab);
     },
-    [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
+    [projectId, openProviderModal, openCustomize],
   );
 
   return (
     <>
-      {projectId && (
-        <ProjectProviderModal
-          projectId={projectId}
-          open={projectModalOpen}
-          onOpenChange={setProjectModalOpen}
-          defaultTab={projectModalTab}
-        />
-      )}
       <CommandPopover open={open} onOpenChange={setOpen}>
         <Tooltip>
           <TooltipTrigger asChild>

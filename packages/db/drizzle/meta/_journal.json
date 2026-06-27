@@ -134,6 +134,13 @@
       "when": 1782513151684,
       "tag": "20260626223231_add_usage_event_request_id",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782520223918,
+      "tag": "20260627003023_add_user_model_preferences",
+      "breakpoints": true
     }
   ]
 }

@@ -56,6 +56,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { extractClipboardFiles } from './clipboard-files';
 import { ModelSelector } from './model-selector';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 
 import {
   CommandGroup,
@@ -127,6 +128,21 @@ function catalogModelFor(providerID: string, modelID: string) {
   return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find((model) => model.id === lookupModelID);
 }
 
+// opencode-native reconciliation for the managed `kortix` provider. Its baked
+// catalog can carry the FULL routable set (managed single-segment ids + every
+// BYOK provider's models namespaced `<provider>/<model>` + ChatGPT `codex/<id>`).
+// In the native world BYOK routes DIRECT through each provider's own native
+// entry (opencode lists it once the key is injected), so the kortix provider
+// must contribute ONLY: (a) the managed catalog (billed via the slim endpoint)
+// and (b) ChatGPT/codex (served under kortix as `codex/<id>`). Dropping the
+// BYOK-namespaced kortix duplicates avoids both a double listing under each
+// provider AND mis-routing a BYOK turn through the managed (credit-billed) path.
+const MANAGED_PICKER_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
+function isPickerModel(providerID: string, modelID: string): boolean {
+  if (providerID !== 'kortix') return true;
+  return MANAGED_PICKER_MODEL_IDS.has(modelID) || modelID.startsWith('codex/');
+}
+
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
   const normalized = normalizeProviderList(providers);
@@ -136,6 +152,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models)) {
+      if (!isPickerModel(p.id, modelID)) continue;
       const caps = (model as any).capabilities;
       const modalities = (model as any).modalities;
       const catalogModel = catalogModelFor(p.id, modelID);

@@ -1,19 +1,24 @@
 'use client';
 
 /**
- * One-time hydration of the global default model from the server.
+ * One-time hydration of the user's model-picker preferences from the server.
  *
- * On app mount, if localStorage has no globalDefault but the server has one
- * (persisted in opencode.jsonc via PUT /kortix/preferences/model), we seed
- * localStorage so the resolution chain in use-opencode-local.ts picks it up.
+ * On app mount, if localStorage has no globalDefault / visibility pins but the
+ * server has them (persisted per auth user via /v1/me/model-preferences), we
+ * seed localStorage so the resolution chain in use-opencode-local.ts and the
+ * picker's visibility logic pick them up.
  *
- * This runs once per page load — the module-level guard prevents repeated fetches.
+ * This runs once per page load — the module-level guard prevents repeated
+ * fetches. The seed functions never overwrite existing local state, so a user's
+ * in-session changes (the optimistic cache) always win over a slower server read.
  */
 
 import { useEffect, useRef } from 'react';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
-import { authenticatedFetch } from '@/lib/auth-token';
-import { hydrateGlobalDefaultFromServer } from './use-model-store';
+import { getModelPreferences } from '@/lib/projects-client';
+import {
+  hydrateGlobalDefaultFromServer,
+  hydrateVisibilityFromServer,
+} from './use-model-store';
 
 let hydrated = false;
 
@@ -26,28 +31,29 @@ export function useModelHydration(enabled = true) {
     didRun.current = true;
     hydrated = true;
 
-    const base = getActiveOpenCodeUrl();
-    if (!base) return;
+    getModelPreferences()
+      .then((data) => {
+        if (!data) return;
 
-    authenticatedFetch(`${base}/kortix/preferences/model`)
-      .then(async (res) => {
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data?.model) return;
+        // Default model — stored as "providerID/modelID".
+        if (typeof data.default === 'string' && data.default) {
+          const model = data.default;
+          const idx = model.indexOf('/');
+          if (idx > 0 && idx < model.length - 1) {
+            hydrateGlobalDefaultFromServer({
+              providerID: model.slice(0, idx),
+              modelID: model.slice(idx + 1),
+            });
+          }
+        }
 
-        // Parse "providerID/modelID" format
-        const model = data.model as string;
-        const idx = model.indexOf('/');
-        if (idx <= 0 || idx >= model.length - 1) return;
-
-        const providerID = model.slice(0, idx);
-        const modelID = model.slice(idx + 1);
-
-        // Uses the model store's internal setStore which notifies all subscribers
-        hydrateGlobalDefaultFromServer({ providerID, modelID });
+        // Per-model visibility pins.
+        if (Array.isArray(data.hidden)) {
+          hydrateVisibilityFromServer(data.hidden);
+        }
       })
       .catch(() => {
-        // Non-fatal — app works fine without server-side default
+        // Non-fatal — app works fine without server-side preferences.
       });
   }, [enabled]);
 }

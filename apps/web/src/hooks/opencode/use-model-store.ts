@@ -16,6 +16,11 @@
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
+  putModelDefault,
+  putModelVisibility,
+  resetModelVisibility as resetModelVisibilityServer,
+} from '@/lib/projects-client';
+import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
@@ -131,6 +136,21 @@ export function hydrateGlobalDefaultFromServer(model: ModelKey): void {
 }
 
 /**
+ * Non-hook API to hydrate the per-model visibility pins (the `user[]` array)
+ * from the server. Only seeds when localStorage has no pins yet, so a user's
+ * in-session changes (the optimistic cache) are never clobbered by a slower
+ * server read. Notifies all subscribers so the UI updates reactively.
+ */
+export function hydrateVisibilityFromServer(
+  entries: Array<{ providerID: string; modelID: string; visibility: Visibility }>,
+): void {
+  if (entries.length === 0) return;
+  const s = getStore();
+  if (s.user.length > 0) return; // Don't overwrite existing local pins
+  setStore({ ...s, user: entries.map((e) => ({ ...e })) });
+}
+
+/**
  * Non-hook API to explicitly set the global default model.
  * Unlike hydrateGlobalDefaultFromServer, this always overwrites.
  * Use when the user explicitly picks a model in workspace settings.
@@ -144,6 +164,9 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
     selectedModel: {},
     sessionModel: {},
   });
+  // Server-backed: the localStorage write above is the optimistic cache; persist
+  // the choice (per auth user) so it follows the user across devices. Best-effort.
+  void putModelDefault(model ? `${model.providerID}/${model.modelID}` : null).catch(() => {});
 }
 
 // ============================================================================
@@ -349,6 +372,8 @@ export function useModelStore(
       next.push({ ...model, visibility: show ? 'show' : 'hide' });
     }
     setStore({ ...s, user: next });
+    // Server-backed (optimistic cache above + best-effort durable write).
+    void putModelVisibility(model.providerID, model.modelID, show ? 'show' : 'hide').catch(() => {});
   }, []);
 
   // Clear every visibility override so all models revert to their default
@@ -357,6 +382,8 @@ export function useModelStore(
     const s = getStore();
     if (s.user.length === 0) return;
     setStore({ ...s, user: [] });
+    // Server-backed: mirror the reset so other devices clear their pins too.
+    void resetModelVisibilityServer().catch(() => {});
   }, []);
 
   // Recent models
@@ -463,6 +490,9 @@ export function useModelStore(
       selectedModel: {},
       sessionModel: {},
     });
+    // Server-backed (optimistic cache above + best-effort durable write) so the
+    // chosen default follows the user across devices and reinstalls.
+    void putModelDefault(model ? `${model.providerID}/${model.modelID}` : null).catch(() => {});
   }, []);
 
   return {

@@ -165,6 +165,7 @@ export {
   executorProjectPolicies,
   executorProjectSettings,
   executorExecutions,
+  userModelPreferences,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,

@@ -516,21 +516,13 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
       setSelected(key);
 
       // Set as global default — checked in useOpenCodeLocal BEFORE agent.model,
-      // so it wins over server-configured agent defaults. Persisted in localStorage.
+      // so it wins over server-configured agent defaults. setGlobalDefault writes
+      // localStorage (optimistic cache) AND persists to the server per auth user
+      // (PUT /v1/me/model-preferences/default) so the choice follows the user
+      // across devices and reinstalls.
       modelStore.setGlobalDefault(key);
       // Also push to recent as a secondary signal
       modelStore.pushRecent(key);
-
-      // Fire-and-forget: persist the default model on the server so it
-      // survives across devices / reinstalls and is written to opencode.jsonc.
-      const base = getActiveOpenCodeUrl();
-      if (base) {
-        authenticatedFetch(`${base}/kortix/preferences/model`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: `${model.providerID}/${model.modelID}` }),
-        }).catch(() => {});
-      }
     },
     [modelStore],
   );

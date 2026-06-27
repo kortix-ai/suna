@@ -7,14 +7,16 @@ export function shouldShowFreeTag(model: Pick<FlatModel, 'free' | 'modelID' | 'm
   return FREE_TOKEN.test(model.modelName) || FREE_TOKEN.test(model.modelID);
 }
 
+// Map a (provider, model) pair from the provider modal into the visibility
+// store key the session picker uses, so a show/hide in one surface matches the
+// other. opencode-native: managed models keep the `kortix` provider id, BYOK
+// providers are native (their own id), and ChatGPT is served under the managed
+// `kortix` provider namespaced as `codex/<id>` — so a `codex` row maps back to
+// that namespaced key.
 export function modelVisibilityKeyForProviderModel(
   providerID: string,
   modelID: string,
-  llmGatewayEnabled: boolean,
 ): { providerID: string; modelID: string } {
-  if (!llmGatewayEnabled) return { providerID, modelID };
-  return {
-    providerID: 'kortix',
-    modelID: providerID === 'kortix' ? modelID : `${providerID}/${modelID}`,
-  };
+  if (providerID === 'codex') return { providerID: 'kortix', modelID: `codex/${modelID}` };
+  return { providerID, modelID };
 }

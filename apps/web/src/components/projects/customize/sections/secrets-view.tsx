@@ -237,13 +237,6 @@ function SecretsCard({
   const queryClient = useQueryClient();
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
-  });
-  const llmGatewayEnabled =
-    projectDetailQuery.data?.project.experimental?.llm_gateway === true;
 
   const normalized = useMemo(() => normalizeResponse(data), [data]);
   const canManage = normalized.can_manage ?? false;
@@ -304,11 +297,9 @@ function SecretsCard({
     setSharedDialogOpen(true);
   };
   const openProviderManagement = () => {
-    if (llmGatewayEnabled) {
-      openCustomize('llm-providers');
-    } else {
-      setProviderModalOpen(true);
-    }
+    // opencode-native: the managed catalog + BYOK connect both live in the
+    // Providers customize panel (providers-view).
+    openCustomize('llm-providers');
   };
 
   const chooseSource = useCallback(
