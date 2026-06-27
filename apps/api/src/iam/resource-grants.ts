@@ -122,6 +122,34 @@ registerProjectScopedMemo(loadProjectResourceGrants);
 
 export { loadProjectResourceGrants };
 
+/**
+ * Cheap memoized gate: does this project scope ANY agent or skill? Lets read
+ * paths (file routes, pickers) skip the whole denied-path computation — and the
+ * config load it needs — in the common case where nothing is scoped. Two memo
+ * hits, no DB round-trip on the hot path once warm.
+ */
+export async function hasAnyResourceGrants(projectId: string): Promise<boolean> {
+  const [agents, skills] = await Promise.all([
+    loadProjectResourceGrants(projectId, 'agent'),
+    loadProjectResourceGrants(projectId, 'skill'),
+  ]);
+  return agents.size > 0 || skills.size > 0;
+}
+
+/**
+ * Of `resourceIds`, the ones with NO grant (unscoped = project-wide). Used to
+ * show an unidentified caller (e.g. a not-logged-in Slack user) only the
+ * project-wide agents/skills, never a scoped one's name.
+ */
+export async function unscopedResourceIds(
+  projectId: string,
+  resourceType: ResourceType,
+  resourceIds: readonly string[],
+): Promise<string[]> {
+  const map = await loadProjectResourceGrants(projectId, resourceType);
+  return resourceIds.filter((id) => !map.has(id));
+}
+
 /** Engine entry point: is (project, type, resourceId) accessible to this member? */
 export async function isProjectResourceAccessible(
   projectId: string,

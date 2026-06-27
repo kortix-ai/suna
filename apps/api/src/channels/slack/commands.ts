@@ -15,6 +15,7 @@ import {
 import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
+import { filterAccessibleProjectResources, unscopedResourceIds } from '../../iam';
 import type { SlashResponse } from './types';
 
 export interface SlashCtx {
@@ -615,6 +616,30 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
       agents = await listProjectAgents(selection.projectId);
     } catch (err) {
       console.warn('[slack-webhook] listProjectAgents failed', err);
+    }
+    // Per-resource scoping: a linked member sees only agents they're scoped to;
+    // an unlinked caller sees only project-wide (unscoped) agents — never leak a
+    // scoped agent's name cross-department. No-op when nothing is scoped.
+    try {
+      const names = agents.map((a) => a.name);
+      const identity = ctx.slackUserId ? await lookupSlackIdentity(ctx.teamId, ctx.slackUserId) : null;
+      let allowedNames: string[];
+      if (identity) {
+        const [proj] = await db
+          .select({ accountId: projects.accountId })
+          .from(projects)
+          .where(eq(projects.projectId, selection.projectId))
+          .limit(1);
+        allowedNames = proj
+          ? await filterAccessibleProjectResources(identity.userId, proj.accountId, selection.projectId, 'agent', names)
+          : await unscopedResourceIds(selection.projectId, 'agent', names);
+      } else {
+        allowedNames = await unscopedResourceIds(selection.projectId, 'agent', names);
+      }
+      const allow = new Set(allowedNames);
+      agents = agents.filter((a) => allow.has(a.name));
+    } catch (err) {
+      console.warn('[slack-webhook] agent scoping filter failed', err);
     }
     const blocks = buildAgentPickerBlocks(ctx, selection.agentName, agents);
     if (ctx.deferredDeliver) {

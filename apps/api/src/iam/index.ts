@@ -15,6 +15,8 @@ export {
   listResourceGrants,
   upsertResourceGrant,
   deleteResourceGrant,
+  hasAnyResourceGrants,
+  unscopedResourceIds,
   type ResourceType as ResourceGrantType,
   type PrincipalType as ResourceGrantPrincipalType,
 } from './resource-grants';

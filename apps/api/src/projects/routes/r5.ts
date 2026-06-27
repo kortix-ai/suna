@@ -11,7 +11,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
-import { filterConfigResourcesForUser } from '../lib/project-resources';
+import { filterConfigResourcesForUser, denierFromConfig, resourceDenierForRequest } from '../lib/project-resources';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
@@ -225,12 +225,17 @@ projectsApp.openapi(
   const rawConfig = await loadProjectConfig(gitProject, files);
   // Per-resource scoping: hide agents/skills this member isn't granted (owner/
   // admins/SAs see everything). No-op when the project has no resource grants.
-  const config = await filterConfigResourcesForUser(rawConfig, {
+  const denierCtx = {
     userId: loaded.userId,
     accountId: loaded.row.accountId,
     projectId,
     actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
-  });
+  };
+  const config = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  // …and hide the raw FILES of those resources from the file list (visibility
+  // isolation). Reuses the config already loaded — no extra git round-trip.
+  const denier = await denierFromConfig(rawConfig, denierCtx);
+  const visibleFiles = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
   return c.json({
     project: serializeProject(loaded.row, {
       projectRole: loaded.projectRole,
@@ -238,8 +243,8 @@ projectsApp.openapi(
     }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(projectId)),
     config,
-    file_count: files.length,
-    files: files.slice(0, 300),
+    file_count: visibleFiles.length,
+    files: visibleFiles.slice(0, 300),
   });
 },
 );
@@ -278,7 +283,17 @@ projectsApp.openapi(
     });
     c.header('X-Kortix-Repo-Status', 'unavailable');
   }
-  return c.json(files.slice(0, 1000));
+  // Visibility isolation: drop files of agents/skills this member is scoped out
+  // of. No-op (one memo check) when the project scopes nothing.
+  const denier = await resourceDenierForRequest({
+    userId: loaded.userId,
+    accountId: loaded.row.accountId,
+    projectId,
+    actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+    row: loaded.row,
+  });
+  const visible = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
+  return c.json(visible.slice(0, 1000));
 },
 );
 
@@ -308,6 +323,24 @@ projectsApp.openapi(
 
   const path = normalizeString(c.req.query('path'));
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
+
+  // Visibility isolation: a zip can't be stripped mid-stream, so refuse any
+  // archive whose subtree would include an agent/skill this member is scoped out
+  // of (e.g. the whole repo, or `.opencode/`). They can still archive a narrower
+  // path that contains none. No-op when nothing is scoped.
+  const denier = await resourceDenierForRequest({
+    userId: loaded.userId,
+    accountId: loaded.row.accountId,
+    projectId,
+    actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+    row: loaded.row,
+  });
+  if (denier?.containsDenied(path ?? '')) {
+    return c.json(
+      { error: 'This folder includes agents or skills you are not allowed to access. Archive a more specific path instead.' },
+      403,
+    );
+  }
 
   try {
     const stream = await archiveRepoSubtree(await withProjectGitAuth(loaded.row), ref, path);
@@ -359,16 +392,27 @@ projectsApp.openapi(
 
   try {
     const gitProject = await withProjectGitAuth(loaded.row);
+    // Visibility isolation: never surface (path or content) a scoped-out
+    // agent/skill in search results. One memo check when nothing is scoped.
+    const denier = await resourceDenierForRequest({
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+      row: loaded.row,
+    });
     if (contentSearch) {
       const matches = await grepRepoFiles(gitProject, query, ref, limit);
-      return c.json({ query, ref, content_search: true, results: matches });
+      const results = denier ? matches.filter((m) => !denier.isDenied(m.path)) : matches;
+      return c.json({ query, ref, content_search: true, results });
     }
     const files = await searchRepoFileNames(gitProject, query, ref, limit);
+    const visible = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
     return c.json({
       query,
       ref,
       content_search: false,
-      results: files.map((f) => ({ path: f.path })),
+      results: visible.map((f) => ({ path: f.path })),
     });
   } catch (error) {
     console.warn('[projects] file search unavailable', {
@@ -403,6 +447,18 @@ projectsApp.openapi(
   if (!path) return c.json({ error: 'path query param is required' }, 400);
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Visibility isolation: a scoped-out member can't read the raw file of an
+  // agent/skill they aren't granted — return the same 404 as a missing file so
+  // the path isn't even confirmed to exist.
+  const denier = await resourceDenierForRequest({
+    userId: loaded.userId,
+    accountId: loaded.row.accountId,
+    projectId,
+    actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+    row: loaded.row,
+  });
+  if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   try {
