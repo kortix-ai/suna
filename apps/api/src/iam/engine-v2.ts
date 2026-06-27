@@ -35,7 +35,11 @@ import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
-import { isResourceAccessible, loadProjectResourceGrants } from './resource-grants';
+import {
+  filterAccessibleResourceIds,
+  isResourceAccessible,
+  loadProjectResourceGrants,
+} from './resource-grants';
 import type {
   AuthorizeResult,
   AuthorizeTarget,
@@ -616,6 +620,34 @@ export async function authorizeV2(
     }
   }
   return { allowed: true, reason };
+}
+
+/**
+ * Batch per-resource filter for list endpoints: given the project's agent names
+ * / skill slugs, return only the ones the user may access — so the agent/skill
+ * lists the UI renders hide what a department isn't scoped to. Resolves the
+ * actor ONCE (groupIds + admin bypass) then applies the resource-grant fold in
+ * memory. Owner/admins, super-admins, and service accounts see everything (they
+ * bypass per-resource scoping, exactly like authorizeV2's fold).
+ */
+export async function filterAccessibleProjectResources(
+  userId: string,
+  accountId: string,
+  projectId: string,
+  resourceType: 'agent' | 'skill',
+  resourceIds: string[],
+  actingTokenId?: string,
+): Promise<string[]> {
+  if (resourceIds.length === 0) return [];
+  const binding = actingTokenId ? await loadTokenProjectBinding(actingTokenId) : null;
+  const { actor } = await resolveActingActor(binding, userId, accountId);
+  if (!actor) return [];
+  if (actor.isSuperAdmin) return resourceIds;
+  // SAs are governed by their own policies/agentGrant, not the human fold; and
+  // owner/admins keep implicit Manager — both see the full list.
+  if (actor.kind !== 'member') return resourceIds;
+  if (implicitProjectRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
+  return filterAccessibleResourceIds(projectId, resourceType, resourceIds, userId, actor.groupIds);
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────

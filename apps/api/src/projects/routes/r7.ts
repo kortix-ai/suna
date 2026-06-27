@@ -1,7 +1,16 @@
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
-import { PROJECT_ACTIONS } from '../../iam';
+import {
+  PROJECT_ACTIONS,
+  deleteResourceGrant,
+  isResourceType,
+  listResourceGrants,
+  upsertResourceGrant,
+} from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
+import { loadProjectConfig } from '../git';
+import { withProjectGitAuth } from '../lib/git';
+import { projectHasResource, projectResourcesFromConfig } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
@@ -754,4 +763,182 @@ projectsApp.openapi(
   if ('error' in result) return c.json({ error: result.error }, result.status as any);
   return c.json(result);
 },
+);
+
+// ─── Per-resource (agent/skill) scoping ─────────────────────────────────────
+// Scope a member or group to SPECIFIC agents/skills. A resource with >=1 grant
+// is visible/usable only to granted principals; unscoped resources stay
+// project-wide. All three routes gate on project.members.manage (same as the
+// group-grant routes) and thread the acting token so the agent-grant fold fires.
+
+// GET /v1/projects/:projectId/resource-grants
+// Returns the project's grantable resources (for the picker) + every grant,
+// each enriched with a principal label so the UI needn't re-join.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'GET /:projectId/resource-grants',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Resource grants + grantable resources'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Enumerate grantable resources from the project config (best-effort: a repo
+    // that won't load just yields empty lists — the existing grants still show).
+    let resources = { agents: [] as unknown[], skills: [] as unknown[] };
+    try {
+      const config = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+      resources = projectResourcesFromConfig(config);
+    } catch (err) {
+      console.warn('[resource-grants] config load failed', {
+        projectId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const grants = await listResourceGrants(projectId);
+
+    // Resolve principal labels in two batched lookups.
+    const memberIds = [...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId))];
+    const groupIds = [...new Set(grants.filter((g) => g.principalType === 'group').map((g) => g.principalId))];
+    const emailByUser = memberIds.length ? await lookupEmailsByUserIds(memberIds) : new Map<string, string>();
+    const groupNameById = new Map<string, string>();
+    if (groupIds.length) {
+      const groupRows = await db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), inArray(accountGroups.groupId, groupIds)));
+      for (const g of groupRows) groupNameById.set(g.groupId, g.name);
+    }
+
+    return c.json({
+      resources,
+      grants: grants.map((g) => ({
+        grant_id: g.grantId,
+        resource_type: g.resourceType,
+        resource_id: g.resourceId,
+        principal_type: g.principalType,
+        principal_id: g.principalId,
+        principal_label:
+          g.principalType === 'member'
+            ? emailByUser.get(g.principalId) ?? g.principalId
+            : groupNameById.get(g.principalId) ?? g.principalId,
+        granted_by: g.grantedBy,
+        created_at: g.createdAt.toISOString(),
+        expires_at: g.expiresAt?.toISOString() ?? null,
+      })),
+    });
+  },
+);
+
+// POST /v1/projects/:projectId/resource-grants
+// Create/update a grant (idempotent on resource+principal). Validates the
+// resource exists in the project and the principal belongs to this account.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/resource-grants',
+    tags: ['access'],
+    summary: 'POST /:projectId/resource-grants',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 201: json(z.any(), 'The created grant'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const body = await readBody(c);
+    const resourceType = normalizeString(body.resource_type ?? body.resourceType);
+    const resourceId = normalizeString(body.resource_id ?? body.resourceId);
+    const principalType = normalizeString(body.principal_type ?? body.principalType);
+    const principalId = normalizeString(body.principal_id ?? body.principalId);
+    if (!resourceType || !isResourceType(resourceType)) {
+      return c.json({ error: 'resource_type must be agent or skill' }, 400);
+    }
+    if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
+    if (principalType !== 'member' && principalType !== 'group') {
+      return c.json({ error: 'principal_type must be member or group' }, 400);
+    }
+    if (!principalId) return c.json({ error: 'principal_id is required' }, 400);
+    const expires = parseExpiresAtBody(body.expires_at);
+    if (!expires.ok) return c.json({ error: expires.error }, 400);
+
+    // The principal must belong to THIS account — never grant a foreign member/
+    // group via a guessed id.
+    if (principalType === 'member') {
+      const [m] = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, principalId)))
+        .limit(1);
+      if (!m) return c.json({ error: 'member not found in this account' }, 404);
+    } else {
+      const [g] = await db
+        .select({ groupId: accountGroups.groupId })
+        .from(accountGroups)
+        .where(and(eq(accountGroups.accountId, loaded.row.accountId), eq(accountGroups.groupId, principalId)))
+        .limit(1);
+      if (!g) return c.json({ error: 'group not found in this account' }, 404);
+    }
+
+    // The resource must actually exist in the project — a typo'd grant would be
+    // a silent dead row that scopes a phantom resource.
+    let config;
+    try {
+      config = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+    } catch (err) {
+      return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
+    }
+    if (!projectHasResource(config, resourceType, resourceId)) {
+      return c.json({ error: `no ${resourceType} '${resourceId}' in this project` }, 400);
+    }
+
+    const { grantId } = await upsertResourceGrant({
+      accountId: loaded.row.accountId,
+      projectId,
+      resourceType,
+      resourceId,
+      principalType,
+      principalId,
+      grantedBy: loaded.userId,
+      expiresAt: expires.value ?? null,
+    });
+    return c.json({ grant_id: grantId, resource_type: resourceType, resource_id: resourceId, principal_type: principalType, principal_id: principalId }, 201);
+  },
+);
+
+// DELETE /v1/projects/:projectId/resource-grants/:grantId
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/resource-grants/{grantId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/resource-grants/:grantId',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), grantId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const grantId = c.req.param('grantId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+
+    const removed = await deleteResourceGrant(grantId, projectId);
+    if (!removed) return c.json({ error: 'grant not found' }, 404);
+    return c.json({ ok: true });
+  },
 );

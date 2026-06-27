@@ -11,6 +11,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
+import { filterConfigResourcesForUser } from '../lib/project-resources';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
@@ -221,7 +222,15 @@ projectsApp.openapi(
     });
     c.header('X-Kortix-Repo-Status', 'unavailable');
   }
-  const config = await loadProjectConfig(gitProject, files);
+  const rawConfig = await loadProjectConfig(gitProject, files);
+  // Per-resource scoping: hide agents/skills this member isn't granted (owner/
+  // admins/SAs see everything). No-op when the project has no resource grants.
+  const config = await filterConfigResourcesForUser(rawConfig, {
+    userId: loaded.userId,
+    accountId: loaded.row.accountId,
+    projectId,
+    actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+  });
   return c.json({
     project: serializeProject(loaded.row, {
       projectRole: loaded.projectRole,
