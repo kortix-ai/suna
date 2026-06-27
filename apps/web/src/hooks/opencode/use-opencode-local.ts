@@ -12,9 +12,11 @@
  */
 
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
+import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { featureFlags } from '@/lib/feature-flags';
 import { listProjectSecrets } from '@/lib/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import { DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -115,6 +117,9 @@ export function parseModelKey(model: unknown): ModelKey | undefined {
     }
   }
   if (typeof model === 'string') {
+    if ((DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS as readonly string[]).includes(model)) {
+      return { providerID: 'opencode', modelID: model };
+    }
     const idx = model.indexOf('/');
     if (idx > 0 && idx < model.length - 1) {
       return { providerID: model.slice(0, idx), modelID: model.slice(idx + 1) };
@@ -124,10 +129,17 @@ export function parseModelKey(model: unknown): ModelKey | undefined {
 }
 
 /**
- * Format a ModelKey as a string "providerID/modelID" for command endpoints.
+ * Format a ModelKey as OpenCode's string model override. Native OpenCode Zen
+ * models are bare ids; prefixing them with `opencode/` is forwarded upstream and
+ * Zen rejects it as an unknown model.
  */
 export function formatModelString(model: ModelKey): string {
+  if (model.providerID === 'opencode') return model.modelID;
   return `${model.providerID}/${model.modelID}`;
+}
+
+export function formatPromptModel(model: ModelKey): ModelKey {
+  return model;
 }
 
 export type ModelProviderMode = 'native' | 'gateway';
@@ -161,6 +173,12 @@ export function useOpenCodeLocal({
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  const { data: accountState } = useAccountState();
+  const freeTier = useMemo(() => {
+    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
+    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
+    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
+  }, [accountState]);
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId as string),
@@ -177,7 +195,10 @@ export function useOpenCodeLocal({
   }, [providerMode, secretsQuery.data]);
 
   // ---- Model store (persisted: visibility, recent, variant) ----
-  const modelStore = useModelStore(flatModels, { connectedProviderIds });
+  const modelStore = useModelStore(flatModels, {
+    connectedProviderIds,
+    freeTier: providerMode === 'gateway' && freeTier,
+  });
 
   // ---- Model validation: a model is valid only if it's in the flattened list,
   // which is already filtered to connected + gateway-only providers. This keeps
@@ -301,7 +322,17 @@ export function useOpenCodeLocal({
           const key = { providerID: p.id, modelID: configured };
           if (isModelValid(key) && isModelDefaultVisible(key)) return key;
         }
-        for (const modelID of Object.keys(p.models)) {
+        const modelIDs =
+          p.id === 'opencode'
+            ? [
+                ...DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS.filter((modelID) => modelID in p.models),
+                ...Object.keys(p.models).filter(
+                  (modelID) =>
+                    !(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS as readonly string[]).includes(modelID),
+                ),
+              ]
+            : Object.keys(p.models);
+        for (const modelID of modelIDs) {
           const key = { providerID: p.id, modelID };
           if (isModelValid(key) && isModelDefaultVisible(key)) return key;
         }
