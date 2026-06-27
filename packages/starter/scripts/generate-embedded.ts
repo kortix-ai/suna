@@ -34,9 +34,21 @@ interface RawFile {
   content: string;
 }
 
+const IGNORED_DIRS = new Set([
+  '.cache',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
+  '.tox',
+  '.venv',
+  '__pycache__',
+  'node_modules',
+]);
+
 function walk(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root)) {
+    if (IGNORED_DIRS.has(entry)) continue;
     const abs = join(root, entry);
     const st = statSync(abs);
     if (st.isDirectory()) out.push(...walk(abs));

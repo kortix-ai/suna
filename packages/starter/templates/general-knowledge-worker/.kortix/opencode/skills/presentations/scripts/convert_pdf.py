@@ -22,7 +22,13 @@ def find_chromium() -> str | None:
     env_path = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
     if env_path and os.path.isfile(env_path):
         return env_path
-    for p in ("/usr/bin/chromium-browser", "/usr/bin/chromium"):
+    for p in (
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ):
         if os.path.isfile(p):
             return p
     return None

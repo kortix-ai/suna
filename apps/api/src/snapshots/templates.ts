@@ -66,7 +66,7 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // browser-automation skill works out of the box with no runtime download.
 // v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
 // no-restart warm seed serves the full picker without a PARK-time fetch.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v12-llm-catalog';
+const RUNTIME_LAYER_VERSION = 'baked-chromium-v13-python-skill-floor';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

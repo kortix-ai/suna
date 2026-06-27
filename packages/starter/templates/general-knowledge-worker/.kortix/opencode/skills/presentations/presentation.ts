@@ -109,11 +109,16 @@ function generateViewer(presPath: string, metadata: PresentationMetadata): void 
 
 function runPythonScript(script: string, args: string[], timeoutMs = 300_000): string {
   const isLinux = process.platform === "linux";
+  const shellArg = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+  const scriptArgs = [script, ...args].map(shellArg).join(" ");
   const cmd = isLinux
-    ? `python3 ${script} ${args.map(a => `"${a}"`).join(" ")}`
-    : `uv run ${script} ${args.map(a => `"${a}"`).join(" ")}`;
+    ? `python3 ${scriptArgs}`
+    : `uv run --managed-python --python 3.12 ${scriptArgs}`;
   const env: Record<string, string | undefined> = { ...process.env };
-  if (!isLinux) env.UV_CACHE_DIR = env.UV_CACHE_DIR ?? join(process.env.HOME ?? "/tmp", ".cache", "uv");
+  if (!isLinux) {
+    env.UV_CACHE_DIR = env.UV_CACHE_DIR ?? join(process.env.HOME ?? "/tmp", ".cache", "uv");
+    env.PYENV_VERSION = "system";
+  }
   try {
     return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env }).trim();
   } catch (e: unknown) {
@@ -212,17 +217,29 @@ function doValidateSlide(base: string, presentation_name: string, slide_number: 
   try { out({ ...JSON.parse(raw), action: "validate_slide", presentation_name, slide_number }); } catch { out({ success: false, error: raw }); }
 }
 
+function exportPresentationFile(presPath: string, safeName: string, format: "pdf" | "pptx"): { success: boolean; path?: string; filename?: string; result?: Record<string, unknown>; error?: string } {
+  const filename = `${safeName}.${format}`;
+  const outPath = join(presPath, filename);
+  const script = format === "pdf" ? "convert_pdf.py" : "convert_pptx.py";
+  const raw = runPythonScript(script, [presPath, outPath]);
+  try {
+    const result = JSON.parse(raw) as Record<string, unknown>;
+    if (result.success === true) return { success: true, path: outPath, filename, result };
+    return { success: false, result, error: String(result.error || raw) };
+  } catch {
+    return { success: false, error: raw };
+  }
+}
+
 function doExportPdf(base: string, presentation_name: string) {
   if (!presentation_name) return out({ success: false, error: "presentation_name is required" });
   const safeName = sanitizeFilename(presentation_name);
   const presPath = join(resolve(base, PRESENTATIONS_DIR), safeName);
   if (!existsSync(presPath)) return out({ success: false, error: `Presentation '${presentation_name}' not found` });
-  const outPath = join(presPath, `${safeName}.pdf`);
-  const raw = runPythonScript("convert_pdf.py", [presPath, outPath]);
-  try {
-    const result = JSON.parse(raw);
-    out(result.success ? { ...result, action: "export_pdf", presentation_name, relative_path: `${PRESENTATIONS_DIR}/${safeName}/${safeName}.pdf` } : result);
-  } catch { out({ success: false, error: raw }); }
+  const exported = exportPresentationFile(presPath, safeName, "pdf");
+  out(exported.success
+    ? { ...exported.result, action: "export_pdf", presentation_name, relative_path: `${PRESENTATIONS_DIR}/${safeName}/${safeName}.pdf` }
+    : { ...(exported.result || {}), success: false, error: exported.error || "PDF export failed" });
 }
 
 function doExportPptx(base: string, presentation_name: string) {
@@ -230,12 +247,10 @@ function doExportPptx(base: string, presentation_name: string) {
   const safeName = sanitizeFilename(presentation_name);
   const presPath = join(resolve(base, PRESENTATIONS_DIR), safeName);
   if (!existsSync(presPath)) return out({ success: false, error: `Presentation '${presentation_name}' not found` });
-  const outPath = join(presPath, `${safeName}.pptx`);
-  const raw = runPythonScript("convert_pptx.py", [presPath, outPath]);
-  try {
-    const result = JSON.parse(raw);
-    out(result.success ? { ...result, action: "export_pptx", presentation_name, relative_path: `${PRESENTATIONS_DIR}/${safeName}/${safeName}.pptx` } : result);
-  } catch { out({ success: false, error: raw }); }
+  const exported = exportPresentationFile(presPath, safeName, "pptx");
+  out(exported.success
+    ? { ...exported.result, action: "export_pptx", presentation_name, relative_path: `${PRESENTATIONS_DIR}/${safeName}/${safeName}.pptx` }
+    : { ...(exported.result || {}), success: false, error: exported.error || "PPTX export failed" });
 }
 
 function doPreview(base: string, presentation_name: string) {
@@ -276,13 +291,15 @@ function serveMime(filePath: string): string {
   return SERVE_MIME_TYPES[extname(filePath).toLowerCase()] || "application/octet-stream";
 }
 
-function serveFile(filePath: string): Response {
+function serveFile(filePath: string, downloadName?: string): Response {
   if (!existsSync(filePath) || !statSync(filePath).isFile()) {
     return new Response("Not found: " + filePath, { status: 404 });
   }
   const data = readFileSync(filePath);
+  const headers: Record<string, string> = { "Content-Type": serveMime(filePath), "Cache-Control": "no-cache" };
+  if (downloadName) headers["Content-Disposition"] = `attachment; filename="${downloadName.replace(/"/g, "")}"`;
   return new Response(data, {
-    headers: { "Content-Type": serveMime(filePath), "Cache-Control": "no-cache" },
+    headers,
   });
 }
 
@@ -359,6 +376,15 @@ function doServe(base: string, port: number) {
         if (rest === "" || rest === "viewer" || rest === "viewer.html" || rest === "index.html") {
           const html = buildViewerHtml(presDir, metadata);
           return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", ...corsHeaders } });
+        }
+
+        if (rest === "download/pdf" || rest === "download/pptx") {
+          const format = rest.endsWith("pdf") ? "pdf" : "pptx";
+          const exported = exportPresentationFile(presDir, presName, format);
+          if (!exported.success || !exported.path || !exported.filename) {
+            return new Response(exported.error || `Failed to export ${format.toUpperCase()}`, { status: 500, headers: corsHeaders });
+          }
+          return serveFile(exported.path, exported.filename);
         }
 
         // ../images/ references from within slide iframes

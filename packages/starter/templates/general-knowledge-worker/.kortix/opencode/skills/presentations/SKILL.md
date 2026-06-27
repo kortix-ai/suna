@@ -1,6 +1,8 @@
 ---
 name: presentations
 description: "Create, manage, validate, preview, and export HTML presentation slides (1920x1080). Load this skill when you need to build a slide deck, export to PDF/PPTX, or preview slides in a browser."
+defaultProjectInstall: true
+defaultProjectInstallOrder: 70
 ---
 
 # Presentations
@@ -59,6 +61,13 @@ URL scheme:
 - `http://localhost:3210/` — index listing all presentations
 - `http://localhost:3210/presentations/<name>/` — viewer for that deck
 - `http://localhost:3210/presentations/<name>/slide_01.html` — raw slide file
+- `http://localhost:3210/presentations/<name>/download/pdf` — export and download PDF
+- `http://localhost:3210/presentations/<name>/download/pptx` — export and download PPTX
+
+The viewer includes PDF and PPTX download buttons by default. They call the
+served `/download/pdf` and `/download/pptx` routes, export the current deck on
+demand, and return a browser download. For script-only generation, keep using
+`export_pdf` and `export_pptx`.
 
 After starting the server, show the URL to the user via `show`:
 ```
@@ -99,5 +108,5 @@ show(action="show", type="url", url="http://localhost:3210/presentations/<name>/
 ## Workflow
 
 ```
-create_slide × N → validate_slide → serve → show viewer URL → export_pdf / export_pptx
+create_slide × N → validate_slide → serve → show viewer URL → user can download PDF/PPTX from viewer
 ```

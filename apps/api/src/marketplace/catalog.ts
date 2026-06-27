@@ -253,9 +253,9 @@ const CURATED_BUNDLES: RegistryItem[] = [
     name: 'documents-pack',
     type: 'registry:bundle',
     title: 'Documents Pack',
-    description: 'Read and write real office files: PDF, Word, Excel, and PowerPoint.',
+    description: 'Read and write real office files: PDF, Word, Excel, and presentations.',
     categories: ['bundle', 'documents'],
-    registryDependencies: ['pdf', 'docx', 'xlsx', 'pptx'],
+    registryDependencies: ['pdf', 'docx', 'xlsx', 'presentations'],
     meta: { source: 'kortix' },
   },
 ];

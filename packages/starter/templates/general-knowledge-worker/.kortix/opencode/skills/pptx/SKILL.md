@@ -1,8 +1,6 @@
 ---
 name: pptx
 description: "Use for creating, editing, reviewing, and validating presentation decks in PPTX format."
-defaultProjectInstall: true
-defaultProjectInstallOrder: 70
 ---
 
 # PPTX Skill

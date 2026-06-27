@@ -2332,6 +2332,11 @@ function SameToolGroup({
     return `${t.title} · ${entries.length}x`;
   }, [isContext, isResearch, entries, anyRunning]);
 
+  const isShell = useMemo(() => {
+    const n = entries[0]?.part.tool.replace(/^oc-/, '').replace(/-/g, '_');
+    return n === 'bash';
+  }, [entries]);
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
@@ -2345,6 +2350,13 @@ function SameToolGroup({
         >
           {isResearch ? (
             <Globe
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : isShell ? (
+            <Terminal
               className={cn(
                 'text-muted-foreground/50 size-3.5 flex-shrink-0',
                 anyRunning && 'animate-pulse-heartbeat',
@@ -3237,9 +3249,7 @@ function SessionTurn({
             // Tools that always render as individual rows — never folded into
             // a "Tool · Nx" pile. File writes/creations are distinct artifacts
             // (index.html, styles.css, …) the user wants to see one-per-line.
-            // Shell commands are likewise distinct actions, each shown on its
-            // own row rather than collapsed into a "Shell · Nx" pile.
-            const NO_GROUP_SET = new Set(['write', 'bash']);
+            const NO_GROUP_SET = new Set(['write']);
             const norm = (t: string) => {
               const n = t.replace(/^oc-/, '').replace(/-/g, '_');
               if (CONTEXT_SET.has(n)) return '__context__';

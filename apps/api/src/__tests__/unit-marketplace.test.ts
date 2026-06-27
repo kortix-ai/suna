@@ -62,7 +62,7 @@ describe('marketplace catalog', () => {
         'document-review',
         'docx',
         'pdf',
-        'pptx',
+        'presentations',
         'research-report',
         'website-building',
         'xlsx',
