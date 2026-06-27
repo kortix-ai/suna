@@ -105,6 +105,49 @@ interface GitTokenResponse {
   repo_url: string;
 }
 
+type ShipCredentialMode = 'none' | 'kortix-token' | 'managed-git-token';
+
+interface ShipGitTarget {
+  repoUrl: string;
+  credentialMode: ShipCredentialMode;
+}
+
+function isGitProxyUrl(url: string | undefined | null): boolean {
+  return Boolean(url && /\/v1\/git\//.test(url));
+}
+
+function projectIsManaged(project: ProjectSummary): boolean {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const git = meta.git as { managed?: boolean } | undefined;
+  return git?.managed === true;
+}
+
+export function resolveProvisionShipGitTarget(project: ProvisionResponse): ShipGitTarget {
+  return {
+    repoUrl: project.repo_url,
+    credentialMode: 'managed-git-token',
+  };
+}
+
+export function resolveExistingShipGitTarget(project: ProjectSummary): ShipGitTarget {
+  if (projectIsManaged(project)) {
+    return {
+      repoUrl: project.repo_url,
+      credentialMode: 'managed-git-token',
+    };
+  }
+  if (isGitProxyUrl(project.git_origin_url)) {
+    return {
+      repoUrl: project.git_origin_url!,
+      credentialMode: 'kortix-token',
+    };
+  }
+  return {
+    repoUrl: project.repo_url,
+    credentialMode: 'none',
+  };
+}
+
 export async function runShip(argv: string[]): Promise<number> {
   let flags: ShipFlags;
   try {
@@ -585,16 +628,9 @@ async function shipFirstTime(
       account_id: accountId,
     });
     project = prov;
-    // Universal proxy origin: when the server returns a git-proxy origin, push
-    // THROUGH the proxy with our own Kortix token (the proxy resolves the real
-    // upstream + host credential server-side) — never the upstream push token.
-    if (prov.git_origin_url && /\/v1\/git\//.test(prov.git_origin_url)) {
-      repoUrl = prov.git_origin_url;
-      pushToken = auth.token;
-    } else {
-      repoUrl = prov.repo_url;
-      pushToken = prov.push_token;
-    }
+    const target = resolveProvisionShipGitTarget(prov);
+    repoUrl = target.repoUrl;
+    pushToken = prov.push_token;
     setOrigin(repoUrl);
   }
 
@@ -636,18 +672,9 @@ async function shipExisting(
     if (handled !== null) return handled;
     throw err;
   }
-  // Universal proxy origin: push THROUGH the Kortix git proxy with our own
-  // Kortix token when the server advertises one (the proxy resolves the real
-  // upstream + host credential server-side).
-  const proxyOrigin =
-    project.git_origin_url && /\/v1\/git\//.test(project.git_origin_url)
-      ? project.git_origin_url
-      : null;
-  const repoUrl = proxyOrigin ?? project.repo_url;
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  // Canonical managed flag lives at metadata.git.managed.
-  const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
-  const managed = git?.managed === true;
+  const target = resolveExistingShipGitTarget(project);
+  const managed = target.credentialMode === 'managed-git-token';
+  const repoUrl = target.repoUrl;
 
   process.stdout.write(
     `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}sync${C.reset}\n` +
@@ -662,18 +689,21 @@ async function shipExisting(
     return 0;
   }
 
-  // Push credential: through the proxy we authenticate with our own Kortix
-  // token; otherwise managed repos get a fresh scoped push token per ship (never
-  // persisted in .git/config).
+  // Push credential: managed repos use a fresh provider token and push to the
+  // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
   let pushToken: string | null = null;
-  if (proxyOrigin) {
+  if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
-  } else if (managed) {
+  } else if (target.credentialMode === 'managed-git-token') {
     const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
     pushToken = tok.push_token;
   }
-  // BYO repos may have lost their remote (fresh clone of a linked repo); heal it.
-  ensureOrigin(repoUrl);
+  // Managed projects own the remote URL, so keep origin aligned with the
+  // upstream that matches the freshly minted provider token. BYO repos may
+  // have lost their remote (fresh clone of a linked repo); heal only when
+  // missing so user-managed credentials stay untouched.
+  if (managed) setOrigin(repoUrl);
+  else ensureOrigin(repoUrl);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
