@@ -25,6 +25,7 @@ import {
   getDefaultSandboxUrl,
   getSandboxServerUrl,
 } from './server-store/url-helpers';
+import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from './current-runtime';
 import {
   deleteServerFromApi,
   isManagedEntry,
@@ -244,6 +245,11 @@ export const useServerStore = create<ServerStore>()(
       },
 
       getActiveServerUrl: () => {
+        // The runtime is owned by `current-runtime` (set by the active session) —
+        // prefer it. The legacy server-store fallback below covers the not-yet-
+        // deleted dashboard/instance surfaces + self-hosted local dev.
+        const current = getCurrentRuntimeUrl();
+        if (current) return current;
         const state = get();
         const active = state.servers.find((s) => s.id === state.activeServerId);
         if (!active) {
@@ -517,6 +523,8 @@ export function getBackendPort(): number {
  * - Cloud mode: uses the server's sandboxId from the store (empty if not yet loaded)
  */
 export function getActiveSandboxId(): string | undefined {
+  const current = getCurrentRuntimeSandboxId();
+  if (current) return current;
   const state = useServerStore.getState();
   const server = state.servers.find((s) => s.id === state.activeServerId) ?? null;
   return server?.sandboxId;

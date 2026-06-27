@@ -11,6 +11,7 @@ import { useOpenCodePendingStore } from '../../state/opencode-pending-store';
 import { useSyncStore } from '../../state/sync-store';
 import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
 import { useServerStore } from '../../state/server-store';
+import { useCurrentRuntime } from '../../state/current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
@@ -38,6 +39,9 @@ export function useOpenCodeEventStream() {
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   const applySyncEvent = useSyncStore((s) => s.applyEvent);
   const serverVersion = useServerStore((s) => s.serverVersion);
+  // Re-render (and re-read getActiveServerUrl, which prefers current-runtime) when
+  // the session's runtime URL changes — so the SSE re-subscribes to the new daemon.
+  const runtimeVersion = useCurrentRuntime((s) => s.version);
   const activeServerUrl = useServerStore((s) => s.getActiveServerUrl());
   const sandboxStatus = useSandboxConnectionStore((s) => s.status);
   const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
@@ -414,6 +418,7 @@ export function useOpenCodeEventStream() {
     removeQuestion,
     clearPending,
     serverVersion,
+    runtimeVersion,
     activeServerUrl,
     sandboxStatus,
     runtimeHealthy,

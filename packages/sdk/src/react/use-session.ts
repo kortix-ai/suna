@@ -24,11 +24,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useOpenCodePendingStore } from '../state/opencode-pending-store';
 import {
-  markRuntimeReadyVerified,
   setOpenCodeHealth,
   setSandboxStatus,
 } from '../state/sandbox-connection-store';
-import { switchToSessionSandboxAsync } from '../state/server-store';
+import { getSandboxUrlForExternalId } from '../state/server-store';
+import { setCurrentRuntime } from '../state/current-runtime';
 import {
   type SessionStartResult,
   sessionStartKey,
@@ -101,20 +101,16 @@ export function useSession(
   // separate per-session client to keep in sync.
   const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox || switchedSandboxId === sandbox.sandbox_id) return;
-    let cancelled = false;
-    // Seed readiness from the server's proof BEFORE the switch: stage==='ready' is
-    // only returned after the daemon answered, so the post-switch connection store
-    // starts connected+healthy (resetForServerSwitch reads this flag) — no client
-    // health poll, and the first turn streams instead of bulk-rendering.
-    markRuntimeReadyVerified();
-    switchToSessionSandboxAsync(projectId, sessionId, sandbox).then((res) => {
-      if (!cancelled && res) setSwitchedSandboxId(sandbox.sandbox_id);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [startReady, projectId, sessionId, sandbox, switchedSandboxId]);
+    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
+    // Point the app's runtime at THIS session's box — no global "switch", just set
+    // the current runtime url. Every read (getClient, the SSE stream, files/
+    // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
+    // health effect below seeds connected+healthy with no client poll.
+    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id);
+    setSwitchedSandboxId(sandbox.sandbox_id);
+  }, [startReady, sandbox, switchedSandboxId]);
+  // Clear the current runtime when this session view unmounts.
+  useEffect(() => () => setCurrentRuntime(null), []);
 
   const switched =
     startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
