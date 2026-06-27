@@ -202,7 +202,7 @@ importers:
   apps/kortix-sandbox-agent-server:
     dependencies:
       hono:
-        specifier: 4.12.25
+        specifier: ^4.12.25
         version: 4.12.25
       zod:
         specifier: ^3.23.8
