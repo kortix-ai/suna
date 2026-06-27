@@ -383,10 +383,12 @@ function Thread({
   );
   const hasPending = questions.length > 0 || permissions.length > 0;
 
-  // SDK model layer feeds the picker + the model we send with.
+  // SDK model layer feeds the picker + the model we send with. Agents come from
+  // the SDK SERVER-SIDE (project config), not the sandbox runtime — so the
+  // roster is identical to the new-session screen and survives a cold runtime.
   const providers = useOpenCodeProviders();
   const config = useOpenCodeConfig();
-  const agents = useVisibleAgents();
+  const agents = useVisibleAgents({ projectId });
   const local = useOpenCodeLocal({
     agents,
     providers: providers.data,

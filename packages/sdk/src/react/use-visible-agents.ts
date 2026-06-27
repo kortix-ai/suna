@@ -30,11 +30,14 @@ function hideProjectOnly(a: Agent): boolean {
  * Returns only visible agents (non-hidden, non-subagent).
  * Use this for agent selectors in UI where users pick which agent to use.
  *
- * Pass `directory` to scope to a project — opencode then includes
- * `<directory>/.opencode/agent/*.md` (e.g. project-manager, engineer,
- * qa) on top of the global set.
+ * Pass `projectId` for a SERVER-SIDE fetch (the project config is source of
+ * truth, works before any sandbox runtime exists) — preferred for selectors.
+ * Pass `directory` to scope the sandbox-runtime fetch to a project instead.
  */
-export function useVisibleAgents(options?: { directory?: string }): Agent[] {
+export function useVisibleAgents(options?: {
+  directory?: string;
+  projectId?: string | null;
+}): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && a.mode !== 'subagent' && !hideProjectOnly(a)),
@@ -46,7 +49,10 @@ export function useVisibleAgents(options?: { directory?: string }): Agent[] {
  * Returns all visible agents including subagents.
  * Use this when you need to show subagents too (e.g., advanced mode).
  */
-export function useAllVisibleAgents(options?: { directory?: string }): Agent[] {
+export function useAllVisibleAgents(options?: {
+  directory?: string;
+  projectId?: string | null;
+}): Agent[] {
   const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && !hideProjectOnly(a)),

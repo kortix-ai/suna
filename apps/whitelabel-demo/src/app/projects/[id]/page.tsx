@@ -15,7 +15,12 @@ import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { startStashKey, type StartStash } from '@/lib/session-start';
 import { cn } from '@/lib/utils';
-import { flattenModels, projectLlmCatalogToProviderList, type FlatModel } from '@kortix/sdk/react';
+import {
+  flattenModels,
+  projectLlmCatalogToProviderList,
+  useVisibleAgents,
+  type FlatModel,
+} from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Bot, Check, ChevronsUpDown, Cpu, Loader2, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -53,11 +58,8 @@ function ProjectHome() {
   const [model, setModel] = useState<FlatModel | null>(null);
 
   // All three pickers come from project-level REST — no runtime needed yet.
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => kortix.project(projectId).detail(),
-    retry: false,
-  });
+  // Agents are a SERVER-SIDE fetch (project config), shared with the workbench.
+  const agents = useVisibleAgents({ projectId });
   const catalog = useQuery({
     queryKey: ['project-llm-catalog', projectId],
     queryFn: () => kortix.project(projectId).llmCatalog(),
@@ -68,8 +70,6 @@ function ProjectHome() {
     queryFn: () => kortix.projects.sandboxTemplates(projectId),
     retry: false,
   });
-
-  const agents = ((detail.data as any)?.config?.agents ?? []) as any[];
   const models = useMemo(
     () => (catalog.data ? flattenModels(projectLlmCatalogToProviderList(catalog.data as any)) : []),
     [catalog.data],
