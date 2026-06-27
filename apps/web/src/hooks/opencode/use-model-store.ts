@@ -18,7 +18,6 @@ import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/shared/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
@@ -179,12 +178,6 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // Includes the synthetic `auto` entry so it's always offered in the picker.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
-// The free Kortix-managed models (the only ones a free-tier / no-active-sub
-// account may use). A free account sees ONLY these under the `kortix` provider —
-// the paid managed models (and the synthetic `auto`) are hidden. Mirrors the
-// gateway's resolve-time tier gate so the picker can't offer a model that 400s.
-const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
-
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');
   return slash === -1 ? modelID : modelID.slice(0, slash);
@@ -260,7 +253,7 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
-    // Free tier (no active paid sub): only the free managed models are visible.
+    // Free tier (no active paid sub): hides Kortix managed paid/AUTO models.
     freeTier?: boolean;
   },
 ) {
@@ -302,9 +295,9 @@ export function useModelStore(
             ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
             : (connectedProviderIds?.has(sub) ?? false);
         if (MANAGED_MODEL_IDS.has(model.modelID)) {
-          // Free tier sees ONLY the free managed models — paid managed and the
-          // synthetic `auto` are hidden (they have no upstream for the account).
-          if (freeTier && !FREE_MANAGED_MODEL_IDS.has(model.modelID)) return false;
+          // Free tier cannot use Kortix managed paid models or synthetic AUTO.
+          // Zen free models are native `opencode` session models now.
+          if (freeTier) return false;
           return true;
         }
         if (!connected) return false;

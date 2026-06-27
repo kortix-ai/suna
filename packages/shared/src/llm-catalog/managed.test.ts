@@ -17,7 +17,6 @@ describe("managed catalog", () => {
       "qwen3.7-max",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
-      ...DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
     ]);
   });
 
@@ -41,7 +40,7 @@ describe("managed catalog", () => {
         m.pricingRef.length,
         `${m.id} needs a pricing ref`,
       ).toBeGreaterThan(0);
-      expect(["bedrock", "openrouter", "opencode-zen"]).toContain(m.transport);
+      expect(["bedrock", "openrouter"]).toContain(m.transport);
     }
   });
 
@@ -52,18 +51,15 @@ describe("managed catalog", () => {
         expect(m.upstreamModelId, `${m.id} (Bedrock) → Anthropic`).toContain(
           "anthropic.claude",
         );
-      } else if (m.transport === "openrouter") {
+      } else {
         // OpenRouter slugs are provider/model.
         expect(m.transport, `${m.id} transport`).toBe("openrouter");
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain("/");
-      } else {
-        expect(m.transport, `${m.id} transport`).toBe("opencode-zen");
-        expect(m.upstreamModelId, `${m.id} Zen id`).not.toContain("/");
       }
     }
   });
 
-  test("curated OpenCode Zen free ids are managed Kortix models", () => {
+  test("curated OpenCode Zen free ids are native session models, not managed Kortix models", () => {
     expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).toEqual([
       "deepseek-v4-flash-free",
       "mimo-v2.5-free",
@@ -80,11 +76,8 @@ describe("managed catalog", () => {
 
     for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
       const model = getManagedModel(id);
-      expect(model, `${id} should resolve`).toBeDefined();
-      expect(model?.transport).toBe("opencode-zen");
-      expect(model?.upstreamModelId).toBe(id);
-      expect(model?.tier).toBe("free");
-      expect(model?.free).toBe(true);
+      expect(model, `${id} should not resolve as managed`).toBeUndefined();
+      expect(isManagedModelId(id), `${id} should not be managed`).toBe(false);
     }
   });
 });

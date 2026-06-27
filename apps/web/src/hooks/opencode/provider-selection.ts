@@ -5,9 +5,12 @@ import { LLM_PROVIDERS } from '@/lib/llm-providers';
 
 export type ProviderListResponse = SdkProviderListResponse;
 
-// In gateway mode OpenCode must see Kortix as the single LLM provider. Native
-// providers, including OpenCode Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
+export const SESSION_NATIVE_PROVIDER_IDS = new Set(['opencode']);
+export const GATEWAY_SESSION_PROVIDER_IDS = new Set([
+  ...GATEWAY_PROVIDER_IDS,
+  ...SESSION_NATIVE_PROVIDER_IDS,
+]);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
 export function normalizeProviderList(
@@ -74,8 +77,28 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   return {
     ...normalized,
-    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
+    all: all.filter((p) => GATEWAY_SESSION_PROVIDER_IDS.has(p.id)),
+    connected: connected.filter((id) => GATEWAY_SESSION_PROVIDER_IDS.has(id)),
+  };
+}
+
+export function mergeProviderLists(
+  primary: ProviderListResponse,
+  secondary: ProviderListResponse,
+): ProviderListResponse {
+  const a = normalizeProviderList(primary);
+  const b = normalizeProviderList(secondary);
+  const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
+  for (const provider of Array.isArray(a.all) ? a.all : []) all.set(provider.id, provider);
+  for (const provider of Array.isArray(b.all) ? b.all : []) all.set(provider.id, provider);
+  const connected = new Set<string>();
+  for (const id of Array.isArray(a.connected) ? a.connected : []) connected.add(id);
+  for (const id of Array.isArray(b.connected) ? b.connected : []) connected.add(id);
+  return {
+    ...a,
+    all: [...all.values()],
+    connected: [...connected],
+    default: { ...(a.default ?? {}), ...(b.default ?? {}) },
   };
 }
 

@@ -5,6 +5,7 @@ import {
   filterToGatewayProviders,
   filterToNativeProviders,
   mergeProjectSecretConnectedProviders,
+  mergeProviderLists,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasGateway,
@@ -54,8 +55,8 @@ describe('provider-selection', () => {
   test('keeps gateway providers only when the running runtime exposes kortix', () => {
     const mixed = providers(['kortix', 'opencode', 'anthropic']);
     expect(providerListHasGateway(mixed)).toBe(true);
-    expect(filterToGatewayProviders(mixed).connected).toEqual(['kortix']);
-    expect(filterToGatewayProviders(mixed).all?.map((p) => p.id)).toEqual(['kortix']);
+    expect(filterToGatewayProviders(mixed).connected).toEqual(['kortix', 'opencode']);
+    expect(filterToGatewayProviders(mixed).all?.map((p) => p.id)).toEqual(['kortix', 'opencode']);
 
     const native = providers(['anthropic', 'openai']);
     expect(providerListHasGateway(native)).toBe(false);
@@ -78,7 +79,7 @@ describe('provider-selection', () => {
           { id: 'opencode', name: 'OpenCode Zen', models: { zen: { name: 'Zen' } } },
           { id: 'anthropic', name: 'Anthropic', models: { claude: { name: 'Claude' } } },
         ],
-      } as ProviderListResponse,
+      } as unknown as ProviderListResponse,
       new Set(['ANTHROPIC_API_KEY']),
       [{ id: 'anthropic', envVars: ['ANTHROPIC_API_KEY'] }],
     );
@@ -100,14 +101,28 @@ describe('provider-selection', () => {
     const list = projectLlmCatalogToProviderList({
       models: {
         auto: { name: 'Auto' },
-        'deepseek-v4-flash-free': { name: 'DeepSeek V4 Flash Free', free: true },
+        'claude-opus-4.8': { name: 'Claude Opus 4.8' },
       },
     });
 
     expect(list.connected).toEqual(['kortix']);
     expect(list.default).toEqual({ kortix: 'auto' });
     expect(list.all?.[0]?.id).toBe('kortix');
-    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['auto', 'deepseek-v4-flash-free']);
-    expect((list.all?.[0]?.models as any)?.['deepseek-v4-flash-free']?.free).toBe(true);
+    expect(Object.keys(list.all?.[0]?.models ?? {})).toEqual(['auto', 'claude-opus-4.8']);
+    expect((list.all?.[0]?.models as any)?.['deepseek-v4-flash-free']).toBeUndefined();
+  });
+
+  test('merges project gateway catalog with session-native OpenCode Zen provider', () => {
+    const project = projectLlmCatalogToProviderList({
+      models: {
+        auto: { name: 'Auto' },
+      },
+    });
+    const session = filterToGatewayProviders(providers(['opencode', 'anthropic']));
+    const merged = mergeProviderLists(project, session);
+
+    expect(merged.connected).toEqual(['kortix', 'opencode']);
+    expect(merged.all?.map((p) => p.id)).toEqual(['kortix', 'opencode']);
+    expect((merged.all?.find((p) => p.id === 'opencode')?.models as any)?.['opencode-model']).toBeDefined();
   });
 });

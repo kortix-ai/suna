@@ -57,12 +57,13 @@ describe("pickAutoModel", () => {
     ).toBeDefined();
   });
 
-  test("free tier resolves auto to a FREE model, never a paid one", () => {
-    // Text → free text default; image → the one free vision model. A free
-    // account has no upstream for fusion/claude-sonnet, so auto must not pick them.
+  test("free tier does not resolve auto through the managed gateway", () => {
+    // A free account's Zen default is a native sandbox `opencode` model, not a
+    // Kortix-managed gateway model. Returning null makes raw auto yield no
+    // gateway candidate instead of silently using a gateway IP for Zen.
     expect(
       pickAutoModel("auto", { messages: [msg("hello there")] }, { free: true }),
-    ).toBe("deepseek-v4-flash-free");
+    ).toBeNull();
     const withImage = {
       messages: [
         {
@@ -77,16 +78,12 @@ describe("pickAutoModel", () => {
         },
       ],
     };
-    expect(pickAutoModel("auto", withImage, { free: true })).toBe(
-      "mimo-v2.5-free",
-    );
+    expect(pickAutoModel("auto", withImage, { free: true })).toBeNull();
   });
 
-  test("both free auto targets are real FREE managed models", () => {
+  test("free Zen defaults are not managed gateway models", () => {
     for (const id of ["deepseek-v4-flash-free", "mimo-v2.5-free"]) {
-      const m = getManagedModel(id);
-      expect(m, `${id} must exist`).toBeDefined();
-      expect(m?.free, `${id} must be free`).toBe(true);
+      expect(getManagedModel(id), `${id} must stay native`).toBeUndefined();
     }
   });
 

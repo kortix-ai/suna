@@ -90,22 +90,24 @@ export function managedModels(opts?: {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (Fusion) so OpenCode sizes conversations the same. It stays
-  // available to every tier — for a free account it resolves to a free model
-  // (see pickAutoModel), so the default still works without exposing paid ones.
-  out[AUTO_MODEL_ID] = {
-    name: "Auto",
-    reasoning: false,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 128_000 },
-  };
+  // its default target (Fusion) so OpenCode sizes conversations the same. Free
+  // tier omits AUTO because Zen free models now run through the native sandbox
+  // `opencode` provider, not the Kortix gateway.
+  if (!opts?.freeOnly) {
+    out[AUTO_MODEL_ID] = {
+      name: "Auto",
+      reasoning: false,
+      tool_call: true,
+      attachment: true,
+      temperature: true,
+      limit: { context: 1_000_000, output: 128_000 },
+    };
+  }
   // The managed lineup is curated and its slugs don't all exist on models.dev
   // (z-ai≠zhipuai, dotted vs dashed Claude ids), so vision + limit are explicit
   // on each model. All current managed models support reasoning/tools/temperature.
-  // `freeOnly` drops the paid managed models so a free-tier account only ever sees
-  // the free OpenCode-Zen lineup through the Kortix gateway.
+  // `freeOnly` drops all managed models. Free-tier Zen is a native session model,
+  // while BYOK/Codex still widen the gateway catalog when a project is scoped.
   for (const m of MANAGED_MODELS) {
     if (opts?.freeOnly && !m.free) continue;
     out[m.id] = {

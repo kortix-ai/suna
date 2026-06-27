@@ -176,37 +176,37 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
   })
 })
 
-describe('buildOpencodeConfigContent — gateway is the sole LLM path (enabled_providers)', () => {
+describe('buildOpencodeConfigContent — gateway plus native OpenCode Zen allowlist', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
     KORTIX_LLM_API_KEY: 'kyolo_abc123',
   }
 
-  test('locks opencode to ONLY the kortix provider when the gateway is active', async () => {
+  test('allows only kortix plus native opencode when the gateway is active', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent(GATEWAY_ENV))!)
-    expect(config.enabled_providers).toEqual(['kortix'])
+    expect(config.enabled_providers).toEqual(['kortix', 'opencode'])
   })
 
-  test('a leaked native key (e.g. GITHUB_TOKEN) cannot open a native provider — only kortix is enabled', async () => {
+  test('a leaked native key (e.g. GITHUB_TOKEN) cannot open its native provider', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse(
       (await buildOpencodeConfigContent({ ...GATEWAY_ENV, GITHUB_TOKEN: 'ghp_x', OPENAI_API_KEY: 'sk-x' }))!,
     )
-    expect(config.enabled_providers).toEqual(['kortix'])
+    expect(config.enabled_providers).toEqual(['kortix', 'opencode'])
   })
 
-  test('ignores connected Codex/OpenCode subscription providers while gateway is active', async () => {
+  test('does not enable codex/openai subscription providers while gateway is active', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const authJson = JSON.stringify({ openai: { type: 'oauth', access: 'x' }, opencode: { key: 'y' } })
     const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, CODEX_AUTH_JSON: authJson }))!)
-    expect(config.enabled_providers).toEqual(['kortix'])
+    expect(config.enabled_providers).toEqual(['kortix', 'opencode'])
   })
 
-  test('ignores malformed auth.json and still locks to kortix', async () => {
+  test('ignores malformed auth.json and still keeps the explicit allowlist', async () => {
     stubGatewayModels(GATEWAY_CATALOG)
     const config = JSON.parse((await buildOpencodeConfigContent({ ...GATEWAY_ENV, OPENCODE_AUTH_JSON: 'not json{' }))!)
-    expect(config.enabled_providers).toEqual(['kortix'])
+    expect(config.enabled_providers).toEqual(['kortix', 'opencode'])
   })
 
   test('does NOT set an allowlist when there is no gateway (subscription-only session stays native)', async () => {

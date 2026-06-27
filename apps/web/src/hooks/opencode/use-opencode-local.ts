@@ -155,8 +155,8 @@ export function useOpenCodeLocal({
   config,
   sessionId,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input, so the
-  // gateway-only allowlist applies here too — native providers never leak in) ----
+  // ---- Flatten models from providers (shared with the chat input). Gateway
+  // sessions include Kortix plus the native OpenCode Zen provider. ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;

@@ -143,16 +143,12 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
       out.small_model = DEFAULT_KORTIX_MODEL
     }
-    // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
-    // allowlist — opencode loads ONLY these and ignores every provider it would
-    // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,
-    // OPENAI_API_KEY → openai), so a leaked key can't open a native path that
-    // bypasses budgets/logging/spend. This is the robust complement to the env
-    // deny-strip in spawnChild (which can be defeated if a key reaches opencode
-    // by some path the deny-list didn't enumerate). Gateway mode is a hard cut:
-    // even project-scoped Codex/OpenCode subscription auth.json must not expose a
-    // native provider here, otherwise usage bypasses gateway logs/budgets.
-    out.enabled_providers = ['kortix']
+    // Gateway mode still allowlists providers so leaked provider keys cannot
+    // open native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets,
+    // logs, and BYOK handling. The one intentional native session provider is
+    // OpenCode Zen: its free models should egress from the sandbox instead of the
+    // Kortix gateway IP.
+    out.enabled_providers = ['kortix', 'opencode']
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread

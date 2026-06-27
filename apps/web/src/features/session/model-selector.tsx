@@ -33,7 +33,6 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
 } from '@kortix/shared/llm-catalog';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { useQuery } from '@tanstack/react-query';
@@ -78,10 +77,13 @@ import { Tag } from '@/components/ui/tag';
 // Kortix and always shown, but rendered as a special "smart routing" affordance.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
-// Free-tier (no active paid sub) only gets the free Kortix-managed models. `auto`
-// and the paid managed models are hidden, and the default lands on a free model.
-const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
-const FREE_DEFAULT_MODEL_ID = 'deepseek-v4-flash-free';
+// Free-tier (no active paid sub) cannot use the Kortix managed paid lineup or
+// synthetic AUTO. The fallback free model lives under OpenCode's native provider
+// once a session sandbox has loaded it.
+const FREE_DEFAULT_MODEL = {
+  providerID: 'opencode',
+  modelID: 'deepseek-v4-flash-free',
+};
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
@@ -159,8 +161,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretNames]);
 
-  // Free tier (free/no plan AND no active subscription) only sees free managed
-  // models through the Kortix gateway. BYOK/connected providers are unaffected.
+  // Free tier (free/no plan AND no active subscription) hides Kortix managed
+  // paid/AUTO models. Native OpenCode Zen and connected BYOK providers remain
+  // available through their own routing.
   const { data: accountState } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
@@ -249,11 +252,17 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [baseModels, llmGatewayEnabled, freeTier],
   );
 
-  // Free tier can't use `auto` or paid managed models — if one is selected (the
-  // inherited default), switch to the free default so the first message doesn't
-  // 400 with "no upstream configured for model fusion".
+  // Free tier can't use gateway `auto` or paid managed models. If one is
+  // selected and the session-native OpenCode Zen provider is available, switch
+  // to the native free default so the first message never routes through the
+  // gateway Zen path.
   const freeDefaultModel = useMemo(
-    () => baseModels.find((m) => m.providerID === 'kortix' && m.modelID === FREE_DEFAULT_MODEL_ID),
+    () =>
+      baseModels.find(
+        (m) =>
+          m.providerID === FREE_DEFAULT_MODEL.providerID &&
+          m.modelID === FREE_DEFAULT_MODEL.modelID,
+      ),
     [baseModels],
   );
   useEffect(() => {
@@ -262,8 +271,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     const disallowed =
       !!sel &&
       sel.providerID === 'kortix' &&
-      MANAGED_MODEL_IDS.has(sel.modelID) &&
-      !FREE_MANAGED_MODEL_IDS.has(sel.modelID);
+      MANAGED_MODEL_IDS.has(sel.modelID);
     if (disallowed) {
       onSelect({ providerID: freeDefaultModel.providerID, modelID: freeDefaultModel.modelID });
     }
