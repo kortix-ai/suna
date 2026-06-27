@@ -24,6 +24,11 @@ export * from './use-model-store';
 export * from './use-model-hydration';
 export * from './use-session-sync';
 export * from './use-sandbox-connection';
+// The live pending-request store. The SSE event stream writes agent QUESTIONS
+// and PERMISSION requests here (keyed by request id, each carrying sessionID);
+// `useSessionSync` does NOT surface them, so a host that renders interactive
+// prompts must read them from this store.
+export { useOpenCodePendingStore } from '../state/opencode-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,

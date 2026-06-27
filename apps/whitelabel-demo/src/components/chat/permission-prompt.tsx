@@ -3,7 +3,7 @@
 /**
  * Renders a pending PERMISSION request (e.g. "run this command?") and sends the
  * decision. `replyToPermission(requestId, 'once'|'always'|'reject')` unblocks the
- * run; without it the agent waits forever.
+ * run; `onResolved` drops it from the pending store.
  */
 
 import { Button } from '@/components/ui/button';
@@ -12,27 +12,26 @@ import { ShieldQuestion } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-export function PermissionPrompt({ request }: { request: Record<string, any> }) {
+export function PermissionPrompt({
+  request,
+  onResolved,
+}: {
+  request: Record<string, any>;
+  onResolved: () => void;
+}) {
   const [sending, setSending] = useState(false);
-  const [done, setDone] = useState(false);
-
   const label = String(request.permission ?? 'this action').replace(/[._-]/g, ' ');
 
   async function reply(decision: 'once' | 'always' | 'reject') {
-    if (sending || done) return;
+    if (sending) return;
     setSending(true);
-    setDone(true);
+    onResolved();
     try {
       await replyToPermission(request.id, decision);
     } catch {
       toast.error('Could not send your decision');
-      setDone(false);
-    } finally {
-      setSending(false);
     }
   }
-
-  if (done) return null;
 
   return (
     <div className="overflow-hidden rounded-xl border border-amber-500/30 bg-amber-500/[0.06]">

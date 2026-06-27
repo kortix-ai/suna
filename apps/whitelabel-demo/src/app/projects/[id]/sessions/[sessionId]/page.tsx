@@ -16,6 +16,7 @@ import {
   useCanonicalOpenCodeSession,
   useOpenCodeConfig,
   useOpenCodeLocal,
+  useOpenCodePendingStore,
   useOpenCodeProviders,
   useSendOpenCodeMessage,
   useSessionSync,
@@ -25,7 +26,8 @@ import { switchToSessionSandboxAsync } from '@kortix/sdk/server-store';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Sparkles } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 export default function SessionWorkbenchPage() {
   return (
@@ -173,11 +175,28 @@ function Chat({
 }
 
 function Thread({ ocSessionId }: { ocSessionId: string }) {
-  const { messages, isBusy, isLoading, questions, permissions } = useSessionSync(ocSessionId);
+  const { messages, isBusy, isLoading } = useSessionSync(ocSessionId);
   const send = useSendOpenCodeMessage();
   const abort = useAbortOpenCodeSession();
   const phase = useRuntimePhase();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Interactive prompts live in the pending store (the SSE stream writes them
+  // there). Select the stable record maps, then derive this session's items —
+  // reading raw arrays in the selector would re-render on every store tick.
+  const questionMap = useOpenCodePendingStore((s) => s.questions);
+  const permissionMap = useOpenCodePendingStore((s) => s.permissions);
+  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
+  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
+  const questions = useMemo(
+    () => Object.values(questionMap).filter((q) => (q as any).sessionID === ocSessionId),
+    [questionMap, ocSessionId],
+  );
+  const permissions = useMemo(
+    () => Object.values(permissionMap).filter((p) => (p as any).sessionID === ocSessionId),
+    [permissionMap, ocSessionId],
+  );
+  const hasPending = questions.length > 0 || permissions.length > 0;
 
   // SDK model layer feeds the picker + the model we send with.
   const providers = useOpenCodeProviders();
@@ -190,12 +209,52 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
     sessionId: ocSessionId,
   });
 
-  const hasPending = questions.length > 0 || permissions.length > 0;
+  // Optimistic send: show the user's message instantly until the server echoes
+  // it back over SSE. Without this, hitting send feels like nothing happened.
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pending) return;
+    const echoed = messages.some(
+      (m) =>
+        m.info.role === 'user' &&
+        (m.parts as any[]).some((p) => p.type === 'text' && p.text?.trim() === pending.trim()),
+    );
+    if (echoed) setPending(null);
+  }, [messages, pending]);
+
+  const sending = !!pending;
+  const busy = isBusy || sending;
+
+  const handleSend = (text: string) => {
+    setPending(text);
+    send.mutate(
+      {
+        sessionId: ocSessionId,
+        parts: [{ type: 'text', text }],
+        ...(local.model.currentKey ? { options: { model: local.model.currentKey } } : {}),
+      },
+      {
+        onError: () => {
+          toast.error('Could not send your message');
+          setPending(null);
+        },
+      },
+    );
+  };
+
+  // The one true "cancel": abort the run AND drop any pending prompts so the UI
+  // never wedges waiting on a server-side answer.
+  const cancelRun = () => {
+    abort.mutate(ocSessionId);
+    questions.forEach((q) => removeQuestion((q as any).id));
+    permissions.forEach((p) => removePermission((p as any).id));
+    setPending(null);
+  };
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-  }, [messages, isBusy, hasPending]);
+  }, [messages, busy, hasPending]);
 
   return (
     <>
@@ -206,7 +265,7 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
               <Loader2 className="size-4 animate-spin" /> Loading conversation…
             </div>
           )}
-          {!isLoading && messages.length === 0 && !hasPending && (
+          {!isLoading && messages.length === 0 && !hasPending && !pending && (
             <div className="grid place-items-center py-16 text-center">
               <Sparkles className="size-6 text-muted-foreground" />
               <p className="mt-3 text-sm text-muted-foreground">
@@ -219,18 +278,32 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
             <MessageView key={m.info.id} message={m} />
           ))}
 
+          {pending && (
+            <div className="flex justify-end">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary/70 px-4 py-2.5 text-sm text-secondary-foreground">
+                {pending}
+              </div>
+            </div>
+          )}
+
           {permissions.map((p) => (
-            <PermissionPrompt key={p.id} request={p} />
+            <PermissionPrompt key={(p as any).id} request={p} onResolved={() => removePermission((p as any).id)} />
           ))}
           {questions.map((q) => (
-            <QuestionPrompt key={q.id} request={q} />
+            <QuestionPrompt
+              key={(q as any).id}
+              request={q}
+              onResolved={() => removeQuestion((q as any).id)}
+              onCancel={cancelRun}
+            />
           ))}
 
-          {isBusy && !hasPending && (
+          {busy && !hasPending && (
             <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
               <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
               <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.1s]" />
               <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" />
+              <span className="ml-1 text-xs">{sending ? 'Sending…' : 'Agent is working…'}</span>
             </div>
           )}
         </div>
@@ -238,16 +311,15 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
 
       <div className="shrink-0 px-5 pb-5">
         <div className="mx-auto max-w-3xl">
+          {phase !== 'ready' && phase !== 'booting' && (
+            <p className="mb-2 text-center text-xs text-muted-foreground">
+              {phase === 'unreachable' ? 'Reconnecting to the runtime…' : 'Connecting…'}
+            </p>
+          )}
           <Composer
-            onSend={(text) =>
-              send.mutate({
-                sessionId: ocSessionId,
-                parts: [{ type: 'text', text }],
-                ...(local.model.currentKey ? { options: { model: local.model.currentKey } } : {}),
-              })
-            }
-            onStop={() => abort.mutate(ocSessionId)}
-            busy={isBusy}
+            onSend={handleSend}
+            onStop={cancelRun}
+            busy={busy}
             disabled={phase !== 'ready'}
             placeholder={phase === 'ready' ? 'Message the agent…' : 'Waiting for the runtime…'}
             toolbar={<ModelPicker model={local.model} />}
