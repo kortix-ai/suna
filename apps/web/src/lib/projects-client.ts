@@ -288,6 +288,7 @@ export interface ProvisionProjectInput {
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   starter_template?: 'general-knowledge-worker' | 'minimal';
+  marketplace_items?: string[];
 }
 
 export interface ProjectGitConnection {

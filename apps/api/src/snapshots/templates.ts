@@ -13,6 +13,7 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
@@ -54,8 +55,6 @@ const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
 const MANIFEST_SCHEMA_SRC_DIR = resolve(REPO_ROOT, 'packages/manifest-schema/src');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
@@ -67,7 +66,7 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // browser-automation skill works out of the box with no runtime download.
 // v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
 // no-restart warm seed serves the full picker without a PARK-time fetch.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v12-llm-catalog';
+const RUNTIME_LAYER_VERSION = 'baked-chromium-v13-python-skill-floor';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

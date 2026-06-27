@@ -104,6 +104,40 @@ automatically whenever you add or need a tool. Full playbook in the
 when you need exact syntax.
 </cli>
 
+<marketplace>
+The **Kortix Marketplace** is the project skill library and the normal way to
+discover, install, inspect, and update optional capabilities. Search it before
+creating a new skill from scratch.
+
+Use the consumer CLI surface:
+
+```sh
+kortix marketplace search <query> --json
+kortix marketplace show <name> --json
+kortix marketplace install <name> --project <project-id>
+kortix marketplace status --project <project-id> --json
+kortix marketplace updates --project <project-id> --json
+kortix marketplace update <name> --project <project-id>
+kortix marketplace update --all --project <project-id>
+```
+
+The web equivalent is the project's Marketplace/Customize surface. Normal
+agents should not use `kortix registry build/validate/publish`; those are
+developer-authoring tools for producing registries, not for consuming skills in
+a project.
+
+Marketplace installs are git-native: installing or updating writes files into
+`.kortix/opencode/skills/...`, updates `registry-lock.json`, and commits the
+change to the project repo. Installed state and update detection come from the
+lock file's target paths and content hashes, not from a hidden database flag.
+`update --all` uses one server-side batch update so all outdated skills land in
+one commit.
+
+**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/marketplace.md`
+— load it whenever you need to pick skills, explain installed/update status,
+debug marketplace behavior, or decide whether to create a new skill.
+</marketplace>
+
 <change-requests>
 **This is the single most important rule for any agent running in a
 Kortix session: if you want your work to land on `main`, you MUST open
@@ -257,6 +291,14 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">
+  In-depth Kortix Marketplace reference. What the marketplace is, when to use
+  it before authoring a new skill, CLI and web workflows, install/update/remove
+  semantics, `registry-lock.json`, default starter skills, source registries,
+  and the difference between consumer `kortix marketplace` commands and
+  developer-only `kortix registry` commands.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md">

@@ -1,0 +1,5 @@
+# SheetJS publishes xlsx on npm only through 0.18.5; Trivy's fixed 0.19.x/0.20.x
+# versions are not available from the npm registry. Keep this narrow until the
+# web XLSX viewer migrates off the abandoned package.
+CVE-2023-30533
+CVE-2024-22363

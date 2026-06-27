@@ -32,6 +32,11 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { SandboxState } from '@daytonaio/sdk';
+import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
 import { config } from '../config';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 
@@ -49,13 +54,6 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
-
-// Keep in sync with snapshots/providers/daytona.ts + dockerfile-layer.ts.
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
-// Chromium for agent-browser, sourced from Playwright (cross-arch; Chrome for
-// Testing has no linux-arm64 build). Keep in sync with dockerfile-layer.ts.
-const PLAYWRIGHT_VERSION = '1.60.0';
 
 const RUNTIME_HOME = '/opt/kortix/home';
 export const OPENCODE_PORT = 4096;

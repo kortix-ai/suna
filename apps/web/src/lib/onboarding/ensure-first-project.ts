@@ -3,6 +3,7 @@ import {
   provisionProject,
   type KortixProject,
 } from '@/lib/projects-client';
+import { listDefaultProjectMarketplaceItems } from '@/lib/marketplace-client';
 
 export type FirstProjectAutoCreateState = {
   bootstrapRequested: boolean;
@@ -48,7 +49,13 @@ export async function ensureFirstProject(
   if (existing.length > 0) return existing[0] ?? null;
 
   try {
-    return await provisionProject({ account_id: accountId, name: 'My First Project' });
+    const marketplaceItems = await listDefaultProjectMarketplaceItems();
+    return await provisionProject({
+      account_id: accountId,
+      name: 'My First Project',
+      starter_template: 'minimal',
+      marketplace_items: marketplaceItems.map((item) => item.id),
+    });
   } catch (err) {
     if (!isProjectLimitError(err)) throw err;
     const retry = await listProjectsForAccount(accountId);

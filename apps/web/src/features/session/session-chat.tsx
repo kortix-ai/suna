@@ -47,6 +47,11 @@ import {
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import {
+  isShellActivityTool,
+  shellActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
 
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
@@ -2213,7 +2218,7 @@ function GroupedReasoningCard({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
           <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
@@ -2295,6 +2300,9 @@ function SameToolGroup({
 
   const isContext = toolName === '__context__';
   const isResearch = toolName === '__research__';
+  const isShell = useMemo(() => {
+    return isShellActivityTool(entries[0]?.part.tool);
+  }, [entries]);
 
   const headerLabel = useMemo(() => {
     if (isContext) {
@@ -2327,9 +2335,13 @@ function SameToolGroup({
       return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
     }
 
+    if (isShell) {
+      return shellActivityGroupLabel(entries.length, anyRunning);
+    }
+
     const t = contextToolTrigger(entries[0].part);
     return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, entries, anyRunning]);
+  }, [isContext, isResearch, isShell, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2344,6 +2356,13 @@ function SameToolGroup({
         >
           {isResearch ? (
             <Globe
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : isShell ? (
+            <Terminal
               className={cn(
                 'text-muted-foreground/50 size-3.5 flex-shrink-0',
                 anyRunning && 'animate-pulse-heartbeat',
@@ -2377,7 +2396,7 @@ function SameToolGroup({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] space-y-0.5 border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
           {isContext
             ? entries.map(({ part }) => {
                 const t = contextToolTrigger(part);
@@ -2416,7 +2435,10 @@ function SameToolGroup({
                 // Same-tool, non-context groups (e.g. 3x web_search) render
                 // each call with its full ToolPartRenderer so users see real
                 // results — answers, sources, images — not just the input arg.
-                <div key={part.id} className="-mx-3">
+                // Sits inside the rail's left padding (no negative margin) so
+                // each row aligns under the group header label, matching the
+                // reasoning block's nested treatment.
+                <div key={part.id}>
                   <ToolPartRenderer
                     part={part}
                     sessionId={sessionId}
@@ -3236,9 +3258,7 @@ function SessionTurn({
             // Tools that always render as individual rows — never folded into
             // a "Tool · Nx" pile. File writes/creations are distinct artifacts
             // (index.html, styles.css, …) the user wants to see one-per-line.
-            // Shell commands are likewise distinct actions, each shown on its
-            // own row rather than collapsed into a "Shell · Nx" pile.
-            const NO_GROUP_SET = new Set(['write', 'bash']);
+            const NO_GROUP_SET = new Set(['write']);
             const norm = (t: string) => {
               const n = t.replace(/^oc-/, '').replace(/-/g, '_');
               if (CONTEXT_SET.has(n)) return '__context__';
@@ -3998,21 +4018,43 @@ export function SessionChat({
           return;
         }
 
-        try {
-          const res = await client.session.promptAsync({
-            sessionID: sessionId,
-            parts,
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: sendOpts.model }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          } as any);
-          // The SDK resolves (not rejects) on HTTP errors, returning
-          // { error: ... } instead of throwing. Handle this case so
-          // the UI doesn't stay stuck on "busy" forever.
-          if (res?.error) handlePromptError(res.error);
-        } catch (err) {
-          handlePromptError(err);
+        const promptBody = {
+          sessionID: sessionId,
+          parts,
+          ...(session?.directory ? { directory: session.directory } : {}),
+          ...(sendOpts?.agent && { agent: sendOpts.agent }),
+          ...(sendOpts?.model && { model: sendOpts.model }),
+          ...(sendOpts?.variant && { variant: sendOpts.variant }),
+        } as any;
+
+        // A freshly-created session points at a sandbox that may still be
+        // booting opencode — the proxy answers `503 "opencode not ready"` until
+        // the binary binds its port. Retry transient failures (especially that
+        // boot signal) across the full boot window so the very first prompt
+        // lands on its own instead of flashing an "opencode not ready" banner
+        // the user can't act on. The optimistic message + busy status stay up
+        // across retries, so the UI shows the send in progress the whole time.
+        for (let attempt = 1; ; attempt++) {
+          let status: number | undefined;
+          let error: unknown;
+          try {
+            // The SDK resolves (not rejects) on HTTP errors, returning
+            // { error, response } instead of throwing.
+            const res = await client.session.promptAsync(promptBody);
+            if (!res?.error) return; // 204 — server accepted the prompt.
+            error = res.error;
+            status = res?.response?.status as number | undefined;
+          } catch (err) {
+            error = err; // thrown = transport failure (no status).
+          }
+
+          const delay = getSendRetryDelayMs(attempt, status, error);
+          if (delay === null) {
+            handlePromptError(error);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, delay));
+          if (cancelled) return;
         }
       })();
     };
@@ -5002,10 +5044,10 @@ export function SessionChat({
       // thrown network error (request never completed) or a 5xx/429/408
       // response — so an already-queued prompt is never double-sent. A 4xx
       // (bad request, auth, missing model key) is a real failure and surfaces
-      // immediately. The optimistic user message + busy status stay up across
-      // retries, so the UI shows the send in progress the whole time.
-      const retryBackoffMs = [400, 1000, 2000];
-      const maxAttempts = retryBackoffMs.length + 1;
+      // immediately. The lone exception is the sandbox proxy's "opencode not
+      // ready" 503 boot signal, which retries across the full boot window (see
+      // getSendRetryDelayMs). The optimistic user message + busy status stay up
+      // across retries, so the UI shows the send in progress the whole time.
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       let res: any;
@@ -5032,8 +5074,9 @@ export function SessionChat({
               error: caughtErr,
             },
           );
-          if (attempt < maxAttempts) {
-            await sleep(retryBackoffMs[attempt - 1]);
+          const delay = getSendRetryDelayMs(attempt, undefined, caughtErr);
+          if (delay !== null) {
+            await sleep(delay);
             continue;
           }
           handleSendError();
@@ -5059,10 +5102,9 @@ export function SessionChat({
               error: res?.error,
             },
           );
-          const transient =
-            status === undefined || status >= 500 || status === 408 || status === 429;
-          if (transient && attempt < maxAttempts) {
-            await sleep(retryBackoffMs[attempt - 1]);
+          const delay = getSendRetryDelayMs(attempt, status, res?.error);
+          if (delay !== null) {
+            await sleep(delay);
             continue;
           }
           handleSendError();
@@ -5769,7 +5811,13 @@ export function SessionChat({
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}
           onClearReply={handleClearReply}
-          lockForQuestion={!!renderedQuestion}
+          // Only lock the input into question-answer mode while the session is
+          // actually busy (a live question keeps the run busy). If a question
+          // chip is ever showing while the session is idle — e.g. a dead /
+          // abandoned question the agent left behind — the input stays unlocked
+          // so a typed message is sent to the agent instead of being swallowed
+          // as a custom answer.
+          lockForQuestion={!!renderedQuestion && isBusy}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5789,6 +5837,7 @@ export function SessionChat({
                 )}
               >
                 <QuestionPrompt
+                  key={renderedQuestion.id}
                   ref={questionPromptRef}
                   request={renderedQuestion}
                   onReply={handleQuestionReply}

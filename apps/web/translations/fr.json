@@ -5240,7 +5240,7 @@
       "line251JsxAttrTitleKortixManagedRepository": "Dépôt géré par Kortix",
       "line253JsxTextCreatesAPrivateManagedRepoSeedsTheStarter": "Crée un repo privé géré, initialise le projet de démarrage et génère le premier instantané de sandbox à partir de la branche par défaut.",
       "line258JsxTextProjectName": "Nom du projet",
-      "line273JsxTextGeneralKnowledgeWorkerSkills": "Compétences générales pour travailleurs du savoir",
+      "line273JsxTextGeneralKnowledgeWorkerSkills": "Compétences de démarrage",
       "line275JsxTextIncludePreconfiguredSkillsForResearchAuditSupportBrand": "Inclut des compétences préconfigurées pour la recherche, l’aide à l’audit, la voix de marque, la création de contenu, les documents, les diapositives, les données et le travail web.",
       "line297JsxTextImportExistingGithubRepo": "Importer un repo GitHub existant",
       "line320JsxTextCreateProject": "Créer le projet",
