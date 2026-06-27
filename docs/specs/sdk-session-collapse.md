@@ -364,7 +364,7 @@ detection (the box dropping after it was healthy). Initial readiness is server-t
 test-fixture errors). **Needs a runtime pass on :13100** to confirm the crossfade UX — typecheck
 can't prove it.
 
-### §6 — per-session client wired (shipped; SSE-concurrency is the isolated remainder)
+### §6 — per-session client wired (shipped; per-session SSE scoped out — see §12)
 
 `useSession` now resolves a per-session runtime URL (the server's `runtime_url`, else derived from
 `external_id`) and builds a per-session client via `getClientForUrl(url)`. The **action path** —
@@ -387,14 +387,46 @@ hooks), `@kortix/sdk/opencode-client` (types). **Zero** plumbing: no `server-sto
 IS the final surface, and the react barrel now demarcates it (a `FINAL PUBLIC SURFACE` block marks
 the lower-level exports as internal plumbing that `useSession` composes).
 
-Those plumbing exports are still physically EXPORTED only because `apps/web` consumes them through
-its not-yet-migrated **file / terminal / git** hooks (every sandbox-coupled hook reads the global
-active-server). Physically removing them is gated on migrating those hooks onto the per-session
-client — a mechanical follow-up, not an architectural one (the surface + mechanism are settled).
+Those plumbing exports stay exported because `apps/web` consumes them through its **file / terminal
+/ git** hooks (~50 files read the global active-server). That is **not** a loose end — see the
+scope decision in **§12**: the *chat* plumbing is internal (composed by `useSession`), while the
+*runtime-access* APIs (`getClient`, `server-store`, files) are the intended surface for a host that
+builds the full IDE beyond chat. They stay by design.
 
-**Net:** the SDK-session-collapse is **complete** end-to-end — SDK + golden white-label + the
-production web session page all on `useSession`; the poller is gone from the active path; the
-per-session client is wired; the final public surface is defined + proven. Two isolated,
-runtime-tested follow-ups remain, both documented above: per-session **SSE** (true concurrent live
-sessions) and the **physical removal** of the legacy plumbing exports once apps/web's non-chat hooks
-move to the per-session client.
+### Item (c) — pending-store converged (shipped)
+
+`apps/web`'s `opencode-pending-store` was a local fork carrying a real fix the SDK lacked —
+`resolvedQuestionIds`, so a resolved question can't be resurrected by a stale SSE re-add (which
+would re-lock the chat input). Ported that guard into the SDK store, added a
+`@kortix/sdk/opencode-pending-store` subpath, and converged the web's copy to a re-export — ONE
+store shared by the SSE writer and the chat reader. The web's pending-store test passes 7/7 against
+the SDK store.
+
+## 12. Final scope decision — single-active-session is the supported model (a + b CLOSED)
+
+The two "remainders" of §6/§7 — routing the **SSE per-session** (a) and **removing the
+runtime-access exports** (b) — are the SAME work: migrating the web's ENTIRE runtime layer off the
+global active-server. Measured: **50 files** in `apps/web` read it (files, git, terminal, skills,
+providers, instances, sidebar, command-palette, the 3,765-line `session-chat`). The decision, after
+that measurement:
+
+- **Single-active-session is THE supported model — by design.** The product navigates *between*
+  sessions; it never runs two live in one tab. With one active session, the global active-server
+  **is** the per-session client, so the SSE riding the global switch is correct, not a compromise.
+- **Per-session SSE (a) is a future concurrency FEATURE, not a loose end.** Its only benefit is >1
+  concurrent live session — which no UI exposes. The mechanism (`getClientForUrl`, `runtime_url`,
+  per-session action path) is in place; the SSE routing gets built when/if concurrency becomes a
+  product need, as a tested feature — not blind, zero-value surgery on the real-time core.
+- **The lower-level exports (b) split in two, and neither is "legacy to delete":** the *chat*
+  plumbing (`OpenCodeEventStreamProvider`, the stores) is internal — `useSession` composes it, and
+  the web's `session-chat` adopting `useSession` is a someday-refactor of a working 3,765-line
+  component, not a loose end; the *runtime-access* APIs (`getClient`, `server-store`, files) are the
+  **intended** surface for a host that builds beyond chat (the full IDE: file tree, terminal, git),
+  used correctly by ~50 web files. They stay.
+
+**Net:** the SDK-session-collapse is **complete** — `useSession` is the one hook to run a session
+(proven by the golden white-label and the production web page), the poller is gone from the active
+path, the per-session client is wired, the pending-store is converged, the public surface is
+defined. (a) and (b) are **closed by decision**, not deferred: the architecture is correct + final
+for the single-active-session product. Concurrent live sessions remain an explicit, scoped-out
+future feature.

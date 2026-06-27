@@ -243,10 +243,10 @@ it from the server.
 
 <Callout type="warn">
 **Internal plumbing.** These are the pieces `useSession` wraps — the SSE provider,
-message sync, the prompt mutations, and the OpenCode-id resolver. A normal host
-should use `useSession` and never touch them. They remain exported only for the
-in-progress `apps/web` migration and advanced cases; new hosts: do not import
-them.
+message sync, the prompt mutations, and the OpenCode-id resolver. A chat-focused
+host uses `useSession` and never touches them. They stay exported for hosts that
+build **beyond chat** (a full IDE — file tree, terminal, git) and for `apps/web`'s
+own `session-chat`; if you're just rendering a conversation, reach for `useSession`.
 </Callout>
 
 | hook | composed role |
