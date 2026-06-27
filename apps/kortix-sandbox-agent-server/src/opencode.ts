@@ -442,23 +442,31 @@ const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }>
   return out
 })()
 
-// Guarantee every model carries a context window. The gateway /models endpoint
-// returns NO per-model limits, so without this OpenCode sees models with no
-// context limit, can't size the conversation, and auto-compaction never fires —
-// long sessions then blow past the window and get stuck (session pinned at 100%
-// context). Backfill from the known-model table (exact id, then bare id), else a
-// conservative default. Models that already declare a usable limit are untouched.
+// Guarantee every model carries a COMPLETE limit ({ context, output }). The slim
+// managed /models endpoint returns only a context window (and the legacy gateway
+// returned none), but opencode's config schema requires BOTH `limit.context` AND
+// `limit.output` on every provider model — a model missing `output` makes the
+// whole injected config fail validation (ConfigInvalidError "limit.output Missing
+// key"), which throws when opencode builds its instance state on the first
+// request, so session-create 500s and the runtime never comes up. (It's also what
+// lets opencode size the conversation so auto-compaction fires.) Backfill each
+// missing field from the known-model table (exact id, then bare id), else a
+// conservative default — preserving any value the source already declared.
 export function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(models)) {
-    if (typeof model.limit?.context === 'number' && model.limit.context > 0) {
-      out[id] = model
-      continue
-    }
     const known = MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id]
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } }
+    const context =
+      typeof model.limit?.context === 'number' && model.limit.context > 0
+        ? model.limit.context
+        : known?.context ?? DEFAULT_MODEL_LIMIT.context
+    const output =
+      typeof model.limit?.output === 'number' && model.limit.output > 0
+        ? model.limit.output
+        : known?.output ?? DEFAULT_MODEL_LIMIT.output
+    out[id] = { ...model, limit: { ...model.limit, context, output } }
   }
   return out
 }

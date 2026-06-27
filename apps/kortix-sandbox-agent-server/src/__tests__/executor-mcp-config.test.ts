@@ -138,6 +138,15 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     expect(models['claude-opus-4.8'].limit.context).toBe(1_000_000)
     // No declared limit → withModelLimits backfills one so opencode can compact.
     expect(models['deepseek/deepseek-v4-flash'].limit.context).toBeGreaterThan(0)
+    // opencode's config schema REQUIRES limit.output on every model — the slim
+    // /models endpoint only carries context_window, so withModelLimits must
+    // backfill output too. A model missing output makes opencode reject the whole
+    // injected config (ConfigInvalidError) and session-create 500s. Every model
+    // (with OR without a declared context) must end up with a positive output.
+    for (const id of Object.keys(models)) {
+      expect(models[id].limit.output).toBeGreaterThan(0)
+      expect(models[id].limit.context).toBeGreaterThan(0)
+    }
   })
 
   test('falls back to a minimal catalog when the gateway /models fetch fails', async () => {
