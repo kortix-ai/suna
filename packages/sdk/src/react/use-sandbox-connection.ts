@@ -111,9 +111,9 @@ export function useSandboxConnection(): void {
           const offlineSignal =
             isImmediateOfflineStatus(status) ||
             /no service is responding|not reachable/i.test(body);
-          const error = new Error(
-            `Sandbox health check failed: ${status}`,
-          ) as Error & { immediateOffline?: boolean };
+          const error = new Error(`Sandbox health check failed: ${status}`) as Error & {
+            immediateOffline?: boolean;
+          };
           error.immediateOffline = offlineSignal;
           throw error;
         }
@@ -134,9 +134,7 @@ export function useSandboxConnection(): void {
         } else {
           incrementSandboxFail();
           const { failCount, wasConnected } = useSandboxConnectionStore.getState();
-          const threshold = wasConnected
-            ? FAIL_THRESHOLD_RECONNECT
-            : FAIL_THRESHOLD_FIRST;
+          const threshold = wasConnected ? FAIL_THRESHOLD_RECONNECT : FAIL_THRESHOLD_FIRST;
           if (failCount >= threshold) {
             setSandboxStatus('unreachable');
           } else if (wasConnected) {

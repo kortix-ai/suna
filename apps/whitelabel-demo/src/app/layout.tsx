@@ -1,5 +1,5 @@
-import type { Metadata } from 'next';
 import { BRAND } from '@/config/brand';
+import type { Metadata } from 'next';
 import { Providers } from './providers';
 import './globals.css';
 

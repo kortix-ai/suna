@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { getProjectLlmCatalog } from '../platform/projects-client';
-import { flattenModels, type FlatModel } from './model-flatten';
+import { type FlatModel, flattenModels } from './model-flatten';
 import { projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
@@ -22,8 +22,5 @@ export function useProjectModels(projectId: string | null | undefined): FlatMode
     staleTime: 30_000,
     retry: false,
   });
-  return useMemo(
-    () => (data ? flattenModels(projectLlmCatalogToProviderList(data)) : []),
-    [data],
-  );
+  return useMemo(() => (data ? flattenModels(projectLlmCatalogToProviderList(data)) : []), [data]);
 }

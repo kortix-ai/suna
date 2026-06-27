@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,8 +52,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   const [inviteRole, setInviteRole] = useState<Role>('viewer');
 
   const invite = useMutation({
-    mutationFn: () =>
-      kortix.project(projectId).access.invite(email.trim(), inviteRole),
+    mutationFn: () => kortix.project(projectId).access.invite(email.trim(), inviteRole),
     onSuccess: () => {
       setEmail('');
       qc.invalidateQueries({ queryKey: membersKey });
@@ -74,8 +73,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const revoke = useMutation({
-    mutationFn: (userId: string) =>
-      kortix.project(projectId).access.revoke(userId),
+    mutationFn: (userId: string) => kortix.project(projectId).access.revoke(userId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersKey });
       toast.success('Access revoked');
@@ -95,8 +93,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const reject = useMutation({
-    mutationFn: (requestId: string) =>
-      kortix.project(projectId).access.rejectRequest(requestId),
+    mutationFn: (requestId: string) => kortix.project(projectId).access.rejectRequest(requestId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: requestsKey });
       toast.success('Request rejected');
@@ -105,8 +102,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const resendInvite = useMutation({
-    mutationFn: (inviteId: string) =>
-      kortix.project(projectId).access.resendInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.project(projectId).access.resendInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite resent');
@@ -115,8 +111,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const revokeInvite = useMutation({
-    mutationFn: (inviteId: string) =>
-      kortix.project(projectId).access.revokeInvite(inviteId),
+    mutationFn: (inviteId: string) => kortix.project(projectId).access.revokeInvite(inviteId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pendingKey });
       toast.success('Invite revoked');
@@ -125,9 +120,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const accessData = access.data as any;
-  const members: any[] = Array.isArray(accessData)
-    ? accessData
-    : (accessData?.members ?? []);
+  const members: any[] = Array.isArray(accessData) ? accessData : (accessData?.members ?? []);
   const requestItems: any[] = ((requests.data as any)?.requests ?? []).filter(
     (r: any) => (r?.status ?? 'pending') === 'pending',
   );
@@ -186,29 +179,18 @@ export function MembersTab({ projectId }: { projectId: string }) {
             </div>
           )}
           {access.isSuccess && members.length === 0 && (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              Just you so far.
-            </div>
+            <div className="p-6 text-center text-sm text-muted-foreground">Just you so far.</div>
           )}
           {members.map((m, i) => {
             const userId = String(m.user_id ?? m.email ?? i);
-            const role: Role = (m.effective_project_role ??
-              m.project_role ??
-              'viewer') as Role;
+            const role: Role = (m.effective_project_role ?? m.project_role ?? 'viewer') as Role;
             const implicit = Boolean(m.has_implicit_access);
             return (
-              <div
-                key={userId}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
+              <div key={userId} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <div className="truncate text-sm">
-                    {m.email ?? m.user_id ?? 'Member'}
-                  </div>
+                  <div className="truncate text-sm">{m.email ?? m.user_id ?? 'Member'}</div>
                   {m.effective_source && (
-                    <div className="text-xs text-muted-foreground">
-                      via {m.effective_source}
-                    </div>
+                    <div className="text-xs text-muted-foreground">via {m.effective_source}</div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -219,9 +201,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                   ) : (
                     <Select
                       value={role}
-                      onValueChange={(v) =>
-                        updateRole.mutate({ userId, role: v as Role })
-                      }
+                      onValueChange={(v) => updateRole.mutate({ userId, role: v as Role })}
                     >
                       <SelectTrigger size="sm" className="w-32">
                         <SelectValue />
@@ -266,17 +246,12 @@ export function MembersTab({ projectId }: { projectId: string }) {
             </div>
           )}
           {pending.isSuccess && pendingItems.length === 0 && (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              No pending invites.
-            </div>
+            <div className="p-6 text-center text-sm text-muted-foreground">No pending invites.</div>
           )}
           {pendingItems.map((p, i) => {
             const inviteId = String(p.invite_id ?? p.email ?? i);
             return (
-              <div
-                key={inviteId}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
+              <div key={inviteId} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm">{p.email ?? 'Invitee'}</div>
                   <div className="text-xs text-muted-foreground">
@@ -327,18 +302,13 @@ export function MembersTab({ projectId }: { projectId: string }) {
           {requestItems.map((r, i) => {
             const requestId = String(r.request_id ?? i);
             return (
-              <div
-                key={requestId}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
+              <div key={requestId} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm">
                     {r.requester_email ?? r.requester_user_id ?? 'Requester'}
                   </div>
                   {r.message && (
-                    <div className="truncate text-xs text-muted-foreground">
-                      {r.message}
-                    </div>
+                    <div className="truncate text-xs text-muted-foreground">{r.message}</div>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -379,9 +349,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
             </div>
           )}
           {grants.isSuccess && grantItems.length === 0 && (
-            <div className="p-6 text-center text-sm text-muted-foreground">
-              No groups attached.
-            </div>
+            <div className="p-6 text-center text-sm text-muted-foreground">No groups attached.</div>
           )}
           {grantItems.map((g, i) => (
             <div
@@ -391,9 +359,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
               <div className="min-w-0">
                 <div className="truncate text-sm">{g.group_name ?? g.group_id}</div>
                 <div className="text-xs text-muted-foreground">
-                  {typeof g.member_count === 'number'
-                    ? `${g.member_count} member(s)`
-                    : 'group'}
+                  {typeof g.member_count === 'number' ? `${g.member_count} member(s)` : 'group'}
                   {g.created_at ? ` · ${relativeTime(g.created_at)}` : ''}
                 </div>
               </div>

@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ArrowUp, Slash, Square } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 type Command = { name: string; description: string | null };
 
@@ -159,7 +159,13 @@ export function Composer({
         <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5 pt-1">
           <div className="min-w-0">{toolbar}</div>
           {busy ? (
-            <Button size="icon" variant="secondary" onClick={onStop} aria-label="Stop" className="size-8 rounded-full">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={onStop}
+              aria-label="Stop"
+              className="size-8 rounded-full"
+            >
               <Square className="size-3.5 fill-current" />
             </Button>
           ) : (

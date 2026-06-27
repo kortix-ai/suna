@@ -19,24 +19,28 @@ import {
   Globe,
   ListChecks,
   Loader2,
+  type LucideIcon,
   Pencil,
   Search,
   SquareTerminal,
   Wrench,
-  type LucideIcon,
 } from 'lucide-react';
 
 type AnyPart = Record<string, any>;
 
 function meta(tool: string): { icon: LucideIcon; label: string } {
   const t = tool.toLowerCase();
-  if (t.includes('bash') || t.includes('shell') || t.includes('exec')) return { icon: SquareTerminal, label: 'Terminal' };
-  if (t.includes('webfetch') || t.includes('fetch') || t.includes('http')) return { icon: Globe, label: 'Fetch' };
-  if (t.includes('glob') || t.includes('list') || t === 'ls') return { icon: FolderSearch, label: 'Find files' };
+  if (t.includes('bash') || t.includes('shell') || t.includes('exec'))
+    return { icon: SquareTerminal, label: 'Terminal' };
+  if (t.includes('webfetch') || t.includes('fetch') || t.includes('http'))
+    return { icon: Globe, label: 'Fetch' };
+  if (t.includes('glob') || t.includes('list') || t === 'ls')
+    return { icon: FolderSearch, label: 'Find files' };
   if (t.includes('grep') || t.includes('search')) return { icon: Search, label: 'Search' };
   if (t.includes('edit') || t.includes('patch')) return { icon: Pencil, label: 'Edit' };
   if (t.includes('write') || t.includes('create')) return { icon: FileText, label: 'Write' };
-  if (t.includes('read') || t.includes('view') || t.includes('cat')) return { icon: FileText, label: 'Read' };
+  if (t.includes('read') || t.includes('view') || t.includes('cat'))
+    return { icon: FileText, label: 'Read' };
   if (t.includes('todo')) return { icon: ListChecks, label: 'Plan' };
   if (t.includes('task') || t.includes('agent')) return { icon: Bot, label: 'Subagent' };
   return { icon: Wrench, label: tool.replace(/[._-]/g, ' ') };

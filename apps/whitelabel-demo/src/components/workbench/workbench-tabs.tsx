@@ -7,10 +7,10 @@ import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { useChat } from '@/components/chat/use-chat';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCanonicalOpenCodeSession } from '@kortix/sdk/react';
 import { Loader2, Sparkles } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -40,7 +40,10 @@ export function WorkbenchTabs({
           ))}
         </TabsList>
       </div>
-      <TabsContent value="chat" className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
+      <TabsContent
+        value="chat"
+        className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+      >
         <Chat projectId={projectId} sessionId={sessionId} pinFromStart={pinFromStart} />
       </TabsContent>
       <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
@@ -164,7 +167,11 @@ function Thread({
             onStop={c.cancel}
             busy={c.busy}
             disabled={c.phase !== 'ready'}
-            placeholder={c.phase === 'ready' ? 'Message the agent…  (/ for commands)' : 'Waiting for the runtime…'}
+            placeholder={
+              c.phase === 'ready'
+                ? 'Message the agent…  (/ for commands)'
+                : 'Waiting for the runtime…'
+            }
             commands={c.commands}
             onCommand={c.runCommand}
             toolbar={

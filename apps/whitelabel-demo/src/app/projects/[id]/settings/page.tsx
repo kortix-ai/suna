@@ -77,7 +77,10 @@ function GeneralTab() {
   const projectId = String(useParams().id);
   const qc = useQueryClient();
   const router = useRouter();
-  const project = useQuery({ queryKey: qk.project(projectId), queryFn: () => kortix.project(projectId).get() });
+  const project = useQuery({
+    queryKey: qk.project(projectId),
+    queryFn: () => kortix.project(projectId).get(),
+  });
   const detail = useQuery({
     queryKey: qk.projectDetail(projectId),
     queryFn: () => kortix.project(projectId).detail(),
@@ -115,7 +118,9 @@ function GeneralTab() {
 
   const current = project.data?.name ?? '';
   const fileCount = (detail.data as any)?.file_count;
-  const modelCount = catalog.data ? Object.keys((catalog.data as any).models ?? {}).length : undefined;
+  const modelCount = catalog.data
+    ? Object.keys((catalog.data as any).models ?? {}).length
+    : undefined;
   const healthState = (health.data as any)?.status ?? (health.isError ? 'unknown' : undefined);
 
   return (
@@ -123,8 +128,16 @@ function GeneralTab() {
       <Card className="p-5">
         <Label htmlFor="name">Project name</Label>
         <div className="mt-2 flex gap-2">
-          <Input id="name" value={name || current} onChange={(e) => setName(e.target.value)} placeholder={current} />
-          <Button disabled={!name.trim() || name.trim() === current || rename.isPending} onClick={() => rename.mutate()}>
+          <Input
+            id="name"
+            value={name || current}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={current}
+          />
+          <Button
+            disabled={!name.trim() || name.trim() === current || rename.isPending}
+            onClick={() => rename.mutate()}
+          >
             {rename.isPending && <Loader2 className="size-4 animate-spin" />}
             Save
           </Button>

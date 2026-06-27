@@ -19,11 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -77,8 +73,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
   // .files.search — filename search, live as you type.
   const search = useQuery({
     queryKey: ['project-files', projectId, 'search', deferredQuery],
-    queryFn: () =>
-      kortix.project(projectId).files.search(deferredQuery, { limit: 50 }),
+    queryFn: () => kortix.project(projectId).files.search(deferredQuery, { limit: 50 }),
     enabled: searching,
   });
 
@@ -198,16 +193,12 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                       title={path}
                       className={cn(
                         'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
-                        active
-                          ? 'text-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
+                        active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                       )}
                     >
                       <FileIcon className="size-3.5 shrink-0 opacity-70" />
                       <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-mono">
-                          {basename(path)}
-                        </span>
+                        <span className="truncate font-mono">{basename(path)}</span>
                         {searching && lineText && (
                           <span className="truncate font-mono text-[0.65rem] opacity-60">
                             {lineText.trim()}
@@ -229,9 +220,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
             <>
               <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate font-mono text-foreground">
-                  {selected}
-                </span>
+                <span className="truncate font-mono text-foreground">{selected}</span>
                 {(() => {
                   const match = listItems.find((f) => f?.path === selected);
                   const size = fmtSize(match?.size);
@@ -255,9 +244,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
                   </div>
                 )}
                 {content.isError && (
-                  <div className="p-4 text-xs text-destructive">
-                    Could not read file.
-                  </div>
+                  <div className="p-4 text-xs text-destructive">Could not read file.</div>
                 )}
                 {content.isSuccess && (
                   <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[0.7rem] leading-relaxed text-foreground/80">
@@ -269,9 +256,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
               <FileText className="size-6 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">
-                Select a file to view its contents.
-              </p>
+              <p className="text-xs text-muted-foreground">Select a file to view its contents.</p>
             </div>
           )}
         </div>
@@ -291,9 +276,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
   });
 
   const raw = history.data as any;
-  const commits: any[] = Array.isArray(raw)
-    ? raw
-    : (raw?.commits ?? raw?.items ?? []);
+  const commits: any[] = Array.isArray(raw) ? raw : (raw?.commits ?? raw?.items ?? []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -311,9 +294,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center gap-2 px-3 py-2">
           <History className="size-3.5 text-brand" />
-          <span className="truncate font-mono text-xs text-foreground">
-            {basename(path)}
-          </span>
+          <span className="truncate font-mono text-xs text-foreground">{basename(path)}</span>
         </div>
         <Separator />
         <ScrollArea className="max-h-72">
@@ -333,8 +314,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
               </div>
             )}
             {commits.map((c, i) => {
-              const sha: string =
-                c?.short_hash ?? c?.hash?.slice(0, 7) ?? String(i);
+              const sha: string = c?.short_hash ?? c?.hash?.slice(0, 7) ?? String(i);
               return (
                 <div
                   key={`${sha}-${i}`}

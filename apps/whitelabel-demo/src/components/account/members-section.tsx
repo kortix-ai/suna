@@ -139,7 +139,9 @@ export function MembersSection({ accountId }: { accountId: string }) {
           </div>
         )}
         {members.isError && (
-          <div className="p-6 text-center text-sm text-destructive">Couldn&apos;t load members.</div>
+          <div className="p-6 text-center text-sm text-destructive">
+            Couldn&apos;t load members.
+          </div>
         )}
         {members.isSuccess && items.length === 0 && (
           <div className="p-6 text-center text-sm text-muted-foreground">Just you so far.</div>

@@ -6,11 +6,11 @@
  * collapsible reasoning, tool cards, files) — the same shape Kortix uses.
  */
 
-import type { MessageWithParts } from '@kortix/sdk/react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import type { MessageWithParts } from '@kortix/sdk/react';
+import { Brain, ChevronRight, Paperclip } from 'lucide-react';
 import { Markdown } from './markdown';
 import { ToolCall } from './tool-call';
-import { Brain, ChevronRight, Paperclip } from 'lucide-react';
 
 type AnyPart = MessageWithParts['parts'][number] & Record<string, any>;
 

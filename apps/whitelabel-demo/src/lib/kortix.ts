@@ -1,7 +1,7 @@
 'use client';
 
-import { createKortix } from '@kortix/sdk';
 import { BRAND } from '@/config/brand';
+import { createKortix } from '@kortix/sdk';
 
 /**
  * The white-label's single seam to Kortix: the official `@kortix/sdk`. No raw

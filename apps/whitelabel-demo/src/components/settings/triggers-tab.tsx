@@ -14,8 +14,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -23,6 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Play, Trash2, Zap } from 'lucide-react';
@@ -51,8 +51,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
   const paused: boolean = Boolean(data?.triggers_paused);
 
   const setActivation = useMutation({
-    mutationFn: (next: boolean) =>
-      kortix.project(projectId).triggers.setActivation(next),
+    mutationFn: (next: boolean) => kortix.project(projectId).triggers.setActivation(next),
     onSuccess: (_res, next) => {
       refresh();
       toast.success(next ? 'All triggers paused' : 'All triggers resumed');
@@ -191,23 +190,16 @@ export function TriggersTab({ projectId }: { projectId: string }) {
           </div>
         )}
         {triggers.isSuccess && items.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            No triggers yet.
-          </div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No triggers yet.</div>
         )}
         {items.map((t, i) => {
           const slug = String(t.slug ?? t.name ?? i);
           const enabled = t.enabled !== false;
           return (
-            <div
-              key={slug}
-              className="flex items-center justify-between gap-3 px-4 py-3"
-            >
+            <div key={slug} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">
-                    {t.name ?? slug}
-                  </span>
+                  <span className="truncate text-sm font-medium">{t.name ?? slug}</span>
                   <Badge variant="outline">{t.type ?? 'cron'}</Badge>
                   <Badge variant={enabled && !paused ? 'default' : 'secondary'}>
                     {paused ? 'paused' : enabled ? 'active' : 'off'}
@@ -267,9 +259,7 @@ function EditTriggerDialog({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(String(trigger?.name ?? ''));
   const [prompt, setPrompt] = useState(String(trigger?.prompt_template ?? ''));
-  const [enabled, setEnabled] = useState<'on' | 'off'>(
-    trigger?.enabled === false ? 'off' : 'on',
-  );
+  const [enabled, setEnabled] = useState<'on' | 'off'>(trigger?.enabled === false ? 'off' : 'on');
 
   const update = useMutation({
     mutationFn: () =>
@@ -306,11 +296,7 @@ function EditTriggerDialog({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor={`e-name-${slug}`}>Name</Label>
-            <Input
-              id={`e-name-${slug}`}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <Input id={`e-name-${slug}`} value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`e-prompt-${slug}`}>Prompt</Label>

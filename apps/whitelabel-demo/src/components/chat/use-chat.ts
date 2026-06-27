@@ -13,6 +13,7 @@ import { useRuntimePhase } from '@/lib/runtime';
 import { useSessionPicks } from '@/lib/session-picks';
 import { clearStartStash, readStartStash } from '@/lib/session-start';
 import {
+  type ModelKey,
   useAbortOpenCodeSession,
   useExecuteOpenCodeCommand,
   useOpenCodePendingStore,
@@ -21,7 +22,6 @@ import {
   useSendOpenCodeMessage,
   useSessionSync,
   useVisibleAgents,
-  type ModelKey,
 } from '@kortix/sdk/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';

@@ -7,10 +7,10 @@
  * the same picker drives both the start config and per-message selection.
  */
 
-import type { FlatModel, ModelKey } from '@kortix/sdk/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import type { FlatModel, ModelKey } from '@kortix/sdk/react';
 import { Check, ChevronsUpDown, Cpu } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -40,7 +40,11 @@ export function ModelPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 max-w-[170px] gap-1 px-2 text-xs text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 max-w-[170px] gap-1 px-2 text-xs text-muted-foreground"
+        >
           <Cpu className="size-3.5 shrink-0" />
           <span className="truncate">{current?.modelName ?? 'Default model'}</span>
           <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
@@ -79,7 +83,9 @@ export function ModelPicker({
             );
           })}
           {filtered.length === 0 && (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">No models match.</div>
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+              No models match.
+            </div>
           )}
         </div>
       </PopoverContent>

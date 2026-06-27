@@ -13,8 +13,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -22,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -29,14 +29,7 @@ import { Loader2, Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-type Provider =
-  | 'pipedream'
-  | 'mcp'
-  | 'openapi'
-  | 'graphql'
-  | 'http'
-  | 'channel'
-  | 'computer';
+type Provider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
 
 const PROVIDERS: Provider[] = [
   'pipedream',
@@ -205,17 +198,12 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
           </div>
         )}
         {connectors.isSuccess && items.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            No connectors yet.
-          </div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No connectors yet.</div>
         )}
         {items.map((c, i) => {
           const cSlug = String(c.slug ?? c.name ?? i);
           return (
-            <div
-              key={cSlug}
-              className="flex items-center justify-between gap-3 px-4 py-3"
-            >
+            <div key={cSlug} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">
@@ -289,14 +277,10 @@ function ConnectorConfigDialog({
           <DialogDescription>Connector configuration (read-only).</DialogDescription>
         </DialogHeader>
         {config.isLoading && <Skeleton className="h-24 w-full" />}
-        {config.isError && (
-          <p className="text-sm text-destructive">Could not load config.</p>
-        )}
+        {config.isError && <p className="text-sm text-destructive">Could not load config.</p>}
         {config.isSuccess && (
           <div className="space-y-2 text-sm">
-            {rows.length === 0 && (
-              <p className="text-muted-foreground">No configurable fields.</p>
-            )}
+            {rows.length === 0 && <p className="text-muted-foreground">No configurable fields.</p>}
             {rows.map(([k, v]) => (
               <div key={k} className={cn('flex items-start justify-between gap-4')}>
                 <span className="text-muted-foreground">{k}</span>

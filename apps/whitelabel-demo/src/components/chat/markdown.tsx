@@ -12,27 +12,50 @@ export function Markdown({ children, className }: { children: string; className?
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
-          h1: ({ children }) => <h1 className="mb-2 mt-4 text-base font-semibold first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-4 text-sm font-semibold first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-sm font-semibold first:mt-0">{children}</h3>,
-          ul: ({ children }) => <ul className="my-2 ml-4 list-disc space-y-1 marker:text-muted-foreground">{children}</ul>,
-          ol: ({ children }) => <ol className="my-2 ml-4 list-decimal space-y-1 marker:text-muted-foreground">{children}</ol>,
+          h1: ({ children }) => (
+            <h1 className="mb-2 mt-4 text-base font-semibold first:mt-0">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="mb-2 mt-4 text-sm font-semibold first:mt-0">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="mb-1.5 mt-3 text-sm font-semibold first:mt-0">{children}</h3>
+          ),
+          ul: ({ children }) => (
+            <ul className="my-2 ml-4 list-disc space-y-1 marker:text-muted-foreground">
+              {children}
+            </ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="my-2 ml-4 list-decimal space-y-1 marker:text-muted-foreground">
+              {children}
+            </ol>
+          ),
           li: ({ children }) => <li className="pl-1">{children}</li>,
           a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-brand underline underline-offset-2 hover:opacity-80">
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-brand underline underline-offset-2 hover:opacity-80"
+            >
               {children}
             </a>
           ),
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           blockquote: ({ children }) => (
-            <blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>
+            <blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">
+              {children}
+            </blockquote>
           ),
           hr: () => <hr className="my-3 border-border" />,
           code: ({ className: c, children }) => {
             const inline = !String(c ?? '').includes('language-');
             if (inline) {
               return (
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]">{children}</code>
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8125rem]">
+                  {children}
+                </code>
               );
             }
             return <code className="font-mono text-[0.8125rem]">{children}</code>;
@@ -47,7 +70,9 @@ export function Markdown({ children, className }: { children: string; className?
               <table className="w-full border-collapse text-xs">{children}</table>
             </div>
           ),
-          th: ({ children }) => <th className="border border-border px-2 py-1 text-left font-medium">{children}</th>,
+          th: ({ children }) => (
+            <th className="border border-border px-2 py-1 text-left font-medium">{children}</th>
+          ),
           td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
         }}
       >

@@ -83,7 +83,9 @@ function Dashboard({ onDisconnect }: { onDisconnect: () => void }) {
 
         <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {projects.isLoading &&
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[72px] rounded-xl" />)}
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[72px] rounded-xl" />
+            ))}
           {projects.isError && (
             <Card className="col-span-full p-4 text-sm text-destructive">
               Couldn&apos;t load projects — check your API key.{' '}

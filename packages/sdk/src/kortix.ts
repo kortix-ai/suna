@@ -1,4 +1,6 @@
 'use client';
+import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { getClient } from './opencode/client';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -16,12 +18,10 @@
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
-import { configureKortix, type KortixPlatformConfig } from './platform/config';
+import { type KortixPlatformConfig, configureKortix } from './platform/config';
 import * as P from './platform/projects-client';
-import { getClient } from './opencode/client';
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import { getSessionHealth } from './session/health';
-import { rewriteLocalhostUrl, proxyLocalhostUrl, type SubdomainUrlOptions } from './session/url';
+import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
 import { getActiveSandboxId, switchToSessionSandboxAsync } from './state/server-store';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -91,59 +91,82 @@ export function createKortix(config: KortixPlatformConfig) {
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
-      onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) => P.setProjectOnboardingComplete(projectId, ...a),
+      onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
+        P.setProjectOnboardingComplete(projectId, ...a),
 
       secrets: {
         list: () => P.listProjectSecrets(projectId),
-        upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) => P.upsertProjectSecret(projectId, input),
+        upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
+          P.upsertProjectSecret(projectId, input),
         remove: (name: string) => P.deleteProjectSecret(projectId, name),
-        setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) => P.setPersonalProjectSecret(projectId, ...a),
+        setPersonal: (...a: DropFirst<Parameters<typeof P.setPersonalProjectSecret>>) =>
+          P.setPersonalProjectSecret(projectId, ...a),
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
-        setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) => P.upsertProjectGitCredential(projectId, input),
+        setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
+          P.upsertProjectGitCredential(projectId, input),
       },
 
       access: {
         list: () => P.listProjectAccess(projectId),
-        invite: (...a: DropFirst<Parameters<typeof P.inviteProjectMember>>) => P.inviteProjectMember(projectId, ...a),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectAccess>>) => P.updateProjectAccess(projectId, ...a),
+        invite: (...a: DropFirst<Parameters<typeof P.inviteProjectMember>>) =>
+          P.inviteProjectMember(projectId, ...a),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectAccess>>) =>
+          P.updateProjectAccess(projectId, ...a),
         revoke: (userId: string) => P.revokeProjectAccess(projectId, userId),
         pendingInvites: () => P.listPendingProjectInvites(projectId),
-        resendInvite: (...a: DropFirst<Parameters<typeof P.resendPendingProjectInvite>>) => P.resendPendingProjectInvite(projectId, ...a),
-        revokeInvite: (...a: DropFirst<Parameters<typeof P.revokePendingProjectInvite>>) => P.revokePendingProjectInvite(projectId, ...a),
+        resendInvite: (...a: DropFirst<Parameters<typeof P.resendPendingProjectInvite>>) =>
+          P.resendPendingProjectInvite(projectId, ...a),
+        revokeInvite: (...a: DropFirst<Parameters<typeof P.revokePendingProjectInvite>>) =>
+          P.revokePendingProjectInvite(projectId, ...a),
         requests: () => P.listProjectAccessRequests(projectId),
-        approveRequest: (...a: DropFirst<Parameters<typeof P.approveProjectAccessRequest>>) => P.approveProjectAccessRequest(projectId, ...a),
-        rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) => P.rejectProjectAccessRequest(projectId, ...a),
+        approveRequest: (...a: DropFirst<Parameters<typeof P.approveProjectAccessRequest>>) =>
+          P.approveProjectAccessRequest(projectId, ...a),
+        rejectRequest: (...a: DropFirst<Parameters<typeof P.rejectProjectAccessRequest>>) =>
+          P.rejectProjectAccessRequest(projectId, ...a),
         groupGrants: () => P.listProjectGroupGrants(projectId),
       },
 
       connectors: {
         list: () => P.listConnectors(projectId),
-        config: (...a: DropFirst<Parameters<typeof P.getConnectorConfig>>) => P.getConnectorConfig(projectId, ...a),
-        create: (...a: DropFirst<Parameters<typeof P.createConnector>>) => P.createConnector(projectId, ...a),
-        remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) => P.deleteConnector(projectId, ...a),
+        config: (...a: DropFirst<Parameters<typeof P.getConnectorConfig>>) =>
+          P.getConnectorConfig(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createConnector>>) =>
+          P.createConnector(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.deleteConnector>>) =>
+          P.deleteConnector(projectId, ...a),
         sync: () => P.syncConnectors(projectId),
       },
 
       policies: {
         list: () => P.listProjectPolicies(projectId),
-        set: (...a: DropFirst<Parameters<typeof P.setProjectPolicies>>) => P.setProjectPolicies(projectId, ...a),
+        set: (...a: DropFirst<Parameters<typeof P.setProjectPolicies>>) =>
+          P.setProjectPolicies(projectId, ...a),
       },
 
       triggers: {
         list: () => P.listProjectTriggers(projectId),
-        create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) => P.createProjectTrigger(projectId, ...a),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectTrigger>>) => P.updateProjectTrigger(projectId, ...a),
-        remove: (...a: DropFirst<Parameters<typeof P.deleteProjectTrigger>>) => P.deleteProjectTrigger(projectId, ...a),
-        fire: (...a: DropFirst<Parameters<typeof P.fireProjectTrigger>>) => P.fireProjectTrigger(projectId, ...a),
-        setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) => P.setProjectTriggersActivation(projectId, ...a),
+        create: (...a: DropFirst<Parameters<typeof P.createProjectTrigger>>) =>
+          P.createProjectTrigger(projectId, ...a),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectTrigger>>) =>
+          P.updateProjectTrigger(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.deleteProjectTrigger>>) =>
+          P.deleteProjectTrigger(projectId, ...a),
+        fire: (...a: DropFirst<Parameters<typeof P.fireProjectTrigger>>) =>
+          P.fireProjectTrigger(projectId, ...a),
+        setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
+          P.setProjectTriggersActivation(projectId, ...a),
       },
 
       files: {
-        list: (options?: Parameters<typeof P.listProjectFiles>[1]) => P.listProjectFiles(projectId, options),
+        list: (options?: Parameters<typeof P.listProjectFiles>[1]) =>
+          P.listProjectFiles(projectId, options),
         read: (path: string, ref?: string) => P.readProjectFile(projectId, path, ref),
-        search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) => P.searchProjectFiles(projectId, ...a),
-        archive: (...a: DropFirst<Parameters<typeof P.fetchProjectArchive>>) => P.fetchProjectArchive(projectId, ...a),
-        history: (...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>) => P.getProjectFileHistory(projectId, ...a),
+        search: (...a: DropFirst<Parameters<typeof P.searchProjectFiles>>) =>
+          P.searchProjectFiles(projectId, ...a),
+        archive: (...a: DropFirst<Parameters<typeof P.fetchProjectArchive>>) =>
+          P.fetchProjectArchive(projectId, ...a),
+        history: (...a: DropFirst<Parameters<typeof P.getProjectFileHistory>>) =>
+          P.getProjectFileHistory(projectId, ...a),
       },
 
       git: {
@@ -151,7 +174,8 @@ export function createKortix(config: KortixPlatformConfig) {
         commit: (sha: string) => P.getProjectCommit(projectId, sha),
         commitDiff: (sha: string) => P.getProjectCommitDiff(projectId, sha),
         branches: () => P.listProjectBranches(projectId),
-        versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) => P.getVersionDiff(projectId, ...a),
+        versionDiff: (...a: DropFirst<Parameters<typeof P.getVersionDiff>>) =>
+          P.getVersionDiff(projectId, ...a),
       },
 
       changeRequests: {
@@ -159,15 +183,20 @@ export function createKortix(config: KortixPlatformConfig) {
         get: (crId: string) => P.getChangeRequest(projectId, crId),
         diff: (crId: string) => P.getChangeRequestDiff(projectId, crId),
         mergePreview: (crId: string) => P.getChangeRequestMergePreview(projectId, crId),
-        open: (...a: DropFirst<Parameters<typeof P.openChangeRequest>>) => P.openChangeRequest(projectId, ...a),
-        merge: (...a: DropFirst<Parameters<typeof P.mergeChangeRequest>>) => P.mergeChangeRequest(projectId, ...a),
-        close: (...a: DropFirst<Parameters<typeof P.closeChangeRequest>>) => P.closeChangeRequest(projectId, ...a),
-        reopen: (...a: DropFirst<Parameters<typeof P.reopenChangeRequest>>) => P.reopenChangeRequest(projectId, ...a),
+        open: (...a: DropFirst<Parameters<typeof P.openChangeRequest>>) =>
+          P.openChangeRequest(projectId, ...a),
+        merge: (...a: DropFirst<Parameters<typeof P.mergeChangeRequest>>) =>
+          P.mergeChangeRequest(projectId, ...a),
+        close: (...a: DropFirst<Parameters<typeof P.closeChangeRequest>>) =>
+          P.closeChangeRequest(projectId, ...a),
+        reopen: (...a: DropFirst<Parameters<typeof P.reopenChangeRequest>>) =>
+          P.reopenChangeRequest(projectId, ...a),
       },
 
       sessions: {
         list: () => P.listProjectSessions(projectId),
-        create: (input?: Parameters<typeof P.createProjectSession>[1]) => P.createProjectSession(projectId, input),
+        create: (input?: Parameters<typeof P.createProjectSession>[1]) =>
+          P.createProjectSession(projectId, input),
       },
 
       session: (sessionId: string) => session(projectId, sessionId),
@@ -198,9 +227,7 @@ export function createKortix(config: KortixPlatformConfig) {
         !started.sandbox ||
         !started.opencode_session_id
       ) {
-        throw new Error(
-          `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`,
-        );
+        throw new Error(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`);
       }
       await switchToSessionSandboxAsync(projectId, sessionId, started.sandbox);
       _ready = { opencodeSessionId: started.opencode_session_id };
@@ -210,17 +237,23 @@ export function createKortix(config: KortixPlatformConfig) {
     return {
       // ── lifecycle (Kortix REST) ──────────────────────────────────────────
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
-      update: (input: Parameters<typeof P.updateProjectSession>[2]) => P.updateProjectSession(projectId, sessionId, input),
+      update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
+        P.updateProjectSession(projectId, sessionId, input),
       delete: () => P.deleteProjectSession(projectId, sessionId),
-      start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) => P.startProjectSession(projectId, sessionId, ...a),
+      start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
+        P.startProjectSession(projectId, sessionId, ...a),
       restart: () => P.restartProjectSession(projectId, sessionId),
-      setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) => P.setProjectSessionSharing(projectId, sessionId, intent),
+      setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
+        P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
-      commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) => P.commitSessionChanges(projectId, sessionId, input),
+      commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
+        P.commitSessionChanges(projectId, sessionId, input),
       publicShares: {
         list: () => P.listSessionPublicShares(projectId, sessionId),
-        create: (...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>) => P.createSessionPublicShare(projectId, sessionId, ...a),
-        revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) => P.revokeSessionPublicShare(projectId, sessionId, ...a),
+        create: (...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>) =>
+          P.createSessionPublicShare(projectId, sessionId, ...a),
+        revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
+          P.revokeSessionPublicShare(projectId, sessionId, ...a),
       },
 
       // ── runtime health + preview (the session owns its runtime) ──────────

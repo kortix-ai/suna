@@ -13,9 +13,7 @@ export function DiffView({ patch }: { patch?: string | null }) {
   const text = (patch ?? '').toString();
   if (!text.trim()) {
     return (
-      <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-        No changes to show.
-      </div>
+      <div className="px-3 py-6 text-center text-xs text-muted-foreground">No changes to show.</div>
     );
   }
   const lines = text.split('\n');

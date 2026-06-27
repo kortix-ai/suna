@@ -5,8 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -14,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Shield, Trash2 } from 'lucide-react';
@@ -96,14 +96,9 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <Label>Default mode</Label>
-            <p className="text-xs text-muted-foreground">
-              How unmatched tool calls are handled.
-            </p>
+            <p className="text-xs text-muted-foreground">How unmatched tool calls are handled.</p>
           </div>
-          <Select
-            value={defaultMode}
-            onValueChange={(v) => setDefaultMode(v as DefaultMode)}
-          >
+          <Select value={defaultMode} onValueChange={(v) => setDefaultMode(v as DefaultMode)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -134,9 +129,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
                 value={r.match}
                 onChange={(e) =>
                   setRules((prev) =>
-                    prev.map((p, j) =>
-                      j === i ? { ...p, match: e.target.value } : p,
-                    ),
+                    prev.map((p, j) => (j === i ? { ...p, match: e.target.value } : p)),
                   )
                 }
                 placeholder="glob, e.g. shell.*"
@@ -146,9 +139,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
                 value={r.action}
                 onValueChange={(v) =>
                   setRules((prev) =>
-                    prev.map((p, j) =>
-                      j === i ? { ...p, action: v as PolicyAction } : p,
-                    ),
+                    prev.map((p, j) => (j === i ? { ...p, action: v as PolicyAction } : p)),
                   )
                 }
               >

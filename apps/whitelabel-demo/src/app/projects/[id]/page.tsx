@@ -13,12 +13,12 @@ import {
 } from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
-import { startStashKey, type StartStash } from '@/lib/session-start';
+import { type StartStash, startStashKey } from '@/lib/session-start';
 import {
+  type ModelKey,
   useProjectConfig,
   useProjectModels,
   useVisibleAgents,
-  type ModelKey,
 } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Loader2, Sparkles } from 'lucide-react';
@@ -83,7 +83,10 @@ function ProjectHome() {
       try {
         sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
       } catch {}
-      kortix.project(projectId).onboardingComplete(true).catch(() => {});
+      kortix
+        .project(projectId)
+        .onboardingComplete(true)
+        .catch(() => {});
       return sessionId;
     },
     onSuccess: (sessionId) => {
@@ -158,7 +161,11 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+              {launching ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ArrowUp className="size-4" />
+              )}
             </Button>
           </div>
         </div>

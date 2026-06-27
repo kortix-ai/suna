@@ -33,7 +33,9 @@ export function InvitesSection({ accountId }: { accountId: string }) {
           </div>
         )}
         {invites.isError && (
-          <div className="p-6 text-center text-sm text-destructive">Couldn&apos;t load invites.</div>
+          <div className="p-6 text-center text-sm text-destructive">
+            Couldn&apos;t load invites.
+          </div>
         )}
         {items.map((inv, i) => (
           <div key={inv.invite_id ?? inv.email ?? i} className="flex items-center gap-3 px-4 py-3">
@@ -44,7 +46,9 @@ export function InvitesSection({ accountId }: { accountId: string }) {
               <div className="truncate text-sm font-medium">{inv.email ?? 'Invited user'}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {inv.created_at ? `Invited ${relativeTime(inv.created_at)}` : ''}
-                {inv.expires_at ? ` · expires ${new Date(inv.expires_at).toLocaleDateString()}` : ''}
+                {inv.expires_at
+                  ? ` · expires ${new Date(inv.expires_at).toLocaleDateString()}`
+                  : ''}
               </div>
             </div>
             <Badge variant="outline" className="capitalize">

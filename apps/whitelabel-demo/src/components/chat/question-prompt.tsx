@@ -93,10 +93,14 @@ export function QuestionPrompt({
                       key={oi}
                       type="button"
                       disabled={sending}
-                      onClick={() => (autoSingle ? submit([[opt.label]]) : pick(qi, opt.label, multiple))}
+                      onClick={() =>
+                        autoSingle ? submit([[opt.label]]) : pick(qi, opt.label, multiple)
+                      }
                       className={cn(
                         'flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors',
-                        picked ? 'border-brand/60 bg-brand/10' : 'border-border bg-card hover:bg-accent',
+                        picked
+                          ? 'border-brand/60 bg-brand/10'
+                          : 'border-border bg-card hover:bg-accent',
                       )}
                     >
                       <span
@@ -111,7 +115,9 @@ export function QuestionPrompt({
                       <span className="min-w-0">
                         <span className="block text-sm text-foreground">{opt.label}</span>
                         {opt.description && (
-                          <span className="block text-xs text-muted-foreground">{opt.description}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {opt.description}
+                          </span>
                         )}
                       </span>
                     </button>

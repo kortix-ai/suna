@@ -3,7 +3,7 @@
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useProjectConfig } from '@kortix/sdk/react';
-import { Bot, Slash, Sparkles, type LucideIcon } from 'lucide-react';
+import { Bot, type LucideIcon, Slash, Sparkles } from 'lucide-react';
 
 /**
  * Read-only view of the project's server-side capabilities — agents, slash

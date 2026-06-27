@@ -28,8 +28,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
   const [gitToken, setGitToken] = useState('');
 
   const upsert = useMutation({
-    mutationFn: () =>
-      kortix.project(projectId).secrets.upsert({ name: name.trim(), value }),
+    mutationFn: () => kortix.project(projectId).secrets.upsert({ name: name.trim(), value }),
     onSuccess: () => {
       setName('');
       setValue('');
@@ -104,9 +103,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
           </div>
         )}
         {secrets.isSuccess && items.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">
-            No secrets yet.
-          </div>
+          <div className="p-6 text-center text-sm text-muted-foreground">No secrets yet.</div>
         )}
         {items.map((s, i) => (
           <SecretRow
@@ -141,10 +138,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
             type="password"
             className="min-w-[12rem] flex-1 font-mono"
           />
-          <Button
-            type="submit"
-            disabled={!gitToken.trim() || setGitCredential.isPending}
-          >
+          <Button type="submit" disabled={!gitToken.trim() || setGitCredential.isPending}>
             {setGitCredential.isPending && <Loader2 className="size-4 animate-spin" />}
             Save credential
           </Button>

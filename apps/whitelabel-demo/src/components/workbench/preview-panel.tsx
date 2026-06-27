@@ -9,12 +9,7 @@
  * session facade — no raw HTTP.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Copy,
   ExternalLink,
@@ -27,10 +22,9 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { kortix } from '@/lib/kortix';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -53,6 +47,8 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { kortix } from '@/lib/kortix';
+import { cn } from '@/lib/utils';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that
 // needs no extra ids (private requires an ownerId, so it's omitted here).
@@ -69,8 +65,7 @@ function statusVariant(status?: string) {
 
 /** Best-effort copyable URL for a public share, defensively reading its shape. */
 function shareUrl(share: any): string {
-  const raw: string =
-    share?.public_path ?? share?.proxy_path ?? share?.public_token ?? '';
+  const raw: string = share?.public_path ?? share?.proxy_path ?? share?.public_token ?? '';
   if (!raw) return '';
   if (/^https?:\/\//.test(raw)) return raw;
   if (typeof window !== 'undefined') {
@@ -100,10 +95,7 @@ export function PreviewPanel({
   sessionId: string;
 }) {
   const qc = useQueryClient();
-  const session = useMemo(
-    () => kortix.session(projectId, sessionId),
-    [projectId, sessionId],
-  );
+  const session = useMemo(() => kortix.session(projectId, sessionId), [projectId, sessionId]);
 
   const previewsKey = ['session-previews', projectId, sessionId];
   const sharesKey = ['session-shares', projectId, sessionId];
@@ -158,9 +150,7 @@ export function PreviewPanel({
   const selected = candidates.find((c) => c.id === selectedId) ?? null;
 
   // SYNC — call directly in render, never awaited.
-  const previewSrc = selected
-    ? session.previewUrl(selected.port, selected.path)
-    : null;
+  const previewSrc = selected ? session.previewUrl(selected.port, selected.path) : null;
 
   const setSharingMut = useMutation({
     mutationFn: (value: string) => {
@@ -247,9 +237,7 @@ export function PreviewPanel({
             }}
             disabled={previewsQuery.isFetching}
           >
-            <RefreshCw
-              className={cn('size-3.5', previewsQuery.isFetching && 'animate-spin')}
-            />
+            <RefreshCw className={cn('size-3.5', previewsQuery.isFetching && 'animate-spin')} />
             Refresh
           </Button>
 
@@ -385,8 +373,8 @@ export function PreviewPanel({
             <Globe className="size-8 text-muted-foreground/50" />
             <p className="text-sm font-medium text-foreground">No preview yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              The agent hasn&apos;t exposed a port. Once it starts a dev server the
-              preview will appear here automatically.
+              The agent hasn&apos;t exposed a port. Once it starts a dev server the preview will
+              appear here automatically.
             </p>
           </div>
         )}

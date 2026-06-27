@@ -25,13 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Check,
-  GitBranch,
-  GitCommitHorizontal,
-  Loader2,
-  Scale,
-} from 'lucide-react';
+import { Check, GitBranch, GitCommitHorizontal, Loader2, Scale } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DiffStat, DiffView } from './diff-view';
@@ -73,9 +67,9 @@ export function CommitsView({
 
   const commitSession = useMutation({
     mutationFn: () =>
-      kortix.session(projectId, sessionId).commit(
-        message.trim() ? { message: message.trim() } : undefined,
-      ),
+      kortix
+        .session(projectId, sessionId)
+        .commit(message.trim() ? { message: message.trim() } : undefined),
     onSuccess: (res) => {
       const r = res as any;
       if (r?.nothing_to_do) {
@@ -148,9 +142,7 @@ export function CommitsView({
               onClick={() => setComparing(true)}
               disabled={!defaultBranch || versionDiff.isFetching}
             >
-              {versionDiff.isFetching ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : null}
+              {versionDiff.isFetching ? <Loader2 className="size-3 animate-spin" /> : null}
               Compare
             </Button>
           </CardTitle>
@@ -252,11 +244,7 @@ export function CommitsView({
         </div>
       </ScrollArea>
 
-      <CommitDetailDialog
-        projectId={projectId}
-        sha={openSha}
-        onClose={() => setOpenSha(null)}
-      />
+      <CommitDetailDialog projectId={projectId} sha={openSha} onClose={() => setOpenSha(null)} />
     </div>
   );
 }
@@ -290,9 +278,7 @@ function CommitDetailDialog({
     <Dialog open={!!sha} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
         <DialogHeader>
-          <DialogTitle className="truncate">
-            {d?.subject ?? 'Commit'}
-          </DialogTitle>
+          <DialogTitle className="truncate">{d?.subject ?? 'Commit'}</DialogTitle>
           <DialogDescription className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <span>{d?.short_hash ?? sha?.slice(0, 7)}</span>
             {d?.author_name && <span>· {d.author_name}</span>}
@@ -300,9 +286,7 @@ function CommitDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {d?.body && (
-          <p className="whitespace-pre-wrap text-xs text-muted-foreground">{d.body}</p>
-        )}
+        {d?.body && <p className="whitespace-pre-wrap text-xs text-muted-foreground">{d.body}</p>}
 
         {files.length > 0 && (
           <div className="space-y-0.5 rounded-md border border-border p-2">

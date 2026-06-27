@@ -101,7 +101,9 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
                 <Skeleton key={i} className="mx-1 my-1 h-9 rounded-md" />
               ))}
             {sessions.isSuccess && items.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">No sessions yet.</p>
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                No sessions yet.
+              </p>
             )}
             {items.map((s) => {
               const active = s.session_id === activeSessionId;
@@ -112,10 +114,17 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
                   href={`/projects/${projectId}/sessions/${s.session_id}`}
                   className={cn(
                     'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
-                    active ? 'bg-sidebar-accent text-foreground' : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                    active
+                      ? 'bg-sidebar-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
                   )}
                 >
-                  <span className={cn('size-2 shrink-0 rounded-full', STATUS_DOT[s.status] ?? 'bg-muted-foreground/40')} />
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      STATUS_DOT[s.status] ?? 'bg-muted-foreground/40',
+                    )}
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{title}</span>
                     <span className="block truncate text-xs text-muted-foreground/70">

@@ -26,15 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowLeft,
-  GitMerge,
-  GitPullRequest,
-  Loader2,
-  Plus,
-  RotateCcw,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, GitMerge, GitPullRequest, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DiffStat, DiffView } from './diff-view';
@@ -109,8 +101,7 @@ export function ChangeRequestsView({
                 <GitPullRequest className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-medium text-foreground">
-                    <span className="text-muted-foreground">#{cr.number}</span>{' '}
-                    {cr.title}
+                    <span className="text-muted-foreground">#{cr.number}</span> {cr.title}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[0.7rem] text-muted-foreground">
                     <span>{cr.head_ref}</span>
@@ -118,10 +109,7 @@ export function ChangeRequestsView({
                     <span>{cr.base_ref}</span>
                   </div>
                 </div>
-                <Badge
-                  variant={CR_STATUS_VARIANT[cr.status] ?? 'outline'}
-                  className="shrink-0"
-                >
+                <Badge variant={CR_STATUS_VARIANT[cr.status] ?? 'outline'} className="shrink-0">
                   {cr.status}
                 </Badge>
               </button>
@@ -262,12 +250,7 @@ function ChangeRequestDetail({
                   )}
                   Merge
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => close.mutate()}
-                  disabled={busy}
-                >
+                <Button size="sm" variant="outline" onClick={() => close.mutate()} disabled={busy}>
                   {close.isPending ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
@@ -278,12 +261,7 @@ function ChangeRequestDetail({
               </>
             )}
             {status === 'closed' && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => reopen.mutate()}
-                disabled={busy}
-              >
+              <Button size="sm" variant="outline" onClick={() => reopen.mutate()} disabled={busy}>
                 {reopen.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
@@ -298,17 +276,11 @@ function ChangeRequestDetail({
 
       {/* Diff */}
       <div className="flex shrink-0 items-center justify-between px-0.5 text-xs font-medium text-muted-foreground">
-        <span>
-          {df?.files_changed ?? df?.files?.length ?? 0} files changed
-        </span>
+        <span>{df?.files_changed ?? df?.files?.length ?? 0} files changed</span>
         {df && <DiffStat additions={df.additions} deletions={df.deletions} />}
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        {diff.isLoading ? (
-          <Skeleton className="h-40 w-full" />
-        ) : (
-          <DiffView patch={df?.patch} />
-        )}
+        {diff.isLoading ? <Skeleton className="h-40 w-full" /> : <DiffView patch={df?.patch} />}
       </ScrollArea>
     </div>
   );
@@ -367,11 +339,7 @@ function OpenChangeRequestDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-          />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -381,9 +349,7 @@ function OpenChangeRequestDialog({
           />
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">
-                Head ref
-              </label>
+              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Head ref</label>
               <Input
                 value={headRef}
                 onChange={(e) => setHeadRef(e.target.value)}
@@ -392,9 +358,7 @@ function OpenChangeRequestDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="px-0.5 text-[0.7rem] text-muted-foreground">
-                Base ref
-              </label>
+              <label className="px-0.5 text-[0.7rem] text-muted-foreground">Base ref</label>
               <Input
                 value={baseRef}
                 onChange={(e) => setBaseRef(e.target.value)}

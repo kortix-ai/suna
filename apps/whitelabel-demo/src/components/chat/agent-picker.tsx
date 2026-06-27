@@ -7,7 +7,6 @@
  * sets it. The chosen name is passed to send as `options.agent`.
  */
 
-import type { Agent } from '@kortix/sdk/opencode-client';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { Agent } from '@kortix/sdk/opencode-client';
 import { Bot, Check, ChevronsUpDown } from 'lucide-react';
 
 export function AgentPicker({
@@ -34,7 +34,11 @@ export function AgentPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 max-w-[150px] gap-1 px-2 text-xs text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 max-w-[150px] gap-1 px-2 text-xs text-muted-foreground"
+        >
           <Bot className="size-3.5 shrink-0" />
           <span className="truncate capitalize">{value ?? defaultName ?? 'Default agent'}</span>
           <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
@@ -48,7 +52,11 @@ export function AgentPicker({
           {!value && <Check className="size-4 shrink-0 text-brand" />}
         </DropdownMenuItem>
         {agents.map((a) => (
-          <DropdownMenuItem key={a.name} onClick={() => onChange(a.name)} className="flex items-start gap-2">
+          <DropdownMenuItem
+            key={a.name}
+            onClick={() => onChange(a.name)}
+            className="flex items-start gap-2"
+          >
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm capitalize">{a.name}</div>
               {a.description && (

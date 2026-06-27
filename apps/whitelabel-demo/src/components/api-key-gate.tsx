@@ -2,12 +2,12 @@
 
 import { BRAND } from '@/config/brand';
 import { setApiKey } from '@/lib/kortix';
+import { KeyRound } from 'lucide-react';
+import { useState } from 'react';
 import { BrandMark } from './brand-mark';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
-import { useState } from 'react';
-import { KeyRound } from 'lucide-react';
 
 /**
  * The single auth surface: paste a Kortix API key. One token, stored locally,
