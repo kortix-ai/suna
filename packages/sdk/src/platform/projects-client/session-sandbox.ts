@@ -42,6 +42,14 @@ export interface SessionStartResult {
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
   opencode_session_id: string | null;
+  /**
+   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * against the configured backendUrl. The server owns the proxy scheme; the SDK
+   * consumes this opaquely (never builds `/p/<id>/<port>` itself). Absent until the
+   * box has an external_id — `useSession` falls back to deriving it from
+   * `sandbox.external_id` when missing.
+   */
+  runtime_url?: string | null;
   reason?: string;
 }
 

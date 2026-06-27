@@ -39,6 +39,9 @@ export {
 export { files } from './files/client';
 export type * from './files/types';
 
+/** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
+export { generateSessionId } from './platform/session-id';
+
 /**
  * A session's runtime surface — proxy/preview/web-proxy URL building + the
  * `/kortix/health` liveness probe. The host reaches these through the session

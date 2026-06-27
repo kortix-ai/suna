@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
-import { newSessionId } from '@/lib/uuid';
+import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
@@ -48,7 +48,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
 
   const newSession = useMutation({
     mutationFn: async () => {
-      const sessionId = newSessionId();
+      const sessionId = generateSessionId();
       await kortix.project(projectId).sessions.create({ session_id: sessionId });
       return sessionId;
     },

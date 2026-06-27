@@ -13,13 +13,13 @@ import {
 } from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
-import { type StartStash, startStashKey } from '@/lib/session-start';
-import { newSessionId } from '@/lib/uuid';
+import { generateSessionId } from '@kortix/sdk';
 import {
   type ModelKey,
   useProjectConfig,
   useProjectModels,
   useVisibleAgents,
+  writeStartStash,
 } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Loader2, Sparkles } from 'lucide-react';
@@ -71,7 +71,7 @@ function ProjectHome() {
 
   const start = useMutation({
     mutationFn: async (text: string) => {
-      const sessionId = newSessionId();
+      const sessionId = generateSessionId();
       // Template + agent are create-time; the prompt + model + agent flow into
       // the first message (stashed) so the chosen model applies at start.
       await kortix.project(projectId).sessions.create({
@@ -80,10 +80,7 @@ function ProjectHome() {
         ...(template && template !== 'default' ? { sandbox_slug: template } : {}),
         ...(agent ? { agent_name: agent } : {}),
       });
-      const stash: StartStash = { prompt: text, model, agent };
-      try {
-        sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
-      } catch {}
+      writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
         .project(projectId)
         .onboardingComplete(true)

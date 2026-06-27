@@ -1,13 +1,15 @@
 'use client';
 
-import type { ModelKey } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
+import type { ModelKey } from './use-model-store';
 
 /**
- * Per-session model + agent selection, persisted locally. The lists come from
+ * Per-session model + agent selection, persisted locally. The lists come from the
  * server-side hooks (`useProjectModels`, `useVisibleAgents`); this just remembers
  * which one is chosen for a session and feeds it to send. `null` means "use the
- * project/agent default" — we omit the field and the runtime decides.
+ * project/agent default" — the field is omitted and the runtime decides. Owned by
+ * the SDK so every host shares one implementation (and `useSession` can apply the
+ * picks to send without the host wiring it).
  */
 export interface SessionPicks {
   model: ModelKey | null;
@@ -25,8 +27,8 @@ export function useSessionPicks(sessionId: string): SessionPicks {
   });
 
   useEffect(() => {
-    // Always reset on session change — the page instance is reused across
-    // session navigation, so without the `else` a new session would inherit the
+    // Always reset on session change — a host page instance is reused across
+    // session navigation, so without resetting a new session would inherit the
     // previous one's picks (and persist them under the wrong key).
     try {
       const raw = localStorage.getItem(storageKey(sessionId));

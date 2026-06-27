@@ -1,10 +1,11 @@
 /**
- * RFC 4122 v4 id. `crypto.randomUUID` only exists in secure contexts (https or
- * localhost), so a self-hosted white-label served over plain http on a LAN would
- * throw. Fall back to `getRandomValues` (broadly available) and only then to
- * Math.random.
+ * RFC 4122 v4 id for a new session. `crypto.randomUUID` only exists in secure
+ * contexts (https or localhost), so a self-hosted white-label served over plain
+ * http on a LAN would throw. Fall back to `getRandomValues` (broadly available)
+ * and only then to `Math.random`. Owned by the SDK so every host generates
+ * session ids the same way instead of reimplementing the fallback.
  */
-export function newSessionId(): string {
+export function generateSessionId(): string {
   const c = typeof crypto !== 'undefined' ? crypto : undefined;
   if (c?.randomUUID) return c.randomUUID();
   const b = new Uint8Array(16);
