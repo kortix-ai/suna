@@ -14,10 +14,11 @@ touch this runbook to change *limits*, not to react minute-to-minute.
 | Env | Replicas | HPA min→max | HPA targets | Pod resources (req=lim mem) |
 |---|---|---|---|---|
 | prod | floor 3 | **3 → 12** | CPU 60% / mem 60% | 500m–1 CPU / **2Gi** (Guaranteed) |
+| staging | floor 2 | **2 → 4** | CPU 60% / mem 60% | 500m–1 CPU / 1Gi |
 | dev | floor 1 | **1 → 2** | chart default | 250m–1 CPU / 512Mi |
 | preview | 1 | **HPA off** | — | 100m–500m / 256–512Mi |
 
-Sources: `infra/k8s/envs/{prod,dev,preview}/values.yaml`,
+Sources: `infra/k8s/envs/{prod,staging,dev,preview}/values.yaml`,
 `infra/k8s/charts/kortix-api/templates/hpa.yaml`, node group in
 `infra/terraform/modules/eks/cluster` +
 `infra/terraform/environments/prod-eks/cluster/terraform.tfvars`.
@@ -53,7 +54,8 @@ resources:
 > OOMKills, raise `resources.limits.memory`, not just the HPA target.
 
 **Change the limits (the GitOps way):** edit the env values, PR, merge. For
-prod the change rides the promote → `prod` flow; for dev it lands on `main`.
+prod the change rides the staging → promote → `prod` flow; for staging it lands
+on `staging`, and for dev it lands on `main`.
 
 ```bash
 # Edit infra/k8s/envs/prod/values.yaml (e.g. maxReplicas 12 → 16), commit, PR.

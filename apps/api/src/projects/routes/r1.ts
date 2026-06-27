@@ -12,6 +12,7 @@ import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, listInstallationRepositories, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
+import { buildProjectSeedFiles, normalizeMarketplaceItems } from '../seed-files';
 import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
@@ -487,16 +488,19 @@ projectsApp.openapi(
   // orphan repo + project so we never leave a half-created project behind.
   const seedStarter = body.seed_starter === true || body.seedStarter === true;
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
+  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   let seeded = false;
   if (seedStarter) {
     const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
     try {
       if (!pushToken) throw new Error('no push credential resolved for seeding');
-      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug, template: starterTemplate });
-      // Constant-var render of the same starter → identical root commit across
-      // all projects of this template (see seedRepoViaGitPush.baseFiles +
-      // snapshots/build-context.ts baked scaffold).
-      const starterBase = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: starterTemplate });
+      const seed = await buildProjectSeedFiles({
+        projectName: name,
+        repoFullName: repoSlug,
+        template: starterTemplate,
+        marketplaceItems,
+        now: now.toISOString(),
+      });
       if (backend.seedFiles) {
         // Seed the project tip == the deterministic scaffold root (the constant
         // 'kortix-project' render), byte-identical to the image-baked scaffold
@@ -506,19 +510,19 @@ projectsApp.openapi(
         // root) — the single biggest spawn-latency win. The per-project name
         // customization is applied in-sandbox at fork (not committed to the
         // shared remote root) so the warm reuse is never broken by a divergent tip.
-        await backend.seedFiles(connRef, pushToken, starterBase, {
+        await backend.seedFiles(connRef, pushToken, seed.files, {
           branch: provisioned.defaultBranch,
           message: 'chore: scaffold Kortix project',
-          baseFiles: starterBase,
+          baseFiles: seed.baseFiles,
         });
       } else {
         await seedRepoViaGitPush({
           upstreamUrl: connRef.upstreamUrl,
           token: pushToken,
-          files: starter,
+          files: seed.files,
           branch: provisioned.defaultBranch,
           commitMessage: 'chore: scaffold Kortix project',
-          baseFiles: starterBase,
+          baseFiles: seed.baseFiles,
         });
       }
       seeded = true;

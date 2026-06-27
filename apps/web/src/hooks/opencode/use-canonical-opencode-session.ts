@@ -57,7 +57,7 @@ export function useCanonicalOpenCodeSession(params: {
   // round-trip that otherwise contends for connections during boot.
   const projectSessionQuery = useQuery({
     queryKey: ['project-session', projectId, sessionId],
-    queryFn: () => getProjectSession(projectId, sessionId),
+    queryFn: () => getProjectSession(projectId, sessionId, { showErrors: false }),
     enabled: !!projectId && !!sessionId && !pinFromStart,
     staleTime: 10_000,
   });

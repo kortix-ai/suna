@@ -20,10 +20,12 @@ import {
   useMarketplaceItems,
   useRegistryUpdates,
   useUninstallMarketplaceItem,
+  useUpdateAllMarketplaceItems,
   useUpdateMarketplaceItem,
 } from '@/hooks/marketplace';
 import type { InstalledItem } from '@/lib/marketplace-client';
-import { TypeTile, typeMeta } from './marketplace-meta';
+import { MarketplaceItemAvatar, type MarketplaceItemAvatarItem } from './marketplace-item-avatar';
+import { typeMeta } from './marketplace-meta';
 
 function relativeDate(iso: string | null): string {
   if (!iso) return '';
@@ -48,13 +50,15 @@ export function MarketplaceInstalledPanel({
   const updates = useRegistryUpdates(projectId);
   const catalog = useMarketplaceItems({});
   const updateMut = useUpdateMarketplaceItem();
+  const updateAllMut = useUpdateAllMarketplaceItems();
   const uninstallMut = useUninstallMarketplaceItem();
 
   const items = installed.data ?? [];
   const statusByName = new Map((updates.data?.updates ?? []).map((u) => [u.name, u.status]));
   const catalogByName = new Map((catalog.data?.items ?? []).map((i) => [i.name, i]));
-  const updateCount = updates.data?.update_available.length ?? 0;
-  const busy = updateMut.isPending || uninstallMut.isPending;
+  const updateNames = updates.data?.update_available ?? [];
+  const updateCount = updateNames.length;
+  const busy = updateMut.isPending || updateAllMut.isPending || uninstallMut.isPending;
 
   const onUpdate = async (it: InstalledItem) => {
     try {
@@ -64,6 +68,21 @@ export function MarketplaceInstalledPanel({
       });
     } catch (e) {
       errorToast('Update failed', { description: (e as Error).message });
+    }
+  };
+
+  const onUpdateAll = async () => {
+    if (updateNames.length === 0) return;
+    try {
+      const res = await updateAllMut.mutateAsync({ projectId });
+      successToast(`Updated ${res.updated.length} item${res.updated.length === 1 ? '' : 's'}`, {
+        description:
+          res.updated.length > 0
+            ? 'Re-committed the latest marketplace files in one commit — live next session.'
+            : 'Everything is already up to date.',
+      });
+    } catch (e) {
+      errorToast('Update all failed', { description: (e as Error).message });
     }
   };
 
@@ -111,31 +130,45 @@ export function MarketplaceInstalledPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        {items.length} installed
-        {updateCount > 0 && (
-          <>
-            {' · '}
-            <span className="text-foreground font-medium">
-              {updateCount} update{updateCount === 1 ? '' : 's'} available
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-muted-foreground text-sm">
+          {items.length} installed
+          {updateCount > 0 && (
+            <>
+              {' · '}
+              <span className="text-foreground font-medium">
+                {updateCount} update{updateCount === 1 ? '' : 's'} available
+              </span>
+            </>
+          )}
+          {updates.isLoading && (
+            <span className="text-muted-foreground/60">
+              {' '}
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextCheckingForUpdatese5306763',
+              )}
             </span>
-          </>
+          )}
+        </p>
+        {updateCount > 0 && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={onUpdateAll}>
+            <RefreshCw className="size-3.5" />
+            {updateAllMut.isPending ? 'Updating...' : 'Update all'}
+          </Button>
         )}
-        {updates.isLoading && (
-          <span className="text-muted-foreground/60">
-            {' '}
-            {tI18nHardcoded.raw(
-              'autoComponentsMarketplaceMarketplaceInstalledPanelJsxTextCheckingForUpdatese5306763',
-            )}
-          </span>
-        )}
-      </p>
+      </div>
 
       <div className="space-y-2.5">
         {items.map((it) => {
           const status = statusByName.get(it.name);
           const meta = typeMeta(it.type);
           const cat = catalogByName.get(it.name);
+          const avatarItem: MarketplaceItemAvatarItem = cat ?? {
+            id: `${it.source}:${it.name}`,
+            name: it.name,
+            marketplaceId: it.source,
+            marketplaceLabel: it.source,
+          };
           const caps = cat?.capabilities;
           const capCount = caps
             ? caps.secrets.length + caps.connectors.length + caps.tools.length
@@ -145,7 +178,7 @@ export function MarketplaceInstalledPanel({
               key={it.name}
               className="border-border/60 bg-card flex items-center gap-3 rounded-2xl border p-3"
             >
-              <TypeTile type={it.type} size="md" />
+              <MarketplaceItemAvatar item={avatarItem} size="md" showSource={!!cat} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-foreground truncate text-sm font-medium">

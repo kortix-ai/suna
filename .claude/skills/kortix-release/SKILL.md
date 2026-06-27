@@ -6,22 +6,25 @@ description: "How to cut a Kortix production release — the versioning philosop
 # Kortix Release
 
 How a clean, accurate production release happens. Two halves: **what version** (the
-bump philosophy) and **how** (notes derived from the real git log, then promote →
-deploy → verify). The release notes you write become the GitHub Release, which is
+bump philosophy) and **how** (notes derived from the real staging candidate, then
+promote → deploy → verify). The release notes you write become the GitHub Release, which is
 exactly what the public **`/changelog`** page renders — so they must reflect what
 actually shipped, nothing invented, nothing missed.
 
 Pairs with **kortix-voice** (how the notes read). The version source of truth is the
 root **`VERSION`** file; `vX.Y.Z` tags are immutable and map 1:1 to a commit + image.
 
-## 0. Golden rule — prod ships ONLY via main → promote
+## 0. Golden rule — prod ships ONLY from staging
 
-**The only way to change prod is: land it on `main` first, then run the Promote
-workflow (main → review-gated release PR → `prod`).** Never `git push …:prod`,
-never open a manual PR into `prod`, never cherry-pick onto `prod`. `prod` must
-always be a strict subset of `main` — a direct-to-prod change makes them diverge
-(the fix lives in prod but not the trunk). This holds even for urgent outage
-hotfixes: commit the fix to `main`, then promote.
+**The only normal way to change prod is: get the release candidate onto
+`staging`, then run Promote to Production (`staging` → reviewed release PR →
+`prod`).** Never `git push …:prod`, never open a manual PR into `prod`, never
+cherry-pick onto `prod`.
+
+`main` is dev. It can move fast and can temporarily be broken. `staging` is the
+production candidate branch: only promote a dev ref to staging when it is ready
+to ship, or open a targeted PR directly into `staging` for a specific release
+candidate/hotfix. Production promotion always reads from `staging`.
 
 ## 1. Versioning philosophy — what bump?
 
@@ -38,23 +41,23 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 
 ## 2. The flow (do this every time)
 
-Releases run off the **`main`** branch. `prod` only ever receives promotions.
+Releases run off the **`staging`** branch. `main` is only the dev trunk.
 
 ### Step 1 — find the last released version
 ```bash
 cd suna
 git fetch origin --tags --quiet
 PREV="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)"   # e.g. v0.9.6
-echo "last release: $PREV  | prod VERSION: $(git show origin/prod:VERSION)"
+echo "last release: $PREV  | staging: $(git rev-parse --short origin/staging) | prod VERSION: $(git show origin/prod:VERSION)"
 ```
 
 ### Step 2 — read EVERY commit since that release (this is the source of truth)
 ```bash
-git log "$PREV..origin/main" --no-merges --pretty='- %s (%h)'
+git log "$PREV..origin/staging" --no-merges --pretty='- %s (%h)'
 ```
 This complete list is the raw material for the notes. Skim full bodies for anything
-non-obvious: `git log "$PREV..origin/main" --no-merges`. Also useful for scope:
-`git diff --stat "$PREV..origin/main"`.
+non-obvious: `git log "$PREV..origin/staging" --no-merges`. Also useful for scope:
+`git diff --stat "$PREV..origin/staging"`.
 
 > The notes must account for **all** of these commits — that's the whole point.
 > Don't summarize from memory; summarize from this log. Nothing invented, nothing dropped.
@@ -70,70 +73,64 @@ non-obvious: `git log "$PREV..origin/main" --no-merges`. Also useful for scope:
 Quality bar: a non-technical reader understands what changed; a teammate can map every
 notable commit in the log to a line in the notes.
 
-### Step 3.5 — pre-Promote QA (deferred / planned)
+### Step 3.5 — staging must be live and green
 
-> **Deferred for now.** The full end-to-end QA gate (agent-browser video walkthrough
-> + API e2e on a preview of the release HEAD, via the company `qa-e2e-preview` skill)
-> is intentionally NOT wired into Promote yet — it's the "next pass." Until then,
-> rely on the per-PR `pr-review` gate + the repo's CI, and do a manual smoke of
-> prod after deploy (Step 6).
->
-> When we turn it on: stand up a preview of `main` HEAD, run the browser-video core
-> flows + the ke2e suite against it, block the promote on any red, and attach the
-> video to the release notes — ideally as a required CI check on the release PR.
+Before promoting, verify the selected staging SHA is the live staging runtime:
+
+```bash
+curl -fsS https://staging-api.kortix.com/v1/health | jq '{environment,version,commit}'
+curl -fsS https://staging.kortix.com/api/runtime-config | grep 'staging-api.kortix.com'
+gh run list --repo kortix-ai/suna --branch staging --limit 10
+```
+
+`qa-staging` must target `staging.kortix.com` / `staging-api.kortix.com`. A green
+run against dev is not a staging gate.
+
+### Step 4 — run Promote to Production
+
 `promote.yml` **requires** `title` and `notes` (this is enforced — you cannot cut a
 release without describing it). They're written into the annotated tag (subject =
 title, body = notes), which deploy-prod turns into the GitHub Release + changelog.
 ```bash
-gh workflow run promote.yml --repo kortix-ai/suna --ref main \
+gh workflow run promote.yml --repo kortix-ai/suna --ref staging \
   -f title="<title>" -f notes="$(cat <<'EOF'
 <markdown notes>
 EOF
 )" -f bump=patch
 ```
 Use `-f version=X.Y.Z` instead of `-f bump=` only for an explicit version (e.g. the
-first `1.0.0`). Watch it: `gh run watch <id> --exit-status`. It bumps VERSION, commits
-to main, tags `vX.Y.Z` (annotated with your title/notes), and fast-forwards `prod`.
+first `1.0.0`). Watch it: `gh run watch <id> --exit-status`. It opens a
+review-gated `release/vX.Y.Z` PR into `prod` with the version, notes, release
+source SHA, and prod GitOps image pins. Production does not move until that PR is
+merged.
 
-### Step 5 — make sure the image for this commit is built
-deploy-prod **retags `kortix/kortix-api:dev-latest`** → it does NOT rebuild. So the
-dev build of the promoted commit must be green first:
+### Step 5 — make sure the staging images for this commit are built
+deploy-prod retags the exact staging images. It does NOT rebuild. So the staging
+build for the promoted commit must be green first:
 ```bash
-gh run list --repo kortix-ai/suna --workflow deploy-dev.yml --limit 3 \
+gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 \
   --json status,conclusion,headSha
 ```
-(Web-only changes don't rebuild the API image — that's fine; they ship via Vercel from
-the `prod` branch, and deploy-prod still stamps the version.)
 
-### Step 6 — deploy is automatic; just verify
-A successful Promote **auto-triggers deploy-prod** (via a `workflow_run` trigger —
-the promote's `prod` push uses `GITHUB_TOKEN` which can't fire the `push` event, so
-`workflow_run` is what wires it). On promote success the full prod pipeline runs:
-retag image `:X.Y.Z`+`:latest`, roll `kortix-prod` ECS, cut the GitHub Release; Vercel
-auto-deploys the `prod` branch (kortix.com). **Nothing to dispatch.** Just watch + verify:
+### Step 6 — merge the release PR, then verify
+After the release PR merges to `prod`, `deploy-prod.yml` retags staging images to
+`:X.Y.Z` + `:latest`, runs prod migrations, rolls EKS, cuts the GitHub Release,
+and Vercel deploys `prod` to `kortix.com`.
+
 ```bash
-gh run list --repo kortix-ai/suna --workflow deploy-prod.yml --limit 1   # the auto run
-# once the "Deploy API to prod (ECS)" job is completed/success:
-curl -fsS https://api-prod.kortix.com/v1/health   # version should be the new X.Y.Z
+gh run list --repo kortix-ai/suna --workflow deploy-prod.yml --limit 1
+curl -fsS https://api.kortix.com/v1/health | jq '{environment,version,commit}'
 gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body   # title + notes present
 ```
-Fallback (if the auto run didn't fire, or to re-run): `gh workflow run deploy-prod.yml
---ref prod`. Concurrency is `cancel-in-progress: false`, so cancel a stuck/queued run
-first (`gh run cancel <id>`).
-deploy-prod also: retags the image `:X.Y.Z`+`:latest`, cuts the GitHub Release
-(name = `vX.Y.Z — <title>`, body = your notes + an auto compare link), and Vercel
-auto-deploys the `prod` branch (kortix.com).
 
 ## 3. Gotchas (hard-won)
 
-- **Promote auto-runs deploy-prod via `workflow_run`** (the prod push itself uses
-  `GITHUB_TOKEN` which can't fire the `push` event, so `workflow_run` on Promote-
-  completion is the wire). So a promote deploys everything; you only dispatch
-  deploy-prod manually as a fallback/re-run.
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
   zombie queued run blocks the next deploy — cancel it first.
-- **Don't promote a moving `main`.** If commits are still landing, each cancels the dev
-  build and `:dev-latest` can't settle — wait until pushing stops, then promote that HEAD.
+- **Don't promote a moving `staging`.** If commits are still landing, wait until
+  staging deploy + QA settles, then promote that exact HEAD.
+- **Staging is not dev.** If `staging.kortix.com/api/runtime-config` references
+  `dev-api.kortix.com`, stop and fix staging before releasing.
 - **The `/changelog` page shows only `≥ 1.0.0`** and reads GitHub Release bodies — so a
   thin/auto-generated body shows up as a thin entry. Write real notes (Step 3).
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
@@ -153,11 +150,40 @@ gh release delete vX.Y.Z --repo kortix-ai/suna           # only if a Release was
 Verify: tag gone, `prod` VERSION = prior, `main` VERSION = prior, api-prod unchanged,
 no `vX.Y.Z` Release.
 
+> Note: `prod` branch protection is `allow_force_pushes:false` + `enforce_admins:true`,
+> so the `git push -f …:refs/heads/prod` above only works if protection is temporarily
+> relaxed. For a release that's ALREADY LIVE, do NOT force-push — use §5.
+
+## 5. Roll back a LIVE release (prod is already serving it)
+
+When a shipped version is broken and you need prod on an OLDER already-released
+version NOW, **do not force-push prod and do not reverse migrations.** Use the
+`rollback-prod.yml` workflow — the inverse of promote (forward → back), reusing the
+target's prebuilt images (zero rebuild):
+```bash
+gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
+  -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
+```
+It opens a review-gated PR into `prod` that re-points `infra/k8s/envs/prod/values.yaml`
++ `gateway-values.yaml` `image.tag` at `:X.Y.Z`. A reviewer merges it → Argo CD
+(auto-sync + selfHeal) rolls kortix-api + kortix-gateway to those images. Then:
+- **Frontend:** Vercel → kortix.com → Deployments → the `vX.Y.Z` prod deployment →
+  **Instant Rollback** (do this AFTER the merge so the Vercel rebuild can't clobber it).
+- **DB:** left as-is. Forward-only migrations are additive, so the live schema is a
+  superset of any older release — older code runs fine; reversing migrations is unsafe.
+- **VERSION** stays at the current prod number so deploy-prod's retag can't overwrite
+  the `:X.Y.Z` rollback image. The deploy-prod run on the merge goes partly red
+  (version-watch / release-create) — cosmetic; Argo does the real roll.
+
+The next promote of `staging` supersedes the rollback cleanly (`merge -s ours`) and moves
+prod forward — i.e. "fix forward" just works again.
+
 ## Checklist
 
-1. `git log $PREV..origin/main` read in full — notes account for all of it.
+1. `git log $PREV..origin/staging` read in full — notes account for all of it.
 2. Bump chosen per §1 (default patch).
 3. title + notes written in kortix-voice, accurate to the log.
-4. `promote.yml` run with title + notes; dev build for that commit is green.
-5. deploy-prod auto-ran on promote success, ECS green, api-prod on the new version.
-6. GitHub Release shows the title + notes → `/changelog` reads cleanly.
+4. `staging.kortix.com` and `staging-api.kortix.com` verified on the staging SHA.
+5. `promote.yml` run with title + notes; release PR merged into `prod`.
+6. deploy-prod ran, EKS green, api.kortix.com on the new version.
+7. GitHub Release shows the title + notes → `/changelog` reads cleanly.

@@ -47,6 +47,11 @@ import {
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import {
+  isShellActivityTool,
+  shellActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
 
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
@@ -63,14 +68,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
+import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
+import {
+  buildOptimisticPromptTextWithUploads,
+  buildPromptPartsWithUploads,
+} from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
   formatModelString,
@@ -98,6 +107,7 @@ import { getClient } from '@/lib/opencode-sdk';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   buildAgentRefsBlock,
@@ -2208,7 +2218,7 @@ function GroupedReasoningCard({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
           <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
@@ -2290,6 +2300,9 @@ function SameToolGroup({
 
   const isContext = toolName === '__context__';
   const isResearch = toolName === '__research__';
+  const isShell = useMemo(() => {
+    return isShellActivityTool(entries[0]?.part.tool);
+  }, [entries]);
 
   const headerLabel = useMemo(() => {
     if (isContext) {
@@ -2322,9 +2335,13 @@ function SameToolGroup({
       return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
     }
 
+    if (isShell) {
+      return shellActivityGroupLabel(entries.length, anyRunning);
+    }
+
     const t = contextToolTrigger(entries[0].part);
     return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, entries, anyRunning]);
+  }, [isContext, isResearch, isShell, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2339,6 +2356,13 @@ function SameToolGroup({
         >
           {isResearch ? (
             <Globe
+              className={cn(
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : isShell ? (
+            <Terminal
               className={cn(
                 'text-muted-foreground/50 size-3.5 flex-shrink-0',
                 anyRunning && 'animate-pulse-heartbeat',
@@ -2372,7 +2396,7 @@ function SameToolGroup({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] space-y-0.5 border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
           {isContext
             ? entries.map(({ part }) => {
                 const t = contextToolTrigger(part);
@@ -2411,7 +2435,10 @@ function SameToolGroup({
                 // Same-tool, non-context groups (e.g. 3x web_search) render
                 // each call with its full ToolPartRenderer so users see real
                 // results — answers, sources, images — not just the input arg.
-                <div key={part.id} className="-mx-3">
+                // Sits inside the rail's left padding (no negative margin) so
+                // each row aligns under the group header label, matching the
+                // reasoning block's nested treatment.
+                <div key={part.id}>
                   <ToolPartRenderer
                     part={part}
                     sessionId={sessionId}
@@ -2483,6 +2510,7 @@ function SessionTurn({
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const [editForkLoading, setEditForkLoading] = useState(false);
+  const pricingLookup = useModelPricingLookup(providers);
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -2576,8 +2604,8 @@ function SessionTurn({
 
   // Cost info (only when not working)
   const costInfo = useMemo(
-    () => (!working ? getTurnCost(allParts) : undefined),
-    [allParts, working],
+    () => (!working ? getTurnCost(allParts, pricingLookup) : undefined),
+    [allParts, working, pricingLookup],
   );
 
   // Turn error — derived directly from message data (same approach as SolidJS reference).
@@ -3230,9 +3258,7 @@ function SessionTurn({
             // Tools that always render as individual rows — never folded into
             // a "Tool · Nx" pile. File writes/creations are distinct artifacts
             // (index.html, styles.css, …) the user wants to see one-per-line.
-            // Shell commands are likewise distinct actions, each shown on its
-            // own row rather than collapsed into a "Shell · Nx" pile.
-            const NO_GROUP_SET = new Set(['write', 'bash']);
+            const NO_GROUP_SET = new Set(['write']);
             const norm = (t: string) => {
               const n = t.replace(/^oc-/, '').replace(/-/g, '_');
               if (CONTEXT_SET.has(n)) return '__context__';
@@ -3595,6 +3621,8 @@ function SessionTurn({
 
 interface SessionChatProps {
   sessionId: string;
+  /** Project id lets agent pickers use the server-side project manifest/catalog. */
+  projectId?: string;
   /** Optional element rendered at the leading (left) edge of the session header */
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
@@ -3607,6 +3635,7 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  projectId,
   headerLeadingAction,
   hideHeader,
   readOnly,
@@ -3736,10 +3765,9 @@ export function SessionChat({
   const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
-  // Scope agents to the session's directory so project-local agents
-  // (.opencode/agent/*.md under the project folder) are returned alongside
-  // the globals. First render has no session yet — fall back to globals.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory });
+  // Project sessions use the server-side project agent roster. Non-project
+  // sessions fall back to OpenCode's directory-scoped runtime discovery.
+  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
@@ -3909,8 +3937,16 @@ export function SessionChat({
       const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
       const messageID = ascendingId('msg');
       const textPartId = ascendingId('prt');
+      // Consume pending files before rendering the optimistic message so
+      // uploaded file cards are visible while the sandbox is still starting.
+      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
+      const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
+        pendingPrompt,
+        pendingFiles,
+      );
+      setOptimisticPrompt(optimisticPendingPrompt);
       setPendingSendMessageId(messageID);
-      addOptimisticUserMessage(messageID, pendingPrompt, [textPartId]);
+      addOptimisticUserMessage(messageID, optimisticPendingPrompt, [textPartId]);
       lastSendTimeRef.current = Date.now();
 
       // Fire-and-forget via promptAsync. Don't send messageID — let the
@@ -3929,13 +3965,14 @@ export function SessionChat({
         removeOptimisticUserMessage(messageID);
         return;
       }
-      const handlePromptError = () => {
+      const handlePromptError = (err?: unknown) => {
         setIsRetrying(false);
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        if (err) setCommandError(formatCommandError(err));
         // Fetch real messages from the server. Some error paths
         // (e.g. missing API key) return the error directly in the
         // HTTP response without ever emitting a session.error SSE
@@ -3963,87 +4000,63 @@ export function SessionChat({
             removeOptimisticUserMessage(messageID);
           });
       };
-      // Consume any pending files stored by the dashboard (File objects
-      // can't survive sessionStorage, so they're in a Zustand store).
-      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
-        const parts: Array<
-          | { type: 'text'; text: string }
-          | { type: 'file'; mime: string; url: string; filename: string }
-        > = [{ type: 'text', text: pendingPrompt }];
-
-        const localFiles = pendingFiles.filter(
-          (f): f is Extract<typeof f, { kind: 'local' }> => f.kind === 'local',
-        );
-        const remoteFiles = pendingFiles.filter(
-          (f): f is Extract<typeof f, { kind: 'remote' }> => f.kind === 'remote',
-        );
-
-        // Include remote files (from fork drafts etc.)
-        for (const file of remoteFiles) {
-          parts.push({
-            type: 'file',
-            mime: file.mime,
-            url: file.url,
-            filename: file.filename,
-          });
-        }
-
-        // Upload local files. The server (/file/upload) guarantees
-        // collision-free destinations — if two files share a name it
-        // auto-suffixes and returns the actual written path.
-        if (localFiles.length > 0) {
-          const uploadResults = await Promise.all(
-            localFiles.map(async (af) => {
-              const safeName = af.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-              const uploadBlob = new File([af.file], safeName, {
-                type: af.file.type,
-              });
-              const results = await uploadFile(uploadBlob, '/workspace/uploads');
-              if (!results || results.length === 0) {
-                throw new Error(`Failed to upload file: ${af.file.name}`);
-              }
-              return {
-                path: results[0].path,
-                mime: af.file.type || 'application/octet-stream',
-                filename: af.file.name,
-              };
-            }),
-          );
-          const uploadedFileRefs = uploadResults
-            .map(
-              (f) =>
-                `<file path="${f.path}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-            )
-            .join('\n');
-          (parts[0] as { type: 'text'; text: string }).text += `\n\n${uploadedFileRefs}`;
-        }
-
-        return parts;
+        const built = await buildPromptPartsWithUploads(pendingPrompt, pendingFiles, uploadFile);
+        return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
       };
 
-      void sendPendingPrompt()
-        .then((parts) =>
-          client.session.promptAsync({
-            sessionID: sessionId,
-            parts,
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: sendOpts.model }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          } as any),
-        )
-        .then((res: any) => {
-          // The SDK resolves (not rejects) on HTTP errors, returning
-          // { error: ... } instead of throwing. Handle this case so
-          // the UI doesn't stay stuck on "busy" forever.
-          if (res?.error) handlePromptError();
-        })
-        .catch(() => {
-          handlePromptError();
-        });
+      void (async () => {
+        let parts: Awaited<ReturnType<typeof sendPendingPrompt>>;
+        try {
+          parts = await sendPendingPrompt();
+        } catch (err) {
+          sessionStorage.setItem(`opencode_pending_prompt:${sessionId}`, pendingPrompt);
+          usePendingFilesStore.getState().setPendingFiles(pendingFiles);
+          pendingPromptHandled.current = false;
+          handlePromptError(err);
+          return;
+        }
+
+        const promptBody = {
+          sessionID: sessionId,
+          parts,
+          ...(session?.directory ? { directory: session.directory } : {}),
+          ...(sendOpts?.agent && { agent: sendOpts.agent }),
+          ...(sendOpts?.model && { model: sendOpts.model }),
+          ...(sendOpts?.variant && { variant: sendOpts.variant }),
+        } as any;
+
+        // A freshly-created session points at a sandbox that may still be
+        // booting opencode — the proxy answers `503 "opencode not ready"` until
+        // the binary binds its port. Retry transient failures (especially that
+        // boot signal) across the full boot window so the very first prompt
+        // lands on its own instead of flashing an "opencode not ready" banner
+        // the user can't act on. The optimistic message + busy status stay up
+        // across retries, so the UI shows the send in progress the whole time.
+        for (let attempt = 1; ; attempt++) {
+          let status: number | undefined;
+          let error: unknown;
+          try {
+            // The SDK resolves (not rejects) on HTTP errors, returning
+            // { error, response } instead of throwing.
+            const res = await client.session.promptAsync(promptBody);
+            if (!res?.error) return; // 204 — server accepted the prompt.
+            error = res.error;
+            status = res?.response?.status as number | undefined;
+          } catch (err) {
+            error = err; // thrown = transport failure (no status).
+          }
+
+          const delay = getSendRetryDelayMs(attempt, status, error);
+          if (delay === null) {
+            handlePromptError(error);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, delay));
+          if (cancelled) return;
+        }
+      })();
     };
 
     attemptSend(0);
@@ -4819,26 +4832,7 @@ export function SessionChat({
       // (not duplicate) the optimistic parts. This matches OpenCode's
       // SolidJS approach where part IDs are sent with the prompt request.
       const textPartId = ascendingId('prt');
-      const remoteFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'remote' }> => file.kind === 'remote',
-      );
-      const localFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'local' }> => file.kind === 'local',
-      );
-      // The server (/file/upload) assigns the final, collision-free path.
-      // We pass the sanitized name for the upload and use it in the
-      // optimistic text as a placeholder — the real path returned by the
-      // server replaces it when the message is actually sent.
-      const uploadPlans = localFiles.map((af) => {
-        const safeName = af.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        return {
-          file: af.file,
-          filename: af.file.name,
-          mime: af.file.type || 'application/octet-stream',
-          safeName,
-          optimisticPath: `/workspace/uploads/${safeName}`,
-        };
-      });
+      const attachedFiles = files ?? [];
 
       // Build optimistic text that includes session ref XML so that
       // HighlightMentions / UserMessageRow can detect multi-word session
@@ -4866,24 +4860,7 @@ export function SessionChat({
         ...rawOptimisticSessionIds,
       ];
       let optimisticText = text;
-      if (uploadPlans.length > 0) {
-        const optimisticFileRefs = uploadPlans
-          .map(
-            (f) =>
-              `<file path="${f.optimisticPath}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-          )
-          .join('\n');
-        optimisticText = `${optimisticText}\n\n${optimisticFileRefs}`;
-      }
-      if (remoteFiles.length > 0) {
-        const optimisticFileRefs = remoteFiles
-          .map(
-            (file) =>
-              `<file path="${file.filename}" mime="${file.mime}" filename="${file.filename}">\nThis file will be restored from the forked prompt.\n</file>`,
-          )
-          .join('\n');
-        optimisticText = `${optimisticText}\n\n${optimisticFileRefs}`;
-      }
+      optimisticText = buildOptimisticPromptTextWithUploads(optimisticText, attachedFiles);
       if (allOptimisticSessionMentions.length > 0) {
         const refs = allOptimisticSessionMentions
           .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
@@ -4937,40 +4914,18 @@ export function SessionChat({
       const parts: Array<
         typeof textPrompt | { type: 'file'; mime: string; url: string; filename: string }
       > = [textPrompt];
-      parts.push(
-        ...remoteFiles.map((file) => ({
-          type: 'file' as const,
-          mime: file.mime,
-          url: file.url,
-          filename: file.filename,
-        })),
-      );
-
-      if (uploadPlans.length > 0) {
-        const uploadResults = await Promise.all(
-          uploadPlans.map(async (plan) => {
-            const uploadBlob = new File([plan.file], plan.safeName, {
-              type: plan.file.type,
-            });
-            const results = await uploadFile(uploadBlob, '/workspace/uploads');
-            if (!results || results.length === 0) {
-              throw new Error(`Failed to upload file: ${plan.filename}`);
-            }
-            return {
-              path: results[0].path,
-              mime: plan.mime,
-              filename: plan.filename,
-            };
-          }),
-        );
-        const uploadedFileRefs = uploadResults
-          .map(
-            (f) =>
-              `<file path="${f.path}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
-          )
-          .join('\n');
-        textPrompt.text = `${textPrompt.text}\n\n${uploadedFileRefs}`;
+      let built: Awaited<ReturnType<typeof buildPromptPartsWithUploads>>;
+      try {
+        built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
+      } catch (err) {
+        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        removeOptimisticUserMessage(messageID);
+        const message = formatCommandError(err);
+        setCommandError(message);
+        throw err instanceof Error ? err : new Error(message);
       }
+      textPrompt.text = built.text;
+      parts.push(...built.remoteParts);
 
       // Append session reference hints for @session mentions.
       // Merge tracked mentions with any raw @ses_<id> tags typed directly.
@@ -5089,10 +5044,10 @@ export function SessionChat({
       // thrown network error (request never completed) or a 5xx/429/408
       // response — so an already-queued prompt is never double-sent. A 4xx
       // (bad request, auth, missing model key) is a real failure and surfaces
-      // immediately. The optimistic user message + busy status stay up across
-      // retries, so the UI shows the send in progress the whole time.
-      const retryBackoffMs = [400, 1000, 2000];
-      const maxAttempts = retryBackoffMs.length + 1;
+      // immediately. The lone exception is the sandbox proxy's "opencode not
+      // ready" 503 boot signal, which retries across the full boot window (see
+      // getSendRetryDelayMs). The optimistic user message + busy status stay up
+      // across retries, so the UI shows the send in progress the whole time.
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       let res: any;
@@ -5119,8 +5074,9 @@ export function SessionChat({
               error: caughtErr,
             },
           );
-          if (attempt < maxAttempts) {
-            await sleep(retryBackoffMs[attempt - 1]);
+          const delay = getSendRetryDelayMs(attempt, undefined, caughtErr);
+          if (delay !== null) {
+            await sleep(delay);
             continue;
           }
           handleSendError();
@@ -5146,10 +5102,9 @@ export function SessionChat({
               error: res?.error,
             },
           );
-          const transient =
-            status === undefined || status >= 500 || status === 408 || status === 429;
-          if (transient && attempt < maxAttempts) {
-            await sleep(retryBackoffMs[attempt - 1]);
+          const delay = getSendRetryDelayMs(attempt, status, res?.error);
+          if (delay !== null) {
+            await sleep(delay);
             continue;
           }
           handleSendError();
@@ -5524,7 +5479,7 @@ export function SessionChat({
   return (
     <div
       className={cn(
-        'relative flex h-full flex-col pt-10 md:pt-0',
+        'relative flex h-full flex-col pt-10',
         // Transparent in the welcome state so the root-level full-bleed wallpaper
         // (portaled into SessionLayout) reads through; solid once real content
         // takes over. Same base color either way, so non-welcome is unchanged.
@@ -5662,7 +5617,10 @@ export function SessionChat({
                       status={
                         isRetrying ? (
                           <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                            {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
+                            {tHardcodedUi.raw(
+                              'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
+                            )}
+                          </span>
                         ) : undefined
                       }
                     />
@@ -5760,9 +5718,7 @@ export function SessionChat({
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && (
-                  <TurnErrorDisplay errorText={commandError} className="mt-2" />
-                )}
+                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
                 {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of
@@ -5855,7 +5811,13 @@ export function SessionChat({
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}
           onClearReply={handleClearReply}
-          lockForQuestion={!!renderedQuestion}
+          // Only lock the input into question-answer mode while the session is
+          // actually busy (a live question keeps the run busy). If a question
+          // chip is ever showing while the session is idle — e.g. a dead /
+          // abandoned question the agent left behind — the input stays unlocked
+          // so a typed message is sent to the agent instead of being swallowed
+          // as a custom answer.
+          lockForQuestion={!!renderedQuestion && isBusy}
           onCustomAnswer={(text) => {
             questionPromptRef.current?.submitCustomAnswer(text);
           }}
@@ -5875,6 +5837,7 @@ export function SessionChat({
                 )}
               >
                 <QuestionPrompt
+                  key={renderedQuestion.id}
                   ref={questionPromptRef}
                   request={renderedQuestion}
                   onReply={handleQuestionReply}

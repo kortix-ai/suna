@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { runAccess } from './commands/access.ts';
-import { runAdd } from './commands/add.ts';
 import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
@@ -14,6 +13,7 @@ import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
+import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -29,8 +29,8 @@ import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { printBanner } from './banner.ts';
-import { activeHostEntry } from './api/config.ts';
 import { getUpdateNotice } from './update-check.ts';
+import { renderHostNotice } from './host-notice.ts';
 import { C, header, pad, rule } from './style.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
@@ -65,8 +65,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'channels', args: '<subcommand>', blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)' },
   { name: 'connectors', args: '<subcommand>', blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)' },
   { name: 'executor', args: '<subcommand>', blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server' },
-  { name: 'add', args: '<item>', blurb: 'Install a skill/agent/command/file/bundle from a registry' },
-  { name: 'registry', args: '<subcommand>', blurb: 'Author + browse registries (build/validate/list/view/search)' },
+  { name: 'marketplace', args: '<subcommand>', blurb: 'Search, show, install, and inspect marketplace items' },
   { name: 'sandboxes', args: '<subcommand>', blurb: 'Manage sandbox images: templates, builds, health' },
   { name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
@@ -134,7 +133,7 @@ async function main(argv: string[]): Promise<number> {
   // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
   // + update notices so its output stays clean.
   if (argv[0] !== 'executor') {
-    printActiveHostNotice(argv[0]);
+    printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
   if (argv[0] === 'init') {
@@ -198,10 +197,11 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'executor') {
     return runExecutor(argv.slice(1));
   }
-  if (argv[0] === 'add') {
-    return runAdd(argv.slice(1));
+  if (argv[0] === 'marketplace') {
+    return runMarketplace(argv.slice(1));
   }
   if (argv[0] === 'registry') {
+    process.stderr.write(`${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`);
     return runRegistry(argv.slice(1));
   }
   if (argv[0] === 'sandboxes') {
@@ -227,6 +227,7 @@ async function main(argv: string[]): Promise<number> {
   // would otherwise create a directory called `deploy/`, etc.
   const RESERVED_FUTURE_COMMANDS = new Set([
     'accounts',
+    'add',
     'mcp',
     'logs',
     'start',
@@ -247,13 +248,9 @@ async function main(argv: string[]): Promise<number> {
   return runCreate(argv);
 }
 
-function printActiveHostNotice(command: string): void {
-  if (['help', '--help', '-h', 'version'].includes(command)) return;
-  const { name, host } = activeHostEntry();
-  const loginState = host.token ? host.user_email || host.user_id || 'logged in' : 'not logged in';
-  process.stderr.write(
-    `${C.dim}host ${C.reset}${C.bold}${name}${C.reset}${C.dim} (${host.url}, ${loginState})${C.reset}\n`,
-  );
+function printActiveHostNotice(argv: readonly string[]): void {
+  const notice = renderHostNotice(argv);
+  if (notice) process.stderr.write(notice);
 }
 
 // Passive, cache-only nudge for subcommands (never touches the network, so it

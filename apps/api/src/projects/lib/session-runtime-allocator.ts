@@ -73,6 +73,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
           slug: input.sandboxSlug,
           builtEnvVars: extraEnvVars,
           sessionMetadata: input.sessionMetadata,
+          projectMetadata: input.project.metadata,
         });
         if (claimed) {
           tl.mark('warm-claim');
@@ -99,6 +100,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         ...(input.runtimeMetadata ?? {}),
       },
       extraEnvVars,
+      projectMetadata: input.project.metadata,
       gitProject: {
         projectId: input.projectId,
         repoUrl: input.project.repoUrl,
@@ -109,7 +111,10 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       resolveGitAuthToken: async () => gitAuthPromise,
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
-      projectWarmSnapshot: readProjectWarmPointer(input.project.metadata)?.name ?? null,
+      projectWarmSnapshot: (() => {
+        const p = readProjectWarmPointer(input.project.metadata);
+        return p ? { name: p.name, provider: p.provider } : null;
+      })(),
       beforeActive: input.beforeActive,
     });
 

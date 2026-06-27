@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, RESERVED_CONNECTOR_SLUGS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import { extractConnectors, RESERVED_CONNECTOR_SLUGS, RESERVED_SLUG_PROVIDERS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -21,11 +21,13 @@ import {
 import { syncProjectConnectors, type SyncResult } from './sync';
 import { setConnectorSharingDb, upsertCredential } from './credentials';
 import type { SharingIntent } from './share';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 export interface ConnectorDraft {
   slug: string;
   name?: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+  platform?: 'slack' | 'email';
   app?: string;
   account?: string;
   url?: string;
@@ -60,6 +62,8 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'openapi') {
     if (d.spec) entry.spec = d.spec;
+  } else if (d.provider === 'channel') {
+    if (d.platform) entry.platform = d.platform;
   }
   if (d.auth && d.auth.type && d.auth.type !== 'none') {
     const auth: Record<string, unknown> = { type: d.auth.type };
@@ -98,16 +102,32 @@ export async function upsertConnectorInManifest(
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
   // Slack CLI). Connect Slack in the Channels tab; it appears as a connector
   // automatically. Only block NEW slugs — editing an existing entry is fine.
-  if (RESERVED_CONNECTOR_SLUGS.has(draft.slug) && (await connectorIdFor(projectId, draft.slug)) === null) {
+  const reservedProvider = RESERVED_SLUG_PROVIDERS[draft.slug];
+  if (
+    RESERVED_CONNECTOR_SLUGS.has(draft.slug) &&
+    (await connectorIdFor(projectId, draft.slug)) === null &&
+    reservedProvider !== draft.provider
+  ) {
     return {
       ok: false,
-      error: `"${draft.slug}" is reserved for the built-in Slack channel — connect Slack in Channels (it appears as a connector automatically). Pick a different slug.`,
+      error: `"${draft.slug}" is reserved for a built-in channel profile. Pick a different slug.`,
       status: 400,
     };
   }
 
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
+  if (
+    draft.provider === 'channel' &&
+    draft.platform === 'email' &&
+    !resolveExperimentalFeature(row.metadata, 'agentmail_email')
+  ) {
+    return {
+      ok: false,
+      error: 'AgentMail Email is experimental and must be enabled for this project',
+      status: 403,
+    };
+  }
 
   let manifest;
   try {
@@ -266,6 +286,7 @@ export async function setConnectorNameInManifest(
 export interface ConnectorConfigView {
   slug: string;
   provider: ConnectorSpec['provider'];
+  platform: ConnectorSpec['platform'];
   credentialMode: 'shared' | 'per_user';
   app: string | null;
   account: string | null;
@@ -295,6 +316,7 @@ export async function getConnectorConfigFromManifest(
   return {
     slug: spec.slug,
     provider: spec.provider,
+    platform: spec.platform,
     credentialMode: spec.credentialMode,
     app: spec.app,
     account: spec.account,

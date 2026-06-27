@@ -15,13 +15,16 @@
     "./agent": "./src/agent/index.ts"
   },
   "bin": {
-    "agent-tunnel": "src/agent/cli.ts",
-    "agent-tunnel-cli": "src/client/cli.ts"
+    "agent-tunnel": "dist/agent-cli.js",
+    "agent-tunnel-cli": "dist/client-cli.js"
   },
   "files": [
-    "src/"
+    "src/",
+    "dist/"
   ],
   "scripts": {
+    "build": "bun build src/agent/cli.ts --target=node --outfile=dist/agent-cli.js --banner='#!/usr/bin/env node' && bun build src/client/cli.ts --target=node --outfile=dist/client-cli.js --banner='#!/usr/bin/env node' && node -e \"const fs=require('node:fs'); fs.chmodSync('dist/agent-cli.js', 0o755); fs.chmodSync('dist/client-cli.js', 0o755);\"",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

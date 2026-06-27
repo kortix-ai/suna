@@ -129,6 +129,23 @@ describe('withRetry', () => {
     }, fastOpts({ maxAttempts: 3, onRetry: ({ attempt }) => seen.push(attempt) }));
     expect(seen).toEqual([1, 2]);
   });
+
+  test('stops once the total deadline is exceeded, well before maxAttempts', async () => {
+    let t = 0;
+    let calls = 0;
+    await expect(
+      withRetry(
+        async () => {
+          calls++;
+          t += 60; // each attempt advances the clock 60ms
+          throw new UpstreamHttpError(500, 'down');
+        },
+        fastOpts({ maxAttempts: 10, deadlineMs: 100, now: () => t }),
+      ),
+    ).rejects.toBeInstanceOf(UpstreamHttpError);
+    // attempt 1 (t 0→60) retries; attempt 2 (t 60→120) overruns 100ms → stop.
+    expect(calls).toBe(2);
+  });
 });
 
 describe('CircuitBreaker', () => {
@@ -172,6 +189,24 @@ describe('CircuitBreaker', () => {
     cb.onFailure();
     expect(cb.current).toBe('open');
     expect(cb.canRequest()).toBe(false);
+  });
+
+  test('failures age out of the rolling window so a slow drip never trips it', () => {
+    let t = 0;
+    const cb = new CircuitBreaker({
+      failureThreshold: 3,
+      windowMs: 100,
+      cooldownMs: 1_000,
+      now: () => t,
+    });
+    cb.onFailure(); // t=0
+    t = 60;
+    cb.onFailure(); // window {0,60}
+    expect(cb.current).toBe('closed');
+    t = 130;
+    cb.onFailure(); // t=0 is now older than 130-100=30 → pruned; window {60,130}
+    expect(cb.current).toBe('closed');
+    expect(cb.failureCount).toBe(2);
   });
 });
 

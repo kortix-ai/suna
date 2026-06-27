@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { run, sh, which } from './exec';
 import { repoRoot } from './git';
 
-export interface Dep { name: string; bin: string; check: () => boolean; installMac: string; installLinux: string; needed: 'always' | 'tunnel'; }
+export interface Dep { name: string; bin: string; check: () => boolean; installMac: string; installLinux: string; needed: 'always' | 'database' | 'isolated-db' | 'tunnel'; }
 
 const isMac = process.platform === 'darwin';
 
@@ -17,14 +17,14 @@ export const DEPS: Dep[] = [
     installMac: 'brew install node@22', installLinux: 'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs' },
   { name: 'pnpm', bin: 'pnpm', check: () => !!which('pnpm'), needed: 'always',
     installMac: 'corepack enable && corepack install', installLinux: 'corepack enable && corepack install' },
-  { name: 'supabase', bin: 'supabase', check: () => !!which('supabase'), needed: 'always',
+  { name: 'supabase', bin: 'supabase', check: () => !!which('supabase'), needed: 'database',
     installMac: 'brew install supabase/tap/supabase', installLinux: 'see https://supabase.com/docs/guides/cli (brew or release tarball)' },
-  { name: 'psql', bin: 'psql', check: () => !!which('psql'), needed: 'always',
+  { name: 'psql', bin: 'psql', check: () => !!which('psql'), needed: 'isolated-db',
     installMac: 'brew install libpq && brew link --force libpq', installLinux: 'sudo apt-get install -y postgresql-client' },
   { name: 'dotenvx', bin: 'dotenvx', needed: 'always',
     check: () => existsSync(join(repoRootSafe(), 'node_modules/.bin/dotenvx')) || !!which('dotenvx'),
     installMac: '(installed by root `pnpm install`)', installLinux: '(installed by root `pnpm install`)' },
-  { name: 'docker', bin: 'docker', needed: 'always',
+  { name: 'docker', bin: 'docker', needed: 'database',
     check: () => sh(['docker', 'info']).ok,
     installMac: 'start Docker Desktop (or `colima start`)', installLinux: 'sudo systemctl start docker' },
   { name: 'cloudflared', bin: 'cloudflared', check: () => !!which('cloudflared'), needed: 'tunnel',
@@ -32,12 +32,16 @@ export const DEPS: Dep[] = [
 ];
 
 export interface DepStatus { dep: Dep; ok: boolean; }
-export function checkDeps(opts: { tunnel?: boolean } = {}): DepStatus[] {
-  return DEPS.filter((d) => d.needed === 'always' || (d.needed === 'tunnel' && opts.tunnel))
+export function checkDeps(opts: { database?: boolean; isolatedDatabase?: boolean; tunnel?: boolean } = {}): DepStatus[] {
+  return DEPS.filter((d) =>
+    d.needed === 'always' ||
+    (d.needed === 'database' && opts.database) ||
+    (d.needed === 'isolated-db' && opts.isolatedDatabase) ||
+    (d.needed === 'tunnel' && opts.tunnel))
     .map((d) => ({ dep: d, ok: d.check() }));
 }
 
-export async function ensureDeps(opts: { tunnel?: boolean; install?: boolean } = {}): Promise<boolean> {
+export async function ensureDeps(opts: { database?: boolean; isolatedDatabase?: boolean; tunnel?: boolean; install?: boolean } = {}): Promise<boolean> {
   let allOk = true;
   for (const { dep, ok } of checkDeps(opts)) {
     if (ok) { console.log(`  ✓ ${dep.name}`); continue; }

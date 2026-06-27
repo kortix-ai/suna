@@ -27,8 +27,13 @@ import {
   Search,
   Unplug,
 } from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
+import {
+  CODEX_AUTH_JSON_SECRET_NAME,
+  ChatGptSubscriptionConnect,
+  LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+} from '@/components/projects/chatgpt-subscription-connect';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,17 +63,11 @@ import {
   type SharingSelection,
 } from '@/features/co-worker/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-
-// Kortix's "Managed" plan covers the curated default models (OpenRouter-routed,
-// no key needed). The opencode `kortix` provider also carries the full BYOK
-// catalog (every routable model) so any model is callable the moment its key is
-// connected — but those are NOT "included with your plan", so the Managed
-// provider must report only the managed set, not the whole catalog.
-const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
@@ -78,21 +77,56 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  getProjectDetail,
   listProjectSecrets,
-  pollProjectProviderOAuth,
   setPersonalProjectSecret,
-  startProjectProviderOAuth,
   upsertProjectSecret,
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 
-const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
-const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
+// Kortix's "Managed" plan covers the curated default models (OpenRouter-routed,
+// no key needed). The opencode `kortix` provider also carries the full BYOK
+// catalog (every routable model) so any model is callable the moment its key is
+// connected — but those are NOT "included with your plan", so the Managed
+// provider must report only the managed set, not the whole catalog.
+const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
 function providerCredentialSummary(provider: LlmProviderEntry): string {
-  if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';
+  if (provider.id === 'codex') return 'ChatGPT subscription';
+  if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
+}
+
+function buildCodexProvider(ocProviders: Awaited<ReturnType<typeof useOpenCodeProviders>>['data']): LlmProviderEntry {
+  const connectedIds = new Set(ocProviders?.connected ?? []);
+  const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
+  const models: LlmProviderModel[] =
+    kortix && connectedIds.has('kortix')
+      ? Object.entries(kortix.models ?? {})
+          .filter(([id]) => id.startsWith('codex/'))
+          .map(([id, m]) => ({
+            id: id.slice('codex/'.length),
+            name: (((m as { name?: string }).name || id).replace('(latest)', '').trim()).replace(
+              /\s*\(ChatGPT\)$/,
+              '',
+            ),
+            released: (m as { release_date?: string; released?: string }).release_date ??
+              (m as { released?: string }).released ??
+              null,
+          }))
+      : [];
+
+  return {
+    id: 'codex',
+    label: 'ChatGPT',
+    envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
+    helpUrl: null,
+    hint: 'ChatGPT Plus or Pro subscription',
+    models,
+    featured: true,
+  };
 }
 
 type ActiveTab = 'connected' | 'catalog' | 'models';
@@ -122,6 +156,14 @@ export function ProjectProviderModal({
   allowedTabs,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 30_000,
+    enabled: open || asPanel,
+  });
+  const llmGatewayEnabled = projectDetailQuery.data?.project.experimental?.llm_gateway === true;
+
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
   // like ModelSelector (so `<Dialog>` can animate in/out cleanly), and firing
   // this query on mount produces a noisy toast for users who can't manage the
@@ -139,12 +181,13 @@ export function ProjectProviderModal({
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // The managed Kortix gateway. It's injected into every sandbox by the
-  // platform (no API key, no connect step), so it never shows up via project
-  // secrets — we surface it here as an always-connected "Managed" provider,
-  // sourcing its model list from the live OpenCode provider list.
+  // The managed Kortix gateway exists only for projects that explicitly opt
+  // into the LLM Gateway. Native OpenCode projects should show only providers
+  // backed by project secrets, even if an old running sandbox still exposes a
+  // stale `kortix` provider.
   const { data: ocProviders } = useOpenCodeProviders();
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
+    if (!llmGatewayEnabled) return null;
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
@@ -165,23 +208,25 @@ export function ProjectProviderModal({
       featured: true,
       managed: true,
     };
-  }, [ocProviders]);
+  }, [llmGatewayEnabled, ocProviders]);
 
   // A provider is "connected" when its API-key route is fully wired (every
   // env var stored). Partial API-key state stays not-connected on purpose — a
   // half-configured provider would error at session start anyway. The managed
   // Kortix provider is always pinned first.
   const connectedProviders = useMemo(() => {
+    const hasCodexSubscription =
+      secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
+      secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
         p.id !== 'kortix' &&
-        ((p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))) ||
-          (p.id === 'openai' &&
-            (secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-              secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME)))),
+        p.envVars.length > 0 &&
+        p.envVars.every((v) => secretNames.has(v)),
     );
-    return kortixProvider ? [kortixProvider, ...byo] : byo;
-  }, [secretNames, kortixProvider]);
+    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
+    return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
+  }, [secretNames, kortixProvider, ocProviders]);
 
   const hasConnections = connectedProviders.length > 0;
 
@@ -232,7 +277,9 @@ export function ProjectProviderModal({
   const body = (
     <>
       {!inSubflow && (
-        <div className={`flex items-center gap-3 px-5 ${asPanel ? 'border-b border-border/50 py-3' : 'pb-3'}`}>
+        <div
+          className={`flex items-center gap-3 px-5 ${asPanel ? 'border-border/50 border-b py-3' : 'pb-3'}`}
+        >
           {showTabBar && (
             <FilterBar>
               {showTab('connected') && (
@@ -255,7 +302,9 @@ export function ProjectProviderModal({
                   onClick={() => switchTab('catalog')}
                   className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
                 >
-                  {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line178JsxTextAddProvider')}
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line178JsxTextAddProvider',
+                  )}
                 </FilterBarItem>
               )}
               {showTab('models') && (
@@ -270,7 +319,9 @@ export function ProjectProviderModal({
             </FilterBar>
           )}
 
-          <div className={`relative h-9 min-w-0 ${showTabBar ? 'ml-auto max-w-[260px] flex-1' : 'w-full'}`}>
+          <div
+            className={`relative h-9 min-w-0 ${showTabBar ? 'ml-auto max-w-[260px] flex-1' : 'w-full'}`}
+          >
             <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
             <Input
               type="text"
@@ -311,7 +362,11 @@ export function ProjectProviderModal({
         )}
 
         {!secretsQuery.isLoading && activeTab === 'models' && (
-          <ModelsTab connectedProviders={connectedProviders} search={search} />
+          <ModelsTab
+            connectedProviders={connectedProviders}
+            search={search}
+            llmGatewayEnabled={llmGatewayEnabled}
+          />
         )}
       </div>
     </>
@@ -389,6 +444,7 @@ function ConnectedTab({
       toast.success(`${provider.label} disconnected`);
       setConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
   });
@@ -877,6 +933,7 @@ function ApiKeyConnectForm({
     onSuccess: () => {
       toast.success(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
@@ -1031,213 +1088,6 @@ function ApiKeyConnectForm({
   );
 }
 
-type ChatGptPhase = 'idle' | 'waiting' | 'done';
-type ChatGptChallenge = { url: string; code: string | null };
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-function ChatGptSubscriptionConnect({
-  projectId,
-  sharing,
-  onConnected,
-}: {
-  projectId: string;
-  sharing: SharingSelection;
-  onConnected: () => void;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const [phase, setPhase] = useState<ChatGptPhase>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const [challenge, setChallenge] = useState<ChatGptChallenge | null>(null);
-  // Flips true on unmount or Cancel to stop the in-flight poll loop.
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
-
-  const reset = useCallback(() => {
-    cancelledRef.current = true;
-    setChallenge(null);
-    setError(null);
-    setPhase('idle');
-  }, []);
-
-  const handleConnect = useCallback(async () => {
-    if (!isSharingComplete(sharing)) {
-      setError('Pick at least one member, or choose another access option.');
-      return;
-    }
-    cancelledRef.current = false;
-    setError(null);
-    setChallenge(null);
-    setPhase('waiting');
-    try {
-      const start = await startProjectProviderOAuth(projectId, 'openai', {
-        sharing: selectionToIntent(sharing),
-      });
-      if (cancelledRef.current) return;
-      setChallenge({ url: start.verification_url, code: start.user_code });
-      // Pop the auth page so the user can enter the code right away.
-      if (start.verification_url) {
-        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
-      }
-
-      const interval = Math.max(2000, start.interval_ms || 3000);
-      const deadline = start.expires_at || Date.now() + 10 * 60_000;
-      while (!cancelledRef.current && Date.now() < deadline) {
-        await sleep(interval);
-        if (cancelledRef.current) return;
-        let res;
-        try {
-          res = await pollProjectProviderOAuth(projectId, 'openai', start.flow_id);
-        } catch {
-          continue; // transient — keep polling
-        }
-        if (cancelledRef.current) return;
-        if (res.status === 'success') {
-          setPhase('done');
-          toast.success('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-          onConnected();
-          return;
-        }
-        if (res.status === 'failed') {
-          setChallenge(null);
-          setPhase('idle');
-          setError(res.error || 'Authorization failed');
-          return;
-        }
-        if (res.status === 'expired') {
-          setChallenge(null);
-          setPhase('idle');
-          setError('Authorization timed out. Try again.');
-          return;
-        }
-        // pending → keep polling
-      }
-      if (!cancelledRef.current) {
-        setChallenge(null);
-        setPhase('idle');
-        setError('Authorization timed out. Try again.');
-      }
-    } catch (err) {
-      if (cancelledRef.current) return;
-      setChallenge(null);
-      setPhase('idle');
-      setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
-    }
-  }, [projectId, sharing, queryClient, onConnected]);
-
-  const waiting = phase === 'waiting';
-
-  return (
-    <div className="border-border/50 bg-muted/20 rounded-2xl border p-4">
-      <div className="flex items-start gap-3">
-        <ProviderLogo providerID="openai" name="OpenAI" size="default" />
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsProjectProviderModalJsxTextChatGPTPlusPro0deb5530',
-            )}
-          </div>
-          <p className="text-muted-foreground mt-0.5 text-xs leading-5">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsProjectProviderModalJsxTextSignInWitha0c5128c',
-            )}
-          </p>
-        </div>
-      </div>
-
-      {waiting && (
-        <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
-          {challenge ? (
-            <>
-              <div className="text-foreground text-xs font-medium">
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
-                )}
-              </div>
-              {challenge.url && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-2 h-8 gap-1.5 px-3"
-                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsProjectProviderModalJsxTextOpenAuthPaged0381841',
-                  )}
-                </Button>
-              )}
-              {challenge.code ? (
-                <div className="mt-3">
-                  <div className="text-muted-foreground text-xs">
-                    {tI18nHardcoded.raw(
-                      'autoComponentsProjectsProjectProviderModalJsxTextEnterThisCodee346992b',
-                    )}
-                  </div>
-                  <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
-                    {challenge.code}
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="text-foreground text-xs font-medium">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectProviderModalJsxTextStartingAuthorization35b1fe13',
-              )}
-            </div>
-          )}
-          <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
-          </div>
-        </div>
-      )}
-
-      {phase === 'done' && (
-        <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
-          )}
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-destructive/5 text-destructive mt-3 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {waiting ? (
-          <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
-            Cancel
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="px-4"
-            onClick={handleConnect}
-          >
-            {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Custom provider (OpenAI-compatible base URL + key) ───────────────────
 
 interface CustomFormState {
@@ -1341,6 +1191,7 @@ function CustomProviderForm({
     onSuccess: (result) => {
       setSavedSnippet(result);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
   });
@@ -1665,51 +1516,71 @@ function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): string {
 function ModelsTab({
   connectedProviders,
   search,
+  llmGatewayEnabled,
 }: {
   connectedProviders: LlmProviderEntry[];
   search: string;
+  llmGatewayEnabled: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   // Visibility (show/hide per model in the picker) is a global, browser-level
   // preference shared with the session model selector — same store, same keys.
-  const flatModels = useMemo<FlatModel[]>(
+  const rows = useMemo(
     () =>
       connectedProviders.flatMap((p) =>
         p.models.map((m) => ({
-          providerID: p.id,
-          providerName: p.label,
-          modelID: m.id,
-          modelName: m.name,
-          releaseDate: m.released ?? undefined,
+          provider: p,
+          model: m,
+          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
         })),
       ),
-    [connectedProviders],
+    [connectedProviders, llmGatewayEnabled],
   );
-  const modelStore = useModelStore(flatModels);
+
+  const flatModels = useMemo<FlatModel[]>(
+    () =>
+      rows.map(({ provider, model, storeKey }) => ({
+        providerID: storeKey.providerID,
+        providerName: provider.label,
+        modelID: storeKey.modelID,
+        modelName: model.name,
+        releaseDate: model.released ?? undefined,
+      })),
+    [rows],
+  );
+  const connectedProviderIds = useMemo(() => {
+    if (!llmGatewayEnabled) return undefined;
+    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
+  }, [connectedProviders, llmGatewayEnabled]);
+  const modelStore = useModelStore(flatModels, {
+    connectedProviderIds,
+  });
 
   const enabledCount = useMemo(
-    () =>
-      flatModels.filter((m) =>
-        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
-      ).length,
-    [flatModels, modelStore],
+    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
+    [rows, modelStore],
   );
   const hasOverrides = modelStore.userPrefs.length > 0;
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return connectedProviders
-      .map((provider) => ({
-        provider,
-        models: provider.models.filter(
-          (model) =>
-            !q || model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q),
-        ),
-      }))
-      .filter((group) => group.models.length > 0);
-  }, [connectedProviders, search]);
+    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
+    for (const row of rows) {
+      if (
+        q &&
+        !row.model.name.toLowerCase().includes(q) &&
+        !row.model.id.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+      const existing = byProvider.get(row.provider.id);
+      if (existing) existing.rows.push(row);
+      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
+    }
+    return Array.from(byProvider.values());
+  }, [rows, search]);
 
   if (connectedProviders.length === 0) {
     return (
@@ -1758,19 +1629,18 @@ function ModelsTab({
         </div>
       )}
       <div className="space-y-3">
-        {grouped.map(({ provider, models }) => (
+        {grouped.map(({ provider, rows }) => (
           <div key={provider.id}>
             <div className="flex items-center gap-2 px-1 pb-1">
               <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
               <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
               </span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">{models.length}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{rows.length}</span>
             </div>
             <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
-              {models.map((model, i) => {
-                const key = { providerID: provider.id, modelID: model.id };
-                const visible = modelStore.isVisible(key);
+              {rows.map(({ model, storeKey }, i) => {
+                const visible = modelStore.isVisible(storeKey);
                 return (
                   <label
                     key={model.id}
@@ -1788,7 +1658,7 @@ function ModelsTab({
                     </div>
                     <Switch
                       checked={visible}
-                      onCheckedChange={(c) => modelStore.setVisibility(key, c)}
+                      onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
                     />
                   </label>
                 );

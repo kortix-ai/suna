@@ -21,13 +21,17 @@
  * the user-facing constraint list.
  */
 
+import {
+  AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
+
 /**
  * Default pinned `agent-browser` (Vercel agent-browser) CLI version baked into
  * the layer when the caller doesn't pin one explicitly. The builder may pass an
  * override via `agentBrowserVersion` to centralize the pin (and fold it into the
  * snapshot fingerprint); this fallback keeps the layer self-contained.
  */
-const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
  * Chromium source for `agent-browser`. agent-browser's own `install` fetches
@@ -38,7 +42,6 @@ const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
  * RUNTIME_LAYER_VERSION in templates.ts when this changes so cached images
  * rebuild (the rendered Dockerfile text is not itself part of the fingerprint).
  */
-const PLAYWRIGHT_VERSION = '1.60.0';
 
 /**
  * Hardcoded "platform default" Dockerfile. Used when a session boots from
@@ -107,6 +110,13 @@ export interface BuildLayeredDockerfileOpts {
    * path. Optional — omit to skip the instance warm-up.
    */
   opencodeConfigPath?: string;
+  /**
+   * Path (in the build context) to the baked full gateway model catalog JSON.
+   * COPY'd into the image so the no-restart warm seed — which has no sandbox
+   * token / projectId to fetch the catalog at PARK — gets the full model picker
+   * instead of the daemon's minimal fallback. Optional; omit to skip.
+   */
+  catalogPath?: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -120,6 +130,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     slackCliPath,
     executorSdkPath,
     opencodeConfigPath,
+    catalogPath,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
@@ -132,6 +143,11 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     'USER root',
     // tmux: lets the agent run long-running processes (dev servers for preview)
     // in a detached session that survives the agent\'s bash tool call.
+    // python3 + pip + office/PDF/data packages: the starter marketplace skills
+    // assume these are present (xlsx/openpyxl, visualization/pandas,
+    // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
+    // layered image so custom sandbox Dockerfiles get the same runtime floor as
+    // the platform default image.
     // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a warm-pool
     // clone is a memory-restored VM that keeps its snapshot-baked IP until the
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
@@ -141,7 +157,54 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
     '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
+    '        build-essential ffmpeg fonts-dejavu fonts-liberation fonts-noto fonts-noto-cjk \\',
+    '        latexmk libreoffice pandoc pkg-config poppler-utils qpdf tesseract-ocr \\',
+    '        python3 python3-dev python3-pip python3-venv \\',
+    '        texlive-bibtex-extra texlive-fonts-recommended texlive-latex-base \\',
+    '        texlive-latex-extra texlive-latex-recommended \\',
     '    && rm -rf /var/lib/apt/lists/*',
+    '',
+    '# Starter skill Python package floor (document/data/PDF/presentation helpers).',
+    'RUN python3 -m pip install --break-system-packages --no-cache-dir \\',
+    '        "beautifulsoup4>=4.12" \\',
+    '        "lxml>=5" \\',
+    '        "markdownify>=0.13" \\',
+    '        "markitdown[pptx]>=0.1.0" \\',
+    '        "matplotlib>=3.8" \\',
+    '        "numpy>=1.26" \\',
+    '        "openpyxl>=3.1" \\',
+    '        "pandas>=2.2" \\',
+    '        "pdf2docx>=0.5" \\',
+    '        "pdf2image>=1.17" \\',
+    '        "pdfplumber>=0.11" \\',
+    '        "pillow>=10" \\',
+    '        "playwright>=1.58" \\',
+    '        "plotly>=5.22" \\',
+    '        "pymupdf>=1.24" \\',
+    '        "pypdf>=4" \\',
+    '        "pypdfium2>=4.30" \\',
+    '        "pytesseract>=0.3" \\',
+    '        "python-docx>=1.1" \\',
+    '        "python-pptx>=1.0" \\',
+    '        "reportlab>=4.2" \\',
+    '        "requests>=2.32" \\',
+    '        "scikit-learn>=1.4" \\',
+    '        "scipy>=1.12" \\',
+    '        "seaborn>=0.13" \\',
+    '        "youtube-transcript-api>=0.6" \\',
+    "    && python3 - <<'PY'",
+    'import importlib',
+    'mods = [',
+    '  "bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl",',
+    '  "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright",',
+    '  "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx",',
+    '  "reportlab", "requests", "sklearn", "scipy", "seaborn",',
+    '  "youtube_transcript_api",',
+    ']',
+    'for mod in mods:',
+    '    importlib.import_module(mod)',
+    'print("starter Python package floor OK")',
+    'PY',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
@@ -289,6 +352,9 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    // Full gateway model catalog, baked at build so the token-less no-restart
+    // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
+    ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),
     // Canonical scaffold repo (bare). Its root commit matches every seeded
     // project's root (pinned dates, seed.ts), enabling local-clone +
     // delta-fetch repo materialization in the daemon (git.ts).

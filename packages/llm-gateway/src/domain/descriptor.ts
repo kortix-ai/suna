@@ -5,7 +5,6 @@ export type ProviderKind =
   | 'openai-responses'
   | 'anthropic'
   | 'bedrock'
-  | 'bedrock-converse'
   | 'custom';
 
 export interface UpstreamPricing {
@@ -25,5 +24,6 @@ export interface UpstreamDescriptor {
   appReferer?: string;
   resolvedModel?: string;
   headers?: Record<string, string>;
+  omitAuthorization?: boolean;
   pricing?: UpstreamPricing;
 }

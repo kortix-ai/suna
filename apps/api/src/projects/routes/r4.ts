@@ -1,32 +1,106 @@
-import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
-import { reconcileChannelConnectors } from '../../executor/sync';
-import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
-import { buildSlackInstallUrl } from '../../channels/slack-oauth';
-import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
-import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
-import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
-import { extractApps } from '../apps';
-import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
-import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, projectTriggerRuntime, projects, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
-import { loadProjectForUser } from '../lib/access';
-import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
-import { APPS_DISABLED_BODY, SlackAuthTest, draftToAppSpec, loadAppsForResponse, parseAppDraft, projectAppsEnabled, removeAppFromManifest, specToAppBody, upsertAppInManifest } from '../lib/apps-helpers';
-import { getAccountMembership, withProjectGitAuth } from '../lib/git';
-import { readBody, requestAuditContext } from '../lib/serializers';
-import { commitManifest, draftToSpec, fireGitTrigger, loadManifestForEdit, loadTriggersForResponse, markGitTriggerFired, parseTriggerDraft, removeTriggerFromManifest, renderPromptTemplate, setGitTriggerOwner, specToBody, triggersPausedForProject, upsertTriggerInManifest, withTriggersPaused } from '../lib/triggers';
+import {
+  deleteAgentMailInstall,
+  deleteSlackInstall,
+  loadAgentMailInstall,
+  loadSlackInstall,
+  normalizeSenderPolicy,
+  saveAgentMailInstall,
+  saveSlackInstall,
+  updateAgentMailSenderPolicy,
+  type AgentMailSenderPolicy,
+} from "../../channels/install-store";
+import { reconcileChannelConnectors } from "../../executor/sync";
+import {
+  createAgentMailInbox,
+  createAgentMailWebhook,
+  resolveAgentMailApiKey,
+} from "../../channels/agentmail-api";
+import { config } from "../../config";
+import {
+  downloadSlackFile,
+  uploadSlackFile,
+} from "../../channels/slack/file-proxy";
+import { buildSlackInstallUrl } from "../../channels/slack-oauth";
+import { slackOauthMode } from "../../channels/slack-oauth-mode";
+import {
+  postQuestion,
+  relayTurnAnswer,
+  relayTurnEnd,
+  relayTurnStep,
+  type QuestionInfo,
+} from "../../channels/slack-webhook";
+import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
+import { auth, errors, json } from "../../openapi";
+import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
+import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
+import { resolveExperimentalFeature } from "../../experimental/features";
+import { db } from "../../shared/db";
+import { extractApps } from "../apps";
+import {
+  extractTriggers,
+  loadProjectTriggers,
+  type ParsedManifest,
+} from "../triggers";
+import { createRoute, z } from "@hono/zod-openapi";
+import {
+  projectSessions,
+  projectTriggerRuntime,
+  projects,
+  sessionSandboxes,
+} from "@kortix/db";
+import { and, eq, inArray } from "drizzle-orm";
+import { loadProjectForUser } from "../lib/access";
+import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
+import {
+  APPS_DISABLED_BODY,
+  SlackAuthTest,
+  draftToAppSpec,
+  loadAppsForResponse,
+  parseAppDraft,
+  projectAppsEnabled,
+  removeAppFromManifest,
+  specToAppBody,
+  upsertAppInManifest,
+} from "../lib/apps-helpers";
+import { getAccountMembership, withProjectGitAuth } from "../lib/git";
+import { readBody, requestAuditContext } from "../lib/serializers";
+import {
+  commitManifest,
+  draftToSpec,
+  fireGitTrigger,
+  loadManifestForEdit,
+  loadTriggersForResponse,
+  markGitTriggerFired,
+  parseTriggerDraft,
+  removeTriggerFromManifest,
+  renderPromptTemplate,
+  setGitTriggerOwner,
+  specToBody,
+  triggersPausedForProject,
+  upsertTriggerInManifest,
+  withTriggersPaused,
+} from "../lib/triggers";
 
 // Body keys that change the trigger's *repo manifest* (committed to git). An
 // owner-only edit touches none of these, so we can skip the manifest commit and
 // just update the DB-side owner — owner lives in project_trigger_runtime, never
 // in the portable kortix.toml.
 const TRIGGER_MANIFEST_KEYS = [
-  'name', 'type', 'agent', 'enabled', 'prompt_template', 'promptTemplate',
-  'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
-  'session_mode', 'sessionMode',
+  "name",
+  "type",
+  "agent",
+  "enabled",
+  "prompt_template",
+  "promptTemplate",
+  "cron",
+  "schedule",
+  "run_at",
+  "runAt",
+  "timezone",
+  "secret_env",
+  "secretEnv",
+  "session_mode",
+  "sessionMode",
 ] as const;
 
 /**
@@ -39,100 +113,121 @@ const TRIGGER_MANIFEST_KEYS = [
 async function resolveOwnerFromBody(
   body: Record<string, unknown>,
   accountId: string,
-): Promise<{ skip: true } | { ownerUserId: string | null } | { error: string }> {
-  if (!('owner_user_id' in body) && !('ownerUserId' in body)) return { skip: true };
+): Promise<
+  { skip: true } | { ownerUserId: string | null } | { error: string }
+> {
+  if (!("owner_user_id" in body) && !("ownerUserId" in body))
+    return { skip: true };
   const raw = (body as any).owner_user_id ?? (body as any).ownerUserId;
-  const ownerUserId = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  const ownerUserId = typeof raw === "string" && raw.trim() ? raw.trim() : null;
   if (ownerUserId) {
-    const membership = await getAccountMembership(ownerUserId, accountId).catch(() => null);
-    if (!membership) return { error: 'owner_user_id must be a member of this account' };
+    const membership = await getAccountMembership(ownerUserId, accountId).catch(
+      () => null,
+    );
+    if (!membership)
+      return { error: "owner_user_id must be a member of this account" };
   }
   return { ownerUserId };
 }
 
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/triggers',
-    tags: ['triggers'],
-    summary: 'GET /:projectId/triggers',
+    method: "get",
+    path: "/{projectId}/triggers",
+    tags: ["triggers"],
+    summary: "GET /:projectId/triggers",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.array(TriggerSchema), 'Triggers'),
-        ...errors(404),
+      200: json(z.array(TriggerSchema), "Triggers"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  return c.json(await loadTriggersForResponse(projectId, loaded.row));
-},
+    return c.json(await loadTriggersForResponse(projectId, loaded.row));
+  },
 );
-
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/triggers',
-    tags: ['triggers'],
-    summary: 'POST /:projectId/triggers',
+    method: "post",
+    path: "/{projectId}/triggers",
+    tags: ["triggers"],
+    summary: "POST /:projectId/triggers",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        201: json(TriggerSchema, 'The created trigger'),
-        ...errors(400, 404, 409),
+      201: json(TriggerSchema, "The created trigger"),
+      ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Specific IAM gate so the audit trail records the precise action.
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, { type: 'project', id: projectId });
+    const projectId = c.req.param("projectId");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Specific IAM gate so the audit trail records the precise action.
+    await assertAuthorized(
+      loaded.userId,
+      loaded.row.accountId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+      { type: "project", id: projectId },
+    );
 
-  const draft = parseTriggerDraft(body, { existingSlug: null });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const draft = parseTriggerDraft(body, { existingSlug: null });
+    if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-  // Owner: default to the creator (so a per_user connector in this trigger's
-  // automated runs uses the creator's accounts), unless an explicit, valid
-  // owner_user_id is supplied. Validate BEFORE committing the manifest.
-  const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-  if ('error' in ownerReq) return c.json({ error: ownerReq.error }, 400);
-  const ownerUserId = 'skip' in ownerReq ? loaded.userId : ownerReq.ownerUserId;
+    // Owner: default to the creator (so a per_user connector in this trigger's
+    // automated runs uses the creator's accounts), unless an explicit, valid
+    // owner_user_id is supplied. Validate BEFORE committing the manifest.
+    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
+    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
+    const ownerUserId =
+      "skip" in ownerReq ? loaded.userId : ownerReq.ownerUserId;
 
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
+    }
 
-  if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
-    return c.json({
-      error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
-    }, 409);
-  }
+    if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
+      return c.json(
+        {
+          error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
+        },
+        409,
+      );
+    }
 
-  const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
-  const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
-  }
+    const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+    const result = await commitManifest(
+      loaded.row,
+      next,
+      `chore: add trigger ${draft.slug}`,
+    );
+    if ("error" in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
 
-  // Persist the owner (DB-side) after the manifest commit succeeds.
-  await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
+    // Persist the owner (DB-side) after the manifest commit succeeds.
+    await setGitTriggerOwner(projectId, draft.slug, ownerUserId);
 
-  return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
-},
+    return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
+  },
 );
 
 // PATCH /:projectId/triggers/activation — server-side, per-project trigger
@@ -151,41 +246,45 @@ projectsApp.openapi(
 // Covered by unit-trigger-activation-route.test.ts.
 projectsApp.openapi(
   createRoute({
-    method: 'patch',
-    path: '/{projectId}/triggers/activation',
-    tags: ['triggers'],
-    summary: 'Pause or resume all of a project\'s triggers server-side',
+    method: "patch",
+    path: "/{projectId}/triggers/activation",
+    tags: ["triggers"],
+    summary: "Pause or resume all of a project's triggers server-side",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
+      200: json(AnyObject, "Updated triggers (includes triggers_paused)"),
       ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = c.req.param("projectId");
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
     await assertAuthorized(
       loaded.userId,
       loaded.row.accountId,
       PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-      { type: 'project', id: projectId },
+      { type: "project", id: projectId },
     );
     const paused = body.paused;
-    if (typeof paused !== 'boolean') {
-      return c.json({ error: 'paused must be a boolean' }, 400);
+    if (typeof paused !== "boolean") {
+      return c.json({ error: "paused must be a boolean" }, 400);
     }
     const [row] = await db
       .update(projects)
-      .set({ metadata: withTriggersPaused(loaded.row.metadata, paused), updatedAt: new Date() })
+      .set({
+        metadata: withTriggersPaused(loaded.row.metadata, paused),
+        updatedAt: new Date(),
+      })
       .where(eq(projects.projectId, projectId))
       .returning();
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    if (!row || row.status === "archived")
+      return c.json({ error: "Not found" }, 404);
     return c.json(await loadTriggersForResponse(projectId, row));
   },
 );
@@ -194,151 +293,178 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'patch',
-    path: '/{projectId}/triggers/{slug}',
-    tags: ['triggers'],
-    summary: 'PATCH /:projectId/triggers/:slug',
+    method: "patch",
+    path: "/{projectId}/triggers/{slug}",
+    tags: ["triggers"],
+    summary: "PATCH /:projectId/triggers/:slug",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE, { type: 'project', id: projectId });
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
-  if (!current) return c.json({ error: 'Not found' }, 404);
-
-  // Owner lives in the DB, not the manifest — validate it up front.
-  const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
-  if ('error' in ownerReq) return c.json({ error: ownerReq.error }, 400);
-
-  // Only commit the repo manifest when a manifest field actually changed. An
-  // owner-only PATCH skips git entirely (owner is a pure platform concern).
-  const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-  if (touchesManifest) {
-    // Merge the patch onto the current spec so callers can send partial bodies
-    // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-    const draft = parseTriggerDraft(
-      { ...specToBody(current), ...body, slug: slug },
-      { existingSlug: slug },
+    const projectId = c.req.param("projectId");
+    const slug = c.req.param("slug");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertAuthorized(
+      loaded.userId,
+      loaded.row.accountId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      { type: "project", id: projectId },
     );
-    if ('error' in draft) return c.json({ error: draft.error }, 400);
 
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
-    const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
     }
-  }
+    const current = extractTriggers(manifest).specs.find(
+      (s) => s.slug === slug,
+    );
+    if (!current) return c.json({ error: "Not found" }, 404);
 
-  // Apply the owner change (if the body specified one) after any manifest commit.
-  if (!('skip' in ownerReq)) {
-    await setGitTriggerOwner(projectId, slug, ownerReq.ownerUserId);
-  }
+    // Owner lives in the DB, not the manifest — validate it up front.
+    const ownerReq = await resolveOwnerFromBody(body, loaded.row.accountId);
+    if ("error" in ownerReq) return c.json({ error: ownerReq.error }, 400);
 
-  return c.json(await loadTriggersForResponse(projectId, loaded.row));
-},
+    // Only commit the repo manifest when a manifest field actually changed. An
+    // owner-only PATCH skips git entirely (owner is a pure platform concern).
+    const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
+    if (touchesManifest) {
+      // Merge the patch onto the current spec so callers can send partial bodies
+      // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
+      const draft = parseTriggerDraft(
+        { ...specToBody(current), ...body, slug: slug },
+        { existingSlug: slug },
+      );
+      if ("error" in draft) return c.json({ error: draft.error }, 400);
+
+      const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+      const result = await commitManifest(
+        loaded.row,
+        next,
+        `chore: update trigger ${slug}`,
+      );
+      if ("error" in result) {
+        return c.json({ error: result.error }, result.status as 400 | 502);
+      }
+    }
+
+    // Apply the owner change (if the body specified one) after any manifest commit.
+    if (!("skip" in ownerReq)) {
+      await setGitTriggerOwner(projectId, slug, ownerReq.ownerUserId);
+    }
+
+    return c.json(await loadTriggersForResponse(projectId, loaded.row));
+  },
 );
 
 // DELETE /v1/projects/:projectId/triggers/:slug
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/triggers/{slug}',
-    tags: ['triggers'],
-    summary: 'DELETE /:projectId/triggers/:slug',
+    method: "delete",
+    path: "/{projectId}/triggers/{slug}",
+    tags: ["triggers"],
+    summary: "DELETE /:projectId/triggers/:slug",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE, { type: 'project', id: projectId });
+    const projectId = c.req.param("projectId");
+    const slug = c.req.param("slug");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertAuthorized(
+      loaded.userId,
+      loaded.row.accountId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+      { type: "project", id: projectId },
+    );
 
-  if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-    return c.json({ error: 'Invalid slug' }, 400);
-  }
+    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
+      return c.json({ error: "Invalid slug" }, 400);
+    }
 
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
-    return c.json({ error: 'Not found' }, 404);
-  }
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
+    }
+    if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
-  const next = removeTriggerFromManifest(manifest, slug);
-  const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
-  }
+    const next = removeTriggerFromManifest(manifest, slug);
+    const result = await commitManifest(
+      loaded.row,
+      next,
+      `chore: delete trigger ${slug}`,
+    );
+    if ("error" in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
 
-  // Drop runtime state too — a re-created trigger of the same slug should
-  // start with a clean last_fired_at.
-  await db
-    .delete(projectTriggerRuntime)
-    .where(and(
-      eq(projectTriggerRuntime.projectId, projectId),
-      eq(projectTriggerRuntime.slug, slug),
-    ));
+    // Drop runtime state too — a re-created trigger of the same slug should
+    // start with a clean last_fired_at.
+    await db
+      .delete(projectTriggerRuntime)
+      .where(
+        and(
+          eq(projectTriggerRuntime.projectId, projectId),
+          eq(projectTriggerRuntime.slug, slug),
+        ),
+      );
 
-  return c.json({ ok: true });
-},
+    return c.json({ ok: true });
+  },
 );
 
 // ─── Slack install — per project, secrets live in project_secrets ────────
 
-
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/slack/installation',
-    tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/installation',
+    method: "get",
+    path: "/{projectId}/channels/slack/installation",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/slack/installation",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      200: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const install = await loadSlackInstall(projectId);
-  return c.json(install ?? null);
-},
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const install = await loadSlackInstall(projectId);
+    return c.json(install ?? null);
+  },
 );
 
 // GET /v1/projects/:projectId/channels/slack/mode
@@ -348,131 +474,481 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/slack/mode',
-    tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/mode',
+    method: "get",
+    path: "/{projectId}/channels/slack/mode",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/slack/mode",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      200: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const mode = slackOauthMode();
-  if (!mode.available) {
-    return c.json({ oauth_available: false, install_url: null });
-  }
-  try {
-    const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
-    return c.json({ oauth_available: true, install_url: installUrl });
-  } catch {
-    return c.json({ oauth_available: false, install_url: null });
-  }
-},
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const mode = slackOauthMode();
+    if (!mode.available) {
+      return c.json({ oauth_available: false, install_url: null });
+    }
+    try {
+      const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
+      return c.json({ oauth_available: true, install_url: installUrl });
+    } catch {
+      return c.json({ oauth_available: false, install_url: null });
+    }
+  },
 );
 
 // POST /v1/projects/:projectId/channels/slack/connect
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/slack/connect',
-    tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/connect',
+    method: "post",
+    path: "/{projectId}/channels/slack/connect",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/slack/connect",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404, 502),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404, 502),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  let body: { bot_token?: string; signing_secret?: string };
-  try {
-    body = (await c.req.json()) as { bot_token?: string; signing_secret?: string };
-  } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400);
-  }
-  const botToken = body.bot_token?.trim();
-  const signingSecret = body.signing_secret?.trim();
-  if (!botToken || !botToken.startsWith('xoxb-')) {
-    return c.json({ error: 'bot_token is required and must start with xoxb-' }, 400);
-  }
-  if (!signingSecret) {
-    return c.json({ error: 'signing_secret is required' }, 400);
-  }
+    let body: { bot_token?: string; signing_secret?: string };
+    try {
+      body = (await c.req.json()) as {
+        bot_token?: string;
+        signing_secret?: string;
+      };
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const botToken = body.bot_token?.trim();
+    const signingSecret = body.signing_secret?.trim();
+    if (!botToken || !botToken.startsWith("xoxb-")) {
+      return c.json(
+        { error: "bot_token is required and must start with xoxb-" },
+        400,
+      );
+    }
+    if (!signingSecret) {
+      return c.json({ error: "signing_secret is required" }, 400);
+    }
 
-  let authTest: SlackAuthTest;
-  try {
-    const res = await fetch('https://slack.com/api/auth.test', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${botToken}`,
-        'content-type': 'application/x-www-form-urlencoded',
-      },
+    let authTest: SlackAuthTest;
+    try {
+      const res = await fetch("https://slack.com/api/auth.test", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${botToken}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+      });
+      authTest = (await res.json()) as SlackAuthTest;
+    } catch (err) {
+      return c.json(
+        { error: `Failed to reach Slack: ${(err as Error).message}` },
+        502,
+      );
+    }
+    if (!authTest.ok || !authTest.team_id || !authTest.user_id) {
+      return c.json(
+        {
+          error: `Slack rejected the token: ${authTest.error ?? "unknown error"}`,
+        },
+        400,
+      );
+    }
+
+    const summary = await saveSlackInstall({
+      projectId,
+      botToken,
+      signingSecret,
+      teamId: authTest.team_id,
+      teamName: authTest.team ?? null,
+      botUserId: authTest.user_id,
     });
-    authTest = (await res.json()) as SlackAuthTest;
-  } catch (err) {
-    return c.json({ error: `Failed to reach Slack: ${(err as Error).message}` }, 502);
-  }
-  if (!authTest.ok || !authTest.team_id || !authTest.user_id) {
-    return c.json({ error: `Slack rejected the token: ${authTest.error ?? 'unknown error'}` }, 400);
-  }
-
-  const summary = await saveSlackInstall({
-    projectId,
-    botToken,
-    signingSecret,
-    teamId: authTest.team_id,
-    teamName: authTest.team ?? null,
-    botUserId: authTest.user_id,
-  });
-  void reconcileChannelConnectors(projectId);
-  return c.json(summary);
-},
+    await reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
 );
 
 // DELETE /v1/projects/:projectId/channels/slack/installation
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/channels/slack/installation',
-    tags: ['channels'],
-    summary: 'DELETE /:projectId/channels/slack/installation',
+    method: "delete",
+    path: "/{projectId}/channels/slack/installation",
+    tags: ["channels"],
+    summary: "DELETE /:projectId/channels/slack/installation",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
+      200: json(z.any(), "OK"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await deleteSlackInstall(projectId);
-  // Tear down the auto-materialized Slack connector now that the install is gone.
-  void reconcileChannelConnectors(projectId);
-  return c.json({ status: 'disconnected' });
-},
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await deleteSlackInstall(projectId);
+    // Tear down the auto-materialized Slack connector now that the install is gone.
+    await reconcileChannelConnectors(projectId);
+    return c.json({ status: "disconnected" });
+  },
 );
+
+// ─── Email install — AgentMail-backed inbox per project ─────────────────────
+
+function emailChannelEnabled(metadata: unknown): boolean {
+  return resolveExperimentalFeature(metadata, "agentmail_email");
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/email/installation",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/email/installation",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
+    const connectorSlug =
+      c.req.query("connector_slug") ||
+      c.req.query("profile_slug") ||
+      "kortix_email";
+    const install = await loadAgentMailInstall(projectId, connectorSlug);
+    return c.json(install ?? null);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/channels/email/mode",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/email/mode",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const enabled = emailChannelEnabled(loaded.row.metadata);
+    return c.json({
+      provider: "agentmail",
+      enabled,
+      managed_available: enabled && Boolean(config.AGENTMAIL_API_KEY),
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/email/connect",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/email/connect",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(400, 403, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (!emailChannelEnabled(loaded.row.metadata)) {
+      return c.json(
+        {
+          error:
+            "AgentMail Email is experimental and must be enabled for this project",
+        },
+        403,
+      );
+    }
+
+    let body: {
+      api_key?: string;
+      connector_slug?: string;
+      profile_slug?: string;
+      username?: string;
+      domain?: string;
+      inbox_id?: string;
+      inboxId?: string;
+      email?: string;
+      display_name?: string;
+      displayName?: string;
+      sender_policy?: Partial<AgentMailSenderPolicy>;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const apiKey = resolveAgentMailApiKey(body.api_key?.trim());
+    if (!apiKey) {
+      return c.json({ error: "AgentMail API key is not configured" }, 503);
+    }
+
+    const connectorSlug =
+      (body.connector_slug ?? body.profile_slug ?? "kortix_email").trim() ||
+      "kortix_email";
+    const displayName = (
+      body.display_name ??
+      body.displayName ??
+      loaded.row.name ??
+      "Kortix Agent"
+    ).trim();
+    const username = normalizeAgentMailUsername(
+      body.username ?? loaded.row.name,
+    );
+    const existingInboxId =
+      typeof (body.inbox_id ?? body.inboxId) === "string"
+        ? (body.inbox_id ?? body.inboxId)!.trim()
+        : "";
+    const existingEmail =
+      typeof body.email === "string" ? body.email.trim() : "";
+    if ((existingInboxId && !existingEmail) || (!existingInboxId && existingEmail)) {
+      return c.json(
+        { error: "Existing AgentMail inbox requires both inbox_id and email" },
+        400,
+      );
+    }
+    const domain =
+      typeof body.domain === "string" && body.domain.trim()
+        ? body.domain.trim()
+        : undefined;
+    let senderPolicy: AgentMailSenderPolicy;
+    try {
+      senderPolicy = parseSenderPolicyBody(body.sender_policy);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+    const clientId = `kortix-project-${projectId}`;
+
+    let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
+    if (existingInboxId && existingEmail) {
+      inbox = {
+        inbox_id: existingInboxId,
+        email: existingEmail,
+        display_name: displayName,
+      };
+    } else {
+      try {
+        inbox = await createAgentMailInbox({
+          apiKey,
+          username,
+          domain,
+          displayName,
+          clientId,
+          metadata: {
+            provider: "kortix",
+            project_id: projectId,
+            account_id: loaded.row.accountId,
+          },
+        });
+      } catch (err) {
+        return c.json(
+          { error: `AgentMail inbox create failed: ${(err as Error).message}` },
+          502,
+        );
+      }
+    }
+
+    let webhookId: string;
+    let webhookSecret: string;
+    try {
+      const webhook = await createAgentMailWebhook({
+        apiKey,
+        inboxId: inbox.inbox_id,
+        url: `${agentMailWebhookBaseUrl(c.req.url)}/v1/webhooks/email/agentmail`,
+        clientId: `kortix-email-${projectId}`,
+      });
+      webhookId = webhook.webhook_id;
+      webhookSecret = webhook.secret;
+    } catch (err) {
+      return c.json(
+        { error: `AgentMail webhook create failed: ${(err as Error).message}` },
+        502,
+      );
+    }
+
+    const summary = await saveAgentMailInstall({
+      projectId,
+      profileSlug: connectorSlug,
+      apiKey: body.api_key?.trim() || null,
+      inboxId: inbox.inbox_id,
+      email: inbox.email,
+      displayName: inbox.display_name ?? displayName,
+      webhookId,
+      webhookSecret,
+      senderPolicy,
+    });
+    await reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: "patch",
+    path: "/{projectId}/channels/email/installation",
+    tags: ["channels"],
+    summary: "PATCH /:projectId/channels/email/installation",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    if (!emailChannelEnabled(loaded.row.metadata)) {
+      return c.json(
+        {
+          error:
+            "AgentMail Email is experimental and must be enabled for this project",
+        },
+        403,
+      );
+    }
+    let body: {
+      connector_slug?: string;
+      profile_slug?: string;
+      sender_policy?: Partial<AgentMailSenderPolicy>;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const connectorSlug =
+      (body.connector_slug ?? body.profile_slug ?? "kortix_email").trim() ||
+      "kortix_email";
+    let senderPolicy: AgentMailSenderPolicy;
+    try {
+      senderPolicy = parseSenderPolicyBody(body.sender_policy);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+    const summary = await updateAgentMailSenderPolicy(
+      projectId,
+      connectorSlug,
+      senderPolicy,
+    );
+    if (!summary)
+      return c.json({ error: "Email channel profile not found" }, 404);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: "delete",
+    path: "/{projectId}/channels/email/installation",
+    tags: ["channels"],
+    summary: "DELETE /:projectId/channels/email/installation",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const connectorSlug =
+      c.req.query("connector_slug") ||
+      c.req.query("profile_slug") ||
+      "kortix_email";
+    await deleteAgentMailInstall(projectId, connectorSlug);
+    await reconcileChannelConnectors(projectId, {
+      platform: "email",
+      slug: connectorSlug,
+    });
+    return c.json({ status: "disconnected" });
+  },
+);
+
+function agentMailWebhookBaseUrl(requestUrl: string): string {
+  return (config.KORTIX_URL || new URL(requestUrl).origin).replace(/\/+$/, "");
+}
+
+function normalizeAgentMailUsername(
+  input: string | null | undefined,
+): string | null {
+  const raw = (input ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const trimmed = raw.slice(0, 48).replace(/-+$/g, "");
+  return trimmed || null;
+}
+
+function parseSenderPolicyBody(
+  input: Partial<AgentMailSenderPolicy> | undefined,
+): AgentMailSenderPolicy {
+  const policy = normalizeSenderPolicy(input);
+  if (policy.allowedRegex) {
+    try {
+      new RegExp(policy.allowedRegex);
+    } catch {
+      throw new Error("Email sender regex is invalid");
+    }
+  }
+  return policy;
+}
 
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
@@ -480,138 +956,178 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/turn-stream',
-    tags: ['projects'],
-    summary: 'POST /:projectId/turn-stream',
+    method: "post",
+    path: "/{projectId}/turn-stream",
+    tags: ["projects"],
+    summary: "POST /:projectId/turn-stream",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: { description: 'Event stream', content: { 'text/event-stream': { schema: z.any() } } },
-        ...errors(400, 403, 404),
+      200: {
+        description: "Event stream",
+        content: { "text/event-stream": { schema: z.any() } },
+      },
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+    const projectId = c.req.param("projectId");
 
-  // Two valid callers: a project-scoped PAT (dashboard or operator) and the
-  // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
-  // its plan steps without a second token). Each is scoped to one projectId.
-  const authType = (c as any).get('authType') as string | undefined;
-  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
-    const accountId = (c as any).get('accountId') as string | undefined;
-    const sandboxId = (c as any).get('sandboxId') as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
+    // Two valid callers: a project-scoped PAT (dashboard or operator) and the
+    // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
+    // its plan steps without a second token). Each is scoped to one projectId.
+    const authType = (c as any).get("authType") as string | undefined;
+    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
+      const accountId = (c as any).get("accountId") as string | undefined;
+      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+      if (!accountId || !sandboxId) {
+        return c.json({ error: "turn-stream requires a sandbox token" }, 403);
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
     }
-    const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
-      .from(sessionSandboxes)
-      .where(and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ))
-      .limit(1);
-    if (!sandbox) {
-      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+
+    let body: {
+      session_id?: string;
+      kind?: string;
+      text?: string;
+      detail?: string;
+      output?: string;
+      sources?: Array<{ url?: string; text?: string }>;
+      blocks?: unknown[];
+      status?: string;
+      opencode_session_id?: string;
+      // Turn-end error detail (opencode AssistantMessage.error / session.error),
+      // so Slack can render "out of credits" / rate-limit / the real error.
+      error_name?: string;
+      error_message?: string;
+      error_status?: number;
+      error_retryable?: boolean;
+      error_provider?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
-  } else {
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-  }
+    const sessionId = body.session_id?.trim();
+    if (!sessionId) {
+      return c.json({ error: "session_id is required" }, 400);
+    }
 
-  let body: {
-    session_id?: string;
-    kind?: string;
-    text?: string;
-    detail?: string;
-    output?: string;
-    sources?: Array<{ url?: string; text?: string }>;
-    blocks?: unknown[];
-    status?: string;
-    opencode_session_id?: string;
-    // Turn-end error detail (opencode AssistantMessage.error / session.error),
-    // so Slack can render "out of credits" / rate-limit / the real error.
-    error_name?: string;
-    error_message?: string;
-    error_status?: number;
-    error_retryable?: boolean;
-    error_provider?: string;
-  };
-  try {
-    body = (await c.req.json()) as typeof body;
-  } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400);
-  }
-  const sessionId = body.session_id?.trim();
-  if (!sessionId) {
-    return c.json({ error: 'session_id is required' }, 400);
-  }
+    // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
+    // finish (idle) or die (error) without the agent closing its Slack message;
+    // finalize it gracefully instead of letting it rot into a timeout failure.
+    // (`turn_end` is the alias newer sandboxes send, with status + the opencode
+    // session id for the server-side root-session guard.)
+    if (body.kind === "end" || body.kind === "turn_end") {
+      const status = body.status === "error" ? "error" : "idle";
+      const errorInfo =
+        body.error_name ||
+        body.error_message ||
+        typeof body.error_status === "number"
+          ? {
+              name:
+                typeof body.error_name === "string"
+                  ? body.error_name
+                  : undefined,
+              message:
+                typeof body.error_message === "string"
+                  ? body.error_message
+                  : undefined,
+              statusCode:
+                typeof body.error_status === "number"
+                  ? body.error_status
+                  : undefined,
+              isRetryable:
+                typeof body.error_retryable === "boolean"
+                  ? body.error_retryable
+                  : undefined,
+              providerID:
+                typeof body.error_provider === "string"
+                  ? body.error_provider
+                  : undefined,
+            }
+          : undefined;
+      const ok = await relayTurnEnd(sessionId, status, errorInfo);
+      return c.json({ ok });
+    }
 
-  // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
-  // finish (idle) or die (error) without the agent closing its Slack message;
-  // finalize it gracefully instead of letting it rot into a timeout failure.
-  // (`turn_end` is the alias newer sandboxes send, with status + the opencode
-  // session id for the server-side root-session guard.)
-  if (body.kind === 'end' || body.kind === 'turn_end') {
-    const status = body.status === 'error' ? 'error' : 'idle';
-    const errorInfo =
-      body.error_name || body.error_message || typeof body.error_status === 'number'
-        ? {
-            name: typeof body.error_name === 'string' ? body.error_name : undefined,
-            message: typeof body.error_message === 'string' ? body.error_message : undefined,
-            statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
-            isRetryable: typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
-            providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
-          }
+    // `opencode_session` carries the canonical opencode ROOT id the sandbox just
+    // bootstrapped (or reused after a restart). Persist it as the durable pin so
+    // the Kortix session resolves to the LIVE root with NO dependency on a browser
+    // ever opening it — closing the null-pin gap that left Slack/trigger/cron
+    // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
+    // is already scoped to this project (checked above); the daemon only ever
+    // reports its own pin-file root, never a subagent.
+    if (body.kind === "opencode_session") {
+      const ocId = body.opencode_session_id?.trim();
+      if (!ocId)
+        return c.json({ error: "opencode_session_id is required" }, 400);
+      const updated = await db
+        .update(projectSessions)
+        .set({ opencodeSessionId: ocId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(projectSessions.sessionId, sessionId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .returning({ sessionId: projectSessions.sessionId });
+      return c.json({ ok: updated.length > 0 });
+    }
+
+    const text = (body.text ?? "").trim();
+    if (!text) {
+      return c.json({ error: "text is required" }, 400);
+    }
+
+    const detail = body.detail?.trim() || undefined;
+    const outputForPrev = body.output?.trim() || undefined;
+    const sourcesForPrev = Array.isArray(body.sources)
+      ? body.sources
+          .filter(
+            (s): s is { url: string; text: string } => !!s?.url && !!s?.text,
+          )
+          .map((s) => ({ url: s.url, text: s.text }))
+      : undefined;
+    const blocks =
+      Array.isArray(body.blocks) && body.blocks.length > 0
+        ? body.blocks
         : undefined;
-    const ok = await relayTurnEnd(sessionId, status, errorInfo);
+
+    const ok =
+      body.kind === "answer"
+        ? await relayTurnAnswer(sessionId, text, blocks)
+        : await relayTurnStep(sessionId, text, {
+            detail,
+            outputForPrev,
+            sourcesForPrev,
+          });
     return c.json({ ok });
-  }
-
-  // `opencode_session` carries the canonical opencode ROOT id the sandbox just
-  // bootstrapped (or reused after a restart). Persist it as the durable pin so
-  // the Kortix session resolves to the LIVE root with NO dependency on a browser
-  // ever opening it — closing the null-pin gap that left Slack/trigger/cron
-  // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
-  // is already scoped to this project (checked above); the daemon only ever
-  // reports its own pin-file root, never a subagent.
-  if (body.kind === 'opencode_session') {
-    const ocId = body.opencode_session_id?.trim();
-    if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
-    const updated = await db
-      .update(projectSessions)
-      .set({ opencodeSessionId: ocId, updatedAt: new Date() })
-      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
-      .returning({ sessionId: projectSessions.sessionId });
-    return c.json({ ok: updated.length > 0 });
-  }
-
-  const text = (body.text ?? '').trim();
-  if (!text) {
-    return c.json({ error: 'text is required' }, 400);
-  }
-
-  const detail = body.detail?.trim() || undefined;
-  const outputForPrev = body.output?.trim() || undefined;
-  const sourcesForPrev = Array.isArray(body.sources)
-    ? body.sources
-        .filter((s): s is { url: string; text: string } => !!s?.url && !!s?.text)
-        .map((s) => ({ url: s.url, text: s.text }))
-    : undefined;
-  const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
-
-  const ok =
-    body.kind === 'answer'
-      ? await relayTurnAnswer(sessionId, text, blocks)
-      : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
-  return c.json({ ok });
-},
+  },
 );
 
 // GET /v1/projects/:projectId/channels/slack/file?url=...
@@ -620,27 +1136,31 @@ projectsApp.openapi(
 // `slack download` once the token is out of the box (KORTIX-206 Phase C2).
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/slack/file',
-    tags: ['channels'],
-    summary: 'GET /:projectId/channels/slack/file (download proxy)',
+    method: "get",
+    path: "/{projectId}/channels/slack/file",
+    tags: ["channels"],
+    summary: "GET /:projectId/channels/slack/file (download proxy)",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
       query: z.object({ url: z.string() }),
     },
     responses: {
-      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      200: {
+        description: "File bytes",
+        content: { "application/octet-stream": { schema: z.any() } },
+      },
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
-    c.header('Content-Type', result.contentType);
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const result = await downloadSlackFile(projectId, c.req.query("url") ?? "");
+    if (!result.ok)
+      return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header("Content-Type", result.contentType);
     return c.body(result.body);
   },
 );
@@ -650,34 +1170,116 @@ projectsApp.openapi(
 // Backs `slack send --file` once the token is out of the box.
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/slack/file/upload',
-    tags: ['channels'],
-    summary: 'POST /:projectId/channels/slack/file/upload (upload proxy)',
+    method: "post",
+    path: "/{projectId}/channels/slack/file/upload",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/slack/file/upload (upload proxy)",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { "application/json": { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), files: z.any() }).passthrough(), 'Uploaded'),
+      200: json(
+        z.object({ ok: z.boolean(), files: z.any() }).passthrough(),
+        "Uploaded",
+      ),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
     const body = await readBody(c);
     const result = await uploadSlackFile(projectId, {
-      channel: String(body.channel ?? ''),
-      filename: String(body.filename ?? ''),
-      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
-      comment: typeof body.comment === 'string' ? body.comment : undefined,
-      threadTs: typeof body.thread_ts === 'string' ? body.thread_ts : (typeof body.threadTs === 'string' ? body.threadTs : undefined),
+      channel: String(body.channel ?? ""),
+      filename: String(body.filename ?? ""),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ""),
+      comment: typeof body.comment === "string" ? body.comment : undefined,
+      threadTs:
+        typeof body.thread_ts === "string"
+          ? body.thread_ts
+          : typeof body.threadTs === "string"
+            ? body.threadTs
+            : undefined,
     });
-    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    if (!result.ok)
+      return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// GET /v1/projects/:projectId/llm-catalog
+// Server-side source of truth for the gateway model catalog. The seed daemon
+// fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
+// full picker into opencode config. The web UI also reads it with normal project
+// auth so the model picker is available before the sandbox runtime answers.
+// The catalog is non-secret; access is still scoped to this project.
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/llm-catalog",
+    tags: ["projects"],
+    summary: "GET /:projectId/llm-catalog",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: z.any() } },
+      },
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const authType = c.get("authType") as string | undefined;
+    const apiKeyType = c.get("apiKeyType") as string | undefined;
+    const accountId = c.get("accountId") as string | undefined;
+    const sandboxId = c.get("sandboxId") as string | undefined;
+    let projectMetadata: unknown;
+    if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+      const [project] = await db
+        .select({ metadata: projects.metadata })
+        .from(projects)
+        .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
+        .limit(1);
+      if (!project) return c.json({ error: "Not found" }, 404);
+      projectMetadata = project.metadata;
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+      projectMetadata = loaded.row.metadata;
+    }
+    if (!projectLlmGatewayEnabled(projectMetadata)) {
+      return c.json(
+        { error: "LLM gateway is disabled for this project", code: "llm_gateway_disabled" },
+        404,
+      );
+    }
+    const models = gatewayModelCatalog(projectId);
+    return c.json({ models });
   },
 );
 
@@ -691,105 +1293,118 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/turn-question',
-    tags: ['projects'],
-    summary: 'POST /:projectId/turn-question',
+    method: "post",
+    path: "/{projectId}/turn-question",
+    tags: ["projects"],
+    summary: "POST /:projectId/turn-question",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 409),
+      200: json(z.any(), "OK"),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
+    const projectId = c.req.param("projectId");
 
-  const authType = (c as any).get('authType') as string | undefined;
-  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
-    const accountId = (c as any).get('accountId') as string | undefined;
-    const sandboxId = (c as any).get('sandboxId') as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: 'turn-question requires a sandbox token' }, 403);
+    const authType = (c as any).get("authType") as string | undefined;
+    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
+      const accountId = (c as any).get("accountId") as string | undefined;
+      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+      if (!accountId || !sandboxId) {
+        return c.json({ error: "turn-question requires a sandbox token" }, 403);
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
     }
-    const [sandbox] = await db
-      .select({ sandboxId: sessionSandboxes.sandboxId })
-      .from(sessionSandboxes)
-      .where(and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ))
-      .limit(1);
-    if (!sandbox) {
-      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+
+    let body: {
+      session_id?: string;
+      request_id?: string;
+      questions?: unknown[];
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
     }
-  } else {
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-  }
+    const sessionId = body.session_id?.trim();
+    if (!sessionId) {
+      return c.json({ error: "session_id is required" }, 400);
+    }
+    if (!Array.isArray(body.questions) || body.questions.length === 0) {
+      return c.json({ error: "at least one question is required" }, 400);
+    }
 
-  let body: {
-    session_id?: string;
-    request_id?: string;
-    questions?: unknown[];
-  };
-  try {
-    body = (await c.req.json()) as typeof body;
-  } catch {
-    return c.json({ error: 'Invalid JSON body' }, 400);
-  }
-  const sessionId = body.session_id?.trim();
-  if (!sessionId) {
-    return c.json({ error: 'session_id is required' }, 400);
-  }
-  if (!Array.isArray(body.questions) || body.questions.length === 0) {
-    return c.json({ error: 'at least one question is required' }, 400);
-  }
+    // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
+    const questions: QuestionInfo[] = [];
+    for (const q of body.questions) {
+      if (!q || typeof q !== "object") continue;
+      const obj = q as Record<string, unknown>;
+      const question = String(obj.question ?? "").trim();
+      if (!question) continue;
+      const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
+      const options = optionsRaw
+        .map((o) =>
+          o && typeof o === "object" ? (o as Record<string, unknown>) : null,
+        )
+        // opencode's QuestionInfo carries `value` (required) + optional `label`. The
+        // harness `question` tool uses `label`. Accept EITHER so an option that only
+        // has `value` still renders a button instead of silently vanishing.
+        .filter(
+          (o): o is Record<string, unknown> =>
+            !!o && (typeof o.label === "string" || typeof o.value === "string"),
+        )
+        .map((o) => ({
+          label: String(o.label ?? o.value),
+          description:
+            typeof o.description === "string"
+              ? String(o.description)
+              : undefined,
+        }));
+      questions.push({
+        question,
+        header: obj.header ? String(obj.header) : undefined,
+        options,
+        multiple: !!obj.multiple,
+        custom: obj.custom === false ? false : true,
+      });
+    }
+    if (questions.length === 0) {
+      return c.json({ error: "no valid questions provided" }, 400);
+    }
 
-  // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
-  const questions: QuestionInfo[] = [];
-  for (const q of body.questions) {
-    if (!q || typeof q !== 'object') continue;
-    const obj = q as Record<string, unknown>;
-    const question = String(obj.question ?? '').trim();
-    if (!question) continue;
-    const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
-    const options = optionsRaw
-      .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
-      // opencode's QuestionInfo carries `value` (required) + optional `label`. The
-      // harness `question` tool uses `label`. Accept EITHER so an option that only
-      // has `value` still renders a button instead of silently vanishing.
-      .filter((o): o is Record<string, unknown> => !!o && (typeof o.label === 'string' || typeof o.value === 'string'))
-      .map((o) => ({
-        label: String(o.label ?? o.value),
-        description: typeof o.description === 'string' ? String(o.description) : undefined,
-      }));
-    questions.push({
-      question,
-      header: obj.header ? String(obj.header) : undefined,
-      options,
-      multiple: !!obj.multiple,
-      custom: obj.custom === false ? false : true,
-    });
-  }
-  if (questions.length === 0) {
-    return c.json({ error: 'no valid questions provided' }, 400);
-  }
-
-  // Non-blocking: post the question(s) into the thread and return immediately
-  // with sentinel `answers`. The agent does NOT wait for an inline answer — the
-  // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
-  // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
-  // image (resumes opencode from them) unblocked.
-  const result = await postQuestion(sessionId, questions);
-  if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
-  return c.json({ ok: true, answers: result.answers });
-},
+    // Non-blocking: post the question(s) into the thread and return immediately
+    // with sentinel `answers`. The agent does NOT wait for an inline answer — the
+    // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
+    // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
+    // image (resumes opencode from them) unblocked.
+    const result = await postQuestion(sessionId, questions);
+    if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
+    return c.json({ ok: true, answers: result.answers });
+  },
 );
 
 // POST /v1/projects/:projectId/triggers/:slug/fire
@@ -799,69 +1414,77 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/triggers/{slug}/fire',
-    tags: ['triggers'],
-    summary: 'POST /:projectId/triggers/:slug/fire',
+    method: "post",
+    path: "/{projectId}/triggers/{slug}/fire",
+    tags: ["triggers"],
+    summary: "POST /:projectId/triggers/:slug/fire",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+    },
     responses: {
-        202: json(z.any(), 'OK'),
-        ...errors(404, 500),
+      202: json(z.any(), "OK"),
+      ...errors(404, 500),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const slug = c.req.param("slug");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
-  const spec = specs.find((s) => s.slug === slug);
-  if (!spec) return c.json({ error: 'Not found' }, 404);
+    const { specs } = await loadProjectTriggers(
+      await withProjectGitAuth(loaded.row),
+    );
+    const spec = specs.find((s) => s.slug === slug);
+    if (!spec) return c.json({ error: "Not found" }, 404);
 
-  const now = new Date();
-  const payload = {
-    trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
-    fired_at: now.toISOString(),
-    source: 'manual',
-    actor: loaded.userId,
-    message: { text: '', source: 'manual_test' },
-  };
-  const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+    const now = new Date();
+    const payload = {
+      trigger: { slug: spec.slug, type: spec.type, kind: "git" },
+      fired_at: now.toISOString(),
+      source: "manual",
+      actor: loaded.userId,
+      message: { text: "", source: "manual_test" },
+    };
+    const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
 
-  const result = await fireGitTrigger({
-    spec,
-    project: loaded.row,
-    payload,
-    renderedPrompt,
-    source: 'manual',
-    request: requestAuditContext(c),
-  });
+    const result = await fireGitTrigger({
+      spec,
+      project: loaded.row,
+      payload,
+      renderedPrompt,
+      source: "manual",
+      request: requestAuditContext(c),
+    });
 
-  if (result.status === 'queued') {
+    if (result.status === "queued") {
+      await markGitTriggerFired(projectId, slug, now);
+      return c.json(
+        {
+          status: "queued",
+          command_id: result.commandId ?? null,
+          session_id: result.sessionId ?? null,
+          reason: result.reason ?? null,
+          deduped: result.deduped ?? false,
+        },
+        202,
+      );
+    }
+    if (result.status === "failed") {
+      return c.json({ error: result.error ?? "Failed to fire trigger" }, 500);
+    }
     await markGitTriggerFired(projectId, slug, now);
-    return c.json({
-      status: 'queued',
-      command_id: result.commandId ?? null,
-      session_id: result.sessionId ?? null,
-      reason: result.reason ?? null,
-      deduped: result.deduped ?? false,
-    }, 202);
-  }
-  if (result.status === 'failed') {
-    return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
-  }
-  await markGitTriggerFired(projectId, slug, now);
-  return c.json({
-    status: result.deduped ? 'deduped' : 'fired',
-    command_id: result.commandId ?? null,
-    session_id: result.sessionId ?? null,
-    deduped: result.deduped ?? false,
-  }, 202);
-},
+    return c.json(
+      {
+        status: result.deduped ? "deduped" : "fired",
+        command_id: result.commandId ?? null,
+        session_id: result.sessionId ?? null,
+        deduped: result.deduped ?? false,
+      },
+      202,
+    );
+  },
 );
 
 // ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────
@@ -878,144 +1501,159 @@ projectsApp.openapi(
 // it. This middleware loads the project's gate and short-circuits before any
 // of the handlers below run.
 
-
-projectsApp.use('/:projectId/apps/*', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+projectsApp.use("/:projectId/apps/*", async (c, next) => {
+  if (!(await projectAppsEnabled(c.req.param("projectId")))) {
     return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
 
-projectsApp.use('/:projectId/apps', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+projectsApp.use("/:projectId/apps", async (c, next) => {
+  if (!(await projectAppsEnabled(c.req.param("projectId")))) {
     return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
-
 
 projectsApp.openapi(
   createRoute({
-    method: 'get',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'GET /:projectId/apps',
+    method: "get",
+    path: "/{projectId}/apps",
+    tags: ["apps"],
+    summary: "GET /:projectId/apps",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
     responses: {
-        200: json(z.array(AppSchema), 'Apps'),
-        ...errors(404),
+      200: json(z.array(AppSchema), "Apps"),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  return c.json(await loadAppsForResponse(projectId, loaded.row));
-},
+    return c.json(await loadAppsForResponse(projectId, loaded.row));
+  },
 );
 
 // POST /v1/projects/:projectId/apps — add a new app to kortix.toml
 
 projectsApp.openapi(
   createRoute({
-    method: 'post',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'POST /:projectId/apps',
+    method: "post",
+    path: "/{projectId}/apps",
+    tags: ["apps"],
+    summary: "POST /:projectId/apps",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        201: json(AppSchema, 'The created app'),
-        ...errors(400, 404, 409),
+      201: json(AppSchema, "The created app"),
+      ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  const draft = parseAppDraft(body, { existingSlug: null });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const draft = parseAppDraft(body, { existingSlug: null });
+    if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
+    }
 
-  if (extractApps(manifest).specs.some((s) => s.slug === draft.slug)) {
-    return c.json({
-      error: `An app with slug "${draft.slug}" already exists. Pick a different name.`,
-    }, 409);
-  }
+    if (extractApps(manifest).specs.some((s) => s.slug === draft.slug)) {
+      return c.json(
+        {
+          error: `An app with slug "${draft.slug}" already exists. Pick a different name.`,
+        },
+        409,
+      );
+    }
 
-  const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-  const result = await commitManifest(loaded.row, next, `chore: add app ${draft.slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
-  }
+    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
+    const result = await commitManifest(
+      loaded.row,
+      next,
+      `chore: add app ${draft.slug}`,
+    );
+    if ("error" in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
 
-  return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
-},
+    return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
+  },
 );
 
 // PATCH /v1/projects/:projectId/apps/:slug — partial update merged onto current
 
 projectsApp.openapi(
   createRoute({
-    method: 'patch',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'PATCH /:projectId/apps/:slug',
+    method: "patch",
+    path: "/{projectId}/apps/{slug}",
+    tags: ["apps"],
+    summary: "PATCH /:projectId/apps/:slug",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const slug = c.req.param("slug");
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  const current = extractApps(manifest).specs.find((s) => s.slug === slug);
-  if (!current) return c.json({ error: 'Not found' }, 404);
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
+    }
+    const current = extractApps(manifest).specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: "Not found" }, 404);
 
-  const draft = parseAppDraft(
-    { ...specToAppBody(current), ...body, slug },
-    { existingSlug: slug },
-  );
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const draft = parseAppDraft(
+      { ...specToAppBody(current), ...body, slug },
+      { existingSlug: slug },
+    );
+    if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-  const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-  const result = await commitManifest(loaded.row, next, `chore: update app ${slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
-  }
+    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
+    const result = await commitManifest(
+      loaded.row,
+      next,
+      `chore: update app ${slug}`,
+    );
+    if ("error" in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
 
-  return c.json(await loadAppsForResponse(projectId, loaded.row));
-},
+    return c.json(await loadAppsForResponse(projectId, loaded.row));
+  },
 );
 
 // DELETE /v1/projects/:projectId/apps/:slug — remove from manifest. Does
@@ -1023,46 +1661,53 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: 'delete',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'DELETE /:projectId/apps/:slug',
+    method: "delete",
+    path: "/{projectId}/apps/{slug}",
+    tags: ["apps"],
+    summary: "DELETE /:projectId/apps/:slug",
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), "OK"),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param("projectId");
+    const slug = c.req.param("slug");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
 
-  if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-    return c.json({ error: 'Invalid slug' }, 400);
-  }
+    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
+      return c.json({ error: "Invalid slug" }, 400);
+    }
 
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractApps(manifest).specs.some((s) => s.slug === slug)) {
-    return c.json({ error: 'Not found' }, 404);
-  }
+    let manifest: ParsedManifest;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (err) {
+      return c.json(
+        { error: (err as Error).message || "Failed to read manifest" },
+        400,
+      );
+    }
+    if (!extractApps(manifest).specs.some((s) => s.slug === slug)) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
-  const next = removeAppFromManifest(manifest, slug);
-  const result = await commitManifest(loaded.row, next, `chore: delete app ${slug}`);
-  if ('error' in result) {
-    return c.json({ error: result.error }, result.status as 400 | 502);
-  }
-  return c.json({ ok: true });
-},
+    const next = removeAppFromManifest(manifest, slug);
+    const result = await commitManifest(
+      loaded.row,
+      next,
+      `chore: delete app ${slug}`,
+    );
+    if ("error" in result) {
+      return c.json({ error: result.error }, result.status as 400 | 502);
+    }
+    return c.json({ ok: true });
+  },
 );
 
 // POST /v1/projects/:projectId/apps/:slug/deploy — manual deploy. Mirrors

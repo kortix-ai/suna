@@ -41,12 +41,10 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
 
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
-  // 'bedrock' = Anthropic InvokeModel/anthropic-payload; 'bedrock-converse' =
-  // the model-agnostic Converse API (Kimi, MiniMax). Same bearer key, different
-  // request/response shape — the kind selects the transport.
+  // Managed Bedrock = Claude via the Anthropic InvokeModel/anthropic-payload transport.
   return {
     provider: 'bedrock',
-    kind: managed.transport,
+    kind: 'bedrock',
     baseUrl: bedrockBaseUrl(),
     apiKey: config.AWS_BEDROCK_API_KEY,
     billingMode: 'credits',
@@ -56,11 +54,31 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
   };
 }
 
+function opencodeZenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor {
+  return {
+    provider: 'opencode-zen',
+    kind: 'openai-compat',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    apiKey: '',
+    omitAuthorization: true,
+    billingMode: 'none',
+    markup: 0,
+    resolvedModel: managed.upstreamModelId,
+    pricing: {
+      inputPerMillion: 0,
+      outputPerMillion: 0,
+      cachedInputPerMillion: 0,
+    },
+  };
+}
+
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   const d =
-    managed.transport === 'openrouter'
-      ? openRouterManagedDescriptor(managed)
-      : bedrockManagedDescriptor(managed);
+    managed.transport === 'opencode-zen'
+      ? opencodeZenManagedDescriptor(managed)
+      : managed.transport === 'openrouter'
+        ? openRouterManagedDescriptor(managed)
+        : bedrockManagedDescriptor(managed);
   return d ? [d] : [];
 }
 

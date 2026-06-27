@@ -28,6 +28,12 @@ import { createAuditRouter } from './routes/audit';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
 import { heartbeatManager } from './core/heartbeat';
+import {
+  clearTunnelRelayOwnerIfCurrent,
+  markTunnelRelayOwner,
+  startTunnelRpcForwarder,
+  stopTunnelRpcForwarder,
+} from './core/cluster-forwarder';
 import { notifyTunnelEvent } from './routes/permission-requests';
 // Static imports — these MUST NOT be dynamic `await import(...)`. Under
 // `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
@@ -119,20 +125,19 @@ function startTunnelService(): void {
   }
 
   heartbeatManager.start();
+  startTunnelRpcForwarder();
 
   // ── DB persistence via relay events ──────────────────────────────────
 
   tunnelRelay.on('agent:connect', async ({ tunnelId, metadata }) => {
     const accountId = metadata?.accountId as string | undefined;
-    if (accountId) {
-      notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
-    }
 
     try {
-      db.update(tunnelConnections)
-        .set({ status: 'online', lastHeartbeatAt: new Date(), updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
-        .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
+      await markTunnelRelayOwner(tunnelId, { status: 'online' });
+
+      if (accountId) {
+        notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
+      }
 
       // Sync active permissions to the agent
       const activePerms = await db
@@ -163,19 +168,15 @@ function startTunnelService(): void {
     }
   });
 
-  tunnelRelay.on('agent:disconnect', async ({ tunnelId }) => {
-    const metadata = tunnelRelay.getAgentMetadata(tunnelId);
+  tunnelRelay.on('agent:disconnect', async ({ tunnelId, metadata }) => {
     const accountId = metadata?.accountId as string | undefined;
 
-    if (accountId) {
-      notifyTunnelEvent(accountId, 'tunnel_disconnected', { tunnelId });
-    }
-
     try {
-      db.update(tunnelConnections)
-        .set({ status: 'offline', updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
-        .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
+      await clearTunnelRelayOwnerIfCurrent(tunnelId, { status: 'offline' });
+
+      if (accountId) {
+        notifyTunnelEvent(accountId, 'tunnel_disconnected', { tunnelId });
+      }
     } catch {}
   });
 
@@ -189,15 +190,13 @@ function startTunnelService(): void {
 
   tunnelRelay.on('message:pong', async ({ tunnelId, params }) => {
     try {
-      db.update(tunnelConnections)
-        .set({ lastHeartbeatAt: new Date(), updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
+      markTunnelRelayOwner(tunnelId, { status: 'online' })
         .catch((err) => console.warn(`[tunnel-heartbeat] DB update failed for ${tunnelId}:`, err));
 
       const mi = params?.machineInfo;
       if (mi && typeof mi === 'object' && (mi as any).hostname) {
         db.update(tunnelConnections)
-          .set({ machineInfo: mi, updatedAt: new Date() })
+          .set({ machineInfo: mi, status: 'online', updatedAt: new Date() })
           .where(eq(tunnelConnections.tunnelId, tunnelId))
           .catch(() => {});
       }
@@ -207,10 +206,7 @@ function startTunnelService(): void {
   tunnelRelay.on('agent:timeout', async ({ tunnelId }) => {
     console.warn(`[tunnel] Agent ${tunnelId} timed out — marking offline`);
     try {
-      await db
-        .update(tunnelConnections)
-        .set({ status: 'offline', updatedAt: new Date() })
-        .where(eq(tunnelConnections.tunnelId, tunnelId));
+      await clearTunnelRelayOwnerIfCurrent(tunnelId, { status: 'offline' });
     } catch (err) {
       console.error(`[tunnel] Failed to mark ${tunnelId} offline:`, err);
     }
@@ -253,6 +249,7 @@ function stopTunnelService(): void {
     clearInterval(permissionCleanupInterval);
     permissionCleanupInterval = null;
   }
+  stopTunnelRpcForwarder();
   heartbeatManager.stop();
   tunnelRelay.shutdown();
   console.log('[TUNNEL] Tunnel service stopped');

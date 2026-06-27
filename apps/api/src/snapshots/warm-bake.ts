@@ -20,7 +20,7 @@
  * Validated on the experimental region (2026-06): apt+opencode+migration ~45s,
  * 75MB binary upload ~85s, snapshot ~40s (all one-time); warm create 1.3s.
  *
- * Toggle: warmSnapshotsEnabled() (KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET).
+ * Toggle: warmSnapshotsEnabled() (admin warm_snapshot toggle + DAYTONA_WARM_TARGET).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -32,6 +32,11 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { SandboxState } from '@daytonaio/sdk';
+import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
 import { config } from '../config';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 
@@ -49,13 +54,6 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
-
-// Keep in sync with snapshots/providers/daytona.ts + dockerfile-layer.ts.
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
-// Chromium for agent-browser, sourced from Playwright (cross-arch; Chrome for
-// Testing has no linux-arm64 build). Keep in sync with dockerfile-layer.ts.
-const PLAYWRIGHT_VERSION = '1.60.0';
 
 const RUNTIME_HOME = '/opt/kortix/home';
 export const OPENCODE_PORT = 4096;
@@ -251,7 +249,7 @@ export async function bakeWarmSnapshot(opts: {
   onLog?: (line: string) => void;
 }): Promise<WarmBakeResult> {
   if (!warmSnapshotsEnabled()) {
-    throw new WarmBakeError('warm snapshots are not enabled (KORTIX_WARM_SNAPSHOT_ENABLED / DAYTONA_WARM_TARGET)');
+    throw new WarmBakeError('warm snapshots are not enabled (admin warm_snapshot toggle / DAYTONA_WARM_TARGET)');
   }
   const onLog = opts.onLog;
   const baseSnapshot = opts.baseSnapshot || (await resolveBuilderBaseSnapshot(onLog));

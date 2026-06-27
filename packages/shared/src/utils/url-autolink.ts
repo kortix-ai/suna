@@ -12,7 +12,8 @@
  * - Markdown links: [text](url) — neither the text nor the url part
  * - Code blocks: ```...```
  * - Inline code: `...`
- * - LaTeX: $...$ or $$...$$
+ * - LaTeX inline math: $...$ (currency like $4M is escaped before parsing)
+ * - LaTeX block math: $$...$$
  */
 
 const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
@@ -48,8 +49,8 @@ function buildProtectedRanges(text: string): Array<[number, number]> {
     ranges.push([m.index, m.index + m[0].length - 1]);
   }
 
-  // ── Inline math  $...$ ───────────────────────────────────────────────────
-  const inlineMathRe = /\$[^$\n]+\$/g;
+  // ── Inline math  $...$ (not markdown-escaped \$ currency) ───────────────
+  const inlineMathRe = /(?<!\\)\$[^$\n]+(?<!\\)\$/g;
   while ((m = inlineMathRe.exec(text)) !== null) {
     ranges.push([m.index, m.index + m[0].length - 1]);
   }

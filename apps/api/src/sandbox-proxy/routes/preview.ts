@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -12,6 +13,8 @@ import {
   resolvePreviewLink,
   wakeSandbox,
 } from '../backend';
+
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -607,10 +610,19 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, upstreamPort, userId, remainingPath, queryString } = opts;
+  const { sandboxId, userId, remainingPath, queryString } = opts;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
+
+  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
+  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
+  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
+  const upstreamPort =
+    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
+      ? 8000
+      : opts.upstreamPort;
+
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
@@ -636,8 +648,6 @@ export async function resolvePreviewWsUpstream(opts: {
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
     .replace(/^https:/i, 'wss:');
-  const url = wsBase + remainingPath + queryString;
-
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId,
     userId,
@@ -645,7 +655,13 @@ export async function resolvePreviewWsUpstream(opts: {
     previewToken,
   });
 
-  return { ok: true, url, headers };
+  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+    const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
+    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
+  }
+
+  return { ok: true, url: upstreamUrl.toString(), headers };
 }
 
 // === Route handlers: ALL /:sandboxId/:port(/*) ===

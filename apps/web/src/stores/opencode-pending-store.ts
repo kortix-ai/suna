@@ -3,9 +3,21 @@
 import { create } from 'zustand';
 import type { PermissionRequest, QuestionRequest } from '@opencode-ai/sdk/v2/client';
 
+// Cap on how many resolved question ids we remember. Question ids are unique
+// per request, so this only ever needs to be large enough to outlive the
+// window in which a stale add (SSE reconnect hydrate, `question.asked` echo, or
+// the self-heal `question.list()` poll) could try to resurrect a question the
+// user already answered. A few hundred comfortably covers any real session.
+const RESOLVED_QUESTION_LIMIT = 200;
+
 interface OpenCodePendingState {
   permissions: Record<string, PermissionRequest>;
   questions: Record<string, QuestionRequest>;
+  // Ids of questions the user has already answered / rejected / dismissed.
+  // `addQuestion` ignores these so a resolved question can never be resurrected
+  // by a stale add path, which would re-lock the chat input. Insertion-ordered
+  // so we can prune the oldest entries once the cap is hit.
+  resolvedQuestionIds: string[];
 
   addPermission: (req: PermissionRequest) => void;
   removePermission: (requestId: string) => void;
@@ -21,6 +33,7 @@ interface OpenCodePendingState {
 export const useOpenCodePendingStore = create<OpenCodePendingState>()((set, get) => ({
   permissions: {},
   questions: {},
+  resolvedQuestionIds: [],
 
   addPermission: (req) =>
     set((state) => ({
@@ -34,17 +47,25 @@ export const useOpenCodePendingStore = create<OpenCodePendingState>()((set, get)
     }),
 
   addQuestion: (req) =>
-    set((state) => ({
-      questions: { ...state.questions, [req.id]: req },
-    })),
+    set((state) => {
+      // Never resurrect a question the user already resolved. SSE reconnect
+      // hydration, the `question.asked` echo, and the self-heal poll all funnel
+      // through here, so this single guard covers every re-add path.
+      if (state.resolvedQuestionIds.includes(req.id)) return state;
+      return { questions: { ...state.questions, [req.id]: req } };
+    }),
 
   removeQuestion: (requestId) =>
     set((state) => {
       const { [requestId]: _, ...rest } = state.questions;
-      return { questions: rest };
+      // Remember the id as resolved so a later stale add can't bring it back.
+      const resolved = state.resolvedQuestionIds.includes(requestId)
+        ? state.resolvedQuestionIds
+        : [...state.resolvedQuestionIds, requestId].slice(-RESOLVED_QUESTION_LIMIT);
+      return { questions: rest, resolvedQuestionIds: resolved };
     }),
 
-  clear: () => set({ permissions: {}, questions: {} }),
+  clear: () => set({ permissions: {}, questions: {}, resolvedQuestionIds: [] }),
 
   getSessionPendingCount: (sessionId) => {
     const s = get();

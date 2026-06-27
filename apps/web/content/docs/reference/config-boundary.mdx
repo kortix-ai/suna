@@ -7,10 +7,17 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 A Kortix project's config has two owners, and the boundary is strict.
 
-- **Kortix owns** `kortix.toml` and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps.
-- **OpenCode owns** `.kortix/opencode/` — how the agent behaves. The platform never reads inside it; it only tells OpenCode where it is.
+- **Kortix owns** `kortix.toml` and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps, and which agents the platform may launch/authorize.
+- **OpenCode owns** `.kortix/opencode/` — how the runtime behaves. `opencode.jsonc` remains the native registry for plugins, MCP servers, providers, models, permissions, and default OpenCode behavior.
 
 The config dir is declared via `[opencode] config_dir` (default `.kortix/opencode`); the agent daemon launches OpenCode with `OPENCODE_CONFIG_DIR` pointed there.
+
+Legacy projects can still rely on OpenCode-native discovery. Projects that adopt
+`[[agents]]` in `kortix.toml` opt into declarative, server-side agent governance:
+Kortix product surfaces should list registered agents from the API, not directly
+from a sandbox OpenCode `/app/agents` response. This is not a rule that every
+native file under `.kortix/opencode/agents/` must be registered; unregistered
+files can still exist for local experiments or runtime internals.
 
 ## Ownership table
 
@@ -22,16 +29,17 @@ The config dir is declared via `[opencode] config_dir` (default `.kortix/opencod
 | Where the OpenCode config dir lives | `kortix.toml` `[opencode] config_dir` | Kortix |
 | Triggers (cron + webhook) | `kortix.toml` `[[triggers]]` | Kortix |
 | Apps (experimental) | `kortix.toml` `[[apps]]` | Kortix |
+| Platform-launchable agents and grants | `kortix.toml` `[[agents]]` | Kortix |
 | Agent personas | `.kortix/opencode/agents/` | OpenCode |
 | Skills | `.kortix/opencode/skills/` | OpenCode |
 | Slash commands | `.kortix/opencode/` (commands) | OpenCode |
 | Custom tools | `.kortix/opencode/` (tools) | OpenCode |
 | Plugins | `.kortix/opencode/` (plugins) | OpenCode |
 | MCP servers | `.kortix/opencode/opencode.jsonc` | OpenCode |
-| Model / provider config | `.kortix/opencode/opencode.jsonc` | OpenCode |
+| Model / provider config | `.kortix/opencode/opencode.jsonc` | OpenCode runtime; product model pickers should come from the server / LLM gateway catalog |
 
 <Callout type="info" title="Rule of thumb">
-If it describes the project, the sandbox, when work runs, or what gets deployed, it belongs in `kortix.toml`. If it describes how the agent thinks, talks, or acts, it belongs under `.kortix/opencode/`.
+If it describes the project, the sandbox, when work runs, what gets deployed, or what the platform is allowed to launch/authorize, it belongs in `kortix.toml`. If it describes how OpenCode executes that agent, it belongs under `.kortix/opencode/`.
 </Callout>
 
 Full `kortix.toml` field reference: [kortix.toml](/docs/reference/manifest). The `.kortix/opencode/` directory follows OpenCode's standard layout; see [opencode.ai/docs](https://opencode.ai/docs/) for each primitive.

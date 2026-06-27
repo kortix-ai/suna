@@ -1,11 +1,68 @@
 # Kortix project
 
+## First, at session start: where do you work?
+
+Before starting any non-trivial change, **ask the user which environment to work
+in** — don't assume. Three choices:
+
+1. **A new isolated worktree** (`pnpm worktree`) — the default for any feature,
+   bugfix, refactor, or experiment beyond a one-line edit. Own branch, own port
+   block, own `node_modules`, own tunnel; runs in parallel without touching the
+   primary web/API stack. By default it reuses the primary checkout's standard
+   local Supabase DB for fast setup and consistent auth. Provision non-blocking with
+   `pnpm worktree create --name <feat> --yes --no-start`, then do all edits/runs
+   under the sibling checkout `../suna-<feat>`. If the change needs database
+   migrations, destructive data work, schema drift, or independent auth/storage
+   state, opt into the full isolated data plane with
+   `pnpm worktree create --name <feat> --db --yes --no-start`. See the
+   **worktree** skill.
+2. **Straight in this primary checkout** via `pnpm dev` (web `3000` / api `8008`)
+   — on `main` or whatever branch is already checked out here. Simplest; fine
+   for small or quick iterative work where isolation isn't needed.
+3. **An existing worktree** — list them with `git worktree list` and work in the
+   one the user names.
+
+Carve-outs where you don't need to ask — just proceed: read-only
+investigation/questions, and trivial single-file typo/comment fixes on the
+current branch.
+
 ## You CAN run and verify everything end-to-end. Do it.
 
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
 Do not claim you "can't verify from here" or hand back unverified work — you
 have everything needed to run the app, hit the real API, provision real
 Daytona sandboxes, drive the real UI in a browser, and assert behavior. Use it.
+
+### Required verification standard — real inputs, real outputs
+
+For every behavior change, assume **100% autonomy** to verify the user-visible
+contract before handing the work back. Do not stop at typechecks, unit tests, or
+mocked internals when a real surface exists.
+
+- **API changes:** exercise the actual HTTP route with real request payloads
+  (`curl`, `bun fetch`, or the `ke2e` runner against a running API). Assert the
+  status code and exact response fields that prove the behavior. For writes,
+  also assert the persisted/read-back state or resulting repo/file output.
+- **CLI changes:** run the real CLI command as a process from bash, with the
+  same flags and stdin a user or agent would use. Assert exit code, stdout,
+  stderr, and any files/API calls/commits it should create. Do not rely only on
+  importing command functions.
+- **Web changes:** drive the real page in Chromium/Playwright/chrome-devtools.
+  Click/type/toggle the actual controls, intercept or observe the network
+  request, and assert the visible UI state plus the outgoing payload. Screenshots
+  are useful evidence, but assertions on DOM and network data are required.
+- **Cross-surface features:** verify each exposed surface independently. If the
+  same feature ships on API + CLI + web + mobile, each gets its own black-box
+  assertion for the inputs users can make and the outputs they receive.
+- **Default/negative paths count:** when changing defaults or removing implicit
+  behavior, assert both the new default and the explicit opt-in/alternate path.
+- **No silent gaps:** if a surface cannot be fully exercised in the current
+  turn, say exactly which input/output remains unverified and why. Otherwise
+  keep going until the real surface is verified.
+- **Final response format:** when work is finished, answer with low-fluff,
+  numbered lists. Include exactly what changed, what was verified, what remains
+  unverified or risky, and what the user should test next. Keep prose short and
+  concrete; do not bury the actionable testing path in a paragraph.
 
 ### The stack (already wired)
 - **Web** — Next.js dev server on `http://localhost:3000`.
@@ -56,7 +113,7 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 
 ### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
 - `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
+  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
   **real services** — no mocking. Every test maps 1:1 to a flow ID in
   `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
   authoritative route manifest (`tests/spec/routes.generated.json`).
@@ -73,6 +130,26 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   `bun run apps/api/scripts/dump-routes.ts`.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
   flows that boot sandboxes have generous timeouts; run long checks in the background.
+
+### Release topology — dev, staging, prod
+- **`main` = dev trunk.** It is the repo default branch and deploys to
+  `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
+  incomplete development can live here while it is being shaken out.
+- **`staging` = release-candidate branch.** Nothing should land on staging unless
+  it is intended to be production-ready. Human/code changes enter staging by PR:
+  `main` -> `staging` for the full dev candidate, or a targeted branch ->
+  `staging` for a selective release candidate. Staging deploys to
+  `staging.kortix.com` / `staging-api.kortix.com` and must use the staging data
+  plane, not dev or prod.
+- Staging deploys must apply pending DB migrations against `STAGING_DATABASE_URL`
+  before the staging EKS rollout. If that secret is missing or points at dev/prod,
+  treat the deploy as broken; staging must never fall back to dev, KE2E, or prod DBs.
+- **`prod` = production.** Production moves only through **Promote to Production**,
+  which uses `staging` as the source, opens a reviewed release PR into `prod`,
+  publishes the release artifacts, and rolls production after merge.
+- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+  `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
+  staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`

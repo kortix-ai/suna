@@ -13,7 +13,7 @@ name: DB Migrations
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'

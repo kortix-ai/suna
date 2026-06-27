@@ -4,17 +4,16 @@
 # deploy; git revert is the rollback.
 
 # Immutable release tag (promote bumps this). NOT :latest in GitOps.
-# The 0.9.68 rollback intentionally does NOT touch the gateway: there was no
-# gateway in the 0.9.68 stack (it entered prod EKS at v0.9.72), and no :0.9.68
-# gateway image exists. Kept on its current 0.9.77 so Argo stays healthy.
 image:
-  tag: "0.9.77"
+  tag: "0.9.78"
+
 # Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
 replicas: 3
 autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
+
 resources:
   requests:
     cpu: "500m"
@@ -22,6 +21,7 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
+
 # Public, direct. Prod sandboxes hit the gateway straight at this host
 # (LLM_GATEWAY_BASE_URL=https://gateway.kortix.com/v1/llm) so LLM streams live
 # on gateway pods, not the API — API deploys don't cut in-flight streams.

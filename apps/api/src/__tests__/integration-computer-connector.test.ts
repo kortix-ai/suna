@@ -30,6 +30,13 @@ let seeded = false;
 
 beforeAll(async () => {
   await db.execute(sql`alter type kortix.executor_connector_provider add value if not exists 'computer'`);
+  await db.execute(sql`
+    alter table kortix.tunnel_connections
+      add column if not exists relay_owner_id varchar(255),
+      add column if not exists relay_owner_instance varchar(255),
+      add column if not exists relay_owner_started_at timestamp with time zone,
+      add column if not exists relay_owner_heartbeat_at timestamp with time zone
+  `);
 
   const rows = (await db.execute(
     sql`select project_id, account_id, metadata from kortix.projects limit 1`,
@@ -123,16 +130,42 @@ describe('computer connector — real DB e2e', () => {
     for (const a of actions) expect((a.binding as { kind: string }).kind).toBe('tunnel');
   });
 
-  test('list_computers returns the connected machine', async () => {
+  test('list_computers returns the connected machine and DB-backed online status', async () => {
     if (!seeded) return;
-    const out = await executeComputerCall({ accountId, selector: null, method: 'list_computers', args: {} });
-    expect(out.ok).toBe(true);
-    const machines = (out as { ok: true; data: { computers: Array<{ id: string; name: string }> } }).data.computers;
-    expect(machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine')).toBe(true);
+    await db
+      .update(tunnelConnections)
+      .set({
+        status: 'online',
+        relayOwnerId: 'api-owner-for-test',
+        relayOwnerInstance: 'api-owner-for-test',
+        relayOwnerStartedAt: new Date(),
+        relayOwnerHeartbeatAt: new Date(),
+        lastHeartbeatAt: new Date(),
+      })
+      .where(eq(tunnelConnections.tunnelId, tunnelId));
 
-    // direct helper sanity
-    const direct = await listAccountComputers(accountId);
-    expect(direct.some((m) => m.id === tunnelId)).toBe(true);
+    try {
+      const out = await executeComputerCall({ accountId, selector: null, method: 'list_computers', args: {} });
+      expect(out.ok).toBe(true);
+      const machines = (out as { ok: true; data: { computers: Array<{ id: string; name: string; online: boolean }> } }).data.computers;
+      expect(machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine' && m.online)).toBe(true);
+
+      // direct helper sanity
+      const direct = await listAccountComputers(accountId);
+      expect(direct.some((m) => m.id === tunnelId && m.online)).toBe(true);
+    } finally {
+      await db
+        .update(tunnelConnections)
+        .set({
+          status: 'offline',
+          relayOwnerId: null,
+          relayOwnerInstance: null,
+          relayOwnerStartedAt: null,
+          relayOwnerHeartbeatAt: null,
+          lastHeartbeatAt: null,
+        })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+    }
   });
 
   test('fs.read with no grant → permission_required (pending approval)', async () => {

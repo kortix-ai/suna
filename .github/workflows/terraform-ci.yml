@@ -7,7 +7,7 @@ name: Terraform CI
 
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
