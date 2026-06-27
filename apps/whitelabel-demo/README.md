@@ -12,9 +12,22 @@ backend, and you have a white-label coding agent.
 
 | Route | SDK surface |
 | --- | --- |
-| `/` | `kortix.projects.list()` behind an API-key gate |
-| `/projects/[id]` | `kortix.project(id).get()` · `.sessions.list()` · `.sessions.create()` |
-| `/projects/[id]/sessions/[sessionId]` | the full reactive chat stack (below) |
+| `/` | projects dashboard + create (`projects.list`, `projects.provision`) |
+| `/account` | accounts + members + invites (`accounts.*`, `projects.listForAccount`) |
+| `/projects/[id]` | new-session onboarding (`sessions.create`, `sandboxTemplates`, `onboardingComplete`) |
+| `/projects/[id]/sessions/[sessionId]` | chat · Files · Changes · Preview tabs + session actions |
+| `/projects/[id]/settings` | General · Secrets · Members · Connectors · Triggers · Policies |
+
+### Full facade coverage
+
+This reference exercises **the entire `@kortix/sdk` facade** — every method has a
+real UI surface (a deliberate goal so nothing is left undemonstrated):
+
+- **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites`
+- **projects**: `list/listForAccount/provision/get/detail/update/archive/llmCatalog/sandboxHealth/sandboxTemplates`
+- **project(id)**: `onboardingComplete` · `secrets.{list,upsert,remove,setPersonal,removePersonal,setGitCredential}` · `access.{list,invite,update,revoke,requests,approveRequest,rejectRequest,pendingInvites,resendInvite,revokeInvite,groupGrants}` · `connectors.{list,config,create,remove,sync}` · `policies.{list,set}` · `triggers.{list,create,update,remove,fire,setActivation}` · `files.{list,read,search,history,archive}` · `git.{commits,commit,commitDiff,branches,versionDiff}` · `changeRequests.{list,get,diff,mergePreview,open,merge,close,reopen}`
+- **session(pid,sid)**: `get/update/delete/start/restart/setSharing/previews/commit · publicShares.{list,create,revoke} · health/previewUrl/proxyUrl/setModel/send/abort`
+- **react** (`@kortix/sdk/react`): `useSessionSync`, `useSendOpenCodeMessage`/`useAbortOpenCodeSession`, `OpenCodeEventStreamProvider`, `useSandboxConnection`, `useOpenCodePendingStore` (questions/permissions), `useOpenCodeLocal`/`useOpenCodeProviders`/`useVisibleAgents`/`useOpenCodeConfig`, `useCanonicalOpenCodeSession`, `replyToQuestion`/`replyToPermission`
 
 Every Kortix call goes through the one client created in `src/lib/kortix.ts`:
 

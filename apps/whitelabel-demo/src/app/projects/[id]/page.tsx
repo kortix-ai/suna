@@ -2,10 +2,17 @@
 
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Loader2, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
@@ -36,7 +43,17 @@ function ProjectHome() {
   const router = useRouter();
   const qc = useQueryClient();
   const [prompt, setPrompt] = useState('');
+  const [template, setTemplate] = useState<string>('default');
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Sandbox templates the new session can boot from.
+  const templates = useQuery({
+    queryKey: ['project-sandbox-templates', projectId],
+    queryFn: () => kortix.projects.sandboxTemplates(projectId),
+    retry: false,
+  });
+  const templateList = ((templates.data as any)?.templates ??
+    (Array.isArray(templates.data) ? templates.data : [])) as any[];
 
   const start = useMutation({
     mutationFn: async (initialPrompt: string) => {
@@ -45,7 +62,10 @@ function ProjectHome() {
         session_id: sessionId,
         initial_prompt: initialPrompt,
         name: initialPrompt.slice(0, 60),
+        ...(template && template !== 'default' ? { sandbox_slug: template } : {}),
       });
+      // Mark first-run onboarding complete (best-effort — never block the launch).
+      kortix.project(projectId).onboardingComplete(true).catch(() => {});
       return sessionId;
     },
     onSuccess: (sessionId) => {
@@ -87,7 +107,26 @@ function ProjectHome() {
             }}
             className="min-h-[88px] w-full resize-none bg-transparent px-4 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground scrollbar-thin"
           />
-          <div className="flex justify-end px-2.5 pb-2.5">
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            {templateList.length > 1 ? (
+              <Select value={template} onValueChange={setTemplate}>
+                <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent text-xs text-muted-foreground shadow-none">
+                  <SelectValue placeholder="Template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templateList.map((t) => {
+                    const slug = String(t.slug ?? t.id ?? t.name ?? 'default');
+                    return (
+                      <SelectItem key={slug} value={slug}>
+                        {t.name ?? slug}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span />
+            )}
             <Button
               size="icon"
               className="size-8 rounded-full"

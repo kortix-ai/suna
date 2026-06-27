@@ -20,7 +20,7 @@ import { clearApiKey, getApiKey, kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, Loader2, LogOut, Plus } from 'lucide-react';
+import { FolderGit2, Loader2, LogOut, Plus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -57,9 +57,16 @@ function Dashboard({ onDisconnect }: { onDisconnect: () => void }) {
       <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
           <BrandMark />
-          <Button variant="ghost" size="sm" onClick={onDisconnect}>
-            <LogOut className="size-4" /> Disconnect
-          </Button>
+          <div className="flex items-center gap-1">
+            <Link href="/account">
+              <Button variant="ghost" size="sm">
+                <Users className="size-4" /> Account
+              </Button>
+            </Link>
+            <Button variant="ghost" size="sm" onClick={onDisconnect}>
+              <LogOut className="size-4" /> Disconnect
+            </Button>
+          </div>
         </div>
       </header>
 

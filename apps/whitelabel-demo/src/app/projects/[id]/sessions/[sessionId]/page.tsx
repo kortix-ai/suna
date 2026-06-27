@@ -6,11 +6,31 @@ import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { ProjectShell } from '@/components/project-shell';
+import { ChangesPanel } from '@/components/workbench/changes-panel';
+import { FilesPanel } from '@/components/workbench/files-panel';
+import { PreviewPanel } from '@/components/workbench/preview-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { kortix } from '@/lib/kortix';
 import { SessionRuntime, useRuntimePhase } from '@/lib/runtime';
-import { qk } from '@/lib/query-keys';
+import { invalidateSessions, qk } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 import {
   useAbortOpenCodeSession,
   useCanonicalOpenCodeSession,
@@ -23,9 +43,9 @@ import {
   useVisibleAgents,
 } from '@kortix/sdk/react';
 import { switchToSessionSandboxAsync } from '@kortix/sdk/server-store';
-import { useQuery } from '@tanstack/react-query';
-import { Loader2, Sparkles } from 'lucide-react';
-import { useParams } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, MoreVertical, Pencil, RotateCw, Sparkles, Trash2 } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -83,7 +103,7 @@ function Workbench() {
         />
       ) : (
         <SessionRuntime>
-          <Chat
+          <WorkbenchTabs
             projectId={projectId}
             sessionId={sessionId}
             pinFromStart={startData?.opencode_session_id ?? null}
@@ -103,8 +123,25 @@ function Header({ projectId, sessionId }: { projectId: string; sessionId: string
   const title =
     session.data?.name || session.data?.custom_name || session.data?.branch_name || 'Session';
   const status = session.data?.status;
+
+  // Runtime liveness probe (GET /kortix/health) for the header dot.
+  const health = useQuery({
+    queryKey: ['session-health', projectId, sessionId],
+    queryFn: () => kortix.session(projectId, sessionId).health(),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const ready = (health.data as any)?.ok && (health.data as any)?.health?.runtimeReady;
+
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
+      <span
+        className={cn(
+          'size-2 shrink-0 rounded-full',
+          ready ? 'bg-emerald-500' : health.data ? 'bg-amber-500' : 'bg-muted-foreground/40',
+        )}
+        title={ready ? 'Runtime healthy' : 'Runtime warming up'}
+      />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{title}</div>
       </div>
@@ -113,7 +150,145 @@ function Header({ projectId, sessionId }: { projectId: string; sessionId: string
           {status}
         </Badge>
       )}
+      <SessionActions projectId={projectId} sessionId={sessionId} currentName={title} />
     </header>
+  );
+}
+
+/** Session lifecycle actions: rename (update), restart, delete. */
+function SessionActions({
+  projectId,
+  sessionId,
+  currentName,
+}: {
+  projectId: string;
+  sessionId: string;
+  currentName: string;
+}) {
+  const qc = useQueryClient();
+  const router = useRouter();
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState('');
+
+  const rename = useMutation({
+    mutationFn: () => kortix.session(projectId, sessionId).update({ name: name.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
+      invalidateSessions(qc, projectId);
+      setRenaming(false);
+      toast.success('Session renamed');
+    },
+    onError: () => toast.error('Could not rename'),
+  });
+  const restart = useMutation({
+    mutationFn: () => kortix.session(projectId, sessionId).restart(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.sessionStart(projectId, sessionId) });
+      toast.success('Restarting the session…');
+    },
+    onError: () => toast.error('Could not restart'),
+  });
+  const remove = useMutation({
+    mutationFn: () => kortix.session(projectId, sessionId).delete(),
+    onSuccess: () => {
+      invalidateSessions(qc, projectId);
+      toast.success('Session deleted');
+      router.push(`/projects/${projectId}`);
+    },
+    onError: () => toast.error('Could not delete'),
+  });
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8" aria-label="Session actions">
+            <MoreVertical className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={() => {
+              setName(currentName);
+              setRenaming(true);
+            }}
+          >
+            <Pencil className="size-4" /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => restart.mutate()} disabled={restart.isPending}>
+            <RotateCw className="size-4" /> Restart
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => remove.mutate()}
+            disabled={remove.isPending}
+          >
+            <Trash2 className="size-4" /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={renaming} onOpenChange={setRenaming}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename session</DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && name.trim() && rename.mutate()}
+          />
+          <DialogFooter>
+            <Button disabled={!name.trim() || rename.isPending} onClick={() => rename.mutate()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
+function WorkbenchTabs({
+  projectId,
+  sessionId,
+  pinFromStart,
+}: {
+  projectId: string;
+  sessionId: string;
+  pinFromStart: string | null;
+}) {
+  return (
+    <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
+      <div className="border-b border-border px-5">
+        <TabsList className="h-10 bg-transparent p-0">
+          {(['chat', 'files', 'changes', 'preview'] as const).map((v) => (
+            <TabsTrigger
+              key={v}
+              value={v}
+              className="h-10 rounded-none border-b-2 border-transparent bg-transparent px-3 capitalize text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            >
+              {v}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
+      <TabsContent value="chat" className="flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
+        <Chat projectId={projectId} sessionId={sessionId} pinFromStart={pinFromStart} />
+      </TabsContent>
+      <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
+        <FilesPanel projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="changes" className="min-h-0 flex-1 overflow-hidden p-4">
+        <ChangesPanel projectId={projectId} sessionId={sessionId} />
+      </TabsContent>
+      <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden p-4">
+        <PreviewPanel projectId={projectId} sessionId={sessionId} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -171,10 +346,18 @@ function Chat({
       </div>
     );
   }
-  return <Thread ocSessionId={rootSessionId} />;
+  return <Thread projectId={projectId} sessionId={sessionId} ocSessionId={rootSessionId} />;
 }
 
-function Thread({ ocSessionId }: { ocSessionId: string }) {
+function Thread({
+  projectId,
+  sessionId,
+  ocSessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+  ocSessionId: string;
+}) {
   const { messages, isBusy, isLoading } = useSessionSync(ocSessionId);
   const send = useSendOpenCodeMessage();
   const abort = useAbortOpenCodeSession();
@@ -208,6 +391,14 @@ function Thread({ ocSessionId }: { ocSessionId: string }) {
     config: config.data,
     sessionId: ocSessionId,
   });
+
+  // Persist the picked model onto the session handle (the facade's opinionated
+  // setModel) alongside the React model store, so either send path agrees.
+  useEffect(() => {
+    if (local.model.currentKey) {
+      kortix.session(projectId, sessionId).setModel(local.model.currentKey);
+    }
+  }, [local.model.currentKey, projectId, sessionId]);
 
   // Optimistic send: show the user's message instantly until the server echoes
   // it back over SSE. Without this, hitting send feels like nothing happened.
