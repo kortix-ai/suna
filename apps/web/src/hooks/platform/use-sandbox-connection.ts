@@ -175,12 +175,16 @@ export function useSandboxConnection() {
 					}
 				}
 			} finally {
+				// Reschedule from finally so EVERY path re-arms the poll loop —
+				// notably the 503 "OpenCode still booting" branch returns early; without
+				// this it stops polling and `healthy` never flips, so useSessionSync and
+				// the SSE (both gated on healthy) never subscribe and a fresh session's
+				// first turn stays invisible until a manual reload.
 				if (alive) {
 					markInitialCheckDone();
+					scheduleNext();
 				}
 			}
-
-			scheduleNext();
 		}
 
 		function scheduleNext() {
