@@ -18,6 +18,7 @@ import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
+  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/shared/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
@@ -156,6 +157,9 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
  * "Manage models".
  */
 const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
+const DEFAULT_VISIBLE_NATIVE_OPENCODE_MODEL_IDS = new Set<string>(
+  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
+);
 
 /**
  * Provider id of the managed Kortix LLM gateway (see the sandbox's
@@ -183,7 +187,13 @@ function subProviderOf(modelID: string): string {
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
-function isDefaultVisible(model: ModelKey): boolean {
+export function isDefaultVisible(model: ModelKey): boolean {
+  if (
+    model.providerID === 'opencode' &&
+    DEFAULT_VISIBLE_NATIVE_OPENCODE_MODEL_IDS.has(model.modelID)
+  ) {
+    return true;
+  }
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 

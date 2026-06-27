@@ -323,6 +323,10 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
   );
 
+  if (!autoModel && visibleModels.length === 0) {
+    return null;
+  }
+
   return (
     <>
       {projectId && (
