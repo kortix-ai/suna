@@ -142,10 +142,14 @@ export function useSandboxConnection(): void {
           }
         }
       } finally {
-        if (alive) markInitialCheckDone();
+        // Reschedule from finally so EVERY path re-arms the poll loop — notably
+        // the 503 "OpenCode still booting" branch returns early, and without
+        // this it would stop polling and the runtime would never flip healthy.
+        if (alive) {
+          markInitialCheckDone();
+          scheduleNext();
+        }
       }
-
-      scheduleNext();
     }
 
     function scheduleNext() {

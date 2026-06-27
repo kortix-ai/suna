@@ -184,7 +184,8 @@ function ChangeRequestDetail({
     onError: () => toast.error('Could not reopen change request'),
   });
 
-  const cr = detail.data as any;
+  // changeRequests.get() returns { change_request: ChangeRequest } — unwrap it.
+  const cr = (detail.data as any)?.change_request;
   const mp = mergePreview.data as any;
   const df = diff.data as any;
   const status: string = cr?.status ?? 'open';

@@ -10,7 +10,7 @@ import { SessionRuntime } from '@/lib/runtime';
 import { switchToSessionSandboxAsync } from '@kortix/sdk/server-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function SessionWorkbenchPage() {
   return (
@@ -38,21 +38,24 @@ function Workbench() {
   const ready = startData?.stage === 'ready';
 
   // 2. Point the SDK's active runtime at this session's sandbox once ready.
-  const [switched, setSwitched] = useState(false);
-  const switchedFor = useRef<string | null>(null);
+  // Track WHICH sandbox we've switched to (not a bare boolean) so navigating to
+  // another session — which reuses this component instance — re-gates instead of
+  // rendering the new session against the previous sandbox.
+  const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
   useEffect(() => {
     const sandbox = startData?.sandbox;
-    if (!ready || !sandbox) return;
-    if (switchedFor.current === sandbox.sandbox_id) return;
-    switchedFor.current = sandbox.sandbox_id;
+    if (!ready || !sandbox || switchedSandboxId === sandbox.sandbox_id) return;
     let cancelled = false;
     switchToSessionSandboxAsync(projectId, sessionId, sandbox).then((res) => {
-      if (!cancelled && res) setSwitched(true);
+      if (!cancelled && res) setSwitchedSandboxId(sandbox.sandbox_id);
     });
     return () => {
       cancelled = true;
     };
-  }, [ready, projectId, sessionId, startData?.sandbox]);
+  }, [ready, projectId, sessionId, startData?.sandbox, switchedSandboxId]);
+
+  const switched =
+    ready && !!startData?.sandbox && switchedSandboxId === startData.sandbox.sandbox_id;
 
   return (
     <>

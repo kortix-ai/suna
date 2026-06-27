@@ -8,7 +8,6 @@
  * what this returns.
  */
 
-import { kortix } from '@/lib/kortix';
 import { useRuntimePhase } from '@/lib/runtime';
 import { useSessionPicks } from '@/lib/session-picks';
 import { clearStartStash, readStartStash } from '@/lib/session-start';
@@ -63,27 +62,30 @@ export function useChat({
   const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
-  // Mirror the selected model onto the session handle (facade setModel).
-  useEffect(() => {
-    if (picks.model) kortix.session(projectId, sessionId).setModel(picks.model);
-  }, [picks.model, projectId, sessionId]);
-
-  // Optimistic send: show the user's message instantly until SSE echoes it.
+  // Optimistic send: show the user's message instantly until a NEW user message
+  // lands in the thread (count grows). Counting is robust to duplicate or
+  // server-normalized text, where a text-equality match would clear too early or
+  // never clear (wedging the composer on Stop). A timeout backstops a lost echo.
+  const userMsgCount = useMemo(
+    () => messages.filter((m) => m.info.role === 'user').length,
+    [messages],
+  );
   const [pending, setPending] = useState<string | null>(null);
+  const pendingBaseCount = useRef(0);
+  useEffect(() => {
+    if (pending && userMsgCount > pendingBaseCount.current) setPending(null);
+  }, [userMsgCount, pending]);
   useEffect(() => {
     if (!pending) return;
-    const echoed = messages.some(
-      (m) =>
-        m.info.role === 'user' &&
-        (m.parts as any[]).some((p) => p.type === 'text' && p.text?.trim() === pending.trim()),
-    );
-    if (echoed) setPending(null);
-  }, [messages, pending]);
+    const t = setTimeout(() => setPending(null), 30_000);
+    return () => clearTimeout(t);
+  }, [pending]);
 
   const sendMessage = (
     text: string,
     override?: { model?: ModelKey | null; agent?: string | null },
   ) => {
+    pendingBaseCount.current = userMsgCount;
     setPending(text);
     const model = override?.model ?? picks.model;
     const agent = override?.agent ?? picks.agent;

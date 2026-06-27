@@ -14,6 +14,7 @@ import {
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { type StartStash, startStashKey } from '@/lib/session-start';
+import { newSessionId } from '@/lib/uuid';
 import {
   type ModelKey,
   useProjectConfig,
@@ -70,7 +71,7 @@ function ProjectHome() {
 
   const start = useMutation({
     mutationFn: async (text: string) => {
-      const sessionId = crypto.randomUUID();
+      const sessionId = newSessionId();
       // Template + agent are create-time; the prompt + model + agent flow into
       // the first message (stashed) so the chosen model applies at start.
       await kortix.project(projectId).sessions.create({

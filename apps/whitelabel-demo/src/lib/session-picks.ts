@@ -25,10 +25,15 @@ export function useSessionPicks(sessionId: string): SessionPicks {
   });
 
   useEffect(() => {
+    // Always reset on session change — the page instance is reused across
+    // session navigation, so without the `else` a new session would inherit the
+    // previous one's picks (and persist them under the wrong key).
     try {
       const raw = localStorage.getItem(storageKey(sessionId));
-      if (raw) setPicks(JSON.parse(raw));
-    } catch {}
+      setPicks(raw ? JSON.parse(raw) : { model: null, agent: null });
+    } catch {
+      setPicks({ model: null, agent: null });
+    }
   }, [sessionId]);
 
   const update = (patch: Partial<{ model: ModelKey | null; agent: string | null }>) =>

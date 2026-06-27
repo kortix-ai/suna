@@ -140,7 +140,8 @@ export function Composer({
               }
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault();
-                pickCommand(matches[highlight].name);
+                const sel = matches[highlight] ?? matches[0];
+                if (sel) pickCommand(sel.name);
                 return;
               }
               if (e.key === 'Escape') {
@@ -151,7 +152,9 @@ export function Composer({
             }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              submit();
+              // Don't fire a new turn while the agent is busy — the visible
+              // control is Stop; use it (the button) to cancel.
+              if (!busy) submit();
             }
           }}
           className="max-h-52 min-h-[24px] w-full resize-none bg-transparent px-4 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground scrollbar-thin"
