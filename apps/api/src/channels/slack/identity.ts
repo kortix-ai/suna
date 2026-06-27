@@ -177,31 +177,30 @@ export async function postIdentityPrompt(input: {
   slackUserId: string;
   reason: 'unlinked' | 'not_member';
 }): Promise<void> {
-  if (!input.channel) return;
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
 
-  if (input.reason === 'unlinked') {
-    const url = buildSlackLoginUrl({ teamId: input.teamId, slackUserId: input.slackUserId });
-    await postEphemeral(
-      token,
-      input.channel,
-      input.slackUserId,
-      'Connect your Kortix account to continue.',
-      connectAccountBlocks(url),
-      input.threadTs,
-    );
-    return;
-  }
+  const { blocks, fallback } =
+    input.reason === 'unlinked'
+      ? {
+          blocks: connectAccountBlocks(
+            buildSlackLoginUrl({ teamId: input.teamId, slackUserId: input.slackUserId }),
+          ),
+          fallback: 'Connect your Kortix account to continue.',
+        }
+      : {
+          blocks: requestAccessBlocks(input.projectId),
+          fallback: "You're connected, but don't have access to this project yet.",
+        };
 
-  await postEphemeral(
-    token,
-    input.channel,
-    input.slackUserId,
-    "You're connected, but don't have access to this project yet.",
-    requestAccessBlocks(input.projectId),
-    input.threadTs,
-  );
+  // Send BOTH: an in-thread ephemeral for context right where they asked, AND a
+  // DM. The DM pushes a real notification and persists — an ephemeral alone is
+  // silent and vanishes on reload, so on its own it reads as "no response."
+  if (input.channel) {
+    await postEphemeral(token, input.channel, input.slackUserId, fallback, blocks, input.threadTs);
+  }
+  const dm = await openDmChannel(token, input.slackUserId);
+  if (dm) await postBlocks(token, dm, fallback, blocks);
 }
 
 export type AccessRequestOutcome =
