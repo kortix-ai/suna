@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from playwright.async_api import async_playwright
-from PyPDF2 import PdfWriter, PdfReader
+from pypdf import PdfWriter, PdfReader
 
 
 def find_chromium() -> str | None:

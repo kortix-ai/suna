@@ -125,7 +125,7 @@
     "cobe": "^0.6.5",
     "color-bits": "^1.1.0",
     "date-fns": "^3.6.0",
-    "diff": "^7.0.0",
+    "diff": "^8.0.3",
     "docx-preview": "^0.3.7",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",

@@ -165,12 +165,12 @@ wheels = [
 ]
 
 [[package]]
-name = "pypdf2"
-version = "3.0.1"
+name = "pypdf"
+version = "6.14.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/9f/bb/18dc3062d37db6c491392007dfd1a7f524bb95886eb956569ac38a23a784/PyPDF2-3.0.1.tar.gz", hash = "sha256:a74408f69ba6271f71b9352ef4ed03dc53a31aa404d29b5d31f53bfecfee1440", size = 227419 }
+sdist = { url = "https://files.pythonhosted.org/packages/03/72/7dfd5ff1c9c37de97a731701f51af091325f123d9d4270361c9c69e4431f/pypdf-6.14.2.tar.gz", hash = "sha256:7873f502fe4385e79539b21d872392dc0c4e3714327c15881cbc7fbfd1f95b25", size = 6491182 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/5e/c86a5643653825d3c913719e788e41386bee415c2b87b4f955432f2de6b2/pypdf2-3.0.1-py3-none-any.whl", hash = "sha256:d16e4205cfee272fbdc0568b68d82be796540b1537508cef59388f839c191928", size = 232572 },
+    { url = "https://files.pythonhosted.org/packages/49/e6/136aa8993a2ae7214e0b0ef2edaa0d2e08d1d4e4982635b08a835ff31ec8/pypdf-6.14.2-py3-none-any.whl", hash = "sha256:3f07891af76dc002657e04993ab9b4de81de29f9013b9761d0b7968bff12e946", size = 349514 },
 ]
 
 [[package]]
@@ -196,7 +196,7 @@ dependencies = [
     { name = "lxml", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pillow", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "playwright", marker = "sys_platform == 'darwin'" },
-    { name = "pypdf2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pypdf", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "python-pptx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -205,7 +205,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.1.0" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "playwright", marker = "sys_platform == 'darwin'", specifier = ">=1.58.0" },
-    { name = "pypdf2", specifier = ">=3.0.1" },
+    { name = "pypdf", specifier = ">=4.0.0" },
     { name = "python-pptx", specifier = ">=1.0.2" },
 ]
 
