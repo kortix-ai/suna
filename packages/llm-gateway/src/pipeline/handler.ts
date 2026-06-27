@@ -200,7 +200,7 @@ export async function handleChatCompletions(
   const requestedModel = typeof body.model === 'string' ? body.model : '';
   // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
   // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
-  const routedModel = config.autoRouter?.(requestedModel, body) ?? requestedModel;
+  const routedModel = config.autoRouter?.(requestedModel, body, principal) ?? requestedModel;
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
