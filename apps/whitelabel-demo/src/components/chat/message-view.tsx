@@ -1,89 +1,84 @@
 'use client';
 
 /**
- * Renders one agent/user message from the sync store. A message is an `info`
- * (role + metadata) plus an ordered list of `parts` (text, reasoning, tool
- * calls, files). We render the part types that matter for a chat transcript and
- * skip the structural ones (step-start/step-finish/snapshot).
+ * One message from the sync store. User messages are a right-aligned bubble;
+ * assistant messages render full-width as ordered content blocks (markdown text,
+ * collapsible reasoning, tool cards, files) — the same shape Kortix uses.
  */
 
 import type { MessageWithParts } from '@kortix/sdk/react';
-import { cn } from '@/lib/utils';
-import { Wrench } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Markdown } from './markdown';
+import { ToolCall } from './tool-call';
+import { Brain, ChevronRight, Paperclip } from 'lucide-react';
 
-// The opencode Part union is broad; read fields defensively.
 type AnyPart = MessageWithParts['parts'][number] & Record<string, any>;
 
-function ToolPart({ part }: { part: AnyPart }) {
-  const name = part.tool ?? 'tool';
-  const stateStatus: string | undefined = part.state?.status;
-  const done = stateStatus === 'completed';
-  const errored = stateStatus === 'error';
+function Reasoning({ text }: { text: string }) {
   return (
-    <div
-      className={cn(
-        'inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs',
-        errored
-          ? 'border-red-500/30 bg-red-500/5 text-red-300'
-          : 'border-[var(--color-border)] bg-[var(--color-panel-2)] text-[var(--color-muted)]',
-      )}
-    >
-      <Wrench className="size-3.5 shrink-0" />
-      <span className="font-medium text-[var(--color-fg)]">{name}</span>
-      {stateStatus && !done && !errored && (
-        <span className="animate-pulse">{stateStatus}…</span>
-      )}
-      {errored && <span>failed</span>}
-    </div>
+    <Collapsible>
+      <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+        <Brain className="size-3.5" />
+        <span>Thought process</span>
+        <ChevronRight className="size-3 transition-transform group-data-[state=open]:rotate-90" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <p className="mt-1.5 whitespace-pre-wrap border-l-2 border-border pl-3 text-xs italic leading-relaxed text-muted-foreground">
+          {text}
+        </p>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function Part({ part }: { part: AnyPart }) {
+function PartView({ part }: { part: AnyPart }) {
   switch (part.type) {
     case 'text':
-      return part.text ? (
-        <p className="whitespace-pre-wrap leading-relaxed">{part.text}</p>
-      ) : null;
+      return part.text?.trim() ? <Markdown>{part.text}</Markdown> : null;
     case 'reasoning':
-      return part.text ? (
-        <p className="whitespace-pre-wrap text-xs italic leading-relaxed text-[var(--color-muted)]">
-          {part.text}
-        </p>
-      ) : null;
+      return part.text?.trim() ? <Reasoning text={part.text} /> : null;
     case 'tool':
-      return <ToolPart part={part} />;
+      return <ToolCall part={part} />;
     case 'file':
       return (
-        <div className="text-xs text-[var(--color-muted)]">
-          📎 {part.filename ?? part.url ?? 'file'}
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+          <Paperclip className="size-3" />
+          {part.filename ?? part.url ?? 'file'}
         </div>
       );
     default:
-      return null; // step-start, step-finish, snapshot, agent — structural
+      return null; // step-start, step-finish, snapshot, agent
   }
 }
 
 export function MessageView({ message }: { message: MessageWithParts }) {
   const isUser = message.info.role === 'user';
-  const parts = message.parts.filter(
+  const parts = (message.parts as AnyPart[]).filter(
     (p) => p.type !== 'step-start' && p.type !== 'step-finish',
   );
-  if (parts.length === 0) return null;
 
-  return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[80%] space-y-2 rounded-2xl px-4 py-2.5 text-sm',
-          isUser
-            ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
-            : 'bg-[var(--color-panel)] text-[var(--color-fg)]',
-        )}
-      >
-        {parts.map((p, i) => (
-          <Part key={(p as AnyPart).id ?? i} part={p as AnyPart} />
-        ))}
+  if (isUser) {
+    const text = parts
+      .filter((p) => p.type === 'text')
+      .map((p) => p.text)
+      .join('\n')
+      .trim();
+    if (!text) return null;
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
+          {text}
+        </div>
       </div>
+    );
+  }
+
+  if (parts.length === 0) return null;
+  return (
+    <div className="space-y-2.5">
+      {parts.map((p, i) => (
+        <PartView key={p.id ?? i} part={p} />
+      ))}
     </div>
   );
 }

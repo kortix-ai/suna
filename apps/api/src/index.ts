@@ -165,6 +165,9 @@ const cloudOrigins = [
 const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
+  'http://localhost:3010',
+  'http://127.0.0.1:3010',
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)

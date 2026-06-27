@@ -3,7 +3,9 @@
 import { BRAND } from '@/config/brand';
 import { setApiKey } from '@/lib/kortix';
 import { BrandMark } from './brand-mark';
-import { Button, Card, Input } from './ui';
+import { Button } from './ui/button';
+import { Card } from './ui/card';
+import { Input } from './ui/input';
 import { useState } from 'react';
 import { KeyRound } from 'lucide-react';
 
@@ -16,25 +18,25 @@ export function ApiKeyGate({ onReady }: { onReady: () => void }) {
   const [value, setValue] = useState('');
 
   return (
-    <div className="grid min-h-dvh place-items-center px-4">
+    <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6">
         <BrandMark className="mb-5" />
-        <h1 className="text-lg font-semibold text-[var(--color-fg)]">Connect to {BRAND.name}</h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
+        <h1 className="text-lg font-semibold tracking-tight">Connect to {BRAND.name}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
           Paste a Kortix API key. Create one in your dashboard under{' '}
-          <span className="text-[var(--color-fg)]">Settings → API keys</span>.
+          <span className="text-foreground">Settings → API keys</span>.
         </p>
         <form
           className="mt-5 space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
             if (!value.trim()) return;
-            setApiKey(value);
+            setApiKey(value.trim());
             onReady();
           }}
         >
           <div className="relative">
-            <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-muted)]" />
+            <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
               value={value}
