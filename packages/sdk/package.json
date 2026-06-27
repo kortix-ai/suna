@@ -39,6 +39,7 @@
     "./server-store": "./src/state/server-store.ts",
     "./sync-store": "./src/state/sync-store.ts",
     "./sandbox-connection-store": "./src/state/sandbox-connection-store.ts",
+    "./opencode-pending-store": "./src/state/opencode-pending-store.ts",
     "./files": "./src/files/client.ts",
     "./session": "./src/session/index.ts",
     "./session/url": "./src/session/url.ts"
