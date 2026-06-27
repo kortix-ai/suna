@@ -49,6 +49,8 @@ import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
 import {
+  isInvisibleActivityPart,
+  isNoGroupActivityTool,
   isShellActivityTool,
   shellActivityGroupLabel,
 } from '@/features/session/session-activity-groups';
@@ -3255,10 +3257,6 @@ function SessionTurn({
               'scrape',
               'scrape_webpage',
             ]);
-            // Tools that always render as individual rows — never folded into
-            // a "Tool · Nx" pile. File writes/creations are distinct artifacts
-            // (index.html, styles.css, …) the user wants to see one-per-line.
-            const NO_GROUP_SET = new Set(['write']);
             const norm = (t: string) => {
               const n = t.replace(/^oc-/, '').replace(/-/g, '_');
               if (CONTEXT_SET.has(n)) return '__context__';
@@ -3274,6 +3272,11 @@ function SessionTurn({
                 }
                 continue;
               }
+              // Render-nothing parts (blank text, internal snapshot/patch
+              // bookkeeping) must not split a run of groupable tools — otherwise
+              // consecutive shells fragment into inconsistent singles instead of
+              // one "Ran N commands" group.
+              if (isInvisibleActivityPart(part)) continue;
               flushReasoning();
 
               if (isToolPart(part)) {
@@ -3283,7 +3286,7 @@ function SessionTurn({
                   shouldShowToolPart(tp) &&
                   tp.tool !== 'todowrite' &&
                   tp.tool !== 'question' &&
-                  !NO_GROUP_SET.has(norm(tp.tool)) &&
+                  !isNoGroupActivityTool(tp.tool) &&
                   !hasPermission &&
                   !isToolPartHidden(tp, message.info.id, hidden);
 
