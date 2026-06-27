@@ -44,3 +44,4 @@ export * from './provider-refresh';
 // ids — no guessing the gateway-vs-BYOK key format.
 export { flattenModels, type FlatModel } from './model-flatten';
 export { projectLlmCatalogToProviderList } from './provider-selection';
+export { useProjectModels } from './use-project-models';

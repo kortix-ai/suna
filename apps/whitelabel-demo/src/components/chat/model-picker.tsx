@@ -1,47 +1,49 @@
 'use client';
 
 /**
- * Model picker — a thin searchable dropdown over the SDK's own model layer. We
- * don't reimplement the catalog/visibility rules (mixed gateway vs BYOK key
- * formats, per-family "latest", connected-provider gating are subtle). We take
- * the resolved `model` from `useOpenCodeLocal()`, render its `list`, and `set()`
- * the choice. `currentKey` is what the workbench passes to send's options.model.
+ * Model picker — a controlled, searchable dropdown over a server-side model list
+ * (`useProjectModels`). Used identically on the new-session screen and in the
+ * chat composer. `value`/`onChange` are a plain `{ providerID, modelID }` key, so
+ * the same picker drives both the start config and per-message selection.
  */
 
-import type { OpenCodeLocalModel } from '@kortix/sdk/react';
+import type { FlatModel, ModelKey } from '@kortix/sdk/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, Cpu } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-export function ModelPicker({ model }: { model: OpenCodeLocalModel }) {
+export function ModelPicker({
+  models,
+  value,
+  onChange,
+}: {
+  models: FlatModel[];
+  value: ModelKey | null;
+  onChange: (value: ModelKey | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-
-  const list = model.list ?? [];
-  const current = model.current;
-  const empty = list.length === 0;
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = q
-      ? list.filter((m) => `${m.modelName} ${m.providerName}`.toLowerCase().includes(q))
-      : list;
+      ? models.filter((m) => `${m.modelName} ${m.providerName}`.toLowerCase().includes(q))
+      : models;
     return base.slice(0, 60);
-  }, [query, list]);
+  }, [query, models]);
+
+  if (models.length === 0) return null;
+  const current =
+    value && models.find((m) => m.providerID === value.providerID && m.modelID === value.modelID);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={empty}
-          className="h-7 max-w-[180px] gap-1 px-2 text-xs text-muted-foreground"
-        >
+        <Button variant="ghost" size="sm" className="h-7 max-w-[170px] gap-1 px-2 text-xs text-muted-foreground">
+          <Cpu className="size-3.5 shrink-0" />
           <span className="truncate">{current?.modelName ?? 'Default model'}</span>
-          {!empty && <ChevronsUpDown className="size-3 shrink-0 opacity-60" />}
+          <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-0">
@@ -56,18 +58,17 @@ export function ModelPicker({ model }: { model: OpenCodeLocalModel }) {
         </div>
         <div className="max-h-72 overflow-y-auto p-1 scrollbar-thin">
           {filtered.map((m) => {
-            const selected =
-              current?.providerID === m.providerID && current?.modelID === m.modelID;
+            const selected = value?.providerID === m.providerID && value?.modelID === m.modelID;
             return (
               <button
                 key={`${m.providerID}/${m.modelID}`}
                 type="button"
                 onClick={() => {
-                  model.set({ providerID: m.providerID, modelID: m.modelID }, { recent: true });
+                  onChange({ providerID: m.providerID, modelID: m.modelID });
                   setOpen(false);
                   setQuery('');
                 }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
               >
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{m.modelName}</div>

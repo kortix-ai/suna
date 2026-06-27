@@ -1,9 +1,9 @@
 'use client';
 
+import { AgentPicker } from '@/components/chat/agent-picker';
+import { ModelPicker } from '@/components/chat/model-picker';
 import { ProjectShell } from '@/components/project-shell';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -14,17 +14,11 @@ import {
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
 import { startStashKey, type StartStash } from '@/lib/session-start';
-import { cn } from '@/lib/utils';
-import {
-  flattenModels,
-  projectLlmCatalogToProviderList,
-  useVisibleAgents,
-  type FlatModel,
-} from '@kortix/sdk/react';
+import { useProjectModels, useVisibleAgents, type ModelKey } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Bot, Check, ChevronsUpDown, Cpu, Loader2, Sparkles } from 'lucide-react';
+import { ArrowUp, Loader2, Sparkles } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 const STARTERS = [
@@ -54,45 +48,32 @@ function ProjectHome() {
 
   const [prompt, setPrompt] = useState('');
   const [template, setTemplate] = useState('default');
-  const [agentName, setAgentName] = useState('');
-  const [model, setModel] = useState<FlatModel | null>(null);
+  const [agent, setAgent] = useState<string | null>(null);
+  const [model, setModel] = useState<ModelKey | null>(null);
 
-  // All three pickers come from project-level REST — no runtime needed yet.
-  // Agents are a SERVER-SIDE fetch (project config), shared with the workbench.
+  // Every picker is a server-side fetch — no runtime needed on this screen.
+  const models = useProjectModels(projectId);
   const agents = useVisibleAgents({ projectId });
-  const catalog = useQuery({
-    queryKey: ['project-llm-catalog', projectId],
-    queryFn: () => kortix.project(projectId).llmCatalog(),
-    retry: false,
-  });
   const templates = useQuery({
     queryKey: ['project-sandbox-templates', projectId],
     queryFn: () => kortix.projects.sandboxTemplates(projectId),
     retry: false,
   });
-  const models = useMemo(
-    () => (catalog.data ? flattenModels(projectLlmCatalogToProviderList(catalog.data as any)) : []),
-    [catalog.data],
-  );
   const templateList = ((templates.data as any)?.templates ??
     (Array.isArray(templates.data) ? templates.data : [])) as any[];
 
   const start = useMutation({
     mutationFn: async (text: string) => {
       const sessionId = crypto.randomUUID();
-      // Template + agent are create-time; prompt + model + agent flow into the
-      // first message (stashed) so the chosen model actually applies at start.
+      // Template + agent are create-time; the prompt + model + agent flow into
+      // the first message (stashed) so the chosen model applies at start.
       await kortix.project(projectId).sessions.create({
         session_id: sessionId,
         name: text.slice(0, 60),
         ...(template && template !== 'default' ? { sandbox_slug: template } : {}),
-        ...(agentName ? { agent_name: agentName } : {}),
+        ...(agent ? { agent_name: agent } : {}),
       });
-      const stash: StartStash = {
-        prompt: text,
-        model: model ? { providerID: model.providerID, modelID: model.modelID } : null,
-        agent: agentName || null,
-      };
+      const stash: StartStash = { prompt: text, model, agent };
       try {
         sessionStorage.setItem(startStashKey(sessionId), JSON.stringify(stash));
       } catch {}
@@ -139,8 +120,8 @@ function ProjectHome() {
             className="min-h-[84px] w-full resize-none bg-transparent px-4 pt-3.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground scrollbar-thin"
           />
           <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5">
-            <ModelSelect models={models} value={model} onChange={setModel} />
-            <AgentSelect agents={agents} value={agentName} onChange={setAgentName} />
+            <ModelPicker models={models} value={model} onChange={setModel} />
+            <AgentPicker agents={agents} value={agent} onChange={setAgent} />
             {templateList.length > 1 && (
               <Select value={template} onValueChange={setTemplate}>
                 <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent text-xs text-muted-foreground shadow-none">
@@ -189,94 +170,5 @@ function ProjectHome() {
         </div>
       </div>
     </div>
-  );
-}
-
-function ModelSelect({
-  models,
-  value,
-  onChange,
-}: {
-  models: FlatModel[];
-  value: FlatModel | null;
-  onChange: (m: FlatModel | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  if (models.length === 0) return null;
-  const filtered = (
-    query
-      ? models.filter((m) => `${m.modelName} ${m.providerName}`.toLowerCase().includes(query.toLowerCase()))
-      : models
-  ).slice(0, 60);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 max-w-[170px] gap-1 px-2 text-xs text-muted-foreground">
-          <Cpu className="size-3.5 shrink-0" />
-          <span className="truncate">{value?.modelName ?? 'Model'}</span>
-          <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0">
-        <div className="border-b border-border p-2">
-          <Input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" className="h-8 text-xs" />
-        </div>
-        <div className="max-h-72 overflow-y-auto p-1 scrollbar-thin">
-          {filtered.map((m) => {
-            const selected = value?.providerID === m.providerID && value?.modelID === m.modelID;
-            return (
-              <button
-                key={`${m.providerID}/${m.modelID}`}
-                type="button"
-                onClick={() => {
-                  onChange(m);
-                  setOpen(false);
-                  setQuery('');
-                }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{m.modelName}</div>
-                  <div className="truncate text-xs text-muted-foreground">{m.providerName}</div>
-                </div>
-                {selected && <Check className="size-4 shrink-0 text-brand" />}
-              </button>
-            );
-          })}
-          {filtered.length === 0 && (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">No models match.</div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function AgentSelect({
-  agents,
-  value,
-  onChange,
-}: {
-  agents: any[];
-  value: string;
-  onChange: (name: string) => void;
-}) {
-  if (agents.length === 0) return null;
-  return (
-    <Select value={value || 'default'} onValueChange={(v) => onChange(v === 'default' ? '' : v)}>
-      <SelectTrigger className="h-7 w-auto gap-1 border-0 bg-transparent text-xs text-muted-foreground shadow-none">
-        <Bot className="size-3.5" />
-        <SelectValue placeholder="Agent" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="default">Default agent</SelectItem>
-        {agents.map((a) => (
-          <SelectItem key={a.name} value={a.name} className="capitalize">
-            {a.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
