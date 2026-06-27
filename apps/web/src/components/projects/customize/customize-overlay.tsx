@@ -128,9 +128,10 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
-const LLM_GROUP: RailGroup = {
-  items: [{ section: 'llm-management', label: 'LLM Management', icon: Boxes }],
-};
+// LLM gateway — one entry that opens the consolidated LLM section (Providers,
+// Overview, Logs, Budgets, API keys). A normal item under "Connect", next to
+// Connectors. Flag-gated on the managed gateway.
+const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
 
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
@@ -144,20 +145,18 @@ function railGroups(
   tunnelEnabled: boolean,
   llmGatewayEnabled: boolean,
 ): readonly RailGroup[] {
-  const groups: RailGroup[] = [];
-  for (const g of GROUPS) {
+  return GROUPS.map((g) => {
     if (g.label === 'Build') {
-      groups.push({ ...g, items: [...g.items, MARKETPLACE_ITEM] });
-    } else if (g.label === 'Connect' && tunnelEnabled) {
-      groups.push({ ...g, items: [...g.items, COMPUTERS_ITEM] });
-    } else {
-      groups.push(g);
+      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
-    if (g.label === 'Connect' && llmGatewayEnabled) {
-      groups.push(LLM_GROUP);
+    if (g.label === 'Connect') {
+      const items = [...g.items];
+      if (tunnelEnabled) items.push(COMPUTERS_ITEM);
+      if (llmGatewayEnabled) items.push(LLM_ITEM);
+      return { ...g, items };
     }
-  }
-  return groups;
+    return g;
+  });
 }
 
 export function CustomizeOverlay({ projectId }: { projectId: string }) {
