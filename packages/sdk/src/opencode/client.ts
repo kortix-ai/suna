@@ -26,8 +26,6 @@ import { authenticatedFetch } from "../platform/auth";
 import { platformConfig } from "../platform/config";
 import { getActiveOpenCodeUrl, registerClientResetter } from "../state/server-store";
 
-let cachedClient: OpencodeClient | null = null;
-let cachedUrl: string | null = null;
 
 /**
  * Resolve the backend base URL as an ABSOLUTE URL.
@@ -84,18 +82,10 @@ export function getClient(): OpencodeClient {
 	if (!url) {
 		throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
 	}
-	if (cachedClient && cachedUrl === url) return cachedClient;
-
-	const fetchImpl = shouldUsePlatformAuth(url)
-		? authenticatedFetch as typeof fetch
-		: ((input, init) => fetch(input, init)) as typeof fetch;
-
-	cachedClient = createOpencodeClient({
-		baseUrl: url,
-		fetch: fetchImpl,
-	});
-	cachedUrl = url;
-	return cachedClient;
+	// One factory. "The active runtime" is just the current session's URL, and
+	// getClientForUrl caches per URL — so there is no separate global singleton to
+	// keep in sync, and no client to "reset" when the current session changes.
+	return getClientForUrl(url);
 }
 
 /**
@@ -129,9 +119,9 @@ export function dropClientForUrl(url: string): void {
 }
 
 /**
- * Force-recreate the client (e.g. after a server switch or token change).
+ * Drop cached clients so the next call recreates them (e.g. after a token change).
+ * No global singleton anymore — this clears the per-URL cache.
  */
 export function resetClient(): void {
-	cachedClient = null;
-	cachedUrl = null;
+	clientsByUrl.clear();
 }
