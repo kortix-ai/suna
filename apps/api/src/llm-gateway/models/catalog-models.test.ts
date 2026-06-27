@@ -20,6 +20,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   test('AUTO + managed lineup present; anonymous callers get managed-only', () => {
     expect(full.auto).toBeDefined();
     expect(full['claude-opus-4.8']).toBeDefined();
+    expect(full['glm-5.2']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
     expect(managedOnly.auto).toBeDefined();
@@ -57,7 +58,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
       expect(freeFull[id], id).toBeUndefined();
     }
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'fusion', 'qwen3.7-max']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'qwen3.7-max']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });
@@ -70,7 +71,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
     const managedFree = gatewayModelCatalog(undefined, { freeManagedOnly: true });
     expect(Object.keys(managedFree)).toEqual([]);
     expect(managedFree.auto).toBeUndefined();
-    expect(managedFree['fusion']).toBeUndefined();
+    expect(managedFree['glm-5.2']).toBeUndefined();
     expect(managedFree['anthropic/claude-opus-4-8']).toBeUndefined();
   });
 

@@ -138,7 +138,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     const candidates = await resolveCandidates(principal('team-auto'), 'auto');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.provider).toBe('openrouter');
-    expect(candidates[0]?.resolvedModel).toBe('fusion');
+    expect(candidates[0]?.resolvedModel).toBe('glm-5.2');
     expect(accountTierCalls).toBe(1);
   });
 

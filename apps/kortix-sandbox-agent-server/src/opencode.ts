@@ -313,6 +313,16 @@ const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
+  // Managed default (AUTO's text target + the explicit default a fresh session
+  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  'glm-5.2': {
+    name: 'GLM 5.2',
+    reasoning: true,
+    tool_call: true,
+    attachment: false,
+    temperature: true,
+    limit: { context: 1_000_000, output: 131_072 },
+  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     reasoning: true,

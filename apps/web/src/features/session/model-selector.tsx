@@ -34,6 +34,7 @@ import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
 } from '@kortix/shared/llm-catalog';
+import { featureFlags } from '@/lib/feature-flags';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
@@ -74,7 +75,10 @@ export function ConnectProviderDialog({
 import { Tag } from '@/components/ui/tag';
 
 // `auto` is a synthetic managed entry (not a real upstream model): grouped under
-// Kortix and always shown, but rendered as a special "smart routing" affordance.
+// Kortix and — when exposed (see featureFlags.enableAutoModel) — rendered as a
+// special "smart routing" affordance rather than a normal list item. It stays in
+// this set so it groups under Kortix and is recognised as managed even while the
+// toggle is hidden.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 // Free-tier (no active paid sub) cannot use the Kortix managed paid lineup or
@@ -246,7 +250,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // the manual model list is hidden unless the user expands it.
   const autoModel = useMemo(
     () =>
-      llmGatewayEnabled && !freeTier
+      featureFlags.enableAutoModel && llmGatewayEnabled && !freeTier
         ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
         : undefined,
     [baseModels, llmGatewayEnabled, freeTier],
@@ -277,7 +281,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     }
   }, [freeTier, llmGatewayEnabled, freeDefaultModel, selectedModel, onSelect]);
   const isAutoSelected =
-    selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
+    featureFlags.enableAutoModel &&
+    selectedModel?.providerID === 'kortix' &&
+    selectedModel?.modelID === AUTO_MODEL_ID;
   // "On" is the collapsed active view; expanding the manual list to pick a
   // specific model reads as off and reveals the providers. So the switch is on
   // exactly when the manual list is hidden.
