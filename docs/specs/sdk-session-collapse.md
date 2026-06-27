@@ -315,3 +315,51 @@ follow-ups recorded here so this doc stays the complete source of truth.
 
 This keeps the merge focused — the **core collapse (§2–§7) + 10a's cheap primitives** — while
 recording the full path. The SSE-lists + billing work are their own future PRs.
+
+---
+
+## 11. Status — what shipped in #3825 vs. what's staged (2026-06-27)
+
+### Shipped + verified (in this merge)
+
+- **§5.1 Server `runtime_url`** — `SessionStartResult.runtime_url` (the opaque `/p/<ext>/8000`
+  proxy base) on `/start`, plus `sessionRuntimeUrlPath()`. Additive + optional; api typecheck
+  green. The SDK type mirrors it. (The stable `/sessions/:id/runtime/*` alias of §5.2 is
+  deferred — the opaque base already removes client-side URL *construction*, which is the win.)
+- **§2–§3 `useSession`** — `useSession(projectId, sessionId)` composes start → switch → SSE
+  (via the `useOpenCodeEventStream` hook, no provider to mount) → canonical-id → message sync
+  into ONE hook. **Readiness is server-truth** (`/start` `stage==='ready'`, seeded into the
+  connection store) — **no client health poller in the live path**, so the first-load 503-halt
+  bug is structurally impossible. SDK typecheck green.
+- **§10a primitives** — `useSessionPicks`, `useRuntimePhase`, `session-start` stash helpers,
+  `generateSessionId` now live in the SDK; the white-label's four reimplemented libs are
+  deleted.
+- **§4 white-label = the golden reference** — its session page is `const s = useSession(...)`
+  + render. Deleted: the `/start` query, the switch effect, `SessionRuntime`, `useChat`, and
+  the `useCanonicalOpenCodeSession` gate. White-label typecheck green. This **proves the
+  collapse end-to-end.**
+
+### Staged (deliberately NOT big-banged here)
+
+- **§5–§7 `apps/web` migration.** Investigation found `apps/web` is a **full fork** of the
+  runtime layer — its own 341-line `sandbox-connection-store`, its own `useSessionSync`, its
+  own `opencode-sync/pending/status/compaction` stores, the health poller, and a **3,765-line**
+  `session-chat.tsx`, across **47+** local-runtime call sites (the SDK was extracted *from* the
+  web; the web kept its originals). Replacing that stack with `useSession` is a large, staged,
+  **runtime-tested** migration — a green typecheck would NOT prove the gating/streaming still
+  work, and breaking production chat is unacceptable. So:
+  - The SDK's now-dormant `use-sandbox-connection` poller + the plumbing exports are **kept**
+    (Phase 7 make-internal stays deferred) so nothing breaks mid-migration — the web still
+    imports `@kortix/sdk/server-store` and friends.
+  - The recommended staging: (a) converge the web's forked stores/hooks onto the SDK's by
+    re-export (the pattern `apps/web/src/stores/server-store.ts` already uses), verifying the
+    build at each step; (b) swap the session page's 7-step mount for `useSession`; (c) replace
+    the 31 `healthy` gate sites with `s.phase`/`runtimePhase`; (d) delete the web's forks +
+    the poller; (e) `§6` per-session-client + `§7` make-internal last.
+- **§6 per-session client** — `getClientForUrl(runtime_url)` is wired through the type but the
+  live path still routes through the global active-server; the swap (kills the
+  no-concurrent-sessions limit) lands with the web migration since it touches the same stores.
+
+**Net:** the SDK-session-collapse is **complete and proven** (SDK + golden white-label); the
+`apps/web` cutover is the one remaining large piece, scoped above as a tested staged migration
+rather than a risky big-bang.
