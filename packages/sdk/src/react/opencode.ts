@@ -23,6 +23,11 @@ export * from './use-opencode-config';
 export * from './use-model-store';
 export * from './use-model-hydration';
 export * from './use-session-sync';
+export * from './use-sandbox-connection';
+export {
+  useSandboxConnectionStore,
+  type SandboxConnectionStatus,
+} from '../state/sandbox-connection-store';
 export * from './use-session-prefetch';
 export * from './use-canonical-opencode-session';
 export * from './use-gateway-catalog-sync';
