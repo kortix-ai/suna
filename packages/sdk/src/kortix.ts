@@ -198,6 +198,13 @@ export function createKortix(config: KortixPlatformConfig) {
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) => proxyLocalhostUrl(url, resolvePreviewOpts()),
 
+      // ── agent actions (opinionated wrappers over the runtime) ────────────
+      /** Send a text prompt to the agent in this session. */
+      send: (text: string) =>
+        runtime().session.prompt({ sessionID: sessionId, parts: [{ type: 'text', text }] }),
+      /** Abort the agent's current run. */
+      abort: () => runtime().session.abort({ sessionID: sessionId }),
+
       // ── runtime (opencode v2, active sandbox) ────────────────────────────
       // The typed opencode client, reached ONLY through the SDK. The host never
       // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
@@ -221,6 +228,10 @@ export function createKortix(config: KortixPlatformConfig) {
 }
 
 export type Kortix = ReturnType<typeof createKortix>;
+/** The id-bound project handle returned by `kortix.project(id)`. */
+export type ProjectHandle = ReturnType<Kortix['project']>;
+/** The id-bound session handle returned by `kortix.session(pid, sid)`. */
+export type SessionHandle = ReturnType<Kortix['session']>;
 
 // ── tiny tuple helpers: bind the leading id arg(s) without re-typing the rest ──
 type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];

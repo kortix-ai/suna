@@ -27,7 +27,7 @@ export {
  * platform seam and returns one client whose methods cover the whole REST +
  * opencode surface — so a host app imports ONLY from `@kortix/sdk`.
  */
-export { createKortix, type Kortix } from './kortix';
+export { createKortix, type Kortix, type ProjectHandle, type SessionHandle } from './kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
 export { files } from './files/client';
