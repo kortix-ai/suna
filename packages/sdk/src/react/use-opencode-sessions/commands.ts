@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient, type OpencodeClient } from '../../opencode/client';
 import type { Command } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_COMMANDS } from './shared';
@@ -28,7 +28,7 @@ export function useOpenCodeCommands() {
   });
 }
 
-export function useExecuteOpenCodeCommand() {
+export function useExecuteOpenCodeCommand(clientOverride?: OpencodeClient) {
   return useMutation({
     mutationFn: async ({
       sessionId,
@@ -39,7 +39,7 @@ export function useExecuteOpenCodeCommand() {
       command: string;
       args?: string;
     }) => {
-      const client = getClient();
+      const client = clientOverride ?? getClient();
       const result = await client.session.command({
         sessionID: sessionId,
         command,

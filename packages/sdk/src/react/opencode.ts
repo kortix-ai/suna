@@ -14,6 +14,23 @@
  * statements resolve to a single declaration with no ambiguity.
  */
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FINAL PUBLIC SURFACE (Phase 7). A new host should reach a session through ONE
+// hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
+// hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
+// primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
+// reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
+// no `OpenCodeEventStreamProvider`, no `useCanonicalOpenCodeSession`, no raw
+// stores, no `getClient`.
+//
+// The lower-level exports below (`OpenCodeEventStreamProvider`,
+// `useCanonicalOpenCodeSession`, the sandbox-connection / sync / pending stores,
+// the per-sandbox session hooks) are now INTERNAL plumbing that `useSession`
+// composes. They remain exported ONLY because apps/web still consumes them
+// directly through its not-yet-migrated file/terminal/git hooks; once that
+// migration lands they come out of the public surface. New hosts: do not import
+// them — use `useSession`.
+// ─────────────────────────────────────────────────────────────────────────────
 export * from './use-opencode-sessions';
 export * from './use-opencode-events';
 export * from './use-opencode-local';

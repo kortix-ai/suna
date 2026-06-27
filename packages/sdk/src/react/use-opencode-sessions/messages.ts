@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient, type OpencodeClient } from '../../opencode/client';
 import { useSyncStore } from '../../state/sync-store';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
@@ -135,7 +135,7 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   return `${prefix}_${hex}${rand}`;
 }
 
-export function useSendOpenCodeMessage() {
+export function useSendOpenCodeMessage(clientOverride?: OpencodeClient) {
   return useMutation({
     mutationFn: async ({
       sessionId,
@@ -166,7 +166,9 @@ export function useSendOpenCodeMessage() {
       // The call blocks until the AI finishes, but we fire-and-forget from
       // the UI side (handleSend doesn't await the mutation result).
       // SSE events drive all incremental UI updates via the sync store.
-      const client = getClient();
+      // Per-session client when useSession supplies one (getClientForUrl(runtime_url)),
+      // else the global active-server client. Same URL for a single active session.
+      const client = clientOverride ?? getClient();
       const result = await client.session.prompt(payload as any);
       if (result.error) {
         const err = result.error as any;
@@ -176,10 +178,10 @@ export function useSendOpenCodeMessage() {
   });
 }
 
-export function useAbortOpenCodeSession() {
+export function useAbortOpenCodeSession(clientOverride?: OpencodeClient) {
   return useMutation({
     mutationFn: async (sessionId: string) => {
-      const client = getClient();
+      const client = clientOverride ?? getClient();
       const result = await client.session.abort({ sessionID: sessionId });
       unwrap(result);
       // After abort succeeds, the SSE stream should deliver session.idle event.

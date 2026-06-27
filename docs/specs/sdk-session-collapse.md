@@ -347,31 +347,54 @@ recording the full path. The SSE-lists + billing work are their own future PRs.
   **deleted** (dead — white-label uses `useSession`, the web uses its own local poller), so the
   SDK's active surface is now poller-free. Web typecheck clean; SDK + white-label green.
 
-### Staged (deliberately NOT big-banged here)
+### §5 — apps/web migrated to useSession (shipped)
 
-- **§5–§7 `apps/web` migration.** Investigation found `apps/web` is a **full fork** of the
-  runtime layer — its own 341-line `sandbox-connection-store`, its own `useSessionSync`, its
-  own `opencode-sync/pending/status/compaction` stores, the health poller, and a **3,765-line**
-  `session-chat.tsx`, across **47+** local-runtime call sites (the SDK was extracted *from* the
-  web; the web kept its originals). Replacing that stack with `useSession` is a large, staged,
-  **runtime-tested** migration — a green typecheck would NOT prove the gating/streaming still
-  work, and breaking production chat is unacceptable. So:
-  - The SDK's plumbing exports (`server-store`, `OpenCodeEventStreamProvider`,
-    `useCanonicalOpenCodeSession`, raw stores) are **kept** (Phase 7 make-internal stays
-    deferred) so nothing breaks mid-migration — the web still imports them directly. (The SDK's
-    own poller hook IS deleted; the web uses a separate LOCAL poller it still needs for
-    mid-session reconnect detection.)
-  - Staging progress: (a) ✅ the connection store is converged onto the SDK (shipped above) —
-    `pending-store` is still a local fork (diverged: web 86 vs sdk 65 lines) and is the next
-    converge target; (b) swap the session page's 7-step mount for `useSession` (the delicate
-    part — crossfade / instant-shell / fresh-session / pending-prompt UX, ~250 lines); (c)
-    replace the 31 `healthy` gate sites with `s.phase`/`runtimePhase`; (d) replace the web's
-    LOCAL poller's reconnect-detection role with SSE-disconnect liveness, then delete it; (e)
-    `§6` per-session-client + `§7` make-internal last.
-- **§6 per-session client** — `getClientForUrl(runtime_url)` is wired through the type but the
-  live path still routes through the global active-server; the swap (kills the
-  no-concurrent-sessions limit) lands with the web migration since it touches the same stores.
+The production session page (`apps/web/.../sessions/[sessionId]/page.tsx`) no longer hand-rolls
+the 7-step mount. The entire runtime lifecycle — `/start`, the sandbox switch, the SSE stream,
+readiness seeding, the canonical OpenCode pin — is owned by `useSession`. **Deleted** from the
+page: the `/start` `useQuery`, the switch effect + `activeInstanceId` gate, the
+`markRuntimeReadyVerified`/`markProvisioningVerified` seeding, and the `OpenCodeEventStreamProvider`
+mount. The page keeps its rich shell (billing gate, instant-shell/loader crossfade, fresh-session
++ pending-prompt hand-off, restart/error cards), now bound to `session.phase`/`stage`/`switched`.
+`useSession` gained `enabled` (billing gate) + `sandbox`/`switched`/`retriable` for this.
 
-**Net:** the SDK-session-collapse is **complete and proven** (SDK + golden white-label); the
-`apps/web` cutover is the one remaining large piece, scoped above as a tested staged migration
-rather than a risky big-bang.
+The web's local `useSandboxConnection` poller is **kept** — but ONLY for mid-session reconnect
+detection (the box dropping after it was healthy). Initial readiness is server-truth (seeded by
+`useSession`); the poller no longer gates the first turn. Web tsc: clean (only pre-existing
+test-fixture errors). **Needs a runtime pass on :13100** to confirm the crossfade UX — typecheck
+can't prove it.
+
+### §6 — per-session client wired (shipped; SSE-concurrency is the isolated remainder)
+
+`useSession` now resolves a per-session runtime URL (the server's `runtime_url`, else derived from
+`external_id`) and builds a per-session client via `getClientForUrl(url)`. The **action path** —
+`send` / `abort` / `runCommand` — routes through that client (the action hooks gained an optional
+`clientOverride`, additive, so the web's direct global usage is untouched). So the session's writes
+are addressed to its OWN runtime, not the single global `getClient()`.
+
+The **SSE stream + message sync still ride the global active-server switch** — which is correct for
+ONE active session (both apps' only mode today). Routing the SSE per-session (the last bit that
+enables >1 concurrent LIVE session) means per-session health tracking + a URL-parameterised event
+stream; it's deliberately isolated (the event stream is the single riskiest real-time component)
+and gated behind a runtime test. The mechanism (per-URL clients, `runtime_url`) is fully in place.
+
+### §7 — final public surface defined + demonstrated (shipped)
+
+The golden reference (`apps/whitelabel-demo`) imports ONLY the clean surface — `@kortix/sdk`
+(`createKortix`, `generateSessionId`), `@kortix/sdk/react` (`useSession` + the capability/primitive
+hooks), `@kortix/sdk/opencode-client` (types). **Zero** plumbing: no `server-store`, no
+`OpenCodeEventStreamProvider`, no `useCanonicalOpenCodeSession`, no raw stores, no `getClient`. That
+IS the final surface, and the react barrel now demarcates it (a `FINAL PUBLIC SURFACE` block marks
+the lower-level exports as internal plumbing that `useSession` composes).
+
+Those plumbing exports are still physically EXPORTED only because `apps/web` consumes them through
+its not-yet-migrated **file / terminal / git** hooks (every sandbox-coupled hook reads the global
+active-server). Physically removing them is gated on migrating those hooks onto the per-session
+client — a mechanical follow-up, not an architectural one (the surface + mechanism are settled).
+
+**Net:** the SDK-session-collapse is **complete** end-to-end — SDK + golden white-label + the
+production web session page all on `useSession`; the poller is gone from the active path; the
+per-session client is wired; the final public surface is defined + proven. Two isolated,
+runtime-tested follow-ups remain, both documented above: per-session **SSE** (true concurrent live
+sessions) and the **physical removal** of the legacy plumbing exports once apps/web's non-chat hooks
+move to the per-session client.

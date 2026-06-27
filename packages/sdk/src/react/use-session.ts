@@ -29,6 +29,8 @@ import {
   setSandboxStatus,
 } from '../state/sandbox-connection-store';
 import { switchToSessionSandboxAsync } from '../state/server-store';
+import { getClientForUrl } from '../opencode/client';
+import { getBackendUrl, getSandboxUrlForExternalId } from '../state/server-store/url-helpers';
 import {
   type SessionStartResult,
   sessionStartKey,
@@ -92,6 +94,23 @@ export function useSession(
   const sandbox = startData?.sandbox ?? null;
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
+
+  // Per-session runtime client (Phase 6), keyed by THIS session's own URL — the
+  // server-owned `runtime_url`, else derived from external_id. The action path
+  // (send / abort / runCommand) routes through this instead of the single global
+  // active-server, so it addresses this session's runtime directly. (The SSE
+  // stream + message sync still ride the global switch below — correct for one
+  // active session; full per-session SSE for concurrent LIVE sessions is the
+  // isolated remainder, see docs/specs/sdk-session-collapse.md §6.)
+  const runtimeUrl = useMemo(() => {
+    const fromStart = startData?.runtime_url;
+    if (fromStart) return `${getBackendUrl()}${fromStart}`;
+    return sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : null;
+  }, [startData?.runtime_url, sandbox?.external_id]);
+  const sessionClient = useMemo(
+    () => (runtimeUrl ? getClientForUrl(runtimeUrl) : undefined),
+    [runtimeUrl],
+  );
 
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
   // sandbox we switched to (not a bare bool) so navigating between sessions (this
@@ -169,10 +188,10 @@ export function useSession(
   const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
-  // 8. Mutations.
-  const sendMutation = useSendOpenCodeMessage();
-  const abortMutation = useAbortOpenCodeSession();
-  const commandMutation = useExecuteOpenCodeCommand();
+  // 8. Mutations — routed through the per-session client (Phase 6).
+  const sendMutation = useSendOpenCodeMessage(sessionClient);
+  const abortMutation = useAbortOpenCodeSession(sessionClient);
+  const commandMutation = useExecuteOpenCodeCommand(sessionClient);
 
   // 9. Optimistic send: show the user's message instantly until a NEW user message
   // lands (count grows) — robust to server-normalized text where a text-equality
