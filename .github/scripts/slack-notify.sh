@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# Posts a Block Kit message via Slack chat.postMessage. Reused by hotfix and
+# Posts a Block Kit message via Slack chat.postMessage. Reused by release and
 # incident workflows. Skips gracefully when SLACK_BOT_TOKEN / SLACK_CHANNEL are
 # unset so it never fails a run just because Slack is not configured.
 #

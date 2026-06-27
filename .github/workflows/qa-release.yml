@@ -58,6 +58,10 @@ jobs:
       KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
       KE2E_STRIPE_SECRET_KEY: ${{ secrets.KE2E_STRIPE_SECRET_KEY }}
       KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.KE2E_STRIPE_WEBHOOK_SECRET }}
+      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
+      # Playwright configs send this as x-vercel-protection-bypass so the browser
+      # suite can reach the app instead of the Vercel login wall.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -118,11 +122,13 @@ jobs:
       - name: Live API smoke
         timeout-minutes: 10
         run: make smoke
-      # The full ke2e API flow suite (~278 live flows) is OFF by default: dev is
-      # already exercised by its own tests, and running the funded suite against
-      # it adds load + time. Opt in by setting repo var QA_RUN_API_SUITE=true once
-      # we wire it against a dedicated target.
-      - name: API flow suite (opt-in)
+      # The full ke2e API flow suite (~278 live flows) runs against staging-api
+      # (QA_API_BASE_URL) as a BLOCKING pre-prod gate, enabled via repo var
+      # QA_RUN_API_SUITE=true. It catches HTTP-contract regressions the browser
+      # and unit gates miss — e.g. an unmounted route returning 404 (CHN-16, which
+      # is exactly how the AgentMail inbound webhook reached prod broken). Flip the
+      # repo var to false only to temporarily skip it.
+      - name: API flow suite
         if: vars.QA_RUN_API_SUITE == 'true'
         timeout-minutes: 45
         run: make api

@@ -30,6 +30,10 @@ jobs:
       E2E_BASE_URL: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
       QA_API_BASE_URL: ${{ vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
       A11Y_CONTRAST_MAX: ${{ vars.A11Y_CONTRAST_MAX || '560' }}
+      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
+      # Playwright configs send this as x-vercel-protection-bypass so the browser
+      # suite can reach the app instead of the Vercel login wall.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

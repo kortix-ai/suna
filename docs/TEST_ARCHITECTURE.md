@@ -152,7 +152,6 @@ Tiers map to Make targets and GitHub Actions lanes:
 | **qa-staging** | push → staging | e2e · visual · a11y · migration · publish Allure | Yes |
 | **qa-nightly** | cron | performance (k6) · DAST (ZAP) · pentest · mutation · chaos · static-security | report + alert |
 | **qa-release** | PR → prod | full suite in sequence + gates | **Yes** (pre-prod) |
-| **hotfix-prod** | dispatch | typecheck · unit · contract · api-coverage (break-glass minimum) | Yes |
 
 **Hardening applied:**
 - Dependency caching (pnpm store, Bun, Playwright browsers) on every lane — the audit found none.
