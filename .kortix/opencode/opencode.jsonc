@@ -12,5 +12,8 @@
   // Local plugins. Tools in `tools/` and plugins in `plugins/` are auto-discovered;
   // this array loads additional plugins by path. The PTY plugin adds pty_spawn /
   // pty_write / pty_read / pty_list / pty_kill for long-running & interactive shells.
-  "plugin": ["./pty/pty-tools.ts"]
+  // kortix-continuation is the always-on todo continuation enforcer: when a session
+  // goes idle with unfinished native todos, it re-prompts the agent to keep going
+  // instead of self-stopping mid-task (set KORTIX_CONTINUATION_DISABLED=1 to disable).
+  "plugin": ["./pty/pty-tools.ts", "./continuation/kortix-continuation.ts"]
 }
