@@ -58,9 +58,16 @@ export interface UseSessionOptions {
   waitMs?: number;
   /**
    * Replay a stashed first message (prompt + model + agent from the "new session"
-   * screen) once the runtime is ready and the thread is empty. Default true.
+   * screen) once the runtime is ready and the thread is empty. Default true. Hosts
+   * with their own first-message hand-off (e.g. apps/web) set this false.
    */
   replayStartStash?: boolean;
+  /**
+   * Gate the whole hook (the /start poll + switch + SSE). Default true. Set false
+   * to hold off until a precondition is met (e.g. a billing gate resolves) — mirrors
+   * a query `enabled` flag.
+   */
+  enabled?: boolean;
 }
 
 export function useSession(
@@ -68,13 +75,13 @@ export function useSession(
   sessionId: string,
   options: UseSessionOptions = {},
 ) {
-  const { waitMs = 15_000, replayStartStash = true } = options;
+  const { waitMs = 15_000, replayStartStash = true, enabled = true } = options;
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
-    enabled: !!projectId && !!sessionId,
+    enabled: enabled && !!projectId && !!sessionId,
     refetchInterval: (q) => {
       const stage = (q.state.data as SessionStartResult | null | undefined)?.stage;
       return stage === 'ready' || stage === 'failed' || stage === 'stopped' ? false : 1500;
@@ -255,6 +262,12 @@ export function useSession(
     phase,
     /** Raw /start stage (provisioning|starting|ready|stopped|failed), for boot UI. */
     stage,
+    /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
+    sandbox,
+    /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */
+    switched,
+    /** Whether polling /start again can still make progress (false = terminal). */
+    retriable: startData?.retriable ?? false,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
     isBusy: sync.isBusy || !!pending,
