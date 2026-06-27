@@ -48,6 +48,10 @@ import {
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import {
+  isShellActivityTool,
+  shellActivityGroupLabel,
+} from '@/features/session/session-activity-groups';
 import { SessionWelcome } from '@/features/session/session-welcome';
 
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
@@ -2214,7 +2218,7 @@ function GroupedReasoningCard({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
           <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
@@ -2296,6 +2300,9 @@ function SameToolGroup({
 
   const isContext = toolName === '__context__';
   const isResearch = toolName === '__research__';
+  const isShell = useMemo(() => {
+    return isShellActivityTool(entries[0]?.part.tool);
+  }, [entries]);
 
   const headerLabel = useMemo(() => {
     if (isContext) {
@@ -2328,14 +2335,13 @@ function SameToolGroup({
       return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
     }
 
+    if (isShell) {
+      return shellActivityGroupLabel(entries.length, anyRunning);
+    }
+
     const t = contextToolTrigger(entries[0].part);
     return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, entries, anyRunning]);
-
-  const isShell = useMemo(() => {
-    const n = entries[0]?.part.tool.replace(/^oc-/, '').replace(/-/g, '_');
-    return n === 'bash';
-  }, [entries]);
+  }, [isContext, isResearch, isShell, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2390,7 +2396,7 @@ function SameToolGroup({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] space-y-0.5 border-l pl-3">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
           {isContext
             ? entries.map(({ part }) => {
                 const t = contextToolTrigger(part);
@@ -2429,7 +2435,10 @@ function SameToolGroup({
                 // Same-tool, non-context groups (e.g. 3x web_search) render
                 // each call with its full ToolPartRenderer so users see real
                 // results — answers, sources, images — not just the input arg.
-                <div key={part.id} className="-mx-3">
+                // Sits inside the rail's left padding (no negative margin) so
+                // each row aligns under the group header label, matching the
+                // reasoning block's nested treatment.
+                <div key={part.id}>
                   <ToolPartRenderer
                     part={part}
                     sessionId={sessionId}
