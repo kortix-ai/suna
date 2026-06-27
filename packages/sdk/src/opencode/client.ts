@@ -24,7 +24,7 @@ export type { OpencodeClient };
 
 import { authenticatedFetch } from "../platform/auth";
 import { platformConfig } from "../platform/config";
-import { getActiveOpenCodeUrl, registerClientResetter } from "../state/server-store";
+import { getActiveOpenCodeUrl } from "../state/server-store";
 
 
 /**
@@ -66,9 +66,6 @@ function shouldUsePlatformAuth(baseUrl: string): boolean {
 		return false;
 	}
 }
-
-// Register the reset function so server-store can call it without a circular import
-registerClientResetter(resetClient);
 
 /**
  * Get (or create) the SDK client for the current active server.

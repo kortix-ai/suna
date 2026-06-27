@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { logger } from "../platform/logger";
-import { registerConnSwitchReset } from "./server-store";
 
 export type SandboxConnectionStatus =
 	| "connecting"
@@ -334,8 +333,3 @@ export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeErr
 		useSandboxConnectionStore.setState(updates);
 	}
 }
-
-// Register the server-switch reset so server-store can call it synchronously
-// without importing this module (avoids the TDZ cycle — see
-// registerConnSwitchReset). Mirrors opencode-sdk's registerClientResetter.
-registerConnSwitchReset(resetForServerSwitch);
