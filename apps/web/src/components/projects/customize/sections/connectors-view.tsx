@@ -1360,7 +1360,7 @@ function EmailSenderPolicyEditor({
   );
 }
 
-function EmailConnectForm({
+export function EmailConnectForm({
   projectId,
   connectorSlug,
   onConnected,
@@ -1703,7 +1703,7 @@ function ConnectedSlackProfile({
   );
 }
 
-function SlackConnectForm({
+export function SlackConnectForm({
   projectId,
   onConnected,
 }: {

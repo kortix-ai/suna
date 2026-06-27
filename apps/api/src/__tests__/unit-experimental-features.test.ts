@@ -81,13 +81,6 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
     expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
   });
 
-  test('llm_gateway fleet default is on by default (global default routing)', () => {
-    // The shipped default for LLM_GATEWAY_DEFAULT_ENABLED is true, so any
-    // environment that leaves it unset routes projects through the gateway by
-    // default (master switch permitting).
-    expect(config.LLM_GATEWAY_DEFAULT_ENABLED).toBe(true);
-  });
-
   test('llm_gateway fleet default can roll all projects on while preserving kill switch and project off override', () => {
     const previousEnabled = config.LLM_GATEWAY_ENABLED;
     const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;

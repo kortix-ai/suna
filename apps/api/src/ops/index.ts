@@ -180,6 +180,7 @@ opsApp.openapi(
     generated_at: new Date().toISOString(),
     api: {
       status: 'ok',
+      env: config.INTERNAL_KORTIX_ENV,
       billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
       tunnel: getTunnelServiceStatus(),
     },
@@ -199,6 +200,9 @@ opsApp.openapi(
     },
     queues: {
       trigger_events_by_status: triggerEventStatus,
+      // Channel events are file-defined now (no queue table); kept for dashboard
+      // shape compatibility so the UI never reads an undefined map.
+      channel_events_by_status: {},
       queued_total: queuedTriggerEvents,
     },
     audit: {

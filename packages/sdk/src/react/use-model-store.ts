@@ -16,6 +16,7 @@
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
+  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/shared/llm-catalog';
 import type { FlatModel } from './model-flatten';
@@ -177,6 +178,7 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // @kortix/shared (mirrors the gateway's managed-ids).
 // Includes the synthetic `auto` entry so it's always offered in the picker.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
+const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
 
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');
@@ -253,10 +255,13 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
+    // Free tier (no active paid sub): only the free managed models are visible.
+    freeTier?: boolean;
   },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
+  const freeTier = opts?.freeTier ?? false;
 
   // Compute latest set
   const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
@@ -291,7 +296,12 @@ export function useModelStore(
           sub === SUBSCRIPTION_PROVIDER_ID
             ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
             : (connectedProviderIds?.has(sub) ?? false);
-        if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
+        if (MANAGED_MODEL_IDS.has(model.modelID)) {
+          // Free tier sees ONLY the free managed models — paid managed and the
+          // synthetic `auto` are hidden (they have no upstream for the account).
+          if (freeTier && !FREE_MANAGED_MODEL_IDS.has(model.modelID)) return false;
+          return true;
+        }
         if (!connected) return false;
         if (state === 'show') return true;
         if (latestSet.has(key)) return true;
@@ -325,7 +335,7 @@ export function useModelStore(
       }
       return false;
     },
-    [visibilityMap, latestSet, allModels, connectedProviderIds],
+    [visibilityMap, latestSet, allModels, connectedProviderIds, freeTier],
   );
 
   // Check if a model is in the latest set

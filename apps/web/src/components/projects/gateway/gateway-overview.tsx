@@ -95,7 +95,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl space-y-5 p-5">
+      <div className="w-full space-y-5 p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-foreground">Last {days} days</h2>
           <RangeSelector days={days} setDays={setDays} />

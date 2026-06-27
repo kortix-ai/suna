@@ -73,7 +73,7 @@ export function GatewayKeys({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl space-y-4 p-5">
+      <div className="w-full space-y-4 p-5">
         <SectionCard
           flush
           title="API keys"

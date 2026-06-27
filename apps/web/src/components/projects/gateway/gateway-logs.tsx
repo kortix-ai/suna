@@ -225,7 +225,7 @@ function GatewayLogDetail({
           <div className="h-40 animate-pulse rounded-2xl bg-muted" />
         </div>
       ) : (
-        <div className="mx-auto flex w-full max-w-3xl animate-in fade-in-0 flex-col gap-4 p-5">
+        <div className="flex w-full animate-in fade-in-0 flex-col gap-4 p-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <span
