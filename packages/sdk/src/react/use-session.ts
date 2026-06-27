@@ -29,8 +29,6 @@ import {
   setSandboxStatus,
 } from '../state/sandbox-connection-store';
 import { switchToSessionSandboxAsync } from '../state/server-store';
-import { getClientForUrl } from '../opencode/client';
-import { getBackendUrl, getSandboxUrlForExternalId } from '../state/server-store/url-helpers';
 import {
   type SessionStartResult,
   sessionStartKey,
@@ -95,32 +93,12 @@ export function useSession(
   const startReady = stage === 'ready';
   const terminal = stage === 'failed' || stage === 'stopped';
 
-  // Per-session runtime client (Phase 6), keyed by THIS session's own URL — the
-  // server-owned `runtime_url`, else derived from external_id. The action path
-  // (send / abort / runCommand) routes through this instead of the single global
-  // active-server, so it addresses this session's runtime directly. (The SSE
-  // stream + message sync still ride the global switch below — correct for one
-  // active session; full per-session SSE for concurrent LIVE sessions is the
-  // isolated remainder, see docs/specs/sdk-session-collapse.md §6.)
-  const runtimeUrl = useMemo(() => {
-    const fromStart = startData?.runtime_url;
-    if (fromStart) return `${getBackendUrl()}${fromStart}`;
-    return sandbox?.external_id ? getSandboxUrlForExternalId(sandbox.external_id) : null;
-  }, [startData?.runtime_url, sandbox?.external_id]);
-  const sessionClient = useMemo(
-    () => (runtimeUrl ? getClientForUrl(runtimeUrl) : undefined),
-    [runtimeUrl],
-  );
-
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
   // sandbox we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
-  // previous sandbox.
-  //
-  // NOTE (Phase 6): this still routes through the global active-server. The server
-  // now also hands us `startData.runtime_url` (an opaque per-session proxy base);
-  // a later phase swaps this for `getClientForUrl(runtime_url)` so two sessions can
-  // be live at once. The surface here does not change when that lands.
+  // previous sandbox. One active session at a time is the supported model, so the
+  // whole chat path (SSE, sync, send) rides this single global switch — there is no
+  // separate per-session client to keep in sync.
   const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
   useEffect(() => {
     if (!startReady || !sandbox || switchedSandboxId === sandbox.sandbox_id) return;
@@ -174,11 +152,11 @@ export function useSession(
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
-    () => Object.values(questionMap).filter((q) => (q as { sessionID?: string }).sessionID === ocSessionId),
+    () => Object.values(questionMap).filter((q) => q.sessionID === ocSessionId),
     [questionMap, ocSessionId],
   );
   const permissions = useMemo(
-    () => Object.values(permissionMap).filter((p) => (p as { sessionID?: string }).sessionID === ocSessionId),
+    () => Object.values(permissionMap).filter((p) => p.sessionID === ocSessionId),
     [permissionMap, ocSessionId],
   );
 
@@ -188,10 +166,10 @@ export function useSession(
   const config = useProjectConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
-  // 8. Mutations — routed through the per-session client (Phase 6).
-  const sendMutation = useSendOpenCodeMessage(sessionClient);
-  const abortMutation = useAbortOpenCodeSession(sessionClient);
-  const commandMutation = useExecuteOpenCodeCommand(sessionClient);
+  // 8. Mutations.
+  const sendMutation = useSendOpenCodeMessage();
+  const abortMutation = useAbortOpenCodeSession();
+  const commandMutation = useExecuteOpenCodeCommand();
 
   // 9. Optimistic send: show the user's message instantly until a NEW user message
   // lands (count grows) — robust to server-normalized text where a text-equality
@@ -240,8 +218,8 @@ export function useSession(
   // The one true cancel: abort the run AND drop any pending prompt + open prompts.
   const cancel = () => {
     if (ocSessionId) abortMutation.mutate(ocSessionId);
-    questions.forEach((q) => removeQuestion((q as { id: string }).id));
-    permissions.forEach((p) => removePermission((p as { id: string }).id));
+    questions.forEach((q) => removeQuestion(q.id));
+    permissions.forEach((p) => removePermission(p.id));
     setPending(null);
   };
 

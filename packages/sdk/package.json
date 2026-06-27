@@ -33,6 +33,7 @@
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
     "./opencode-client": "./src/opencode/client.ts",
+    "./config": "./src/platform/config.ts",
     "./auth": "./src/platform/auth.ts",
     "./api-client": "./src/platform/api-client.ts",
     "./projects-client": "./src/platform/projects-client/index.ts",
