@@ -82,8 +82,10 @@ await s.runtime.session.prompt({
 await s.runtime.session.abort({ sessionID: sessionId });
 ```
 
-For **live** message / part / event streaming in a UI, use the reactive hooks in
-[`@kortix/sdk/react`](/docs/sdk/react) rather than polling the runtime client.
+For **live** message / part / event streaming in a UI, don't use `s.runtime`
+directly — call [`useSession(projectId, sessionId)`](/docs/sdk/react#usesessionprojectid-sessionid-options),
+the one hook that owns the whole runtime (start, SSE, readiness) and returns the
+thread, `send`, and the boot `phase`.
 
 <Callout type="warn">
 Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by

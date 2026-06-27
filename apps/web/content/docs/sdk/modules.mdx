@@ -175,6 +175,13 @@ for it last.
 
 ## `@kortix/sdk/server-store` and `@kortix/sdk/sync-store`
 
+<Callout type="warn">
+**Internal plumbing — `useSession` composes these.** A normal host never imports
+them: `useSession(projectId, sessionId)` owns runtime resolution and the live
+thread. They're documented for the in-progress `apps/web` migration and advanced
+cases; new hosts should not reach for them.
+</Callout>
+
 The two zustand stores the runtime layer keeps. `server-store` tracks the **active
 runtime** — which sandbox/server is current and how to reach it; `sync-store`
 holds the **live thread state** that SSE events stream into.

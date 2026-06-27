@@ -94,6 +94,29 @@ Don't import `@opencode-ai/sdk`, `backendApi`, or `authenticatedFetch` in app
 code. Everything is reachable through `createKortix` or a `@kortix/sdk/*` subpath.
 </Callout>
 
+## In a React app
+
+For a live UI, don't drive the runtime by hand — **one hook runs a session**:
+
+```tsx
+import { useSession } from '@kortix/sdk/react';
+
+function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const s = useSession(projectId, sessionId);
+  if (s.phase !== 'ready') return <Booting stage={s.stage} onRetry={s.retry} />;
+  return (
+    <>
+      {s.messages.map(({ info, parts }) => <Message key={info.id} info={info} parts={parts} />)}
+      <Composer busy={s.isBusy} onSend={(t) => s.send(t)} onStop={s.cancel} />
+    </>
+  );
+}
+```
+
+`useSession` owns `/start`, the runtime switch, the SSE stream, readiness, and the
+canonical id — no provider to mount, no poller, no server store. See
+**[React hooks](/docs/sdk/react)**.
+
 ## Next
 
 - [The client](/docs/sdk/the-client) — the full facade surface.

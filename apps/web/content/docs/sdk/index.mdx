@@ -39,7 +39,7 @@ s.previewUrl(3000, '/docs');   // proxy URL for a port the agent exposed
 The SDK gives you an **imperative** client for actions and **reactive** hooks for live UI data:
 
 - `createKortix(config)` → the facade. Call methods: `kortix.projects.list()`, `kortix.session(pid, sid).start()`.
-- `@kortix/sdk/react` → hooks. Subscribe to live data: session messages, streaming parts, runtime events.
+- `@kortix/sdk/react` → hooks. **`useSession(projectId, sessionId)` runs a whole session** in one hook — messages, `send`, status, the boot `phase` — with the runtime (start, SSE, readiness) handled for you. Plus models, config, and PTY.
 
 <Cards>
   <Card title="Getting started" href="/docs/sdk/getting-started">Install, configure, authenticate, and make your first calls.</Card>
