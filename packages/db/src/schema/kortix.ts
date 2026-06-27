@@ -2668,6 +2668,74 @@ export const iamRoleActionsRelations = relations(iamRoleActions, ({ one }) => ({
 }));
 
 
+/**
+ * IAM V2 per-RESOURCE scoping. Scopes a member or group (Department) to a
+ * SPECIFIC agent or skill within a project — "Marketing may use agent
+ * `outreach-bot` and skill `lead-research`, nothing else." Sits as an
+ * INTERSECTION on top of the project-role / custom-policy verdict:
+ *   - A resource (agent name / skill slug) becomes "scoped" once ≥1 grant row
+ *     exists for (project, resource_type, resource_id).
+ *   - UNSCOPED resources stay project-wide (no behaviour change) — so scoping
+ *     agent A restricts only agent A; agents with no grant stay open to anyone
+ *     who holds the capability. This makes the feature inherently opt-in and
+ *     avoids surprise lockouts.
+ *   - SCOPED resources are visible/usable ONLY to principals with a matching
+ *     grant (member = the user, or any group the user belongs to). Account
+ *     owners/admins keep implicit Manager and bypass scoping entirely.
+ * `resource_id` is TEXT because agent names + skill slugs are file-based
+ * manifest keys, not uuids. Mirrors the project_group_grants / iam_policies
+ * (member|group principal) pattern; principal_id is an untyped uuid for the
+ * same polymorphic reason as iam_policies.principal_id.
+ */
+export const iamResourceGrants = kortixSchema.table(
+  'iam_resource_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** 'agent' | 'skill' — validated app-side; extensible to command/etc. */
+    resourceType: varchar('resource_type', { length: 32 }).notNull(),
+    /** Agent name / skill slug — the file-based manifest key (NOT a uuid). */
+    resourceId: text('resource_id').notNull(),
+    /** 'member' (user id) | 'group' (account_groups.group_id). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — same choice as iam_policies.principal_id. */
+    principalId: uuid('principal_id').notNull(),
+    /** v1 is allow-only; 'deny' reserved for a future explicit-deny tier. */
+    effect: varchar('effect', { length: 8 }).default('allow').notNull(),
+    /** Optional auto-revoke; same semantics as project_members.expires_at. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One grant per (resource, principal) — upsert target.
+    uniqueIndex('uq_iam_resource_grants').on(
+      table.projectId,
+      table.resourceType,
+      table.resourceId,
+      table.principalType,
+      table.principalId,
+    ),
+    // "Is anything of this type scoped in this project?" + per-resource lookup.
+    index('idx_iam_resource_grants_project_type').on(table.projectId, table.resourceType),
+    index('idx_iam_resource_grants_resource').on(
+      table.projectId,
+      table.resourceType,
+      table.resourceId,
+    ),
+    // Cache invalidation by principal (a user or a group).
+    index('idx_iam_resource_grants_principal').on(table.principalType, table.principalId),
+    index('idx_iam_resource_grants_account').on(table.accountId),
+  ],
+);
+
+
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
 // drive the /scim/v2/accounts/:accountId/* endpoints. Separate from PATs

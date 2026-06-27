@@ -142,6 +142,7 @@ export {
   iamRoles,
   iamRoleActions,
   iamPolicies,
+  iamResourceGrants,
   iamRolesRelations,
   iamRoleActionsRelations,
   // SCIM
