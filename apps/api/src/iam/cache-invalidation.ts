@@ -33,6 +33,25 @@ export function registerPrincipalScopedMemo(memo: PrincipalScopedMemo): void {
   principalScopedMemos.push(memo);
 }
 
+// ── Project-scoped memos (keyed `${projectId}|…`) ──────────────────────────
+// The per-resource grant memo (resource-grants.ts) is keyed by project, not
+// principal: a resource-grant change affects every principal of the project at
+// once, so it busts the whole project entry rather than fanning out to members.
+const projectScopedMemos: PrincipalScopedMemo[] = [];
+
+/** A memo keyed `${projectId}|…` registers so it can be busted per project. */
+export function registerProjectScopedMemo(memo: PrincipalScopedMemo): void {
+  projectScopedMemos.push(memo);
+}
+
+/** Drop every cached entry for one project — e.g. after a resource-grant
+ *  mutation. Process-local (same contract as the principal-scoped busts). */
+export function invalidateIamCacheForProjectResources(projectId: string | null | undefined): void {
+  if (!projectId) return;
+  const prefix = `${projectId}|`;
+  for (const memo of projectScopedMemos) memo.invalidateByPrefix(prefix);
+}
+
 /** Drop every cached authz entry for one user across all registered memos. */
 export function invalidateIamCacheForUser(userId: string | null | undefined): void {
   if (!userId) return;

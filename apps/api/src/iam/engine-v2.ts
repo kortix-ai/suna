@@ -35,6 +35,7 @@ import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
+import { isResourceAccessible, loadProjectResourceGrants } from './resource-grants';
 import type {
   AuthorizeResult,
   AuthorizeTarget,
@@ -581,6 +582,25 @@ export async function authorizeV2(
     if (actor.kind === 'service_account') return { allowed: false, reason: 'service_account_scope_insufficient' };
     if (!effective) return { allowed: false, reason: 'no_project_membership' };
     return { allowed: false, reason: 'project_role_insufficient' };
+  }
+
+  // PER-RESOURCE SCOPING (human members only). When the action targets a
+  // SPECIFIC agent/skill (target.resource set), intersect the verdict with
+  // iam_resource_grants: if that resource is scoped (>=1 grant row), the member
+  // must be in the granted set (themselves or one of their groups). Unscoped
+  // resources stay project-wide — so this never locks anyone out of a resource
+  // nobody scoped. Owner/admins keep implicit Manager and bypass; service
+  // accounts are governed by their own policies + agentGrant, not this fold.
+  if (
+    effectiveTarget.type === 'project' &&
+    effectiveTarget.resource &&
+    actor.kind === 'member' &&
+    !implicitProjectRoleForAccount(actor.accountRole ?? 'member')
+  ) {
+    const grants = await loadProjectResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
+    if (!isResourceAccessible(grants.get(effectiveTarget.resource.id), userId, actor.groupIds)) {
+      return { allowed: false, reason: 'resource_scope_insufficient' };
+    }
   }
 
   // (standingRole|userRole) ∩ agentGrant — the central enforcement. A scoped
