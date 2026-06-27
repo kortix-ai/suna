@@ -68,11 +68,33 @@ describe('chatToResponses', () => {
         messages: [{ role: 'user', content: 'x' }],
         reasoning_effort: 'high',
         tools: [{ type: 'function', function: { name: 'get_weather', description: 'd', parameters: { type: 'object' } } }],
+        tool_choice: { type: 'function', function: { name: 'get_weather' } },
       },
       codex,
     );
     expect(payload.reasoning).toEqual({ effort: 'high' });
     expect(payload.tools).toEqual([{ type: 'function', name: 'get_weather', description: 'd', parameters: { type: 'object' } }]);
+    expect(payload.tool_choice).toEqual({ type: 'function', name: 'get_weather' });
+  });
+
+  test('defaults Codex requests to low reasoning unless the caller overrides it', () => {
+    const implicit = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }] },
+      codex,
+    );
+    expect(implicit.reasoning).toEqual({ effort: 'low' });
+
+    const explicit = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }], reasoning: { effort: 'high' } },
+      codex,
+    );
+    expect(explicit.reasoning).toEqual({ effort: 'high' });
+
+    const nonCodex = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }] },
+      { ...codex, provider: 'openai' },
+    );
+    expect(nonCodex.reasoning).toBeUndefined();
   });
 
   test('flattens assistant tool calls and tool results into input items', () => {
