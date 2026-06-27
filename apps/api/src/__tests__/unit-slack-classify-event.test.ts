@@ -57,6 +57,7 @@ mock.module('../channels/slack-api', () => ({
   getChannelName: async () => 'general',
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
+  postEphemeral: async () => true,
   postBlocks: async () => 'ts',
   postMessage: async () => 'ts',
   publishHomeView: async () => {},
