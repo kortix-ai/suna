@@ -225,6 +225,13 @@ export const AUTO_MODEL_ID = "auto";
 const AUTO_TARGET_MODEL = "fusion"; // text-only default
 const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
 
+// Free-tier AUTO targets. A free account can't route to the paid targets above
+// (they'd 400 with "no upstream configured"), so AUTO resolves to the curated
+// free OpenCode-Zen lineup instead: a text default + the single free vision
+// model, so even image requests stay on a model the account can actually use.
+const AUTO_FREE_MODEL = "deepseek-v4-flash-free"; // free text default
+const AUTO_FREE_VISION_MODEL = "mimo-v2.5-free"; // the only free vision model
+
 function requestHasImage(body: Record<string, unknown>): boolean {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   for (const message of messages) {
@@ -253,10 +260,15 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 export function pickAutoModel(
   model: string,
   body: Record<string, unknown>,
+  opts?: { free?: boolean },
 ): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
     return null;
-  return requestHasImage(body) ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
+  const hasImage = requestHasImage(body);
+  if (opts?.free) {
+    return hasImage ? AUTO_FREE_VISION_MODEL : AUTO_FREE_MODEL;
+  }
+  return hasImage ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [

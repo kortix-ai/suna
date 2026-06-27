@@ -16,6 +16,8 @@ import {
   resolveAgentMailApiKey,
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
+import { getCachedAccountTier } from "../../billing/services/entitlements";
+import { tierGrantsAllModels } from "../../billing/services/tiers";
 import {
   downloadSlackFile,
   uploadSlackFile,
@@ -1241,6 +1243,7 @@ projectsApp.openapi(
     const accountId = c.get("accountId") as string | undefined;
     const sandboxId = c.get("sandboxId") as string | undefined;
     let projectMetadata: unknown;
+    let ownerAccountId: string | undefined;
     if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
@@ -1267,10 +1270,12 @@ projectsApp.openapi(
         .limit(1);
       if (!project) return c.json({ error: "Not found" }, 404);
       projectMetadata = project.metadata;
+      ownerAccountId = accountId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
       projectMetadata = loaded.row.metadata;
+      ownerAccountId = loaded.row.accountId as string | undefined;
     }
     if (!projectLlmGatewayEnabled(projectMetadata)) {
       return c.json(
@@ -1278,7 +1283,13 @@ projectsApp.openapi(
         404,
       );
     }
-    const models = gatewayModelCatalog(projectId);
+    // Free-tier accounts only see free managed models in the picker (their own
+    // BYOK-connected models still show). Mirrors the gateway's resolve-time gate.
+    const freeManagedOnly =
+      config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
+        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        : false;
+    const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
   },
 );

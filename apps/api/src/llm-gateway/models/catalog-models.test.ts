@@ -49,3 +49,36 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(gatewayModelCatalog('proj')).toBe(full);
   });
 });
+
+describe('gatewayModelCatalog — free-tier visibility', () => {
+  const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
+
+  test('free tier sees ONLY free managed models (paid managed hidden)', () => {
+    // Every free OpenCode-Zen model present...
+    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
+      expect(freeFull[id], id).toBeDefined();
+      expect(freeFull[id]?.free, id).toBe(true);
+    }
+    // ...and AUTO stays (it resolves to a free model for free accounts)...
+    expect(freeFull.auto).toBeDefined();
+    // ...but every paid managed model is gone.
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'fusion', 'qwen3.7-max']) {
+      expect(freeFull[id], id).toBeUndefined();
+    }
+  });
+
+  test('free tier still sees BYOK catalog models (own connected keys work)', () => {
+    expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
+  });
+
+  test('anonymous + free-only = free managed lineup with no BYOK', () => {
+    const managedFree = gatewayModelCatalog(undefined, { freeManagedOnly: true });
+    expect(managedFree.auto).toBeDefined();
+    expect(managedFree['fusion']).toBeUndefined();
+    expect(managedFree['anthropic/claude-opus-4-8']).toBeUndefined();
+  });
+
+  test('free-tier catalog is its own memoized singleton', () => {
+    expect(gatewayModelCatalog('proj', { freeManagedOnly: true })).toBe(freeFull);
+  });
+});

@@ -15,6 +15,12 @@ import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
+  cleanResultSnippet,
+  formatRawOutput,
+  looksLikeJsonPayload,
+  recoverLinkResults,
+} from '@/features/session/tool-output-format';
+import {
   extractReadableHtml,
   stripMarkupForToolOutput,
 } from '@/features/session/tool-renderers-sanitization';
@@ -926,9 +932,40 @@ function ToolOutputFallback({
     );
   }
 
+  // Structured/oversized payloads (JSON dumps, very long blobs) render as a
+  // tidy, length-capped monospace block. Feeding raw JSON to the markdown
+  // renderer produces a garbled wall of text — the "looks weird" complaint.
+  if (looksLikeJsonPayload(output) || output.length > 4000) {
+    return <RawOutputBlock output={output} />;
+  }
+
   return (
     <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
       <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    </div>
+  );
+}
+
+/**
+ * Tidy, length-capped raw-output view: pretty-prints JSON when parseable, caps
+ * the rendered text, and notes how much was dropped. The shared safety net for
+ * any tool whose output isn't worth a bespoke renderer.
+ */
+function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
+  const { text, truncatedChars } = useMemo(
+    () => formatRawOutput(output, maxChars),
+    [output, maxChars],
+  );
+  return (
+    <div data-scrollable className="max-h-72 overflow-auto p-2">
+      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+        {text}
+      </pre>
+      {truncatedChars > 0 && (
+        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
+          +{truncatedChars.toLocaleString()} more characters
+        </div>
+      )}
     </div>
   );
 }
@@ -3907,6 +3944,21 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
     }
     if (sources.length > 0) return [{ query: '', sources }];
   }
+
+  // Last resort: the output was JSON we couldn't strictly parse (oversized /
+  // truncated mid-stream). Recover whatever title/url/snippet records we can so
+  // the user still sees clean result cards instead of a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return [
+        {
+          query: '',
+          sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        },
+      ];
+    }
+  }
   return [];
 }
 
@@ -4071,7 +4123,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                                 </div>
                                 {src.snippet && (
                                   <p className="text-muted-foreground/60 mt-1 line-clamp-2 text-xs leading-relaxed">
-                                    {src.snippet.slice(0, 200)}
+                                    {cleanResultSnippet(src.snippet, 200)}
                                   </p>
                                 )}
                               </div>
@@ -4156,6 +4208,25 @@ function parseScrapeOutput(output: string | any): ParsedScrapeOutput | null {
       })),
     };
   }
+
+  // Last resort: oversized / truncated JSON that failed strict parsing — recover
+  // the page records so we still render result cards, never a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return {
+        total: recovered.length,
+        successful: recovered.length,
+        failed: 0,
+        results: recovered.map((r) => ({
+          url: r.url,
+          success: true,
+          title: r.title || undefined,
+          content: r.snippet || undefined,
+        })),
+      };
+    }
+  }
   return null;
 }
 
@@ -4205,9 +4276,7 @@ function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               if (!resultUrl) return null;
               const favicon = wsFavicon(resultUrl);
               const resultDomain = wsDomain(resultUrl);
-              const snippet = result.content
-                ? result.content.replace(/\\n/g, ' ').replace(/\s+/g, ' ').slice(0, 200)
-                : undefined;
+              const snippet = result.content ? cleanResultSnippet(result.content, 200) : undefined;
 
               return (
                 <a

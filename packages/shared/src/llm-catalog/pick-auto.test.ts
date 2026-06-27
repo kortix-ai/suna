@@ -57,6 +57,45 @@ describe("pickAutoModel", () => {
     ).toBeDefined();
   });
 
+  test("free tier resolves auto to a FREE model, never a paid one", () => {
+    // Text → free text default; image → the one free vision model. A free
+    // account has no upstream for fusion/claude-sonnet, so auto must not pick them.
+    expect(
+      pickAutoModel("auto", { messages: [msg("hello there")] }, { free: true }),
+    ).toBe("deepseek-v4-flash-free");
+    const withImage = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "what is this?" },
+            {
+              type: "image_url",
+              image_url: { url: "data:image/png;base64,AAAA" },
+            },
+          ],
+        },
+      ],
+    };
+    expect(pickAutoModel("auto", withImage, { free: true })).toBe(
+      "mimo-v2.5-free",
+    );
+  });
+
+  test("both free auto targets are real FREE managed models", () => {
+    for (const id of ["deepseek-v4-flash-free", "mimo-v2.5-free"]) {
+      const m = getManagedModel(id);
+      expect(m, `${id} must exist`).toBeDefined();
+      expect(m?.free, `${id} must be free`).toBe(true);
+    }
+  });
+
+  test("free option does not affect non-auto pass-through", () => {
+    expect(
+      pickAutoModel("claude-opus-4.8", { messages: [msg("hi")] }, { free: true }),
+    ).toBeNull();
+  });
+
   test("AUTO_MODEL_ID is the bare synthetic id", () => {
     expect(AUTO_MODEL_ID).toBe("auto");
   });
