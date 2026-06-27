@@ -11,9 +11,11 @@ import {
 } from "../../channels/install-store";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
+  agentMailUpstreamStatus,
   createAgentMailInbox,
   createAgentMailWebhook,
   resolveAgentMailApiKey,
+  isAgentMailInboxLimitError,
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
@@ -692,7 +694,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), "OK"),
-      ...errors(400, 403, 404, 502, 503),
+      ...errors(400, 403, 404, 409, 502, 503, 504),
     },
   }),
   async (c: any) => {
@@ -792,8 +794,8 @@ projectsApp.openapi(
         });
       } catch (err) {
         return c.json(
-          { error: `AgentMail inbox create failed: ${(err as Error).message}` },
-          502,
+          agentMailConnectErrorBody("inbox_create", err),
+          agentMailConnectErrorStatus(err),
         );
       }
     }
@@ -811,8 +813,8 @@ projectsApp.openapi(
       webhookSecret = webhook.secret;
     } catch (err) {
       return c.json(
-        { error: `AgentMail webhook create failed: ${(err as Error).message}` },
-        502,
+        agentMailConnectErrorBody("webhook_create", err),
+        agentMailConnectErrorStatus(err),
       );
     }
 
@@ -950,6 +952,51 @@ function parseSenderPolicyBody(
     }
   }
   return policy;
+}
+
+function agentMailConnectErrorStatus(err: unknown): 409 | 502 | 504 {
+  if (isAgentMailInboxLimitError(err)) return 409;
+  if (agentMailUpstreamStatus(err) === 504) return 504;
+  return 502;
+}
+
+function agentMailConnectErrorBody(
+  stage: "inbox_create" | "webhook_create",
+  err: unknown,
+) {
+  const upstreamStatus = agentMailUpstreamStatus(err);
+  if (isAgentMailInboxLimitError(err)) {
+    return {
+      error:
+        "AgentMail inbox limit reached. Delete an unused AgentMail inbox or connect an existing AgentMail inbox with inbox_id and email.",
+      code: "agentmail_inbox_limit",
+      provider: "agentmail",
+      upstream_status: upstreamStatus,
+      stage,
+    };
+  }
+  if (upstreamStatus === 504) {
+    return {
+      error:
+        stage === "inbox_create"
+          ? "AgentMail inbox create timed out"
+          : "AgentMail webhook create timed out",
+      code: "agentmail_timeout",
+      provider: "agentmail",
+      upstream_status: upstreamStatus,
+      stage,
+    };
+  }
+  return {
+    error:
+      stage === "inbox_create"
+        ? `AgentMail inbox create failed: ${(err as Error).message}`
+        : `AgentMail webhook create failed: ${(err as Error).message}`,
+    code: "agentmail_upstream_error",
+    provider: "agentmail",
+    upstream_status: upstreamStatus,
+    stage,
+  };
 }
 
 // POST /v1/projects/:projectId/turn-stream

@@ -1,7 +1,13 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { config } from "../config";
-import { createAgentMailWebhook, resolveAgentMailApiKey } from "../channels/agentmail-api";
+import {
+  AgentMailApiError,
+  createAgentMailInbox,
+  createAgentMailWebhook,
+  isAgentMailInboxLimitError,
+  resolveAgentMailApiKey,
+} from "../channels/agentmail-api";
 import { verifyAgentMailSignature } from "../channels/email/verify";
 import type { AgentMailMessageReceivedEvent } from "../channels/email/types";
 
@@ -167,6 +173,40 @@ describe("AgentMail webhook provisioning", () => {
         "message.received",
         "message.received.unauthenticated",
       ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe("AgentMail provider errors", () => {
+  test("preserves upstream status and detects inbox quota failures", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          message: "Maximum number of inboxes reached for this workspace",
+        }),
+        {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        },
+      )) as unknown as typeof fetch;
+    try {
+      try {
+        await createAgentMailInbox({
+          apiKey: "am_test",
+          username: "support",
+          displayName: "Support",
+          clientId: "kortix-project-proj-1",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(AgentMailApiError);
+        expect((err as AgentMailApiError).status).toBe(403);
+        expect(isAgentMailInboxLimitError(err)).toBe(true);
+        return;
+      }
+      throw new Error("Expected AgentMail inbox create to fail");
     } finally {
       globalThis.fetch = originalFetch;
     }
