@@ -22,7 +22,10 @@ import { getClient } from './opencode/client';
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import { getSessionHealth } from './session/health';
 import { rewriteLocalhostUrl, proxyLocalhostUrl, type SubdomainUrlOptions } from './session/url';
-import { getActiveSandboxId } from './state/server-store';
+import { getActiveSandboxId, switchToSessionSandboxAsync } from './state/server-store';
+
+/** A model the agent can run, as the opencode runtime identifies it. */
+export type SessionModel = { providerID: string; modelID: string };
 
 /** The opencode runtime client for the currently-active sandbox (set by the host). */
 function runtime(): OpencodeClient {
@@ -173,6 +176,36 @@ export function createKortix(config: KortixPlatformConfig) {
 
   /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
   function session(projectId: string, sessionId: string) {
+    // Opinionated-action state, scoped to THIS handle. The opencode runtime is
+    // keyed by the OpenCode session id (resolved server-side at /start), NOT the
+    // Kortix `sessionId` — they differ. We resolve+cache it once, and remember a
+    // chosen model so `send` carries it.
+    let _ready: { opencodeSessionId: string } | null = null;
+    let _model: SessionModel | undefined;
+
+    /**
+     * Make this session's runtime reachable and return its OpenCode session id.
+     * Idempotent: `start` provisions/resumes the sandbox (long-poll until ready),
+     * we point the active runtime at it, and cache the resolved id for reuse.
+     */
+    async function ensureReady(): Promise<{ opencodeSessionId: string }> {
+      if (_ready) return _ready;
+      const started = await P.startProjectSession(projectId, sessionId, 30_000);
+      if (
+        !started ||
+        started.stage !== 'ready' ||
+        !started.sandbox ||
+        !started.opencode_session_id
+      ) {
+        throw new Error(
+          `Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`,
+        );
+      }
+      await switchToSessionSandboxAsync(projectId, sessionId, started.sandbox);
+      _ready = { opencodeSessionId: started.opencode_session_id };
+      return _ready;
+    }
+
     return {
       // ── lifecycle (Kortix REST) ──────────────────────────────────────────
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
@@ -199,11 +232,28 @@ export function createKortix(config: KortixPlatformConfig) {
       proxyUrl: (url?: string) => proxyLocalhostUrl(url, resolvePreviewOpts()),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
-      /** Send a text prompt to the agent in this session. */
-      send: (text: string) =>
-        runtime().session.prompt({ sessionID: sessionId, parts: [{ type: 'text', text }] }),
-      /** Abort the agent's current run. */
-      abort: () => runtime().session.abort({ sessionID: sessionId }),
+      // These do the right thing end-to-end for scripts/non-React hosts: ensure
+      // the runtime is up, point the SDK at it, resolve the OpenCode session id,
+      // and act. React hosts use `@kortix/sdk/react` hooks instead, which bind to
+      // the same resolved id reactively (see the white-label reference app).
+      /** Pick the model `send` will use for subsequent prompts (until changed). */
+      setModel: (model: SessionModel | undefined) => {
+        _model = model;
+      },
+      /** Provision/resume if needed, then send a text prompt to the agent. */
+      send: async (text: string) => {
+        const { opencodeSessionId } = await ensureReady();
+        return runtime().session.prompt({
+          sessionID: opencodeSessionId,
+          parts: [{ type: 'text', text }],
+          ...(_model ? { model: _model } : {}),
+        });
+      },
+      /** Abort the agent's current run in this session. */
+      abort: async () => {
+        const { opencodeSessionId } = await ensureReady();
+        return runtime().session.abort({ sessionID: opencodeSessionId });
+      },
 
       // ── runtime (opencode v2, active sandbox) ────────────────────────────
       // The typed opencode client, reached ONLY through the SDK. The host never
