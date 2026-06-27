@@ -14,6 +14,7 @@
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { featureFlags } from '@/lib/feature-flags';
+import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/shared/llm-catalog';
 import { listProjectSecrets } from '@/lib/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS } from '@kortix/shared/llm-catalog';
@@ -352,7 +353,7 @@ export function useOpenCodeLocal({
     // fallback slots resolve fine without one, and the agent roster can be empty
     // (e.g. a project with no configured agents, or `enableProjects` off). The
     // agent-keyed slots are simply skipped when there's no current agent.
-    return getFirstValidModel(
+    const resolved = getFirstValidModel(
       // 1. Per-session model (user's explicit choice in this session — survives reload)
       () => (scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined),
       // Back-compat: read the old unscoped slot only if it is valid in the
@@ -368,6 +369,22 @@ export function useOpenCodeLocal({
       // 5. Global fallback (config.model > recent > first connected)
       () => fallbackModel,
     );
+    // AUTO is hidden from the picker (see featureFlags.enableAutoModel): never
+    // surface it as the selected model. The sandbox/agent/config still defaults to
+    // `kortix/auto`, so the chain above legitimately resolves to it — substitute
+    // the explicit default model (GLM 5.2) so the picker reflects a concrete,
+    // opt-in model and the request carries it directly. Skipped if that model
+    // isn't available (e.g. non-gateway instance, or a free-tier catalog that
+    // doesn't serve it), which falls back to the resolved value.
+    if (
+      !featureFlags.enableAutoModel &&
+      resolved?.providerID === 'kortix' &&
+      resolved.modelID === AUTO_MODEL_ID
+    ) {
+      const explicit = { providerID: 'kortix', modelID: AUTO_DEFAULT_MODEL_ID };
+      if (isModelValid(explicit)) return explicit;
+    }
+    return resolved;
   }, [
     currentAgent,
     sessionId,
@@ -375,6 +392,7 @@ export function useOpenCodeLocal({
     providerMode,
     modelStore,
     getFirstValidModel,
+    isModelValid,
     fallbackModel,
   ]);
 

@@ -39,7 +39,7 @@ export interface ManagedModel {
   name: string;
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
-  //   'openrouter'   → an OpenRouter slug (`openrouter/fusion`)
+  //   'openrouter'   → an OpenRouter slug (`z-ai/glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
@@ -103,14 +103,14 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_000_000, output: 64_000 },
   },
   {
-    id: "fusion",
-    name: "Fusion",
-    upstreamModelId: "openrouter/fusion",
+    id: "glm-5.2",
+    name: "GLM 5.2",
+    upstreamModelId: "z-ai/glm-5.2",
     transport: "openrouter",
-    pricingRef: "openrouter/fusion",
+    pricingRef: "z-ai/glm-5.2",
     tier: "balanced",
     vision: false,
-    limit: { context: 1_000_000, output: 128_000 },
+    limit: { context: 1_000_000, output: 131_072 },
   },
   {
     id: "qwen3.7-max",
@@ -166,13 +166,31 @@ export const MANAGED_FLAGSHIP_MODEL_ID = (
 // request asks for it, the gateway resolves it to a concrete managed model and
 // bills it as the resolved model.
 //
-// For now AUTO is Fusion (OpenRouter's multi-model router) except a request that
-// carries images is routed to a vision-capable model so attachments aren't
-// silently ignored (Fusion is text-only). The `autoRouter` hook and this single
-// indirection point are where a future, more sophisticated per-task handler plugs in.
+// AUTO resolves to GLM 5.2 (text) except a request that carries images, which is
+// routed to a vision-capable model so attachments aren't silently ignored (GLM is
+// text-only). The `autoRouter` hook and this single indirection point are where a
+// future, more sophisticated per-task handler plugs in.
+//
+// AUTO is currently HIDDEN from the picker (see AUTO_MODEL_ENABLED): every session
+// explicitly opts into a concrete model. The resolution path below stays fully
+// intact — the sandbox still defaults `small_model`/headless sessions to `auto`,
+// and a stale gateway caller asking for raw `auto` still resolves — so re-exposing
+// the toggle is a one-line flip.
 export const AUTO_MODEL_ID = "auto";
 
-const AUTO_TARGET_MODEL = "fusion"; // text-only default
+// Whether AUTO is exposed in the model picker. Off for now: we want an explicit
+// opt-in on which model to use, and will bring AUTO back later. The web app reads
+// this through `featureFlags.enableAutoModel`, which can override it per-deploy via
+// NEXT_PUBLIC_ENABLE_AUTO_MODEL. The server keeps serving + resolving `auto`
+// regardless, so this only gates the UI.
+export const AUTO_MODEL_ENABLED = false;
+
+// The single "what to choose for auto" knob: the model AUTO routes text requests
+// to, AND the concrete model a fresh session defaults to while AUTO is hidden.
+// Change this one constant to re-point both.
+export const AUTO_DEFAULT_MODEL_ID = "glm-5.2";
+
+const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID; // text-only default
 const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
 
 function requestHasImage(body: Record<string, unknown>): boolean {
