@@ -184,7 +184,14 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
     [tunnelEnabled, llmGatewayEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
-  const sectionVisible = allItems.some((item) => item.section === section);
+  // The single `llm-management` rail item stands in for every `llm-*` sub-section
+  // (llm-providers, llm-logs, …), so a deep-link to one of those must count as
+  // visible — otherwise the effect below bounces it to the default (Files).
+  const sectionVisible = allItems.some((item) =>
+    item.section === 'llm-management'
+      ? section.startsWith('llm-')
+      : item.section === section,
+  );
 
   useEffect(() => {
     if (open && !sectionVisible) {

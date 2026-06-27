@@ -299,7 +299,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       setOpen(false);
       if (projectId) {
         if (llmGatewayEnabled) {
-          openCustomize('llm-providers');
+          // Plus → "Add provider" (the core surface); the sliders / manage-models
+          // button → "Models". Both land on LLM → Providers, never Files.
+          openCustomize('llm-providers', {
+            llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
+          });
         } else {
           setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
           setProjectModalOpen(true);
@@ -366,15 +370,16 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                 value={search}
                 onValueChange={setSearch}
                 rightElement={
-                  <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+                  <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
+                          aria-label="Add provider"
                           onClick={() => handleOpenProviderModal('providers')}
-                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Plus className="size-4" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
@@ -387,10 +392,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       <TooltipTrigger asChild>
                         <button
                           type="button"
+                          aria-label="Manage models"
                           onClick={() => handleOpenProviderModal('models')}
-                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                          <SlidersHorizontal className="size-4" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
