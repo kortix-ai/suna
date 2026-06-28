@@ -460,6 +460,15 @@ function validateSandboxTemplates(
     } else {
       seenSlugs.add(slug);
     }
+    // The runtime caps sandbox-template slugs at 64 chars (apps/api dockerfile-layer
+    // SLUG_RE) — a longer slug parses here but is silently dropped at sync, so warn.
+    if (slug && SLUG_RE.test(slug) && slug.length > 64) {
+      issues.push({
+        path: `${where}.slug`,
+        message: `slug is ${slug.length} chars; the runtime caps template slugs at 64, so this template would be silently dropped at sync. Shorten it.`,
+        severity: 'warning',
+      });
+    }
     const hasImage = typeof entry.image === 'string' && entry.image.trim() !== '';
     const hasDockerfile = typeof entry.dockerfile === 'string' && entry.dockerfile.trim() !== '';
     if (hasImage && hasDockerfile) {
@@ -615,6 +624,13 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
           message: 'timezone must be an IANA string.',
           severity: 'error',
         });
+      } else if (typeof entry.timezone === 'string' && entry.timezone.trim() && !isValidIanaTimeZone(entry.timezone.trim())) {
+        // Runtime rejects a non-IANA zone (e.g. "PST") and the trigger never fires.
+        issues.push({
+          path: `${where}.timezone`,
+          message: `"${entry.timezone}" is not a valid IANA time zone (e.g. "America/New_York"); the runtime rejects it and the trigger would never fire.`,
+          severity: 'warning',
+        });
       }
     } else if (type === 'webhook') {
       const secret =
@@ -755,6 +771,43 @@ function validateConnectors(
           severity: 'error',
         });
       }
+    }
+    // Advisory: the runtime parser enforces the rules below, but the gate stays
+    // non-blocking (warnings) so a hand-edited manifest is never hard-rejected —
+    // it just surfaces what would fail to materialize at runtime.
+    if (provider === 'mcp' && entry.transport !== undefined) {
+      const tr = typeof entry.transport === 'string' ? entry.transport.trim().toLowerCase() : '';
+      if (tr !== 'http' && tr !== 'sse') {
+        issues.push({
+          path: `${where}.transport`,
+          message: `transport should be "http" or "sse" (got "${tr || 'unset'}"); the runtime rejects anything else.`,
+          severity: 'warning',
+        });
+      }
+    }
+    if (provider === 'openapi' && typeof entry.spec !== 'string') {
+      issues.push({
+        path: `${where}.spec`,
+        message: 'openapi connectors need a `spec` (URL or repo path); without it the connector fails to materialize.',
+        severity: 'warning',
+      });
+    }
+    if (entry.credential !== undefined) {
+      const cm = typeof entry.credential === 'string' ? entry.credential.trim().toLowerCase() : '';
+      if (cm !== 'shared' && cm !== 'per_user') {
+        issues.push({
+          path: `${where}.credential`,
+          message: `credential should be "shared" or "per_user" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
+          severity: 'warning',
+        });
+      }
+    }
+    if (provider === 'pipedream' && entry.auth !== undefined) {
+      issues.push({
+        path: `${where}.auth`,
+        message: 'pipedream connectors authenticate via the connected account — [connectors.auth] is ignored at runtime.',
+        severity: 'warning',
+      });
     }
     // Optional [connectors.auth]
     if (entry.auth !== undefined) {
@@ -912,25 +965,49 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
         });
       }
     }
-    if (entry.source !== undefined) {
-      if (!isTable(entry.source)) {
-        issues.push({ path: `${where}.source`, message: 'source must be a table.', severity: 'error' });
-      } else {
-        const type = typeof entry.source.type === 'string' ? entry.source.type : '';
-        if (type !== 'git' && type !== 'tar') {
-          issues.push({
-            path: `${where}.source.type`,
-            message: `source.type must be "git" or "tar" (got "${type || 'unset'}").`,
-            severity: 'error',
-          });
-        }
+    if (entry.source === undefined) {
+      // The runtime requires [apps.source]; without it the app never deploys.
+      issues.push({
+        path: `${where}.source`,
+        message: 'no [apps.source] declared; the runtime requires one, so this app will not deploy.',
+        severity: 'warning',
+      });
+    } else if (!isTable(entry.source)) {
+      issues.push({ path: `${where}.source`, message: 'source must be a table.', severity: 'error' });
+    } else {
+      const type = typeof entry.source.type === 'string' ? entry.source.type : '';
+      if (type !== 'git' && type !== 'tar') {
+        issues.push({
+          path: `${where}.source.type`,
+          message: `source.type must be "git" or "tar" (got "${type || 'unset'}").`,
+          severity: 'error',
+        });
+      } else if (type === 'tar' && typeof entry.source.url !== 'string') {
+        issues.push({
+          path: `${where}.source.url`,
+          message: 'tar sources need a `url`; without it the app fails to deploy.',
+          severity: 'warning',
+        });
       }
     }
     if (entry.build !== undefined && !isTable(entry.build)) {
       issues.push({ path: `${where}.build`, message: 'build must be a table.', severity: 'error' });
     }
-    if (entry.env !== undefined && !isTable(entry.env)) {
-      issues.push({ path: `${where}.env`, message: 'env must be a table of string KEY=VALUE pairs.', severity: 'error' });
+    if (entry.env !== undefined) {
+      if (!isTable(entry.env)) {
+        issues.push({ path: `${where}.env`, message: 'env must be a table of string KEY=VALUE pairs.', severity: 'error' });
+      } else {
+        // The runtime rejects non-string values and non-env-name keys; warn so a
+        // hand-edited manifest isn't blocked but the author sees what will fail.
+        for (const [k, v] of Object.entries(entry.env)) {
+          if (typeof v !== 'string') {
+            issues.push({ path: `${where}.env.${k}`, message: 'app env values must be strings; the runtime rejects non-string values.', severity: 'warning' });
+          }
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+            issues.push({ path: `${where}.env.${k}`, message: `"${k}" is not a valid env-var name; the runtime rejects it.`, severity: 'warning' });
+          }
+        }
+      }
     }
   });
 }
@@ -939,6 +1016,16 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
 
 function isTable(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** A valid IANA time-zone name (the runtime rejects anything else). */
+function isValidIanaTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function expectStringOrAbsent(
