@@ -12,7 +12,16 @@ takes one via `getToken`, which it sends as `Authorization: Bearer <token>`.
 ## API key — the one programmatic credential
 
 Create one in **Settings → API keys → Create key**. Name it, choose its scope, copy
-it once (shown only at creation), and store it as a secret.
+it once (shown only at creation), and store it as a secret. An API key **acts as
+you**, so it can reach every project your account can.
+
+<Callout type="warn">
+Don't use a **Service account** here. Service accounts (`kortix_sa_…`) are a
+separate, advanced IAM principal with **no project access until it's explicitly
+granted** — point the SDK at one and every call returns `403 "You do not have
+access to this project"`. For the SDK, the CLI, and the white-label demo, you
+want an **API key** from **Settings → API keys**.
+</Callout>
 
 ```ts
 const kortix = createKortix({
