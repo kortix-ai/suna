@@ -77,11 +77,11 @@ In shared-DB mode this leaves the primary Supabase DB running and untouched.
 
 Current migrations live in `packages/db/migrations` and are applied with
 node-pg-migrate (`pnpm --filter @kortix/db migrate`; see
-`packages/db/MIGRATIONS.md`). The worktree runner still has an open bug from the
-cutover where it calls the old `db:migrate` script and emits Drizzle-era error
-text; if worktree schema setup fails there, track/fix
-https://github.com/kortix-ai/suna/issues/3630 rather than treating the old command
-as authoritative.
+`packages/db/MIGRATIONS.md`). The worktree runner applies
+`packages/db/scripts/test-prereqs.sql` first, then calls that `migrate` script.
+If isolated schema setup fails, debug the prereqs and
+`packages/db/migrations/*.sql` rather than looking for the retired
+`db:migrate`/Drizzle path.
 
 ## All commands (non-interactive)
 
