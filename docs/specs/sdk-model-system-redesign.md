@@ -79,27 +79,33 @@ default and no per-trigger model.
 
 ### 2. Model defaults: one scoped surface, server-resolved
 
-**Scopes (most-specific wins):**
+**Resolution precedence (most-specific wins):**
 
 ```
-trigger(triggerId)  >  agent(agentName)  >  project  >  account  >  platform(auto)
+explicit pick  >  trigger.model  >  agent default  >  project default  >  account default  >  platform(auto)
 ```
 
-**API.** Generalize `model-defaults` from `{account,agent}` to a scope tuple:
+- **`model_preferences`** (a generalized `account_model_preferences`) holds the
+  reusable defaults — `scope ∈ {account, project, agent}` + `scopeKey`
+  (`projectId` for project, `agentName` for agent) + `model`.
+- **`trigger.model`** is a nullable field **on the trigger/webhook spec itself**
+  (set where you create the trigger; `null` = "Default" = resolve the chain). It
+  is the most-specific *default-time* override for that run.
+
+**API.** Generalize `model-defaults` from `{account,agent}` to `{account,project,agent}`:
 
 ```
 GET    /projects/:id/model-defaults
   → { platformDefault, accountDefault, projectDefault,
-      agentDefaults: Record<agent, wire>, triggerDefaults: Record<triggerId, wire>,
-      resolvedForCaller }                      // NOTE: no freeTier field — gateway owns that
-PUT    /projects/:id/model-defaults   { scope:'project'|'account'|'agent'|'trigger', key?, model }
+      agentDefaults: Record<agent, wire>, resolvedForCaller }   // no freeTier — gateway owns that
+PUT    /projects/:id/model-defaults   { scope:'project'|'account'|'agent', key?, model }
 DELETE /projects/:id/model-defaults?scope=…&key=…
 ```
 
-Persistence: extend `account_model_preferences` (or a new `model_preferences`)
-to carry `projectId` + `scope ∈ {account,project,agent,trigger}` + `scopeKey`.
-Resolution lives in `apps/api/src/llm-gateway/resolution/default-model.ts`,
-extended to the precedence above and applied wherever `auto` is resolved.
+Trigger/webhook model is set through the **triggers API** (the new `model` field on
+the trigger spec), not `model-defaults`. Resolution lives in
+`apps/api/src/llm-gateway/resolution/default-model.ts`, extended to the precedence
+above (and checking `trigger.model` first for trigger runs) wherever `auto` resolves.
 
 **Client sends `auto`, server resolves.** Adopt main's display/send split:
 - `currentKey` = what to *show* (the resolved default or the user's explicit pick).
@@ -117,16 +123,22 @@ and chat history isn't polluted with implicit picks.
 // Catalog — already tier-filtered by the server; render as-is.
 kortix.project(id).llmCatalog()                       // → models the caller can use
 
-// Defaults — one clean CRUD, all scopes:
+// Defaults — one clean CRUD (account / project / agent scope):
 kortix.project(id).modelDefaults.get()                // → resolved + per-scope map
 kortix.project(id).modelDefaults.set({ scope:'project', model })
-kortix.project(id).modelDefaults.set({ scope:'agent',   key: agentName,  model })
-kortix.project(id).modelDefaults.set({ scope:'trigger', key: triggerId,  model })
+kortix.project(id).modelDefaults.set({ scope:'account', model })
+kortix.project(id).modelDefaults.set({ scope:'agent',   key: agentName, model })
 kortix.project(id).modelDefaults.clear({ scope, key? })
 
-// React: one hook, server-backed, optimistic.
-useModelDefaults(projectId)   // { resolvedFor(agent?|trigger?), set*, clear*, isLoading }
+// Triggers/webhooks carry their own agent + model (model: null = "Default"):
+kortix.project(id).triggers.create({ ...trigger, agent, model: model ?? null })
+kortix.project(id).triggers.update(triggerId, { agent, model })
+
+// React helpers (server-backed, optimistic):
+useModelDefaults(projectId)   // { resolvedFor(agent?), set*, clear*, isLoading }
 useModelPicker(projectId, { sessionId, agentName })  // { current, sendKey, onDefault, list, set }
+// The trigger/webhook form reuses an <AgentSelect/> + <ModelSelect/> (Default + catalog)
+// both reading the same SDK catalog/defaults — one selector, used everywhere.
 ```
 
 All of this lives in **`@kortix/sdk`** (`projects-client` + `react`). `apps/web`,
@@ -136,34 +148,60 @@ only if a host truly needs it.
 
 ## Migration plan
 
-1. **API** — generalize `model-defaults` to `{account,project,agent,trigger}`
-   scope (DB column + routes + `default-model.ts` resolution). Drop `freeTier`
-   from the response (the catalog already encodes availability).
+1. **API** — (a) generalize `model-defaults` to `{account,project,agent}` scope
+   (`model_preferences` table + routes + `default-model.ts` resolution), dropping
+   `freeTier` from the response (the catalog already encodes availability); (b) add
+   a nullable **`model`** field to the trigger/webhook spec + routes, and have the
+   trigger run resolver check `trigger.model` first.
 2. **SDK** — port main's model-defaults into the SDK (not `apps/web`):
-   `projects-client.modelDefaults.*`, `useModelDefaults`, the `currentKey`/
-   `sendKey`/`onDefault` split, `modelKeyToWire`/`wireToModelKey` as internals.
+   `projects-client.modelDefaults.*` (account/project/agent), `useModelDefaults`,
+   the `currentKey`/`sendKey`/`onDefault` split, `modelKeyToWire`/`wireToModelKey`
+   as internals; extend `triggers.create/update` to carry `agent` + `model`.
    **Delete** `freeTier`, `FREE_MANAGED_MODEL_IDS`, and the
    `DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS` dependency.
 3. **Hosts** — keep `apps/web` modules as SDK shims; delete the client-side
-   `useAccountState`-based free-tier calc. The demo's `model-picker`/`composer`
-   read `sendKey`.
+   `useAccountState`-based free-tier calc. Ship one reusable `<AgentSelect/>` +
+   `<ModelSelect/>` (Default + catalog) used by the composer, project/agent
+   settings, **and the trigger + webhook creation forms** — all reading the same
+   SDK catalog/defaults. The demo's `model-picker`/`composer` read `sendKey`.
 4. **Merge reconciliation** — this supersedes the blocked `origin/main` merge:
    instead of porting main's *account-scoped* defaults as-is, land the
    project/agent/trigger-scoped version above. Resolves the 23 type errors at the
    source (the SDK gains the symbols the merged consumers expect).
 
-## Open decisions (need your call)
+## Decisions (locked, 2026-06-28)
 
-1. **Project vs account precedence** — proposed `trigger > agent > project >
-   account > platform`. Is a **project** default meant to *override* the account
-   default (per-project wins), or only fill in when the account has none? (Spec
-   assumes project overrides account.)
-2. **Agent model field** — should an agent also be able to pin a model in its
-   manifest (`AgentSpec.model`), or is the per-agent *default* (set via SDK) the
-   only mechanism? (Spec uses the SDK default; no manifest field.)
-3. **Trigger default storage** — per-trigger default in `model_preferences`
-   (scope=trigger) vs a `model` field on `GitTriggerSpec`. (Spec uses
-   `model_preferences` so all defaults share one resolution path.)
-4. **`auto` everywhere** — OK to make the client always send `auto` when on a
-   default (server resolves), accepting that the shown model is a hint that can
-   differ from what the gateway ultimately picks for `auto`?
+1. **Project overrides account.** The "account" default is your **personal
+   account** default (the model you pick for yourself); a **project** default
+   overrides it for that project. Full precedence for an effective model:
+
+   ```
+   explicit pick (session/composer)         // a user's in-the-moment choice
+     > trigger model (if the run is a trigger and its model is set)
+     > agent default                          // per-agent, set via SDK
+     > project default                        // overrides account
+     > account (personal) default
+     > platform default (auto → gateway picks)
+   ```
+
+2. **Triggers + webhooks carry an agent AND a model.** Creating a schedule (cron)
+   or a webhook exposes a **server-side selector for both the agent and the
+   model**. The model field defaults to **"Default"** (meaning: leave it to the
+   resolution chain above — agent → project → account → platform) and can be set
+   to a specific model. Agents/triggers do **not** pin a model today; this is new.
+   - Storage: add a nullable **`model`** field to the trigger/webhook spec
+     (alongside the existing `agent`). `null` ⇒ "Default" ⇒ resolve the chain at
+     run time. This keeps a trigger's model part of the trigger's own definition
+     (set where you create it), while still flowing through the one resolution
+     path. `model_preferences` covers project/account/agent scope; the trigger's
+     own `model` is the most-specific override for that run.
+
+3. **Per-agent default via the SDK** (no manifest `model` field). An agent's
+   default model is a `model_preferences` row (scope=agent); the agent picker in a
+   trigger/webhook just chooses *which* agent, and the model selector chooses its
+   model-or-Default.
+
+4. **Client sends `auto` on Default.** When the user is on a default (hasn't made
+   an explicit pick), the client sends `auto` and the gateway resolves it through
+   the chain. The shown model is a hint; the gateway is the source of truth for
+   what `auto` becomes. Changing a project/agent default takes effect live.
