@@ -3,6 +3,7 @@
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Bell,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/features/icon/icon';
+import Hint from '@/components/ui/hint';
 import {
   ComposerChatInput,
   type ComposerOptions,
@@ -37,8 +39,9 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   getProjectDetail,
   listConnectors,
+  listProjectAccessRequests,
   listProjectAccess,
-  listProjectSandboxTemplates,
+  listProjectSandboxes,
   listProjectTriggers,
   type SandboxTemplate,
 } from '@/lib/projects-client';
@@ -69,20 +72,13 @@ export function ProjectHome({
   busy: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    ...Q,
-  });
-  const name = detail.data?.project?.name ?? '';
-  const displayName = name.trim() || 'this project';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],
-    queryFn: () => listProjectSandboxTemplates(projectId),
+    queryFn: () => listProjectSandboxes(projectId),
     ...Q,
   });
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
@@ -90,6 +86,14 @@ export function ProjectHome({
   const activeSlug = selectedSlug ?? defaultSlug;
 
   const showSandboxPicker = sandboxItems.length >= 1;
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const accessRequests = useQuery({
+    queryKey: ['project-access-requests', projectId],
+    queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
+    retry: false,
+    ...Q,
+  });
+  const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
@@ -128,19 +132,31 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
-
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
-        <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
-          <h1 className="text-muted-foreground text-left text-[2.3rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
-            Give <span className="text-foreground">{displayName}</span>{' '}
-            {tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
-            )}
-          </h1>
+      {pendingAccessCount > 0 ? (
+        <div className="absolute right-4 top-4 z-20">
+          <Hint label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="relative bg-background/80 backdrop-blur-sm"
+              onClick={() => openCustomize('members')}
+              aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+            >
+              <Bell className="size-4" />
+              <Badge
+                size="xs"
+                variant="new"
+                className="absolute -right-1 -top-1 min-w-5 px-1 tabular-nums"
+              >
+                {pendingAccessCount}
+              </Badge>
+            </Button>
+          </Hint>
         </div>
+      ) : null}
 
-        <ProjectHomeSections projectId={projectId} />
-      </div>
+      <ProjectHomeWelcomeBody projectId={projectId} />
 
       <div className="relative z-10 shrink-0">
         <div className="mx-auto mb-4 w-full max-w-[52rem] px-2 sm:px-4">
@@ -172,7 +188,38 @@ export function ProjectHome({
   );
 }
 
-function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
+/**
+ * The project-home empty-state body: the welcome heading + the "set up your
+ * project" tiles. Shared by the project index page AND the instant session
+ * shell's empty state so a brand-new session opens onto the identical surface.
+ */
+export function ProjectHomeWelcomeBody({ projectId }: { projectId: string }) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const detail = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    ...Q,
+  });
+  const name = detail.data?.project?.name ?? '';
+  const displayName = name.trim() || 'this project';
+
+  return (
+    <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
+      <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
+        <h1 className="text-muted-foreground text-left text-[2.3rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+          Give <span className="text-foreground">{displayName}</span>{' '}
+          {tI18nHardcoded.raw(
+            'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
+          )}
+        </h1>
+      </div>
+
+      <ProjectHomeSections projectId={projectId} />
+    </div>
+  );
+}
+
+export function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeftFade, setShowLeftFade] = useState(false);

@@ -62,11 +62,10 @@ export function buildServer(): GatewayServer {
       breaker: config.breaker,
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
-      // Tier-aware: a free account's `auto` resolves to a free model, not a paid
-      // one it has no upstream for. The principal (with freeModelsOnly, set by
-      // the API at auth) arrives over the authorize RPC and is passed through here.
+      // Resolve `auto` against the principal's account/agent default (resolved
+      // API-side in withResolvedTier and carried across the authorize RPC).
       autoRouter: (model, body, principal) =>
-        pickAutoModel(model, body, { free: !!principal.freeModelsOnly }),
+        pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     },
     { logger },
   );

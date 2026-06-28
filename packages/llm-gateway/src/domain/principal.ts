@@ -8,14 +8,16 @@ export interface AuthedPrincipal {
   // authentication so it travels with the principal — including across the RPC
   // boundary to the out-of-process gateway pod — without a second tier lookup.
   tier?: string;
-  // True when the account may ONLY use free managed models (free tier with
-  // internal billing on). Drives both the served-catalog filter and the `auto`
-  // router so a free user only ever sees and routes to free models.
+  // True when the account may not use platform-managed Kortix models (free tier
+  // with internal billing on). The served catalog still includes BYOK/Codex
+  // project models so users can connect their own provider.
   freeModelsOnly?: boolean;
-  // The account/project/agent-configured default model, resolved once at
-  // authentication (see apps/api llm-gateway/resolution/default-model). `auto`
-  // resolves to this; undefined → the platform target. Travels with the
-  // principal so it survives the RPC hop to the standalone gateway pod.
+  // The account/agent-configured default model this principal's session should use
+  // when it asks for the synthetic `auto` model — a concrete gateway wire model
+  // (e.g. 'glm-5.2', 'anthropic/claude-sonnet-4.6'), never `auto`. Resolved once at
+  // authentication (agent default → account default) and undefined when there is no
+  // configured default (→ the platform default applies). Travels with the principal
+  // across the RPC boundary so the standalone pod resolves `auto` identically.
   defaultModel?: string;
 }
 

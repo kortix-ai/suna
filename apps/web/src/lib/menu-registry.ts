@@ -40,6 +40,7 @@ import {
   GitCompareArrows,
   Globe,
   Hash,
+  Key,
   Keyboard,
   // Settings pages
   KeyRound,
@@ -58,6 +59,7 @@ import {
   Plus,
   Receipt,
   RefreshCw,
+  Rocket,
   ScrollText,
   Search,
   SlidersHorizontal,
@@ -66,6 +68,8 @@ import {
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
+
+const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
 // ============================================================================
 // Types
@@ -481,6 +485,18 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'workspace agents skills commands tools build create',
   },
   {
+    id: 'secrets-quick',
+    label: 'Secrets Manager',
+    icon: KeyRound,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/settings/credentials',
+    tabId: 'settings:secrets',
+    tabType: 'settings',
+  },
+  {
     id: 'providers-quick',
     label: 'LLM Providers',
     icon: Bot,
@@ -489,6 +505,29 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'openProviderModal',
+  },
+  {
+    id: 'ssh-quick',
+    label: 'SSH',
+    icon: Key,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar', 'commandPalette'],
+    kind: 'action',
+    actionId: 'generateSSHKey',
+    keywords: 'ssh key generate public private git clone remote',
+  },
+  {
+    id: 'api-keys-quick',
+    label: 'API',
+    icon: Cable,
+    group: 'quickActions',
+    subGroup: 'security',
+    showIn: ['rightSidebar'],
+    kind: 'navigate',
+    href: '/settings/api-keys',
+    tabId: 'settings:api-keys',
+    tabType: 'settings',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -514,6 +553,20 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/scheduled-tasks',
   },
+  ...(DEPLOYMENTS_ENABLED
+    ? [
+        {
+          id: 'deployments',
+          label: 'Deployments',
+          icon: Rocket,
+          group: 'navigation' as const,
+          subGroup: 'services' as const,
+          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
+          kind: 'navigate' as const,
+          href: '/deployments',
+        },
+      ]
+    : []),
   {
     id: 'running-services',
     label: 'Service Manager',
@@ -654,6 +707,27 @@ export const menuRegistry: MenuItemDef[] = [
   // SETTINGS PAGES (navigate to route)
   // ──────────────────────────────────────────────────────────────────────────
   {
+    id: 'secrets-manager',
+    label: 'Secrets Manager',
+    icon: KeyRound,
+    group: 'settingsPages',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/settings/credentials',
+    tabType: 'settings',
+    keywords: 'secrets manager credentials env environment variables integrations keys',
+  },
+  {
+    id: 'api-keys',
+    label: 'API Keys',
+    icon: CogOneSolid,
+    group: 'settingsPages',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/settings/api-keys',
+    tabType: 'settings',
+  },
+  {
     id: 'llm-providers',
     label: 'LLM Providers',
     icon: Bot,
@@ -746,13 +820,13 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'API keys',
+    label: 'CLI tokens',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'tokens',
-    keywords: 'api keys tokens personal access pat cli command line authentication',
+    keywords: 'cli tokens personal access pat command line authentication',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -904,7 +978,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCardSolid },
     { id: 'transactions', label: 'Credits ledger', icon: Receipt },
-    { id: 'tokens', label: 'API keys', icon: KeyRound },
+    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

@@ -11,4 +11,8 @@
   "permission": "allow",
   // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
   // Install optional tools/plugins through the Kortix marketplace.
+  // kortix-continuation is the always-on todo continuation enforcer: when a session
+  // goes idle with unfinished native todos, it re-prompts the agent to keep going
+  // instead of self-stopping mid-task (set KORTIX_CONTINUATION_DISABLED=1 to disable).
+  "plugin": ["./continuation/kortix-continuation.ts"]
 }

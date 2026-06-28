@@ -6,7 +6,7 @@ name: Build Staging Artifacts
 #
 # Build every releasable container on every staging push and tag it with the
 # exact staging commit (`staging-<sha8>`). That gives deploy-prod a precise image
-# source for both full dev-candidate PRs and staging-only hotfix/release-candidate
+# source for both full dev-candidate PRs and targeted release-candidate
 # PRs. The deploy workflow may add `[skip ci]` GitOps pin commits after this
 # build; those are deployment metadata, not code promotion.
 

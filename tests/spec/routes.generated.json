@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 416,
+  "count": 421,
   "routes": [
     {
       "method": "GET",
@@ -13,6 +13,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/authenticate"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/authorize"
     },
     {
       "method": "POST",
@@ -412,14 +416,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/admin/api/warm-pool-config"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/admin/api/warm-pool-config"
-    },
-    {
-      "method": "GET",
       "path": "/v1/admin/api/warm-snapshot-config"
     },
     {
@@ -585,6 +581,10 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/slack/identity/bind"
     },
     {
       "method": "GET",
@@ -995,6 +995,10 @@
       "path": "/v1/projects/:projectId/channels/email/installation"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/email/mode"
     },
@@ -1167,8 +1171,36 @@
       "path": "/v1/projects/:projectId/group-grants/:groupId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/llm-catalog"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/marketplace/:name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/install"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update-all"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace/updates"
     },
     {
       "method": "GET",
@@ -1191,14 +1223,6 @@
       "path": "/v1/projects/:projectId/onboarding"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence/leave"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/registry"
     },
@@ -1213,6 +1237,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/registry/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/registry/update-all"
     },
     {
       "method": "GET",
@@ -1373,14 +1401,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/version-diff"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/warm-pool"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/warm-pool"
     },
     {
       "method": "POST",

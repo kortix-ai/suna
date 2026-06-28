@@ -1,2 +1,1546 @@
 'use client';
-export * from '@kortix/sdk/react';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams } from 'next/navigation';
+import { getClient } from '@/lib/opencode-sdk';
+import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
+import { markSessionFresh } from '@/lib/fresh-sessions';
+import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
+import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useServerStore } from '@/stores/server-store';
+import { ScopedCache } from '@/lib/storage/managed-storage';
+import {
+  getProjectDetail,
+  getProjectLlmCatalog,
+  listProjectSecrets,
+  type ProjectConfigSummary,
+} from '@/lib/projects-client';
+import { LLM_PROVIDERS } from '@/lib/llm-providers';
+import {
+  filterToGatewayProviders,
+  filterToNativeProviders,
+  GATEWAY_PROVIDER_IDS,
+  mergeProviderLists,
+  mergeProjectSecretConnectedProviders,
+  normalizeProviderList,
+  projectLlmCatalogToProviderList,
+  providerListHasModels,
+} from './provider-selection';
+import type {
+  Session,
+  Message,
+  Part,
+  Agent,
+  Command,
+  Project,
+  SessionStatus,
+  PermissionRule,
+  Model,
+  McpStatus,
+  Path as PathInfo,
+  ProviderListResponse as SdkProviderListResponse,
+  Worktree,
+  WorktreeCreateInput,
+  WorktreeRemoveInput,
+  WorktreeResetInput,
+} from '@opencode-ai/sdk/v2/client';
+
+// ============================================================================
+// Re-export SDK types for consumers
+// ============================================================================
+
+export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
+export { GATEWAY_PROVIDER_IDS };
+
+// Re-export filtered agents hook for UI agent selectors
+export { useVisibleAgents } from './use-visible-agents';
+
+/**
+ * Shape returned by `client.session.messages()`:
+ * `Array<{ info: Message; parts: Part[] }>`
+ */
+export interface MessageWithParts {
+  info: Message;
+  parts: Part[];
+}
+
+/**
+ * Provider list response — matches the actual SDK response from `client.provider.list()`.
+ * The SDK's inline model shape differs from the `Model` type, so we use the SDK's
+ * response type directly.
+ */
+export type ProviderListResponse = SdkProviderListResponse;
+
+/**
+ * Prompt part (input to send message).
+ * Supports text, file references, and agent/mode mentions.
+ */
+export type PromptPart =
+  | { type: 'text'; text: string; id?: string }
+  | { type: 'file'; mime: string; url: string; filename?: string; source?: { text: { value: string; start: number; end: number }; type: 'file'; path: string } }
+  | { type: 'agent'; name: string; source?: { value: string; start: number; end: number } };
+
+export interface SendMessageOptions {
+  model?: { providerID: string; modelID: string };
+  agent?: string;
+  variant?: string;
+}
+
+/**
+ * Skill type from `client.app.skills()`.
+ */
+export interface Skill {
+  name: string;
+  description: string;
+  location: string;
+  content: string;
+}
+
+/**
+ * Tool list item from `client.tool.list()`.
+ */
+export interface ToolListItem {
+  id: string;
+  description: string;
+  parameters: unknown;
+}
+
+// ============================================================================
+// Query Keys
+// ============================================================================
+
+/**
+ * Active sandbox/server id, used to scope per-sandbox caches.
+ *
+ * Each project session is its OWN sandbox (session_id == sandbox_id), but the
+ * OpenCode SDK client + caches are global. Without scoping, switching from
+ * session A to B would show A's data under B — which is why the code used to
+ * NUKE the entire opencode cache on every switch. That nuke is exactly what
+ * made returning to an already-open session "reload".
+ *
+ * By appending the server id to per-sandbox cache keys, every sandbox's data
+ * coexists in the cache, so returning to a warm session is instant and we no
+ * longer need to tear anything down. Appended at the END so existing prefix
+ * matches (e.g. invalidate `['opencode','sessions']`) still hit.
+ *
+ * `session(id)` / `messages(id)` stay global: opencode session ids are unique
+ * per sandbox, so they never collide across sandboxes.
+ */
+function activeServerKey(): string {
+  try {
+    return useServerStore.getState().activeServerId ?? 'none';
+  } catch {
+    return 'none';
+  }
+}
+
+export const opencodeKeys = {
+  all: ['opencode'] as const,
+  sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
+  session: (id: string) => ['opencode', 'session', id] as const,
+  messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
+  agents: () => ['opencode', 'agents', activeServerKey()] as const,
+  toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
+  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
+  skills: () => ['opencode', 'skills', activeServerKey()] as const,
+  projects: () => ['opencode', 'projects', activeServerKey()] as const,
+  currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
+  commands: () => ['opencode', 'commands', activeServerKey()] as const,
+  providers: () => ['opencode', 'providers', activeServerKey()] as const,
+  pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
+  mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
+  worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
+};
+
+// ============================================================================
+// Helper: unwrap SDK response (data / error)
+// ============================================================================
+
+function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): T {
+  if (result.error) {
+    const err = result.error as any;
+    const status = (result.response as Response | undefined)?.status;
+    // Try to extract the most specific error message from the SDK response
+    const msg =
+      err?.data?.message ||
+      err?.message ||
+      err?.error ||
+      (typeof err === 'string' ? err : null) ||
+      (typeof err === 'object' ? JSON.stringify(err) : null) ||
+      (status ? `Server returned ${status}` : 'SDK request failed');
+    throw new Error(msg);
+  }
+  return result.data as T;
+}
+
+// ============================================================================
+// Session Hooks
+// ============================================================================
+
+// localStorage placeholder caches are per-sandbox too — scope by active server
+// id so re-opening a warm session paints its OWN last data, never the previous
+// sandbox's. Scoping lives in the helpers so every call site inherits it.
+//
+// These are backed by ScopedCache, which caps each family to its N
+// most-recently-used scopes. That cap is the whole point: the default scope is
+// the EPHEMERAL per-sandbox server id, so without a cap every new session would
+// leak a fresh `kortix_cache_*:<serverId>` blob forever and eventually blow the
+// localStorage quota (which then crashes whatever store writes next). The cache
+// is disposable — a miss just refetches — so small caps are safe.
+const LS_SESSIONS = 'kortix_cache_sessions';
+const LS_AGENTS = 'kortix_cache_agents';
+const LS_COMMANDS = 'kortix_cache_commands';
+const LS_PROVIDERS = 'kortix_cache_providers';
+
+// Session/command lists are keyed per ephemeral sandbox — keep only the few
+// most-recent sandboxes warm. Agents are keyed per directory (+ global), which
+// is a small, stable space, so it gets more headroom. Providers are global.
+const sessionsCache = new ScopedCache<Session[]>(LS_SESSIONS, 4);
+const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
+const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
+const providersCache = new ScopedCache<ProviderListResponse>(LS_PROVIDERS, 2);
+
+const cacheByFamily: Record<string, ScopedCache<any>> = {
+  [LS_SESSIONS]: sessionsCache,
+  [LS_AGENTS]: agentsCache,
+  [LS_COMMANDS]: commandsCache,
+  [LS_PROVIDERS]: providersCache,
+};
+
+function getLSCache<T>(family: string, scope?: string): T | undefined {
+  return cacheByFamily[family]?.get(scope ?? activeServerKey()) as T | undefined;
+}
+
+function setLSCache(family: string, value: unknown, scope?: string): void {
+  cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
+}
+
+const PROJECT_SESSION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function canQueryOpenCodeSession(sessionId: string | null | undefined): sessionId is string {
+  return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
+}
+
+export function clearProjectProviderCache(projectId: string): void {
+  providersCache.remove(`proj:${projectId}:native`);
+  providersCache.remove(`proj:${projectId}:gateway`);
+}
+
+/**
+ * Stable cache scope for data that does NOT vary per sandbox. The default
+ * scope is the ephemeral per-sandbox server id, which is correct for
+ * session-specific data (session lists collide across sandboxes) but wrong for
+ * platform/project-level data like the model list and the agent roster: those
+ * are identical across every sandbox, yet a per-server key guarantees a cache
+ * MISS on every brand-new session (new sandbox → new server id → never seen).
+ * Keying them here instead lets a fresh session paint its pickers from cache on
+ * the first frame, before the sandbox is even up — killing the visible pop-in.
+ */
+const CACHE_SCOPE_GLOBAL = 'global';
+
+export function useOpenCodeRuntimeReady() {
+  return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+}
+
+export function useOpenCodeSessions() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  // Subscribe to the active server so the query key recomputes the instant the
+  // sandbox switches — returning to a warm session hits its cached list rather
+  // than refetching from scratch.
+  const serverId = useServerStore((s) => s.activeServerId) ?? undefined;
+  return useQuery<Session[]>({
+    queryKey: opencodeKeys.sessions(serverId),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.session.list({ limit: 10000 });
+      const sessions = unwrap(result);
+      const sorted = sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
+      setLSCache(LS_SESSIONS, sorted);
+      return sorted;
+    },
+    placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
+    enabled: runtimeReady,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    // With the scaffold-warm seed, opencode is ALREADY 'ok' for /workspace and a
+    // root session is pinned the moment runtimeReady flips — so the first list
+    // normally returns the pinned session in one shot. The only misses left are
+    // the server-switch client race + the ~350ms health-poll enable lag, both of
+    // which clear in one fast retry. So poll TIGHT (16 x 150ms = ~2.4s) to land
+    // the first success in <300ms instead of mid-400ms-window; exponential tail
+    // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
+    // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 16,
+    retryDelay: (attempt) =>
+      attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
+  });
+}
+
+export function useOpenCodeSession(sessionId: string) {
+  const queryClient = useQueryClient();
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
+  return useQuery<Session>({
+    queryKey: opencodeKeys.session(sessionId),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.session.get({ sessionID: sessionId });
+      return unwrap(result);
+    },
+    enabled: runtimeReady && canQuerySession,
+    staleTime: Infinity,
+    // Retry transient failures (sandbox still warming, brief network blip) so a
+    // single failed lookup doesn't settle as "not found" and flash the
+    // not-accessible error. The query stays in its loading state across retries.
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
+    placeholderData: () => {
+      const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
+      return sessions?.find((s) => s.id === sessionId);
+    },
+  });
+}
+
+export function useCreateOpenCodeSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (options: { directory?: string; title?: string } | void) => {
+      const opts = options || {};
+      // Opencode-inside-sandbox can be still booting when this fires (auto-
+      // create on session page mount). The sandbox proxy returns 503 with
+      // "opencode not ready" until the binary binds its port. Retry that
+      // specific transient inline — anything else propagates immediately.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const client = getClient();
+          const result = await client.session.create({
+            directory: opts.directory,
+            title: opts.title,
+          });
+          return unwrap(result);
+        } catch (e) {
+          const msg = (e as { message?: string })?.message ?? '';
+          if (attempt < 6 && /opencode not ready/i.test(msg)) {
+            await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 4_000)));
+            continue;
+          }
+          throw e;
+        }
+      }
+    },
+    onSuccess: (newSession) => {
+      // Surgically insert into cache — SSE session.created will also fire
+      // but this gives instant UI feedback. Dedup to avoid duplicate keys.
+      const session = newSession as Session;
+      // Mark this session as freshly created so the session page shows the
+      // instant typeable shell (not the resume loader). In-memory + synchronous,
+      // so it's reliably set before the create-then-navigate hop. Every create
+      // path flows through this hook; resumes don't.
+      markSessionFresh(session.id);
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return [session];
+        const idx = old.findIndex((s) => s.id === session.id);
+        if (idx >= 0) {
+          const next = [...old];
+          next[idx] = session;
+          return next.sort((a, b) => b.time.updated - a.time.updated);
+        }
+        return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
+      });
+      queryClient.setQueryData(opencodeKeys.session(session.id), session);
+    },
+  });
+}
+
+export function useDeleteOpenCodeSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const client = getClient();
+      const result = await client.session.delete({ sessionID: sessionId });
+      unwrap(result);
+      return sessionId;
+    },
+    onSuccess: (sessionId) => {
+      // Surgically remove from cache — SSE session.deleted will also fire
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return old;
+        return old.filter((s) => s.id !== sessionId);
+      });
+      queryClient.removeQueries({ queryKey: opencodeKeys.session(sessionId) });
+      queryClient.removeQueries({ queryKey: opencodeKeys.messages(sessionId) });
+    },
+  });
+}
+
+export function useUpdateOpenCodeSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      title,
+      archived,
+    }: {
+      sessionId: string;
+      title?: string;
+      archived?: boolean;
+    }) => {
+      const client = getClient();
+      const body: { title?: string; time?: { archived?: number } } = {};
+      if (title !== undefined) body.title = title;
+      if (archived !== undefined) body.time = { archived: archived ? Date.now() : 0 };
+      const result = await client.session.update({ sessionID: sessionId, ...body });
+      return unwrap(result);
+    },
+    onSuccess: (updatedSession) => {
+      // Surgically update cache — SSE session.updated will also fire
+      const session = updatedSession as Session;
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((s) => s.id === session.id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = session;
+        return next.sort((a, b) => b.time.updated - a.time.updated);
+      });
+      queryClient.setQueryData(opencodeKeys.session(session.id), session);
+    },
+  });
+}
+
+export function useOpenCodeSessionDiff(sessionId: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
+  return useQuery({
+    queryKey: ['opencode', 'session-diff', sessionId],
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.session.diff({ sessionID: sessionId });
+      return unwrap(result);
+    },
+    enabled: runtimeReady && canQuerySession,
+    staleTime: Infinity,
+  });
+}
+
+export function useOpenCodeSessionTodo(sessionId: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
+  return useQuery({
+    queryKey: ['opencode', 'session-todo', sessionId],
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.session.todo({ sessionID: sessionId });
+      const data = unwrap(result);
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: runtimeReady && canQuerySession,
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Get messages for a session.
+ *
+ * CONSOLIDATED: Now reads from the Zustand sync store (single source of truth)
+ * instead of making its own independent React Query fetch. The sync store is
+ * populated by useSessionSync on mount and kept live by SSE events.
+ *
+ * Previously this was an independent React Query hook with its own queryFn that
+ * called client.session.messages() — duplicating the exact same fetch that
+ * useSessionSync already makes. This caused 2x /session/{id}/message requests
+ * on every session navigation.
+ *
+ * Returns a shape compatible with the old UseQueryResult<MessageWithParts[]>
+ * for backward compatibility with consumers (session-layout, tool-renderers,
+ * snapshot-dialog, session-diff-viewer).
+ */
+/**
+ * Message cache for useOpenCodeMessages — prevents creating new array references
+ * on every render. Same pattern as buildMessages() in use-session-sync.ts.
+ * Without this, the Zustand selector returns a new array from .map() on every
+ * call, breaking useSyncExternalStore's Object.is check → infinite re-render.
+ */
+const MSG_HOOK_CACHE_MAX = 20;
+const msgHookCache = new Map<
+  string,
+  {
+    msgs: Message[] | undefined;
+    partRefs: (Part[] | undefined)[];
+    result: MessageWithParts[];
+  }
+>();
+
+function touchMsgHookCache(sessionId: string) {
+  const entry = msgHookCache.get(sessionId);
+  if (entry) {
+    msgHookCache.delete(sessionId);
+    msgHookCache.set(sessionId, entry);
+  }
+  if (msgHookCache.size > MSG_HOOK_CACHE_MAX) {
+    const oldest = msgHookCache.keys().next().value;
+    if (oldest) msgHookCache.delete(oldest);
+  }
+}
+
+const EMPTY_MSGS: MessageWithParts[] = [];
+
+function buildMsgsForHook(
+  sessionId: string,
+  msgs: Message[] | undefined,
+  parts: Record<string, Part[]>,
+): MessageWithParts[] {
+  if (!msgs || msgs.length === 0) return EMPTY_MSGS;
+
+  const cached = msgHookCache.get(sessionId);
+  if (cached && cached.msgs === msgs) {
+    let same = cached.partRefs.length === msgs.length;
+    if (same) {
+      for (let i = 0; i < msgs.length; i++) {
+        if (parts[msgs[i].id] !== cached.partRefs[i]) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) return cached.result;
+  }
+
+  const partRefs: (Part[] | undefined)[] = [];
+  const result: MessageWithParts[] = [];
+  for (const info of msgs) {
+    const pa = parts[info.id];
+    partRefs.push(pa);
+    result.push({ info, parts: pa ?? [] });
+  }
+  msgHookCache.set(sessionId, { msgs, partRefs, result });
+  touchMsgHookCache(sessionId);
+  return result;
+}
+
+export function useOpenCodeMessages(sessionId: string) {
+  // Select via a referentially-stable selector that uses an external cache.
+  // getMessages() in the store creates new arrays via .map() on every call,
+  // which breaks useSyncExternalStore → infinite loop. buildMsgsForHook()
+  // returns the same reference if nothing changed for this session.
+  const messages = useSyncStore((s) =>
+    buildMsgsForHook(sessionId, s.messages[sessionId], s.parts),
+  );
+  const isLoading = !useSyncStore((s) => sessionId in s.messages);
+
+  return {
+    data: messages.length > 0 ? messages : undefined,
+    isLoading,
+    isError: false,
+    error: null,
+    refetch: async () => ({ data: messages } as any),
+  };
+}
+
+// ============================================================================
+// Prompt / Abort Hooks
+// ============================================================================
+
+/**
+ * Generate a monotonic ascending ID compatible with the server's Identifier.ascending().
+ * Server format: prefix + "_" + 12-char hex timestamp + 14-char random base62 = prefix_<26 chars>
+ * Server validates: z.string().startsWith("msg") for messages, "prt" for parts.
+ */
+let lastIdTimestamp = 0;
+let idCounter = 0;
+export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
+  const now = Date.now();
+  if (now !== lastIdTimestamp) {
+    lastIdTimestamp = now;
+    idCounter = 0;
+  }
+  idCounter++;
+  const encoded = BigInt(now) * BigInt(0x1000) + BigInt(idCounter);
+  const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  let rand = '';
+  for (let i = 0; i < 14; i++) rand += chars[Math.floor(Math.random() * 62)];
+  return `${prefix}_${hex}${rand}`;
+}
+
+export function useSendOpenCodeMessage() {
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      parts,
+      options,
+      messageID,
+    }: {
+      sessionId: string;
+      parts: PromptPart[];
+      options?: SendMessageOptions;
+      messageID?: string;
+    }) => {
+      const mappedParts = parts.map((p) => {
+        if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
+        if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
+        return { type: 'text' as const, text: p.text };
+      });
+      const payload = {
+        sessionID: sessionId,
+        parts: mappedParts,
+        ...(messageID && { messageID }),
+        ...(options?.model && { model: options.model }),
+        ...(options?.agent && { agent: options.agent }),
+        ...(options?.variant && { variant: options.variant }),
+      };
+
+      // Match OpenCode exactly: use session.prompt() (blocking endpoint).
+      // The call blocks until the AI finishes, but we fire-and-forget from
+      // the UI side (handleSend doesn't await the mutation result).
+      // SSE events drive all incremental UI updates via the sync store.
+      const client = getClient();
+      const result = await client.session.prompt(payload as any);
+      if (result.error) {
+        const err = result.error as any;
+        throw new Error(err?.data?.message || err?.message || 'Failed to send message');
+      }
+    },
+  });
+}
+
+export function useAbortOpenCodeSession() {
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const client = getClient();
+      const result = await client.session.abort({ sessionID: sessionId });
+      unwrap(result);
+      // After abort succeeds, the SSE stream should deliver session.idle event.
+      // If the UI stays stuck, it means the SSE event wasn't received/processed.
+      // The optimistic idle status we set in handleStop should handle this, but
+      // if for some reason the abort HTTP call returned but SSE didn't update,
+      // we force-refresh the session status from the server.
+      try {
+        const statusResult = await client.session.status();
+        const statuses = statusResult.data as Record<string, any>;
+        const serverStatus = statuses[sessionId];
+        if (serverStatus && serverStatus.type !== 'idle') {
+          // Server still thinks we're busy - update the store with server's view
+          // This can happen if SSE events were missed
+          useSyncStore.getState().setStatus(sessionId, serverStatus);
+        }
+      } catch {
+        // Non-critical — SSE will eventually deliver the correct status
+      }
+    },
+    retry: 2,
+    retryDelay: 300,
+    onError: () => {},
+  });
+}
+
+// ============================================================================
+// Agent Hooks
+// ============================================================================
+
+/**
+ * Load agents. With `projectId`, the server-side project config is source of
+ * truth: it returns declarative `kortix.toml [[agents]]` entries for adopted
+ * projects and OpenCode file discovery for legacy projects. Without `projectId`,
+ * this falls back to the sandbox OpenCode runtime.
+ */
+export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
+  const directory = options?.directory;
+  const projectId = options?.projectId ?? null;
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const cacheScope = projectId
+    ? `project:${projectId}`
+    : directory
+      ? `dir:${directory}`
+      : CACHE_SCOPE_GLOBAL;
+  return useQuery<Agent[]>({
+    queryKey: projectId
+      ? ['project-detail', projectId, 'agents']
+      : directory
+        ? [...opencodeKeys.agents(), 'dir', directory]
+        : opencodeKeys.agents(),
+    queryFn: async () => {
+      if (projectId) {
+        const detail = await getProjectDetail(projectId);
+        const agents = detail.config.agents.map(projectConfigAgentToOpenCodeAgent);
+        setLSCache(LS_AGENTS, agents, cacheScope);
+        return agents;
+      }
+      const client = getClient();
+      const result = await client.app.agents(directory ? { directory } : undefined);
+      const data = unwrap(result);
+      const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
+      // Agents are defined in the project repo (.kortix/opencode/agents), so the
+      // roster is stable across every session that shares a working directory.
+      // Cache under a directory-scoped (or global) STABLE key — not the
+      // ephemeral per-sandbox server id — so a new session's picker paints from
+      // cache instead of waiting on sandbox boot + the in-box /app/agents call.
+      // (Previously the directory case cached nothing at all → guaranteed pop-in.)
+      setLSCache(LS_AGENTS, agents, cacheScope);
+      return agents;
+    },
+    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
+    enabled: projectId ? true : runtimeReady,
+    staleTime: projectId ? 30_000 : Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+function projectConfigAgentToOpenCodeAgent(
+  agent: ProjectConfigSummary['agents'][number],
+): Agent {
+  return {
+    name: agent.name,
+    description: agent.description ?? undefined,
+    mode: agent.mode ?? undefined,
+    source: agent.source,
+    hidden: agent.enabled === false,
+  } as unknown as Agent;
+}
+
+export function useOpenCodeAgent(agentName: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Agent | undefined>({
+    queryKey: [...opencodeKeys.agents(), agentName],
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.app.agents();
+      const agents = unwrap(result);
+      return agents.find((a: Agent) => a.name === agentName);
+    },
+    enabled: runtimeReady && !!agentName,
+    staleTime: Infinity,
+  });
+}
+
+// ============================================================================
+// Tool Hooks
+// ============================================================================
+
+export function useOpenCodeToolIds() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<string[]>({
+    queryKey: opencodeKeys.toolIds(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.tool.ids();
+      return unwrap(result);
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+export function useOpenCodeTools(providerID: string, modelID: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<ToolListItem[]>({
+    queryKey: opencodeKeys.tools(providerID, modelID),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.tool.list({ provider: providerID, model: modelID });
+      return unwrap(result) as ToolListItem[];
+    },
+    enabled: runtimeReady && !!providerID && !!modelID,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+// ============================================================================
+// Skill Hooks
+// ============================================================================
+
+export function useOpenCodeSkills() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Skill[]>({
+    queryKey: opencodeKeys.skills(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.app.skills();
+      return unwrap(result) as Skill[];
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+// ============================================================================
+// Project Hooks
+// ============================================================================
+
+export function useOpenCodeProjects() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Project[]>({
+    queryKey: opencodeKeys.projects(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.project.list();
+      return unwrap(result);
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
+  });
+}
+
+export function useOpenCodeCurrentProject() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Project>({
+    queryKey: opencodeKeys.currentProject(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.project.current();
+      return unwrap(result);
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
+  });
+}
+
+// ============================================================================
+// Path Info Hook
+// ============================================================================
+
+export function useOpenCodePathInfo() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<PathInfo>({
+    queryKey: opencodeKeys.pathInfo(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.path.get();
+      return unwrap(result);
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+// ============================================================================
+// Command Hooks
+// ============================================================================
+
+export function useOpenCodeCommands() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Command[]>({
+    queryKey: opencodeKeys.commands(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.command.list();
+      const commands = unwrap(result);
+      setLSCache(LS_COMMANDS, commands);
+      return commands;
+    },
+    placeholderData: () => getLSCache<Command[]>(LS_COMMANDS),
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+export function useExecuteOpenCodeCommand() {
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      command,
+      args,
+    }: {
+      sessionId: string;
+      command: string;
+      args?: string;
+    }) => {
+      const client = getClient();
+      const result = await client.session.command({
+        sessionID: sessionId,
+        command,
+        arguments: args || '',
+      });
+      unwrap(result);
+    },
+    // CRITICAL: Disable retry for commands. The /command endpoint blocks until
+    // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
+    // timeout or network error kills the connection, TanStack Query's default
+    // global retry would re-POST the command, causing it to execute twice on
+    // the server. Commands are non-idempotent — each POST creates a new
+    // execution. Never retry them.
+    retry: false,
+  });
+}
+
+// ============================================================================
+// Summarize Hook
+// ============================================================================
+
+export function useSummarizeOpenCodeSession() {
+  const queryClient = useQueryClient();
+  const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
+  const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
+  return useMutation({
+    mutationFn: async (params: { sessionId: string; providerID?: string; modelID?: string }) => {
+      const client = getClient();
+
+      let { providerID, modelID } = params;
+
+      // 1. Try config default model
+      if (!providerID || !modelID) {
+        try {
+          const configResult = await client.global.config.get();
+          const config = configResult.data as any;
+          if (config?.model) {
+            const parts = (config.model as string).split('/');
+            if (parts.length >= 2) {
+              providerID = providerID || parts[0];
+              modelID = modelID || parts.slice(1).join('/');
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 2. Try to get model from the session's latest assistant message
+      if (!providerID || !modelID) {
+        try {
+          const msgs = await client.session.messages({ sessionID: params.sessionId });
+          const allMsgs = (msgs.data ?? []) as Array<{ info: { role: string; providerID?: string; modelID?: string } }>;
+          for (let i = allMsgs.length - 1; i >= 0; i--) {
+            const m = allMsgs[i].info;
+            if (m.role === 'assistant' && m.providerID && m.modelID) {
+              providerID = providerID || m.providerID;
+              modelID = modelID || m.modelID;
+              break;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. Try first available provider/model from provider list
+      if (!providerID || !modelID) {
+        try {
+          const providerResult = await client.provider.list();
+          const providers = providerResult.data as any;
+          if (providers && typeof providers === 'object') {
+            for (const [pid, providerInfo] of Object.entries(providers)) {
+              const models = (providerInfo as any)?.models;
+              if (models && typeof models === 'object') {
+                const firstModelId = Object.keys(models)[0];
+                if (firstModelId) {
+                  providerID = pid;
+                  modelID = firstModelId;
+                  break;
+                }
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!providerID || !modelID) {
+        throw new Error('No model available for compaction. Please configure a model in settings.');
+      }
+
+      const result = await client.session.summarize({
+        sessionID: params.sessionId,
+        providerID,
+        modelID,
+      });
+      unwrap(result);
+      return params.sessionId;
+    },
+    onMutate: ({ sessionId }) => {
+      startCompaction(sessionId);
+    },
+    onError: (_err, { sessionId }) => {
+      stopCompaction(sessionId);
+    },
+    onSuccess: (_sessionId) => {
+      // SSE session.compacted event handles rehydration of messages and
+      // session data. No need to invalidate here — the event handler in
+      // use-opencode-events.ts fetches messages + session for that ID.
+    },
+  });
+}
+
+// ============================================================================
+// Fork Hook
+// ============================================================================
+
+/**
+ * Fork a session at a specific message point.
+ * Creates a new session that branches off from the given message.
+ * Returns the newly created Session.
+ */
+export function useForkSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      messageId,
+      directory,
+      workspace,
+    }: {
+      sessionId: string;
+      messageId?: string;
+      directory?: string;
+      workspace?: string;
+    }) => {
+      const client = getClient();
+      const result = await client.session.fork({
+        sessionID: sessionId,
+        ...(messageId && { messageID: messageId }),
+        ...(directory && { directory }),
+        ...(workspace && { workspace }),
+      });
+      return unwrap(result) as Session;
+    },
+    onSuccess: (newSession) => {
+      // Insert forked session into cache — SSE session.created will also fire.
+      // Dedup to avoid duplicate keys in the session list.
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return [newSession];
+        const idx = old.findIndex((s) => s.id === newSession.id);
+        if (idx >= 0) {
+          const next = [...old];
+          next[idx] = newSession;
+          return next.sort((a, b) => b.time.updated - a.time.updated);
+        }
+        return [newSession, ...old].sort((a, b) => b.time.updated - a.time.updated);
+      });
+      queryClient.setQueryData(opencodeKeys.session(newSession.id), newSession);
+    },
+  });
+}
+
+
+
+// ============================================================================
+// Init Hook — analyze project and create AGENTS.md (via /init command)
+// ============================================================================
+
+export function useInitSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ sessionId }: { sessionId: string }) => {
+      const client = getClient();
+      const result = await client.session.command({
+        sessionID: sessionId,
+        command: 'init',
+        arguments: '',
+      });
+      if (result.error) {
+        const err = result.error as any;
+        throw new Error(err?.data?.message || err?.message || 'Failed to initialize project');
+      }
+      return sessionId;
+    },
+    onSuccess: (sessionId) => {
+      // SSE events handle session updates. Just refetch messages for this session
+      // since /init creates new messages.
+      queryClient.refetchQueries({ queryKey: opencodeKeys.messages(sessionId) });
+    },
+    // Suppress global error handler — caller handles errors via onError callback
+    onError: () => {},
+    // Same rationale as useExecuteOpenCodeCommand — /command blocks until done,
+    // retrying on timeout would duplicate execution.
+    retry: false,
+  });
+}
+
+// ============================================================================
+// Provider Hooks
+// ============================================================================
+
+export function useOpenCodeProviders() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  const params = useParams();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const projectGatewayEnabled =
+    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
+  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
+  // BYOK makes the connected model set project-specific (a provider connected
+  // in one project must NOT leak into another, nor linger after removal), so
+  // the persisted placeholder is scoped per project — not the old global scope.
+  const cacheScope = projectId
+    ? `proj:${projectId}:${projectGatewayEnabled ? 'gateway' : 'native'}`
+    : CACHE_SCOPE_GLOBAL;
+  return useQuery<ProviderListResponse>({
+    queryKey: projectId
+      ? [
+          'project-providers',
+          projectId,
+          projectGatewayEnabled
+            ? runtimeReady
+              ? 'gateway-runtime'
+              : 'gateway-catalog'
+            : 'native',
+        ]
+      : opencodeKeys.providers(),
+    queryFn: async () => {
+      if (projectId && projectGatewayEnabled) {
+        const catalog = await getProjectLlmCatalog(projectId);
+        let providers = projectLlmCatalogToProviderList(catalog);
+        if (runtimeReady) {
+          const client = getClient();
+          const result = await client.provider.list();
+          const sessionProviders = filterToGatewayProviders(normalizeProviderList(unwrap(result)));
+          providers = mergeProviderLists(providers, sessionProviders);
+        }
+        setLSCache(LS_PROVIDERS, providers, cacheScope);
+        return providers;
+      }
+      const client = getClient();
+      const result = await client.provider.list();
+      let rawProviders = normalizeProviderList(unwrap(result));
+      if (projectId) {
+        const secrets = await listProjectSecrets(projectId);
+        const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
+        const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
+        rawProviders = mergeProjectSecretConnectedProviders(
+          rawProviders,
+          secretNames,
+          LLM_PROVIDERS,
+        );
+      }
+      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
+
+      // During sandbox boot the OpenCode server frequently answers
+      // /provider/list BEFORE its provider config is wired up, returning zero
+      // CONNECTED providers (→ zero models). With staleTime:Infinity such an
+      // empty answer would be cached for the whole session and never refetched,
+      // AND persisted to the global localStorage cache below — poisoning the
+      // first frame of every future session too. That is the "model picker
+      // never shows up" bug. Treat a model-less response as a transient boot
+      // state: throw so React Query retries it (with backoff), and never cache
+      // or persist it.
+      if (!providerListHasModels(providers)) {
+        throw new Error(
+          'opencode provider list has no connected models yet — sandbox still warming up',
+        );
+      }
+
+      // Persist under the per-project scope (never the ephemeral per-sandbox
+      // server id) so a fresh session paints the right models instantly. Only
+      // genuine, model-bearing responses reach here, so the placeholder cache
+      // is never poisoned with an empty list.
+      setLSCache(LS_PROVIDERS, providers, cacheScope);
+      return providers;
+    },
+    // Only ever serve a model-bearing placeholder. A previously-poisoned cache
+    // (written before this guard existed) is ignored so it can't paint empty.
+    placeholderData: () => {
+      const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, cacheScope);
+      if (!providerListHasModels(cached)) return undefined;
+      // Old gateway caches may have been persisted before the source filter —
+      // clean them on read, but native-mode projects must see the runtime's
+      // actual provider list for v0.9.68/backward-compatible fallback.
+      if (projectGatewayEnabled) {
+        const gatewayProviders = filterToGatewayProviders(cached as ProviderListResponse);
+        return providerListHasModels(gatewayProviders) ? gatewayProviders : undefined;
+      }
+      if (projectId && !projectGatewayEnabled) {
+        const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
+        return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
+      }
+      return cached;
+    },
+    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+    // The boot race (sandbox up, providers not yet wired) self-heals: keep
+    // retrying with capped exponential backoff until real models appear.
+    retry: (failureCount) => failureCount < 10,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
+  });
+}
+
+// ============================================================================
+// MCP Status Hook
+// ============================================================================
+
+export function useOpenCodeMcpStatus() {
+  const runtimeReady = useOpenCodeRuntimeReady();
+  return useQuery<Record<string, McpStatus>>({
+    queryKey: opencodeKeys.mcpStatus(),
+    queryFn: async () => {
+      const client = getClient();
+      const result = await client.mcp.status();
+      return unwrap(result) as Record<string, McpStatus>;
+    },
+    enabled: runtimeReady,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
+  });
+}
+
+// ============================================================================
+// Share / Unshare Hooks
+// ============================================================================
+
+export function useShareSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const client = getClient();
+      const result = await client.session.share({ sessionID: sessionId });
+      return unwrap(result) as Session;
+    },
+    onSuccess: (updatedSession) => {
+      // Surgically update cache with share info
+      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((s) => s.id === updatedSession.id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = updatedSession;
+        return next;
+      });
+    },
+  });
+}
+
+export function useUnshareSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const client = getClient();
+      const result = await client.session.unshare({ sessionID: sessionId });
+      return unwrap(result) as Session;
+    },
+    onSuccess: (updatedSession) => {
+      // Surgically update cache with unshare info
+      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
+      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((s) => s.id === updatedSession.id);
+        if (idx < 0) return old;
+        const next = [...old];
+        next[idx] = updatedSession;
+        return next;
+      });
+    },
+  });
+}
+
+// ============================================================================
+// Part Edit / Delete Hooks
+// ============================================================================
+
+/**
+ * Update a message part (e.g. edit text content).
+ * Uses `client.part.update()` — available in SDK v2.
+ * SSE `message.part.updated` events handle cache updates automatically.
+ */
+export function useUpdatePart() {
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      messageId,
+      partId,
+      part,
+    }: {
+      sessionId: string;
+      messageId: string;
+      partId: string;
+      part: Partial<Part>;
+    }) => {
+      const client = getClient();
+      const result = await client.part.update({
+        sessionID: sessionId,
+        messageID: messageId,
+        partID: partId,
+        part: part as Part,
+      });
+      return unwrap(result) as Part;
+    },
+    // SSE message.part.updated handles cache updates via sync store.
+    // No onSuccess needed — eliminates unnecessary message refetch.
+  });
+}
+
+/**
+ * Delete a message part.
+ * Uses `client.part.delete()` — available in SDK v2.
+ * SSE `message.part.removed` events handle cache updates automatically.
+ */
+export function useDeletePart() {
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      messageId,
+      partId,
+    }: {
+      sessionId: string;
+      messageId: string;
+      partId: string;
+    }) => {
+      const client = getClient();
+      const result = await client.part.delete({
+        sessionID: sessionId,
+        messageID: messageId,
+        partID: partId,
+      });
+      return unwrap(result);
+    },
+    // SSE message.part.removed handles cache updates via sync store.
+    // No onSuccess needed — eliminates unnecessary message refetch.
+  });
+}
+
+// ============================================================================
+// File Search (direct SDK call, not a hook)
+// ============================================================================
+
+let mentionFileIndexCache:
+  | {
+      files: string[];
+      fetchedAt: number;
+    }
+  | undefined;
+
+let mentionDirScanCache:
+  | {
+      files: string[];
+      fetchedAt: number;
+    }
+  | undefined;
+
+export async function findOpenCodeFiles(query: string): Promise<string[]> {
+  const client = getClient();
+  const normalizedQuery = query.trim();
+  const ql = normalizedQuery.toLowerCase();
+
+  const rankFile = (path: string): number => {
+    const lower = path.toLowerCase();
+    const base = lower.split('/').pop() ?? lower;
+    const depth = path.split('/').length - 1;
+    if (ql.length === 0) return depth;
+    if (base === ql) return 0 + depth * 0.01;
+    if (base.startsWith(ql)) return 10 + depth * 0.01;
+    if (base.includes(ql)) return 20 + depth * 0.01;
+    if (lower.startsWith(ql)) return 30 + depth * 0.01;
+    if (lower.includes(ql)) return 40 + depth * 0.01;
+    return 1000 + depth;
+  };
+
+  const fileMatchesQuery = (path: string): boolean => {
+    if (ql.length === 0) return true;
+    const lower = path.toLowerCase();
+    if (lower.includes(ql)) return true;
+    const base = lower.split('/').pop() ?? lower;
+    return base.includes(ql);
+  };
+
+  const readEntries = async (request: Promise<{ data?: unknown; error?: unknown }>): Promise<string[]> => {
+    try {
+      const result = await request;
+      const entries = unwrap(result);
+      if (!Array.isArray(entries)) return [];
+      const normalized: string[] = [];
+      for (const entry of entries) {
+        if (typeof entry === 'string' && entry.length > 0) {
+          normalized.push(entry);
+          continue;
+        }
+
+        if (entry && typeof entry === 'object') {
+          const maybePath = (entry as { path?: unknown }).path;
+          const maybeType = (entry as { type?: unknown }).type;
+          if (typeof maybePath === 'string' && maybePath.length > 0) {
+            if (maybeType === 'directory' && !maybePath.endsWith('/')) {
+              normalized.push(`${maybePath}/`);
+            } else {
+              normalized.push(maybePath);
+            }
+          }
+        }
+      }
+      return normalized;
+    } catch {
+      return [];
+    }
+  };
+
+  const [strictFiles, broadResults] = await Promise.all([
+    readEntries(client.find.files({ query: normalizedQuery, type: 'file', limit: 80 })),
+    readEntries(client.find.files({ query: normalizedQuery, limit: 80 })),
+  ]);
+
+  const fileMatches = new Set<string>();
+  const directoryMatches: string[] = [];
+
+  for (const entry of [...strictFiles, ...broadResults]) {
+    if (entry.endsWith('/')) {
+      directoryMatches.push(entry);
+      continue;
+    }
+    fileMatches.add(entry);
+  }
+
+  if (fileMatches.size < 20 && normalizedQuery.length > 0 && directoryMatches.length > 0) {
+    const expandedDirs = directoryMatches.slice(0, 6);
+    const dirChildren = await Promise.all(
+      expandedDirs.map(async (dir) => {
+        const path = dir.endsWith('/') ? dir.slice(0, -1) : dir;
+        const children = await readEntries(client.file.list({ path }));
+        return children
+          .filter((child) => !child.endsWith('/'))
+          .filter((child) => fileMatchesQuery(child));
+      }),
+    );
+
+    for (const group of dirChildren) {
+      for (const child of group) {
+        fileMatches.add(child);
+      }
+    }
+  }
+
+  // Explicit root scan fallback for @mentions.
+  // Some backends under-return root-level files via find.files(query).
+  if (normalizedQuery.length > 0 && fileMatches.size < 20) {
+    const [rootWorkspace, rootEmpty] = await Promise.all([
+      readEntries(client.file.list({ path: '/workspace' } as any)),
+      readEntries(client.file.list({ path: '' } as any)),
+    ]);
+    for (const entry of [...rootWorkspace, ...rootEmpty]) {
+      if (entry.endsWith('/')) continue;
+      if (fileMatchesQuery(entry)) fileMatches.add(entry);
+    }
+  }
+
+  // Directory scan fallback for @mentions.
+  // Builds a lightweight index from root + first-level directories (e.g.
+  // /workspace/Desktop, /workspace/test) to catch substring matches that
+  // find.files(query) may miss.
+  if (normalizedQuery.length > 0 && fileMatches.size < 20) {
+    const now = Date.now();
+    const cacheFresh = mentionDirScanCache && now - mentionDirScanCache.fetchedAt < 60_000;
+
+    if (!cacheFresh) {
+      const roots = await Promise.all([
+        readEntries(client.file.list({ path: '/workspace' } as any)),
+        readEntries(client.file.list({ path: '' } as any)),
+      ]);
+      const rootEntries = Array.from(new Set([...roots[0], ...roots[1]]));
+
+      const fileSet = new Set<string>();
+      const firstLevelDirs = rootEntries
+        .filter((entry) => entry.endsWith('/'))
+        .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
+        .slice(0, 80);
+
+      for (const entry of rootEntries) {
+        if (!entry.endsWith('/')) fileSet.add(entry);
+      }
+
+      const childLists = await Promise.all(
+        firstLevelDirs.map((dir) => readEntries(client.file.list({ path: dir } as any))),
+      );
+
+      for (const children of childLists) {
+        for (const child of children) {
+          if (!child.endsWith('/')) fileSet.add(child);
+        }
+      }
+
+      mentionDirScanCache = {
+        files: Array.from(fileSet),
+        fetchedAt: now,
+      };
+    }
+
+    for (const path of mentionDirScanCache?.files ?? []) {
+      if (fileMatchesQuery(path)) fileMatches.add(path);
+    }
+  }
+
+  // Fallback index for @mentions: some backends return sparse results for
+  // incremental filename fragments. Build/cached a broad file index and filter
+  // client-side to keep mention search responsive and tolerant.
+  if (normalizedQuery.length > 0 && fileMatches.size < 10) {
+    const now = Date.now();
+    const cacheFresh =
+      mentionFileIndexCache && now - mentionFileIndexCache.fetchedAt < 60_000;
+    if (!cacheFresh) {
+      const [indexStrict, indexBroad] = await Promise.all([
+        readEntries(client.find.files({ query: '', type: 'file', limit: 2000 })),
+        readEntries(client.find.files({ query: '', limit: 2000 })),
+      ]);
+      const indexSet = new Set<string>();
+      for (const entry of [...indexStrict, ...indexBroad]) {
+        if (!entry.endsWith('/')) indexSet.add(entry);
+      }
+      mentionFileIndexCache = {
+        files: Array.from(indexSet),
+        fetchedAt: now,
+      };
+    }
+
+    for (const path of mentionFileIndexCache?.files ?? []) {
+      if (fileMatchesQuery(path)) fileMatches.add(path);
+    }
+  }
+
+  return Array.from(fileMatches)
+    .sort((a, b) => rankFile(a) - rankFile(b) || a.localeCompare(b))
+    .slice(0, 20);
+}
+
+// ============================================================================
+// Permission & Question Reply (direct SDK calls, not hooks)
+// ============================================================================
+
+export async function replyToPermission(
+  requestId: string,
+  reply: 'once' | 'always' | 'reject',
+  message?: string,
+): Promise<void> {
+  const client = getClient();
+  const result = await client.permission.reply({ requestID: requestId, reply, message });
+  unwrap(result);
+}
+
+export async function replyToQuestion(
+  requestId: string,
+  answers: string[][],
+): Promise<void> {
+  const client = getClient();
+  const result = await client.question.reply({ requestID: requestId, answers });
+  unwrap(result);
+}
+
+export async function rejectQuestion(requestId: string): Promise<void> {
+  const client = getClient();
+  const result = await client.question.reject({ requestID: requestId });
+  unwrap(result);
+}
+
+// useSessionPolling was removed — SSE reconnects within <3s making 2s HTTP
+// polling redundant. All session status + message updates are driven by SSE
+// events via the sync store. See SSE-FIRST-MIGRATION-PLAN.md Phase 1d.

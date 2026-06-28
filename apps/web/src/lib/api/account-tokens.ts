@@ -3,8 +3,6 @@ import { backendApi } from '../api-client';
 export interface AccountToken {
   token_id: string;
   name: string;
-  /** Non-null = scoped to this one project; null = account-wide. */
-  project_id: string | null;
   public_key: string;
   status: 'active' | 'revoked' | 'expired';
   expires_at: string | null;
@@ -25,7 +23,7 @@ export const accountTokensApi = {
     return res.data;
   },
 
-  async create(input: { name: string; expires_at?: string; project_id?: string }): Promise<CreatedAccountToken> {
+  async create(input: { name: string; expires_at?: string }): Promise<CreatedAccountToken> {
     const res = await backendApi.post<CreatedAccountToken>('/accounts/tokens', input);
     if (!res.success || !res.data) throw new Error(res.error?.message ?? 'Failed to create token');
     return res.data;

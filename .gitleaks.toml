@@ -33,3 +33,14 @@ paths = [
 regexes = [
   '''enterprise[A-Za-z0-9]+''',
 ]
+
+[[allowlists]]
+description = "False-positive UUID defaults in the local Slack auth fixture seeder. These are deterministic local fixture IDs, not credentials. Keep the exception scoped to the script and the two literal UUIDs so any real secret still fails."
+condition = "AND"
+paths = [
+  '''apps/api/scripts/slack-auth-fixtures\.ts$''',
+]
+regexes = [
+  '''95788432-f5df-4ffe-af9e-0ed4e03cf96e''',
+  '''b4a01f33-d46c-4a96-8a1d-0a265e48978f''',
+]

@@ -30,6 +30,7 @@ let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
+  agentName: 'default',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
   provider: 'daytona',
@@ -65,8 +66,6 @@ function sortPreferredSandboxRows(rows: any[]): any[] {
   return [...rows].sort((a, b) => {
     const statusDiff = rank(a.status) - rank(b.status);
     if (statusDiff !== 0) return statusDiff;
-    const poolDiff = (a.poolState == null ? 0 : 1) - (b.poolState == null ? 0 : 1);
-    if (poolDiff !== 0) return poolDiff;
     return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
   });
 }
@@ -105,7 +104,7 @@ mock.module('../shared/db', () => {
         // { accountRole } from accountUser/account_members depending on the path.
         const fieldKeys = fields ? Object.keys(fields) : [];
         const isSandboxQuery = fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
@@ -247,7 +246,11 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
-    body: typeof init?.body === 'string' ? init.body : null,
+    body: typeof init?.body === 'string'
+      ? init.body
+      : init?.body instanceof ArrayBuffer
+        ? new TextDecoder().decode(init.body)
+        : null,
   });
 
   if (!responseConfig) {
@@ -599,13 +602,111 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
+      llmGatewayDenyEnv: '',
+      llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      refreshModels: false,
+      refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+  });
+
+  test('strips legacy default agent before forwarding prompt_async to OpenCode', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'default', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+  });
+
+  test('rejects prompt_async switches between two different CONCRETE agents (executor grants are session-token bound)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [{ status: 204, body: '' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'agent switch requires a new session',
+      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      expected_agent: 'reviewer',
+      requested_agent: 'researcher',
+    });
+    expect(mockFetchCalls).toHaveLength(0);
+  });
+
+  // Regression: the reported "agent switch requires a new session" false positive.
+  // A brand-new session is stored with the sentinel agent 'default', but the client
+  // resolves "the default" to its concrete name ('kortix') and echoes it back on
+  // prompts. That is NOT a switch — 'default' is non-binding — so it must be allowed,
+  // with the echoed agent stripped so OpenCode runs its own default_agent.
+  test('allows prompt_async when a default session receives the concrete resolved-default agent, stripping it', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'kortix', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    // The agent is stripped so OpenCode resolves its own default_agent (the boot agent).
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {

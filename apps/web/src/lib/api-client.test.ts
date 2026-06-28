@@ -1,7 +1,4 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-// Narrow subpath: loads only the SDK config module, not the full barrel (which
-// would pull projects-client + reorder module load → a transient ESM cycle).
-import { configureKortix } from '@kortix/sdk/config';
 
 mock.module('@/lib/auth-token', () => ({
   getSupabaseAccessToken: async () => 'test-access-token',
@@ -26,11 +23,6 @@ mock.module('./error-handler', () => ({
 describe('backendApi', () => {
   beforeEach(() => {
     mock.restore();
-    // `@/lib/api-client` re-exports `@kortix/sdk/api-client`, which reads its token
-    // + backendUrl from the SDK platform config (configureKortix), NOT the web's
-    // `@/lib/auth-token`. Wire the SDK seam so the test exercises the real shimmed
-    // path instead of short-circuiting on a null token.
-    configureKortix({ backendUrl: '/v1', getToken: async () => 'test-access-token' });
   });
 
   test('uses bearer auth and omits browser cookies by default', async () => {

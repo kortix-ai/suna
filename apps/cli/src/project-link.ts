@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { defaultProject } from './api/config.ts';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 /**
@@ -75,8 +76,9 @@ export function clearLink(cwd = process.cwd()): void {
 /**
  * Resolve which project a CLI command should operate on, in order:
  *   1. --project / projectArg
- *   2. KORTIX_PROJECT_ID env
- *   3. .kortix/link.json in cwd
+ *   2. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
+ *   3. .kortix/link.json in cwd (per-repo binding)
+ *   4. the active host's global default project (`kortix projects use`)
  * Returns null if none of those are set.
  */
 export function resolveProjectId(projectArg?: string): string | null {
@@ -84,5 +86,6 @@ export function resolveProjectId(projectArg?: string): string | null {
   const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
   if (envProjectId) return envProjectId;
   const link = loadLink();
-  return link?.project_id ?? null;
+  if (link?.project_id) return link.project_id;
+  return defaultProject()?.project_id ?? null;
 }

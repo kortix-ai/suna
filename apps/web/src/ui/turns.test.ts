@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AssistantMessage, StepFinishPart } from '@kortix/sdk/opencode-client';
+import type { AssistantMessage, StepFinishPart } from '@opencode-ai/sdk/v2/client';
 
 import {
   COST_MARKUP,
   formatCost,
+  getChildSessionError,
   getSessionCost,
   getTurnCost,
   type ModelPricingLookup,
@@ -183,5 +184,50 @@ describe('formatCost', () => {
 
   test('formats whole-cent amounts with two decimals', () => {
     expect(formatCost(2.22)).toBe('$2.22');
+  });
+});
+
+describe('getChildSessionError', () => {
+  function childMsg(
+    overrides: Partial<AssistantMessage> & { role?: 'user' | 'assistant' } = {},
+  ): MessageWithParts {
+    return {
+      info: assistantInfo(overrides as Partial<AssistantMessage>),
+      parts: [],
+    };
+  }
+
+  test('returns undefined for no messages', () => {
+    expect(getChildSessionError(undefined)).toBeUndefined();
+    expect(getChildSessionError([])).toBeUndefined();
+  });
+
+  test('returns undefined when no assistant message has an error', () => {
+    expect(getChildSessionError([childMsg(), childMsg()])).toBeUndefined();
+  });
+
+  test('surfaces a sub-agent error string (e.g. free usage exceeded)', () => {
+    const messages = [
+      childMsg(),
+      childMsg({ error: 'Free usage exceeded, subscribe to Go' } as unknown as Partial<AssistantMessage>),
+    ];
+    expect(getChildSessionError(messages)).toBe('Free usage exceeded, subscribe to Go');
+  });
+
+  test('unwraps a structured error onto its message', () => {
+    const messages = [
+      childMsg({
+        error: { data: { message: 'Free usage exceeded, subscribe to Go' } },
+      } as unknown as Partial<AssistantMessage>),
+    ];
+    expect(getChildSessionError(messages)).toBe('Free usage exceeded, subscribe to Go');
+  });
+
+  test('returns the most recent error when several exist', () => {
+    const messages = [
+      childMsg({ error: 'older error' } as unknown as Partial<AssistantMessage>),
+      childMsg({ error: 'newest error' } as unknown as Partial<AssistantMessage>),
+    ];
+    expect(getChildSessionError(messages)).toBe('newest error');
   });
 });

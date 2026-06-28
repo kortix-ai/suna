@@ -62,6 +62,16 @@ function toolsToResponses(tools: unknown): unknown[] | undefined {
   });
 }
 
+function toolChoiceToResponses(toolChoice: unknown): unknown {
+  if (!toolChoice || typeof toolChoice !== 'object') return toolChoice;
+  const choice = toolChoice as Json;
+  const fn = choice.function as Json | undefined;
+  if (choice.type === 'function' && typeof fn?.name === 'string') {
+    return { type: 'function', name: fn.name };
+  }
+  return toolChoice;
+}
+
 function reasoningFromBody(body: Json): Json | undefined {
   if (body.reasoning && typeof body.reasoning === 'object') return body.reasoning as Json;
   if (typeof body.reasoning_effort === 'string') return { effort: body.reasoning_effort };
@@ -129,8 +139,10 @@ export function chatToResponses(body: Json, descriptor: UpstreamDescriptor): Jso
   if (instructions) payload.instructions = instructions;
   const tools = toolsToResponses(body.tools);
   if (tools) payload.tools = tools;
-  if (body.tool_choice !== undefined) payload.tool_choice = body.tool_choice;
-  const reasoning = reasoningFromBody(body);
+  if (body.tool_choice !== undefined) payload.tool_choice = toolChoiceToResponses(body.tool_choice);
+  const reasoning =
+    reasoningFromBody(body) ??
+    (descriptor.provider === 'openai-codex' ? { effort: 'low' } : undefined);
   if (reasoning) payload.reasoning = reasoning;
 
   return payload;

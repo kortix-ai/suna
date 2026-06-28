@@ -59,10 +59,11 @@ import { SettingsView } from '@/components/projects/customize/sections/settings-
 import { SkillsView } from '@/components/projects/customize/sections/skills-view';
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { TriggersView } from '@/components/projects/triggers-view';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
+import { getProjectDetail, listProjectAccessRequests } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -173,6 +174,15 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const accessRequests = useQuery({
+    queryKey: ['project-access-requests', projectId],
+    queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
+    enabled: open && !!projectId,
+    retry: false,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
   const projectName = detail.data?.project?.name ?? '';
 
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
@@ -184,7 +194,14 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
     [tunnelEnabled, llmGatewayEnabled],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
-  const sectionVisible = allItems.some((item) => item.section === section);
+  // The single `llm-management` rail item stands in for every `llm-*` sub-section
+  // (llm-providers, llm-logs, …), so a deep-link to one of those must count as
+  // visible — otherwise the effect below bounces it to the default (Files).
+  const sectionVisible = allItems.some((item) =>
+    item.section === 'llm-management'
+      ? section.startsWith('llm-')
+      : item.section === section,
+  );
 
   useEffect(() => {
     if (open && !sectionVisible) {
@@ -262,6 +279,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                     <RailButton
                       item={item}
                       active={section === item.section}
+                      count={item.section === 'members' ? pendingAccessCount : 0}
                       onClick={() => setSection(item.section)}
                       orientation="horizontal"
                     />
@@ -292,6 +310,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                                 ? section.startsWith('llm-')
                                 : section === item.section
                             }
+                            count={item.section === 'members' ? pendingAccessCount : 0}
                             onClick={() => setSection(item.section)}
                           />
                         </li>
@@ -321,11 +340,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
 function RailButton({
   item,
   active,
+  count = 0,
   onClick,
   orientation = 'vertical',
 }: {
   item: RailItem;
   active: boolean;
+  count?: number;
   onClick: () => void;
   orientation?: 'vertical' | 'horizontal';
 }) {
@@ -365,6 +386,11 @@ function RailButton({
         />
       ) : null}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+      {count > 0 ? (
+        <Badge size="xs" variant="new" className="ml-auto min-w-5 px-1 tabular-nums">
+          {count}
+        </Badge>
+      ) : null}
     </button>
   );
 }

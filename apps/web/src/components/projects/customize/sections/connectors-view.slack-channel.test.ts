@@ -11,6 +11,22 @@ describe('Slack channel connector catalogue', () => {
     expect(source).not.toMatch(/<ChannelProfileCard[\s\S]*slug="kortix_slack"/);
   });
 
+  test('keeps Slack out of the Pipedream Easy Connect catalogue', () => {
+    expect(source).toContain("new Set(['slack', 'slack_v2'])");
+    expect(source).toContain(
+      'const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));',
+    );
+    expect(source).toContain('{visibleApps.map((app) => (');
+  });
+
+  test('uses Slack branding for the built-in channel card', () => {
+    expect(source).toContain(
+      "SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128'",
+    );
+    expect(source).toContain('<SlackIconTile />');
+    expect(source).not.toContain('<EntityAvatar icon={Slack} size="sm" />');
+  });
+
   test('keeps the full custom Slack app manifest setup before token fields', () => {
     expect(source).toContain('Use custom Slack app');
     expect(source).toContain('Bring your own Slack app');

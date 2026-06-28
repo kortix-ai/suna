@@ -25,7 +25,9 @@ import {
   deliverSlackFollowUpToSession,
   renderFollowUpPrompt,
 } from './session';
-import { postLoginPrompt, resolveSlackActor } from './identity';
+import { ensureSlackThreadParticipant } from './participants';
+import { currentChannelSelection } from './selection';
+import { postIdentityPrompt, resolveSlackActor } from './identity';
 import { resolveProjectAutomationActor } from '../../projects/session-lifecycle';
 import {
   deleteTurn,
@@ -40,7 +42,7 @@ import {
   clearThreadErrorNotice,
   inboundMessageKey,
 } from './dedup';
-import { sessionWebUrl, stripMentions } from './util';
+import { escapeMrkdwn, sessionWebUrl, stripMentions } from './util';
 import { config } from '../../config';
 import type {
   EventClass,
@@ -51,6 +53,25 @@ import type {
 } from './types';
 
 export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
+
+export async function ensureProjectChannelBinding(
+  projectId: string,
+  teamId: string,
+  channelId: string,
+): Promise<void> {
+  if (!projectId || !teamId || !channelId) return;
+  await db
+    .insert(chatChannelBindings)
+    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
+    .onConflictDoUpdate({
+      target: [
+        chatChannelBindings.platform,
+        chatChannelBindings.workspaceId,
+        chatChannelBindings.channelId,
+      ],
+      set: { projectId, pickerTs: null },
+    });
+}
 
 export async function resolveOauthProject(
   teamId: string,
@@ -326,7 +347,14 @@ export async function maybeHandleDmCommand(
 
   let resp: SlashResponse;
   try {
-    resp = await handleSlashCommand(sub, arg, { teamId, channelId, slackUserId: event.user ?? '', command, deferredDeliver });
+    resp = await handleSlashCommand(sub, arg, {
+      teamId,
+      channelId,
+      slackUserId: event.user ?? '',
+      command,
+      deferredDeliver,
+      projectScopedProjectId: fallbackProjectId,
+    });
   } catch (err) {
     console.error('[slack-webhook] dm command failed', err);
     resp = { response_type: 'ephemeral', text: 'Something went wrong handling that command. Try again in a moment.' };
@@ -335,7 +363,7 @@ export async function maybeHandleDmCommand(
   return true;
 }
 
-async function classifyEvent(
+export async function classifyEvent(
   teamId: string,
   event: SlackEvent,
   botUserId: string | null,
@@ -343,7 +371,17 @@ async function classifyEvent(
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
   if (event.subtype) return 'ignore';
-  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'ignore';
+  // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
+  // deliver an `app_mention` for a mention made INSIDE an existing thread —
+  // notably a thread that predates the bot joining the channel — there it arrives
+  // ONLY as a `message` (with `thread_ts`) via our `message.channels` /
+  // `message.groups` subscription. Treating it as a mention is what lets the bot
+  // answer when it's re-tagged in an old thread instead of going silent until you
+  // start a fresh one. When Slack DOES send both siblings (the common top-level
+  // case), the exactly-once `inboundMessageKey` gate — keyed on the shared
+  // (team, channel, ts) — collapses them into a single run, so this never
+  // double-answers.
+  if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'mention';
   if (event.channel_type === 'im') return 'dm';
   if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts))) return 'follow_up';
   return 'ignore';
@@ -369,6 +407,14 @@ const CHANNEL_INTRO_FALLBACK = "Kortix is now connected to this channel. Mention
 async function postChannelIntro(projectId: string, channelId: string): Promise<void> {
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return;
+  const [project] = await db
+    .select({ name: projects.name })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  const projectLine = project?.name
+    ? `This channel is connected to *${escapeMrkdwn(project.name)}*.`
+    : 'This channel is connected to a Kortix project.';
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'header',
@@ -380,13 +426,15 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
         type: 'mrkdwn',
         text: [
           '`@`-mention Kortix with a task and an agent gets on it — working across your connected tools and replying right here in the thread. Follow-ups stay in the same conversation, with full context.',
+          projectLine,
+          'Agent, model, and session policy settings are shared by this Slack channel.',
           '',
           'Try something like:',
           '• `@Kortix summarize this thread and draft a reply to the customer`',
           '• `@Kortix pull last week’s signups, group them by source, and drop a CSV here`',
           '• `@Kortix put together a one-pager on our Q2 numbers`',
           '',
-          'Run `/kortix help` to see commands.',
+          'Use the app slash command with `help` to see channel settings.',
         ].join('\n'),
       },
     },
@@ -412,6 +460,9 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   if (!event) return;
 
   const teamId = envelope.team_id ?? event.team ?? '';
+  if (teamId && event.channel) {
+    await ensureProjectChannelBinding(projectId, teamId, event.channel);
+  }
   const botUserId = await loadSlackBotUserIdForProject(projectId);
 
   if (
@@ -429,31 +480,51 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;
 
-  if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
-    const token = await loadSlackTokenForProject(projectId);
-    if (token && event.channel) {
-      await postMessage(
-        token,
-        event.channel,
-        "Hi! @mention me with a task and I'll get on it.",
-        event.thread_ts ?? event.ts,
-      );
-    }
-    return;
-  }
-
   // Exactly-once gate. ONE user message can arrive as several events (Slack
   // delivers a channel @mention as both `app_mention` and `message`), be retried
   // with a fresh event_id, and fan across replicas — but every delivery shares the
   // message's (team, channel, ts). Claim that identity atomically; if we lose, a
   // sibling delivery already owns this message, so we must NOT run it again.
-  // This is what stops the "answered the same question 3×" class for good — a
-  // redelivery that lands after the thread→session mapping exists would otherwise
-  // be routed as a fresh follow-up and run the agent a second time.
+  // This gate must sit before every visible Slack response, including auth
+  // prompts and empty-mention help, so one bare @mention never posts twice.
   // (Button clicks synthesize their own turns via spawnAgentTurn directly and are
   // intentionally NOT gated here, so re-clicking an option still works.)
   const msgKey = inboundMessageKey(teamId, event);
   if (msgKey && !(await claimInboundMessage(msgKey))) return;
+
+  if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
+    if (config.SLACK_REQUIRE_USER_IDENTITY) {
+      const [project] = await db
+        .select({ accountId: projects.accountId })
+        .from(projects)
+        .where(eq(projects.projectId, projectId))
+        .limit(1);
+      if (!project) return;
+      const slackUserId = event.user ?? '';
+      const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
+      if ('reason' in actor) {
+        await postIdentityPrompt({
+          projectId,
+          teamId,
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          slackUserId,
+          reason: actor.reason,
+        });
+        return;
+      }
+    }
+    const token = await loadSlackTokenForProject(projectId);
+    if (token && event.channel) {
+      await postMessage(
+        token,
+        event.channel,
+        "Mention @Kortix with a task and I'll get on it.",
+        event.thread_ts ?? event.ts,
+      );
+    }
+    return;
+  }
 
   await spawnAgentTurn(projectId, envelope, event);
 }
@@ -482,14 +553,19 @@ export async function spawnAgentTurn(
   let actorUserId: string;
   if (config.SLACK_REQUIRE_USER_IDENTITY) {
     const slackUserId = event.user ?? '';
-    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId);
+    const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
     if ('reason' in actor) {
-      await postLoginPrompt({
+      await postIdentityPrompt({
         projectId,
         teamId,
         channel: event.channel,
+        // Top-level ephemeral prompts should render beside the message. Passing
+        // the message ts as thread_ts hides the auth prompt in a new thread.
+        threadTs: event.thread_ts,
         slackUserId,
         reason: actor.reason,
+        envelope,
+        event,
       });
       return;
     }
@@ -506,7 +582,11 @@ export async function spawnAgentTurn(
   let revived = false;
   if (teamId && threadId) {
     const [existing] = await db
-      .select({ sessionId: chatThreads.sessionId, createdBy: projectSessions.createdBy })
+      .select({
+        sessionId: chatThreads.sessionId,
+        createdBy: projectSessions.createdBy,
+        metadata: projectSessions.metadata,
+      })
       .from(chatThreads)
       .innerJoin(projectSessions, eq(projectSessions.sessionId, chatThreads.sessionId))
       .where(
@@ -518,6 +598,24 @@ export async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
+      if (config.SLACK_REQUIRE_USER_IDENTITY) {
+        const selection = event.channel
+          ? await currentChannelSelection({ teamId, channelId: event.channel })
+          : null;
+        const allowed = await ensureSlackThreadParticipant({
+          projectId,
+          teamId,
+          channel: event.channel,
+          threadId,
+          sessionId: existing.sessionId,
+          sessionOwnerId: existing.createdBy,
+          sessionMetadata: existing.metadata,
+          channelPolicy: selection?.conversationPolicy,
+          slackUserId: event.user ?? '',
+          actorUserId,
+        });
+        if (!allowed) return;
+      }
       // A known thread maps PERMANENTLY to exactly one session. Route the message
       // into that session and NEVER create a second one — the session is durable
       // and resurrects its own sandbox (resume / reprovision) underneath; the
@@ -534,14 +632,13 @@ export async function spawnAgentTurn(
         handle.sessionId = existing.sessionId;
         await saveTurn(handle);
       }
-      // Per-thread identity: a follow-up runs as the thread's original creator,
-      // not whoever happens to be replying. The sandbox was already booted with
-      // the creator's credentials; attribute the command to them too (fall back
-      // to this validated sender if the row predates per-user identity).
+      // Per-Slack-user identity: once a thread participant is authorized, deliver
+      // their follow-up as that validated Kortix user. The thread/session gate
+      // above decides whether they are allowed to join this conversation at all.
       const outcome = await deliverSlackFollowUpToSession({
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
-        userId: existing.createdBy ?? actorUserId,
+        userId: actorUserId,
       });
 
       if (outcome === 'delivered') {

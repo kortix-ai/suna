@@ -78,7 +78,7 @@ jobs:
               - 'apps/kortix-sandbox-agent-server/**'
             desktop:
               - '.github/workflows/ci.yml'
-              - 'apps/desktop/**'
+              - 'apps/desktop-electron/**'
             # self-host stack: anything that can break `kortix self-host start`'s
             # from-scratch DB bootstrap or the CLI's compose generation.
             self_host:
@@ -279,65 +279,42 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
-    # Skip on PRs that don't touch desktop code — the Tauri/Rust build is the
-    # slowest job in CI and the desktop shell changes rarely. Push-to-main builds
-    # (desktop.yml) still cover release artifacts.
+    # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
+    # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Linux Tauri dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            curl \
-            file \
-            libgtk-3-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            wget
 
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-
       - name: Install pnpm
         run: corepack enable pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
         env:
           npm_config_engine_strict: "false"
 
-      - name: Prepare desktop shell assets
-        run: pnpm --filter @kortix/desktop run prepare-assets
+      - name: Ensure Electron runtime
+        run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
-      - name: Build Linux desktop installer
-        run: pnpm --filter @kortix/desktop tauri build --bundles appimage
+      - name: Build Linux desktop installer (Electron, unsigned)
+        run: pnpm --filter @kortix/desktop-electron exec electron-builder --linux --publish never
         env:
           KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/projects
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Verify installer exists
         run: |
           shopt -s nullglob
-          files=(apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          files=(apps/desktop-electron/dist/*.AppImage)
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
 

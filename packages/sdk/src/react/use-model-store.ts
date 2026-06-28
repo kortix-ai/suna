@@ -16,7 +16,6 @@
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
 } from '@kortix/shared/llm-catalog';
 import type { FlatModel } from './model-flatten';
@@ -178,7 +177,6 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // @kortix/shared (mirrors the gateway's managed-ids).
 // Includes the synthetic `auto` entry so it's always offered in the picker.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
-const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
 
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');
@@ -297,9 +295,10 @@ export function useModelStore(
             ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
             : (connectedProviderIds?.has(sub) ?? false);
         if (MANAGED_MODEL_IDS.has(model.modelID)) {
-          // Free tier sees ONLY the free managed models — paid managed and the
-          // synthetic `auto` are hidden (they have no upstream for the account).
-          if (freeTier && !FREE_MANAGED_MODEL_IDS.has(model.modelID)) return false;
+          // Free tier has no upstream for managed Kortix models (the gateway
+          // rejects them), so hide every managed model — they use connected
+          // providers (BYOK / Codex) instead.
+          if (freeTier) return false;
           return true;
         }
         if (!connected) return false;

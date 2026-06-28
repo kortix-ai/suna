@@ -5,7 +5,7 @@ import { CircleAlert, AlertTriangle } from 'lucide-react';
 import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';
-import { listFiles, useFilesStore } from '@/features/files';
+import { hasFileExtension, listFiles, useFilesStore } from '@/features/files';
 
 /**
  * Standalone file viewer for the tab system.
@@ -39,9 +39,11 @@ export function FileTabContent({ tabId, filePath }: FileTabContentProps) {
     if (dirCheckRef.current) return;
     dirCheckRef.current = true;
 
-    // Heuristic: if path has a file extension, skip the directory check
-    const basename = filePath.split('/').pop() || '';
-    if (basename.includes('.')) {
+    // Heuristic: if path has a real file extension, skip the directory check.
+    // A leading dot (dot-directories like `.opencode`, `.github`) is NOT an
+    // extension, so those still get probed below instead of being rendered as
+    // a file (which would fail with "Path is a directory").
+    if (hasFileExtension(filePath)) {
       setIsDir(false);
       return;
     }

@@ -127,13 +127,6 @@
       "when": 1782412998383,
       "tag": "20260625184318_slack_user_identity",
       "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1782616302578,
-      "tag": "20260628031142_account_model_preferences",
-      "breakpoints": true
     }
   ]
 }

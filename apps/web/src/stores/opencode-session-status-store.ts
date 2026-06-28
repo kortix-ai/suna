@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import type { SessionStatus } from '@kortix/sdk/opencode-client';
+import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
 
 interface SessionStatusState {
   statuses: Record<string, SessionStatus>;

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
@@ -13,11 +12,10 @@ describe("managed catalog", () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       "claude-opus-4.8",
       "claude-sonnet-4.6",
-      "fusion",
+      "glm-5.2",
       "qwen3.7-max",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
-      ...DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
     ]);
   });
 
@@ -41,7 +39,7 @@ describe("managed catalog", () => {
         m.pricingRef.length,
         `${m.id} needs a pricing ref`,
       ).toBeGreaterThan(0);
-      expect(["bedrock", "openrouter", "opencode-zen"]).toContain(m.transport);
+      expect(["bedrock", "openrouter"]).toContain(m.transport);
     }
   });
 
@@ -52,39 +50,18 @@ describe("managed catalog", () => {
         expect(m.upstreamModelId, `${m.id} (Bedrock) → Anthropic`).toContain(
           "anthropic.claude",
         );
-      } else if (m.transport === "openrouter") {
+      } else {
         // OpenRouter slugs are provider/model.
         expect(m.transport, `${m.id} transport`).toBe("openrouter");
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain("/");
-      } else {
-        expect(m.transport, `${m.id} transport`).toBe("opencode-zen");
-        expect(m.upstreamModelId, `${m.id} Zen id`).not.toContain("/");
       }
     }
   });
 
-  test("curated OpenCode Zen free ids are managed Kortix models", () => {
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).toEqual([
-      "deepseek-v4-flash-free",
-      "mimo-v2.5-free",
-      "nemotron-3-ultra-free",
-      "north-mini-code-free",
-    ]);
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain("big-pickle");
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
-      "qwen3.6-plus-free",
-    );
-    expect(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS).not.toContain(
-      "minimax-m3-free",
-    );
-
-    for (const id of DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS) {
-      const model = getManagedModel(id);
-      expect(model, `${id} should resolve`).toBeDefined();
-      expect(model?.transport).toBe("opencode-zen");
-      expect(model?.upstreamModelId).toBe(id);
-      expect(model?.tier).toBe("free");
-      expect(model?.free).toBe(true);
+  test("OpenRouter free slugs are not managed Kortix defaults", () => {
+    for (const id of ["north-mini-code-free", "nemotron-3-ultra-free"]) {
+      expect(getManagedModel(id), `${id} should not resolve`).toBeUndefined();
+      expect(isManagedModelId(id), `${id} should not be managed`).toBe(false);
     }
   });
 });
@@ -93,10 +70,9 @@ describe("managed resolution + back-compat aliases", () => {
   test("resolves current ids", () => {
     expect(getManagedModel("claude-opus-4.8")?.name).toBe("Claude Opus 4.8");
     expect(getManagedModel("claude-opus-4.8")?.transport).toBe("bedrock");
-    expect(getManagedModel("fusion")?.transport).toBe("openrouter");
-    expect(getManagedModel("fusion")?.upstreamModelId).toBe(
-      "openrouter/fusion",
-    );
+    expect(getManagedModel("glm-5.2")?.name).toBe("GLM 5.2");
+    expect(getManagedModel("glm-5.2")?.transport).toBe("openrouter");
+    expect(getManagedModel("glm-5.2")?.upstreamModelId).toBe("z-ai/glm-5.2");
     expect(getManagedModel("qwen3.7-max")?.upstreamModelId).toBe(
       "qwen/qwen3.7-max",
     );
@@ -111,7 +87,7 @@ describe("managed resolution + back-compat aliases", () => {
       "kortix-basic",
       "glm-4.6",
       "glm-5.1",
-      "glm-5.2",
+      "fusion",
       "qwen3-max",
       "minimax-m2.5",
       "kimi-k2",

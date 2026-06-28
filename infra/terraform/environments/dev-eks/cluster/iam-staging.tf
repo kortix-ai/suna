@@ -70,13 +70,20 @@ resource "aws_iam_role_policy" "staging_ci_deploy" {
         ]
       },
       {
+        # Least privilege: the deploy role only ever creates/writes/tags the dev
+        # and staging env bundles. Scope to those exact secrets (the `-*` suffix
+        # covers the random suffix AWS appends), not "*" (Drata CRITICAL: avoid
+        # allow-all resource patterns).
         Effect = "Allow"
         Action = [
           "secretsmanager:CreateSecret",
           "secretsmanager:PutSecretValue",
           "secretsmanager:TagResource"
         ]
-        Resource = "*"
+        Resource = [
+          local.dev_secret_arn,
+          local.staging_secret_arn
+        ]
       }
     ]
   })

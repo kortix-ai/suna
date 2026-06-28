@@ -69,6 +69,8 @@ export {
   useFileContent,
   useInvalidateFileContent,
   useFileSearch,
+  useTextSearch,
+  useLssSearch,
   useServerHealth,
   useCurrentProject,
   useFileEventInvalidation,
@@ -87,14 +89,22 @@ export {
   useCommit,
   useCommitDiff,
   commitKeys,
+  useWorkspaceSearch,
+  searchWorkspaceFiles,
+  rankFileResult,
+  parseFileResults,
   fileListKeys,
   fileContentKeys,
   fileSearchKeys,
   fileHistoryKeys,
+  lssSearchKeys,
 } from './hooks';
 
-// Standalone workspace file search (mirrors files feature surface)
-export { searchWorkspaceFiles } from './search/workspace-search-service';
+export type {
+  FileSearchResult,
+  WorkspaceSearchState,
+  UseWorkspaceSearchOptions,
+} from './hooks';
 
 // Store
 export {

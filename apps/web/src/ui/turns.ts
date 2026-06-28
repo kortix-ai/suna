@@ -23,7 +23,7 @@ import type {
   PermissionRequest,
   QuestionRequest,
   SessionStatus,
-} from '@kortix/sdk/opencode-client';
+} from '@opencode-ai/sdk/v2/client';
 import type {
   MessageWithParts,
   Turn,
@@ -640,6 +640,28 @@ export function getChildSessionId(part: ToolPart): string | undefined {
       if (match) return match[1];
     }
     return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Extract the error message from a child (sub-agent) session's raw messages.
+ *
+ * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
+ * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
+ * lives on the child session and never reaches the parent's turn renderer.
+ * Scans newest-first so the most recent failure wins.
+ */
+export function getChildSessionError(
+  childMessages: MessageWithParts[] | undefined,
+): string | undefined {
+  if (!childMessages) return undefined;
+  for (let i = childMessages.length - 1; i >= 0; i--) {
+    const info = childMessages[i]?.info as AssistantMessage | undefined;
+    if (info?.role === 'assistant' && info.error) {
+      return unwrapError(info.error);
+    }
   }
   return undefined;
 }

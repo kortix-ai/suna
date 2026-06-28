@@ -498,3 +498,42 @@ prompt = "Hello"
     expect(b).toEqual(a);
   });
 });
+
+/**
+ * Drift guard: the runtime trigger parser (extractTriggers) and the canonical
+ * schema gate (@kortix/manifest-schema, run on CR-merge) must agree on which
+ * `[[triggers]]` shapes are valid. The runtime accepts several alias keys
+ * (prompt_template, schedule/runAt, secretEnv, sessionMode) and coerces enabled
+ * / lowercases session_mode; the gate must accept the same, or it falsely blocks
+ * a manifest that materializes fine — the bug class behind the missing `channel`
+ * connector provider. Keep them locked together.
+ */
+describe('[[triggers]] — runtime parser ⇄ schema gate agreement', () => {
+  const { validateManifest } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
+
+  function schemaTriggerErrors(block: string): string[] {
+    return validateManifest(manifestWith(block))
+      .issues.filter((i) => i.severity === 'error' && i.path.startsWith('triggers['))
+      .map((i) => i.path);
+  }
+
+  const cases: Array<{ name: string; block: string; accept: boolean }> = [
+    { name: 'prompt_template alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt_template = "go"` },
+    { name: 'schedule alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\nschedule = "0 9 * * *"\nprompt = "go"` },
+    { name: 'runAt alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\nrunAt = "2099-01-01T09:00:00Z"\nprompt = "go"` },
+    { name: 'secretEnv alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "webhook"\nsecretEnv = "WEBHOOK_SECRET"\nprompt = "go"` },
+    { name: 'session_mode case-insensitive', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "Reuse"` },
+    { name: 'enabled coercible', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = 1` },
+    { name: 'missing prompt', accept: false, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"` },
+    { name: 'unknown type', accept: false, block: `[[triggers]]\nslug = "t"\ntype = "made-up"\nprompt = "go"` },
+  ];
+
+  for (const { name, block, accept } of cases) {
+    test(`${name}: parser and schema agree (accept=${accept})`, () => {
+      const runtimeOk = extractTriggers(parseManifestString(manifestWith(block))).errors.length === 0;
+      const schemaOk = schemaTriggerErrors(block).length === 0;
+      expect(runtimeOk).toBe(accept);
+      expect(schemaOk).toBe(accept);
+    });
+  }
+});

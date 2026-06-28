@@ -11,9 +11,10 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-react';
+import { Bot, Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal, Star } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -30,11 +31,12 @@ import { getProjectDetail, listProjectSecrets } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   AUTO_MODEL_ID,
   DEFAULT_MANAGED_MODEL_IDS,
-  DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS,
 } from '@kortix/shared/llm-catalog';
+import { featureFlags } from '@/lib/feature-flags';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
@@ -75,13 +77,11 @@ export function ConnectProviderDialog({
 import { Tag } from '@/components/ui/tag';
 
 // `auto` is a synthetic managed entry (not a real upstream model): grouped under
-// Kortix and always shown, but rendered as a special "smart routing" affordance.
+// Kortix and — when exposed (see featureFlags.enableAutoModel) — rendered as a
+// special "smart routing" affordance rather than a normal list item. It stays in
+// this set so it groups under Kortix and is recognised as managed even while the
+// toggle is hidden.
 const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
-
-// Free-tier (no active paid sub) only gets the free Kortix-managed models. `auto`
-// and the paid managed models are hidden, and the default lands on a free model.
-const FREE_MANAGED_MODEL_IDS = new Set<string>(DEFAULT_OPENCODE_ZEN_FREE_MODEL_IDS);
-const FREE_DEFAULT_MODEL_ID = 'deepseek-v4-flash-free';
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we split that
@@ -98,14 +98,33 @@ function pickerGroupId(model: FlatModel): string {
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
+type ModelRef = { providerID: string; modelID: string };
+
+// Optional "set this model as a default" controls. When provided, the picker
+// shows a footer to pin the selected model as the account default (and, when an
+// agent is active, that agent's default). These persist server-side — the LLM
+// gateway resolves `auto` against them. Omitted in non-session pickers.
+export interface ModelDefaultControls {
+  /** Current agent name; enables the per-agent default action when set. */
+  agentName?: string;
+  onSetAccountDefault: (model: ModelRef) => void;
+  onSetAgentDefault?: (model: ModelRef) => void;
+}
+
 export interface ModelSelectorProps {
   models: FlatModel[];
   selectedModel: { providerID: string; modelID: string } | null;
   onSelect: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
+  defaultControls?: ModelDefaultControls;
 }
 
-export function ModelSelector({ models, selectedModel, onSelect }: ModelSelectorProps) {
+export function ModelSelector({
+  models,
+  selectedModel,
+  onSelect,
+  defaultControls,
+}: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -114,6 +133,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [expandManual, setExpandManual] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   // When mounted under /projects/[id]/..., route the action buttons to the
   // per-project provider modal so credentials land in `project_secrets`. On
@@ -159,8 +179,8 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretNames]);
 
-  // Free tier (free/no plan AND no active subscription) only sees free managed
-  // models through the Kortix gateway. BYOK/connected providers are unaffected.
+  // Free tier (free/no plan AND no active subscription) hides Kortix managed
+  // paid/AUTO models. Managed free models and connected BYOK providers remain.
   const { data: accountState } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
@@ -176,7 +196,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || baseModels[0]?.modelName || 'Model';
+  const displayName = current?.modelName || 'No model';
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -243,33 +263,16 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // the manual model list is hidden unless the user expands it.
   const autoModel = useMemo(
     () =>
-      llmGatewayEnabled && !freeTier
+      featureFlags.enableAutoModel && llmGatewayEnabled && !freeTier
         ? baseModels.find((m) => m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID)
         : undefined,
     [baseModels, llmGatewayEnabled, freeTier],
   );
 
-  // Free tier can't use `auto` or paid managed models — if one is selected (the
-  // inherited default), switch to the free default so the first message doesn't
-  // 400 with "no upstream configured for model fusion".
-  const freeDefaultModel = useMemo(
-    () => baseModels.find((m) => m.providerID === 'kortix' && m.modelID === FREE_DEFAULT_MODEL_ID),
-    [baseModels],
-  );
-  useEffect(() => {
-    if (!freeTier || !llmGatewayEnabled || !freeDefaultModel) return;
-    const sel = selectedModel;
-    const disallowed =
-      !!sel &&
-      sel.providerID === 'kortix' &&
-      MANAGED_MODEL_IDS.has(sel.modelID) &&
-      !FREE_MANAGED_MODEL_IDS.has(sel.modelID);
-    if (disallowed) {
-      onSelect({ providerID: freeDefaultModel.providerID, modelID: freeDefaultModel.modelID });
-    }
-  }, [freeTier, llmGatewayEnabled, freeDefaultModel, selectedModel, onSelect]);
   const isAutoSelected =
-    selectedModel?.providerID === 'kortix' && selectedModel?.modelID === AUTO_MODEL_ID;
+    featureFlags.enableAutoModel &&
+    selectedModel?.providerID === 'kortix' &&
+    selectedModel?.modelID === AUTO_MODEL_ID;
   // "On" is the collapsed active view; expanding the manual list to pick a
   // specific model reads as off and reveals the providers. So the switch is on
   // exactly when the manual list is hidden.
@@ -299,7 +302,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       setOpen(false);
       if (projectId) {
         if (llmGatewayEnabled) {
-          openCustomize('llm-providers');
+          // Plus → "Add provider" (the core surface); the sliders / manage-models
+          // button → "Models". Both land on LLM → Providers, never Files.
+          openCustomize('llm-providers', {
+            llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
+          });
         } else {
           setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
           setProjectModalOpen(true);
@@ -310,6 +317,14 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     },
     [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
   );
+
+  const handleUpgrade = useCallback(() => {
+    setOpen(false);
+    openUpgradeDialog({
+      reason: 'subscription_required',
+      accountId: projectDetailQuery.data?.project.account_id,
+    });
+  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
 
   return (
     <>
@@ -366,15 +381,16 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                 value={search}
                 onValueChange={setSearch}
                 rightElement={
-                  <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+                  <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
+                          aria-label="Add provider"
                           onClick={() => handleOpenProviderModal('providers')}
-                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Plus className="size-4" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
@@ -387,10 +403,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       <TooltipTrigger asChild>
                         <button
                           type="button"
+                          aria-label="Manage models"
                           onClick={() => handleOpenProviderModal('models')}
-                          className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
-                          <SlidersHorizontal className="h-3.5 w-3.5" />
+                          <SlidersHorizontal className="size-4" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
@@ -479,11 +496,57 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                     ))}
                   </>
                 ) : (
-                  <div className="text-muted-foreground/50 py-8 text-center text-xs">
-                    {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
+                  <div className="px-3 py-5 text-center">
+                    <div className="text-foreground text-sm font-medium">No models available</div>
+                    <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+                      Upgrade or connect your own provider to start using this session.
+                    </p>
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <Button type="button" size="xs" onClick={handleUpgrade}>
+                        <CreditCard className="size-3.5" />
+                        Upgrade
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleOpenProviderModal('providers')}
+                      >
+                        <KeyRound className="size-3.5" />
+                        Connect provider
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CommandList>
+              {defaultControls && selectedModel ? (
+                <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      defaultControls.onSetAccountDefault(selectedModel);
+                      setOpen(false);
+                    }}
+                    className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                  >
+                    <Star className="size-3.5 shrink-0" />
+                    Set as my default model
+                  </button>
+                  {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        defaultControls.onSetAgentDefault?.(selectedModel);
+                        setOpen(false);
+                      }}
+                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                    >
+                      <Bot className="size-3.5 shrink-0" />
+                      Set as default for {defaultControls.agentName}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="p-1.5 pt-0">

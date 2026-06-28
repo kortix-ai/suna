@@ -889,7 +889,7 @@ export class LocalDockerProvider implements SandboxProvider {
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
       ...filteredSandboxEnv,
-      // The in-sandbox `kortix` CLI authenticates with the project-scoped PAT
+      // The in-sandbox `kortix` CLI authenticates with the session executor PAT
       // (KORTIX_CLI_TOKEN), not KORTIX_TOKEN (the service key). Forward it so
       // `kortix cr open` / `secrets` / … work in local sandboxes too — parity
       // with the cloud provider. Appended last so it wins over any stray local

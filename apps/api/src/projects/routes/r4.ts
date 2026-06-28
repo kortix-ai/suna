@@ -11,9 +11,11 @@ import {
 } from "../../channels/install-store";
 import { reconcileChannelConnectors } from "../../executor/sync";
 import {
+  agentMailUpstreamStatus,
   createAgentMailInbox,
   createAgentMailWebhook,
   resolveAgentMailApiKey,
+  isAgentMailInboxLimitError,
 } from "../../channels/agentmail-api";
 import { config } from "../../config";
 import { getCachedAccountTier } from "../../billing/services/entitlements";
@@ -692,7 +694,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), "OK"),
-      ...errors(400, 403, 404, 502, 503),
+      ...errors(400, 403, 404, 409, 502, 503, 504),
     },
   }),
   async (c: any) => {
@@ -792,8 +794,8 @@ projectsApp.openapi(
         });
       } catch (err) {
         return c.json(
-          { error: `AgentMail inbox create failed: ${(err as Error).message}` },
-          502,
+          agentMailConnectErrorBody("inbox_create", err),
+          agentMailConnectErrorStatus(err),
         );
       }
     }
@@ -811,8 +813,8 @@ projectsApp.openapi(
       webhookSecret = webhook.secret;
     } catch (err) {
       return c.json(
-        { error: `AgentMail webhook create failed: ${(err as Error).message}` },
-        502,
+        agentMailConnectErrorBody("webhook_create", err),
+        agentMailConnectErrorStatus(err),
       );
     }
 
@@ -952,6 +954,51 @@ function parseSenderPolicyBody(
   return policy;
 }
 
+function agentMailConnectErrorStatus(err: unknown): 409 | 502 | 504 {
+  if (isAgentMailInboxLimitError(err)) return 409;
+  if (agentMailUpstreamStatus(err) === 504) return 504;
+  return 502;
+}
+
+function agentMailConnectErrorBody(
+  stage: "inbox_create" | "webhook_create",
+  err: unknown,
+) {
+  const upstreamStatus = agentMailUpstreamStatus(err);
+  if (isAgentMailInboxLimitError(err)) {
+    return {
+      error:
+        "AgentMail inbox limit reached. Delete an unused AgentMail inbox or connect an existing AgentMail inbox with inbox_id and email.",
+      code: "agentmail_inbox_limit",
+      provider: "agentmail",
+      upstream_status: upstreamStatus,
+      stage,
+    };
+  }
+  if (upstreamStatus === 504) {
+    return {
+      error:
+        stage === "inbox_create"
+          ? "AgentMail inbox create timed out"
+          : "AgentMail webhook create timed out",
+      code: "agentmail_timeout",
+      provider: "agentmail",
+      upstream_status: upstreamStatus,
+      stage,
+    };
+  }
+  return {
+    error:
+      stage === "inbox_create"
+        ? `AgentMail inbox create failed: ${(err as Error).message}`
+        : `AgentMail webhook create failed: ${(err as Error).message}`,
+    code: "agentmail_upstream_error",
+    provider: "agentmail",
+    upstream_status: upstreamStatus,
+    stage,
+  };
+}
+
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
 // kind=answer finalizes the turn's streamed message with the agent's reply.
@@ -978,9 +1025,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param("projectId");
 
-    // Two valid callers: a project-scoped PAT (dashboard or operator) and the
-    // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
-    // its plan steps without a second token). Each is scoped to one projectId.
+    // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
+    // in-sandbox agent CLI) and the session sandbox's own service credential.
+    // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get("authType") as string | undefined;
     if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
       const accountId = (c as any).get("accountId") as string | undefined;
@@ -1283,8 +1330,9 @@ projectsApp.openapi(
         404,
       );
     }
-    // Free-tier accounts only see free managed models in the picker (their own
-    // BYOK-connected models still show). Mirrors the gateway's resolve-time gate.
+    // Free-tier accounts see only managed models explicitly marked free plus
+    // their own BYOK/Codex-connected catalog entries. Paid managed models and
+    // synthetic AUTO stay hidden from the picker.
     const freeManagedOnly =
       config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
         ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))

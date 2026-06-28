@@ -50,7 +50,7 @@ describe('credential proxy — live token swap (the no-restart mechanism)', () =
   test('fails closed (503) before any token is set — never an open relay', async () => {
     const up = mockUpstream()
     try {
-      // fresh proxy, never tokened (the pre-claim window) → must fail closed
+      // fresh proxy, never tokened (the pre-restore window) → must fail closed
       startLlmProxy(14319, up.url)
       expect(llmProxyReady()).toBe(false)
       const res = await fetch(`${llmProxyBaseUrl()}/v1/llm/models`)

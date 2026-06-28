@@ -24,7 +24,7 @@ import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '
 import type { ModelPricingLookup } from '@/ui/turns';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk/opencode-client';
+import type { Session, AssistantMessage, Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 
 // ============================================================================

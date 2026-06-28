@@ -33,7 +33,7 @@ const DANGEROUS_NAMES = new Set([
 // values. We can't mutate a live process's env, so deliver them through the same
 // BASH_ENV-sourced file every shell already reads. This is an explicit allowlist
 // (NOT all KORTIX_*): only the session's own identity/context creds, never the
-// daemon-internal vars (proxy URLs, OPENCODE_CONFIG_CONTENT, warm-pool flags).
+// daemon-internal vars (proxy URLs, OPENCODE_CONFIG_CONTENT, warm-seed flags).
 // The values are the agent's own session identity and the file is 0600 tmpfs +
 // shredded on shutdown — same posture as the project secrets already written here.
 const SHELL_SESSION_CREDS = [
@@ -147,7 +147,7 @@ export function writeAgentEnvFile(
   const bootEnv = opts.bootEnv ?? process.env
   const bootNames = bootSecretNames(bootEnv)
   // Pull the per-session identity creds from the live process env (reloadSessionEnv
-  // populates process.env from /etc/pt-env on claim). On a no-restart hot-swap the
+// populates process.env from /etc/pt-env on warm-snapshot restore). On a no-restart hot-swap the
   // daemon has these but the reused seed opencode does not — so writing them here
   // is what gets them to the agent's shells via BASH_ENV.
   const sessionCreds: Record<string, string> = {}

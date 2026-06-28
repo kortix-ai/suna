@@ -45,6 +45,11 @@ on:
         required: false
         default: staging
         type: string
+      skip_green:
+        description: 'Fast-track: skip the staging QA-green wait (still requires the staging images to be built). Also enabled standingly via the RELEASE_FAST_TRACK repo variable.'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: promote
@@ -100,8 +105,16 @@ jobs:
         id: preflight
         env:
           GH_TOKEN: ${{ github.token }}
+          # Opt-in FAST-TRACK: set repo variable RELEASE_FAST_TRACK=true (standing)
+          # or pass skip_green=true (per-run). In fast-track we still REQUIRE the
+          # staging image-build checks to be green — deploy-prod retags those exact
+          # images, so they must exist — but we DON'T wait on the slow QA/e2e lanes.
+          FAST: ${{ (vars.RELEASE_FAST_TRACK == 'true' || inputs.skip_green) && 'true' || 'false' }}
         run: |
           set -euo pipefail
+          if [ "$FAST" = "true" ]; then
+            echo "::warning::FAST-TRACK promote — only the staging image-build checks are gated; QA/e2e greenness is NOT verified for this release (RELEASE_FAST_TRACK / skip_green)."
+          fi
           TREE_SHA="$(git rev-parse HEAD)"
           IMAGE_SHA="$TREE_SHA"
           if [ "${{ inputs.ref }}" = "staging" ] && [ -f infra/k8s/envs/staging/values.yaml ]; then
@@ -149,7 +162,8 @@ jobs:
             not_green="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/${sha}/check-runs?per_page=100" --paginate \
               --jq '[ .check_runs[]
                       | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
-                      | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not) ]
+                      | select(((.name | ascii_downcase | startswith("dependabot")) or (.name | ascii_downcase | startswith("analyze")) or (.name == "compliance-as-code-action") or (.name == "Open review-gated release PR")) | not)
+                      | select(if env.FAST == "true" then (.name | startswith("Build ")) else true end) ]
                     | group_by(.name) | map(max_by(.started_at // ""))
                     | .[]
                     | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))

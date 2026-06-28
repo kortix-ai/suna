@@ -43,6 +43,9 @@ export {
   type UploadResult,
 } from './api/opencode-files';
 
+// Pure path heuristics
+export { hasFileExtension } from './path-utils';
+
 // API — semantic search (LSS)
 export { searchLss } from './api/lss-search';
 
@@ -56,6 +59,8 @@ export {
   useFileContent,
   useInvalidateFileContent,
   useFileSearch,
+  useTextSearch,
+  useLssSearch,
   useServerHealth,
   useCurrentProject,
   useFileEventInvalidation,
@@ -68,14 +73,22 @@ export {
   useFileHistory,
   useFileCommitDiff,
   useFileAtCommit,
+  useWorkspaceSearch,
+  searchWorkspaceFiles,
+  rankFileResult,
+  parseFileResults,
   fileListKeys,
   fileContentKeys,
   fileSearchKeys,
   fileHistoryKeys,
+  lssSearchKeys,
 } from './hooks';
 
-// Standalone workspace file search (CMD+K, @-mentions, etc.)
-export { searchWorkspaceFiles } from './search/workspace-search-service';
+export type {
+  FileSearchResult,
+  WorkspaceSearchState,
+  UseWorkspaceSearchOptions,
+} from './hooks';
 
 // Store
 export {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { computeLatestSet } from './use-model-store';
+import { computeLatestSet, isDefaultVisible } from './use-model-store';
 
 function monthsAgo(months: number): string {
   const date = new Date();
@@ -50,5 +50,12 @@ describe('model-store visibility policy', () => {
     expect(latest.has('openai:gpt-current')).toBe(true);
     expect(latest.has('anthropic:claude-old')).toBe(false);
     expect(latest.has('anthropic:claude-legacy')).toBe(false);
+  });
+
+  test('native OpenCode Zen models are not special-cased as defaults', () => {
+    expect(
+      isDefaultVisible({ providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }),
+    ).toBe(false);
+    expect(isDefaultVisible({ providerID: 'opencode', modelID: 'paid-model' })).toBe(false);
   });
 });

@@ -66,9 +66,9 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
 /**
  * Attach the resolved billing tier + `freeModelsOnly` flag to a principal once,
  * at authentication, so they travel with it everywhere — including across the
- * RPC boundary to the out-of-process gateway pod — and decide a free account's
- * model visibility and `auto` routing without a second tier lookup. When
- * internal billing is off (self-host) every account sees the full lineup.
+ * RPC boundary to the out-of-process gateway pod — and decide whether managed
+ * Kortix models are visible without a second tier lookup. When internal billing
+ * is off (self-host) every account sees the full lineup.
  */
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED

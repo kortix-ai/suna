@@ -3,13 +3,11 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Check,
-  type LucideIcon,
   Mail,
   MessageSquare,
   MoreHorizontal,
   Plus,
   Settings2,
-  Slack,
   Unplug,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -18,6 +16,7 @@ import { CustomizeSectionHeader } from '@/components/projects/customize/customiz
 import {
   EmailConnectForm,
   SlackConnectForm,
+  SlackLogo,
 } from '@/components/projects/customize/sections/connectors-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,7 +35,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -124,7 +122,11 @@ function SlackChannelCard({
 
   return (
     <ChannelCard
-      icon={Slack}
+      media={
+        <ChannelIconTile>
+          <SlackLogo className="size-6" />
+        </ChannelIconTile>
+      }
       name="Slack"
       description="Mentions and threaded replies route straight into agent sessions."
       connected={Boolean(install)}
@@ -182,7 +184,11 @@ function EmailChannelCard({
 
   return (
     <ChannelCard
-      icon={Mail}
+      media={
+        <ChannelIconTile>
+          <Mail className="text-muted-foreground size-5" />
+        </ChannelIconTile>
+      }
       name="Email"
       description="Give your agent its own inbox. Inbound mail starts a session and replies come back by email."
       connected={Boolean(install)}
@@ -258,13 +264,24 @@ function ChannelConnectDialog({
   );
 }
 
+/** Neutral square tile that frames a channel's real brand logo (Slack) or glyph
+ *  (Email) — the same treatment the Connectors list gives connected apps, so the
+ *  real Slack logo shows consistently everywhere. */
+function ChannelIconTile({ children }: { children: ReactNode }) {
+  return (
+    <span className="border-border/60 bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border">
+      {children}
+    </span>
+  );
+}
+
 /**
  * One channel as a card: identity + live status on the left, the single primary
  * action on the right (Connect when off, a quiet menu when on). The connect and
  * disconnect dialogs ride along as `children`.
  */
 function ChannelCard({
-  icon: Icon,
+  media,
   name,
   description,
   connected,
@@ -274,7 +291,7 @@ function ChannelCard({
   onDisconnect,
   children,
 }: {
-  icon: LucideIcon;
+  media: ReactNode;
   name: string;
   description: string;
   connected: boolean;
@@ -289,7 +306,7 @@ function ChannelCard({
   return (
     <div className="border-border/60 bg-card rounded-2xl border p-5">
       <div className="flex items-start gap-3.5">
-        <EntityAvatar icon={Icon} size="lg" />
+        {media}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-foreground text-sm font-semibold">{name}</h3>

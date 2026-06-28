@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { AUTO_MODEL_ID, getManagedModel, pickAutoModel } from "./index";
+import {
+  AUTO_DEFAULT_MODEL_ID,
+  AUTO_MODEL_ENABLED,
+  AUTO_MODEL_ID,
+  getManagedModel,
+  pickAutoModel,
+} from "./index";
 
 const msg = (content: string) => ({ role: "user", content });
 
@@ -19,16 +25,16 @@ describe("pickAutoModel", () => {
     ).not.toBeNull();
   });
 
-  test("text requests resolve to Fusion (regardless of size / tools)", () => {
+  test("text requests resolve to GLM 5.2 (regardless of size / tools)", () => {
     expect(pickAutoModel("auto", { messages: [msg("hello there")] })).toBe(
-      "fusion",
+      "glm-5.2",
     );
     expect(
       pickAutoModel("auto", {
         messages: [msg("x".repeat(250_000))],
         tools: [{ name: "edit" }],
       }),
-    ).toBe("fusion");
+    ).toBe("glm-5.2");
   });
 
   test("image requests route to a vision model (not blind GLM)", () => {
@@ -50,53 +56,98 @@ describe("pickAutoModel", () => {
   });
 
   test("both auto targets are real managed models", () => {
-    expect(getManagedModel("fusion"), "fusion must exist").toBeDefined();
+    expect(getManagedModel("glm-5.2"), "glm-5.2 must exist").toBeDefined();
     expect(
       getManagedModel("claude-sonnet-4.6"),
       "claude-sonnet-4.6 must exist",
     ).toBeDefined();
   });
 
-  test("free tier resolves auto to a FREE model, never a paid one", () => {
-    // Text → free text default; image → the one free vision model. A free
-    // account has no upstream for fusion/claude-sonnet, so auto must not pick them.
+  test("AUTO_MODEL_ID is the bare synthetic id", () => {
+    expect(AUTO_MODEL_ID).toBe("auto");
+  });
+
+  test("AUTO is hidden by default; its target is the GLM 5.2 explicit default", () => {
+    // The picker hides AUTO for now (explicit opt-in), but the resolution path
+    // stays intact — and AUTO's text target IS the explicit default model.
+    expect(AUTO_MODEL_ENABLED).toBe(false);
+    expect(AUTO_DEFAULT_MODEL_ID).toBe("glm-5.2");
     expect(
-      pickAutoModel("auto", { messages: [msg("hello there")] }, { free: true }),
-    ).toBe("deepseek-v4-flash-free");
-    const withImage = {
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "what is this?" },
-            {
-              type: "image_url",
-              image_url: { url: "data:image/png;base64,AAAA" },
-            },
-          ],
-        },
+      getManagedModel(AUTO_DEFAULT_MODEL_ID),
+      "the auto/default target must be a real managed model",
+    ).toBeDefined();
+    expect(pickAutoModel("auto", { messages: [msg("hi")] })).toBe(
+      AUTO_DEFAULT_MODEL_ID,
+    );
+  });
+});
+
+const imageBody = {
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "what is this?" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
       ],
-    };
-    expect(pickAutoModel("auto", withImage, { free: true })).toBe(
-      "mimo-v2.5-free",
+    },
+  ],
+};
+
+describe("pickAutoModel — account/agent default (gateway source of truth)", () => {
+  test("auto resolves to the supplied default over the platform default", () => {
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "claude-opus-4.8" }),
+    ).toBe("claude-opus-4.8");
+    // BYOK default (provider/model wire form) is honored verbatim.
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, {
+        defaultModel: "anthropic/claude-sonnet-4.6",
+      }),
+    ).toBe("anthropic/claude-sonnet-4.6");
+  });
+
+  test("a 'kortix/'-prefixed default is normalized for the managed lookup", () => {
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "kortix/glm-5.2" }),
+    ).toBe("kortix/glm-5.2");
+  });
+
+  test("null/undefined/empty default falls back to the platform default", () => {
+    expect(pickAutoModel("auto", { messages: [msg("hi")] }, {})).toBe(AUTO_DEFAULT_MODEL_ID);
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: null }),
+    ).toBe(AUTO_DEFAULT_MODEL_ID);
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "" }),
+    ).toBe(AUTO_DEFAULT_MODEL_ID);
+  });
+
+  test("image overrides a managed TEXT-ONLY default to the vision model", () => {
+    // glm-5.2 is text-only → an image must not be silently dropped.
+    expect(pickAutoModel("auto", imageBody, { defaultModel: "glm-5.2" })).toBe(
+      "claude-sonnet-4.6",
     );
   });
 
-  test("both free auto targets are real FREE managed models", () => {
-    for (const id of ["deepseek-v4-flash-free", "mimo-v2.5-free"]) {
-      const m = getManagedModel(id);
-      expect(m, `${id} must exist`).toBeDefined();
-      expect(m?.free, `${id} must be free`).toBe(true);
-    }
+  test("image KEEPS a vision-capable managed default (no override)", () => {
+    // claude-opus-4.8 has vision → keep the user's chosen default.
+    expect(pickAutoModel("auto", imageBody, { defaultModel: "claude-opus-4.8" })).toBe(
+      "claude-opus-4.8",
+    );
   });
 
-  test("free option does not affect non-auto pass-through", () => {
+  test("image KEEPS a BYOK default (we don't second-guess the user's provider)", () => {
     expect(
-      pickAutoModel("claude-opus-4.8", { messages: [msg("hi")] }, { free: true }),
-    ).toBeNull();
+      pickAutoModel("auto", imageBody, { defaultModel: "anthropic/claude-sonnet-4.6" }),
+    ).toBe("anthropic/claude-sonnet-4.6");
   });
 
-  test("AUTO_MODEL_ID is the bare synthetic id", () => {
-    expect(AUTO_MODEL_ID).toBe("auto");
+  test("a default is never applied to a concrete (non-auto) request", () => {
+    expect(
+      pickAutoModel("claude-opus-4.8", { messages: [msg("hi")] }, {
+        defaultModel: "glm-5.2",
+      }),
+    ).toBeNull();
   });
 });

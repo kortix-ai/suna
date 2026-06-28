@@ -47,7 +47,8 @@ import {
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { getSendRetryDelayMs, isOpenCodeNotReadyError } from '@/features/session/opencode-send-retry';
+import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
 import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
@@ -84,8 +85,10 @@ import {
 } from '@/features/session/uploaded-file-refs';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
+  formatPromptModel,
   formatModelString,
   parseModelKey,
+  type ModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
 import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
@@ -3626,6 +3629,8 @@ interface SessionChatProps {
   sessionId: string;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
+  /** Immutable project-session agent. When set, prompts are locked to this agent. */
+  boundAgentName?: string | null;
   /** Optional element rendered at the leading (left) edge of the session header */
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
@@ -3639,6 +3644,7 @@ interface SessionChatProps {
 export function SessionChat({
   sessionId,
   projectId,
+  boundAgentName,
   headerLeadingAction,
   hideHeader,
   readOnly,
@@ -3779,7 +3785,17 @@ export function SessionChat({
   const forkSession = useForkSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId });
+  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const lockedAgentName = boundAgentName?.trim() || null;
+  const localAgentSet = local.agent.set;
+  const localModelCurrentKey = local.model.currentKey;
+  // Wire model to SEND: `auto` when on the default (gateway resolves it), else
+  // the explicit pick. Always send this — not currentKey, which is for display.
+  const localModelSendKey = local.model.sendKey;
+  const localModelList = local.model.list;
+  const localModelSet = local.model.set;
+  const localModelVisible = local.model.visible;
+  const localVariantSet = local.model.variant.set;
 
   // Default the agent picker to whichever agent owns the latest assistant
   // turn in this session. Catches PM onboarding sessions (first turn was PM),
@@ -3899,39 +3915,65 @@ export function SessionChat({
         // Exhausted retries — no pending prompt
         return;
       }
-      pendingPromptHandled.current = true;
-      setPollingActive(true);
-      setPendingSendInFlight(true);
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
-      sessionStorage.removeItem(`opencode_pending_prompt:${sessionId}`);
-      sessionStorage.removeItem(`opencode_pending_send_failed:${sessionId}`);
-
       // Restore agent/model/variant selections from the dashboard
       const options: Record<string, unknown> = {};
+      let selectedModelForSend: ModelKey | undefined;
+      const isSelectableModel = (model: ModelKey): boolean =>
+        localModelList.some(
+          (m) => m.providerID === model.providerID && m.modelID === model.modelID,
+        ) && localModelVisible(model);
       try {
         const raw = sessionStorage.getItem(`opencode_pending_options:${sessionId}`);
         if (raw) {
           const pendingOptions = JSON.parse(raw);
           sessionStorage.removeItem(`opencode_pending_options:${sessionId}`);
           if (pendingOptions?.agent) {
-            options.agent = pendingOptions.agent;
-            local.agent.set(pendingOptions.agent as string);
+            if (!lockedAgentName || pendingOptions.agent === lockedAgentName) {
+              options.agent = pendingOptions.agent;
+              localAgentSet(pendingOptions.agent as string);
+            }
           }
           if (pendingOptions?.model) {
             const parsedPendingModel = parseModelKey(pendingOptions.model);
-            if (parsedPendingModel) {
+            if (parsedPendingModel && isSelectableModel(parsedPendingModel)) {
               options.model = parsedPendingModel;
-              local.model.set(parsedPendingModel);
+              selectedModelForSend = parsedPendingModel;
+              localModelSet(parsedPendingModel);
             }
           }
           if (pendingOptions?.variant) {
             options.variant = pendingOptions.variant;
-            local.model.variant.set(pendingOptions.variant as string);
+            localVariantSet(pendingOptions.variant as string);
           }
         }
       } catch {
         // ignore
       }
+
+      if (lockedAgentName) {
+        options.agent = lockedAgentName;
+      }
+
+      if (!selectedModelForSend && localModelSendKey) {
+        options.model = localModelSendKey;
+        selectedModelForSend = localModelSendKey;
+      }
+
+      if (!selectedModelForSend) {
+        if (attempt < 120) {
+          retryTimer = setTimeout(() => attemptSend(attempt + 1), 250);
+          return;
+        }
+        setCommandError(NO_MODEL_AVAILABLE_MESSAGE);
+        return;
+      }
+
+      pendingPromptHandled.current = true;
+      setPollingActive(true);
+      setPendingSendInFlight(true);
+      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      sessionStorage.removeItem(`opencode_pending_prompt:${sessionId}`);
+      sessionStorage.removeItem(`opencode_pending_send_failed:${sessionId}`);
 
       // Send the message with retry. The useSendOpenCodeMessage hook already
       // retries 3 times internally for transient errors. We add one additional
@@ -4026,7 +4068,7 @@ export function SessionChat({
           parts,
           ...(session?.directory ? { directory: session.directory } : {}),
           ...(sendOpts?.agent && { agent: sendOpts.agent }),
-          ...(sendOpts?.model && { model: sendOpts.model }),
+          ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model as ModelKey) }),
           ...(sendOpts?.variant && { variant: sendOpts.variant }),
         } as any;
 
@@ -4068,8 +4110,20 @@ export function SessionChat({
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, addOptimisticUserMessage, removeOptimisticUserMessage]);
+  }, [
+    sessionId,
+    addOptimisticUserMessage,
+    removeOptimisticUserMessage,
+    localAgentSet,
+    localModelCurrentKey,
+    localModelSendKey,
+    localModelList,
+    localModelSet,
+    localModelVisible,
+    localVariantSet,
+    lockedAgentName,
+    session?.directory,
+  ]);
 
   // Clear optimistic prompt once real messages arrive
   useEffect(() => {
@@ -4895,15 +4949,17 @@ export function SessionChat({
       const overrideAgent = overrides?.agent;
       const overrideModel = overrides?.model;
       const overrideVariant = overrides?.variant;
-      if (overrideAgent !== undefined) {
+      if (lockedAgentName) {
+        options.agent = lockedAgentName;
+      } else if (overrideAgent !== undefined) {
         if (overrideAgent) options.agent = overrideAgent;
       } else if (local.agent.current) {
         options.agent = local.agent.current.name;
       }
       if (overrideModel !== undefined) {
         if (overrideModel) options.model = overrideModel;
-      } else if (local.model.currentKey) {
-        options.model = local.model.currentKey;
+      } else if (local.model.sendKey) {
+        options.model = local.model.sendKey;
       }
       if (overrideVariant !== undefined) {
         if (overrideVariant) options.variant = overrideVariant;
@@ -5032,7 +5088,7 @@ export function SessionChat({
         // when the user picked a project agent from the picker.
         ...(session?.directory ? { directory: session.directory } : {}),
         ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-        ...(sendOpts?.model ? { model: sendOpts.model } : {}),
+        ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
         ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
       } as any;
 
@@ -5094,20 +5150,8 @@ export function SessionChat({
           // the exact status, the URL it actually hit, and the error body.
           // Lead with a readable string; the dev overlay renders the raw SDK
           // error object that embeds a non-enumerable Response as `{}`.
-          // A 503 "opencode not ready" (and other retryable blips) self-heal
-          // across the sandbox cold-boot window, so a normal first-send retry
-          // shouldn't surface as a red console error. Log transient retries
-          // quietly (debug for the expected boot 503, warn for other retries)
-          // and only escalate to console.error once we're actually giving up.
-          const delay = getSendRetryDelayMs(attempt, status, res?.error);
-          const willRetry = delay !== null;
-          const logSend = !willRetry
-            ? console.error
-            : isOpenCodeNotReadyError(res?.error)
-              ? console.debug
-              : console.warn;
-          logSend(
-            `[session-chat] send ${willRetry ? 'retrying' : 'failed'} (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
+          console.error(
+            `[session-chat] send failed (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
             {
               sessionId,
               attempt,
@@ -5117,7 +5161,8 @@ export function SessionChat({
               error: res?.error,
             },
           );
-          if (willRetry) {
+          const delay = getSendRetryDelayMs(attempt, status, res?.error);
+          if (delay !== null) {
             await sleep(delay);
             continue;
           }
@@ -5152,8 +5197,10 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
+      lockedAgentName,
       local.agent.current,
       local.model.currentKey,
+      local.model.sendKey,
       local.model.variant.current,
       addOptimisticUserMessage,
       removeOptimisticUserMessage,
@@ -5319,8 +5366,8 @@ export function SessionChat({
 
       playSound('send');
       const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.currentKey
-        ? formatModelString(local.model.currentKey)
+      const selectedModel = local.model.sendKey
+        ? formatModelString(local.model.sendKey)
         : undefined;
       const handleCommandError = (err?: unknown) => {
         setPendingCommand(null);
@@ -5357,7 +5404,9 @@ export function SessionChat({
           sessionID: sessionId,
           command: cmd.name,
           arguments: args || '',
-          ...(local.agent.current && { agent: local.agent.current.name }),
+          ...((lockedAgentName || local.agent.current?.name) && {
+            agent: lockedAgentName || local.agent.current?.name,
+          }),
           ...(selectedModel && { model: selectedModel }),
           ...(local.model.variant.current && {
             variant: local.model.variant.current,
@@ -5378,8 +5427,10 @@ export function SessionChat({
     [
       sessionId,
       scrollToBottom,
+      lockedAgentName,
       local.agent.current,
       local.model.currentKey,
+      local.model.sendKey,
       local.model.variant.current,
     ],
   );
@@ -5807,13 +5858,26 @@ export function SessionChat({
           onStop={handleStop}
           escCount={escCount}
           agents={local.agent.list}
-          selectedAgent={local.agent.current?.name ?? null}
-          onAgentChange={(name) => local.agent.set(name ?? undefined)}
+          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentSelectorLocked={!!lockedAgentName}
           commands={commands || []}
           onCommand={handleCommand}
           models={local.model.list}
           selectedModel={local.model.currentKey ?? null}
           onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+          modelDefaultControls={{
+            agentName: lockedAgentName ?? local.agent.current?.name,
+            onSetAccountDefault: (m) => {
+              void local.model.defaults.setAccountDefault(m);
+            },
+            onSetAgentDefault: lockedAgentName || local.agent.current
+              ? (m) => {
+                  const name = lockedAgentName ?? local.agent.current?.name;
+                  if (name) void local.model.defaults.setAgentDefault(name, m);
+                }
+              : undefined,
+          }}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}
           onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
@@ -5821,6 +5885,7 @@ export function SessionChat({
           sessionId={sessionId}
           onFileSearch={handleFileSearch}
           providers={providers}
+          modelRequired
           threadContext={threadContext}
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}

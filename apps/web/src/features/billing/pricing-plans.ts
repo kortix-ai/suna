@@ -20,12 +20,10 @@ export const PRICING_PLANS: PricingPlan[] = [
     price: '$0',
     note: 'Start with real sandbox credits.',
     features: [
-      '500 credits / month for sandbox compute only',
-      '1 project',
-      'Free LLM models included',
+      '200 credits / month for sandbox compute',
+      '3 projects',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
-      'Credits reset monthly',
     ],
   },
   {
@@ -37,12 +35,13 @@ export const PRICING_PLANS: PricingPlan[] = [
     highlight: true,
     badge: 'Most popular',
     features: [
-      '2,000 usage credits per seat, pooled',
-      'Managed frontier models included',
+      'Everything in Free',
+      '2,500 credits / month per seat, pooled',
+      'Access to the latest AI models',
       'BYOK and ChatGPT subscription still supported',
       'Up to 200 projects, up to 100 seats',
       'Top up credits anytime',
-      'Standard support',
+      'Support via email',
     ],
   },
   {

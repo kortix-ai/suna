@@ -6,6 +6,7 @@ import {
   DEFAULT_HOST_NAME,
   activeHostName,
   getHost,
+  setActiveAccount,
   validateHostName,
 } from '../api/config.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
@@ -147,6 +148,14 @@ export async function runLogin(argv: string[]): Promise<number> {
     },
     /* makeActive */ true,
   );
+  // Persist the active account's display fields (and reconcile any default
+  // project) so the context block + `accounts ls` read correctly offline.
+  if (primary) {
+    setActiveAccount(
+      { id: primary.account_id, slug: primary.slug, name: primary.name },
+      hostName,
+    );
+  }
 
   process.stdout.write(
     `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,

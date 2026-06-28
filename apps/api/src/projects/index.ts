@@ -44,7 +44,7 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
-// Session helpers (consumed by warm-pool / channels).
+// Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
   createProjectSession,

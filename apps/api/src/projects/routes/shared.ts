@@ -10,7 +10,7 @@ import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import {
   ProjectRow,
@@ -147,10 +147,9 @@ const PRERESUME_THROTTLE_MS = 30_000;
  */
 /**
  * The pre-resume candidates: the user's OWN most-recently-used STOPPED session
- * sandboxes in a project (status='stopped', a provider box still attached, not a
- * warm-pool row). Most-recent-first, capped at `limit`. Pure DB read, no side
- * effects — exported so the selection (ordering/scoping/status filter) is
- * testable without provisioning real sandboxes.
+ * sandboxes in a project (status='stopped', a provider box still attached).
+ * Most-recent-first, capped at `limit`. Pure DB read, no side effects —
+ * exported so the selection is testable without provisioning real sandboxes.
  */
 export async function selectPreResumeTargets(
   projectId: string,
@@ -171,7 +170,6 @@ export async function selectPreResumeTargets(
       eq(sessionSandboxes.projectId, projectId),
       eq(sessionSandboxes.status, 'stopped'),
       isNotNull(sessionSandboxes.externalId),
-      isNull(sessionSandboxes.poolState),
       eq(projectSessions.createdBy, userId),
     ))
     .orderBy(desc(sessionSandboxes.lastUsedAt))
@@ -288,6 +286,8 @@ export type SessionStartStage =
 export interface SessionStartResult {
   /** Coarse lifecycle stage the client renders + polls on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   /** Serialized session_sandboxes row (same shape as GET /sandbox), or null. */
@@ -416,6 +416,7 @@ async function replaceStaleRuntimeOnOpen(
   await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
   return {
     stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
     opencode_session_id: null,
@@ -498,6 +499,7 @@ export async function openSession(args: {
     if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
       return {
         stage: visible.row.status === 'failed' ? 'failed' : 'stopped',
+        agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
         opencode_session_id: null,
@@ -513,6 +515,7 @@ export async function openSession(args: {
     }
     return {
       stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
@@ -523,6 +526,7 @@ export async function openSession(args: {
   if (row.status === 'provisioning' || !row.externalId) {
     return {
       stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
       opencode_session_id: null,
@@ -581,6 +585,7 @@ export async function openSession(args: {
     });
     return {
       stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
@@ -609,6 +614,7 @@ export async function openSession(args: {
     ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   return {
     stage: booting ? 'starting' : 'ready',
+    agent_name: visible.row.agentName ?? 'default',
     retriable: booting,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: ensured.pin,

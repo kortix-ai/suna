@@ -52,6 +52,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
+import type { SandboxInfo } from '@/lib/platform-client';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxes, useDeleteAdminSandbox, type AdminSandbox } from '@/hooks/admin/use-admin-sandboxes';
 import { useAdminAccounts, useAdminAccountUsers, useAdminGrantCredits, type AdminAccount } from '@/hooks/admin/use-admin-accounts';
@@ -80,8 +82,6 @@ function StatusBadge({ status }: { status: string | null }) {
     case 'active':
     case 'running':
       return <Badge variant="highlight">{status}</Badge>;
-    case 'pooled':
-      return <Badge variant="info" className="gap-1">{status}</Badge>;
     case 'provisioning':
       return <Badge variant="warning" className="gap-1">{status}</Badge>;
     case 'stopped':
@@ -151,10 +151,25 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
   });
   const deleteMutation = useDeleteAdminSandbox();
   const [confirmDelete, setConfirmDelete] = useState<AdminSandbox | null>(null);
+  const [selectedSandbox, setSelectedSandbox] = useState<SandboxInfo | null>(null);
 
   const list = data?.sandboxes ?? [];
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function toSandboxInfo(sandbox: AdminSandbox): SandboxInfo {
+    return {
+      sandbox_id: sandbox.sandboxId,
+      external_id: sandbox.externalId || '',
+      name: sandbox.name || sandbox.sandboxId,
+      provider: (sandbox.provider as SandboxInfo['provider']) || 'justavps',
+      base_url: sandbox.baseUrl || '',
+      status: sandbox.status || 'unknown',
+      metadata: (sandbox.metadata as Record<string, unknown> | undefined) ?? undefined,
+      created_at: sandbox.createdAt,
+      updated_at: sandbox.updatedAt,
+    };
+  }
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
@@ -195,7 +210,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
           <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-[130px] text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line208JsxTextAllStatuses')}</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pooled">Pooled</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line208JsxTextAllStatuses')}</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
             </SelectContent>
           </Select>
           <Select value={providerFilter || 'all'} onValueChange={(v) => setProviderFilter(v === 'all' ? '' : v)}>
@@ -217,7 +232,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
               <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-[90px]">ID</TableHead><TableHead>Name</TableHead><TableHead>{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line227JsxTextAccountEmail')}</TableHead><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead><TableHead className="w-[150px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
                 {list.map((sandbox) => (
-                  <TableRow key={sandbox.sandboxId} className="group">
+                  <TableRow key={sandbox.sandboxId} className="group cursor-pointer" onClick={() => setSelectedSandbox(toSandboxInfo(sandbox))}>
                     <TableCell className="font-mono text-xs text-muted-foreground" title={sandbox.sandboxId}>{sandbox.sandboxId.slice(0, 8)}</TableCell>
                     <TableCell className="text-sm max-w-[140px] truncate" title={sandbox.name ?? undefined}>{sandbox.name ?? <span className="text-muted-foreground">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line232JsxTextMdash')}</span>}</TableCell>
                     <TableCell><div className="flex flex-col min-w-0"><span className="text-sm truncate">{sandbox.accountName ?? '—'}</span>{sandbox.ownerEmail && <span className="text-xs text-muted-foreground truncate">{sandbox.ownerEmail}</span>}</div></TableCell>
@@ -256,6 +271,8 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
             <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3"><Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteMutation.isPending}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete'}</Button></div>
           </DialogContent>
         </Dialog>
+
+        <InstanceSettingsModal sandbox={selectedSandbox} open={!!selectedSandbox} onOpenChange={(open) => { if (!open) setSelectedSandbox(null); }} />
       </div>
     </div>
   );

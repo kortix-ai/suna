@@ -148,8 +148,8 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
     // layered image so custom sandbox Dockerfiles get the same runtime floor as
     // the platform default image.
-    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a warm-pool
-    // clone is a memory-restored VM that keeps its snapshot-baked IP until the
+    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a
+    // snapshot-restored VM keeps its snapshot-baked IP until the
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
     // inside the guest. Without these the IP never changes → the guest stays on
     // the baked IP while the edge routes to the allocated IP → every request
@@ -192,19 +192,14 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '        "scipy>=1.12" \\',
     '        "seaborn>=0.13" \\',
     '        "youtube-transcript-api>=0.6" \\',
-    "    && python3 - <<'PY'",
-    'import importlib',
-    'mods = [',
-    '  "bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl",',
-    '  "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright",',
-    '  "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx",',
-    '  "reportlab", "requests", "sklearn", "scipy", "seaborn",',
-    '  "youtube_transcript_api",',
-    ']',
-    'for mod in mods:',
-    '    importlib.import_module(mod)',
-    'print("starter Python package floor OK")',
-    'PY',
+    // Verify the import floor with a `python3 -c` ONE-LINER, NOT a RUN heredoc.
+    // Platinum builds with buildah's classic imagebuilder, which does not support
+    // Dockerfile RUN heredocs (and ignores `# syntax=docker/dockerfile:1.7`): it
+    // parses the heredoc body's first line ("import importlib") as a Dockerfile
+    // instruction "IMPORT" and aborts the build with `Unknown instruction: IMPORT`
+    // at STEP 6 — failing EVERY Platinum template build. A -c one-liner is
+    // equivalent (still fails the layer if any module is missing) and portable.
+    '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
@@ -214,11 +209,12 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
     // time database migration (may take a few minutes)" — before it answers any
     // request. On a fresh VM that runs on the session hot path, adding ~15-35s
-    // before opencode replies to /session; on a warm-pool claim that window is
-    // exactly what surfaces as the FE's "sandbox not ready" 503s. opencode's db
+    // before opencode replies to /session; on a restored warm snapshot that
+    // window is exactly what surfaces as the FE's "sandbox not ready" 503s.
+    // opencode's db
     // lives in a BAKED path (XDG_DATA_HOME=/opt/kortix/home/.local/share), so we
     // run opencode here once to complete the migration and bake the migrated db
-    // into the image layer. Every boot afterwards — cold or warm-pool restore —
+    // into the image layer. Every boot afterwards — cold or warm-snapshot restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
     // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
     // effort: if opencode can't serve at build time it just falls back to the
@@ -246,22 +242,29 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
     '    && bun --version',
     '',
-    // Pre-install the OpenCode tool dependencies once, at image-build time, into a
-    // stable baked location. The tools in .kortix/opencode/tools/ (web_search,
-    // image_search, scrape_webpage) import these, and OpenCode runs `bun install`
-    // in the cloned config dir at boot — but node_modules/bun.lock are gitignored,
-    // so that boot install would otherwise RE-RESOLVE the `^` ranges over the
+    // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
+    // into a stable baked location. The cloned config dir's plugin + tools import
+    // @opencode-ai/plugin (+ its effect/zod/@opencode-ai/sdk tree) and
+    // @mendable/firecrawl-js / @tavily/core / replicate, and OpenCode runs
+    // `bun install` in that dir the first time a session opens — but node_modules/
+    // bun.lock are gitignored, so that boot install would otherwise fetch over the
     // network (a 1.5–6s — sometimes minutes — stall on the session hot path). The
     // daemon's ensureOpencodeConfigDeps() links this baked node_modules + bun.lock
-    // into the resolved config dir before opencode starts, making the boot install
-    // a no-op. The same step also warms Bun's cache at the runtime HOME
-    // (HOME=/opt/kortix/home). Keep deps in sync with
-    // packages/starter/templates/base/.kortix/opencode/package.json — and bump
-    // RUNTIME_LAYER_VERSION in templates.ts when they change (the rendered
-    // Dockerfile is not itself part of the snapshot fingerprint).
+    // into the resolved config dir before opencode starts, making the boot install a
+    // verified OFFLINE no-op. The same caches warm Bun at HOME=/opt/kortix/home.
+    //
+    // CRITICAL — @opencode-ai/plugin is pinned to the OPENCODE BINARY version
+    // (`opencodeVersion`), NOT the version declared in the project/starter
+    // package.json. OpenCode loads the plugin SDK that matches its OWN binary: it
+    // overwrites whatever @opencode-ai/plugin the config dir pins with its binary
+    // version, fetching it over the network if absent. Baking the stale starter pin
+    // (e.g. 1.17.9 while the binary is 1.17.11) therefore left opencode re-fetching
+    // the matching plugin on EVERY boot — the ~5–8s "opencode-session-created" gap.
+    // Baking the binary version makes opencode find it already present → no fetch.
+    // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     'RUN mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
     '',
     // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode

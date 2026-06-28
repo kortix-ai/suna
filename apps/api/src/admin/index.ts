@@ -477,47 +477,6 @@ adminApp.openapi(
   },
 );
 
-// ── Warm pool: master enable + default ready-count (DB-backed, not env) ──────
-// GET current warm-pool config. The master gate AND-controls every per-template
-// opt-in (warm-pool.ts warmPoolEnabled). Default OFF — we don't run warm pools.
-adminApp.openapi(
-  createRoute({
-    method: 'get', path: '/api/warm-pool-config', tags: ['admin'],
-    summary: 'Get warm pool config', ...auth,
-    responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const { warmPoolSetting } = await import('../platform/services/runtime-settings');
-    return c.json(warmPoolSetting());
-  },
-);
-
-// PUT warm-pool config ({ enabled, size }). size capped at 25; enabled OFF = the
-// whole driver is inert (every create cold-provisions).
-adminApp.openapi(
-  createRoute({
-    method: 'put', path: '/api/warm-pool-config', tags: ['admin'],
-    summary: 'Set warm pool config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean().optional(), size: z.number().int().min(0).max(25).optional() }) } } } },
-    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
-  }),
-  async (c: any) => {
-    const body = await c.req.json().catch(() => ({}));
-    const value = {
-      enabled: body?.enabled === true,
-      size: Number.isInteger(body?.size) && body.size >= 0 ? Math.min(body.size, 25) : 0,
-    };
-    const { db } = await import('../shared/db');
-    const { platformSettings } = await import('@kortix/db');
-    const { WARM_POOL_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: WARM_POOL_KEY, value, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
-    invalidateRuntimeSettings();
-    await refreshRuntimeSettings();
-    return c.json({ ok: true, ...value });
-  },
-);
-
 // ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
 // GET the warm-snapshot toggle. Master switch for the per-project warm-fork
 // (Platinum + Daytona); per-provider sub-gates still apply (daytona warm target,

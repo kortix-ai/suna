@@ -5,6 +5,10 @@ import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { createSlackAccessRequest, notifyAdminsOfAccessRequest } from './identity';
+import { decideSlackThreadJoin } from './participants';
+import { attachPendingSlackAuthResponseUrl } from './auth-resume';
+import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { modelLabel, setChannelAgent, setChannelModel } from './selection';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
@@ -278,6 +282,163 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
   });
 }
 
+// "Request access" (the ephemeral nudge for a connected-but-no-access user) →
+// file a project access request and ping the account's admins. Replaces the
+// ephemeral in place via the interaction's response_url so the user gets an
+// immediate, only-visible-to-them confirmation.
+async function handleRequestAccess(payload: SlackInteractionPayload, value: string): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const slackUserId = payload.user?.id ?? '';
+  let projectId = '';
+  try {
+    projectId = (JSON.parse(value || '{}') as { projectId?: string }).projectId ?? '';
+  } catch {
+    projectId = '';
+  }
+  if (!teamId || !slackUserId || !projectId) return;
+
+  const result = await createSlackAccessRequest({ teamId, slackUserId, projectId });
+  const message =
+    result.status === 'created'
+      ? "Access requested ✓ — an admin will review it. Once you're approved, send your message again and I'll get on it."
+      : result.status === 'pending'
+        ? "You've already requested access — it's pending an admin's review."
+        : result.status === 'already-member'
+          ? 'You already have access — send your message again and I’ll get on it.'
+          : 'I couldn’t request access — connect your Kortix account first, then try again.';
+  await respondViaUrl(payload.response_url, { replace_original: true, text: message });
+
+  if (result.status === 'created') {
+    await notifyAdminsOfAccessRequest({
+      teamId,
+      projectId,
+      accountId: result.accountId,
+      requesterUserId: result.requesterUserId,
+      requesterSlackUserId: slackUserId,
+    });
+  }
+}
+
+async function handleThreadJoinDecision(
+  payload: SlackInteractionPayload,
+  value: string,
+  decision: 'approved' | 'denied',
+): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const channelId = payload.channel?.id ?? '';
+  const deciderSlackUserId = payload.user?.id ?? '';
+  let parsed: {
+    projectId?: string;
+    sessionId?: string;
+    threadId?: string;
+    requesterUserId?: string;
+    requesterSlackUserId?: string;
+  } = {};
+  try {
+    parsed = JSON.parse(value || '{}') as typeof parsed;
+  } catch {
+    parsed = {};
+  }
+  if (
+    !teamId ||
+    !channelId ||
+    !deciderSlackUserId ||
+    !parsed.projectId ||
+    !parsed.sessionId ||
+    !parsed.threadId ||
+    !parsed.requesterUserId ||
+    !parsed.requesterSlackUserId
+  ) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: 'I could not read that approval request. Ask the person to request access again.',
+    });
+    return;
+  }
+
+  const result = await decideSlackThreadJoin({
+    teamId,
+    channelId,
+    deciderSlackUserId,
+    projectId: parsed.projectId,
+    sessionId: parsed.sessionId,
+    threadId: parsed.threadId,
+    requesterUserId: parsed.requesterUserId,
+    requesterSlackUserId: parsed.requesterSlackUserId,
+    decision,
+  });
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    replace_original: true,
+    text: result.text,
+  });
+}
+
+function loginActionValue(action: NonNullable<SlackInteractionPayload['actions']>[number]): {
+  pendingId?: string;
+  url?: string;
+} {
+  try {
+    const parsed = JSON.parse(action.value || '{}') as { pendingId?: string; url?: string };
+    return {
+      ...(typeof parsed.pendingId === 'string' && parsed.pendingId ? { pendingId: parsed.pendingId } : {}),
+      ...(typeof parsed.url === 'string' && parsed.url ? { url: parsed.url } : {}),
+    };
+  } catch {
+    // Fall back to parsing the URL below for prompts generated before the
+    // first-button action flow existed.
+  }
+  const token = action.url?.split('/identity/login/')[1]?.split(/[?#]/)[0]
+    ?? action.url?.split('/slack/login/')[1]?.split(/[?#]/)[0];
+  return {
+    ...(token ? { pendingId: verifyLoginState(token)?.pendingId } : {}),
+    ...(action.url ? { url: action.url } : {}),
+  };
+}
+
+async function handleSlackLoginConnect(
+  payload: SlackInteractionPayload,
+  action: NonNullable<SlackInteractionPayload['actions']>[number],
+): Promise<void> {
+  const login = loginActionValue(action);
+  const teamId = payload.team?.id ?? '';
+  const slackUserId = payload.user?.id ?? '';
+  await attachPendingSlackAuthResponseUrl({
+    pendingId: login.pendingId,
+    teamId,
+    slackUserId,
+    responseUrl: payload.response_url,
+  });
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    replace_original: true,
+    text: 'Opening Kortix to connect your account...',
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: login.url
+            ? `*Open Kortix to connect your account.*\n<${login.url}|Continue in Kortix>. This message will update when the connection is complete.`
+            : '*Open Kortix to connect your account.*\nRun `/kortix login` if this button expired.',
+        },
+      },
+      ...(login.url
+        ? [{
+          type: 'actions',
+          elements: [{
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open Kortix', emoji: true },
+            style: 'primary',
+            url: login.url,
+            action_id: 'slack_login_open',
+          }],
+        }]
+        : []),
+    ],
+  });
+}
+
 export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
@@ -299,6 +460,30 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   // A plain "Open session ↗" link button carries a `url` and needs no handling.
   if (action.action_id === 'session_open') return;
+
+  // Identity / access nudges. "Connect" and "Review in Kortix" are URL buttons —
+  // they open a link, so swallow their block_action so it doesn't fall through to
+  // the agent-click catch-all below. "Request access" does real work.
+  if (action.action_id === 'slack_login_connect') {
+    await handleSlackLoginConnect(payload, action);
+    return;
+  }
+  if (action.action_id === 'slack_open_access_review') {
+    return;
+  }
+  if (action.action_id === 'slack_request_access') {
+    await handleRequestAccess(payload, action.value ?? '');
+    return;
+  }
+
+  if (action.action_id === 'slack_thread_join_approve') {
+    await handleThreadJoinDecision(payload, action.value ?? '', 'approved');
+    return;
+  }
+  if (action.action_id === 'slack_thread_join_deny') {
+    await handleThreadJoinDecision(payload, action.value ?? '', 'denied');
+    return;
+  }
 
   if (action.action_id.startsWith('switch_project_')) {
     await handleSwitchProject(payload, action.value ?? '');
