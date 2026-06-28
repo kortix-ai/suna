@@ -59,7 +59,7 @@ import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_MESSAGE,
 } from './model-availability';
-import { ModelSelector } from './model-selector';
+import { ModelSelector, type ModelDefaultControls } from './model-selector';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 import {
@@ -1439,6 +1439,8 @@ export interface SessionChatInputProps {
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** Optional "set as default" controls for the model picker (account/per-agent). */
+  modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
@@ -1534,6 +1536,7 @@ export function SessionChatInput({
   models = [],
   selectedModel = null,
   onModelChange,
+  modelDefaultControls,
   variants = [],
   selectedVariant = null,
   onVariantChange,
@@ -2586,6 +2589,7 @@ export function SessionChatInput({
                   selectedModel={selectedModel}
                   onSelect={onModelChange}
                   providers={providers}
+                  defaultControls={modelDefaultControls}
                 />
               )}
               {variants.length > 0 && onVariantChange && (

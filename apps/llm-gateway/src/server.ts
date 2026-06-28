@@ -62,7 +62,10 @@ export function buildServer(): GatewayServer {
       breaker: config.breaker,
       captureBodies: config.captureBodies,
       maxCapturedBodyBytes: config.maxCapturedBodyBytes,
-      autoRouter: pickAutoModel,
+      // Resolve `auto` against the principal's account/agent default (resolved
+      // API-side in withResolvedTier and carried across the authorize RPC).
+      autoRouter: (model, body, principal) =>
+        pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
     },
     { logger },
   );

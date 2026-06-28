@@ -3785,6 +3785,9 @@ export function SessionChat({
   const local = useOpenCodeLocal({ agents, providers, config, sessionId });
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
+  // Wire model to SEND: `auto` when on the default (gateway resolves it), else
+  // the explicit pick. Always send this — not currentKey, which is for display.
+  const localModelSendKey = local.model.sendKey;
   const localModelList = local.model.list;
   const localModelSet = local.model.set;
   const localModelVisible = local.model.visible;
@@ -3941,9 +3944,9 @@ export function SessionChat({
         // ignore
       }
 
-      if (!selectedModelForSend && localModelCurrentKey) {
-        options.model = localModelCurrentKey;
-        selectedModelForSend = localModelCurrentKey;
+      if (!selectedModelForSend && localModelSendKey) {
+        options.model = localModelSendKey;
+        selectedModelForSend = localModelSendKey;
       }
 
       if (!selectedModelForSend) {
@@ -4103,6 +4106,7 @@ export function SessionChat({
     removeOptimisticUserMessage,
     localAgentSet,
     localModelCurrentKey,
+    localModelSendKey,
     localModelList,
     localModelSet,
     localModelVisible,
@@ -4941,8 +4945,8 @@ export function SessionChat({
       }
       if (overrideModel !== undefined) {
         if (overrideModel) options.model = overrideModel;
-      } else if (local.model.currentKey) {
-        options.model = local.model.currentKey;
+      } else if (local.model.sendKey) {
+        options.model = local.model.sendKey;
       }
       if (overrideVariant !== undefined) {
         if (overrideVariant) options.variant = overrideVariant;
@@ -5182,6 +5186,7 @@ export function SessionChat({
       sessionId,
       local.agent.current,
       local.model.currentKey,
+      local.model.sendKey,
       local.model.variant.current,
       addOptimisticUserMessage,
       removeOptimisticUserMessage,
@@ -5347,8 +5352,8 @@ export function SessionChat({
 
       playSound('send');
       const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.currentKey
-        ? formatModelString(local.model.currentKey)
+      const selectedModel = local.model.sendKey
+        ? formatModelString(local.model.sendKey)
         : undefined;
       const handleCommandError = (err?: unknown) => {
         setPendingCommand(null);
@@ -5408,6 +5413,7 @@ export function SessionChat({
       scrollToBottom,
       local.agent.current,
       local.model.currentKey,
+      local.model.sendKey,
       local.model.variant.current,
     ],
   );
@@ -5842,6 +5848,19 @@ export function SessionChat({
           models={local.model.list}
           selectedModel={local.model.currentKey ?? null}
           onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+          modelDefaultControls={{
+            agentName: local.agent.current?.name,
+            freeTier: local.model.defaults.freeTier,
+            onSetAccountDefault: (m) => {
+              void local.model.defaults.setAccountDefault(m);
+            },
+            onSetAgentDefault: local.agent.current
+              ? (m) => {
+                  const name = local.agent.current?.name;
+                  if (name) void local.model.defaults.setAgentDefault(name, m);
+                }
+              : undefined,
+          }}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}
           onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
