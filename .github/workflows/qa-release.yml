@@ -174,13 +174,15 @@ jobs:
           npx allure generate test-results/allure-results -o test-results/allure-report || true
           npm run catalog || true
       - name: AWS auth for report publish
+        id: aws-report-auth
         if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}
       - name: Publish release Allure report
-        if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
+        if: always() && steps.aws-report-auth.outcome == 'success'
         run: |
           set -euo pipefail
           run_key="release/${{ github.run_id }}"
