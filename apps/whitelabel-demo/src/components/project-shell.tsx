@@ -14,7 +14,7 @@ import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Settings } from 'lucide-react';
+import { ArrowLeft, FolderX, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -29,6 +29,13 @@ const STATUS_DOT: Record<string, string> = {
   failed: 'bg-destructive',
 };
 
+/** 403/404 from the API — access denied or the project doesn't exist here. */
+function isAccessError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string } | undefined;
+  if (e?.status === 403 || e?.status === 404) return true;
+  return /\b40[34]\b|forbidden|do not have access|not found/i.test(e?.message ?? '');
+}
+
 export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const projectId = String(params.id);
@@ -39,11 +46,16 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   const project = useQuery({
     queryKey: qk.project(projectId),
     queryFn: () => kortix.project(projectId).get(),
+    // 403/404 never recovers on retry — fail fast instead of spamming.
+    retry: (count, err) => !isAccessError(err) && count < 2,
   });
+  const denied = project.isError && isAccessError(project.error);
   const sessions = useQuery({
     queryKey: qk.sessions(projectId),
     queryFn: () => kortix.project(projectId).sessions.list(),
-    refetchInterval: 5_000,
+    refetchInterval: denied ? false : 5_000,
+    enabled: !denied,
+    retry: (count, err) => !isAccessError(err) && count < 2,
   });
 
   const newSession = useMutation({
@@ -60,6 +72,8 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   });
 
   const items = sessions.data ?? [];
+
+  if (denied) return <AccessDenied />;
 
   return (
     <div className="flex h-dvh bg-background">
@@ -140,6 +154,30 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+    </div>
+  );
+}
+
+/** Shown when the API key can't see the project (403/404) — instead of a
+ *  retry-spamming broken shell. */
+function AccessDenied() {
+  return (
+    <div className="grid h-dvh place-items-center bg-background px-6">
+      <div className="flex max-w-sm flex-col items-center text-center">
+        <div className="grid size-12 place-items-center rounded-full border border-border bg-card">
+          <FolderX className="size-5 text-muted-foreground" />
+        </div>
+        <h1 className="mt-4 text-lg font-medium">Project not available</h1>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          This project doesn&apos;t exist, or your API key doesn&apos;t have access to it. Pick one
+          from your projects to continue.
+        </p>
+        <Button asChild className="mt-5 gap-2">
+          <Link href="/">
+            <ArrowLeft className="size-4" /> All projects
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
