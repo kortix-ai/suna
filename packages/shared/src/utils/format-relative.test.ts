@@ -91,15 +91,15 @@ describe('formatRelative future times', () => {
   });
 
   test('renders future minutes when future is enabled', () => {
-    expect(formatRelative(ahead(5 * MINUTE), { future: true })).toBe('in 5m');
+    expect(formatRelative(ahead(5 * MINUTE + 5 * SECOND), { future: true })).toBe('in 5m');
   });
 
   test('renders future hours when future is enabled', () => {
-    expect(formatRelative(ahead(3 * HOUR), { future: true })).toBe('in 3h');
+    expect(formatRelative(ahead(3 * HOUR + 5 * SECOND), { future: true })).toBe('in 3h');
   });
 
   test('renders future days when future is enabled', () => {
-    expect(formatRelative(ahead(2 * DAY), { future: true })).toBe('in 2d');
+    expect(formatRelative(ahead(2 * DAY + 5 * SECOND), { future: true })).toBe('in 2d');
   });
 
   test('uses the default sub-minute future label', () => {
