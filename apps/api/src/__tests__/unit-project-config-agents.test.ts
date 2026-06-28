@@ -40,6 +40,7 @@ describe('project config agent discovery', () => {
           connectors: 'all',
           kortixCli: 'all',
           file: null,
+          model: null,
         },
         {
           name: 'triage',
@@ -48,6 +49,7 @@ describe('project config agent discovery', () => {
           connectors: [],
           kortixCli: [],
           file: '.kortix/opencode/agents/release-bot.md',
+          model: null,
         },
         {
           name: 'disabled',
@@ -56,6 +58,7 @@ describe('project config agent discovery', () => {
           connectors: [],
           kortixCli: [],
           file: null,
+          model: null,
         },
       ],
     };

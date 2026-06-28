@@ -428,6 +428,55 @@ prompt = "x"
   });
 });
 
+describe('[[triggers]] — model', () => {
+  test('absent model parses to null (the "Default" path)', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "no-model"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+`)));
+    expect(specs[0]!.model).toBeNull();
+  });
+
+  test('an explicit model round-trips through serialize', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "with-model"
+type = "cron"
+cron = "0 0 9 * * *"
+model = "anthropic/claude-sonnet-4-6"
+prompt = "x"
+`));
+    const out = serializeManifest(parsed);
+    expect(out).toContain('anthropic/claude-sonnet-4-6');
+    const reparsed = extractTriggers(parseManifestString(out)).specs;
+    expect(reparsed[0]!.model).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  test('triggerSpecToTomlEntry omits a null model but writes a set one', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "plain"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+
+[[triggers]]
+slug = "pinned"
+type = "cron"
+cron = "* * * * * *"
+model = "openai/gpt-5"
+prompt = "x"
+`)));
+    const plain = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'plain')!);
+    const pinned = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'pinned')!);
+    expect(plain.model).toBeUndefined();
+    expect(pinned.model).toBe('openai/gpt-5');
+  });
+});
+
 describe('serializeManifest — round-trip', () => {
   test('a parsed-then-serialized manifest re-parses to the same shape', () => {
     const input = manifestWith(`

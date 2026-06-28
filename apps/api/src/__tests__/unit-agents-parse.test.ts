@@ -183,6 +183,7 @@ describe('[[agents]] — round-trip', () => {
       connectors: ['github'],
       kortixCli: ['project.deploy'],
       file: null,
+      model: 'anthropic/claude-sonnet-4-6',
     };
     const entry = agentSpecToTomlEntry(spec);
     const { specs, errors } = parse(`
@@ -190,14 +191,15 @@ describe('[[agents]] — round-trip', () => {
 name = "${entry.name}"
 connectors = ${JSON.stringify(entry.connectors)}
 kortix_cli = ${JSON.stringify(entry.kortix_cli)}
+model = "${entry.model}"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], kortixCli: ['project.deploy'] });
+    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], kortixCli: ['project.deploy'], model: 'anthropic/claude-sonnet-4-6' });
   });
 
   test('minimal spec emits only name', () => {
     const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], file: null,
+      name: 'kortix', path: '', enabled: true, connectors: [], kortixCli: [], file: null, model: null,
     });
     expect(entry).toEqual({ name: 'kortix' });
   });
