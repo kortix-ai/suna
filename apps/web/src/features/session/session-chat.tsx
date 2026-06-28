@@ -5850,7 +5850,6 @@ export function SessionChat({
           onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
           modelDefaultControls={{
             agentName: local.agent.current?.name,
-            freeTier: local.model.defaults.freeTier,
             onSetAccountDefault: (m) => {
               void local.model.defaults.setAccountDefault(m);
             },
