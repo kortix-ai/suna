@@ -33,7 +33,6 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
-  Slack,
   Trash2,
   Zap,
   type LucideIcon,
@@ -1754,7 +1753,7 @@ export function SlackConnectForm({
       ) : installUrl ? (
         <InfoBanner
           tone="info"
-          icon={Slack}
+          icon={<SlackLogo />}
           title="Add Kortix to your Slack workspace"
           action={
             <Button size="sm" className="shrink-0 gap-1.5" asChild>
@@ -1768,7 +1767,7 @@ export function SlackConnectForm({
           One-click install - authorize Kortix in your workspace, no setup required.
         </InfoBanner>
       ) : (
-        <InfoBanner tone="warning" icon={Slack} title="Managed Slack install is not configured">
+        <InfoBanner tone="warning" icon={<SlackLogo />} title="Managed Slack install is not configured">
           Use a custom Slack app for this deployment.
         </InfoBanner>
       )}
@@ -3002,18 +3001,32 @@ function ChannelCatalogue({
   );
 }
 
-function SlackIconTile() {
+/**
+ * The real Slack logo — the single Slack mark used everywhere across the
+ * connectors + channels surface (catalogue cards, channel cards, connect flow),
+ * so Slack always reads as Slack and never as a generic glyph. Sized by
+ * `className`; defaults to `size-4`.
+ */
+export function SlackLogo({ className }: { className?: string }) {
   return (
-    <span className="border-border/60 bg-card relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border">
+    <span className={cn('relative inline-flex size-4 shrink-0', className)}>
       <Image
         src={SLACK_ICON_SRC}
         alt=""
         referrerPolicy="no-referrer"
         fill
-        sizes="36px"
-        className="object-contain p-1"
+        sizes="32px"
+        className="object-contain"
         unoptimized
       />
+    </span>
+  );
+}
+
+function SlackIconTile() {
+  return (
+    <span className="border-border/60 bg-card relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border">
+      <SlackLogo className="size-7" />
     </span>
   );
 }

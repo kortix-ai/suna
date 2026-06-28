@@ -1,11 +1,12 @@
 'use client';
 
-import { CheckCircle2, Loader2, Slack, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { slackIdentityApi } from '@/lib/api/slack-identity';
 
@@ -88,7 +89,7 @@ export default function SlackLoginPage() {
         <div className="p-7">
           <div className="mb-6 flex items-center gap-3">
             <div className="bg-muted/40 grid size-11 place-items-center rounded-2xl border">
-              <Slack className="size-5" />
+              <Icon.Slack className="size-5" />
             </div>
             <div>
               <div className="text-base font-semibold">Connect Slack to Kortix</div>
@@ -126,7 +127,7 @@ export default function SlackLoginPage() {
                 </>
               ) : (
                 <>
-                  <Slack className="size-4" /> Connect my account
+                  <Icon.Slack className="size-4" /> Connect my account
                 </>
               )}
             </Button>
