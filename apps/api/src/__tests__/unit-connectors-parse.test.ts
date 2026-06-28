@@ -515,3 +515,41 @@ spec = "https://x/y.json"
     expect(manifestHashForConnector(a)).not.toBe(manifestHashForConnector(c));
   });
 });
+
+/**
+ * Drift guard: the runtime parser (this module) and the canonical schema gate
+ * (@kortix/manifest-schema, run on CR-merge) must agree on which providers a
+ * kortix.toml may declare. They drifted once — `channel` was added here and to
+ * channel-manifest.ts (which WRITES it into the manifest) but not to the schema,
+ * so the merge gate rejected manifests the platform itself produced. Keep them
+ * locked together: a provider one side accepts the other must not reject.
+ */
+describe('[[connectors]] — runtime parser ⇄ schema gate provider agreement', () => {
+  const { validateManifest } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
+
+  function schemaConnectorErrors(body: string): string[] {
+    return validateManifest(manifestWith(body))
+      .issues.filter((i) => i.severity === 'error' && i.path.startsWith('connectors['))
+      .map((i) => i.path);
+  }
+
+  const cases: Array<{ name: string; body: string; accept: boolean }> = [
+    { name: 'pipedream', accept: true, body: `[[connectors]]\nslug = "c"\nprovider = "pipedream"\napp = "gmail"` },
+    { name: 'mcp', accept: true, body: `[[connectors]]\nslug = "c"\nprovider = "mcp"\nurl = "https://e.com"` },
+    { name: 'openapi', accept: true, body: `[[connectors]]\nslug = "c"\nprovider = "openapi"\nspec = "https://e.com/o.json"` },
+    { name: 'graphql', accept: true, body: `[[connectors]]\nslug = "c"\nprovider = "graphql"\nendpoint = "https://e.com/graphql"` },
+    { name: 'http', accept: true, body: `[[connectors]]\nslug = "c"\nprovider = "http"\nbase_url = "https://e.com"` },
+    { name: 'channel', accept: true, body: `[[connectors]]\nslug = "kortix_slack"\nprovider = "channel"\nplatform = "slack"` },
+    { name: 'computer (synth-only)', accept: false, body: `[[connectors]]\nslug = "computer"\nprovider = "computer"` },
+    { name: 'unknown provider', accept: false, body: `[[connectors]]\nslug = "c"\nprovider = "made-up"` },
+  ];
+
+  for (const { name, body, accept } of cases) {
+    test(`${name}: parser and schema agree (accept=${accept})`, () => {
+      const runtimeOk = parseAndExtract(body).errors.length === 0;
+      const schemaOk = schemaConnectorErrors(body).length === 0;
+      expect(runtimeOk).toBe(accept);
+      expect(schemaOk).toBe(accept);
+    });
+  }
+});
