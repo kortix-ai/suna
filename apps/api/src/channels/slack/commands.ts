@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
+import { accountMembers, chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage, respondViaUrl, sessionWebUrl } from './util';
@@ -10,10 +10,12 @@ import {
   listProjectAgents,
   modelLabel,
   setChannelAgent,
+  setChannelConversationPolicy,
   setChannelModel,
 } from './selection';
 import { buildSlackLoginUrl } from './login';
 import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
+import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import type { SlashResponse } from './types';
 
@@ -33,6 +35,9 @@ export interface SlashCtx {
   // (no response_url), so deferred subcommands post their result through this
   // instead of `respondViaUrl`. Set only by the DM command runner.
   deferredDeliver?: (resp: SlashResponse) => Promise<void>;
+  // Set for per-project/manual Slack apps. These apps do not switch projects:
+  // the webhook URL already scopes every event and command to one Kortix project.
+  projectScopedProjectId?: string;
 }
 
 export async function handleSlashCommand(
@@ -43,12 +48,15 @@ export async function handleSlashCommand(
   switch (sub) {
     case 'projects':
     case 'list':
+      if (ctx.projectScopedProjectId) return slashProjectScopedInfo(ctx);
       return slashProjects(ctx);
     case 'switch':
     case 'use':
     case 'rebind':
+      if (ctx.projectScopedProjectId) return slashProjectScopedInfo(ctx);
       return slashSwitch(ctx);
     case 'unbind':
+      if (ctx.projectScopedProjectId) return slashProjectScopedInfo(ctx);
       return slashUnbind(ctx);
     case 'sessions':
       return slashSessions(ctx);
@@ -76,9 +84,12 @@ export async function handleSlashCommand(
     case 'use-model':
     case 'set-model':
       return slashSetModel(ctx, arg);
+    case 'policy':
+    case 'conversation':
+      return slashPolicy(ctx, arg);
     case 'help':
     case '':
-      return slashHelp(ctx.command);
+      return slashHelp(ctx);
     default:
       return unknownSub(sub, ctx.command);
   }
@@ -91,7 +102,27 @@ function unknownSub(sub: string, command: string): SlashResponse {
   };
 }
 
-function slashHelp(command: string): SlashResponse {
+function slashHelp(ctx: SlashCtx): SlashResponse {
+  const command = ctx.command;
+  const isProjectScoped = !!ctx.projectScopedProjectId;
+  const projectRows = isProjectScoped
+    ? [
+        { cmd: `${command} agents`,   desc: 'Pick which project agent answers in this channel.' },
+        { cmd: `${command} agent <name>`, desc: 'Set the channel-wide agent (`default` to reset).' },
+        { cmd: `${command} models`,   desc: 'Pick which model this channel uses.' },
+        { cmd: `${command} model <id>`, desc: 'Set the channel-wide model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
+        { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions in this channel.' },
+      ]
+    : [
+        { cmd: `${command} projects`, desc: 'List every Kortix project connected to this workspace.' },
+        { cmd: `${command} switch`,   desc: 'Bind this channel to a different project (opens a picker).' },
+        { cmd: `${command} unbind`,   desc: 'Clear this channel\'s project binding.' },
+        { cmd: `${command} agents`,   desc: 'List this project\'s agents and pick which one answers here.' },
+        { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
+        { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
+        { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
+        { cmd: `${command} policy`,   desc: 'Show who can join Slack-started sessions in this channel.' },
+      ];
   return {
     response_type: 'ephemeral',
     blocks: [
@@ -103,18 +134,14 @@ function slashHelp(command: string): SlashResponse {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: 'Drive Kortix from any Slack channel. All responses are private to you.',
+          text: isProjectScoped
+            ? 'This Slack app is tied to one Kortix project. Agent, model, and session policy settings are channel-wide.'
+            : 'Drive Kortix from any Slack channel. All responses are private to you.',
         },
       },
       { type: 'divider' },
       ...[
-        { cmd: `${command} projects`, desc: 'List every Kortix project connected to this workspace.' },
-        { cmd: `${command} switch`,   desc: 'Bind this channel to a different project (opens a picker).' },
-        { cmd: `${command} unbind`,   desc: 'Clear this channel\'s project binding.' },
-        { cmd: `${command} agents`,   desc: 'List this project\'s agents and pick which one answers here.' },
-        { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
-        { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
-        { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
+        ...projectRows,
         // Only advertised when per-user identity is enabled.
         ...(config.SLACK_REQUIRE_USER_IDENTITY
           ? [
@@ -130,6 +157,31 @@ function slashHelp(command: string): SlashResponse {
         type: 'section',
         text: { type: 'mrkdwn', text: `\`${r.cmd}\`\n${r.desc}` },
       })),
+    ],
+  };
+}
+
+async function slashProjectScopedInfo(ctx: SlashCtx): Promise<SlashResponse> {
+  const projectId = ctx.projectScopedProjectId;
+  const [project] = projectId
+    ? await db
+        .select({ name: projects.name, projectId: projects.projectId })
+        .from(projects)
+        .where(eq(projects.projectId, projectId))
+        .limit(1)
+    : [];
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: project
+            ? `This Slack app is already tied to *${escapeMrkdwn(project.name)}*.\nUse \`${ctx.command} agents\`, \`${ctx.command} models\`, or \`${ctx.command} policy\` to configure this channel.`
+            : `This Slack app is already tied to one Kortix project.\nUse \`${ctx.command} agents\`, \`${ctx.command} models\`, or \`${ctx.command} policy\` to configure this channel.`,
+        },
+      },
     ],
   };
 }
@@ -429,6 +481,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
   const og = repoOgImage(p.repoUrl);
   const agentLabel = selection?.agentName ?? 'default';
   const modelLabelText = selection?.opencodeModel ? modelLabel(selection.opencodeModel) : 'project default';
+  const policy = normalizeConversationPolicy(selection?.conversationPolicy);
   const section: Record<string, unknown> = {
     type: 'section',
     text: {
@@ -447,6 +500,7 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
         elements: [
           { type: 'mrkdwn', text: `🤖  Agent: *${escapeMrkdwn(agentLabel)}*` },
           { type: 'mrkdwn', text: `🧠  Model: *${escapeMrkdwn(modelLabelText)}*` },
+          { type: 'mrkdwn', text: `🔒  Slack sessions: *${conversationPolicyLabel(policy)}*` },
           { type: 'mrkdwn', text: `Change with \`${ctx.command} agents\` · \`${ctx.command} models\`` },
         ],
       },
@@ -472,6 +526,85 @@ async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
   };
 }
 
+async function canManageSlackPolicy(ctx: SlashCtx, projectId: string): Promise<boolean> {
+  if (!ctx.slackUserId) return false;
+  const identity = await lookupSlackIdentity(ctx.teamId, ctx.slackUserId);
+  if (!identity) return false;
+  const [project] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return false;
+  const [member] = await db
+    .select({ role: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(and(
+      eq(accountMembers.accountId, project.accountId),
+      eq(accountMembers.userId, identity.userId),
+      inArray(accountMembers.accountRole, ['owner', 'admin']),
+    ))
+    .limit(1);
+  return !!member;
+}
+
+async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first.` } }],
+    };
+  }
+
+  const requested = arg.trim();
+  const current = normalizeConversationPolicy(selection.conversationPolicy);
+  if (!requested) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Slack session policy: ${conversationPolicyLabel(current)}*\nNew Slack sessions in this channel use this policy.`,
+          },
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `Default is \`project_open\`: linked project members can join Slack-started sessions. Use \`owner_approval\` for private threads with owner approval, or \`owner_only\` to block everyone else.`,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const next = normalizeConversationPolicy(requested);
+  if (next !== requested) {
+    return {
+      response_type: 'ephemeral',
+      text: `Unknown policy \`${requested}\`. Use \`owner_approval\`, \`owner_only\`, or \`project_open\`.`,
+    };
+  }
+  if (!(await canManageSlackPolicy(ctx, selection.projectId))) {
+    return {
+      response_type: 'ephemeral',
+      text: 'Only a linked Kortix account owner or admin for this project can change the Slack session policy.',
+    };
+  }
+  const ok = await setChannelConversationPolicy(ctx, next);
+  return {
+    response_type: 'ephemeral',
+    text: ok
+      ? `Slack session policy set to ${conversationPolicyLabel(next)} for this channel. Existing threads keep their original policy.`
+      : 'That channel is no longer bound to a project.',
+  };
+}
+
 // ── Login / Logout ───────────────────────────────────────────────────────────
 // Bind this Slack user to their OWN Kortix account so the agent runs as them
 // (their credentials/secrets/connectors) instead of the workspace owner. The
@@ -492,15 +625,15 @@ async function slashLogin(ctx: SlashCtx): Promise<SlashResponse> {
           type: 'mrkdwn',
           text: existing
             ? '*Your Slack is already connected to a Kortix account.*\nClick below to re-connect (e.g. to switch accounts). The link expires in 10 minutes.'
-            : '*Connect your Kortix account.*\nKortix runs as your own account, so it uses your credentials and connected apps — not the installer\'s. The link expires in 10 minutes and is private to you.',
+            : '*Connect your Kortix account.*\nKortix needs access to your account before it can run from Slack. The link expires in 10 minutes and is private to you.',
         },
       },
       {
         type: 'actions',
         elements: [
           {
-            type: 'button',
-            text: { type: 'plain_text', text: existing ? 'Re-connect Kortix' : 'Connect my Kortix account', emoji: true },
+          type: 'button',
+            text: { type: 'plain_text', text: existing ? 'Re-connect Kortix' : 'Connect or create account', emoji: true },
             style: 'primary',
             url,
             action_id: 'slack_login_connect',

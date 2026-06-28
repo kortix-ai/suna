@@ -768,6 +768,10 @@ export const chatChannelBindings = kortixSchema.table(
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
     opencodeModel: varchar('opencode_model', { length: 128 }),
+    // How Slack users may participate in sessions started from this channel.
+    // Default is project-wide sharing: linked project members can join the
+    // Slack thread. Teams can opt into owner approval or owner-only.
+    conversationPolicy: varchar('conversation_policy', { length: 32 }).default('project_open').notNull(),
     installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -808,6 +812,65 @@ export const chatThreads = kortixSchema.table(
     ),
     index('idx_chat_threads_project').on(table.projectId),
     index('idx_chat_threads_session').on(table.sessionId),
+  ],
+);
+
+// Short-lived Slack messages waiting for the sender to finish `/login`. The
+// login URL carries only this id; the original Slack event stays server-side so
+// we can resume the exact message after the account bind succeeds.
+export const chatPendingAuthMessages = kortixSchema.table(
+  'chat_pending_auth_messages',
+  {
+    pendingId: uuid('pending_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: varchar('platform', { length: 32 }).default('slack').notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
+    event: jsonb('event').notNull().$type<Record<string, unknown>>(),
+    slackResponseUrl: text('slack_response_url'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_chat_pending_auth_messages_lookup').on(
+      table.workspaceId,
+      table.platformUserId,
+      table.expiresAt,
+    ),
+    index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+  ],
+);
+
+export const chatThreadParticipants = kortixSchema.table(
+  'chat_thread_participants',
+  {
+    participantId: uuid('participant_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    userId: uuid('user_id').notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decidedByUserId: uuid('decided_by_user_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_thread_participants_thread_user').on(
+      table.platform,
+      table.workspaceId,
+      table.threadId,
+      table.platformUserId,
+    ),
+    index('idx_chat_thread_participants_session').on(table.sessionId),
+    index('idx_chat_thread_participants_user').on(table.userId),
   ],
 );
 

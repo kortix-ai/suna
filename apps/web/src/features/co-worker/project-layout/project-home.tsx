@@ -3,6 +3,7 @@
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Bell,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/features/icon/icon';
+import Hint from '@/components/ui/hint';
 import {
   ComposerChatInput,
   type ComposerOptions,
@@ -37,6 +39,7 @@ import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   getProjectDetail,
   listConnectors,
+  listProjectAccessRequests,
   listProjectAccess,
   listProjectSandboxes,
   listProjectTriggers,
@@ -90,6 +93,14 @@ export function ProjectHome({
   const activeSlug = selectedSlug ?? defaultSlug;
 
   const showSandboxPicker = sandboxItems.length >= 1;
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const accessRequests = useQuery({
+    queryKey: ['project-access-requests', projectId],
+    queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
+    retry: false,
+    ...Q,
+  });
+  const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
@@ -128,6 +139,29 @@ export function ProjectHome({
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
+      {pendingAccessCount > 0 ? (
+        <div className="absolute right-4 top-4 z-20">
+          <Hint label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="relative bg-background/80 backdrop-blur-sm"
+              onClick={() => openCustomize('members')}
+              aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+            >
+              <Bell className="size-4" />
+              <Badge
+                size="xs"
+                variant="new"
+                className="absolute -right-1 -top-1 min-w-5 px-1 tabular-nums"
+              >
+                {pendingAccessCount}
+              </Badge>
+            </Button>
+          </Hint>
+        </div>
+      ) : null}
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
         <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">

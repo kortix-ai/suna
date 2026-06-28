@@ -31,7 +31,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
 
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'set', 'values', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) {
+  for (const m of ['from', 'innerJoin', 'where', 'limit', 'set', 'values', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
@@ -40,6 +40,14 @@ function makeChain(): any {
 mock.module('../shared/db', () => ({
   db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
+}));
+mock.module('../projects/session-lifecycle', () => ({
+  continueSession: async () => 'delivered',
+  createSession: async (input: { body: Record<string, unknown> }) => {
+    lastBody = input.body;
+    return { status: 'created', sessionId: 'new-sess', row: fakeSessionRow('new-sess') };
+  },
+  resolveProjectAutomationActor: async () => 'user-1',
 }));
 
 // Capture the body createProjectSession is called with.
@@ -52,6 +60,7 @@ mock.module('../channels/slack/selection', () => ({
   // session.ts only uses currentChannelSelection; the rest are here so the
   // module shape stays complete for any other importer in the graph.
   setChannelAgent: async () => true,
+  setChannelConversationPolicy: async () => true,
   setChannelModel: async () => true,
   listProjectAgents: async () => [],
   RECOMMENDED_MODELS: [
@@ -101,7 +110,9 @@ mock.module('../channels/slack-api', () => ({
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
   joinChannel: async () => true,
+  openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',
+  postEphemeral: async () => true,
   postMessage: async () => 'ts',
   publishHomeView: async () => {},
   removeReaction: async () => {},
@@ -112,13 +123,16 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { spawnAgentTurn } = await import('../channels/slack/dispatch');
+const { config } = await import('../config');
 const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
+const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
 
 const project = { projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.toml' };
 const envelope = { team_id: 'T1', event: undefined } as any;
 const event = { type: 'app_mention', channel: 'C1', ts: '100.1', user: 'U1', thread_ts: '90.0', text: 'hi' } as any;
 
 afterAll(() => {
+  config.SLACK_REQUIRE_USER_IDENTITY = originalRequireIdentity;
   resetSlackSessionLifecycleForTest();
   mock.restore();
 });
@@ -126,6 +140,7 @@ afterAll(() => {
 // Brand-new thread, claim won → createProjectSession runs exactly once.
 function newThreadFifo() {
   dbResults = [
+    [project], // spawnAgentTurn project lookup
     [], // chat_threads lookup → brand-new thread
     [project], // projects lookup
     [{ eventId: 'claim' }], // claimThreadCreate → WON
@@ -135,6 +150,7 @@ function newThreadFifo() {
 }
 
 beforeEach(() => {
+  config.SLACK_REQUIRE_USER_IDENTITY = false;
   lastBody = null;
   selection = null;
   setSlackSessionLifecycleForTest({

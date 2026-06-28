@@ -600,10 +600,11 @@ export async function requestProjectAccess(projectId: string, message?: string) 
   );
 }
 
-export async function listProjectAccessRequests(projectId: string) {
+export async function listProjectAccessRequests(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<{ requests: ProjectAccessRequest[] }>(
       `/projects/${projectId}/access-requests`,
+      options,
     ),
   );
 }

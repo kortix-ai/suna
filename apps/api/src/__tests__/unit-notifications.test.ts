@@ -11,7 +11,7 @@ mock.module('../config', () => ({
   config: mockConfig,
 }));
 
-const { sendAccountInviteEmail } = await import('../accounts/email');
+const { sendAccountInviteEmail, sendProjectAccessRequestEmail } = await import('../accounts/email');
 
 const originalFetch = globalThis.fetch;
 let calls: Array<{ url: string; init: RequestInit }> = [];
@@ -72,5 +72,25 @@ describe('notification emails', () => {
 
     expect(result).toEqual({ ok: false, skipped: true, reason: 'missing_mailtrap_token' });
     expect(calls).toHaveLength(0);
+  });
+
+  test('sends project access request emails to the Members review surface', async () => {
+    const result = await sendProjectAccessRequestEmail({
+      email: 'manager@example.test',
+      projectName: 'Slack <Auth>',
+      requesterEmail: 'requester@example.test',
+      reviewUrl: 'https://app.example.test/projects/proj-1/customize/members',
+      message: 'Please approve <this account>.',
+    });
+
+    expect(result).toEqual({ ok: true, provider: 'mailtrap', status: 200 });
+
+    const payload = sentPayload();
+    expect(payload.to).toEqual([{ email: 'manager@example.test' }]);
+    expect(payload.subject).toBe('requester@example.test requested access to Slack <Auth>');
+    expect(payload.category).toBe('project-access-request');
+    expect(payload.html).toContain('https://app.example.test/projects/proj-1/customize/members');
+    expect(payload.html).toContain('Slack &lt;Auth&gt;');
+    expect(payload.html).toContain('Please approve &lt;this account&gt;.');
   });
 });
