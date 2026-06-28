@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import React, { useMemo } from 'react';
-import { processUnicodeContent } from '@/components/file-editors';
+import { processUnicodeContent } from '@/components/file-editors/utils';
 
 interface JsonRendererProps {
   content: string;

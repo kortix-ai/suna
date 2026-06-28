@@ -155,7 +155,6 @@ const LEGACY_PALETTE_HIDDEN = new Set([
   'templates',
   'changelog',
   'credits-explained',
-  'secrets-manager',
   'api-keys',
   'llm-providers',
   'open-terminal',
@@ -1106,13 +1105,6 @@ export function CommandPalette() {
     });
   }, [close]);
 
-  const handleGenerateSSHKey = useCallback(() => {
-    close();
-    import('@/stores/ssh-dialog-store').then(({ useSSHDialogStore }) => {
-      useSSHDialogStore.getState().openSSHDialog();
-    });
-  }, [close]);
-
   const handleRestartConfig = useCallback(() => {
     close();
     const serverUrl = useServerStore.getState().getActiveServerUrl();
@@ -1153,7 +1145,6 @@ export function CommandPalette() {
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
-      generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       restartFull: handleRestartFull,
     }),
@@ -1166,7 +1157,6 @@ export function CommandPalette() {
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
-      handleGenerateSSHKey,
       handleRestartConfig,
       handleRestartFull,
     ],

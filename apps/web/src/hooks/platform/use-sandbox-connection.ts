@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { authenticatedFetch, getAuthToken } from "@/lib/auth-token";
+import { getAuthToken } from "@/lib/auth-token";
+import { getSessionHealth, isRuntimeReady } from "@kortix/sdk/session";
 import {
 	incrementSandboxFail,
 	markInitialCheckDone,
@@ -45,31 +46,15 @@ function isImmediateOfflineStatus(status: number): boolean {
 	return status === 502 || status === 503 || status === 504;
 }
 
-type SandboxHealthResponse = {
-	status?: string;
-	runtimeReady?: boolean;
-	version?: string;
-	opencode?: string | boolean;
-	boot_error?: string | null;
-	reason?: string | null;
-	message?: string | null;
-};
-
-function isRuntimeReady(health: SandboxHealthResponse | null): boolean {
-	if (!health) return false;
-	if (health.runtimeReady !== undefined) return health.runtimeReady === true;
-	if (health.opencode !== undefined) return health.opencode === "ok" || health.opencode === true;
-	return health.status !== "starting" && health.status !== "down" && health.status !== "error";
-}
-
 /**
  * useSandboxConnection — monitors the active server's reachability.
  *
- * Key behaviour:
- *   - On first failure, immediately switches to fast polling (3s).
+ * Probes the SDK-owned `/kortix/health` endpoint (`getSessionHealth`) and maps
+ * the result into the connection store. Behaviour:
+ *   - On first failure, immediately switches to fast polling.
  *   - If the user was previously connected, the first failure moves to
  *     "connecting" and the second consecutive failure marks unreachable.
- *   - If it's the first connection, requires 3 failures (same as before).
+ *   - If it's the first connection, requires FAIL_THRESHOLD_FIRST failures.
  */
 export function useSandboxConnection() {
 	const activeServerId = useServerStore((s) => s.activeServerId);
@@ -79,7 +64,6 @@ export function useSandboxConnection() {
 	const abortRef = useRef<AbortController | null>(null);
 	const isMountRef = useRef(true);
 	const prevServerVersionRef = useRef(serverVersion);
-	const portsFetchedRef = useRef(false);
 
 	useEffect(() => {
 		const isFirstMount = isMountRef.current;
@@ -91,7 +75,6 @@ export function useSandboxConnection() {
 			// Full reset — clears wasConnected, failCount, status, everything.
 			// Each instance starts with a clean slate.
 			resetForServerSwitch();
-			portsFetchedRef.current = false;
 		}
 
 		let alive = true;
@@ -120,34 +103,21 @@ export function useSandboxConnection() {
 			try {
 				const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
 
-				const res = await authenticatedFetch(`${url}/kortix/health`, {
-					method: "GET",
-					signal: controller.signal,
-				}, { retryOnAuthError: false });
+				const result = await getSessionHealth(url, { signal: controller.signal });
 				clearTimeout(timer);
 
 				if (!alive) return;
 
-				if (res.status === 401) {
-					// Treat 401 like any other failure — respect the threshold
+				if (result.status === 401 || result.status === 403) {
+					// Treat auth errors like any other failure — respect the threshold
 					// instead of immediately marking unreachable. During transitions
 					// (e.g. provisioning → dashboard), the proxy may briefly return 401
 					// before auth propagates.
-					throw new Error(`Auth error: ${res.status}`);
+					throw new Error(`Auth error: ${result.status}`);
 				}
 
-				if (res.status === 403) {
-					throw new Error(`Auth error: ${res.status}`);
-				}
-
-				if (res.status === 503) {
-					const body = await res.text().catch(() => "");
-					let parsed: any = null;
-					try {
-						parsed = body ? JSON.parse(body) : null;
-					} catch {
-						parsed = null;
-					}
+				if (result.status === 503) {
+					const parsed = result.health;
 					resetSandboxFail();
 					setSandboxStatus("connected");
 					setOpenCodeHealth(
@@ -161,13 +131,13 @@ export function useSandboxConnection() {
 					return;
 				}
 
-				if (!res.ok) {
-					const body = await res.text().catch(() => "");
+				if (!result.ok) {
+					const body = result.body;
 					const offlineSignal =
-						isImmediateOfflineStatus(res.status) ||
+						isImmediateOfflineStatus(result.status) ||
 						/no service is responding|not reachable/i.test(body);
 					const error = new Error(
-						`Sandbox health check failed: ${res.status}${body ? ` ${body.slice(0, 120)}` : ""}`,
+						`Sandbox health check failed: ${result.status}${body ? ` ${body.slice(0, 120)}` : ""}`,
 					) as Error & { immediateOffline?: boolean };
 					error.immediateOffline = offlineSignal;
 					throw error;
@@ -175,7 +145,7 @@ export function useSandboxConnection() {
 
 				resetSandboxFail();
 				setSandboxStatus("connected");
-				const healthData = await res.json().catch(() => null) as SandboxHealthResponse | null;
+				const healthData = result.health;
 				setOpenCodeHealth(
 					isRuntimeReady(healthData),
 					healthData?.version,
@@ -184,29 +154,6 @@ export function useSandboxConnection() {
 				if (healthData?.version) {
 					setSandboxVersion(healthData.version);
 				}
-
-				// Fetch port mappings once on first successful connection.
-				if (!portsFetchedRef.current) {
-					portsFetchedRef.current = true;
-					try {
-						const portsRes = await authenticatedFetch(`${url}/kortix/ports`, {
-							signal: AbortSignal.timeout(8000),
-						}, { retryOnAuthError: false });
-						if (portsRes.ok) {
-							const data = await portsRes.json();
-							if (data.ports && Object.keys(data.ports).length > 0) {
-								const activeId = useServerStore.getState().activeServerId;
-								useServerStore.getState().updateServerSilent(activeId, {
-									mappedPorts: data.ports,
-									provider: "local_docker",
-								});
-							}
-						}
-					} catch {
-						/* non-critical — proxy fallback still works */
-					}
-				}
-
 			} catch (error) {
 				if (!alive) return;
 				if ((error as { immediateOffline?: boolean } | undefined)?.immediateOffline) {
@@ -228,12 +175,16 @@ export function useSandboxConnection() {
 					}
 				}
 			} finally {
+				// Reschedule from finally so EVERY path re-arms the poll loop —
+				// notably the 503 "OpenCode still booting" branch returns early; without
+				// this it stops polling and `healthy` never flips, so useSessionSync and
+				// the SSE (both gated on healthy) never subscribe and a fresh session's
+				// first turn stays invisible until a manual reload.
 				if (alive) {
 					markInitialCheckDone();
+					scheduleNext();
 				}
 			}
-
-			scheduleNext();
 		}
 
 		function scheduleNext() {

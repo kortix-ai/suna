@@ -1,6 +1,6 @@
 // Project access — members, access requests, project invites, and group grants.
 
-import { backendApi } from '../api-client';
+import { backendApi, type ApiClientOptions } from '../api-client';
 import { unwrap, type AccountRole, type ProjectRole } from './shared';
 
 export interface ProjectGroupAccessSource {
@@ -69,10 +69,11 @@ export async function requestProjectAccess(projectId: string, message?: string) 
   );
 }
 
-export async function listProjectAccessRequests(projectId: string) {
+export async function listProjectAccessRequests(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<{ requests: ProjectAccessRequest[] }>(
       `/projects/${projectId}/access-requests`,
+      options,
     ),
   );
 }

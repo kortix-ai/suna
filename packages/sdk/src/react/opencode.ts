@@ -38,7 +38,6 @@ export * from './use-opencode-mcp';
 export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
-export * from './use-model-hydration';
 export * from './use-session-sync';
 // The client health poller (useSandboxConnection) was REMOVED — readiness is now
 // server-truth via `useSession` (/start `stage==='ready'`, seeded into the

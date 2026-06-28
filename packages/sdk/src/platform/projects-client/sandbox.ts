@@ -214,3 +214,9 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
     ),
   );
 }
+
+export async function listProjectSandboxes(projectId: string) {
+  return unwrap(
+    await backendApi.get<SandboxTemplatesResponse>(`/projects/${projectId}/sandboxes`),
+  );
+}

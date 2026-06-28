@@ -23,7 +23,7 @@ import type {
   PermissionRequest,
   QuestionRequest,
   SessionStatus,
-} from '@opencode-ai/sdk/v2/client';
+} from '@kortix/sdk/opencode-client';
 import type {
   MessageWithParts,
   Turn,

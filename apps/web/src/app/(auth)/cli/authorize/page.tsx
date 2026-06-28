@@ -113,7 +113,7 @@ function CliAuthorizeInner() {
       const minted = await withTimeout(
         accountTokensApi.create({ name }),
         MINT_TIMEOUT_MS,
-        'Timed out asking the Kortix API to mint a token. Is the API reachable?',
+        'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
       );
 
       const controller = new AbortController();
@@ -132,7 +132,7 @@ function CliAuthorizeInner() {
         accountTokensApi.revoke(minted.token_id).catch(() => {});
         if ((err as Error).name === 'AbortError') {
           throw new Error(
-            `Timed out delivering the token to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
+            `Timed out delivering the API key to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
           );
         }
         throw new Error(

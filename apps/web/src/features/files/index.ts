@@ -59,8 +59,6 @@ export {
   useFileContent,
   useInvalidateFileContent,
   useFileSearch,
-  useTextSearch,
-  useLssSearch,
   useServerHealth,
   useCurrentProject,
   useFileEventInvalidation,
@@ -73,22 +71,14 @@ export {
   useFileHistory,
   useFileCommitDiff,
   useFileAtCommit,
-  useWorkspaceSearch,
-  searchWorkspaceFiles,
-  rankFileResult,
-  parseFileResults,
   fileListKeys,
   fileContentKeys,
   fileSearchKeys,
   fileHistoryKeys,
-  lssSearchKeys,
 } from './hooks';
 
-export type {
-  FileSearchResult,
-  WorkspaceSearchState,
-  UseWorkspaceSearchOptions,
-} from './hooks';
+// Standalone workspace file search (CMD+K, @-mentions, etc.)
+export { searchWorkspaceFiles } from './search/workspace-search-service';
 
 // Store
 export {

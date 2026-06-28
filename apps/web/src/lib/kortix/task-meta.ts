@@ -12,7 +12,14 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';
+/** Canonical task statuses (inlined; formerly from the /kortix/tasks board API). */
+export type KortixTaskStatus =
+  | 'todo'
+  | 'in_progress'
+  | 'input_needed'
+  | 'awaiting_review'
+  | 'completed'
+  | 'cancelled';
 
 export interface StatusMeta {
   icon: LucideIcon;

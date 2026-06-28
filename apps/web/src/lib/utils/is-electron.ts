@@ -19,7 +19,7 @@ export function isElectron(): boolean {
   if (typeof navigator !== 'undefined' && navigator.userAgent) {
     if (navigator.userAgent.toLowerCase().includes('electron')) return true;
   }
-  // @ts-expect-error - Electron renderer process global
+  // @ts-ignore - Electron renderer process global
   if (window.process && window.process.type === 'renderer') return true;
 
   return false;
