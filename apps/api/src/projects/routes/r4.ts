@@ -1025,9 +1025,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param("projectId");
 
-    // Two valid callers: a project-scoped PAT (dashboard or operator) and the
-    // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
-    // its plan steps without a second token). Each is scoped to one projectId.
+    // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
+    // in-sandbox agent CLI) and the session sandbox's own service credential.
+    // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get("authType") as string | undefined;
     if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
       const accountId = (c as any).get("accountId") as string | undefined;

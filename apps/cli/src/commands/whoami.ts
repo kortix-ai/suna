@@ -13,6 +13,7 @@ selected host.
 Options:
   --host <name>     Probe a specific host (default: active).
   --json            Machine-readable JSON output.
+  --token-only      Print only the active token context.
   -h, --help        Show this help.
 `;
 
@@ -20,14 +21,16 @@ interface WhoamiFlags {
   host?: string;
   json: boolean;
   help: boolean;
+  tokenOnly: boolean;
 }
 
 function parseFlags(argv: string[]): WhoamiFlags {
-  const f: WhoamiFlags = { json: false, help: false };
+  const f: WhoamiFlags = { json: false, help: false, tokenOnly: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '-h' || a === '--help') f.help = true;
     else if (a === '--json') f.json = true;
+    else if (a === '--token-only') f.tokenOnly = true;
     else if (a === '--host') {
       const next = argv[i + 1];
       if (!next) throw new Error('--host requires a value');
@@ -93,7 +96,29 @@ export async function runWhoami(argv: string[]): Promise<number> {
       account_id: active?.account_id ?? auth.account_id ?? null,
       account: active ?? null,
       accounts: me.accounts,
+      token_context: me.token_context ?? null,
     });
+    return 0;
+  }
+
+  if (flags.tokenOnly) {
+    const ctx = me.token_context;
+    const tokenKind = ctx?.session_id
+      ? 'session token'
+      : ctx?.project_id
+        ? 'project token'
+        : ctx?.auth_type || 'user token';
+    process.stdout.write(`\n  ${C.bold}${tokenKind}${C.reset}\n`);
+    if (ctx?.project_id) process.stdout.write(`  ${C.dim}project   ${C.reset}${ctx.project_id}\n`);
+    if (ctx?.session_id) process.stdout.write(`  ${C.dim}session   ${C.reset}${ctx.session_id}\n`);
+    if (ctx?.agent) process.stdout.write(`  ${C.dim}agent     ${C.reset}${ctx.agent}\n`);
+    if (ctx?.connectors != null) {
+      process.stdout.write(`  ${C.dim}connectors ${C.reset}${formatGrant(ctx.connectors)}\n`);
+    }
+    if (ctx?.kortix_cli != null) {
+      process.stdout.write(`  ${C.dim}kortix_cli ${C.reset}${formatGrant(ctx.kortix_cli)}\n`);
+    }
+    process.stdout.write('\n');
     return 0;
   }
 
@@ -113,6 +138,15 @@ export async function runWhoami(argv: string[]): Promise<number> {
     );
   }
   process.stdout.write(`  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`);
+  if (me.token_context?.project_id || me.token_context?.session_id || me.token_context?.agent) {
+    const ctx = me.token_context;
+    const tokenKind = ctx.session_id ? 'session token' : ctx.project_id ? 'project token' : ctx.auth_type || 'token';
+    process.stdout.write(`  ${C.dim}token     ${C.reset}${tokenKind}\n`);
+    if (ctx.project_id) process.stdout.write(`  ${C.dim}project   ${C.reset}${ctx.project_id}\n`);
+    if (ctx.session_id) process.stdout.write(`  ${C.dim}session   ${C.reset}${ctx.session_id}\n`);
+    if (ctx.agent) process.stdout.write(`  ${C.dim}agent     ${C.reset}${ctx.agent}\n`);
+    if (ctx.connectors != null) process.stdout.write(`  ${C.dim}connectors ${C.reset}${formatGrant(ctx.connectors)}\n`);
+  }
   const totalHosts = listHosts().length;
   if (totalHosts > 1) {
     process.stdout.write(
@@ -121,4 +155,8 @@ export async function runWhoami(argv: string[]): Promise<number> {
   }
   process.stdout.write('\n');
   return 0;
+}
+
+function formatGrant(value: string[] | 'all'): string {
+  return value === 'all' ? 'all' : value.length ? value.join(', ') : 'none';
 }

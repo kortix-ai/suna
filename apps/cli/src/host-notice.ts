@@ -14,7 +14,11 @@ export interface HostNotice {
 
 function hostAuthState(host: Host, mode: 'env' | 'stored'): string {
   if (!host.token) return 'not logged in';
-  if (mode === 'env') return 'authenticated (project token)';
+  if (mode === 'env') {
+    return process.env.KORTIX_SESSION_ID
+      ? 'authenticated (session token)'
+      : 'authenticated (project token)';
+  }
   if (host.user_email || host.user_id) return `${host.user_email || host.user_id} (user)`;
   return 'authenticated';
 }

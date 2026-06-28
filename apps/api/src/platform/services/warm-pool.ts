@@ -34,6 +34,7 @@ import { getProvider } from '../providers';
 import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
+import { resolveAgentGrant } from '../../projects/agents';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
@@ -504,12 +505,20 @@ export interface ClaimSpareForSessionInput {
   accountId: string;
   projectId: string;
   userId: string;
+  agentName: string;
   provider: SandboxProviderName;
   /** Sandbox template the session asked for. Only a spare built from the SAME
    *  template is claimable; defaults to the platform default template. */
   slug?: string;
   /** The exact env the cold path would inject (buildSessionSandboxEnvVars output). */
   builtEnvVars: Record<string, string>;
+  gitProject: {
+    projectId: string;
+    repoUrl: string;
+    defaultBranch: string;
+    manifestPath: string;
+    gitAuthToken: string | null;
+  };
   sessionMetadata: Record<string, unknown>;
   /** Project metadata, used for per-project experimental gates. */
   projectMetadata?: unknown;
@@ -532,7 +541,18 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
     // which stays the spare's park key).
     let executorToken: string | null = null;
     try {
-      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}` })).secretKey;
+      const agentGrant = await resolveAgentGrant(input.agentName, input.gitProject).catch((err) => {
+        console.warn(`[warm-pool] failed to resolve agent grant for ${input.projectId}:`, err instanceof Error ? err.message : err);
+        return null;
+      });
+      executorToken = (await createAccountToken({
+        accountId: input.accountId,
+        userId: input.userId,
+        projectId: input.projectId,
+        sessionId: input.sessionId,
+        agentGrant,
+        name: `Executor Session ${input.sessionId.slice(0, 8)}`,
+      })).secretKey;
     } catch (err) {
       console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
     }

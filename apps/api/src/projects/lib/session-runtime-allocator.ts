@@ -69,9 +69,17 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
           accountId: input.accountId,
           projectId: input.projectId,
           userId: input.userId,
+          agentName: input.agentName,
           provider: input.providerName,
           slug: input.sandboxSlug,
           builtEnvVars: extraEnvVars,
+          gitProject: {
+            projectId: input.projectId,
+            repoUrl: input.project.repoUrl,
+            defaultBranch: input.project.defaultBranch,
+            manifestPath: input.project.manifestPath,
+            gitAuthToken: null,
+          },
           sessionMetadata: input.sessionMetadata,
           projectMetadata: input.project.metadata,
         });

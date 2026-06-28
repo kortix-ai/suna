@@ -99,6 +99,14 @@ export const MeSchema = z
   .object({
     user_id: z.string(),
     email: z.string(),
+    token_context: z.object({
+      auth_type: z.string().nullable(),
+      project_id: z.string().nullable(),
+      session_id: z.string().nullable(),
+      agent: z.string().nullable(),
+      connectors: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+      kortix_cli: z.union([z.literal('all'), z.array(z.string())]).nullable(),
+    }).optional(),
     accounts: z.array(
       z.object({
         account_id: z.string(),

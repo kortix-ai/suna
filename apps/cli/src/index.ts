@@ -54,6 +54,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
+  { name: 'token', blurb: 'Show the active token context (project/session/agent grants)' },
   { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
   { name: 'projects', args: '<subcommand>', blurb: 'List, link, open Kortix cloud projects' },
   { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
@@ -157,6 +158,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'whoami') {
     return runWhoami(argv.slice(1));
+  }
+  if (argv[0] === 'token') {
+    return runWhoami(['--token-only', ...argv.slice(1)]);
   }
   if (argv[0] === 'projects') {
     return runProjects(argv.slice(1));

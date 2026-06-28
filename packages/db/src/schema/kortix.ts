@@ -1409,8 +1409,8 @@ export const accountTokens = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     /** When non-null, this token is scoped to a single project — it
      *  can only call `/v1/projects/<project_id>/*` routes and is
-     *  rejected by account-level handlers. Used for sandbox-injected
-     *  CLI tokens. */
+     *  rejected by account-level handlers. Session executor tokens also set
+     *  sessionId + agentGrant. */
     projectId: uuid('project_id').references(() => projects.projectId, {
       onDelete: 'cascade',
     }),
@@ -1424,9 +1424,10 @@ export const accountTokens = kortixSchema.table(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     /** Per-agent authorization grant for a sandbox session token: which Kortix
      *  CLI/API actions + connector profiles the running agent may use. Resolved
-     *  from kortix.toml's [[agents]] overlay at session birth (= declared ∩ the
-     *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
-     *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
+     *  from kortix.toml's [[agents]] overlay at session birth. The launching
+     *  user's role is still enforced by route IAM, so effective access is
+     *  user role ∩ agentGrant. Null for non-agent tokens (laptop CLI PATs,
+     *  etc.) — which keep role-only access. */
     agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
     /** Session this token belongs to (sandbox executor token, session_id =
      *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —

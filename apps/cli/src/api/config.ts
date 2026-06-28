@@ -167,8 +167,8 @@ export function deleteConfig(): void {
 /**
  * Resolve the active Host for the current invocation. Priority:
  *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted),
- *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the project-scoped
- *      session PAT the platform injects into a sandbox. (The SANDBOX credential
+ *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the session-scoped
+ *      executor PAT the platform injects into a sandbox. (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
  *      authenticate against the project-scoped API routes the CLI calls.)

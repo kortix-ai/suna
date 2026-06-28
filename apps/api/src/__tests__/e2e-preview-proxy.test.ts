@@ -30,6 +30,7 @@ let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
+  agentName: 'default',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
   provider: 'daytona',
@@ -105,7 +106,7 @@ mock.module('../shared/db', () => {
         // { accountRole } from accountUser/account_members depending on the path.
         const fieldKeys = fields ? Object.keys(fields) : [];
         const isSandboxQuery = fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
@@ -599,13 +600,61 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
+      llmGatewayDenyEnv: '',
+      llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      refreshModels: false,
+      refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+  });
+
+  test('rejects prompt_async agent switches because executor grants are session-token bound', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [{ status: 204, body: '' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'agent switch requires a new session',
+      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      expected_agent: 'default',
+      requested_agent: 'reviewer',
+    });
+    expect(mockFetchCalls).toHaveLength(0);
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
