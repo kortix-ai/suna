@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
@@ -432,15 +433,21 @@ export async function forwardToSandbox(
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(body, incomingHeaders);
         const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-        // Block ONLY a genuine switch between two different concrete agents.
-        if (isProhibitedAgentSwitch(requestedAgent, sessionAgent)) {
+        // Agent-lock enforcement is OFF by default — in-session agent switching is
+        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
+        // explicitly enabled (a future per-agent executor-token auth model; see the
+        // config flag's TODO). Until then a prompt may freely run a different agent.
+        if (
+          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
+          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
+        ) {
           return agentSwitchConflictResponse(sessionAgent, requestedAgent!);
         }
-        // On a non-concrete ('default') session, never forward an explicit agent:
-        // OpenCode resolves its own `default_agent` — the exact agent the session
-        // booted and the executor token was minted for — so the box always runs
-        // the right agent regardless of which concrete name the client echoed.
-        if (sessionAgent === DEFAULT_AGENT_SENTINEL && requestedAgent) {
+        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
+        // `default_agent` (the real default the session booted with). A *concrete*
+        // requested agent is forwarded untouched so the user can switch agents
+        // within a session.
+        if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
         try {
