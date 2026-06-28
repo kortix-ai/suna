@@ -12,11 +12,11 @@ import { accountMembers, projectMembers, projectSessions, projects } from '@kort
 import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { maxProjectsForAccount } from '../../shared/account-limits';
+import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/account-limits';
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 
-// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
+// Enforce the per-account project cap (free → 3, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
 // project. `repoUrl`, when supplied, makes re-linking a repo the account already
 // owns idempotent — that's an update, not a new project, so it never trips the
@@ -49,8 +49,8 @@ export async function enforceProjectQuota(
     return c.json(
       {
         error:
-          limit === 1
-            ? 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.'
+          limit === FREE_TIER_PROJECT_LIMIT
+            ? `Free accounts are limited to ${limit} projects. Upgrade to a paid plan to create more.`
             : `This account has reached its limit of ${limit} projects.`,
         code: 'project_limit_reached',
         limit,

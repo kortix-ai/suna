@@ -114,8 +114,8 @@ export function UpgradePlansModal({ open, onOpenChange, accountState }: UpgradeP
             )}
           </ModalTitle>
           <ModalDescription className="text-base">
-            Simple per-seat pricing. Free includes 500 credits each month for sandbox compute;
-            upgrade when you want managed models and 2,000 pooled usage credits per seat.
+            Simple per-seat pricing. Free includes 200 credits each month for sandbox compute;
+            upgrade when you want the latest AI models and 2,500 pooled credits per seat.
           </ModalDescription>
         </ModalHeader>
 

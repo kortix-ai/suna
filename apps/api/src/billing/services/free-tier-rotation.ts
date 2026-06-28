@@ -6,7 +6,7 @@ import {
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { resetExpiringCredits } from './credits';
 
-const FREE_TIER_MONTHLY_CREDITS_USD = 5;
+const FREE_TIER_MONTHLY_CREDITS_USD = 2;
 
 function rotationMonth(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
