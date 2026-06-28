@@ -601,6 +601,7 @@ jobs:
       CLUSTER: kortix-prod-eks
       NAMESPACE: kortix-prod
       APP: kortix-api
+      ARGO_APP: kortix-prod
       API_HOST: api-eks.kortix.com
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
@@ -623,6 +624,37 @@ jobs:
       - name: Update kubeconfig
         if: steps.guard.outputs.exists == 'true'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Self-heal: a forward release OWNS prod, so the Argo app must track the
+      # `prod` branch. A break-glass rollback can repoint its targetRevision at a
+      # one-off `rollback/*` branch to deploy without merging to prod; if never
+      # pointed back, EVERY later release silently stalls in the rollout wait below
+      # (Argo keeps syncing the rollback branch, so the image never reaches
+      # :VERSION). Assert `prod` and repoint if drifted. Best-effort: never fail the
+      # deploy on this (the wait is the backstop). See docs/runbooks + kortix-rollback.
+      - name: Ensure Argo app tracks 'prod' (recover a stranded rollback repoint)
+        if: steps.guard.outputs.exists == 'true'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          cur="$(kubectl -n argocd get application "$ARGO_APP" -o json 2>/dev/null \
+            | jq -r '[(.spec.sources // [.spec.source])[].targetRevision] | map(select(.!=null)) | unique | join(",")')"
+          if [ -z "$cur" ]; then
+            echo "::warning::Could not read Argo app $ARGO_APP — skipping self-heal; the rollout wait is the backstop."; exit 0
+          fi
+          if [ "$cur" = "prod" ]; then echo "✓ Argo app $ARGO_APP tracks 'prod'."; exit 0; fi
+          echo "::warning::Argo app $ARGO_APP was tracking '$cur' (not 'prod') — repointing to 'prod' (stranded-rollback recovery)."
+          n="$(kubectl -n argocd get application "$ARGO_APP" -o json | jq '(.spec.sources // []) | length')"
+          if [ "$n" -gt 0 ]; then
+            for i in $(seq 0 $((n-1))); do
+              kubectl -n argocd patch application "$ARGO_APP" --type json \
+                -p "[{\"op\":\"replace\",\"path\":\"/spec/sources/$i/targetRevision\",\"value\":\"prod\"}]"
+            done
+          else
+            kubectl -n argocd patch application "$ARGO_APP" --type merge \
+              -p '{"spec":{"source":{"targetRevision":"prod"}}}'
+          fi
+          kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
 
       # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
       # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
@@ -766,6 +798,7 @@ jobs:
       CLUSTER: kortix-prod-eks
       NAMESPACE: kortix-prod
       APP: kortix-gateway
+      ARGO_APP: kortix-gateway-prod
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
       - name: Configure AWS credentials (OIDC)
@@ -787,6 +820,33 @@ jobs:
       - name: Update kubeconfig
         if: steps.guard.outputs.exists == 'true'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Self-heal: assert the Argo app tracks `prod` and repoint if a break-glass
+      # rollback left it on a `rollback/*` branch (else the rollout wait stalls
+      # forever). Best-effort; the wait is the backstop. See the API job + kortix-rollback.
+      - name: Ensure Argo app tracks 'prod' (recover a stranded rollback repoint)
+        if: steps.guard.outputs.exists == 'true'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          cur="$(kubectl -n argocd get application "$ARGO_APP" -o json 2>/dev/null \
+            | jq -r '[(.spec.sources // [.spec.source])[].targetRevision] | map(select(.!=null)) | unique | join(",")')"
+          if [ -z "$cur" ]; then
+            echo "::warning::Could not read Argo app $ARGO_APP — skipping self-heal; the rollout wait is the backstop."; exit 0
+          fi
+          if [ "$cur" = "prod" ]; then echo "✓ Argo app $ARGO_APP tracks 'prod'."; exit 0; fi
+          echo "::warning::Argo app $ARGO_APP was tracking '$cur' (not 'prod') — repointing to 'prod' (stranded-rollback recovery)."
+          n="$(kubectl -n argocd get application "$ARGO_APP" -o json | jq '(.spec.sources // []) | length')"
+          if [ "$n" -gt 0 ]; then
+            for i in $(seq 0 $((n-1))); do
+              kubectl -n argocd patch application "$ARGO_APP" --type json \
+                -p "[{\"op\":\"replace\",\"path\":\"/spec/sources/$i/targetRevision\",\"value\":\"prod\"}]"
+            done
+          else
+            kubectl -n argocd patch application "$ARGO_APP" --type merge \
+              -p '{"spec":{"source":{"targetRevision":"prod"}}}'
+          fi
+          kubectl -n argocd annotate application "$ARGO_APP" argocd.argoproj.io/refresh=hard --overwrite || true
 
       # Code is the first-class copy: re-apply the committed Argo CD Application so
       # the live app always tracks what the repo says (path / targetRevision /

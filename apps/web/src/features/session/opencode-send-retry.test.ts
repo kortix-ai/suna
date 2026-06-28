@@ -80,9 +80,24 @@ describe('getSendRetryDelayMs', () => {
       delays.push(delay);
       if (attempt > 20) throw new Error('retry schedule did not terminate');
     }
-    // 7 retries → 8 total attempts, covering ~16s of cold boot.
-    expect(delays.length).toBe(7);
-    expect(delays.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(15000);
+    // 10 retries → 11 total attempts, covering ~29s of cold boot / wake.
+    expect(delays.length).toBe(10);
+    expect(delays.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(25000);
+  });
+
+  test('any 503 uses the boot/wake window even without a tidy message', () => {
+    // A 503 from the sandbox proxy always means "not ready / waking", so it must
+    // get the long boot window — not the short transient one — so a wake-from-
+    // auto-stop send lands instead of reverting a prompt that then runs.
+    const opaque = {}; // SDK error whose body didn't carry a message
+    const delays: number[] = [];
+    for (let attempt = 1; ; attempt++) {
+      const delay = getSendRetryDelayMs(attempt, 503, opaque);
+      if (delay === null) break;
+      delays.push(delay);
+      if (attempt > 20) throw new Error('retry schedule did not terminate');
+    }
+    expect(delays.length).toBe(10);
   });
 
   test('retries a generic transient 5xx, but only briefly', () => {
@@ -90,7 +105,7 @@ describe('getSendRetryDelayMs', () => {
     expect(getSendRetryDelayMs(1, 502, err)).toBe(400);
     expect(getSendRetryDelayMs(2, 502, err)).toBe(1000);
     expect(getSendRetryDelayMs(3, 502, err)).toBe(2000);
-    // Generic transient window exhausts after 3 retries (4 attempts total).
+    // Generic transient window (a non-503 5xx) exhausts after 3 retries.
     expect(getSendRetryDelayMs(4, 502, err)).toBeNull();
   });
 
