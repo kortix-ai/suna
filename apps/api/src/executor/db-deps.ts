@@ -77,6 +77,11 @@ import type {
 } from './router';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
 
 type ConnectorRow = typeof executorConnectors.$inferSelect;
 
@@ -287,6 +292,7 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
  * unlock for using the Executor locally: same gateway, same authz, any principal.
  */
 async function resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null> {
+  if (!isUuid(projectId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
   const tokenProjectId = c.get('tokenProjectId') as string | undefined;
@@ -371,6 +377,7 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
 }
 
 async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+  if (!isUuid(projectId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
   const [proj] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
