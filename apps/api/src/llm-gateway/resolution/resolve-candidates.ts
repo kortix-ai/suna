@@ -44,8 +44,12 @@ export async function resolveCandidates(
   // The gateway package normally applies pickAutoModel before calling this hook.
   // Keep the same fallback here so a stale standalone gateway that asks the API
   // to resolve raw "auto" still gets a concrete upstream instead of 400ing —
-  // tier-aware, so a free account's raw "auto" resolves to a free model.
-  const effectiveModel = pickAutoModel(model, {}, { free: !!principal.freeModelsOnly }) ?? model;
+  // tier- and default-aware (the resolved default on the principal wins).
+  const effectiveModel =
+    pickAutoModel(model, {}, {
+      free: !!principal.freeModelsOnly,
+      defaultModel: principal.defaultModel,
+    }) ?? model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {

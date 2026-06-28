@@ -16,6 +16,7 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
@@ -70,11 +71,25 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
  * internal billing is off (self-host) every account sees the full lineup.
  */
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { ...principal, freeModelsOnly: false };
+  const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
+    ? await (async () => {
+        const tier = await getCachedAccountTier(principal.accountId);
+        return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+      })()
+    : { ...principal, freeModelsOnly: false };
+  // Resolve the account/project/agent-configured default model once, here, so it
+  // travels with the principal (including across the RPC boundary to the
+  // standalone pod) and `auto` resolves to it. freeModelsOnly is already set
+  // above, so the resolver can drop a managed default for free tier. Never let a
+  // resolution hiccup break auth for every LLM call — degrade to the platform
+  // target (undefined) on error.
+  let defaultModel: string | undefined;
+  try {
+    defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  } catch {
+    defaultModel = undefined;
   }
-  const tier = await getCachedAccountTier(principal.accountId);
-  return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+  return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */

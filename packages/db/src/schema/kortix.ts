@@ -3126,3 +3126,43 @@ export const projectSecretGrantsRelations = relations(projectSecretGrants, ({ on
     references: [projectSecrets.secretId],
   }),
 }));
+
+/**
+ * Reusable default-model preferences, keyed by account. The gateway resolves an
+ * incoming `auto` against these (most-specific scope wins). Per-trigger and
+ * per-agent *manifest* models live in kortix.toml; this table holds the
+ * dynamic, SDK/UI-set defaults that have no natural home in committed code.
+ *
+ * scope / scope_key:
+ *   - 'account' → scope_key '' (the account/personal default)
+ *   - 'project' → scope_key = projectId (overrides account for that project)
+ *   - 'agent'   → scope_key = agentName (overrides project for that agent; a
+ *                 dynamic override of the agent's kortix.toml [[agents]].model)
+ *
+ * `model` is the gateway wire model (bare managed id like 'glm-5.2', BYOK
+ * 'provider/model', or 'codex/…'). Never 'auto' — that's the synthetic resolved
+ * here. Entitlement is enforced by the gateway, not by this table.
+ */
+export const accountModelPreferences = kortixSchema.table(
+  'account_model_preferences',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    scopeKey: text('scope_key').default('').notNull(),
+    model: varchar('model', { length: 128 }).notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_model_preferences_account').on(table.accountId),
+    uniqueIndex('idx_account_model_preferences_scope').on(
+      table.accountId,
+      table.scope,
+      table.scopeKey,
+    ),
+  ],
+);

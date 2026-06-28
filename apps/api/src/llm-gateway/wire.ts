@@ -23,10 +23,14 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     // One gateway instance per process — its circuit breakers are long-lived.
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
-      // Tier-aware: a free account's `auto` resolves to a free model, not a paid
-      // one it has no upstream for. freeModelsOnly is set on the principal at auth.
+      // Tier-aware + default-aware: an account/project/agent default (resolved at
+      // auth, on the principal) wins; else a free account's `auto` resolves to a
+      // free model, not a paid one it has no upstream for.
       autoRouter: (model, body, principal) =>
-        pickAutoModel(model, body, { free: !!principal.freeModelsOnly }),
+        pickAutoModel(model, body, {
+          free: !!principal.freeModelsOnly,
+          defaultModel: principal.defaultModel,
+        }),
     });
     const llm = new Hono();
     llm.get('/health', (c) =>

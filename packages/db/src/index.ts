@@ -171,6 +171,8 @@ export {
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
   projectSecretGrantsRelations,
+  // Model defaults
+  accountModelPreferences,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
 

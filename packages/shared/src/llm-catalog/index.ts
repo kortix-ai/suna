@@ -260,10 +260,14 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 export function pickAutoModel(
   model: string,
   body: Record<string, unknown>,
-  opts?: { free?: boolean },
+  opts?: { free?: boolean; defaultModel?: string },
 ): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
     return null;
+  // An account/project/agent-configured default (already resolved + entitlement-
+  // checked upstream — the resolver drops a managed default for free tier) wins
+  // over the platform target.
+  if (opts?.defaultModel) return opts.defaultModel;
   const hasImage = requestHasImage(body);
   if (opts?.free) {
     return hasImage ? AUTO_FREE_VISION_MODEL : AUTO_FREE_MODEL;

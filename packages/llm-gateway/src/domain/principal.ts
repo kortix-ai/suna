@@ -12,6 +12,11 @@ export interface AuthedPrincipal {
   // internal billing on). Drives both the served-catalog filter and the `auto`
   // router so a free user only ever sees and routes to free models.
   freeModelsOnly?: boolean;
+  // The account/project/agent-configured default model, resolved once at
+  // authentication (see apps/api llm-gateway/resolution/default-model). `auto`
+  // resolves to this; undefined → the platform target. Travels with the
+  // principal so it survives the RPC hop to the standalone gateway pod.
+  defaultModel?: string;
 }
 
 export type BillingMode = 'credits' | 'platform-fee' | 'none';
