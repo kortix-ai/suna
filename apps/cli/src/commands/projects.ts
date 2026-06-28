@@ -1,6 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { loadAuth } from '../api/auth.ts';
-import { activeHostName } from '../api/config.ts';
+import {
+  activeAccount,
+  activeHostName,
+  clearDefaultProject,
+  defaultProject,
+  setActiveAccount,
+  setDefaultProject,
+} from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { confirm } from '../prompts.ts';
 import {
@@ -14,19 +21,27 @@ import { selectFromList } from '../tui-select.ts';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
-import type { ProjectSummary } from '../api/types.ts';
+import type { Auth } from '../api/auth.ts';
+import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 
 const HELP = `Usage: kortix projects <subcommand>
 
 Subcommands:
-  ls                   List projects in your active account (--json)
-  info [<id>]          Show one project (defaults to the linked one) (--json)
+  ls [--all]           List projects in the active account (--all spans every
+                       account, grouped). (--json)
+  info [<id>]          Show one project (defaults to the linked/default) (--json)
+  use [<id>]           Set the global DEFAULT project (interactive if omitted).
+                       Switches the active account to the project's account.
+  unset                Clear the global default project.
   link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
   rm [<id>]            Archive a project (defaults to the linked one).
                        --purge also deletes its managed git repo (irreversible).
                        -y / --yes skips the confirmation.
+
+A directory link (.kortix/link.json) always wins over the default; the
+default is what commands use anywhere else on your machine.
 
 Run \`kortix projects <subcommand> --help\` for options.
 `;
@@ -42,14 +57,22 @@ export async function runProjects(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list': {
-      const json = takeFlagBool([...rest], ['--json']);
-      return projectsLs(json);
+      const restCopy = [...rest];
+      const all = takeFlagBool(restCopy, ['--all', '-a']);
+      const json = takeFlagBool(restCopy, ['--json']);
+      return projectsLs(json, all);
     }
     case 'info': {
       const restCopy = [...rest];
       const json = takeFlagBool(restCopy, ['--json']);
       return projectsInfo(restCopy[0], json);
     }
+    case 'use':
+    case 'default':
+      return projectsUse(rest.find((a) => !a.startsWith('-')));
+    case 'unset':
+    case 'clear':
+      return projectsUnset();
     case 'link':
       return projectsLink(rest[0]);
     case 'unlink':
@@ -74,11 +97,21 @@ function requireAuth() {
   return auth;
 }
 
-async function projectsLs(json = false): Promise<number> {
+/** The account `projects ls` should be scoped to: the active account, falling
+ *  back to the host's stored account id. Undefined lets the server pick its
+ *  earliest-joined-account default (pre-feature behavior). */
+function scopeAccountId(auth: Auth): string | undefined {
+  return activeAccount()?.id ?? auth.account_id ?? undefined;
+}
+
+async function projectsLs(json = false, all = false): Promise<number> {
   const auth = requireAuth();
   if (!auth) return 1;
-  const client = clientFromAuth(auth);
+  if (all) return projectsLsAll(auth, json);
 
+  // Scope to the active account so this lists exactly that account's projects
+  // (not the server's earliest-joined-account default).
+  const client = clientFromAuth(auth, { accountId: scopeAccountId(auth) });
   let projects: ProjectSummary[];
   try {
     projects = await client.get<ProjectSummary[]>('/projects');
@@ -91,27 +124,124 @@ async function projectsLs(json = false): Promise<number> {
     return 0;
   }
 
+  const acct = activeAccount();
+  const linked = loadLink()?.project_id;
+  const def = defaultProject()?.project_id;
+
+  process.stdout.write('\n');
+  if (acct) {
+    const label = acct.name
+      ? `${C.bold}${acct.name}${C.reset} ${C.faded}(${acct.slug})${C.reset}`
+      : `${C.bold}${acct.slug}${C.reset}`;
+    process.stdout.write(`  ${C.dim}account  ${C.reset}${label}\n\n`);
+  }
+
   if (projects.length === 0) {
-    process.stdout.write(`${C.dim}No projects in this account.${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}No projects in this account.${C.reset}\n\n`);
     return 0;
   }
 
+  renderProjectTable(projects, { linked, def });
+  process.stdout.write(
+    `\n  ${C.dim}${projects.length} project${projects.length === 1 ? '' : 's'}` +
+      `${acct ? ` in ${acct.name || acct.slug}` : ''} · spans all accounts: ${C.reset}` +
+      `${C.cyan}kortix projects ls --all${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+async function projectsLsAll(auth: Auth, json = false): Promise<number> {
+  let me: MeResponse;
+  try {
+    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+  } catch (err) {
+    return surface(err);
+  }
+
+  const activeId = activeAccount()?.id ?? auth.account_id;
   const linked = loadLink()?.project_id;
+  const def = defaultProject()?.project_id;
+
+  const sections: { account: AccountMembership; projects: ProjectSummary[] }[] = [];
+  for (const a of me.accounts) {
+    let projects: ProjectSummary[] = [];
+    try {
+      projects = await clientFromAuth(auth, { accountId: a.account_id }).get<ProjectSummary[]>(
+        '/projects',
+      );
+    } catch {
+      /* skip accounts we can't read; leave the section empty */
+    }
+    sections.push({ account: a, projects });
+  }
+
+  if (json) {
+    emitJson(
+      sections.map((s) => ({
+        account: {
+          account_id: s.account.account_id,
+          slug: s.account.slug,
+          name: s.account.name,
+          role: s.account.role,
+          active: s.account.account_id === activeId,
+        },
+        projects: s.projects,
+      })),
+    );
+    return 0;
+  }
+
+  let total = 0;
+  for (const s of sections) {
+    const activeMark =
+      s.account.account_id === activeId ? `   ${C.green}← active${C.reset}` : '';
+    process.stdout.write('\n');
+    process.stdout.write(
+      `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
+    );
+    if (s.projects.length === 0) {
+      process.stdout.write(`  ${C.dim}— no projects${C.reset}\n`);
+      continue;
+    }
+    renderProjectTable(s.projects, { linked, def });
+    total += s.projects.length;
+  }
+  process.stdout.write(
+    `\n  ${C.dim}${total} project${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
+      `account${me.accounts.length === 1 ? '' : 's'}${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+/** Render a project table. `●` marks the global default, `◆` the cwd's
+ *  directory link; a trailing tag spells it out. */
+function renderProjectTable(
+  projects: ProjectSummary[],
+  marks: { linked?: string; def?: string },
+): void {
   const nameW = Math.max(...projects.map((p) => p.name.length), 4);
-  process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}${pad('NAME', nameW)}   ${pad('REPO', 40)}   BRANCH    UPDATED${C.reset}\n`,
   );
   for (const p of projects) {
-    const marker = p.project_id === linked ? `${C.green}● ${C.reset}` : '  ';
+    const isDefault = p.project_id === marks.def;
+    const isLinked = p.project_id === marks.linked;
+    const marker = isDefault
+      ? `${C.green}● ${C.reset}`
+      : isLinked
+        ? `${C.cyan}◆ ${C.reset}`
+        : '  ';
+    const tag = isDefault
+      ? `   ${C.green}default${C.reset}`
+      : isLinked
+        ? `   ${C.cyan}linked${C.reset}`
+        : '';
     const repo = trimMid(p.repo_url, 40);
     const updated = formatRelative(p.updated_at);
     process.stdout.write(
-      `${marker}${pad(p.name, nameW)}   ${pad(repo, 40)}   ${pad(p.default_branch, 8)}  ${C.faded}${updated}${C.reset}\n`,
+      `${marker}${pad(p.name, nameW)}   ${pad(repo, 40)}   ${pad(p.default_branch, 8)}  ${C.faded}${updated}${C.reset}${tag}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}${projects.length} project${projects.length === 1 ? '' : 's'}${C.reset}\n\n`);
-  return 0;
 }
 
 async function projectsInfo(arg?: string, json = false): Promise<number> {
@@ -144,6 +274,99 @@ async function projectsInfo(arg?: string, json = false): Promise<number> {
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n\n`);
+  return 0;
+}
+
+async function projectsUse(arg?: string): Promise<number> {
+  const auth = requireAuth();
+  if (!auth) return 1;
+
+  let target: ProjectSummary | null = null;
+  if (arg) {
+    // An explicit id may live in any account — resolve it unscoped.
+    try {
+      target = await clientFromAuth(auth).get<ProjectSummary>(`/projects/${arg}`);
+    } catch (err) {
+      return surface(err);
+    }
+  } else {
+    // Pick from the active account's projects.
+    let list: ProjectSummary[];
+    try {
+      list = await clientFromAuth(auth, { accountId: scopeAccountId(auth) }).get<ProjectSummary[]>(
+        '/projects',
+      );
+    } catch (err) {
+      return surface(err);
+    }
+    if (list.length === 0) {
+      process.stderr.write(
+        `${status.err('No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
+      );
+      return 1;
+    }
+    const picked = await selectFromList<ProjectSummary>({
+      title: 'Set the global default project',
+      items: list.map((p) => ({ value: p, label: p.name, sublabel: p.project_id })),
+    });
+    if (!picked) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+    target = picked;
+  }
+
+  if (!target) {
+    process.stderr.write(`${status.err('Could not resolve a project.')}\n`);
+    return 1;
+  }
+
+  // A default project pins its account. If it lives in a different account
+  // than the active one, switch the active account to it (resolving the
+  // account's display name best-effort) before recording the default.
+  const switched = target.account_id !== (activeAccount()?.id ?? auth.account_id);
+  let accountLabel = target.account_id.slice(0, 8);
+  if (switched) {
+    let slug = target.account_id.slice(0, 8);
+    let name: string | undefined;
+    try {
+      const me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+      const m = me.accounts.find((a) => a.account_id === target!.account_id);
+      if (m) {
+        slug = m.slug;
+        name = m.name;
+      }
+    } catch {
+      /* fall back to the truncated id */
+    }
+    setActiveAccount({ id: target.account_id, slug, name });
+    accountLabel = name ? `${name} (${slug})` : slug;
+  }
+  setDefaultProject({
+    project_id: target.project_id,
+    account_id: target.account_id,
+    name: target.name,
+  });
+
+  process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
+  if (switched) {
+    process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
+  }
+  process.stdout.write(
+    `  ${C.dim}Used by connectors/executor/sessions when a directory isn't linked.${C.reset}\n`,
+  );
+  return 0;
+}
+
+async function projectsUnset(): Promise<number> {
+  const existing = defaultProject();
+  if (clearDefaultProject()) {
+    process.stdout.write(
+      `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
+    );
+  } else {
+    process.stdout.write(`${C.dim}No default project set. Nothing to do.${C.reset}\n`);
+  }
   return 0;
 }
 

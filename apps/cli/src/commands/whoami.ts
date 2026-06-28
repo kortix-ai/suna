@@ -1,5 +1,5 @@
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
-import { activeHostName, listHosts } from '../api/config.ts';
+import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
@@ -86,6 +86,9 @@ export async function runWhoami(argv: string[]): Promise<number> {
 
   const resolvedHost = flags.host ?? activeHostName();
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
+  // Default project is read from the active host only (a --host probe shows
+  // the other host's identity, not this machine's active default).
+  const def = flags.host ? null : defaultProject();
 
   if (flags.json) {
     emitJson({
@@ -97,6 +100,7 @@ export async function runWhoami(argv: string[]): Promise<number> {
       account: active ?? null,
       accounts: me.accounts,
       token_context: me.token_context ?? null,
+      default_project: def,
     });
     return 0;
   }
@@ -134,7 +138,12 @@ export async function runWhoami(argv: string[]): Promise<number> {
   }
   if (me.accounts.length > 1) {
     process.stdout.write(
-      `  ${C.dim}${me.accounts.length} accounts total — target one with ${C.reset}${C.cyan}kortix ship --account <slug>${C.reset}\n`,
+      `  ${C.dim}${me.accounts.length} accounts total — switch with ${C.reset}${C.cyan}kortix accounts use <slug>${C.reset}\n`,
+    );
+  }
+  if (def) {
+    process.stdout.write(
+      `  ${C.dim}project   ${C.reset}${def.name || def.project_id} ${C.faded}(default)${C.reset}\n`,
     );
   }
   process.stdout.write(`  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`);
