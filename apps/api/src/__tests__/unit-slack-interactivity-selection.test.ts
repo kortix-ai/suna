@@ -22,7 +22,12 @@ mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
-mock.module('../channels/slack-api', () => ({ updateMessage: async () => {} }));
+mock.module('../channels/slack-api', () => ({
+  openDmChannel: async () => 'D1',
+  postBlocks: async () => 'ts',
+  postEphemeral: async () => true,
+  updateMessage: async () => {},
+}));
 
 const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];

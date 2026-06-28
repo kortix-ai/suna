@@ -335,7 +335,7 @@ export async function createProjectSession(input: {
    * project, not to the stand-in owner they're attributed to, and would
    * otherwise be invisible to everyone but the account's first owner.
    */
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
   const visibility = input.visibility ?? 'private';

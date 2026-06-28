@@ -2,11 +2,16 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
+import { authorize } from '../../iam';
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { loadSlackTokenForProject } from '../install-store';
 import { openDmChannel, postBlocks, postEphemeral } from '../slack-api';
+import { createPendingSlackAuthMessage } from './auth-resume';
 import { buildSlackLoginUrl } from './login';
 import { dashboardBase } from './util';
+import type { SlackEnvelope, SlackEvent } from './types';
 
 const PLATFORM = 'slack';
 
@@ -15,12 +20,13 @@ export type SlackActor =
   | { reason: 'unlinked' | 'not_member' };
 
 // Resolve the Slack sender to the Kortix user they linked via `/login`, and
-// confirm that user is a member of the project's account. This is the
-// authoritative security gate: no live, member-backed mapping → no run.
+// confirm that user may start work in this project. This is the authoritative
+// security gate: no live, project-write-capable mapping → no run.
 export async function resolveSlackActor(
   teamId: string,
   slackUserId: string,
   accountId: string,
+  projectId: string,
 ): Promise<SlackActor> {
   if (!teamId || !slackUserId) return { reason: 'unlinked' };
 
@@ -39,6 +45,13 @@ export async function resolveSlackActor(
   if (!link) return { reason: 'unlinked' };
 
   if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
+  const verdict = await authorize(
+    link.userId,
+    accountId,
+    PROJECT_ACTIONS.PROJECT_WRITE,
+    { type: 'project', id: projectId },
+  );
+  if (!verdict.allowed) return { reason: 'not_member' };
   return { userId: link.userId };
 }
 
@@ -121,13 +134,13 @@ export async function revokeSlackIdentity(teamId: string, slackUserId: string): 
 // Connecting is decoupled from access, so a brand-new user connects once and then
 // requests access in-thread without bouncing off a hard "ask an admin" wall.
 
-export function connectAccountBlocks(url: string): unknown[] {
+export function connectAccountBlocks(url: string, pendingId?: string | null): unknown[] {
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'Kortix runs as *your own* Kortix account — connect it once to continue. _Only you can see this._',
+        text: 'Kortix needs a linked Kortix account before it can run from Slack. Connect or create one to continue. _Only you can see this._',
       },
     },
     {
@@ -135,9 +148,9 @@ export function connectAccountBlocks(url: string): unknown[] {
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: 'Connect my Kortix account', emoji: true },
+          text: { type: 'plain_text', text: 'Connect or create account', emoji: true },
           style: 'primary',
-          url,
+          value: JSON.stringify({ url, ...(pendingId ? { pendingId } : {}) }),
           action_id: 'slack_login_connect',
         },
       ],
@@ -176,22 +189,34 @@ export async function postIdentityPrompt(input: {
   threadTs?: string;
   slackUserId: string;
   reason: 'unlinked' | 'not_member';
+  envelope?: SlackEnvelope;
+  event?: SlackEvent;
 }): Promise<void> {
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
 
-  const { blocks, fallback } =
-    input.reason === 'unlinked'
-      ? {
-          blocks: connectAccountBlocks(
-            buildSlackLoginUrl({ teamId: input.teamId, slackUserId: input.slackUserId }),
-          ),
-          fallback: 'Connect your Kortix account to continue.',
-        }
-      : {
-          blocks: requestAccessBlocks(input.projectId),
-          fallback: "You're connected, but don't have access to this project yet.",
-        };
+  let blocks: unknown[];
+  let fallback: string;
+  if (input.reason === 'unlinked') {
+    const pendingId = input.envelope && input.event
+      ? await createPendingSlackAuthMessage({
+        projectId: input.projectId,
+        teamId: input.teamId,
+        slackUserId: input.slackUserId,
+        envelope: input.envelope,
+        event: input.event,
+      })
+      : null;
+    blocks = connectAccountBlocks(buildSlackLoginUrl({
+      teamId: input.teamId,
+      slackUserId: input.slackUserId,
+      ...(pendingId ? { pendingId } : {}),
+    }), pendingId);
+    fallback = 'Kortix needs a linked Kortix account to continue.';
+  } else {
+    blocks = requestAccessBlocks(input.projectId);
+    fallback = "You're connected, but don't have access to this project yet.";
+  }
 
   // Send BOTH: an in-thread ephemeral for context right where they asked, AND a
   // DM. The DM pushes a real notification and persists — an ephemeral alone is
@@ -227,7 +252,18 @@ export async function createSlackAccessRequest(input: {
 
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
   if (await isAccountMember(identity.userId, project.accountId)) {
-    return { status: 'already-member', ...base };
+    const verdict = await authorize(
+      identity.userId,
+      project.accountId,
+      PROJECT_ACTIONS.PROJECT_WRITE,
+      { type: 'project', id: input.projectId },
+    );
+    if (!verdict.allowed) {
+      // They are in the org, but cannot run Slack-started sessions for this
+      // project yet. Keep the same review queue instead of silently failing.
+    } else {
+      return { status: 'already-member', ...base };
+    }
   }
 
   const [existing] = await db
@@ -249,7 +285,7 @@ export async function createSlackAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
-    message: null,
+    message: 'Requested from Slack. Approve as Editor so they can run Kortix from Slack.',
   });
   return { status: 'created', ...base };
 }
@@ -265,6 +301,12 @@ export async function notifyAdminsOfAccessRequest(input: {
   requesterUserId: string;
   requesterSlackUserId: string;
 }): Promise<void> {
+  await notifyProjectAccessRequestManagers({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    requesterUserId: input.requesterUserId,
+  });
+
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
 
@@ -283,7 +325,7 @@ export async function notifyAdminsOfAccessRequest(input: {
     input.requesterUserId,
   );
   const who = email ? `*${email}*` : `<@${input.requesterSlackUserId}>`;
-  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}`;
+  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}/customize/members`;
   const text = `${who} requested access to a Kortix project in this workspace.`;
   const blocks = [
     {
@@ -316,7 +358,7 @@ export async function notifyAdminsOfAccessRequest(input: {
 
 // Reverse of lookupSlackIdentity: the Slack user a Kortix user is linked to in a
 // given workspace, so we can DM admins about access requests.
-async function lookupSlackUserIdForKortixUser(teamId: string, userId: string): Promise<string | null> {
+export async function lookupSlackUserIdForKortixUser(teamId: string, userId: string): Promise<string | null> {
   const [row] = await db
     .select({ slackUserId: chatUserIdentities.platformUserId })
     .from(chatUserIdentities)

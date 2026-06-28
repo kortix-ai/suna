@@ -146,6 +146,11 @@ describe('launch envs', () => {
     expect(env.KORTIX_API_PROXY_TARGET).toBe(`http://localhost:${ports.api}`);
   });
 
+  test('api-generated links target the worktree web port', () => {
+    const env = apiLaunchEnv(ports, creds);
+    expect(env.FRONTEND_URL).toBe(`http://localhost:${ports.web}`);
+  });
+
   test('shared primary Supabase creds use standard local ports when status is unavailable', () => {
     const creds = primaryCredsFromStatus({});
     expect(creds.dbUrl).toContain(`127.0.0.1:${SHARED_SUPABASE_PORTS.sbDb}`);
