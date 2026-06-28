@@ -390,6 +390,11 @@ jobs:
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
           APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
+          # Apple-ID notarization fallback — electron-builder uses whichever set
+          # is populated (API key above OR Apple-ID here).
+          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (secrets.APPLE_APP_SPECIFIC_PASSWORD || secrets.APPLE_PASSWORD) || '' }}
+          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
           WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
