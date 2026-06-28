@@ -47,7 +47,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
   // the proxy with a placeholder key, making the gateway provider config
   // SESSION-INDEPENDENT (the real per-session token is injected by the proxy, not
-  // baked here). This lets a tokenless warm seed bake a usable provider so claim
+  // baked here). This lets a tokenless warm seed bake a usable provider so restore
   // can hot-swap the token with NO opencode restart. Cold/Daytona never set this
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
@@ -101,7 +101,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
           // Proxy mode: the MCP talks to the localhost executor proxy with a
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
-          // claim). Direct mode (cold/Daytona): the real token + api url, as before.
+          // restore). Direct mode (cold/Daytona): the real token + api url, as before.
           KORTIX_EXECUTOR_TOKEN: executorProxyMode ? EXECUTOR_PROXY_PLACEHOLDER_KEY : executorToken!,
           KORTIX_API_URL: executorProxyMode ? executorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
@@ -143,16 +143,11 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
     if (!('small_model' in out) || typeof out.small_model !== 'string') {
       out.small_model = DEFAULT_KORTIX_MODEL
     }
-    // Lock opencode to the gateway as the ONLY LLM path. enabled_providers is an
-    // allowlist — opencode loads ONLY these and ignores every provider it would
-    // otherwise auto-detect from env (e.g. GITHUB_TOKEN → GitHub Models,
-    // OPENAI_API_KEY → openai), so a leaked key can't open a native path that
-    // bypasses budgets/logging/spend. This is the robust complement to the env
-    // deny-strip in spawnChild (which can be defeated if a key reaches opencode
-    // by some path the deny-list didn't enumerate). We keep `kortix` plus any
-    // providers the Codex/OpenCode subscription auth.json enables — those are the
-    // user's own subscription (consumed into auth.json, intentionally not gated).
-    out.enabled_providers = gatewayEnabledProviders(env)
+    // Gateway mode allowlists providers so leaked provider keys cannot open
+    // native Anthropic/OpenAI/GitHub/etc paths that bypass gateway budgets, logs,
+    // and BYOK handling. Free models are managed gateway models too, so the
+    // selector has one stable catalog before the sandbox has booted.
+    out.enabled_providers = ['kortix']
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
@@ -171,26 +166,6 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   }
 
   return JSON.stringify(out)
-}
-
-// The opencode provider allowlist when the gateway is active: always `kortix`,
-// plus any providers the Codex/OpenCode subscription auth.json declares (its
-// top-level keys are provider ids) so a connected subscription keeps working.
-// The auth secret is still present on the env passed here — materializeOpencodeAuth
-// strips it from the spawned process env later, not from this copy.
-function gatewayEnabledProviders(env: NodeJS.ProcessEnv): string[] {
-  const allow = new Set<string>(['kortix'])
-  const authJson = env[CODEX_AUTH_JSON_SECRET] ?? env[OPENCODE_AUTH_JSON_SECRET]
-  if (authJson?.trim()) {
-    try {
-      const parsed = JSON.parse(authJson)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const provider of Object.keys(parsed)) allow.add(provider)
-      }
-    } catch {
-    }
-  }
-  return [...allow]
 }
 
 type KortixProviderOpts = {
@@ -217,31 +192,54 @@ async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<str
   }
 }
 
-// Resolve the model catalog. A baked file (org-stable, written by a step that has
-// the catalog without a per-session token) wins — that's what lets a tokenless
-// warm seed bake the FULL catalog. Otherwise fetch from the real gateway (needs a
-// real base+key; only present in direct mode). Falls back to the minimal set.
+// Well-known path the snapshot builder bakes the full org model catalog to (see
+// dockerfile-layer.ts `COPY ${catalogPath} /opt/kortix/llm-catalog.json`). Present
+// on every modern image; used as the fast, always-available fallback so a slow or
+// down gateway never collapses the picker to the ~13-model minimal set.
+const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
+
+/** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
+ *  Returns null when missing, unreadable, or empty so callers can fall through. */
+function readCatalogFile(path: string): Record<string, KortixGatewayModel> | null {
+  try {
+    const raw = readFileSync(path, 'utf8')
+    const parsed = JSON.parse(raw) as { models?: Record<string, KortixGatewayModel> } | Record<string, KortixGatewayModel>
+    const models = (parsed && typeof parsed === 'object' && 'models' in parsed
+      ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
+      : (parsed as Record<string, KortixGatewayModel>)) ?? {}
+    return Object.keys(models).length > 0 ? models : null
+  } catch {
+    return null
+  }
+}
+
+// Resolve the model catalog. Order:
+//   1. an EXPLICIT baked file (warm seed's KORTIX_LLM_CATALOG_FILE) — tokenless
+//      full catalog, wins outright;
+//   2. a fresh per-session fetch from the real gateway (per-account catalog) when
+//      we have creds (direct mode);
+//   3. the IMAGE-BAKED catalog at the well-known path — so a slow/down gateway
+//      still yields the full picker instead of the tiny minimal set;
+//   4. the minimal hardcoded set (last resort).
 async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<string, KortixGatewayModel>> {
   if (opts.catalogFile) {
-    try {
-      const raw = readFileSync(opts.catalogFile, 'utf8')
-      const parsed = JSON.parse(raw) as { models?: Record<string, KortixGatewayModel> } | Record<string, KortixGatewayModel>
-      const models = (parsed && typeof parsed === 'object' && 'models' in parsed
-        ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
-        : (parsed as Record<string, KortixGatewayModel>)) ?? {}
-      if (Object.keys(models).length > 0) {
-        logger.info(`[opencode] loaded ${Object.keys(models).length} gateway models from baked catalog ${opts.catalogFile}`)
-        return models
-      }
-      logger.warn(`[opencode] baked catalog ${opts.catalogFile} was empty; falling back`)
-    } catch (err) {
-      logger.warn(`[opencode] baked catalog read failed (${opts.catalogFile}): ${(err as Error).message}; falling back`)
+    const models = readCatalogFile(opts.catalogFile)
+    if (models) {
+      logger.info(`[opencode] loaded ${Object.keys(models).length} gateway models from baked catalog ${opts.catalogFile}`)
+      return models
     }
+    logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
   if (opts.fetchBaseURL && opts.fetchApiKey) {
-    return fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+    const fetched = await fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+    if (fetched) return fetched
   }
-  logger.warn('[opencode] no baked catalog and no gateway credentials to fetch; using minimal fallback')
+  const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  if (baked) {
+    logger.info(`[opencode] gateway fetch unavailable; loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    return baked
+  }
+  logger.warn('[opencode] no baked catalog and no gateway models; using minimal fallback')
   return MINIMAL_FALLBACK_MODELS
 }
 
@@ -259,7 +257,7 @@ const GATEWAY_MODELS_TIMEOUT_MS = 6_000
 async function fetchGatewayModels(
   baseUrl: string,
   apiKey: string,
-): Promise<Record<string, KortixGatewayModel>> {
+): Promise<Record<string, KortixGatewayModel> | null> {
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
   const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
   logger.info(`[opencode] fetching gateway models from ${url} (timeout ${GATEWAY_MODELS_TIMEOUT_MS}ms)`)
@@ -292,8 +290,8 @@ async function fetchGatewayModels(
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
-  logger.error(`[opencode] gateway models unavailable (${url}); using minimal fallback so the session can start`)
-  return MINIMAL_FALLBACK_MODELS
+  logger.error(`[opencode] gateway models unavailable (${url}); caller will fall back to the baked/minimal catalog`)
+  return null
 }
 
 // New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
@@ -336,6 +334,16 @@ const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     attachment: true,
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
+  },
+  // Managed default (AUTO's text target + the explicit default a fresh session
+  // opts into). Bare id = Kortix-managed; text-only, so no attachment.
+  'glm-5.2': {
+    name: 'GLM 5.2',
+    reasoning: true,
+    tool_call: true,
+    attachment: false,
+    temperature: true,
+    limit: { context: 1_000_000, output: 131_072 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',

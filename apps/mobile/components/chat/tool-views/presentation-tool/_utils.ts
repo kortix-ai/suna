@@ -80,28 +80,48 @@ export async function downloadPresentation(
 ): Promise<void> {
   try {
     const exportUrl = `${sandboxUrl}/presentation/convert-to-${format}`;
-    
-    log.log(`📤 [downloadPresentation] Exporting ${format}:`, exportUrl);
-    
-    // POST request to sandbox API (matching frontend)
-    const response = await fetch(exportUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        presentation_path: presentationPath,
-        download: true,
-      }),
-    });
 
-    if (!response.ok) {
+    log.log(`📤 [downloadPresentation] Exporting ${format}:`, exportUrl);
+
+    // The sandbox runs the conversion in the background and answers each POST
+    // fast (202 while generating, 200 + the file when ready), so poll until the
+    // file is ready rather than expecting an immediate binary response.
+    const POLL_INTERVAL_MS = 2500;
+    const MAX_WAIT_MS = 4 * 60_000;
+    const startedAt = Date.now();
+    let fileBlob: Blob | null = null;
+    while (!fileBlob) {
+      const response = await fetch(exportUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ presentation_path: presentationPath, download: true }),
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      const isFile =
+        response.ok &&
+        (contentType.includes('pdf') ||
+          contentType.includes('presentation') ||
+          contentType.includes('octet-stream'));
+
+      if (isFile) {
+        fileBlob = await response.blob();
+        break;
+      }
+
+      if (response.status === 202) {
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          throw new Error(`Timed out waiting for the ${format} to generate`);
+        }
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+        continue;
+      }
+
       throw new Error(`Failed to download ${format}: ${response.status}`);
     }
 
-    // Get the blob
-    const blob = await response.blob();
-    
+    const blob = fileBlob;
+
     // Convert blob to base64 and save to file system
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

@@ -88,6 +88,7 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<CustomizeSection, { read: ProjectA
   // LLM gateway sections — visible to any project member; the backend enforces
   // the specific gateway capability (logs/spend.read, routing.edit, budget.set,
   // keys.manage) on each mutation route, so visibility gates on project.read.
+  'llm-management': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-overview': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-providers': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
   'llm-logs': { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },

@@ -1,3 +1,4 @@
+import { listDefaultProjectMarketplaceItems } from '@/lib/marketplace-client';
 import {
   listProjectsForAccount,
   provisionProject,
@@ -23,16 +24,14 @@ export type FirstProjectAutoCreateState = {
 
 export function hasFirstProjectBootstrapSignal(searchParams: URLSearchParams): boolean {
   return (
-    searchParams.get('team_signup') === 'success' ||
-    searchParams.get('auth_event') === 'signup'
+    searchParams.get('team_signup') === 'success' || searchParams.get('auth_event') === 'signup'
   );
 }
 
 export function isProjectLimitError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? '');
   return (
-    message.includes('project_limit_reached') ||
-    message.includes('Free accounts are limited to 1 project')
+    message.includes('project_limit_reached') || message.includes('Free accounts are limited to')
   );
 }
 
@@ -41,14 +40,18 @@ export function isProjectLimitError(err: unknown): boolean {
  * exist. If the free-tier cap is already consumed, recover by listing again
  * and returning the existing project instead of surfacing a dead-end error.
  */
-export async function ensureFirstProject(
-  accountId: string,
-): Promise<KortixProject | null> {
+export async function ensureFirstProject(accountId: string): Promise<KortixProject | null> {
   const existing = await listProjectsForAccount(accountId);
   if (existing.length > 0) return existing[0] ?? null;
 
   try {
-    return await provisionProject({ account_id: accountId, name: 'My First Project' });
+    const marketplaceItems = await listDefaultProjectMarketplaceItems();
+    return await provisionProject({
+      account_id: accountId,
+      name: 'My First Project',
+      starter_template: 'minimal',
+      marketplace_items: marketplaceItems.map((item) => item.id),
+    });
   } catch (err) {
     if (!isProjectLimitError(err)) throw err;
     const retry = await listProjectsForAccount(accountId);

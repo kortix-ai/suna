@@ -7,7 +7,8 @@ import type {
 } from '@kortix/llm-gateway';
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage } from '../billing/services/credits';
-import { llmPriceMarkup } from '../billing/services/tiers';
+import { getCachedAccountTier } from '../billing/services/entitlements';
+import { llmPriceMarkup, tierGrantsAllModels } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { validateAccountToken } from '../repositories/account-tokens';
@@ -17,6 +18,7 @@ import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -36,6 +38,11 @@ import { resolveCandidates } from './resolution/resolve-candidates';
  * Returns null for an unknown/expired/revoked token.
  */
 export async function authenticatePrincipal(token: string): Promise<AuthedPrincipal | null> {
+  const principal = await resolvePrincipal(token);
+  return principal ? withResolvedTier(principal) : null;
+}
+
+async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> {
   if (isGatewayKey(token)) {
     return validateGatewayKey(token);
   }
@@ -54,6 +61,28 @@ export async function authenticatePrincipal(token: string): Promise<AuthedPrinci
     };
   }
   return null;
+}
+
+/**
+ * Attach the resolved billing tier + `freeModelsOnly` flag to a principal once,
+ * at authentication, so they travel with it everywhere — including across the
+ * RPC boundary to the out-of-process gateway pod — and decide whether managed
+ * Kortix models are visible without a second tier lookup. When internal billing
+ * is off (self-host) every account sees the full lineup.
+ */
+async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
+  const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
+    ? await (async () => {
+        const tier = await getCachedAccountTier(principal.accountId);
+        return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+      })()
+    : { ...principal, freeModelsOnly: false };
+  // Resolve the account/agent-configured default model once, here, so it travels
+  // with the principal (including across the RPC boundary to the standalone pod)
+  // and `auto` resolves to it. freeModelsOnly is already set above, so the
+  // resolver can drop a managed default for free tier.
+  const defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
@@ -178,6 +207,9 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     assertBudget: assertGatewayBudget,
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
-    listModels: async (principal) => gatewayModelCatalog(principal.projectId),
+    listModels: async (principal) =>
+      gatewayModelCatalog(principal.projectId, {
+        freeManagedOnly: !!principal.freeModelsOnly,
+      }),
   };
 }

@@ -10,18 +10,31 @@ import {
   listMarketplaceItems,
   listMarketplaces,
   listMarketplaceSources,
+  listPublicMarketplaceItems,
+  listPublicMarketplaces,
   listRegistryUpdates,
   removeMarketplaceSource,
   uninstallMarketplaceItem,
+  updateAllMarketplaceItems,
   updateMarketplaceItem,
   type AddSourceInput,
-  type MarketplaceItem,
 } from '@/lib/marketplace-client';
 
-export function useMarketplaceItems(params: { query?: string; type?: string; source?: string }) {
+export function useMarketplaceItems(params: {
+  query?: string;
+  type?: string;
+  source?: string;
+  publicOnly?: boolean;
+}) {
+  const publicOnly = params.publicOnly ?? false;
   return useQuery({
-    queryKey: ['marketplace-items', params.query ?? '', params.type ?? 'all', params.source ?? 'all'],
-    queryFn: () => listMarketplaceItems(params),
+    queryKey: [
+      publicOnly ? 'marketplace-items-public' : 'marketplace-items',
+      params.query ?? '',
+      params.type ?? 'all',
+      params.source ?? 'all',
+    ],
+    queryFn: () => (publicOnly ? listPublicMarketplaceItems(params) : listMarketplaceItems(params)),
     staleTime: 60_000,
     // While the catalog is still streaming sources in (cold load), re-poll so
     // newly-resolved sources appear without a manual refresh.
@@ -32,10 +45,11 @@ export function useMarketplaceItems(params: { query?: string; type?: string; sou
   });
 }
 
-export function useMarketplaces() {
+export function useMarketplaces(opts?: { publicOnly?: boolean }) {
+  const publicOnly = opts?.publicOnly ?? false;
   return useQuery({
-    queryKey: ['marketplaces'],
-    queryFn: listMarketplaces,
+    queryKey: [publicOnly ? 'marketplaces-public' : 'marketplaces'],
+    queryFn: publicOnly ? listPublicMarketplaces : listMarketplaces,
     staleTime: 60_000,
     refetchInterval: (query) => (query.state.data?.loading ? 1500 : false),
   });
@@ -99,6 +113,18 @@ export function useUpdateMarketplaceItem() {
   });
 }
 
+export function useUpdateAllMarketplaceItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId }: { projectId: string }) => updateAllMarketplaceItems(projectId),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+  });
+}
+
 export function useInstallMarketplaceItem() {
   const qc = useQueryClient();
   return useMutation({
@@ -127,10 +153,11 @@ export function useUninstallMarketplaceItem() {
 
 // ── "Add a marketplace" sources ─────────────────────────────────────────────
 
-export function useMarketplaceSources() {
+export function useMarketplaceSources(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['marketplace-sources'],
     queryFn: listMarketplaceSources,
+    enabled: opts?.enabled ?? true,
     staleTime: 60_000,
   });
 }

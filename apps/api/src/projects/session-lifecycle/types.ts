@@ -46,7 +46,7 @@ export interface CreateSessionCommand {
   project: ProjectRow;
   userId: string;
   body: Record<string, unknown>;
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -60,7 +60,7 @@ export interface QueuedCreateSessionPayload {
   body: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
 }

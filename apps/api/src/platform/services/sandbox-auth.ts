@@ -1,4 +1,4 @@
-import { and, eq, ne } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
@@ -15,7 +15,7 @@ export async function getSandboxServiceKeyByExternalId(externalId: string): Prom
   const [row] = await db
     .select({ config: sandboxes.config })
     .from(sandboxes)
-    .where(and(eq(sandboxes.externalId, externalId), ne(sandboxes.status, 'pooled')))
+    .where(eq(sandboxes.externalId, externalId))
     .limit(1);
 
   const configJson = (row?.config || {}) as Record<string, unknown>;

@@ -47,14 +47,20 @@ import type {
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
 import {
-  GATEWAY_PROVIDER_IDS,
   useOpenCodeSessions,
   useOpenCodeSessionTodo,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { AnimatePresence, motion } from 'motion/react';
 import { extractClipboardFiles } from './clipboard-files';
-import { ModelSelector } from './model-selector';
+import {
+  NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+  isModelRequiredButUnavailable,
+  NO_MODEL_AVAILABLE_MESSAGE,
+} from './model-availability';
+import { ModelSelector, type ModelDefaultControls } from './model-selector';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 import {
   CommandGroup,
@@ -107,28 +113,42 @@ export interface FlatModel {
     input: number;
     output: number;
   };
+  /** True for zero-cost managed models exposed by the gateway. */
+  free?: boolean;
   /** Provider source (env, api, config, custom) */
   providerSource?: string;
 }
 
+function catalogModelFor(providerID: string, modelID: string) {
+  let lookupProviderID = providerID;
+  let lookupModelID = modelID;
+  if (providerID === 'kortix') {
+    const slash = modelID.indexOf('/');
+    if (slash !== -1) {
+      lookupProviderID = modelID.slice(0, slash);
+      lookupModelID = modelID.slice(slash + 1);
+    }
+  }
+  return LLM_PROVIDER_BY_ID.get(lookupProviderID)?.models.find((model) => model.id === lookupModelID);
+}
+
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
   if (!providers) return [];
-  const all = Array.isArray(providers.all) ? providers.all : [];
-  const connected = Array.isArray(providers.connected) ? providers.connected : [];
+  const normalized = normalizeProviderList(providers);
+  const all = Array.isArray(normalized.all) ? normalized.all : [];
+  const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
   const result: FlatModel[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
-    // Defense in depth: the provider list is already source-filtered to the
-    // gateway, but never render a native (bypass) provider even if one slips in.
-    if (!GATEWAY_PROVIDER_IDS.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models)) {
       const caps = (model as any).capabilities;
       const modalities = (model as any).modalities;
+      const catalogModel = catalogModelFor(p.id, modelID);
       result.push({
         providerID: p.id,
         providerName: p.name,
         modelID,
-        modelName: (model.name || modelID).replace('(latest)', '').trim(),
+        modelName: (model.name || catalogModel?.name || modelID).replace('(latest)', '').trim(),
         variants: model.variants,
         capabilities: caps
           ? {
@@ -142,7 +162,8 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
               toolcall: (model as any).tool_call ?? false,
             },
         contextWindow: (model as any).limit?.context,
-        releaseDate: (model as any).release_date,
+        releaseDate:
+          (model as any).release_date ?? (model as any).released ?? catalogModel?.released ?? undefined,
         family: (model as any).family,
         cost: (model as any).cost
           ? {
@@ -150,6 +171,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
               output: (model as any).cost.output ?? 0,
             }
           : undefined,
+        free: (model as any).free === true,
         providerSource: (p as any).source,
       });
     }
@@ -165,10 +187,12 @@ export function AgentSelector({
   agents,
   selectedAgent,
   onSelect,
+  disabled = false,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
+  disabled?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -213,12 +237,16 @@ export function AgentSelector({
   const displayName = currentAgent?.name || 'Agent';
 
   return (
-    <CommandPopover open={open} onOpenChange={setOpen}>
+    // When locked we keep the trigger hoverable (no native `disabled`, which
+    // would suppress hover) but gate the popover shut, so the tooltip can still
+    // explain WHY the agent can't be switched mid-session.
+    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <Tooltip>
         <TooltipTrigger asChild>
           <CommandPopoverTrigger>
             <button
               type="button"
+              aria-disabled={disabled || undefined}
               aria-label={tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
               )}
@@ -226,6 +254,7 @@ export function AgentSelector({
                 'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
+                disabled && 'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
@@ -238,11 +267,19 @@ export function AgentSelector({
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          <p>
-            {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-            <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">Tab</kbd>
-          </p>
+        <TooltipContent side="top" className="max-w-[240px] text-xs">
+          {disabled ? (
+            <p>
+              {"This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."}
+            </p>
+          ) : (
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
+              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
+                Tab
+              </kbd>
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
 
@@ -269,6 +306,7 @@ export function AgentSelector({
                     value={`agent-${agent.name}`}
                     className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
+                      if (disabled) return;
                       onSelect(agent.name);
                       setOpen(false);
                     }}
@@ -1412,11 +1450,15 @@ export interface SessionChatInputProps {
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
+  /** Show the selected agent but prevent switching inside an immutable session. */
+  agentSelectorLocked?: boolean;
   commands?: Command[];
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** Optional "set as default" controls for the model picker (account/per-agent). */
+  modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
@@ -1425,6 +1467,8 @@ export interface SessionChatInputProps {
   sessionId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
   disabled?: boolean;
+  /** If true, a concrete model must be selected before a chat/command send. */
+  modelRequired?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1505,17 +1549,20 @@ export function SessionChatInput({
   agents = [],
   selectedAgent = null,
   onAgentChange,
+  agentSelectorLocked = false,
   commands = [],
   onCommand,
   models = [],
   selectedModel = null,
   onModelChange,
+  modelDefaultControls,
   variants = [],
   selectedVariant = null,
   onVariantChange,
   messages,
   sessionId,
   disabled = false,
+  modelRequired = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1972,9 +2019,22 @@ export function SessionChatInput({
     }
   }, [mentionItems.length]);
 
+  const modelUnavailable = isModelRequiredButUnavailable({
+    modelRequired,
+    selectedModel,
+    lockForQuestion,
+  });
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
+  const submitDisabled = disabled || modelUnavailable;
 
   const handleSubmit = useCallback(async () => {
+    if (modelUnavailable) {
+      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
+        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+      });
+      return;
+    }
+
     // If a command is staged, execute it with the current text as args
     if (stagedCommand) {
       const args = text.trim();
@@ -2010,7 +2070,7 @@ export function SessionChatInput({
     }
 
     const trimmed = text.trim();
-    if ((!trimmed && attachedFiles.length === 0) || disabled) return;
+    if ((!trimmed && attachedFiles.length === 0) || submitDisabled) return;
 
     /* AutoContinue — commented out
     // AutoContinue intercept: when a mode is armed, route through the
@@ -2070,7 +2130,8 @@ export function SessionChatInput({
     }
   }, [
     text,
-    disabled,
+    submitDisabled,
+    modelUnavailable,
     onSend,
     onCommand,
     stagedCommand,
@@ -2188,7 +2249,7 @@ export function SessionChatInput({
     }
 
     // Tab cycles through agents when no popover is open
-    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange) {
+    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange && !agentSelectorLocked) {
       e.preventDefault();
       const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
       const nextIdx = (currentIdx + 1) % primaryAgents.length;
@@ -2534,19 +2595,21 @@ export function SessionChatInput({
                 </TooltipContent>
               </Tooltip>
 
-              {primaryAgents.length > 0 && onAgentChange && (
+              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
                 <AgentSelector
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
-                  onSelect={onAgentChange}
+                  onSelect={onAgentChange ?? (() => {})}
+                  disabled={agentSelectorLocked}
                 />
               )}
-              {models.length > 0 && onModelChange && (
+              {(models.length > 0 || modelRequired) && onModelChange && (
                 <ModelSelector
                   models={models}
                   selectedModel={selectedModel}
                   onSelect={onModelChange}
                   providers={providers}
+                  defaultControls={modelDefaultControls}
                 />
               )}
               {variants.length > 0 && onVariantChange && (
@@ -2582,7 +2645,7 @@ export function SessionChatInput({
 
               {toolbarSlot}
 
-              <VoiceRecorder onTranscription={handleTranscription} disabled={disabled || isBusy} />
+              <VoiceRecorder onTranscription={handleTranscription} disabled={submitDisabled || isBusy} />
 
               {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
@@ -2636,22 +2699,38 @@ export function SessionChatInput({
                       {questionButtonLabel}
                     </Button>
                   ) : (
-                    <Button
-                      size="sm"
-                      disabled={
-                        lockForQuestion
-                          ? (!canSubmit && !questionCanAct) || disabled
-                          : !canSubmit || disabled
-                      }
-                      onClick={handleSubmit}
-                      className="h-8 w-8 flex-shrink-0 rounded-full p-0"
-                    >
-                      {disabled ? (
-                        <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      ) : (
-                        <ArrowUp className="size-4" />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex rounded-full">
+                          <Button
+                            size="sm"
+                            disabled={
+                              lockForQuestion
+                                ? (!canSubmit && !questionCanAct) || disabled
+                                : !canSubmit || submitDisabled
+                            }
+                            onClick={handleSubmit}
+                            aria-label={
+                              modelUnavailable
+                                ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
+                                : 'Send message'
+                            }
+                            className="h-8 w-8 flex-shrink-0 rounded-full p-0"
+                          >
+                            {disabled ? (
+                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <ArrowUp className="size-4" />
+                            )}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {modelUnavailable && (
+                        <TooltipContent side="top" className="max-w-[260px] text-xs">
+                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
+                        </TooltipContent>
                       )}
-                    </Button>
+                    </Tooltip>
                   )}
                 </div>
               )}

@@ -63,8 +63,7 @@ load_local_env() {
   # Warm SNAPSHOT baking OFF for local dev. The [warm-bake] builder (gated by
   # warmSnapshotsEnabled() = KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET)
   # keeps trying to bake a `kortix-warm-runtime-*` base on Daytona's experimental
-  # region, which flakes locally with "internal error" and spams the logs. The
-  # warm POOL is left untouched (it's per-project via projects.metadata.warm_pool).
+  # region, which flakes locally with "internal error" and spams the logs.
   export KORTIX_WARM_SNAPSHOT_ENABLED=false
   # DOCKER_HOST only feeds the (now-disabled) local_docker provider, but the
   # committed apps/api/.env may carry a stale per-machine socket path (e.g.

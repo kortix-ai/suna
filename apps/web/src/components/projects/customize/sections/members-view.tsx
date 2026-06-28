@@ -1003,11 +1003,11 @@ function PendingAccessRequestsCard({ projectId }: { projectId: string }) {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'viewer'),
+    mutationFn: (requestId: string) => approveProjectAccessRequest(projectId, requestId, 'editor'),
     onMutate: (requestId) => markBusy(requestId),
     onSettled: (_data, _error, requestId) => clearBusy(requestId),
     onSuccess: (result) => {
-      toast.success(`${result.member.email ?? 'Requester'} can now view this project`);
+      toast.success(`${result.member.email ?? 'Requester'} can now use this project`);
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
     },

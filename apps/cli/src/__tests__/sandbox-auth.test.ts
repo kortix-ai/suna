@@ -11,7 +11,7 @@ import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN carry the
-// project-scoped PAT, KORTIX_API_URL already includes the `/v1` mount, and
+// session executor PAT, KORTIX_API_URL already includes the `/v1` mount, and
 // KORTIX_PROJECT_ID selects the project — all read with zero config files.
 
 const ENV_KEYS = [
@@ -21,6 +21,7 @@ const ENV_KEYS = [
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
   'BASH_ENV',
+  'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
   'KORTIX_AUTH_FILE',
 ] as const;
@@ -35,6 +36,7 @@ beforeEach(() => {
   }
   // Point config storage at a path that does not exist so no real auth leaks in.
   process.env.KORTIX_CONFIG_FILE = '/nonexistent/kortix-test-config.json';
+  process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
 });
 
 afterEach(() => {
@@ -77,6 +79,7 @@ describe('in-sandbox auth resolution', () => {
           '',
         ].join('\n'),
       );
+      delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
       process.env.BASH_ENV = envFile;
 
       const host = activeHost();

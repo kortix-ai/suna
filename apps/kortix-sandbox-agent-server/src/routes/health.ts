@@ -24,10 +24,10 @@ function wantedSessionBranch(): string {
 /**
  * Whether THIS sandbox's session expects a repo — from the host-written env
  * file, NOT the frozen process env. A warm-snapshot fork resumes a daemon
- * whose process booted as a repo-less generic spare (autoClone unset), so
+ * whose process booted as a repo-less warm seed (autoClone unset), so
  * cfg.autoClone said "no repo required" and health reported ready ~100ms
- * after fork while the claim was still fetching the repo — the frontend then
- * stormed a mid-claim runtime and stuck (caught live 2026-06-12, second
+ * after fork while adoption was still fetching the repo — the frontend then
+ * stormed a mid-adoption runtime and stuck (caught live 2026-06-12, second
  * variant of the same class as wantedSessionBranch).
  */
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {

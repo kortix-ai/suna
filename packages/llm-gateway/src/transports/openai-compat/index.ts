@@ -18,8 +18,8 @@ export function buildUpstreamRequest(
 ): UpstreamRequest {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
-    authorization: `Bearer ${descriptor.apiKey}`,
   };
+  if (!descriptor.omitAuthorization) headers.authorization = `Bearer ${descriptor.apiKey}`;
   if (descriptor.appName) headers['x-title'] = descriptor.appName;
   if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
   if (descriptor.headers) Object.assign(headers, descriptor.headers);

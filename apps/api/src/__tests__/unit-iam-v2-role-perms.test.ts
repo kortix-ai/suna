@@ -59,10 +59,22 @@ describe('IAM V2 — project role table', () => {
     }
   });
 
-  test('viewer has only read-ish actions', () => {
+  test('viewer is the base usable role: reads + runs sessions, no customization', () => {
+    // Every viewer action is either a read or a session-lifecycle action —
+    // viewer can use the agent/chat but never edit, deploy, or manage.
     for (const a of PROJECT_ROLE_PERMS.viewer) {
-      expect(a).toMatch(/\.(read)$/);
+      expect(a).toMatch(/\.(read|start|exec|stop)$/);
     }
+    // Can start / run / stop sessions (the default role must be able to USE Kortix).
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_START)).toBe(true);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_EXEC)).toBe(true);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_SESSION_STOP)).toBe(true);
+    // ...but cannot customize the project in any way.
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(false);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
+    expect(projectRoleAllows('viewer', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);
   });
 
   test('editor can fire and write triggers but not manage members or delete project', () => {

@@ -79,15 +79,13 @@ const MANAGER_ONLY: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_GATEWAY_KEYS_MANAGE,
 ];
 
-/** Actions an editor gets on top of viewer. Triggers and sessions
- *  are part of "content" — editor manages them. */
+/** Actions an editor gets on top of viewer. Editing the project,
+ *  deploying, triggers, and gateway routing are "customization" — that's
+ *  what separates an editor from a viewer. Running sessions is NOT here:
+ *  it's part of the viewer baseline (see below). */
 const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_DEPLOY,
-
-  PROJECT_ACTIONS.PROJECT_SESSION_START,
-  PROJECT_ACTIONS.PROJECT_SESSION_EXEC,
-  PROJECT_ACTIONS.PROJECT_SESSION_STOP,
 
   PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
   PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
@@ -113,12 +111,22 @@ const EDITOR_EXTRAS: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
 ];
 
-/** Read-only baseline. */
+/** Baseline for the default project role. Viewer is the base *usable* role:
+ *  it can read everything AND start / run / stop sessions — i.e. actually use
+ *  the agent and the chat. A read-only viewer that can't open a session is
+ *  useless, and this is the role new members get by default, so it has to be
+ *  able to drive Kortix. What it CANNOT do is customize the project: edit
+ *  settings, deploy, manage members/triggers, or change gateway routing —
+ *  those live in EDITOR_EXTRAS / MANAGER_ONLY above. */
 const VIEWER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_READ,
   PROJECT_ACTIONS.PROJECT_SESSION_READ,
   PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
   PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+
+  PROJECT_ACTIONS.PROJECT_SESSION_START,
+  PROJECT_ACTIONS.PROJECT_SESSION_EXEC,
+  PROJECT_ACTIONS.PROJECT_SESSION_STOP,
 
   PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
   PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,

@@ -66,11 +66,15 @@ export function escapeMrkdwn(s: string): string {
 export async function respondViaUrl(url: string | undefined, body: unknown): Promise<void> {
   if (!url) return;
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.warn('[slack-webhook] response_url POST rejected', res.status, text.slice(0, 500));
+    }
   } catch (err) {
     console.warn('[slack-webhook] response_url POST failed', err);
   }

@@ -9,6 +9,9 @@ import { codexModelIds } from "./codex-models";
 
 interface GatewayModel {
   name: string;
+  released?: string | null;
+  release_date?: string | null;
+  family?: string;
   reasoning?: boolean;
   tool_call?: boolean;
   attachment?: boolean;
@@ -84,7 +87,7 @@ export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   // AUTO is synthetic (not a real model): it accepts images because pickAutoModel
   // routes image-bearing requests to a vision-capable model. Its window matches
-  // its default target (Fusion) so OpenCode sizes conversations the same.
+  // its default target so OpenCode sizes conversations the same.
   out[AUTO_MODEL_ID] = {
     name: "Auto",
     reasoning: false,
@@ -112,11 +115,15 @@ export function managedModels(): Record<string, GatewayModel> {
 export function gatewayModelsAll(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   for (const provider of CATALOG.providers) {
+    if (provider.id === "opencode") continue;
     if (!resolveCatalogUpstream(provider.id)) continue;
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
       out[`${provider.id}/${model.id}`] = {
         name: model.name,
+        released: model.released,
+        release_date: model.released,
+        family: (model as { family?: string }).family,
         ...capabilitiesOf(model),
       };
     }
@@ -130,6 +137,9 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
       name: `${model?.name ?? humanize(id)} (ChatGPT)`,
+      released: model?.released,
+      release_date: model?.released,
+      family: (model as { family?: string } | undefined)?.family,
       // Derive from models.dev; default to GPT-5.x's profile (reasoning, tools,
       // vision) for any id models.dev doesn't list yet.
       reasoning: model?.reasoning ?? true,
@@ -143,20 +153,31 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
 }
 
 // The served catalog depends only on the committed CATALOG snapshot and process
-// env (codex ids) — never on the caller. So the two shapes are each built ONCE,
-// at module load, instead of rebuilt (iterating ~5k models) on every /models
-// request and sandbox boot.
+// env (codex ids) — never on the caller. So the shapes are each built ONCE, at
+// module load, instead of rebuilt (iterating ~5k models) on every /models
+// request and sandbox boot. Free-tier accounts get no managed Kortix models;
+// BYOK/Codex are unchanged once a project is scoped.
 const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
-const FULL_CATALOG: Record<string, GatewayModel> = {
-  ...MANAGED_ONLY,
+const BYOK_AND_CODEX: Record<string, GatewayModel> = {
   ...gatewayModelsAll(),
   ...gatewayCodexModels(),
 };
+const FULL_CATALOG: Record<string, GatewayModel> = {
+  ...MANAGED_ONLY,
+  ...BYOK_AND_CODEX,
+};
+const EMPTY_CATALOG: Record<string, GatewayModel> = {};
 
-// `projectId` gates BYOK/codex visibility (anonymous callers see managed only) —
-// it is NOT a per-project filter, so both shapes are shared singletons.
+// `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
+// `freeManagedOnly` (a free-tier account with internal billing on) hides every
+// managed Kortix model. A free user's own connected provider keys still work,
+// but there is no unreliable platform-managed free default.
 export function gatewayModelCatalog(
   projectId: string | undefined,
+  opts?: { freeManagedOnly?: boolean },
 ): Record<string, GatewayModel> {
+  if (opts?.freeManagedOnly) {
+    return projectId ? BYOK_AND_CODEX : EMPTY_CATALOG;
+  }
   return projectId ? FULL_CATALOG : MANAGED_ONLY;
 }

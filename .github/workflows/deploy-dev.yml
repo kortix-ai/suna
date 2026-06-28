@@ -18,10 +18,10 @@ name: Deploy Dev
 #   - CLI         → 4 cross-compiled binaries published to the mutable
 #                   `dev-latest` GitHub prerelease (default API base dev-api).
 #
-# Desktop is intentionally NOT here — it's a Tauri webview shell that changes
+# Desktop is intentionally NOT here — it's an Electron shell that changes
 # rarely and needs slow signed macOS/Windows runners, so it lives in its own
-# workflow (desktop.yml: only on apps/desktop/** changes or manual dispatch) and
-# never blocks the CLI/API/frontend dev deploy.
+# workflow (desktop.yml: only on apps/desktop-electron/** changes or manual
+# dispatch) and never blocks the CLI/API/frontend dev deploy.
 #
 # Promotion to production is a separate, manual workflow (promote.yml), which cuts
 # the single unified vX.Y.Z release bundling API + frontend + CLI + desktop.

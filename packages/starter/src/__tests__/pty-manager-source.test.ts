@@ -4,10 +4,24 @@ import { join } from 'node:path';
 
 import embeddedStarter from '../embedded.generated.json' with { type: 'json' };
 
-const managerPath = '.kortix/opencode/pty/opencode-pty/src/plugin/pty/manager.ts';
-const toolsPath = '.kortix/opencode/pty/pty-tools.ts';
-const templateManagerPath = join(import.meta.dir, '..', '..', 'templates', 'base', managerPath);
-const templateToolsPath = join(import.meta.dir, '..', '..', 'templates', 'base', toolsPath);
+const baseManagerPath = '.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts';
+const baseToolsPath = '.kortix/opencode/plugins/pty.ts';
+const templateManagerPath = join(
+  import.meta.dir,
+  '..',
+  '..',
+  'templates',
+  'base',
+  baseManagerPath,
+);
+const templateToolsPath = join(
+  import.meta.dir,
+  '..',
+  '..',
+  'templates',
+  'base',
+  baseToolsPath,
+);
 
 function findEmbeddedFile(path: string): string {
   const base = (embeddedStarter as Record<string, { files: { path: string; content: string }[] }>).base;
@@ -19,7 +33,7 @@ function findEmbeddedFile(path: string): string {
 describe('starter PTY manager resilience', () => {
   test('falls back to local PTY when backend spawn or websocket attach fails', () => {
     const source = readFileSync(templateManagerPath, 'utf8');
-    const embedded = findEmbeddedFile(managerPath);
+    const embedded = findEmbeddedFile(baseManagerPath);
 
     for (const content of [source, embedded]) {
       expect(content).toContain('function resolveBackendCommand');
@@ -33,7 +47,7 @@ describe('starter PTY manager resilience', () => {
 
   test('returns structured tool failures instead of throwing through OpenCode', () => {
     const source = readFileSync(templateToolsPath, 'utf8');
-    const embedded = findEmbeddedFile(toolsPath);
+    const embedded = findEmbeddedFile(baseToolsPath);
 
     for (const content of [source, embedded]) {
       expect(content).toContain('async function recoverPtyTool');

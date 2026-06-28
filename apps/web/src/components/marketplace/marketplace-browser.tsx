@@ -24,6 +24,8 @@ import { MarketplaceAvatar } from './marketplace-avatar';
 import { MarketplaceItemCard } from './marketplace-item-card';
 import { TYPE_FILTERS, TYPE_SECTIONS } from './marketplace-meta';
 
+const MARKETPLACE_GRID_CLASS = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3';
+
 /** Search + adaptive type filters + a source switcher + a card grid (grouped by
  *  type when browsing everything). Selecting a card opens its detail as a full
  *  in-place page (not a slide-out). Shared by the top-level /marketplace page
@@ -34,12 +36,18 @@ export function MarketplaceBrowser({
   installedNames,
   source: sourceProp,
   onSourceChange,
+  publicOnly = false,
+  readOnly = false,
 }: {
   onAdd: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
   /** Controlled source filter (defaults to internal state). */
   source?: string;
   onSourceChange?: (source: string) => void;
+  /** Use unauthenticated public catalog reads. */
+  publicOnly?: boolean;
+  /** Hide project/source mutation affordances. */
+  readOnly?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
@@ -51,7 +59,7 @@ export function MarketplaceBrowser({
   const [addOpen, setAddOpen] = useState(false);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
 
-  const marketplacesQuery = useMarketplaces();
+  const marketplacesQuery = useMarketplaces({ publicOnly });
   const marketplaces = useMemo(
     () => marketplacesQuery.data?.marketplaces ?? [],
     [marketplacesQuery.data],
@@ -64,7 +72,7 @@ export function MarketplaceBrowser({
   }, [marketplacesQuery.data, marketplaces]);
   const total = marketplaces.reduce((s, m) => s + m.count, 0);
 
-  const sources = useMarketplaceSources().data ?? [];
+  const sources = useMarketplaceSources({ enabled: !readOnly }).data ?? [];
   const removeSource = useRemoveMarketplaceSource();
 
   useEffect(() => {
@@ -89,7 +97,12 @@ export function MarketplaceBrowser({
   const effectiveType = typeTabs.some((t) => t.value === type) ? type : 'all';
   const showTypeTabs = typeTabs.length > 1;
 
-  const itemsQuery = useMarketplaceItems({ query: debounced, type: effectiveType, source });
+  const itemsQuery = useMarketplaceItems({
+    query: debounced,
+    type: effectiveType,
+    source,
+    publicOnly,
+  });
   const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
   const grouped = effectiveType === 'all' && !debounced;
   // Catalog still streaming external sources in (cold first load).
@@ -132,7 +145,7 @@ export function MarketplaceBrowser({
       installed={installedNames?.has(item.name)}
       showSource={source === 'all'}
       onOpen={(it) => openItem(it.id)}
-      onAdd={onAdd}
+      onAdd={readOnly ? undefined : onAdd}
     />
   );
 
@@ -175,12 +188,19 @@ export function MarketplaceBrowser({
               ))}
             </FilterBar>
           )}
-          <Button variant="outline" size="sm" className="shrink-0" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" />
-            {tI18nHardcoded.raw(
-              'autoComponentsMarketplaceMarketplaceBrowserJsxTextAddSource8387392e',
-            )}
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus className="size-4" />
+              {tI18nHardcoded.raw(
+                'autoComponentsMarketplaceMarketplaceBrowserJsxTextAddSource8387392e',
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -234,7 +254,7 @@ export function MarketplaceBrowser({
       </div>
 
       {/* Selected external source — provenance + remove */}
-      {selected?.external && (
+      {selected?.external && !readOnly && (
         <div className="border-border/60 bg-muted/20 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <MarketplaceAvatar
@@ -279,7 +299,7 @@ export function MarketplaceBrowser({
       )}
 
       {itemsQuery.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[92px] rounded-2xl" />
           ))}
@@ -299,7 +319,7 @@ export function MarketplaceBrowser({
         />
       ) : items.length === 0 ? (
         streaming ? (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-[92px] rounded-2xl" />
             ))}
@@ -323,12 +343,16 @@ export function MarketplaceBrowser({
                 {section.label}{' '}
                 <span className="text-muted-foreground/60 font-normal">{section.items.length}</span>
               </h2>
-              <div className="grid gap-3 sm:grid-cols-2">{section.items.map(renderCard)}</div>
+              <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
+                {section.items.map(renderCard)}
+              </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">{items.map(renderCard)}</div>
+        <div className={MARKETPLACE_GRID_CLASS} data-marketplace-grid>
+          {items.map(renderCard)}
+        </div>
       )}
 
       {streaming && items.length > 0 && (
@@ -340,7 +364,7 @@ export function MarketplaceBrowser({
         </div>
       )}
 
-      <AddMarketplaceDialog open={addOpen} onOpenChange={setAddOpen} />
+      {!readOnly && <AddMarketplaceDialog open={addOpen} onOpenChange={setAddOpen} />}
     </div>
   );
 }

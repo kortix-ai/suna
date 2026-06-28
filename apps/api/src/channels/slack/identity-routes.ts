@@ -18,13 +18,56 @@ import { config } from '../../config';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
 import { listProjectsForWorkspace, loadSlackTeamNameForProject } from '../install-store';
+import { spawnAgentTurn } from './dispatch';
+import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
 import { isAccountMember, linkSlackIdentity } from './identity';
 
 export const slackIdentityApp = makeOpenApiApp();
 
+slackIdentityApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/login/{token}',
+    tags: ['channels'],
+    summary: 'Redirect a Slack login link to the web login page',
+    request: { params: z.object({ token: z.string().min(1) }) },
+    responses: {
+      200: { description: 'HTML redirect to web Slack login page' },
+    },
+  }),
+  async (c: any) => {
+    const token = c.req.param('token');
+    const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+    const target = `${base}/slack/login/${encodeURIComponent(token)}`;
+    return c.html(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="0; url=${target}" />
+    <title>Opening Kortix</title>
+  </head>
+  <body>
+    <p>Opening Kortix...</p>
+    <script>window.location.replace(${JSON.stringify(target)});</script>
+    <p><a href="${target}">Continue to Kortix</a></p>
+  </body>
+</html>`);
+  },
+);
+
 const BindBody = z.object({ token: z.string().min(1) });
-const BindResult = z.object({ ok: z.boolean(), workspaceName: z.string().nullable() });
+const BindResult = z.object({
+  ok: z.boolean(),
+  workspaceName: z.string().nullable(),
+  // Whether the now-linked user is actually a member of the workspace's account.
+  // Connecting is decoupled from access: a non-member links successfully
+  // (hasAccess=false) and then requests access in-thread. The runtime gate still
+  // blocks any agent run until they're an approved member.
+  hasAccess: z.boolean(),
+  resumed: z.boolean(),
+});
 
 slackIdentityApp.openapi(
   createRoute({
@@ -63,18 +106,31 @@ slackIdentityApp.openapi(
       .where(inArray(projects.projectId, projectIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
-    if (!memberships.some(Boolean)) {
-      return c.json(
-        { error: "You're not a member of this workspace's Kortix account. Ask an admin to add you, then try again." },
-        403,
-      );
-    }
+    const hasAccess = memberships.some(Boolean);
 
+    // Link regardless of membership. Connecting your Kortix account is decoupled
+    // from having access: we establish WHO this Slack user is so a non-member can
+    // request access right in the thread. This is safe — the link grants nothing
+    // on its own; the runtime gate (resolveSlackActor) still requires membership
+    // before any agent runs, so a linked non-member can do nothing until an admin
+    // approves. The workspace-must-be-connected check above still stands.
     await linkSlackIdentity({ teamId: payload.teamId, slackUserId: payload.slackUserId, userId });
+
+    const pending = await consumePendingSlackAuthMessage({
+      pendingId: payload.pendingId,
+      teamId: payload.teamId,
+      slackUserId: payload.slackUserId,
+    });
+    if (pending) {
+      void replaceSlackAuthPromptConnected(pending.slackResponseUrl, { hasAccess });
+      void spawnAgentTurn(pending.projectId, pending.envelope, pending.event).catch((err) => {
+        console.error('[slack-auth] failed to resume pending Slack message after bind', err);
+      });
+    }
 
     const workspaceName = projectIds.length
       ? await loadSlackTeamNameForProject(projectIds[0]).catch(() => null)
       : null;
-    return c.json({ ok: true, workspaceName: workspaceName || null });
+    return c.json({ ok: true, workspaceName: workspaceName || null, hasAccess, resumed: !!pending });
   },
 );

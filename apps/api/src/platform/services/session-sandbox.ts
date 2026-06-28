@@ -50,6 +50,7 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
 // Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
@@ -164,6 +165,8 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
+  /** Project metadata, used for per-project experimental gates. */
+  projectMetadata?: unknown;
   /**
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
@@ -199,13 +202,6 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
-  /**
-   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
-   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
-   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
-   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
-   */
-  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -309,6 +305,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
+  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
   const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
     db
       .insert(sessionSandboxes)
@@ -347,13 +344,15 @@ export async function provisionSessionSandbox(opts: {
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    accountEntitledToLlmGateway(accountId).catch((err) => {
-      console.warn(
-        `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-      return false;
-    }),
+    llmGatewayEnabled
+      ? accountEntitledToLlmGateway(accountId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+          return false;
+        })
+      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
@@ -374,15 +373,14 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement: any account whose tier grants all models — per-seat teams AND
-  // every legacy paid tier (pro, tier_*) — on billing-on deploys, plus everyone
-  // on billing-off (local / self-hosted; the gateway records-but-never-debits
-  // there). See accountEntitledToLlmGateway: it gates on the resolved TIER, not
-  // billing_model, so legacy paying customers are no longer wrongly stripped to
-  // the Zen-only catalog. Per-request affordability stays in the gateway's own
-  // billing gate (assertBillingActive + deductForLlmUsage).
+  // Enablement is a three-part gate: operator availability, per-project
+  // experimental opt-in, and account entitlement. If any part is off we inject
+  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
+  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
+  // so legacy paying customers are no longer wrongly stripped to the Zen-only
+  // catalog. Per-request affordability stays in the gateway's own billing gate.
   const gatewayLlmKey: string | null =
-    config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
+    llmGatewayEnabled && gatewayEntitled ? executorToken : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -431,9 +429,7 @@ export async function provisionSessionSandbox(opts: {
     // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
     // idle-stops + CoW-resumes natively rather than depending on the maintenance
     // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
-    // reaper stays as a secondary backstop only. Warm seeds / legacy spares pass
-    // an EXPLICIT autoStopInterval=0 to stay persistent.
-    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
+    // reaper stays as a secondary backstop only.
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -612,7 +608,7 @@ export async function provisionSessionSandbox(opts: {
           },
           attempts,
         ),
-        config: { serviceKey: sandboxKey.secretKey },
+        config: { serviceKey: sandboxKey.secretKey, llmGatewayEnabled: !!gatewayLlmKey },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };

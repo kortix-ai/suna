@@ -217,7 +217,7 @@ describe('daemon PTY websocket bridge', () => {
     }
   })
 
-  it('uses the reloaded sandbox token for warm-claim websocket traffic', async () => {
+  it('uses the reloaded sandbox token for restored warm-snapshot websocket traffic', async () => {
     const upstream = startEchoUpstream()
 
     const proxy = startProxy(

@@ -254,6 +254,12 @@ test.describe('08 — Accounts, invites, and project access', () => {
       `/projects/${project.project_id}`,
     );
     expect(readableProject.effective_project_role).toBe('viewer');
+    // A viewer is the base *usable* role: it can start sessions and use the agent
+    // chat (this previously 403'd, which made the default project role useless).
+    // It reaches provider validation just like an owner — an invalid provider is a
+    // 400, NOT the old role 403 (and avoids actually provisioning a sandbox here).
+    expect(await apiStatus(memberSession.access_token, 'POST', `/projects/${project.project_id}/sessions`, { provider: 'justavps' })).toBe(400);
+    // ...but it still cannot customize the project.
     expect(await apiStatus(memberSession.access_token, 'PATCH', `/projects/${project.project_id}`, { name: 'blocked' })).toBe(403);
 
     await api<{ ok: true }>(

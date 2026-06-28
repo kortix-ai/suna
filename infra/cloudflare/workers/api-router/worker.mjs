@@ -27,11 +27,17 @@ export default {
     const url = new URL(request.url);
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
 
+    // `manual` so backend 3xx responses are passed straight through to the
+    // browser. With `follow`, the worker would chase a browser-facing redirect
+    // server-side (no client cookies) — e.g. the Slack OAuth callback's
+    // `302 → kortix.com/projects/...` got followed here, kortix.com bounced to
+    // /auth, and the worker returned that /auth HTML as a 200, so the browser
+    // never saw the redirect (blank page, URL stuck on the callback).
     const modifiedRequest = new Request(targetUrl, {
       method: request.method,
       headers: request.headers,
       body: request.body,
-      redirect: 'follow',
+      redirect: 'manual',
     });
 
     const response = await fetch(modifiedRequest);

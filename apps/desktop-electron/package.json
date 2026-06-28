@@ -1,0 +1,29 @@
+{
+  "name": "@kortix/desktop-electron",
+  "productName": "Kortix",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kortix desktop shell — Electron wrapper around the web app",
+  "author": "Kortix",
+  "repository": "https://github.com/kortix-ai/suna",
+  "main": "src/main.js",
+  "scripts": {
+    "setup": "node scripts/ensure-runtime.js",
+    "dev": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=http://localhost:3000/projects electron .",
+    "dev:dev-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://dev.kortix.com/projects electron .",
+    "dev:prod-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://kortix.com/projects electron .",
+    "pack": "node scripts/ensure-runtime.js && electron-builder --dir",
+    "dev:macos": "pnpm run pack && open \"$(find dist -maxdepth 2 -name 'Kortix.app' | head -1)\"",
+    "build": "node scripts/ensure-runtime.js && electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

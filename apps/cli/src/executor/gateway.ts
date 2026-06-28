@@ -33,7 +33,7 @@ import { CliError } from './io.ts';
  * When a project is known we hit the project-explicit gateway routes (which
  * accept a plain user token), so `kortix executor` is the SAME locally and in
  * the cloud. Without a project we fall back to the legacy flat routes, which
- * need a project-scoped session token (the in-sandbox case).
+ * need a scoped session token (the in-sandbox case).
  */
 export function executorClient(projectOverride?: string): ExecutorClient {
   const auth = loadAuth();

@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:13737';
 const apiURL = process.env.E2E_API_URL || 'http://localhost:13738/v1';
+// Lets CI browser tests pass through Vercel deployment protection (SSO) on staging.
+const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 export default defineConfig({
   testDir: './e2e/specs',
@@ -16,6 +18,9 @@ export default defineConfig({
   outputDir: '../test-results/artifacts',
   use: {
     baseURL,
+    extraHTTPHeaders: vercelBypass
+      ? { 'x-vercel-protection-bypass': vercelBypass }
+      : undefined,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

@@ -223,7 +223,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
   // Shared gateway logic — used by BOTH the legacy flat routes (project derived
-  // from a project-scoped session token) and the project-EXPLICIT routes
+  // from a scoped session token) and the project-EXPLICIT routes
   // (project from the path, any valid principal). One implementation, two faces.
   const catalogResponse = async (c: any, p: ExecutorPrincipal) => {
     const connectors = await deps.listCatalog(p);

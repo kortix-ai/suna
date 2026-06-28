@@ -754,10 +754,10 @@ function SettingsGroup({
   return (
     <section className="space-y-3">
       <div className="space-y-0.5 px-1">
-        <h3 className="text-muted-foreground/70 text-[10px] font-semibold tracking-[0.08em] uppercase">
+        <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
           {title}
         </h3>
-        {description && <p className="text-muted-foreground/80 text-[11px]">{description}</p>}
+        {description && <p className="text-muted-foreground/80 text-xs">{description}</p>}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -1209,7 +1209,6 @@ function MembersCard({
             <Button
               size="sm"
               variant="outline"
-              className="border-destructive/40 text-destructive hover:bg-destructive/5"
               onClick={() => setBulkDialog('remove')}
               disabled={bulkBusy}
             >
@@ -1302,8 +1301,8 @@ function MembersCard({
                     <div className="hidden items-center gap-1.5 sm:flex">
                       {member.is_super_admin && (
                         <Badge
-                          variant="outline"
-                          className="h-5 rounded-2xl border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                          variant="warning"
+                          size="sm"
                           title={tHardcodedUi.raw(
                             'appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck',
                           )}
@@ -1314,7 +1313,7 @@ function MembersCard({
                       {member.groups && member.groups.length > 0 && (
                         <Badge
                           variant="outline"
-                          className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                          size="sm"
                           title={member.groups.map((g) => g.name).join(', ')}
                         >
                           {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
@@ -1324,7 +1323,7 @@ function MembersCard({
                         member.active_pat_count > 0 && (
                           <Badge
                             variant="outline"
-                            className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                            size="sm"
                             title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
                           >
                             {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
@@ -1332,8 +1331,8 @@ function MembersCard({
                         )}
                       {member.has_verified_mfa && (
                         <Badge
-                          variant="outline"
-                          className="h-5 rounded-2xl border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                          variant="success"
+                          size="sm"
                           title={tHardcodedUi.raw(
                             'appAccountsIdPage.line952JsxAttrTitleMFAEnrolled',
                           )}
@@ -2005,7 +2004,14 @@ function PendingInvitesSection({
           return (
             <ListRow
               key={invite.invite_id}
-              leading={<UserAvatar email={invite.email} size="md" />}
+              leading={
+                <div className="flex items-center gap-2.5">
+                  {/* Spacer matching the members list's checkbox column so
+                      invite avatars align with member avatars below. */}
+                  <span className="w-3.5" aria-hidden />
+                  <UserAvatar email={invite.email} size="md" />
+                </div>
+              }
               title={invite.email}
               badges={
                 <Badge variant="secondary" size="sm">

@@ -57,9 +57,10 @@ export default function PublicSessionSharePage() {
   const origin = apiOrigin();
   const iframeSrc = useMemo(() => {
     if (!meta?.share) return '';
-    if (meta.share.public_url) return meta.share.public_url;
-    if (!meta.share.proxy_path || !origin) return '';
-    return `${origin}${meta.share.proxy_path}`;
+    // Prefer the path-based proxy on the same origin we just fetched metadata
+    // from — it always resolves. `public_url` is a fallback for older responses.
+    if (meta.share.proxy_path && origin) return `${origin}${meta.share.proxy_path}`;
+    return meta.share.public_url || '';
   }, [meta, origin]);
   const fileSrc = useMemo(() => {
     if (!meta?.share || meta.share.resource_type !== 'file') return '';

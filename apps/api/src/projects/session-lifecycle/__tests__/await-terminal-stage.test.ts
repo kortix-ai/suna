@@ -16,7 +16,7 @@ const stepNow = (step: number) => {
 };
 
 describe('awaitTerminalStage — session-start long-poll loop', () => {
-  test('returns immediately when already ready (warm-claim fast path, no resolve)', async () => {
+  test('returns immediately when already ready (no resolve)', async () => {
     let calls = 0;
     const r = await awaitTerminalStage(
       mk('ready', false),

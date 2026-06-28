@@ -124,6 +124,13 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   // --- skills: <cd>/skills/**/SKILL.md (the dir holding SKILL.md is the skill)
   for (const sk of groupSkillFiles(files, `${configDir}/skills`)) {
     const meta = parseFrontmatter(readOptional(source, sk.skillMd));
+    const defaultProjectInstall =
+      meta.defaultProjectInstall === 'true'
+        ? true
+        : meta.defaultProjectInstall === 'false'
+          ? false
+          : undefined;
+    const defaultProjectInstallOrder = Number(meta.defaultProjectInstallOrder);
     add(
       {
         name: meta.name && /^[a-z0-9][a-z0-9-_.]*$/i.test(meta.name) ? meta.name : sk.name,
@@ -136,7 +143,12 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
           type: 'registry:file',
           target: buildTarget.skill(sk.name, f.rel),
         })),
-        meta: { source: name, primitive: 'skill' },
+        meta: {
+          source: name,
+          primitive: 'skill',
+          ...(defaultProjectInstall === undefined ? {} : { defaultProjectInstall }),
+          ...(Number.isFinite(defaultProjectInstallOrder) ? { defaultProjectInstallOrder } : {}),
+        },
       },
       'skill',
     );
@@ -246,7 +258,7 @@ function expandExtraItem(item: RegistryItem, source: BuildSource, files: string[
 function groupCategories(skillPath: string): string[] | undefined {
   const parts = skillPath.split('/');
   if (parts.length < 2) return undefined;
-  // e.g. "GENERAL-KNOWLEDGE-WORKER/pdf" → category "general-knowledge-worker"
+  // e.g. "research/pdf" → category "research"
   return [parts[0].toLowerCase()];
 }
 

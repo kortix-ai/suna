@@ -292,6 +292,8 @@ mock.module('../iam/dispatcher', () => {
     const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
     if (action === 'project.read') return pr === 'viewer' || pr === 'editor' || pr === 'manager';
+    // Session lifecycle: any project member (viewer included) may run sessions.
+    if (action.startsWith('project.session.')) return pr === 'viewer' || pr === 'editor' || pr === 'manager';
     if (action === 'project.write') return pr === 'editor' || pr === 'manager';
     return pr === 'manager';
   };

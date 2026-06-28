@@ -20,6 +20,7 @@ import {
 } from '@/features/co-worker/shared/sharing-picker';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isBillingEnabled } from '@/lib/config';
 import { listProjectSecrets, pollProjectProviderOAuth, startProjectProviderOAuth } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
@@ -160,6 +161,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           toast.success('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          refreshProjectProviderState(queryClient, projectId);
           onConnected?.();
           return;
         }

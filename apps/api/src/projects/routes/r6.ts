@@ -11,11 +11,14 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
+import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
 import { reconcileComputerConnectors } from '../../executor/sync';
+import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
   return {
@@ -347,6 +350,14 @@ projectsApp.openapi(
       message,
     })
     .returning();
+
+  await notifyProjectAccessRequestManagers({
+    accountId: project.accountId,
+    projectId,
+    requesterUserId: userId,
+    requesterEmail: created.requesterEmail,
+    message,
+  });
 
   return c.json({ status: 'created', request: serializeProjectAccessRequest(created) }, 201);
 },
@@ -1121,6 +1132,9 @@ projectsApp.openapi(
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     if (feature === 'agent_tunnel') {
       void reconcileComputerConnectors(row.accountId);
+    }
+    if (feature === 'llm_gateway') {
+      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
     }
     return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   },

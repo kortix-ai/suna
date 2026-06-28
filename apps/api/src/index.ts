@@ -49,7 +49,6 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
-import { API_INSTANCE, API_STARTED_AT } from './shared/instance';
 import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
@@ -64,7 +63,6 @@ import { startProjectMaintenance, stopProjectMaintenance } from './projects/main
 import { kickStartupPreBuild } from './snapshots/builder';
 import { kickWarmBaseBuild } from './snapshots/warm-bake';
 import { warmSnapshotsEnabled } from './shared/daytona';
-import { warmPoolEnabled } from './platform/services/warm-pool';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -334,6 +332,11 @@ const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 // the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
 // Lets the team verify precisely which code is live. 'unknown' for local dev.
 const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+// When this process booted — confirms a deploy actually rolled fresh pods.
+const STARTED_AT = new Date().toISOString();
+// Which replica answered (pod name in k8s, task/container id in ECS).
+const API_INSTANCE = process.env.HOSTNAME || 'unknown';
+
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
 mountOpenApiDocs(app, API_VERSION);
@@ -352,13 +355,6 @@ const HealthSchema = z
     timestamp: z.string(),
     billing_enabled: z.boolean(),
     warm_snapshots: z.boolean(),
-    warm_pool: z.object({
-      enabled: z.boolean(),
-      max_total: z.number(),
-      size: z.number(),
-      clone_at_park: z.boolean(),
-      presence_minutes: z.number(),
-    }),
     tunnel: z.any(),
     leader: z.boolean(),
     trigger_scheduler: z.any(),
@@ -373,7 +369,7 @@ const healthHandler = (c: any) =>
     commit: API_COMMIT,
     environment: config.INTERNAL_KORTIX_ENV,
     instance: API_INSTANCE,
-    started_at: API_STARTED_AT,
+    started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
     // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
     // the container's memory limit, without needing metrics-server/dashboards.
@@ -384,17 +380,6 @@ const healthHandler = (c: any) =>
     // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
     // misconfigured env var is visible remotely instead of failing silently.
     warm_snapshots: warmSnapshotsEnabled(),
-    // Whether the warm POOL is live in THIS pod + its tuning. Surfaced so a
-    // values.yaml extraEnv that never reached the running pod (e.g. a stuck
-    // Argo sync) is visible remotely instead of silently leaving every start
-    // cold. Config-only — no DB query, so /health stays cheap (see the Better
-    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_ENABLED (no global cap).
-    warm_pool: {
-      enabled: warmPoolEnabled(),
-      default_size: config.KORTIX_WARM_POOL_SIZE,
-      clone_at_park: config.KORTIX_WARM_POOL_CLONE_AT_PARK,
-      presence_minutes: config.KORTIX_WARM_POOL_PRESENCE_MINUTES,
-    },
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
     // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
@@ -680,8 +665,8 @@ const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, em
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
-app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — raw AgentMail events
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -870,6 +855,15 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
+  // toggles (warm_snapshot / provider_fallback) are honored from
+  // request #1. Without this a fresh pod serves the cold-cache defaults for the
+  // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
+  // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
+  // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
+  await import('./platform/services/runtime-settings')
+    .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
@@ -879,8 +873,8 @@ async function startReplicaServices() {
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
 // (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
 // up to 10); running these on every replica would double-fire cron triggers
-// (N duplicate paid agent sessions + duplicate external side effects),
-// over-provision the warm pool, and double-run legacy migrations. Leader
+// (N duplicate paid agent sessions + duplicate external side effects) and
+// double-run legacy migrations. Leader
 // election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
 // The guard makes start/stop idempotent across leadership flaps.
 let singletonWorkersRunning = false;
@@ -1008,12 +1002,10 @@ export default {
       server.timeout(req, 0);
     }
 
-    // LLM chat completions stream SSE — both the in-API /v1/llm pipeline and the
-    // /v1/llm-gateway reverse proxy to the standalone pod. Let the gateway's own
-    // keep-alive / upstream timeout govern them instead of Bun closing the client
-    // socket at idleTimeout with an empty reply. (startsWith('/v1/llm') covers
-    // both /v1/llm and /v1/llm-gateway.)
-    if (url.pathname.startsWith('/v1/llm')) {
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
       server.timeout(req, 0);
     }
 
@@ -1139,7 +1131,7 @@ export default {
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
+        tunnelWsHandlers.onClose(ws.data.tunnelId);
         return;
       }
       if (ws.data?.type === 'preview-ws') {

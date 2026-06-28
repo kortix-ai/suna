@@ -13,8 +13,7 @@
  * "using baked repo checkout" path (kortix-sandbox-agent-server/src/git.ts)
  * just creates the session branch locally — and opencode starts hot. Commits
  * that land between bake and session are covered by a fire-and-forget
- * `/kortix/refresh?base=1&restart=0` after boot (the same fast-forward the
- * warm-pool claim path uses).
+   * `/kortix/refresh?base=1&restart=0` after boot.
  *
  * Names are content-addressed per (project, tip commit, warm runtime base):
  * `kortix-wproj-<proj8>-<hash12>`. A CR merge bakes a new name; the project's
@@ -267,14 +266,14 @@ tail -2 /tmp/oc-prewarm.log; rm -f /tmp/oc-prewarm.log'`,
  * Platinum per-project warm bake. Platinum has no live-snapshot-a-builder API
  * like Daytona; instead we build a per-project STATEFUL template (via the same
  * from-build adapter the shared default uses) whose runtime == the default's,
- * and have the daemon clone the project repo AT CAPTURE ("park") — driven by the
- * capture_env below (KORTIX_WARM_POOL_CLONE_AT_PARK). The host snapshots the VM
+ * and have the daemon clone the project repo during capture, driven by the
+ * capture_env below. The host snapshots the VM
  * once opencode is warm + a root session is pinned, then CoW-forks it per
  * session (~1-2s, no in-box clone). Stale-tip is self-healing at the daemon
  * (git.ts re-clones when baked HEAD != session base), so this is pure upside.
  *
  * No new Platinum API: from-build already accepts capture/capture_condition/
- * capture_env. The only genuinely new behaviour is the daemon park-clone.
+ * capture_env. The only genuinely new behaviour is the daemon seed clone.
  */
 async function bakeProjectWarmSnapshotPlatinum(
   project: WarmableProject,
@@ -289,7 +288,7 @@ async function bakeProjectWarmSnapshotPlatinum(
   const { resolveTemplateBySlug, computeTemplateIdentity } = await import('./templates');
   const { createApiKey } = await import('../repositories/api-keys');
 
-  // accountId — needed to mint the short-TTL park-clone credential. The bake is
+  // accountId — needed to mint the short-TTL seed-clone credential. The bake is
   // called with a project subset that may omit it, so read it from the row.
   const [acct] = await db
     .select({ accountId: projects.accountId })
@@ -322,19 +321,19 @@ async function bakeProjectWarmSnapshotPlatinum(
   }
 
   // Mirror the DEFAULT runtime exactly (same opencode/agent/CLI a cold session
-  // gets) — the repo is NOT baked via Dockerfile; it is cloned at park.
+  // gets) — the repo is NOT baked via Dockerfile; it is cloned during capture.
   const template = await resolveTemplateBySlug(gitProject, 'default');
   const identity = await computeTemplateIdentity(gitProject, template);
 
-  // Short-TTL ACCOUNT credential for the park clone. The daemon clones the repo
+  // Short-TTL ACCOUNT credential for the seed clone. The daemon clones the repo
   // via the Kortix git proxy using this token; the proxy accepts an account-
   // scoped (type='user') key for the project's account (a sandbox-type token
-  // would require a live sandbox row, which doesn't exist at park).
+  // would require a live sandbox row, which doesn't exist during capture).
   //
   // We deliberately do NOT revoke it synchronously: buildSnapshot returns at
-  // rootfs-`ready`, but the stateful CAPTURE that actually runs the park-clone
+  // rootfs-`ready`, but the stateful CAPTURE that actually runs the seed clone
   // happens AFTER that, asynchronously, on the CP seed-baker loop. Revoking here
-  // would kill the token before the clone uses it (→ park-clone auth-fails → the
+  // would kill the token before the clone uses it (→ seed-clone auth-fails → the
   // warm snapshot bakes WITHOUT the repo). The 30m TTL bounds exposure (the
   // capture completes within minutes), the token is overridden in every fork by
   // its own per-session token, and a capture that somehow outlives the TTL just
@@ -347,7 +346,7 @@ async function bakeProjectWarmSnapshotPlatinum(
     // key: authorizeGitProxy only checks accountId ownership for it, never the
     // sandbox scope, so the value is irrelevant to auth — use the projectId uuid.
     sandboxId: project.projectId,
-    title: 'warm-bake park-clone (short-TTL)',
+    title: 'warm-bake seed-clone (short-TTL)',
     type: 'user',
     expiresAt: new Date(Date.now() + 30 * 60_000),
   });
@@ -367,14 +366,14 @@ async function bakeProjectWarmSnapshotPlatinum(
     capture: 'stateful',
     captureCondition: { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 },
     captureEnv: {
-      // Same warm-seed knobs the shared default uses…
-      KORTIX_WARM_POOL: '1',
+      // Same daemon warm-capture knobs the shared default uses.
+      KORTIX_WARM_SEED: '1',
       KORTIX_ENABLE_INNER_DOCKER: '0',
       PUID: '911',
       PGID: '911',
       TZ: 'UTC',
-      // …plus the repo identity so the daemon clones the PROJECT at park.
-      KORTIX_WARM_POOL_CLONE_AT_PARK: '1',
+      // Plus the repo identity so the daemon clones the project into the seed.
+      KORTIX_WARM_SEED_PROJECT_CLONE: '1',
       KORTIX_PROJECT_AUTO_CLONE: '1',
       KORTIX_PROJECT_ID: project.projectId,
       KORTIX_REPO_URL: proxyGitUrl(project.projectId),
@@ -384,8 +383,8 @@ async function bakeProjectWarmSnapshotPlatinum(
       KORTIX_SANDBOX_TOKEN: cloneCred.secretKey,
       KORTIX_TOKEN: cloneCred.secretKey,
       // No-restart warm-fork (stateful ONLY — never cold/Daytona): bake proxy-mode
-      // opencode at PARK so a claim hot-swaps the per-session token into the live
-      // proxy instead of restarting opencode (~8s). Fast path stays untouched.
+      // opencode into the seed so fork adoption hot-swaps the per-session token
+      // into the live proxy instead of restarting opencode (~8s).
       KORTIX_LLM_HOTSWAP: '1',
       // Bake the FULL org catalog at PARK via the sandbox-token-authed endpoint, so
       // the picker isn't degraded to the daemon's minimal fallback. Best-effort:
@@ -449,8 +448,8 @@ export function kickProjectWarmBake(project: WarmableProject, onLog?: (l: string
 
 /**
  * Fast-forward a restored workspace to the CURRENT base tip — covers commits
- * merged between bake and session. Same daemon endpoint the warm-pool claim
- * path uses (`/kortix/refresh?base=1&restart=0`); retried because the daemon
+ * merged between bake and session. Uses the daemon endpoint
+ * `/kortix/refresh?base=1&restart=0`; retried because the daemon
  * is still coming up right after a restore. Fire-and-forget by callers.
  */
 export async function refreshRestoredWorkspace(externalId: string, userId: string | undefined): Promise<void> {

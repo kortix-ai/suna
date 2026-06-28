@@ -23,6 +23,10 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
   };
 }
 
+function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
+  return livePricing(managed.pricingRef);
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
   return {
@@ -35,7 +39,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appName: 'Kortix',
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
+    pricing: managedPricing(managed),
   };
 }
 
@@ -50,7 +54,7 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
+    pricing: managedPricing(managed),
   };
 }
 

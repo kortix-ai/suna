@@ -16,6 +16,7 @@ type SandboxEnvKey = (typeof SANDBOX_ENV_KEYS)[number];
 const ALLOWED_KEYS = new Set<string>(SANDBOX_ENV_KEYS);
 
 function candidatePaths(): string[] {
+  if (process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE === '1') return [];
   const paths: string[] = [];
   if (process.env.BASH_ENV && basename(process.env.BASH_ENV) === 'agent-env.sh') {
     paths.push(process.env.BASH_ENV);

@@ -444,14 +444,20 @@ jobs:
             -e NEXT_PUBLIC_APP_URL="https://${WEB_HOST}" \
             -e KORTIX_PUBLIC_APP_URL="https://${WEB_HOST}" \
             -e NEXT_PUBLIC_URL="https://${WEB_HOST}" \
+            -e SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
+            -e SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
             -e NEXT_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
             -e KORTIX_PUBLIC_SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL" \
             -e NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
             -e KORTIX_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+            -e BACKEND_URL="https://${PUBLIC_API_HOST}/v1" \
+            -e APP_URL="https://${WEB_HOST}" \
             -e NEXT_PUBLIC_BILLING_ENABLED="true" \
             -e KORTIX_PUBLIC_BILLING_ENABLED="true" \
+            -e AUTH_PROVIDERS="google" \
             -e NEXT_PUBLIC_AUTH_PROVIDERS="google" \
             -e KORTIX_PUBLIC_AUTH_PROVIDERS="google" \
+            -e AUTH_METHODS="magic,password" \
             -e NEXT_PUBLIC_AUTH_METHODS="magic,password" \
             -e KORTIX_PUBLIC_AUTH_METHODS="magic,password" \
             -b NEXT_PUBLIC_KORTIX_VERSION="$VERSION" \
@@ -467,6 +473,10 @@ jobs:
       - name: Verify API, web TLS, and runtime config
         env:
           EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
+          # staging.kortix.com sits behind Vercel deployment protection (SSO);
+          # send this header so the web verification reaches the app, not the
+          # Vercel login wall. The API host is the ALB and needs no bypass.
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           set -euo pipefail
           for i in $(seq 1 30); do
@@ -480,8 +490,8 @@ jobs:
           done
           [ "${envv:-}" = "staging" ] || { echo "::error::staging API did not report environment=staging"; exit 1; }
 
-          curl -fsSI --max-time 20 "https://${WEB_HOST}/" >/tmp/web-headers
-          runtime="$(curl -fsS --max-time 20 "https://${WEB_HOST}/api/runtime-config")"
+          curl -fsSI --max-time 20 -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" "https://${WEB_HOST}/" >/tmp/web-headers
+          runtime="$(curl -fsS --max-time 20 -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" "https://${WEB_HOST}/api/runtime-config")"
           printf '%s' "$runtime" | grep -F "\"BACKEND_URL\":\"https://${PUBLIC_API_HOST}/v1\"" >/dev/null
           printf '%s' "$runtime" | grep -F "\"APP_URL\":\"https://${WEB_HOST}\"" >/dev/null
           if printf '%s' "$runtime" | grep -F "dev-api.kortix.com" >/dev/null; then

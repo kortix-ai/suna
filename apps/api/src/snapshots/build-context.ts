@@ -18,6 +18,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile } from './dockerfile-layer';
@@ -48,9 +49,6 @@ const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
-
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -164,6 +162,29 @@ export async function stageBuildContext(
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
   });
+
+  // ── Buildah-portability guard ──────────────────────────────────────────────
+  // The SAME composed context ships to BOTH providers. Daytona builds with
+  // BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
+  // builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+  // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
+  // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
+  // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
+  // 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+  // Reject it at the SOURCE with a clear error instead of an opaque remote build
+  // failure minutes later — and keep the Dockerfile portable to both builders.
+  const heredocLine = composed
+    .split('\n')
+    .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+  if (heredocLine) {
+    throw new Error(
+      `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
+        `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
+        `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
+        `directives work on Daytona but silently break every Platinum template build.`,
+    );
+  }
+
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);
   } else {

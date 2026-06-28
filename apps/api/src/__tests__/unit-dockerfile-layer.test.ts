@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
+import {
   buildDefaultSandboxTemplate,
   buildLayeredDockerfile,
   DEFAULT_SANDBOX_SLUG,
@@ -10,8 +15,8 @@ import {
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
-  opencodeVersion: '1.15.10',
-  agentBrowserVersion: '0.27.0',
+  opencodeVersion: OPENCODE_VERSION,
+  agentBrowserVersion: AGENT_BROWSER_VERSION,
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
@@ -25,8 +30,13 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
-    expect(merged).toContain('opencode-ai@1.15.10');
-    expect(merged).toContain('agent-browser@0.27.0');
+    expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
+    expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
+    expect(merged).toContain('python3 python3-dev python3-pip python3-venv');
+    expect(merged).toContain('"openpyxl>=3.1"');
+    expect(merged).toContain('"pandas>=2.2"');
+    expect(merged).toContain('"playwright>=1.58"');
+    expect(merged).toContain('importlib.import_module(mod)');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.
@@ -42,7 +52,7 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Chromium comes from Playwright (cross-arch; Chrome for Testing has no
     // linux-arm64 build) and pulls its OS libs via --with-deps.
-    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
+    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     // Wired BOTH ways: the documented env var → a stable symlink, AND
     // agent-browser's own auto-detected cache (env-independent, #422-proof).
     expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
@@ -55,7 +65,7 @@ describe('buildLayeredDockerfile', () => {
     // PLAYWRIGHT_BROWSERS_PATH must be set BEFORE the install so Chromium lands
     // in the stable system path the symlinks resolve against.
     const envIdx = merged.indexOf('PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers');
-    const installIdx = merged.indexOf('playwright@1.60.0 install');
+    const installIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install`);
     expect(envIdx).toBeGreaterThanOrEqual(0);
     expect(envIdx).toBeLessThan(installIdx);
   });
@@ -100,7 +110,7 @@ WORKDIR /workspace
   test('agentBrowserVersion is optional — falls back to the pinned default', () => {
     const { agentBrowserVersion, ...withoutVersion } = COMMON;
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...withoutVersion });
-    expect(merged).toContain('agent-browser@0.27.0');
+    expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
   });
 
   test('platform default Dockerfile composes to a valid image', () => {

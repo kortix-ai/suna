@@ -340,7 +340,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Per-agent gate: starting a session provisions compute. A scoped agent token
   // must hold project.session.start (no-op for human/PAT tokens).
@@ -659,7 +659,7 @@ projectsApp.openapi(
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const serverManagedFields = ['status', 'sandbox_url', 'sandboxUrl', 'error'];
@@ -754,7 +754,7 @@ projectsApp.openapi(
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const loaded = await loadProjectForUser(c, projectId, 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Per-agent gate: tearing down a session. A scoped agent token must hold
   // project.session.stop (no-op for human/PAT tokens).

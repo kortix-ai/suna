@@ -13,9 +13,20 @@ import { ScopedCache } from '@/lib/storage/managed-storage';
 import {
   getProjectDetail,
   getProjectLlmCatalog,
+  listProjectSecrets,
   type ProjectConfigSummary,
-  type ProjectLlmCatalogResponse,
 } from '@/lib/projects-client';
+import { LLM_PROVIDERS } from '@/lib/llm-providers';
+import {
+  filterToGatewayProviders,
+  filterToNativeProviders,
+  GATEWAY_PROVIDER_IDS,
+  mergeProviderLists,
+  mergeProjectSecretConnectedProviders,
+  normalizeProviderList,
+  projectLlmCatalogToProviderList,
+  providerListHasModels,
+} from './provider-selection';
 import type {
   Session,
   Message,
@@ -40,6 +51,7 @@ import type {
 // ============================================================================
 
 export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
+export { GATEWAY_PROVIDER_IDS };
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from './use-visible-agents';
@@ -204,6 +216,18 @@ function setLSCache(family: string, value: unknown, scope?: string): void {
   cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
 }
 
+const PROJECT_SESSION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function canQueryOpenCodeSession(sessionId: string | null | undefined): sessionId is string {
+  return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
+}
+
+export function clearProjectProviderCache(projectId: string): void {
+  providersCache.remove(`proj:${projectId}:native`);
+  providersCache.remove(`proj:${projectId}:gateway`);
+}
+
 /**
  * Stable cache scope for data that does NOT vary per sandbox. The default
  * scope is the ephemeral per-sandbox server id, which is correct for
@@ -259,6 +283,7 @@ export function useOpenCodeSessions() {
 export function useOpenCodeSession(sessionId: string) {
   const queryClient = useQueryClient();
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery<Session>({
     queryKey: opencodeKeys.session(sessionId),
     queryFn: async () => {
@@ -266,7 +291,7 @@ export function useOpenCodeSession(sessionId: string) {
       const result = await client.session.get({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
@@ -393,6 +418,7 @@ export function useUpdateOpenCodeSession() {
 
 export function useOpenCodeSessionDiff(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-diff', sessionId],
     queryFn: async () => {
@@ -400,13 +426,14 @@ export function useOpenCodeSessionDiff(sessionId: string) {
       const result = await client.session.diff({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
   });
 }
 
 export function useOpenCodeSessionTodo(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
+  const canQuerySession = canQueryOpenCodeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-todo', sessionId],
     queryFn: async () => {
@@ -415,7 +442,7 @@ export function useOpenCodeSessionTodo(sessionId: string) {
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: runtimeReady && !!sessionId,
+    enabled: runtimeReady && canQuerySession,
     staleTime: Infinity,
   });
 }
@@ -676,7 +703,7 @@ function projectConfigAgentToOpenCodeAgent(
     mode: agent.mode ?? undefined,
     source: agent.source,
     hidden: agent.enabled === false,
-  } as Agent;
+  } as unknown as Agent;
 }
 
 export function useOpenCodeAgent(agentName: string) {
@@ -1040,78 +1067,64 @@ export function useInitSession() {
 // Provider Hooks
 // ============================================================================
 
-/**
- * True when a provider-list response actually carries usable models — i.e. at
- * least one CONNECTED provider that exposes ≥1 model. A response failing this
- * is a transient boot state, not a real answer (see useOpenCodeProviders).
- */
-function providerListHasModels(providers: ProviderListResponse | undefined): boolean {
-  const all = Array.isArray(providers?.all) ? providers!.all : [];
-  const connected = Array.isArray(providers?.connected) ? providers!.connected : [];
-  if (connected.length === 0) return false;
-  return all.some(
-    (p) =>
-      connected.includes(p.id) &&
-      p.models &&
-      Object.keys(p.models).length > 0,
-  );
-}
-
-// Every LLM call must go through the Kortix gateway, which opencode exposes as
-// the single `kortix` provider (Codex included, as `codex/<id>` models). Any
-// OTHER provider opencode reports is a NATIVE one (a leaked `anthropic`/`openai`
-// key) that talks to the provider directly and bypasses the gateway. Drop them
-// HERE, at the source, so they never reach the cache or any consumer. `opencode`
-// (Zen) is the deliberate exception: its free models route natively too, but
-// that's the point — they're free and never touch gateway billing.
-export const GATEWAY_PROVIDER_IDS = new Set(['kortix', 'opencode']);
-
-function filterToGatewayProviders(providers: ProviderListResponse): ProviderListResponse {
-  const all = Array.isArray(providers.all) ? providers.all : [];
-  const connected = Array.isArray(providers.connected) ? providers.connected : [];
-  return {
-    ...providers,
-    all: all.filter((p) => GATEWAY_PROVIDER_IDS.has(p.id)),
-    connected: connected.filter((id) => GATEWAY_PROVIDER_IDS.has(id)),
-  };
-}
-
-function projectLlmCatalogToProviderList(
-  catalog: ProjectLlmCatalogResponse,
-): ProviderListResponse {
-  const models = catalog.models ?? {};
-  return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
-    connected: ['kortix'],
-    all: [{
-      id: 'kortix',
-      name: 'Kortix',
-      source: 'gateway',
-      models,
-    }],
-  } as ProviderListResponse;
-}
-
 export function useOpenCodeProviders() {
   const runtimeReady = useOpenCodeRuntimeReady();
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+  const projectGatewayEnabled =
+    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
+  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
   // BYOK makes the connected model set project-specific (a provider connected
   // in one project must NOT leak into another, nor linger after removal), so
   // the persisted placeholder is scoped per project — not the old global scope.
-  const cacheScope = projectId ? `proj:${projectId}` : CACHE_SCOPE_GLOBAL;
+  const cacheScope = projectId
+    ? `proj:${projectId}:${projectGatewayEnabled ? 'gateway' : 'native'}`
+    : CACHE_SCOPE_GLOBAL;
   return useQuery<ProviderListResponse>({
-    queryKey: projectId ? ['project-llm-catalog', projectId] : opencodeKeys.providers(),
+    queryKey: projectId
+      ? [
+          'project-providers',
+          projectId,
+          projectGatewayEnabled
+            ? runtimeReady
+              ? 'gateway-runtime'
+              : 'gateway-catalog'
+            : 'native',
+        ]
+      : opencodeKeys.providers(),
     queryFn: async () => {
-      if (projectId) {
+      if (projectId && projectGatewayEnabled) {
         const catalog = await getProjectLlmCatalog(projectId);
-        const providers = projectLlmCatalogToProviderList(catalog);
+        let providers = projectLlmCatalogToProviderList(catalog);
+        if (runtimeReady) {
+          const client = getClient();
+          const result = await client.provider.list();
+          const sessionProviders = filterToGatewayProviders(normalizeProviderList(unwrap(result)));
+          providers = mergeProviderLists(providers, sessionProviders);
+        }
         setLSCache(LS_PROVIDERS, providers, cacheScope);
         return providers;
       }
       const client = getClient();
       const result = await client.provider.list();
-      const providers = filterToGatewayProviders(unwrap(result));
+      let rawProviders = normalizeProviderList(unwrap(result));
+      if (projectId) {
+        const secrets = await listProjectSecrets(projectId);
+        const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
+        const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
+        rawProviders = mergeProjectSecretConnectedProviders(
+          rawProviders,
+          secretNames,
+          LLM_PROVIDERS,
+        );
+      }
+      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
 
       // During sandbox boot the OpenCode server frequently answers
       // /provider/list BEFORE its provider config is wired up, returning zero
@@ -1140,11 +1153,20 @@ export function useOpenCodeProviders() {
     placeholderData: () => {
       const cached = getLSCache<ProviderListResponse>(LS_PROVIDERS, cacheScope);
       if (!providerListHasModels(cached)) return undefined;
-      // Old caches may have been persisted before the source filter — clean them
-      // on read so a poisoned cache never paints a native provider.
-      return filterToGatewayProviders(cached as ProviderListResponse);
+      // Old gateway caches may have been persisted before the source filter —
+      // clean them on read, but native-mode projects must see the runtime's
+      // actual provider list for v0.9.68/backward-compatible fallback.
+      if (projectGatewayEnabled) {
+        const gatewayProviders = filterToGatewayProviders(cached as ProviderListResponse);
+        return providerListHasModels(gatewayProviders) ? gatewayProviders : undefined;
+      }
+      if (projectId && !projectGatewayEnabled) {
+        const nativeProviders = filterToNativeProviders(cached as ProviderListResponse);
+        return providerListHasModels(nativeProviders) ? nativeProviders : undefined;
+      }
+      return cached;
     },
-    enabled: projectId ? true : runtimeReady,
+    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep

@@ -29,15 +29,12 @@ import {
   Boxes,
   Container,
   FolderOpen,
-  Gauge,
   GitPullRequest,
   KeyRound,
-  KeySquare,
   Lock,
   MessageSquare,
   Monitor,
   Plug,
-  ScrollText,
   Settings,
   SlidersHorizontal,
   Sparkles,
@@ -45,7 +42,6 @@ import {
   Terminal,
   Timer,
   Users,
-  Wallet,
   Webhook,
   X,
   type LucideIcon,
@@ -56,13 +52,7 @@ import { ChannelsView } from '@/components/projects/customize/sections/channels-
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
 import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
-import {
-  LlmBudgetsView,
-  LlmKeysView,
-  LlmLogsView,
-  LlmOverviewView,
-  LlmProvidersView,
-} from '@/components/projects/customize/sections/gateway-view';
+import { LlmManagementView } from '@/components/projects/customize/sections/gateway-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
@@ -70,10 +60,11 @@ import { SettingsView } from '@/components/projects/customize/sections/settings-
 import { SkillsView } from '@/components/projects/customize/sections/skills-view';
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { TriggersView } from '@/components/projects/triggers-view';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useIsMobile } from '@/hooks/utils';
-import { getProjectDetail } from '@/lib/projects-client';
+import { getProjectDetail, listProjectAccessRequests } from '@/lib/projects-client';
 import { DEFAULT_CUSTOMIZE_SECTION, type CustomizeSection } from '@/lib/customize-sections';
 import {
   CUSTOMIZE_SECTION_ACCESS,
@@ -121,16 +112,6 @@ const GROUPS: readonly RailGroup[] = [
     ],
   },
   {
-    label: 'LLM',
-    items: [
-      { section: 'llm-overview', label: 'Overview', icon: Gauge },
-      { section: 'llm-providers', label: 'Providers', icon: Boxes },
-      { section: 'llm-logs', label: 'Logs', icon: ScrollText },
-      { section: 'llm-budgets', label: 'Budgets', icon: Wallet },
-      { section: 'llm-keys', label: 'Keys', icon: KeySquare },
-    ],
-  },
-  {
     label: 'Automate',
     items: [
       { section: 'schedules', label: 'Schedules', icon: Timer },
@@ -155,22 +136,32 @@ const GROUPS: readonly RailGroup[] = [
   },
 ];
 
+// LLM gateway — one entry that opens the consolidated LLM section (Providers,
+// Overview, Logs, Budgets, API keys). A normal item under "Connect", next to
+// Connectors. Flag-gated on the managed gateway.
+const LLM_ITEM: RailItem = { section: 'llm-management', label: 'LLM', icon: Boxes };
+
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
-// Experimental Marketplace — browse + install skills. Opt-in (Customize →
-// Settings → Experimental); slots into "Build" right after Commands.
+// Marketplace — browse + install skills, agents, commands, tools, and bundles.
 const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
 
 /** Build the rail groups for this project, injecting flag-gated entries. */
-function railGroups(tunnelEnabled: boolean, marketplaceEnabled: boolean): readonly RailGroup[] {
+function railGroups(
+  tunnelEnabled: boolean,
+  llmGatewayEnabled: boolean,
+): readonly RailGroup[] {
   return GROUPS.map((g) => {
-    if (g.label === 'Build' && marketplaceEnabled) {
+    if (g.label === 'Build') {
       return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
     }
-    if (g.label === 'Connect' && tunnelEnabled) {
-      return { ...g, items: [...g.items, COMPUTERS_ITEM] };
+    if (g.label === 'Connect') {
+      const items = [...g.items];
+      if (tunnelEnabled) items.push(COMPUTERS_ITEM);
+      if (llmGatewayEnabled) items.push(LLM_ITEM);
+      return { ...g, items };
     }
     return g;
   });
@@ -190,6 +181,15 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const accessRequests = useQuery({
+    queryKey: ['project-access-requests', projectId],
+    queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
+    enabled: open && !!projectId,
+    retry: false,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
   const projectName = detail.data?.project?.name ?? '';
 
   // IAM visibility gating. One batched probe over every section's read leaf —
@@ -230,19 +230,32 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
-  const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
+  const llmGatewayEnabled = detail.data?.project?.experimental?.llm_gateway ?? false;
   const groups = useMemo(
-    // Compose the existing experimental-flag filtering with IAM visibility: an
-    // item shows only if it passes BOTH its flag check (already baked into
-    // railGroups) AND its read-leaf probe. Empty groups drop out so no orphan
-    // header renders.
+    // Compose the experimental-flag filtering with IAM visibility: an item shows
+    // only if it passes BOTH its flag check (already baked into railGroups) AND
+    // its read-leaf probe. Empty groups drop out so no orphan header renders.
     () =>
-      railGroups(tunnelEnabled, marketplaceEnabled)
+      railGroups(tunnelEnabled, llmGatewayEnabled)
         .map((g) => ({ ...g, items: g.items.filter((item) => isSectionAllowed(item.section)) }))
         .filter((g) => g.items.length > 0),
-    [tunnelEnabled, marketplaceEnabled, isSectionAllowed],
+    [tunnelEnabled, llmGatewayEnabled, isSectionAllowed],
   );
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  // The single `llm-management` rail item stands in for every `llm-*` sub-section
+  // (llm-providers, llm-logs, …), so a deep-link to one of those must count as
+  // visible — otherwise the effect below bounces it to the default (Files).
+  const sectionVisible = allItems.some((item) =>
+    item.section === 'llm-management'
+      ? section.startsWith('llm-')
+      : item.section === section,
+  );
+
+  useEffect(() => {
+    if (open && !sectionVisible) {
+      setSection(DEFAULT_CUSTOMIZE_SECTION);
+    }
+  }, [open, sectionVisible, setSection]);
 
   // Once the probe has resolved, surface a subtle note when the role hides at
   // least one section — so the shorter rail reads as intentional, not broken.
@@ -336,6 +349,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                     <RailButton
                       item={item}
                       active={section === item.section}
+                      count={item.section === 'members' ? pendingAccessCount : 0}
                       onClick={() => setSection(item.section)}
                       orientation="horizontal"
                     />
@@ -361,7 +375,12 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                         <li key={item.section}>
                           <RailButton
                             item={item}
-                            active={section === item.section}
+                            active={
+                              item.section === 'llm-management'
+                                ? section.startsWith('llm-')
+                                : section === item.section
+                            }
+                            count={item.section === 'members' ? pendingAccessCount : 0}
                             onClick={() => setSection(item.section)}
                           />
                         </li>
@@ -380,8 +399,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
 
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
             {open &&
+              sectionVisible &&
               (activeAllowed ? (
-                <SectionContent section={section} projectId={projectId} />
+                <SectionContent
+                  section={section}
+                  projectId={projectId}
+                  llmGatewayEnabled={llmGatewayEnabled}
+                />
               ) : (
                 // Probe resolved and the current user's role doesn't grant this
                 // section's read leaf — block the content even if it was reached
@@ -406,11 +430,13 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
 function RailButton({
   item,
   active,
+  count = 0,
   onClick,
   orientation = 'vertical',
 }: {
   item: RailItem;
   active: boolean;
+  count?: number;
   onClick: () => void;
   orientation?: 'vertical' | 'horizontal';
 }) {
@@ -450,6 +476,11 @@ function RailButton({
         />
       ) : null}
       <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
+      {count > 0 ? (
+        <Badge size="xs" variant="new" className="ml-auto min-w-5 px-1 tabular-nums">
+          {count}
+        </Badge>
+      ) : null}
     </button>
   );
 }
@@ -457,10 +488,22 @@ function RailButton({
 function SectionContent({
   section,
   projectId,
+  llmGatewayEnabled,
 }: {
   section: CustomizeSection;
   projectId: string;
+  llmGatewayEnabled: boolean;
 }) {
+  if (section.startsWith('llm-') && !llmGatewayEnabled) {
+    return null;
+  }
+
+  // All LLM surfaces live behind one section with its own sub-rail. The active
+  // tab is derived from the `llm-*` section, so deep-links keep working.
+  if (section.startsWith('llm-')) {
+    return <LlmManagementView projectId={projectId} />;
+  }
+
   // Each branch is a separate component instance, so switching sections tears
   // down the previous tree (matches the per-route behavior the legacy pages
   // had).
@@ -481,16 +524,6 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
-    case 'llm-overview':
-      return <LlmOverviewView projectId={projectId} />;
-    case 'llm-providers':
-      return <LlmProvidersView projectId={projectId} />;
-    case 'llm-logs':
-      return <LlmLogsView projectId={projectId} />;
-    case 'llm-budgets':
-      return <LlmBudgetsView projectId={projectId} />;
-    case 'llm-keys':
-      return <LlmKeysView projectId={projectId} />;
     case 'computers':
       return <ComputersView projectId={projectId} />;
     case 'members':

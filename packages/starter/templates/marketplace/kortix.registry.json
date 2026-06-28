@@ -1,0 +1,27 @@
+{
+  "name": "kortix-marketplace",
+  "items": [
+    {
+      "name": "agent-browser",
+      "type": "registry:skill",
+      "title": "Agent Browser",
+      "description": "Browser automation skill for using the baked agent-browser runtime from an OpenCode agent.",
+      "categories": ["kortix-runtime", "browser"],
+      "files": [
+        {
+          "path": "runtime/skills/agent-browser",
+          "type": "registry:file",
+          "target": "@skills/agent-browser"
+        }
+      ],
+      "meta": {
+        "source": "kortix",
+        "defaultProjectInstall": true,
+        "defaultProjectInstallOrder": 90,
+        "capabilities": {
+          "tools": ["agent-browser"]
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import {
   buildSessionSandboxEnvVars,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isMissingRuntimeError,
   retireSessionSandboxRow,
@@ -184,6 +185,7 @@ export async function restartSession(input: {
           opencodeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
+          llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         }),
       resolveGitAuthToken: async () =>
         (await withProjectGitAuth(loaded.row as any)).gitAuthToken ?? null,
