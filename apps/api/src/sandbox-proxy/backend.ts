@@ -42,6 +42,8 @@ export interface SandboxRecord {
   externalId: string;
   /** Owning session — links to project_sessions for the launching identity. */
   sessionId: string;
+  /** Agent the sandbox executor token was minted for. */
+  agentName: string | null;
   projectId: string;
   accountId: string;
   provider: string;
@@ -86,7 +88,6 @@ function preferredSandboxOrder() {
       when ${sessionSandboxes.status} = 'stopped' then 2
       else 3
     end`,
-    sql`case when ${sessionSandboxes.poolState} is null then 0 else 1 end`,
     sql`${sessionSandboxes.updatedAt} desc`,
   ];
 }
@@ -104,6 +105,12 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
       sandboxId: sessionSandboxes.sandboxId,
       externalId: sessionSandboxes.externalId,
       sessionId: sessionSandboxes.sessionId,
+      agentName: sql<string | null>`(
+        select ${projectSessions.agentName}
+        from ${projectSessions}
+        where ${projectSessions.sessionId} = ${sessionSandboxes.sessionId}
+        limit 1
+      )`,
       projectId: sessionSandboxes.projectId,
       accountId: sessionSandboxes.accountId,
       provider: sessionSandboxes.provider,
@@ -135,6 +142,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     sandboxId: row.sandboxId,
     externalId: row.externalId ?? externalId,
     sessionId: row.sessionId,
+    agentName: row.agentName ?? null,
     projectId: row.projectId,
     accountId: row.accountId,
     provider: row.provider,

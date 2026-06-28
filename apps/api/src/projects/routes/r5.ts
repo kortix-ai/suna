@@ -1,7 +1,5 @@
 import { getProvider as getDeploymentProvider } from '../../deployments/providers';
 import { auth, errors, json } from '../../openapi';
-import { getWarmPoolCounts, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
-import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
 import { deployAppSpec, getLatestDeployment } from '../app-sweep';
 import { loadProjectApps, manifestHashForApp } from '../apps';
@@ -700,95 +698,6 @@ projectsApp.openapi(
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
-},
-);
-
-// GET /v1/projects/:projectId/warm-pool
-// Live warm pool config + status for the Customize → Sandbox card: how many
-// sandboxes are ready (parked) vs warming (booting) right now.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/warm-pool',
-    tags: ['projects'],
-    summary: 'GET /:projectId/warm-pool',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const cfg = resolveWarmConfig(loaded.row.metadata);
-  const counts = warmPoolEnabled() ? await getWarmPoolCounts(projectId) : { ready: 0, warming: 0 };
-  return c.json({ available: warmPoolEnabled(), enabled: cfg.enabled, size: cfg.size, ...counts });
-},
-);
-
-// PATCH /v1/projects/:projectId/warm-pool
-// Per-project warm pool config (Customize → Sandbox). DB-only — stored in
-// projects.metadata.warm_pool, never in kortix.toml. Applies immediately by
-// kicking a refill toward the new desired size.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/warm-pool',
-    tags: ['projects'],
-    summary: 'PATCH /:projectId/warm-pool',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  // Per-template (per sandbox-template slug) warm config, opt-in. Stored DB-only
-  // in projects.metadata.warm_pool_templates[slug] — never in kortix.toml.
-  const slug = normalizeString(body.slug) || DEFAULT_SANDBOX_SLUG;
-  const templatesMap = (meta.warm_pool_templates && typeof meta.warm_pool_templates === 'object' && !Array.isArray(meta.warm_pool_templates)
-    ? { ...(meta.warm_pool_templates as Record<string, unknown>) }
-    : {}) as Record<string, unknown>;
-  const prev = (templatesMap[slug] && typeof templatesMap[slug] === 'object' && !Array.isArray(templatesMap[slug])
-    ? templatesMap[slug]
-    : {}) as Record<string, unknown>;
-  const enabled =
-    typeof body.enabled === 'boolean' ? body.enabled : typeof prev.enabled === 'boolean' ? prev.enabled : false;
-  let size =
-    body.size !== undefined && Number.isFinite(Number(body.size))
-      ? Math.floor(Number(body.size))
-      : typeof prev.size === 'number'
-        ? prev.size
-        : 1;
-  if (size < 0) size = 0;
-  if (size > 25) size = 25;
-  templatesMap[slug] = { enabled, size };
-
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: { ...meta, warm_pool_templates: templatesMap }, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  void refillProjectPool(projectId).catch(() => {});
-  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 },
 );
 

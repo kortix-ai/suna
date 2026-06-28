@@ -38,10 +38,10 @@ describe('tierGrantsAllModels', () => {
     expect(tierGrantsAllModels('none')).toBe(false);
   });
 
-  test('free tier exposes 500 display credits without premium gateway entitlement', () => {
+  test('free tier exposes 200 display credits without premium gateway entitlement', () => {
     const free = getTier('free');
     expect(free.hidden).toBe(false);
-    expect(free.monthlyCredits * CREDITS_PER_DOLLAR).toBe(500);
+    expect(free.monthlyCredits * CREDITS_PER_DOLLAR).toBe(200);
     expect(free.models).not.toContain('all');
   });
 

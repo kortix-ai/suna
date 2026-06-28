@@ -37,10 +37,7 @@ export function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Only pages that actually exist under app/admin/* — the old "Legacy" group
-  // linked to sandbox-pool/analytics/feedback/notifications/stress-test, none of
-  // which were ported, so every one 404'd. Warm-pool control now lives on the
-  // Providers page; the rest were dropped.
+  // Only pages that actually exist under app/admin/*.
   const primaryItems: NavItem[] = [
     {
       href: '/admin/ops',

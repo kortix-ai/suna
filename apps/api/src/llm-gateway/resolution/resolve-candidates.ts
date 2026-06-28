@@ -43,10 +43,12 @@ export async function resolveCandidates(
 ): Promise<UpstreamDescriptor[]> {
   // The gateway package normally applies pickAutoModel before calling this hook.
   // Keep the same fallback here so a stale standalone gateway that asks the API
-  // to resolve raw "auto" still gets a concrete upstream instead of 400ing.
+  // to resolve raw "auto" still gets a concrete upstream instead of 400ing — and
+  // resolve it against the same account/agent default the autoRouter used.
   // Free-tier principals cannot use managed Kortix models, so stale AUTO below
   // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel = pickAutoModel(model, {}) ?? model;
+  const effectiveModel =
+    pickAutoModel(model, {}, { defaultModel: principal.defaultModel }) ?? model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {

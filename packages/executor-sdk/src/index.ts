@@ -42,8 +42,8 @@ export interface ExecutorClientOptions {
    * valid principal — a logged-in user token OR an in-sandbox session token.
    * This is what makes the Executor usable identically on a laptop and inside a
    * sandbox. When omitted, falls back to the legacy flat routes
-   * (`/executor/{connectors,call}`), which derive the project from a
-   * project-scoped session token (back-compat for already-baked sandboxes).
+   * (`/executor/{connectors,call}`), which derive the project from a scoped
+   * session token (back-compat for already-baked sandboxes).
    */
   projectId?: string;
   fetchImpl?: typeof fetch;

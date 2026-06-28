@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal } from 'lucide-react';
+import { Bot, Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal, Star } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -98,14 +98,33 @@ function pickerGroupId(model: FlatModel): string {
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
+type ModelRef = { providerID: string; modelID: string };
+
+// Optional "set this model as a default" controls. When provided, the picker
+// shows a footer to pin the selected model as the account default (and, when an
+// agent is active, that agent's default). These persist server-side — the LLM
+// gateway resolves `auto` against them. Omitted in non-session pickers.
+export interface ModelDefaultControls {
+  /** Current agent name; enables the per-agent default action when set. */
+  agentName?: string;
+  onSetAccountDefault: (model: ModelRef) => void;
+  onSetAgentDefault?: (model: ModelRef) => void;
+}
+
 export interface ModelSelectorProps {
   models: FlatModel[];
   selectedModel: { providerID: string; modelID: string } | null;
   onSelect: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
+  defaultControls?: ModelDefaultControls;
 }
 
-export function ModelSelector({ models, selectedModel, onSelect }: ModelSelectorProps) {
+export function ModelSelector({
+  models,
+  selectedModel,
+  onSelect,
+  defaultControls,
+}: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -500,6 +519,34 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                   </div>
                 )}
               </CommandList>
+              {defaultControls && selectedModel ? (
+                <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      defaultControls.onSetAccountDefault(selectedModel);
+                      setOpen(false);
+                    }}
+                    className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                  >
+                    <Star className="size-3.5 shrink-0" />
+                    Set as my default model
+                  </button>
+                  {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        defaultControls.onSetAgentDefault?.(selectedModel);
+                        setOpen(false);
+                      }}
+                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                    >
+                      <Bot className="size-3.5 shrink-0" />
+                      Set as default for {defaultControls.agentName}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="p-1.5 pt-0">

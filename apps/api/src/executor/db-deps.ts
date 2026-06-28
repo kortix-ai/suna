@@ -307,7 +307,7 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
     userId: result.userId,
     accountId: result.accountId,
     projectId: result.projectId,
-    sessionId: c.req.header('X-Kortix-Session-Id') ?? null,
+    sessionId: c.req.header('X-Kortix-Session-Id') ?? result.sessionId ?? null,
     subject: await resolveShareSubject(result.userId),
     agentGrant: result.agentGrant ?? null,
   };
@@ -349,7 +349,7 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
     userId,
     accountId,
     projectId,
-    sessionId: c.req.header('X-Kortix-Session-Id') ?? null,
+    sessionId: c.req.header('X-Kortix-Session-Id') ?? (c.get('sessionId') as string | undefined) ?? null,
     subject: await resolveShareSubject(userId),
     agentGrant: (c.get('agentGrant') as ExecutorPrincipal['agentGrant']) ?? null,
   };

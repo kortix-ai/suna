@@ -1,6 +1,6 @@
 // Session-status constants — deliberately dependency-free so lean, hot modules
 // (the sandbox reaper, the concurrency-cap counter) can import them without
-// pulling in the heavy serializer graph (config, warm-pool, snapshots, github…).
+// pulling in the heavy serializer graph (config, snapshots, github…).
 //
 // NOTE: the partial index idx_project_sessions_account_active (see
 // packages/db/drizzle/20260617102106_account_active_session_index.sql) hard-codes

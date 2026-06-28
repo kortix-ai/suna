@@ -208,3 +208,42 @@ export async function sendAccountInviteEmail(opts: {
     category: 'account-invite',
   });
 }
+
+export async function sendProjectAccessRequestEmail(opts: {
+  email: string;
+  projectName: string | null;
+  requesterEmail: string;
+  reviewUrl: string;
+  message?: string | null;
+}): Promise<EmailDeliveryResult> {
+  const projectName = opts.projectName?.trim() || 'a Kortix project';
+  const message = opts.message?.trim();
+  const messageBlock = message
+    ? `<p style="${S.p}"><span style="${S.strong}">Message:</span><br />${escapeHtml(message)}</p>`
+    : '';
+
+  const body = `
+    <p style="${S.p}">
+      <span style="${S.strong}">${escapeHtml(opts.requesterEmail)}</span>
+      requested access to <span style="${S.strong}">${escapeHtml(projectName)}</span>.
+    </p>
+    ${messageBlock}
+    <a href="${escapeHtml(opts.reviewUrl)}" style="${S.btn}">Review request</a>
+    <p style="${S.smallNote}">
+      Project managers can approve or decline this from Customize → Members.
+    </p>
+  `;
+
+  const html = renderEmail({
+    kicker: 'Access request',
+    title: 'Review project access',
+    body,
+  });
+
+  return send({
+    to: opts.email,
+    subject: `${opts.requesterEmail} requested access to ${projectName}`,
+    html,
+    category: 'project-access-request',
+  });
+}

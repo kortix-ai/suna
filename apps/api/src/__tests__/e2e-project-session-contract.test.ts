@@ -297,6 +297,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     granted: 1_000_000,
     used: 0,
   }),
+  upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
 
@@ -868,7 +869,6 @@ describe('project session API contract', () => {
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -936,7 +936,6 @@ describe('project session API contract', () => {
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -1010,7 +1009,6 @@ describe('project session API contract', () => {
         externalId: null,
         baseUrl: null,
         status: 'provisioning',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -1158,6 +1156,7 @@ describe('project session API contract', () => {
     expect(pendingSandbox.status).toBe(200);
     expect(await pendingSandbox.json()).toMatchObject({
       stage: 'provisioning',
+      agent_name: 'default',
     });
 
     sessionRow = null;
@@ -1186,7 +1185,6 @@ describe('project session API contract', () => {
         externalId: 'box-existing',
         baseUrl: null,
         status: 'active',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -1203,6 +1201,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
+      agent_name: 'default',
       retriable: true,
     });
     expect(providerStartCalls).toBe(1);
@@ -1228,7 +1227,6 @@ describe('project session API contract', () => {
         externalId: 'box-existing',
         baseUrl: null,
         status: 'active',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -1245,6 +1243,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
+      agent_name: 'default',
       retriable: true,
       sandbox: null,
       reason: 'runtime_waking',
@@ -1276,7 +1275,6 @@ describe('project session API contract', () => {
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,
@@ -1293,6 +1291,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
+      agent_name: 'default',
       retriable: true,
       sandbox: null,
       reason: 'runtime_removed',
@@ -1329,7 +1328,6 @@ describe('project session API contract', () => {
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
-        poolState: null,
         config: {},
         metadata: {},
         lastUsedAt: null,

@@ -17,8 +17,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
  *
  * OPTIMISTIC: mint the session id client-side and navigate IMMEDIATELY — the
  * instant shell paints before the create POST even returns. The backend honors a
- * client-provided UUID (`session_id` is client-authoritative; the warm pool binds
- * to it), and the session page's `/start` poll tolerates the sub-second
+ * client-provided UUID (`session_id` is client-authoritative), and the session page's `/start` poll tolerates the sub-second
  * create-vs-start race by retrying. Provisioning + the route bundle are warmed
  * during the navigation; the session is persisted in the background.
  *
@@ -37,7 +36,14 @@ export function useNewProjectSession(projectId: string | undefined) {
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
 
   return useCallback(
-    (opts?: { onNavigate?: (sessionId: string) => void; create?: { sandbox_slug?: string } }) => {
+    (opts?: {
+      onNavigate?: (sessionId: string) => void;
+      // `agent_name` binds the session's immutable boot agent at birth. It MUST
+      // match the agent the composer sends on the first prompt — the API proxy
+      // rejects any prompt whose `agent` differs from the session's bound agent
+      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
+      create?: { sandbox_slug?: string; agent_name?: string };
+    }) => {
       if (!projectId || creatingRef.current) return;
 
       if (isBillingEnabled() && billingLoading) return;

@@ -44,8 +44,6 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
-  warm_pool?: { enabled: boolean; size: number };
-  warm_pool_available?: boolean;
   /** Full experimental-feature catalog (drives Settings → Experimental). */
   experimental_features?: ExperimentalFeatureView[];
 }
@@ -1455,14 +1453,6 @@ export interface ProjectSnapshotsResponse {
   builds: ProjectSnapshotBuild[];
 }
 
-export interface WarmPoolStatus {
-  available: boolean;
-  enabled: boolean;
-  size: number;
-  ready: number;
-  warming: number;
-}
-
 export interface CreateSandboxTemplateInput {
   slug: string;
   name?: string;
@@ -1539,16 +1529,5 @@ export function fixSandboxWithAgent(projectId: string) {
   return apiFetch<{ session_id: string }>(`${projectBase(projectId)}/snapshots/fix-with-agent`, {
     method: 'POST',
     body: JSON.stringify({}),
-  });
-}
-
-export function getWarmPoolStatus(projectId: string) {
-  return apiFetch<WarmPoolStatus>(`${projectBase(projectId)}/warm-pool`);
-}
-
-export function updateWarmPool(projectId: string, input: { enabled?: boolean; size?: number }) {
-  return apiFetch<KortixProject>(`${projectBase(projectId)}/warm-pool`, {
-    method: 'PATCH',
-    body: JSON.stringify(input),
   });
 }

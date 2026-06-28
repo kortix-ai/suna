@@ -43,6 +43,7 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  boundAgentName,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -57,17 +58,21 @@ export function ComposerChatInput({
   prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  /** Immutable project-session agent. When set, sends are locked to this agent. */
+  boundAgentName?: string | null;
 }) {
   const { data: agents } = useOpenCodeAgents({ projectId });
   const { data: providers } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId });
+  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const lockedAgentName = boundAgentName?.trim() || null;
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
     const o: ComposerOptions = {};
-    if (local.agent.current) o.agent = local.agent.current.name;
+    if (lockedAgentName) o.agent = lockedAgentName;
+    else if (local.agent.current) o.agent = local.agent.current.name;
     if (local.model.currentKey) o.model = local.model.currentKey;
     if (local.model.variant.current) o.variant = local.model.variant.current;
     return o;
@@ -88,8 +93,9 @@ export function ComposerChatInput({
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}
-      selectedAgent={local.agent.current?.name ?? null}
-      onAgentChange={(name) => local.agent.set(name ?? undefined)}
+      selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+      onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+      agentSelectorLocked={!!lockedAgentName}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}

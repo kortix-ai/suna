@@ -22,6 +22,11 @@ export interface ApiClient {
 export interface ClientOptions {
   apiBase?: string;
   token?: string;
+  /** When set (non-empty), every request is scoped to this account via a
+   *  `?account_id=` query param. The API honors it in resolveProjectAccount
+   *  (and validates membership); project-id routes ignore it. Without it the
+   *  server falls back to the caller's earliest-joined account. */
+  accountId?: string;
 }
 
 function joinUrl(base: string, path: string): string {
@@ -38,13 +43,22 @@ function joinUrl(base: string, path: string): string {
   return `${b}${versioned}`;
 }
 
+/** Append `account_id=<id>` to a URL, merging with any existing query, but
+ *  never duplicating a param the caller already set explicitly. */
+function withAccountId(url: string, accountId?: string): string {
+  if (!accountId) return url;
+  if (/[?&]account_id=/.test(url)) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}account_id=${encodeURIComponent(accountId)}`;
+}
+
 async function request<T>(
   method: string,
   path: string,
   body: unknown,
-  opts: { apiBase: string; token?: string },
+  opts: { apiBase: string; token?: string; accountId?: string },
 ): Promise<T> {
-  const url = joinUrl(opts.apiBase, path);
+  const url = withAccountId(joinUrl(opts.apiBase, path), opts.accountId);
   const headers: Record<string, string> = {};
   if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -85,19 +99,31 @@ async function request<T>(
 
 export function createApiClient(opts: ClientOptions): ApiClient {
   const apiBase = opts.apiBase ?? 'https://api.kortix.com';
+  const accountId = opts.accountId || undefined;
+  const base = { apiBase, token: opts.token, accountId };
   return {
     apiBase,
-    get: <T>(path: string) => request<T>('GET', path, undefined, { apiBase, token: opts.token }),
-    post: <T>(path: string, body?: unknown) =>
-      request<T>('POST', path, body ?? {}, { apiBase, token: opts.token }),
-    put: <T>(path: string, body?: unknown) =>
-      request<T>('PUT', path, body ?? {}, { apiBase, token: opts.token }),
-    patch: <T>(path: string, body?: unknown) =>
-      request<T>('PATCH', path, body ?? {}, { apiBase, token: opts.token }),
-    delete: <T>(path: string) => request<T>('DELETE', path, undefined, { apiBase, token: opts.token }),
+    get: <T>(path: string) => request<T>('GET', path, undefined, base),
+    post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}, base),
+    put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}, base),
+    patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body ?? {}, base),
+    delete: <T>(path: string) => request<T>('DELETE', path, undefined, base),
   };
 }
 
-export function clientFromAuth(auth: Auth): ApiClient {
-  return createApiClient({ apiBase: auth.api_base, token: auth.token });
+export interface ClientFromAuthOptions {
+  /** Scope every request to this account via `?account_id=`. Opt-in: pass it
+   *  only for account-scoped LISTs (e.g. `projects ls`). Project-id routes
+   *  (`/projects/<id>/…`) already determine the account from the id, and
+   *  identity calls (`/accounts/me`) must stay account-agnostic — leave it
+   *  unset for those. */
+  accountId?: string;
+}
+
+export function clientFromAuth(auth: Auth, opts: ClientFromAuthOptions = {}): ApiClient {
+  return createApiClient({
+    apiBase: auth.api_base,
+    token: auth.token,
+    accountId: opts.accountId || undefined,
+  });
 }

@@ -16,11 +16,9 @@ import {
   deleteConnector,
   deleteSandboxTemplate,
   fixSandboxWithAgent,
-  getWarmPoolStatus,
   listProjectSnapshots,
   rebuildProjectSnapshot,
   updateSandboxTemplate,
-  updateWarmPool,
   deletePersonalProjectSecret,
   deleteProjectSecret,
   deleteProjectTrigger,
@@ -136,7 +134,6 @@ export const projectKeys = {
     path: string
   ) => ['project-commit-diff', projectId, sha, path] as const,
   snapshots: (projectId: string | null | undefined) => ['project-snapshots', projectId] as const,
-  warmPool: (projectId: string | null | undefined) => ['warm-pool-status', projectId] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
@@ -959,24 +956,5 @@ export function useFixSandboxWithAgent(projectId: string) {
       queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
-  });
-}
-
-/** Live warm-pool status (ready / warming), polled while enabled. */
-export function useWarmPoolStatus(projectId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.warmPool(projectId),
-    queryFn: () => getWarmPoolStatus(projectId!),
-    enabled: enabled && !!projectId,
-    refetchInterval: 4_000,
-    staleTime: 0,
-  });
-}
-
-export function useUpdateWarmPool(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { enabled?: boolean; size?: number }) => updateWarmPool(projectId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) }),
   });
 }

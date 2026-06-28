@@ -59,7 +59,7 @@ import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_MESSAGE,
 } from './model-availability';
-import { ModelSelector } from './model-selector';
+import { ModelSelector, type ModelDefaultControls } from './model-selector';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 import {
@@ -187,10 +187,12 @@ export function AgentSelector({
   agents,
   selectedAgent,
   onSelect,
+  disabled = false,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
+  disabled?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -241,6 +243,7 @@ export function AgentSelector({
           <CommandPopoverTrigger>
             <button
               type="button"
+              disabled={disabled}
               aria-label={tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
               )}
@@ -248,6 +251,7 @@ export function AgentSelector({
                 'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
                 flash && 'bg-primary/10 text-foreground',
                 open && 'bg-muted text-foreground',
+                disabled && 'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-muted-foreground',
               )}
             >
               <span className="max-w-[100px] truncate">{displayName}</span>
@@ -291,6 +295,7 @@ export function AgentSelector({
                     value={`agent-${agent.name}`}
                     className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
+                      if (disabled) return;
                       onSelect(agent.name);
                       setOpen(false);
                     }}
@@ -1434,11 +1439,15 @@ export interface SessionChatInputProps {
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
+  /** Show the selected agent but prevent switching inside an immutable session. */
+  agentSelectorLocked?: boolean;
   commands?: Command[];
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** Optional "set as default" controls for the model picker (account/per-agent). */
+  modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
@@ -1529,11 +1538,13 @@ export function SessionChatInput({
   agents = [],
   selectedAgent = null,
   onAgentChange,
+  agentSelectorLocked = false,
   commands = [],
   onCommand,
   models = [],
   selectedModel = null,
   onModelChange,
+  modelDefaultControls,
   variants = [],
   selectedVariant = null,
   onVariantChange,
@@ -2227,7 +2238,7 @@ export function SessionChatInput({
     }
 
     // Tab cycles through agents when no popover is open
-    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange) {
+    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange && !agentSelectorLocked) {
       e.preventDefault();
       const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
       const nextIdx = (currentIdx + 1) % primaryAgents.length;
@@ -2573,11 +2584,12 @@ export function SessionChatInput({
                 </TooltipContent>
               </Tooltip>
 
-              {primaryAgents.length > 0 && onAgentChange && (
+              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
                 <AgentSelector
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
-                  onSelect={onAgentChange}
+                  onSelect={onAgentChange ?? (() => {})}
+                  disabled={agentSelectorLocked}
                 />
               )}
               {(models.length > 0 || modelRequired) && onModelChange && (
@@ -2586,6 +2598,7 @@ export function SessionChatInput({
                   selectedModel={selectedModel}
                   onSelect={onModelChange}
                   providers={providers}
+                  defaultControls={modelDefaultControls}
                 />
               )}
               {variants.length > 0 && onVariantChange && (

@@ -11,7 +11,6 @@ import { CustomizeSectionHeader } from '@/components/projects/customize/customiz
  * Customize → Sandbox. The project's runtime image: per-commit snapshots that
  * every session boots from, their health, retention, and recovery (Retry /
  * Fix with agent). Env vars live under Secrets; this surface owns the image.
- * Warm pool is configured per template, inline on each row in the templates card.
  */
 
 export function SandboxView({ projectId }: { projectId: string }) {

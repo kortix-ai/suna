@@ -19,7 +19,7 @@ export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
  * comes up WITHOUT the baked runtime (its filesystem layer is dropped ~half the
  * time — a Daytona experimental-region bug). Non-retryable at the provision
  * layer: the caller falls back to the normal Dockerfile-snapshot path instead of
- * spinning up more flaky warm boxes.
+ * creating more flaky memory-snapshot restores.
  */
 export class WarmRuntimeUnavailableError extends Error {
   constructor(message: string) {
@@ -44,9 +44,8 @@ export interface CreateSandboxOpts {
   snapshot?: string;
   /**
    * Provider auto-stop idle timeout in minutes. Defaults to the provider's own
-   * value (15). Pass 0 to disable auto-stop — used for warm-pool sandboxes,
-   * which must stay running until claimed (our own idle sweep hibernates them
-   * once claimed). See docs/specs/warm-pool.md.
+   * value (15). Providers clamp session sandboxes so normal runtime creation
+   * cannot create persistent boxes.
    */
   autoStopInterval?: number;
   /**

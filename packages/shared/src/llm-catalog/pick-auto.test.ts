@@ -81,3 +81,73 @@ describe("pickAutoModel", () => {
     );
   });
 });
+
+const imageBody = {
+  messages: [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "what is this?" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      ],
+    },
+  ],
+};
+
+describe("pickAutoModel — account/agent default (gateway source of truth)", () => {
+  test("auto resolves to the supplied default over the platform default", () => {
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "claude-opus-4.8" }),
+    ).toBe("claude-opus-4.8");
+    // BYOK default (provider/model wire form) is honored verbatim.
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, {
+        defaultModel: "anthropic/claude-sonnet-4.6",
+      }),
+    ).toBe("anthropic/claude-sonnet-4.6");
+  });
+
+  test("a 'kortix/'-prefixed default is normalized for the managed lookup", () => {
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "kortix/glm-5.2" }),
+    ).toBe("kortix/glm-5.2");
+  });
+
+  test("null/undefined/empty default falls back to the platform default", () => {
+    expect(pickAutoModel("auto", { messages: [msg("hi")] }, {})).toBe(AUTO_DEFAULT_MODEL_ID);
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: null }),
+    ).toBe(AUTO_DEFAULT_MODEL_ID);
+    expect(
+      pickAutoModel("auto", { messages: [msg("hi")] }, { defaultModel: "" }),
+    ).toBe(AUTO_DEFAULT_MODEL_ID);
+  });
+
+  test("image overrides a managed TEXT-ONLY default to the vision model", () => {
+    // glm-5.2 is text-only → an image must not be silently dropped.
+    expect(pickAutoModel("auto", imageBody, { defaultModel: "glm-5.2" })).toBe(
+      "claude-sonnet-4.6",
+    );
+  });
+
+  test("image KEEPS a vision-capable managed default (no override)", () => {
+    // claude-opus-4.8 has vision → keep the user's chosen default.
+    expect(pickAutoModel("auto", imageBody, { defaultModel: "claude-opus-4.8" })).toBe(
+      "claude-opus-4.8",
+    );
+  });
+
+  test("image KEEPS a BYOK default (we don't second-guess the user's provider)", () => {
+    expect(
+      pickAutoModel("auto", imageBody, { defaultModel: "anthropic/claude-sonnet-4.6" }),
+    ).toBe("anthropic/claude-sonnet-4.6");
+  });
+
+  test("a default is never applied to a concrete (non-auto) request", () => {
+    expect(
+      pickAutoModel("claude-opus-4.8", { messages: [msg("hi")] }, {
+        defaultModel: "glm-5.2",
+      }),
+    ).toBeNull();
+  });
+});

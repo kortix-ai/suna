@@ -12,6 +12,7 @@ import { alreadyHandled } from './dedup';
 import { parseEnvelope, verifySlackSignature } from './util';
 import {
   dispatchSlackEvent,
+  ensureProjectChannelBinding,
   handleAssistantThreadStarted,
   maybeHandleDmCommand,
   maybePostChannelIntro,
@@ -29,7 +30,7 @@ import type { SlackInteractionPayload, SlashResponse } from './types';
 // own signature check, then hands the verified raw body to these.
 
 /** Parse a slash-command form body and run it → the Slack response object. */
-async function runSlashCommandBody(rawBody: string): Promise<SlashResponse> {
+async function runSlashCommandBody(rawBody: string, projectScopedProjectId?: string): Promise<SlashResponse> {
   const params = new URLSearchParams(rawBody);
   const text = (params.get('text') ?? '').trim();
   const teamId = params.get('team_id') ?? '';
@@ -38,11 +39,22 @@ async function runSlashCommandBody(rawBody: string): Promise<SlashResponse> {
   const command = params.get('command') || '/kortix';
   const responseUrl = params.get('response_url') ?? undefined;
 
+  if (projectScopedProjectId && teamId && channelId) {
+    await ensureProjectChannelBinding(projectScopedProjectId, teamId, channelId);
+  }
+
   const [sub, ...rest] = text.split(/\s+/);
   const arg = rest.join(' ').trim();
   const subLower = (sub || 'help').toLowerCase();
   try {
-    return await handleSlashCommand(subLower, arg, { teamId, channelId, slackUserId, command, responseUrl });
+    return await handleSlashCommand(subLower, arg, {
+      teamId,
+      channelId,
+      slackUserId,
+      command,
+      responseUrl,
+      projectScopedProjectId,
+    });
   } catch (err) {
     console.error('[slack-webhook] slash command failed', err);
     return { response_type: 'ephemeral', text: 'Something went wrong handling that command. Try again in a moment.' };
@@ -231,6 +243,14 @@ slackWebhookApp.openapi(
   const projectId = c.req.param('projectId');
   const rawBody = await c.req.text();
 
+  const envelope = parseEnvelope(rawBody);
+  if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
+  // Slack verifies the Events API request URL before a manual/BYO app can be
+  // installed and saved back to Kortix, so there is no project signing secret
+  // yet. Only the bootstrap challenge is allowed through this unsigned path;
+  // every real callback below remains project-secret verified.
+  if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
+
   const signingSecret = await loadSlackSigningSecretForProject(projectId);
   if (!signingSecret) return c.json({ error: 'Not configured' }, 404);
 
@@ -240,9 +260,6 @@ slackWebhookApp.openapi(
     return c.json({ error: 'Invalid signature' }, 401);
   }
 
-  const envelope = parseEnvelope(rawBody);
-  if (!envelope) return c.json({ error: 'Invalid JSON' }, 400);
-  if (envelope.type === 'url_verification') return c.json({ challenge: envelope.challenge });
   if (envelope.type !== 'event_callback' || !envelope.event) return c.json({ ok: true });
   if (await alreadyHandled(envelope.event_id)) return c.json({ ok: true });
 
@@ -285,7 +302,7 @@ slackWebhookApp.openapi(
   if (!verifySlackSignature(rawBody, timestamp, signature, signingSecret)) {
     return c.json({ error: 'Invalid signature' }, 401);
   }
-  return c.json(await runSlashCommandBody(rawBody));
+  return c.json(await runSlashCommandBody(rawBody, projectId));
 },
 );
 
@@ -318,7 +335,7 @@ slackWebhookApp.openapi(
     return c.json({ error: 'Invalid signature' }, 401);
   }
   runInteractivityBody(rawBody);
-  return c.json({ ok: true });
+  return c.body('', 200);
 },
 );
 
@@ -335,7 +352,7 @@ slackWebhookApp.openapi(
     summary: 'Per-project (BYO app) Slack app manifest (single source of truth)',
     request: {
       params: z.object({ projectId: z.string() }),
-      query: z.object({ name: z.string().optional() }),
+      query: z.object({ name: z.string().optional(), command: z.string().optional() }),
     },
     responses: {
       200: json(z.any(), 'Slack app manifest JSON'),
@@ -344,8 +361,9 @@ slackWebhookApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const name = c.req.query('name') || undefined;
+  const command = c.req.query('command') || undefined;
   // Prefer the configured public URL; fall back to the request host.
   const baseUrl = resolveBaseUrl(new URL(c.req.url), config.KORTIX_URL || undefined);
-  return c.json(generateSlackManifest({ baseUrl, projectId, appName: name, botName: name }));
+  return c.json(generateSlackManifest({ baseUrl, projectId, appName: name, botName: name, command }));
 },
 );
