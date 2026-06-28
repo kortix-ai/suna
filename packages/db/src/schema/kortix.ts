@@ -560,6 +560,36 @@ export const projectSessions = kortixSchema.table(
   ],
 );
 
+// Account-scoped default model preferences. Drives server-side resolution of the
+// synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
+// per-agent default (scope='agent', scope_key=agent_name) → the account default
+// (scope='account', scope_key='') → the platform default. The stored `model` is a
+// gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
+// or 'codex/<id>') — never the synthetic `auto`. One row per (account, scope, key).
+export const accountModelPreferences = kortixSchema.table(
+  'account_model_preferences',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    scopeKey: text('scope_key').default('').notNull(),
+    model: varchar('model', { length: 128 }).notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_model_preferences_account').on(table.accountId),
+    uniqueIndex('idx_account_model_preferences_scope').on(
+      table.accountId,
+      table.scope,
+      table.scopeKey,
+    ),
+  ],
+);
+
 /**
  * Allow-list for a `restricted` session — which members/groups (besides the
  * owner) can see + open it. Mirrors `project_secret_grants`.

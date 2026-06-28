@@ -18,6 +18,7 @@ import { recordUsageEvent } from '../shared/usage-events';
 import { checkBudget } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -70,11 +71,18 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
  * is off (self-host) every account sees the full lineup.
  */
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return { ...principal, freeModelsOnly: false };
-  }
-  const tier = await getCachedAccountTier(principal.accountId);
-  return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+  const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
+    ? await (async () => {
+        const tier = await getCachedAccountTier(principal.accountId);
+        return { ...principal, tier, freeModelsOnly: !tierGrantsAllModels(tier) };
+      })()
+    : { ...principal, freeModelsOnly: false };
+  // Resolve the account/agent-configured default model once, here, so it travels
+  // with the principal (including across the RPC boundary to the standalone pod)
+  // and `auto` resolves to it. freeModelsOnly is already set above, so the
+  // resolver can drop a managed default for free tier.
+  const defaultModel = await resolveDefaultModelForPrincipal(tiered);
+  return defaultModel ? { ...tiered, defaultModel } : tiered;
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */

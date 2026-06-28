@@ -21,9 +21,10 @@ import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
+import { setModelDefault } from '@/lib/projects-client';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
@@ -52,7 +53,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { saveToolKeys } from './save-tool-keys';
 
@@ -510,29 +511,29 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
     });
   }, [allModels, modelStore]);
 
+  const params = useParams();
+  const wizardProjectId = typeof params?.id === 'string' ? params.id : null;
   const handleSelect = useCallback(
     (model: FlatModel) => {
       const key = { providerID: model.providerID, modelID: model.modelID };
       setSelected(key);
 
-      // Set as global default — checked in useOpenCodeLocal BEFORE agent.model,
-      // so it wins over server-configured agent defaults. Persisted in localStorage.
+      // Local default cache for instant display; the server account default
+      // (below) is the source of truth the gateway resolves.
       modelStore.setGlobalDefault(key);
-      // Also push to recent as a secondary signal
       modelStore.pushRecent(key);
 
-      // Fire-and-forget: persist the default model on the server so it
-      // survives across devices / reinstalls and is written to opencode.jsonc.
-      const base = getActiveOpenCodeUrl();
-      if (base) {
-        authenticatedFetch(`${base}/kortix/preferences/model`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: `${model.providerID}/${model.modelID}` }),
+      // Persist the account default server-side so it follows the user across
+      // devices and the gateway resolves `auto` to it. Best-effort: the wizard
+      // runs within a project context; the local default covers display meanwhile.
+      if (wizardProjectId) {
+        setModelDefault(wizardProjectId, {
+          scope: 'account',
+          model: modelKeyToWire(key),
         }).catch(() => {});
       }
     },
-    [modelStore],
+    [modelStore, wizardProjectId],
   );
 
   const handleContinue = useCallback(() => {
