@@ -246,7 +246,11 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
-    body: typeof init?.body === 'string' ? init.body : null,
+    body: typeof init?.body === 'string'
+      ? init.body
+      : init?.body instanceof ArrayBuffer
+        ? new TextDecoder().decode(init.body)
+        : null,
   });
 
   if (!responseConfig) {
@@ -630,6 +634,28 @@ describe('Preview proxy: forwarding', () => {
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
+  });
+
+  test('strips legacy default agent before forwarding prompt_async to OpenCode', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'default', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('rejects prompt_async agent switches because executor grants are session-token bound', async () => {
