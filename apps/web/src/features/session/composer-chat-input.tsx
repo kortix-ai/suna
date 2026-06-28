@@ -66,7 +66,10 @@ export function ComposerChatInput({
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
   const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
-  const lockedAgentName = boundAgentName?.trim() || null;
+  // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
+  // the new-session picker is switchable; the chosen agent rides through on create.
+  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
+  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {

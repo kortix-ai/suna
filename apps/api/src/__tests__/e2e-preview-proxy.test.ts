@@ -658,9 +658,15 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  test('rejects prompt_async switches between two different CONCRETE agents (executor grants are session-token bound)', async () => {
+  // Agent-lock enforcement is OFF by default (KORTIX_ENFORCE_SESSION_AGENT_LOCK
+  // unset) — in-session agent switching is allowed. A prompt may run a different
+  // concrete agent than the session booted with, and it's forwarded untouched.
+  test('allows in-session agent switching by default (no 409, concrete agent forwarded)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
-    mockFetchResponses = [{ status: 204, body: '' }];
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -671,22 +677,19 @@ describe('Preview proxy: forwarding', () => {
       body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({
-      error: 'agent switch requires a new session',
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      expected_agent: 'reviewer',
-      requested_agent: 'researcher',
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
     });
-    expect(mockFetchCalls).toHaveLength(0);
   });
 
   // Regression: the reported "agent switch requires a new session" false positive.
-  // A brand-new session is stored with the sentinel agent 'default', but the client
-  // resolves "the default" to its concrete name ('kortix') and echoes it back on
-  // prompts. That is NOT a switch — 'default' is non-binding — so it must be allowed,
-  // with the echoed agent stripped so OpenCode runs its own default_agent.
-  test('allows prompt_async when a default session receives the concrete resolved-default agent, stripping it', async () => {
+  // A brand-new session is stored with the sentinel agent 'default'; the client
+  // resolves "the default" to a concrete name and echoes it back. With enforcement
+  // off this never 409s, and a concrete agent is forwarded untouched so the user
+  // can switch agents within the session.
+  test('allows a default session to run a concrete agent (forwarded untouched)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -703,8 +706,9 @@ describe('Preview proxy: forwarding', () => {
     });
 
     expect(res.status).toBe(204);
-    // The agent is stripped so OpenCode resolves its own default_agent (the boot agent).
+    // Concrete agent forwarded untouched (only the literal 'default' sentinel is stripped).
     expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'kortix',
       parts: [{ type: 'text', text: 'hi' }],
     });
   });

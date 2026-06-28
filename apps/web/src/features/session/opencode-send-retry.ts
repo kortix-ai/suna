@@ -17,10 +17,12 @@
 const TRANSIENT_BACKOFF_MS = [400, 1000, 2000];
 
 /**
- * "opencode not ready" boot window — stretched to cover a cold sandbox binding
- * its opencode port (~16s total), mirroring the create-session retry budget.
+ * Boot/wake window — covers a sandbox binding its opencode port, whether that's
+ * a cold first-session boot OR a wake from auto-stop (sandbox resume + opencode
+ * rebind, which is slower). Stretched to ~30s so the prompt lands instead of the
+ * client giving up and reverting a message that actually ran once the box woke.
  */
-const BOOT_BACKOFF_MS = [400, 800, 1500, 2500, 4000, 4000, 4000];
+const BOOT_BACKOFF_MS = [400, 800, 1500, 2500, 4000, 4000, 4000, 4000, 4000, 4000];
 
 /** Pull a human-readable message out of any error/response-error shape. */
 export function extractSendErrorMessage(error: unknown): string {
@@ -43,10 +45,14 @@ export function extractSendErrorMessage(error: unknown): string {
 
 /**
  * The sandbox proxy returns `503 "opencode not ready"` while opencode's binary
- * is still booting inside a freshly-created sandbox.
+ * is still booting inside a freshly-created sandbox — or while a sandbox is
+ * waking from auto-stop and rebinding its port. Match the common "not ready /
+ * waking / booting / provisioning" shapes, not just the exact string.
  */
 export function isOpenCodeNotReadyError(error: unknown): boolean {
-  return /opencode not ready/i.test(extractSendErrorMessage(error));
+  return /opencode not ready|not ready|not yet ready|waking|booting|still booting|provision/i.test(
+    extractSendErrorMessage(error),
+  );
 }
 
 /**
@@ -70,7 +76,13 @@ export function getSendRetryDelayMs(
   status: number | undefined,
   error: unknown,
 ): number | null {
-  const schedule = isOpenCodeNotReadyError(error)
+  // A 503 from our sandbox proxy ALWAYS means "sandbox/opencode not ready" — a
+  // cold boot or a wake from auto-stop — so give it the full boot/wake window,
+  // not the short transient one, even when the error body didn't carry a tidy
+  // message. Giving up early here is exactly what reverted a prompt that then
+  // landed once the box finished waking.
+  const isBoot = status === 503 || isOpenCodeNotReadyError(error);
+  const schedule = isBoot
     ? BOOT_BACKOFF_MS
     : isTransientSendStatus(status)
       ? TRANSIENT_BACKOFF_MS

@@ -141,6 +141,15 @@ const envSchema = z.object({
   KORTIX_PRERESUME_ENABLED:         optBoolFalse,
   KORTIX_PRERESUME_MAX_PER_PROJECT: optInt(1),
 
+  // Lock a session to the agent it booted with: the preview proxy 409s a prompt
+  // that asks OpenCode to run a different agent. GATED OFF by default — it was
+  // added for a future per-agent executor-token auth model that isn't built yet,
+  // and meanwhile it blocks legitimate in-session agent switching and
+  // false-positives on new sessions (the picker can send the first agent in the
+  // list before the session's real default resolves). TODO(marko): re-enable once
+  // the executor token is re-minted per requested agent before tool execution.
+  KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
+
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
   // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
@@ -562,6 +571,7 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
+  KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
