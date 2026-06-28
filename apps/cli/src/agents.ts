@@ -28,7 +28,7 @@ const OPENCODE_DIR = '.kortix/opencode';
  * own — it reads the root `AGENTS.md` natively.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
- * under a grouping folder (e.g. `GENERAL-KNOWLEDGE-WORKER/<skill>/SKILL.md`) are
+ * under a grouping folder (e.g. `<skill>/SKILL.md`) are
  * NOT discovered locally by Claude. They still load in the OpenCode sandbox and
  * for Codex, both of which discover skills recursively.
  */

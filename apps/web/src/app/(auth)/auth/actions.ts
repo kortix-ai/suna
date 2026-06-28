@@ -1,5 +1,7 @@
 'use server';
 
+import { accountHasAppAccess } from '@/lib/auth/account-access';
+import { resolveFirstProjectPathForNewUser } from '@/lib/auth/bootstrap-first-project';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -529,9 +531,32 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
+  const runtimeEnv = getServerPublicEnv();
+  const billingEnabled = runtimeEnv.BILLING_ENABLED;
+  let redirectTo = returnUrl;
+
+  if (billingEnabled && !alreadyExists && signInData.session?.access_token) {
+    try {
+      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
+        /\/v1\/?$/,
+        '',
+      );
+      if (backendUrl) {
+        const projectPath = await resolveFirstProjectPathForNewUser({
+          backendUrl,
+          accessToken: signInData.session.access_token,
+          isNewUser: true,
+        });
+        if (projectPath) redirectTo = projectPath;
+      }
+    } catch {
+      // Fall back to the default return URL.
+    }
+  }
+
   return {
     success: true,
-    redirectTo: returnUrl,
+    redirectTo,
     accessToken: signInData.session?.access_token || null,
     refreshToken: signInData.session?.refresh_token || null,
     mobileHandoffUrl: buildMobileSessionHandoffUrl({
@@ -632,9 +657,15 @@ export async function verifyOtp(prevState: any, formData: FormData) {
         });
         if (accountStateRes.ok) {
           const accountState = await accountStateRes.json();
-          const tierKey = accountState?.subscription?.tier_key || accountState?.tier?.name || '';
-          if (!tierKey || tierKey === 'none') {
+          if (!accountHasAppAccess(accountState)) {
             finalDestination = '/accounts';
+          } else {
+            const projectPath = await resolveFirstProjectPathForNewUser({
+              backendUrl,
+              accessToken: data.session.access_token,
+              isNewUser: true,
+            });
+            if (projectPath) finalDestination = projectPath;
           }
         }
       }

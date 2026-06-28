@@ -14,6 +14,7 @@ export interface ServicePaths {
   logDir: string;
   launchdPlist: string;
   systemdUnit: string;
+  windowsScript: string;
 }
 
 export interface ServiceStatus {
@@ -32,11 +33,16 @@ export function getServicePaths(): ServicePaths {
     logDir: join(configDir, 'logs'),
     launchdPlist: join(home, 'Library', 'LaunchAgents', `${SERVICE_LABEL}.plist`),
     systemdUnit: join(home, '.config', 'systemd', 'user', `${SERVICE_LABEL}.service`),
+    windowsScript: join(configDir, 'agent-tunnel-service.ps1'),
   };
 }
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function powershellQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function xmlEscape(value: string): string {
@@ -48,13 +54,18 @@ function xmlEscape(value: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function currentRunnerCommand(): string {
+function currentRunnerParts(): { command: string; args: string[] } {
   const exec = process.execPath;
   const script = process.argv[1];
   if (script && existsSync(script)) {
-    return `${shellQuote(exec)} ${shellQuote(script)} run --service`;
+    return { command: exec, args: [script, 'run', '--service'] };
   }
-  return 'npx --yes @kortix/agent-tunnel run --service';
+  return { command: 'npx', args: ['--yes', '@kortix/agent-tunnel', 'run', '--service'] };
+}
+
+function currentRunnerCommand(): string {
+  const runner = currentRunnerParts();
+  return [runner.command, ...runner.args].map(shellQuote).join(' ');
 }
 
 export function buildServiceShellCommand(options: ServiceInstallOptions = {}): string {
@@ -70,6 +81,35 @@ export function buildServiceShellCommand(options: ServiceInstallOptions = {}): s
   }
 
   return `exec ${runner}`;
+}
+
+export function renderWindowsPowerShellScript(
+  options: ServiceInstallOptions = {},
+  runner = currentRunnerParts(),
+): string {
+  const keepAwake = options.keepAwake === true;
+  const command = powershellQuote(runner.command);
+  const args = runner.args.map(powershellQuote).join(' ');
+
+  return `$ErrorActionPreference = 'Continue'
+${keepAwake ? `Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class KortixPower {
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern UInt32 SetThreadExecutionState(UInt32 esFlags);
+}
+'@
+[KortixPower]::SetThreadExecutionState(0x80000000 -bor 0x00000001 -bor 0x00000040) | Out-Null
+` : ''}while ($true) {
+  & ${command}${args ? ` ${args}` : ''}
+  Start-Sleep -Seconds 5
+}
+`;
+}
+
+function windowsTaskCommand(paths: ServicePaths): string {
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${paths.windowsScript}"`;
 }
 
 export function renderLaunchdPlist(command: string, paths: ServicePaths = getServicePaths()): string {
@@ -177,7 +217,31 @@ export function installService(options: ServiceInstallOptions = {}): ServiceStat
     };
   }
 
-  throw new Error('Background service install is currently supported on macOS launchd and Linux systemd user services.');
+  if (platform() === 'win32') {
+    writeFileSync(paths.windowsScript, renderWindowsPowerShellScript(options), { mode: 0o600 });
+    const create = run('schtasks.exe', [
+      '/Create',
+      '/TN',
+      SERVICE_LABEL,
+      '/TR',
+      windowsTaskCommand(paths),
+      '/SC',
+      'ONLOGON',
+      '/F',
+      '/RL',
+      'LIMITED',
+    ]);
+    const start = run('schtasks.exe', ['/Run', '/TN', SERVICE_LABEL]);
+    return {
+      platform: platform(),
+      installed: create.ok,
+      active: start.ok ? true : null,
+      path: paths.windowsScript,
+      detail: [create.detail, start.detail].filter(Boolean).join('\n'),
+    };
+  }
+
+  throw new Error('Background service install is currently supported on macOS launchd, Linux systemd user services, and Windows Scheduled Tasks.');
 }
 
 export function uninstallService(): ServiceStatus {
@@ -210,7 +274,111 @@ export function uninstallService(): ServiceStatus {
     };
   }
 
-  throw new Error('Background service uninstall is currently supported on macOS launchd and Linux systemd user services.');
+  if (platform() === 'win32') {
+    const existed = existsSync(paths.windowsScript);
+    const stop = run('schtasks.exe', ['/End', '/TN', SERVICE_LABEL]);
+    const del = run('schtasks.exe', ['/Delete', '/TN', SERVICE_LABEL, '/F']);
+    if (existed) rmSync(paths.windowsScript, { force: true });
+    return {
+      platform: platform(),
+      installed: false,
+      active: false,
+      path: paths.windowsScript,
+      detail: [stop.detail, del.detail].filter(Boolean).join('\n'),
+    };
+  }
+
+  throw new Error('Background service uninstall is currently supported on macOS launchd, Linux systemd user services, and Windows Scheduled Tasks.');
+}
+
+export function startService(): ServiceStatus {
+  const paths = getServicePaths();
+
+  if (platform() === 'darwin') {
+    const installed = existsSync(paths.launchdPlist);
+    const boot = installed ? run('launchctl', ['bootstrap', launchdTarget(), paths.launchdPlist]) : { ok: false, detail: 'LaunchAgent is not installed.' };
+    const kick = run('launchctl', ['kickstart', '-k', `${launchdTarget()}/${SERVICE_LABEL}`]);
+    return {
+      platform: platform(),
+      installed,
+      active: boot.ok || kick.ok ? true : null,
+      path: paths.launchdPlist,
+      detail: [boot.detail, kick.detail].filter(Boolean).join('\n'),
+    };
+  }
+
+  if (platform() === 'linux') {
+    const installed = existsSync(paths.systemdUnit);
+    const start = installed ? run('systemctl', ['--user', 'start', `${SERVICE_LABEL}.service`]) : { ok: false, detail: 'systemd unit is not installed.' };
+    return {
+      platform: platform(),
+      installed,
+      active: start.ok ? true : null,
+      path: paths.systemdUnit,
+      detail: start.detail,
+    };
+  }
+
+  if (platform() === 'win32') {
+    const installed = existsSync(paths.windowsScript);
+    const start = installed ? run('schtasks.exe', ['/Run', '/TN', SERVICE_LABEL]) : { ok: false, detail: 'Scheduled Task is not installed.' };
+    return {
+      platform: platform(),
+      installed,
+      active: start.ok ? true : null,
+      path: paths.windowsScript,
+      detail: start.detail,
+    };
+  }
+
+  throw new Error('Background service start is currently supported on macOS, Linux, and Windows.');
+}
+
+export function stopService(): ServiceStatus {
+  const paths = getServicePaths();
+
+  if (platform() === 'darwin') {
+    const installed = existsSync(paths.launchdPlist);
+    const stop = installed ? run('launchctl', ['bootout', launchdTarget(), paths.launchdPlist]) : { ok: false, detail: 'LaunchAgent is not installed.' };
+    return {
+      platform: platform(),
+      installed,
+      active: false,
+      path: paths.launchdPlist,
+      detail: stop.detail,
+    };
+  }
+
+  if (platform() === 'linux') {
+    const installed = existsSync(paths.systemdUnit);
+    const stop = installed ? run('systemctl', ['--user', 'stop', `${SERVICE_LABEL}.service`]) : { ok: false, detail: 'systemd unit is not installed.' };
+    return {
+      platform: platform(),
+      installed,
+      active: false,
+      path: paths.systemdUnit,
+      detail: stop.detail,
+    };
+  }
+
+  if (platform() === 'win32') {
+    const installed = existsSync(paths.windowsScript);
+    const stop = installed ? run('schtasks.exe', ['/End', '/TN', SERVICE_LABEL]) : { ok: false, detail: 'Scheduled Task is not installed.' };
+    return {
+      platform: platform(),
+      installed,
+      active: false,
+      path: paths.windowsScript,
+      detail: stop.detail,
+    };
+  }
+
+  throw new Error('Background service stop is currently supported on macOS, Linux, and Windows.');
+}
+
+export function restartService(): ServiceStatus {
+  stopService();
+  return startService();
 }
 
 export function getServiceStatus(): ServiceStatus {
@@ -240,10 +408,23 @@ export function getServiceStatus(): ServiceStatus {
     };
   }
 
+  if (platform() === 'win32') {
+    const installed = existsSync(paths.windowsScript);
+    const status = run('schtasks.exe', ['/Query', '/TN', SERVICE_LABEL, '/FO', 'LIST', '/V']);
+    const detail = status.detail || (installed ? readFileSync(paths.windowsScript, 'utf8') : undefined);
+    return {
+      platform: platform(),
+      installed,
+      active: status.ok ? /Status:\s*Running/i.test(detail ?? '') : false,
+      path: paths.windowsScript,
+      detail,
+    };
+  }
+
   return {
     platform: platform(),
     installed: false,
     active: null,
-    detail: 'Background service status is currently supported on macOS launchd and Linux systemd user services.',
+    detail: 'Background service status is currently supported on macOS launchd, Linux systemd user services, and Windows Scheduled Tasks.',
   };
 }

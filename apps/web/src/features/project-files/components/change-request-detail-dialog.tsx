@@ -2,15 +2,14 @@
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
-import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import {
   Disclosure,
   DisclosureBody,
   DisclosureContent,
   DisclosureTrigger,
 } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -22,8 +21,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DiffStat, STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { createProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
+import { SparklesSolid } from '@mynaui/icons-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import {
   AlertTriangle,
@@ -42,8 +44,10 @@ import {
   Rows3,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestStatus } from '../api/change-requests';
+import { useProjectContext } from '../context';
 import {
   useChangeRequest,
   useChangeRequestDiff,
@@ -53,6 +57,44 @@ import {
   useReopenChangeRequest,
 } from '../hooks/use-change-requests';
 import { DiffRenderer } from './diff-renderer';
+
+/** One manifest-validation finding, as returned in the merge 422 body. */
+interface ManifestIssue {
+  path: string;
+  message: string;
+  severity: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * The chat prompt that seeds the fix session. Carries the full CR context plus
+ * every validation error so the agent can resolve the merge block end-to-end.
+ */
+function buildManifestFixPrompt(
+  cr: { number: number; title: string; head_ref: string; base_ref: string },
+  issues: ManifestIssue[],
+): string {
+  const issueLines = issues
+    .map((i) => {
+      const where = i.line ? ` (line ${i.line}${i.column ? `, col ${i.column}` : ''})` : '';
+      return `- [${i.severity}] ${i.path}: ${i.message}${where}`;
+    })
+    .join('\n');
+  return [
+    `Change request #${cr.number} ("${cr.title}") can't merge: its kortix.toml fails manifest validation, so the merge is blocked. Fix the manifest so the change request can merge.`,
+    ``,
+    `Branch: ${cr.head_ref} → ${cr.base_ref}`,
+    ``,
+    `Manifest validation errors:`,
+    issueLines || '- (the manifest failed to validate against the canonical schema)',
+    ``,
+    `Steps:`,
+    `1. Open kortix.toml and review each validation error above.`,
+    `2. Fix the root cause of each error so the manifest validates against the schema.`,
+    `3. Commit the fix and open a change request. Once it merges, the change ships.`,
+  ].join('\n');
+}
 
 function StatusBadge({ status }: { status: ChangeRequestStatus }) {
   const map: Record<
@@ -114,6 +156,10 @@ function diffSectionId(index: number) {
   return `cr-diff-file-${index}`;
 }
 
+export function diffRendererViewportClass(layout: 'unified' | 'split') {
+  return layout === 'split' ? 'min-w-[860px] lg:min-w-0' : 'min-w-[680px] sm:min-w-0';
+}
+
 function scrollToDiffSection(sectionId: string) {
   requestAnimationFrame(() => {
     const target = document.getElementById(sectionId);
@@ -155,10 +201,14 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     detailQuery.data?.change_request.status === 'open',
   );
 
+  const router = useRouter();
+  const projectId = useProjectContext()?.projectId ?? '';
+
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();
   const reopenMutation = useReopenChangeRequest();
   const [diffLayout, setDiffLayout] = useState<'unified' | 'split'>('unified');
+  const [fixing, setFixing] = useState(false);
 
   const cr = detailQuery.data?.change_request;
   const diff = diffQuery.data;
@@ -175,6 +225,19 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     cr?.description || (cr?.status === 'open' && preview) || cr?.status === 'merged',
   );
 
+  // A manifest-blocked merge comes back as 422 / code MANIFEST_INVALID with the
+  // failing issues in the body. Detect it so the dialog can offer "Fix with
+  // agent" instead of a dead-end toast.
+  // Gate on `variables === crId` so a stale failure from a previously-viewed CR
+  // (the dialog is reused, not remounted) never bleeds onto the current one.
+  const mergeError = mergeMutation.error as
+    | (Error & { code?: string; data?: { issues?: ManifestIssue[] } })
+    | null;
+  const manifestIssues =
+    mergeError?.code === 'MANIFEST_INVALID' && mergeMutation.variables === crId
+      ? (mergeError.data?.issues ?? [])
+      : null;
+
   const handleMerge = () => {
     if (!crId) return;
     mergeMutation.mutate(crId, {
@@ -185,8 +248,37 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             : `Merged ${res.merge.merge_commit_sha.slice(0, 7)}`,
         );
       },
-      onError: (err) => errorToast(err.message),
+      // Manifest blocks render in the banner below; everything else stays a toast.
+      onError: (err) => {
+        if ((err as { code?: string })?.code !== 'MANIFEST_INVALID') errorToast(err.message);
+      },
     });
+  };
+
+  // Spin up a session pre-seeded with the validation errors so the agent can fix
+  // the manifest and re-ship. Purely client-side: mint the id, navigate, persist
+  // in the background — same optimistic path as every other "new session" entry.
+  const handleFixWithAgent = () => {
+    if (!cr || !projectId || manifestIssues === null || fixing) return;
+    setFixing(true);
+    const sessionId = crypto.randomUUID();
+    const prompt = buildManifestFixPrompt(cr, manifestIssues);
+    router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+    onClose();
+    router.push(`/projects/${projectId}/sessions/${sessionId}`);
+    createProjectSession(projectId, {
+      session_id: sessionId,
+      initial_prompt: prompt,
+      // Branch the fix session off the CR head so it opens on the broken
+      // manifest, with the whole change in view.
+      base_ref: cr.head_ref,
+      name: `Fix CR #${cr.number} manifest`,
+    })
+      .catch((err) => {
+        errorToast(err instanceof Error ? err.message : 'Failed to start the fix session');
+        router.replace(`/projects/${projectId}`);
+      })
+      .finally(() => setFixing(false));
   };
 
   const handleClose = () => {
@@ -344,6 +436,38 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {renderActions('header')}
           </div>
         </ModalHeader>
+
+        {manifestIssues !== null && (
+          <div className="border-border shrink-0 border-b px-4 py-3 sm:px-5">
+            <InfoBanner
+              tone="destructive"
+              icon={AlertTriangle}
+              title="Manifest validation failed — merge blocked"
+              action={
+                <Button size="sm" variant="blue" disabled={fixing} onClick={handleFixWithAgent}>
+                  {fixing ? <Loading /> : <SparklesSolid />}
+                  Fix with agent
+                </Button>
+              }
+            >
+              {manifestIssues.length > 0 ? (
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 font-mono text-xs [&_li]:break-all">
+                  {manifestIssues.map((issue, idx) => (
+                    <li key={`${issue.path}-${idx}`}>
+                      {issue.path}: {issue.message}
+                      {issue.line ? ` (line ${issue.line})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span>
+                  kortix.toml on this branch doesn’t validate against the schema. Start a session to
+                  fix it.
+                </span>
+              )}
+            </InfoBanner>
+          </div>
+        )}
 
         <ModalBody className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-0 lg:flex lg:flex-col lg:overflow-hidden">
           {diffQuery.isLoading ? (
@@ -618,10 +742,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                                   <DiffRenderer
                                     patch={patch}
                                     layout={diffLayout}
-                                    className={cn(
-                                      'min-w-[680px] sm:min-w-0',
-                                      diffLayout === 'split' && 'min-w-[860px] lg:min-w-0',
-                                    )}
+                                    className={diffRendererViewportClass(diffLayout)}
                                   />
                                 </div>
                               ) : (

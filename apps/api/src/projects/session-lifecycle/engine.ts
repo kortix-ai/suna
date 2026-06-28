@@ -5,6 +5,8 @@ import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
+import { awaitTerminalStage } from './await-stage';
+import { deliverWithRetry, type DeliveryTarget } from './deliver';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -139,12 +141,43 @@ export async function createSession(command: CreateSessionCommand): Promise<Sess
 }
 
 export async function startSession(command: StartSessionCommand) {
-  const start = await openSession({
+  const first = await openSession({
     loaded: command.loaded,
     visible: command.visible,
     projectId: command.projectId,
     sessionId: command.sessionId,
   });
+  // Optional long-poll: re-resolve (re-reading the live session row each tick,
+  // like continueSession) until ready/terminal or the bounded deadline, so the
+  // client learns `ready` immediately instead of on its ~800ms poll tick.
+  // waitMs<=0 or an already-terminal first result → returns `first` unchanged,
+  // so the immediate-ready path and every non-long-poll caller are untouched.
+  const start = await awaitTerminalStage(
+    first,
+    async () => {
+      const [fresh] = await db
+        .select({
+          status: projectSessions.status,
+          sandboxProvider: projectSessions.sandboxProvider,
+          baseRef: projectSessions.baseRef,
+          agentName: projectSessions.agentName,
+          opencodeSessionId: projectSessions.opencodeSessionId,
+          accountId: projectSessions.accountId,
+          metadata: projectSessions.metadata,
+        })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, command.sessionId))
+        .limit(1);
+      if (!fresh) return null;
+      return openSession({
+        loaded: command.loaded,
+        visible: { row: fresh },
+        projectId: command.projectId,
+        sessionId: command.sessionId,
+      });
+    },
+    { waitMs: command.waitMs ?? 0 },
+  );
   return {
     status: start.stage === 'ready' ? 'ready' : 'pending',
     sessionId: command.sessionId,
@@ -231,18 +264,29 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  const externalId = sandboxExternalId(opened);
-  if (!externalId || !opened.opencode_session_id) return 'pending';
-  if (await postPrompt(externalId, opened.opencode_session_id, text, userId)) return 'delivered';
+  // Runtime is ready — hand off the prompt, healing + retrying through the
+  // transient failures a freshly-woken sandbox throws (rotated opencode session
+  // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
+  // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
+  // the old code gave up on the first hiccup and dropped the user's message.
+  const toTarget = (
+    o: NonNullable<Awaited<ReturnType<typeof openOnce>>>,
+  ): DeliveryTarget => ({
+    stage: o.stage,
+    externalId: sandboxExternalId(o),
+    opencodeSessionId: o.opencode_session_id,
+  });
 
-  const healed = await openOnce();
-  const healedId = healed?.opencode_session_id;
-  if (healed?.stage === 'ready' && healedId && healedId !== opened.opencode_session_id) {
-    if (await postPrompt(sandboxExternalId(healed) ?? externalId, healedId, text, userId)) {
-      return 'delivered';
-    }
-  }
-  return 'pending';
+  return deliverWithRetry({
+    sessionId,
+    opened: toTarget(opened),
+    reopen: async () => {
+      const healed = await openOnce();
+      return healed ? toTarget(healed) : null;
+    },
+    send: (externalId, opencodeSessionId) =>
+      postPrompt(externalId, opencodeSessionId, text, userId),
+  });
 }
 
 export async function drainSessionLifecycleQueue(input: {
@@ -410,6 +454,16 @@ async function applyPostCreateActions(input: {
           .onConflictDoNothing({
             target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId],
           });
+      } else if (action.type === 'deliver_prompt') {
+        const outcome = await continueSession({
+          source: action.source,
+          sessionId: input.sessionId,
+          text: action.text,
+          userId: action.userId ?? undefined,
+        });
+        if (outcome !== 'delivered') {
+          return { ok: false, error: `initial prompt delivery ${outcome}` };
+        }
       }
     }
     return { ok: true };
@@ -440,18 +494,26 @@ async function postPrompt(
   userId: string,
 ): Promise<boolean> {
   const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
-  const res = await forwardToSandbox(
-    externalId,
-    DAEMON_PORT,
-    { kind: 'principal', userId },
-    'POST',
-    `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-    `?directory=${encodeURIComponent(WORKSPACE)}`,
-    new Headers({ 'Content-Type': 'application/json' }),
-    body.buffer as ArrayBuffer,
-    config.KORTIX_URL ?? '',
-  );
-  if (res.ok || res.status === 204) return true;
-  if (res.status !== 404) console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
-  return false;
+  try {
+    const res = await forwardToSandbox(
+      externalId,
+      DAEMON_PORT,
+      { kind: 'principal', userId },
+      'POST',
+      `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
+      `?directory=${encodeURIComponent(WORKSPACE)}`,
+      new Headers({ 'Content-Type': 'application/json' }),
+      body.buffer as ArrayBuffer,
+      config.KORTIX_URL ?? '',
+    );
+    if (res.ok || res.status === 204) return true;
+    if (res.status !== 404) console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+    return false;
+  } catch (err) {
+    // A connection refused/reset while the sandbox finishes resuming — treat as a
+    // retryable miss (the deliver loop will heal + retry) instead of letting it
+    // bubble up and silently drop the turn.
+    console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
+    return false;
+  }
 }

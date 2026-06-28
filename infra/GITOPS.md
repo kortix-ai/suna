@@ -19,7 +19,7 @@ infra/k8s/
 - **Deploy** = a commit/PR that bumps `image.tag` in `infra/k8s/envs/<env>/values.yaml`. Argo CD syncs it onto the cluster.
 - **Rollback** = `git revert` that commit. Argo CD reconciles back.
 - **Drift** (anyone `kubectl edit`s a managed resource) is auto-reverted (`selfHeal: true`).
-- The Application tracks a branch per env: **prod → `prod`**, dev → `main` (Phase 3).
+- The Applications track a branch per env: **prod → `prod`**, staging → `staging`, dev → `main`.
 
 ## Bootstrap (one time)
 
@@ -76,25 +76,25 @@ CLI through the gateway uses gRPC-Web: `argocd login ops.kortix.com --grpc-web`.
 
 ## Release flow & the GitHub Actions
 
-Promotion keeps its good bones (one `VERSION`, retag-don't-rebuild, review-gated
-promote). What changes is how the deploy *happens*:
+Promotion keeps one `VERSION`, retag-don't-rebuild, and a review gate at the
+prod boundary:
 
-| Workflow | Role now (dual-run) | At api.kortix.com cutover |
-| --- | --- | --- |
-| `deploy-prod-eks.yml` | After the image is retagged, **bumps `envs/prod/values.yaml` → Argo CD deploys EKS** (gated by GitHub Environment `production`). No kubectl/helm. | becomes the **sole** prod deploy |
-| `deploy-prod.yml` | unchanged — retag · CLI · desktop · GitHub Release · **rolls ECS** (ECS still serves api.kortix.com) | **drop the `deploy-api` (ECS roll) job** |
-| `deploy-dev.yml` | unchanged — builds + rolls ECS dev | Phase 3: drop ECS roll, bump `envs/dev/values.yaml` |
-| `e2e.yml` | unchanged (WIP, non-gating) | wire as a required gate when ready |
+| Workflow | Role |
+| --- | --- |
+| `deploy-dev.yml` | On `main`, build/push `dev-<sha8>`, apply dev node-pg-migrate migrations, bump `infra/k8s/envs/dev/values.yaml`, and watch Argo CD roll `kortix-dev`. |
+| `build-staging.yml` / `deploy-staging.yml` / `qa-staging.yml` | On `staging`, build exact `staging-<sha8>` images, deploy the staging runtime, and run the staging e2e lane against staging URLs. |
+| `promote.yml` | Manual dispatch that promotes `staging` by default and opens a reviewed `release/vX.Y.Z` PR into `prod`; it does not tag, release, retag, or deploy. |
+| `deploy-prod.yml` | On the `prod` merge, retag the tested staging image, apply prod node-pg-migrate migrations, cut the GitHub Release, and watch Argo CD roll `kortix-prod`. |
 
-A release = merge the promote PR → `deploy-prod` retags + cuts the release →
-`deploy-prod-eks` bumps the prod values → Argo CD rolls EKS. **Rollback = `git
-revert`** the values bump (or `argocd app rollback`).
+A release = merge the promote PR → `deploy-prod` retags + migrates + publishes →
+Argo CD rolls EKS from the values committed on `prod`. **Rollback = `git revert`**
+the values/release commit (or `argocd app rollback`).
 
-**Approval gate:** create the `production` GitHub Environment (Settings →
-Environments) with required reviewers — the `deploy-prod-eks` job then pauses for
-sign-off before it touches prod. Branch protection note: the job pushes the bump
-commit to `prod`; allow the Actions bot to push (or relax the rule for it), the
-same way `deploy-prod`'s `sync-main-version` pushes to `main`.
+**Approval gate:** today the enforced human gate is the reviewed promote PR into
+the protected `prod` branch. If Kortix wants a second runtime approval in Actions,
+create the `production` GitHub Environment and add `environment: production` to
+the `deploy-api` job in `deploy-prod.yml`; otherwise the environment gate does not
+pause the workflow.
 
 ## Canary (Phase 2)
 
@@ -120,19 +120,23 @@ Watch a canary: `kubectl argo rollouts get rollout kortix-api -n kortix-prod --w
 
 ```
 PRs merge to main  ─►  DEV only        (dev Argo app tracks `main`)
-                       prod untouched
+                       staging/prod untouched
 
-Actions → Promote   ─►  merges main → `prod` branch (reviewed)
-   └─ deploy-prod-eks bumps image.tag in prod's envs/prod/values.yaml
-        (GitHub Environment `production` approval)
+PR main→staging or targeted PR to staging
+                    └─►  STAGING only  (staging Argo app tracks `staging`)
+                         production untouched
+
+Actions → Promote to Production ─► opens reviewed release PR into `prod`
+   └─ release PR already bumps image.tag in prod's envs/prod/values.yaml
+        (deploy-prod migrates + watches the EKS roll after merge)
                        └─►  prod Argo app (tracks `prod`) syncs ─► PROD
 ```
 
-The **prod Application tracks the `prod` branch** — so nothing on `main` can
-touch prod. Prod moves *only* when someone runs **Promote** (merges to `prod`)
-and the image bump lands on `prod`. (Bootstrap note: the app currently tracks
-`main` until the first promote puts the GitOps manifests on `prod`; then repoint
-`spec.sources[].targetRevision` from `main` → `prod` — a one-line change.)
+The **prod Application tracks the `prod` branch** — so nothing on `main` or
+`staging` can touch prod directly. `staging` is the only normal source for a
+production release, but prod moves *only* when someone runs **Promote to
+Production** and the reviewed release PR merges into `prod` with the image/value
+bump.
 
 ## GitHub-org SSO + retiring admin
 

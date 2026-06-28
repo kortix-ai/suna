@@ -1,10 +1,11 @@
 /**
  * `[[agents]]` parsing for `kortix.toml`.
  *
- * An agent's *behavior* is its OpenCode `.md` (front matter: prompt/model/mode/
- * tools/permission/skill-perms). OpenCode discovers and loads those as today.
- * This block is a thin **scoping overlay**, keyed by name, that grants the only
- * two things the agent `.md` can't express:
+ * An agent's *behavior* still comes from its OpenCode `.md` (front matter:
+ * prompt/model/mode/tools/permission/skill-perms). Once a project declares
+ * `[[agents]]`, this block is also the server-side launch roster and the
+ * governance policy keyed by agent name. Its grant fields cover the two things
+ * the agent `.md` can't express:
  *
  *   1. `connectors` — which integration profiles (by [[connectors]].slug) the
  *      agent may call. Default: none.
@@ -30,12 +31,13 @@
  * them in `errors` so the UI can render them next to the good ones.
  */
 import { createHash } from 'node:crypto';
-import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
+import type { ParsedManifest } from './triggers';
 import { PROJECT_ACTIONS, CHANNEL_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const MANIFEST_FILENAME = 'kortix.toml';
 
 /**
  * The actions an agent's `kortix_cli` may grant — the project-scoped surface.
@@ -132,6 +134,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
 export async function loadProjectAgents(project: GitBackedProject): Promise<LoadedAgents> {
   let manifest: ParsedManifest | null;
   try {
+    const { readManifest } = await import('./triggers');
     manifest = await readManifest(project);
   } catch (err) {
     return {

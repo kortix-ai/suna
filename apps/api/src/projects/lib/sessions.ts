@@ -5,10 +5,12 @@ import { auth, json } from '../../openapi';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
@@ -169,6 +171,11 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
+   *  opencode is locked to the gateway and native provider keys are withheld;
+   *  OFF (default) → native BYOK providers must reach opencode, so the deny
+   *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
+  llmGatewayEnabled: boolean;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -229,7 +236,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // a NATIVE provider and bypass the gateway. The daemon withholds exactly
     // these names from the opencode process (Codex/OpenCode auth is excluded —
     // that one is an intentional native provider).
-    KORTIX_OPENCODE_DENY_ENV: nativeProviderEnvNames().join(','),
+    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     KORTIX_PROJECT_AUTO_CLONE: '1',
     // Force a FULL clone (no blobless partial clone). The blobless default
     // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
@@ -257,39 +264,6 @@ export async function buildSessionSandboxEnvVars(input: {
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
     }),
-  };
-}
-
-/**
- * Stage-2 warm-spare env: the PROJECT identity a session-LESS spare needs to
- * clone the base branch + warm the opencode project plugin AT PARK — and
- * nothing more. Deliberately omits KORTIX_BRANCH_NAME / KORTIX_SESSION_ID /
- * KORTIX_BOOTSTRAP_OPENCODE_SESSION / KORTIX_INITIAL_PROMPT so park stays on the
- * base branch and warms via a readiness probe (no session created, nothing
- * relayed). Also omits user runtime secrets: the clone authenticates with the
- * box's own KORTIX_TOKEN (git proxy) and the plugin warm needs none — the
- * claimant's full per-user env (secrets, channel binding, session id, branch,
- * prompt) is staged at claim by stageClaimEnv, so no other user's secrets ever
- * sit in a spare before it's bound.
- */
-export function buildSpareSandboxEnvVars(input: {
-  projectId: string;
-  repoUrl: string;
-  baseRef: string;
-  agentName: string;
-}): Record<string, string> {
-  return {
-    KORTIX_PROJECT_AUTO_CLONE: '1',
-    // Full clone (see buildSessionSandboxEnvVars for why blobless is avoided).
-    KORTIX_CLONE_FILTER: '',
-    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
-    KORTIX_DEFAULT_BRANCH: input.baseRef,
-    KORTIX_BASE_REF: input.baseRef,
-    KORTIX_PROJECT_ID: input.projectId,
-    KORTIX_SERVICE_PORT: '8000',
-    KORTIX_AGENT_NAME: input.agentName,
-    KORTIX_API_URL: deriveKortixApiBase(),
-    KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
   };
 }
 
@@ -361,7 +335,7 @@ export async function createProjectSession(input: {
    * project, not to the stand-in owner they're attributed to, and would
    * otherwise be invisible to everyone but the account's first owner.
    */
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
   const visibility = input.visibility ?? 'private';
@@ -538,6 +512,7 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           opencodeModel,
+          llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,
         }),
@@ -608,6 +583,7 @@ export async function createProjectSession(input: {
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,
+        projectMetadata: project.metadata,
         gitProject: {
           projectId,
           repoUrl: project.repoUrl,
@@ -644,6 +620,9 @@ export async function createProjectSession(input: {
       } catch (markErr) {
         console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
       }
+      // Surface the failure to the originating channel (Slack) so the thread
+      // doesn't sit on a ⏳ until the 30-min GC. No-op for non-channel sessions.
+      notifySessionProvisioningFailed(sessionId, message);
     }
   })();
 

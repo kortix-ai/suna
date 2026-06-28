@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -12,6 +13,9 @@ import {
   resolvePreviewLink,
   wakeSandbox,
 } from '../backend';
+import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
+
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -240,6 +244,27 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
+function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
+  if (!body) return null;
+  const contentType = incomingHeaders.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) return null;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
+    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string): Response {
+  return jsonProxyError({
+    error: 'agent switch requires a new session',
+    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+    expected_agent: expectedAgent,
+    requested_agent: requestedAgent,
+  }, 409);
+}
+
 // === Core HTTP forwarder ======================================================
 //
 // Forwards one request to a sandbox port with the full upstream auth header set,
@@ -344,12 +369,23 @@ export async function forwardToSandbox(
   // liveness is owned by the health-check loop + reconciler, not a port request.
   let sawDeadSignal = false;
 
+  // Wall-clock budget so a cold/dead sandbox returns our friendly page BEFORE
+  // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
+  const proxyStartedAt = Date.now();
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
+    if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
       const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
+        const sessionAgent = record.agentName ?? 'default';
+        if (requestedAgent && requestedAgent !== sessionAgent) {
+          return agentSwitchConflictResponse(sessionAgent, requestedAgent);
+        }
         try {
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,
@@ -445,7 +481,7 @@ export async function forwardToSandbox(
         // instead of hanging the whole proxy. `body` is buffered (line ~576, not
         // a stream) so aborting only kills the in-flight attempt, never truncates
         // an upload mid-stream.
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(proxyAttemptTimeoutMs(budgetRemainingMs)),
         // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
         decompress: false,
         duplex: 'half',
@@ -607,10 +643,19 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, upstreamPort, userId, remainingPath, queryString } = opts;
+  const { sandboxId, userId, remainingPath, queryString } = opts;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
+
+  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
+  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
+  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
+  const upstreamPort =
+    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
+      ? 8000
+      : opts.upstreamPort;
+
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
@@ -636,8 +681,6 @@ export async function resolvePreviewWsUpstream(opts: {
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
     .replace(/^https:/i, 'wss:');
-  const url = wsBase + remainingPath + queryString;
-
   const headers = await buildSandboxUpstreamHeaders({
     sandboxId,
     userId,
@@ -645,7 +688,13 @@ export async function resolvePreviewWsUpstream(opts: {
     previewToken,
   });
 
-  return { ok: true, url, headers };
+  const upstreamUrl = new URL(wsBase + remainingPath + queryString);
+  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+    const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
+    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
+  }
+
+  return { ok: true, url: upstreamUrl.toString(), headers };
 }
 
 // === Route handlers: ALL /:sandboxId/:port(/*) ===

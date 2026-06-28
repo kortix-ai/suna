@@ -59,6 +59,7 @@ import {
 import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  getProjectDetail,
   listProjectSecrets,
   setPersonalProjectSecret,
   upsertProjectSecret,
@@ -66,8 +67,10 @@ import {
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
@@ -232,7 +235,15 @@ function SecretsCard({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const queryKey = ['project-secrets', projectId];
+  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const queryKey = useMemo(() => ['project-secrets', projectId], [projectId]);
+  const projectDetailQuery = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    staleTime: 30_000,
+  });
+  const llmGatewayEnabled =
+    projectDetailQuery.data?.project.experimental?.llm_gateway === true;
 
   const normalized = useMemo(() => normalizeResponse(data), [data]);
   const canManage = normalized.can_manage ?? false;
@@ -257,20 +268,25 @@ function SecretsCard({
     row: null,
   });
 
+  const refreshSecretsAndProviders = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey });
+    refreshProjectProviderState(queryClient, projectId);
+  }, [projectId, queryClient, queryKey]);
+
   const removeShared = useMutation({
     mutationFn: (name: string) => deleteProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
   const removeMine = useMutation({
     mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
   // The per-key source choice (use shared vs use mine) — only flips the active
   // flag; the value is set via the personal dialog.
   const setSource = useMutation({
     mutationFn: ({ name, active }: { name: string; active: boolean }) =>
       setPersonalProjectSecret(projectId, name, { active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: refreshSecretsAndProviders,
   });
 
   const filtered = useMemo(() => {
@@ -286,6 +302,13 @@ function SecretsCard({
   const openSharedEdit = (row: SecretRow) => {
     setSharedDialogRow(row);
     setSharedDialogOpen(true);
+  };
+  const openProviderManagement = () => {
+    if (llmGatewayEnabled) {
+      openCustomize('llm-providers');
+    } else {
+      setProviderModalOpen(true);
+    }
   };
 
   const chooseSource = useCallback(
@@ -355,7 +378,7 @@ function SecretsCard({
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 text-xs"
-                onClick={() => setProviderModalOpen(true)}
+                onClick={openProviderManagement}
               >
                 <Plug className="h-3.5 w-3.5" />
                 {tI18nHardcoded.raw(
@@ -415,14 +438,14 @@ function SecretsCard({
         onOpenChange={setSharedDialogOpen}
         projectId={projectId}
         row={sharedDialogRow}
-        onSaved={() => queryClient.invalidateQueries({ queryKey })}
+        onSaved={refreshSecretsAndProviders}
       />
       <PersonalSecretDialog
         open={personalDialog.open}
         row={personalDialog.row}
         projectId={projectId}
         onClose={() => setPersonalDialog({ open: false, row: null })}
-        onSaved={() => queryClient.invalidateQueries({ queryKey })}
+        onSaved={refreshSecretsAndProviders}
       />
     </div>
   );

@@ -39,9 +39,8 @@ const optInt = (def: number) =>
 
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
  * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle
- * isn't silently dropped — the bug that left KORTIX_WARM_POOL_CLONE_AT_PARK="1"
- * parsing as false (Stage-1, re-clone on claim) even though the daemon itself
- * sets that env to '1'. optBoolTrue keeps its original 'anything but false' rule. */
+ * isn't silently dropped. optBoolTrue keeps its original 'anything but false'
+ * rule. */
 const optBoolTrue = z.string().optional().default('true').transform((v) => v !== 'false');
 const optBoolFalse = z
   .string()
@@ -127,32 +126,6 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (re-introduced behind the session runtime allocator: a
-  // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
-  // bound to a session id on create — decoupled from the durable session row).
-  // Per-template default ready-count when a template is first opted in via the
-  // UI (per-template UI value overrides). FALLBACK DEFAULT ONLY — the live value
-  // is the DB `warm_pool` setting (admin Providers panel / runtime-settings.ts).
-  KORTIX_WARM_POOL_SIZE:           optInt(0),
-  // Master on/off for the warm pool subsystem. Default OFF — we don't run warm
-  // pools by default (they hold idle boxes for no reason). This env is only the
-  // FALLBACK default; the live master gate is the DB `warm_pool` setting flipped
-  // from the admin Providers panel (runtime-settings.ts → warmPoolEnabled()).
-  // When OFF the allocator skips the claim path and every create cold-provisions.
-  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
-  // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
-  // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
-  // base branch + warm the opencode project plugin AT PARK — so a claim only
-  // creates the session branch locally + adopts the warm opencode (~0.5s claim
-  // vs ~9s when the spare clones+warms on claim). Default off; turns a generic
-  // pool into per-project warm boxes (idle cost per hot project), so enable only
-  // for projects with predictable imminent sessions and after live-validation.
-  KORTIX_WARM_POOL_CLONE_AT_PARK:  optBoolFalse,
-  // Presence window: only keep a warm pool while a user has touched the project
-  // (authenticated portal activity) within this many minutes. Closing the tab
-  // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
-
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -195,6 +168,18 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
+  // Feature flag for per-Slack-user identity. OFF (default): every Slack message
+  // runs as the account owner (legacy behavior). ON: each sender must link their
+  // own Kortix account via `/kortix login` (a member of the project's account)
+  // and the agent runs AS them; unlinked senders are blocked. `/kortix login`
+  // and the bind endpoint stay available regardless, so users can pre-link
+  // before the flag is flipped on.
+  SLACK_REQUIRE_USER_IDENTITY: optBoolFalse,
+
+  // ── Channels — AgentMail email adapter (optional) ────────────────────────
+  AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
+  AGENTMAIL_API_KEY:           optStr,
+  AGENTMAIL_WEBHOOK_SECRET:    optStr,
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
@@ -205,9 +190,21 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // Fleet default for projects with no explicit per-project override. Defaults
+  // ON: wherever the gateway is available (master switch above), the managed
+  // gateway is the default routing mechanism and every project inherits it
+  // unless it explicitly opts out. The master switch still wins —
+  // LLM_GATEWAY_ENABLED=false forces native OpenCode for everyone regardless of
+  // this value — and an operator can set LLM_GATEWAY_DEFAULT_ENABLED=false to
+  // opt a whole environment back to native-by-default.
+  LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
+  // billing error (429/402/403), fall over to THIS managed model (billed as
+  // Kortix credits) so the turn survives instead of erroring. Empty disables.
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT:      optInt(0),
@@ -252,20 +249,15 @@ const envSchema = z.object({
   DAYTONA_WEBHOOK_SECRET:      optStr,
 
   // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
-  // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
+  // The MASTER on/off switch is the DB-backed admin toggle (warm_snapshot,
+  // runtime-settings.ts, default ON) — NOT an env var. When it's on AND
   // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
   // sessions can boot from a snapshot baked with services already running in
   // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
   // The warm snapshot is baked imperatively off a stock base snapshot — the
   // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
-  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   DAYTONA_WARM_TARGET:         optStr,
   DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
-  // Pool spawns default to warm snapshots (fast refills, but Daytona caps warm
-  // boxes at 1 vCPU / 1 GiB — see warm-bake.ts). Set true to boot pool boxes
-  // from the full-size Dockerfile image instead (slower refills, 2/4/20 spec).
-  KORTIX_WARM_POOL_FULL_SIZE:  optBoolFalse,
-
   // When a template's content hash changes and a fresh snapshot is built, drop
   // the now-superseded predecessor immediately (reap-on-repoint) instead of
   // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
@@ -308,15 +300,14 @@ const envSchema = z.object({
   // that created it dies (orphaned local-dev & ephemeral-env sessions are the
   // main leak source). All in MINUTES.
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
-  //                use site so a box is NEVER created persistent (a 0 here once
-  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
   //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
   //                still resumable; kept warm-resumable in the meantime).
   //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(120),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
   KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
@@ -571,10 +562,6 @@ export const config = {
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
-  KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
-  KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
@@ -593,12 +580,20 @@ export const config = {
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
   SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
+  SLACK_REQUIRE_USER_IDENTITY: env.SLACK_REQUIRE_USER_IDENTITY,
+
+  // ─── Channels (AgentMail email) ──────────────────────────────────────────
+  AGENTMAIL_API_URL: env.AGENTMAIL_API_URL,
+  AGENTMAIL_API_KEY: env.AGENTMAIL_API_KEY,
+  AGENTMAIL_WEBHOOK_SECRET: env.AGENTMAIL_WEBHOOK_SECRET,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
@@ -625,10 +620,8 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
-  KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.

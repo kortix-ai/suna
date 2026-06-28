@@ -147,12 +147,11 @@ Tiers map to Make targets and GitHub Actions lanes:
 
 | Lane | Trigger | Runs | Blocking? |
 |---|---|---|---|
-| **qa-pr** | PR → main/prod | lint · typecheck · **unit (product-code coverage)** · integration · contract · **api/ke2e flows** · SAST (Semgrep) · gates | **Yes** (fast, < 15min) |
+| **qa-pr** | PR → main/staging/prod | lint · typecheck · **unit (product-code coverage)** · integration · contract · **api/ke2e flows** · SAST (Semgrep) · gates | **Yes** (fast, < 15min) |
 | **package-tests** *(new)* | PR | `pnpm -r test` across all apps/packages (the previously-orphaned suites) with dependency caching | **Yes** |
-| **qa-main** | push → main | e2e · visual · a11y · migration · publish Allure | Yes |
+| **qa-staging** | push → staging | e2e · visual · a11y · migration · publish Allure | Yes |
 | **qa-nightly** | cron | performance (k6) · DAST (ZAP) · pentest · mutation · chaos · static-security | report + alert |
 | **qa-release** | PR → prod | full suite in sequence + gates | **Yes** (pre-prod) |
-| **hotfix-prod** | dispatch | typecheck · unit · contract · api-coverage (break-glass minimum) | Yes |
 
 **Hardening applied:**
 - Dependency caching (pnpm store, Bun, Playwright browsers) on every lane — the audit found none.

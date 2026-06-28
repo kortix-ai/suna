@@ -8,6 +8,10 @@ import {
 } from '../../projects/session-lifecycle';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { currentChannelSelection } from './selection';
+import {
+  normalizeConversationPolicy,
+  rememberSlackThreadOwner,
+} from './participants';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 
@@ -56,8 +60,13 @@ export async function createOrJoinThreadSession(input: {
   envelope: SlackEnvelope;
   event: SlackEvent;
   revived: boolean;
+  // The Kortix user this Slack sender linked via `/login`, already verified by
+  // the gate in spawnAgentTurn to be a member of the project's account. The
+  // session runs AS this user, so their credentials/secrets/connectors apply —
+  // never the account owner's.
+  actorUserId: string;
 }): Promise<void> {
-  const { projectId, teamId, threadId, envelope, event, revived } = input;
+  const { projectId, teamId, threadId, envelope, event, revived, actorUserId } = input;
 
   const [project] = await db
     .select()
@@ -66,18 +75,14 @@ export async function createOrJoinThreadSession(input: {
     .limit(1);
   if (!project) return;
 
-  const userId = await slackSessionLifecycle.resolveProjectAutomationActor(project.accountId);
-  if (!userId) {
-    console.warn('[slack-webhook] no actor for project', projectId);
-    return;
-  }
+  const userId = actorUserId;
 
   // Claim the thread-create. Loser → wait for the winner's mapping and follow up.
   const claimKey = teamId && threadId ? `slack:threadcreate:${teamId}:${threadId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
     } else {
       console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
         teamId,
@@ -103,7 +108,7 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
       return;
     }
   }
@@ -115,6 +120,7 @@ export async function createOrJoinThreadSession(input: {
   const selection = event.channel
     ? await currentChannelSelection({ teamId, channelId: event.channel })
     : null;
+  const conversationPolicy = normalizeConversationPolicy(selection?.conversationPolicy);
 
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
@@ -132,9 +138,7 @@ export async function createOrJoinThreadSession(input: {
     postCreate: teamId && threadId
       ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
       : undefined,
-    // Slack threads are team-facing — project-visible, not private to the
-    // stand-in owner the session is attributed to.
-    visibility: 'project',
+    visibility: conversationPolicy === 'project_open' ? 'project' : 'restricted',
     metadata: {
       source: 'slack',
       slack: {
@@ -143,6 +147,7 @@ export async function createOrJoinThreadSession(input: {
         user: event.user,
         thread_ts: threadId,
         event_type: event.type,
+        conversation_policy: conversationPolicy,
       },
     },
     // Sandbox-side env the slack skill references. The agent uses these to
@@ -168,6 +173,15 @@ export async function createOrJoinThreadSession(input: {
   if (result.sessionId && handle) {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
+  }
+  if (result.sessionId && teamId && threadId && event.user) {
+    await rememberSlackThreadOwner({
+      teamId,
+      threadId,
+      sessionId: result.sessionId,
+      slackUserId: event.user,
+      userId,
+    });
   }
 }
 

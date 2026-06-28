@@ -19,6 +19,7 @@ import {
 import {
   findCatalogEntryByName,
   getCatalogEntry,
+  githubLoaderOptions,
   type CatalogEntry,
   type ItemCapabilities,
 } from './catalog';
@@ -40,7 +41,7 @@ function inlineResolvedItem(entry: CatalogEntry): ResolvedItem {
 
 /** Resolve an entry to a ResolvedItem — inline for base, fetched for external. */
 function resolveEntry(entry: CatalogEntry, raw: string): Promise<ResolvedItem> {
-  if (entry.external) return loadItem({ registry: entry.external, item: entry.item.name, raw });
+  if (entry.external) return loadItem({ registry: entry.external, item: entry.item.name, raw }, githubLoaderOptions);
   return Promise.resolve(inlineResolvedItem(entry));
 }
 
@@ -66,8 +67,18 @@ export interface InstallBuildResult {
   capabilities: ItemCapabilities;
 }
 
+export interface InstallBatchBuildInput extends Omit<InstallBuildInput, 'id'> {
+  ids: string[];
+}
+
+export interface InstallBatchBuildResult {
+  files: Array<{ path: string; content: string }>;
+  installed: Array<{ name: string; type: string }>;
+  capabilities: ItemCapabilities;
+}
+
 export async function buildInstall(input: InstallBuildInput): Promise<InstallBuildResult> {
-  const entry = await getCatalogEntry(input.id);
+  const entry = (await getCatalogEntry(input.id)) ?? (await findCatalogEntryByName(input.id));
   if (!entry) throw new Error(`unknown item "${input.id}"`);
 
   const root = await resolveEntry(entry, input.id);
@@ -97,6 +108,40 @@ export async function buildInstall(input: InstallBuildInput): Promise<InstallBui
     files,
     plan,
     installed: plan.units.map((u) => ({ name: u.name, type: u.type })),
+    capabilities: {
+      secrets: [...new Set(caps.secrets)],
+      connectors: [...new Set(caps.connectors)],
+      tools: [...new Set(caps.tools)],
+      network: [...new Set(caps.network)],
+    },
+  };
+}
+
+export async function buildInstallBatch(input: InstallBatchBuildInput): Promise<InstallBatchBuildResult> {
+  const files = new Map<string, string>();
+  const installed = new Map<string, { name: string; type: string }>();
+  const caps: ItemCapabilities = { secrets: [], connectors: [], tools: [], network: [] };
+  let lockRaw = input.existingLockRaw;
+
+  for (const id of input.ids) {
+    const built = await buildInstall({
+      id,
+      configDir: input.configDir,
+      existingLockRaw: lockRaw,
+      legacyLockRaw: input.legacyLockRaw,
+      now: input.now,
+    });
+    for (const file of built.files) {
+      files.set(file.path, file.content);
+      if (file.path === REGISTRY_LOCK_FILENAME) lockRaw = file.content;
+    }
+    for (const item of built.installed) installed.set(item.name, item);
+    unionCapabilities(caps, built.capabilities);
+  }
+
+  return {
+    files: [...files.entries()].map(([path, content]) => ({ path, content })),
+    installed: [...installed.values()],
     capabilities: {
       secrets: [...new Set(caps.secrets)],
       connectors: [...new Set(caps.connectors)],

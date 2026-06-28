@@ -1,4 +1,5 @@
 import { backendApi } from '@/lib/api-client';
+import { getEnv } from '@/lib/env-config';
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -27,6 +28,8 @@ export interface MarketplaceItem {
   marketplaceLabel: string;
   owner?: string;
   sourceId?: string;
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
 }
 
 export interface DependencyItem {
@@ -65,6 +68,15 @@ function unwrap<T>(response: { data?: T; success: boolean; error?: Error }): T {
     throw response.error ?? new Error('Request failed');
   }
   return response.data;
+}
+
+async function publicGet<T>(path: string): Promise<T> {
+  const base = typeof window === 'undefined' ? getEnv().BACKEND_URL.replace(/\/$/, '').replace(/\/v1$/, '') : '';
+  const response = await fetch(`${base}/v1${path.startsWith('/') ? path : `/${path}`}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  return response.json() as Promise<T>;
 }
 
 /** A source still resolving during the cold first-load — rendered as a spinner
@@ -107,6 +119,40 @@ export async function listMarketplaceItems(params?: {
   return { items: res.items ?? [], loading: !!res.loading, pending: res.pending ?? 0, sources: res.sources ?? [] };
 }
 
+export function defaultProjectMarketplaceItems(items: MarketplaceItem[] | undefined): MarketplaceItem[] {
+  return (items ?? [])
+    .filter((item) => item.defaultProjectInstall)
+    .sort(
+      (a, b) =>
+        (a.defaultProjectInstallOrder ?? 999) - (b.defaultProjectInstallOrder ?? 999) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+export async function listDefaultProjectMarketplaceItems(): Promise<MarketplaceItem[]> {
+  const page = await listMarketplaceItems({ source: 'kortix', type: 'skill' });
+  return defaultProjectMarketplaceItems(page.items);
+}
+
+export async function listPublicMarketplaceItems(params?: {
+  query?: string;
+  type?: string;
+  source?: string;
+}): Promise<ItemsPage> {
+  const qs = new URLSearchParams();
+  if (params?.query) qs.set('query', params.query);
+  if (params?.type && params.type !== 'all') qs.set('type', params.type);
+  if (params?.source && params.source !== 'all') qs.set('source', params.source);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await publicGet<{
+    items: MarketplaceItem[];
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  }>(`/marketplace/items${suffix}`);
+  return { items: res.items ?? [], loading: !!res.loading, pending: res.pending ?? 0, sources: res.sources ?? [] };
+}
+
 export interface MarketplaceSummary {
   id: string;
   label: string;
@@ -135,6 +181,21 @@ export async function listMarketplaces(): Promise<MarketplacesPage> {
       sources?: PendingSource[];
     }>(`/marketplace/marketplaces`),
   );
+  return {
+    marketplaces: res.marketplaces ?? [],
+    loading: !!res.loading,
+    pending: res.pending ?? 0,
+    sources: res.sources ?? [],
+  };
+}
+
+export async function listPublicMarketplaces(): Promise<MarketplacesPage> {
+  const res = await publicGet<{
+    marketplaces: MarketplaceSummary[];
+    loading?: boolean;
+    pending?: number;
+    sources?: PendingSource[];
+  }>(`/marketplace/marketplaces`);
   return {
     marketplaces: res.marketplaces ?? [],
     loading: !!res.loading,
@@ -213,6 +274,19 @@ export async function updateMarketplaceItem(
       `/projects/${projectId}/registry/update`,
       { name },
     ),
+  );
+}
+
+export async function updateAllMarketplaceItems(
+  projectId: string,
+): Promise<{ ok: boolean; updated: string[]; commit_sha: string | null; file_count: number }> {
+  return unwrap(
+    await backendApi.post<{
+      ok: boolean;
+      updated: string[];
+      commit_sha: string | null;
+      file_count: number;
+    }>(`/projects/${projectId}/marketplace/update-all`),
   );
 }
 

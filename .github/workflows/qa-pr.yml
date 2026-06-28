@@ -6,7 +6,7 @@ name: QA - PR
 
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
   workflow_dispatch:
 
 concurrency:

@@ -30,6 +30,7 @@ let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
+  agentName: 'default',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
   provider: 'daytona',
@@ -48,6 +49,7 @@ let mockFetchResponses: Array<{
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let mockResolvedPreviewPorts: number[] = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -64,8 +66,6 @@ function sortPreferredSandboxRows(rows: any[]): any[] {
   return [...rows].sort((a, b) => {
     const statusDiff = rank(a.status) - rank(b.status);
     if (statusDiff !== 0) return statusDiff;
-    const poolDiff = (a.poolState == null ? 0 : 1) - (b.poolState == null ? 0 : 1);
-    if (poolDiff !== 0) return poolDiff;
     return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
   });
 }
@@ -104,7 +104,7 @@ mock.module('../shared/db', () => {
         // { accountRole } from accountUser/account_members depending on the path.
         const fieldKeys = fields ? Object.keys(fields) : [];
         const isSandboxQuery = fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
@@ -186,7 +186,8 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
-    resolvePreviewLink: async () => {
+    resolvePreviewLink: async (_externalId: string, port: number) => {
+      mockResolvedPreviewPorts.push(port);
       return { url: mockPreviewUrl, token: mockPreviewToken };
     },
     ensureRunning: async (sandboxId: string) => {
@@ -268,6 +269,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
+const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -323,6 +325,7 @@ beforeEach(() => {
   mockFetchCallCount = 0;
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
+  mockResolvedPreviewPorts = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -330,6 +333,49 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe('Preview proxy: websocket upstream resolution', () => {
+  test('keeps Daytona PTY websocket upstreams on direct OpenCode port 4096', async () => {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([4096]);
+    if (upstream.ok) {
+      expect(upstream.url).toBe('wss://preview.daytona.io/proxy-url/pty/pty_test/connect');
+    }
+  });
+
+  test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockPreviewUrl = 'https://8000-platinum.sbx.example';
+    mockPreviewToken = null;
+
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (upstream.ok) {
+      const url = new URL(upstream.url);
+      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      const queryContext = url.searchParams.get('__kortix_user_context');
+      expect(queryContext).toBeTruthy();
+      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
+      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
+    }
+  });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -552,12 +598,61 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
+      llmGatewayDenyEnv: '',
+      llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+  });
+
+  test('rejects prompt_async agent switches because executor grants are session-token bound', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [{ status: 204, body: '' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'agent switch requires a new session',
+      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      expected_agent: 'default',
+      requested_agent: 'reviewer',
+    });
+    expect(mockFetchCalls).toHaveLength(0);
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {

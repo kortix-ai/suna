@@ -20,7 +20,7 @@ describe('embedded starter snapshot', () => {
       'general-knowledge-worker'
     ];
     const skillFiles = gkw.files.filter((f) =>
-      f.path.startsWith('.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/'),
+      f.path.startsWith('.kortix/opencode/skills/'),
     );
     expect(skillFiles.length).toBeGreaterThan(0);
   });

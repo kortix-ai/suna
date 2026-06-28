@@ -11,6 +11,7 @@ import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
 import { PublicFileShareView } from './public-file-share-view';
+import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
 
 interface PublicShareMeta {
   share: {
@@ -56,9 +57,10 @@ export default function PublicSessionSharePage() {
   const origin = apiOrigin();
   const iframeSrc = useMemo(() => {
     if (!meta?.share) return '';
-    if (meta.share.public_url) return meta.share.public_url;
-    if (!meta.share.proxy_path || !origin) return '';
-    return `${origin}${meta.share.proxy_path}`;
+    // Prefer the path-based proxy on the same origin we just fetched metadata
+    // from — it always resolves. `public_url` is a fallback for older responses.
+    if (meta.share.proxy_path && origin) return `${origin}${meta.share.proxy_path}`;
+    return meta.share.public_url || '';
   }, [meta, origin]);
   const fileSrc = useMemo(() => {
     if (!meta?.share || meta.share.resource_type !== 'file') return '';
@@ -167,7 +169,7 @@ export default function PublicSessionSharePage() {
     : 'The session runtime is not active. Sign in with access to this project to start it.';
 
   return (
-    <main className="bg-background text-foreground flex min-h-screen flex-col">
+    <main className={SHARE_PAGE_ROOT_CLASS}>
       <header className="border-border/70 bg-background/95 flex min-h-[64px] flex-col gap-3 border-b px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex shrink-0 items-center gap-2.5">
@@ -266,7 +268,7 @@ export default function PublicSessionSharePage() {
           <iframe
             title={meta.share.label}
             src={iframeSrc}
-            className="h-full min-h-[calc(100vh-64px)] w-full border-0"
+            className={SHARE_PREVIEW_IFRAME_CLASS}
             sandbox={tI18nHardcoded.raw(
               'autoAppPublicShareSessionTokenPageJsxAttrSandboxAllow2840c013',
             )}

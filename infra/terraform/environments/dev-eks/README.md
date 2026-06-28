@@ -1,6 +1,7 @@
 # environments/dev-eks
 
-Dev EKS stack for `dev-api-eks.kortix.com`, run in parallel with ECS dev. A
+Dev EKS stack for `dev-api-eks.kortix.com`, the active dev API origin behind
+`dev-api.kortix.com` (verified by `X-Backend: eks` on 2026-06-21). A
 faithful clone of `prod-eks` (same modules), **fully isolated** — its own VPC
 (`10.40.0.0/16`), cluster (`kortix-dev-eks`), and Argo CD — trimmed for dev:
 a single NAT gateway, a 2-node floor, and Argo CD running **headless** (UI +
@@ -19,9 +20,10 @@ Two Terraform states, applied in order (identical flow to prod-eks):
 
 The app workload is the Helm chart at `infra/k8s/charts/kortix-api`, rendered
 with `infra/k8s/envs/dev/values.yaml` and deployed by Argo CD (app:
-`infra/k8s/argocd/applications/dev.yaml`, tracks `main`). CI
-(`.github/workflows/deploy-dev-eks.yml`) bumps the image tag on every push to
-`main` — Terraform owns infra, GitOps owns the app.
+`infra/k8s/argocd/applications/dev.yaml`, tracks `main`).
+`.github/workflows/deploy-dev.yml` applies dev database migrations, bumps the
+image tag on every API push to `main`, and watches the EKS rollout — Terraform
+owns infra, GitOps owns the app.
 
 ## Apply
 
@@ -70,9 +72,9 @@ cd ../platform && terraform init && terraform apply
 
 5. **Verify**: `curl https://dev-api-eks.kortix.com/v1/health` → `environment: dev`.
 
-## Cutover (later)
+## Active route / standby
 
-Flip `dev-api.kortix.com` → dev-eks (Cloudflare), set `workers.enabled: true` in
-`envs/dev/values.yaml`, and disable the ECS dev service. Until then EKS dev runs
-**API-only** so ECS keeps the dev-tier singleton workers (shared Postgres leader
-lease). Full architecture + coexistence notes: **`infra/EKS.md`**.
+`dev-api.kortix.com` currently routes to EKS. ECS remains the Worker standby via
+`dev-api-ecs-fargate.kortix.com`; keep the Worker config aligned with the live
+route before redeploying it (tracking: https://github.com/kortix-ai/suna/issues/3629).
+Full architecture + coexistence notes: **`infra/EKS.md`**.

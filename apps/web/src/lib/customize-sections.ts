@@ -17,6 +17,12 @@ export type CustomizeSection =
   | 'marketplace'
   | 'secrets'
   | 'connectors'
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
   | 'computers'
   | 'members'
   | 'schedules'
@@ -37,6 +43,12 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'marketplace',
   'secrets',
   'connectors',
+  'llm-management',
+  'llm-overview',
+  'llm-providers',
+  'llm-logs',
+  'llm-budgets',
+  'llm-keys',
   'computers',
   'members',
   'schedules',

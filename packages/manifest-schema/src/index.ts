@@ -30,9 +30,43 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 const TRIGGER_TYPES = ['cron', 'webhook'] as const;
-const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'] as const;
+// Providers a kortix.toml may declare. `channel` is included because the
+// platform itself writes `[[connectors]] provider="channel"` into the manifest
+// when a Slack/email channel is connected (see executor/channel-manifest.ts), so
+// the gate must accept what the backend produces. MUST stay in sync with the
+// runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
+// by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
+// deliberately absent: it is synth-only and never written to a manifest.
+const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'] as const;
 const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'none'] as const;
+/** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
+const CHANNEL_PLATFORMS = ['slack', 'email'] as const;
+/**
+ * Platform-owned slugs and the only provider allowed to use each — mirrors
+ * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
+ * catalog (the bug that made `slack thread` 404; see KORTIX-206).
+ */
+const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
+  kortix_slack: 'channel',
+  kortix_email: 'channel',
+  computer: 'computer',
+};
 const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
+
+/**
+ * True when `v` is a value the runtime's `coerceBool` recognizes for an
+ * `enabled` flag (apps/api/.../triggers.ts coerceBool). The runtime accepts
+ * booleans, 0/1, and the strings true/false/1/0/yes/no/on/off (case-insensitive)
+ * — the gate must accept the same set or it falsely rejects manifests that
+ * materialize fine. Genuine garbage (e.g. "maybe", a table) is still flagged.
+ */
+function isEnabledValue(v: unknown): boolean {
+  if (typeof v === 'boolean' || typeof v === 'number') return true;
+  if (typeof v === 'string') {
+    return ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'].includes(v.trim().toLowerCase());
+  }
+  return false;
+}
 
 const SANDBOX_CPU_BOUNDS = { min: 1, max: 32 } as const;
 const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
@@ -147,6 +181,8 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.session.read', 'project.session.start', 'project.session.exec', 'project.session.stop',
   'project.members.read', 'project.members.manage',
   'project.trigger.read', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.trigger.fire',
+  'project.gateway.logs.read', 'project.gateway.spend.read', 'project.gateway.routing.edit',
+  'project.gateway.budget.set', 'project.gateway.keys.manage',
   'channel.read', 'channel.connect', 'channel.send', 'channel.disconnect',
 ];
 
@@ -160,8 +196,9 @@ function validateGrantList(
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
+    // Runtime parseGrantSet treats "" the same as "none" (default-deny).
     const v = value.trim().toLowerCase();
-    if (v !== 'all' && v !== 'none') {
+    if (v !== '' && v !== 'all' && v !== 'none') {
       issues.push({ path: where, message: `${label} string must be "all" or "none" (or an array of names).`, severity: 'error' });
     }
     return;
@@ -530,8 +567,16 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         severity: 'error',
       });
     }
-    const prompt = typeof entry.prompt === 'string' ? entry.prompt : '';
-    if (!prompt.trim()) {
+    // Aliases below mirror the runtime parser's input tolerance
+    // (apps/api/.../triggers.ts parseTriggerEntry): `prompt`/`prompt_template`,
+    // `cron`/`schedule`, `run_at`/`runAt`, `secret_env`/`secretEnv`,
+    // `session_mode`/`sessionMode`. The gate must accept whatever the runtime
+    // accepts, or it falsely blocks a manifest that materializes fine.
+    const promptRaw =
+      typeof entry.prompt === 'string' ? entry.prompt
+      : typeof entry.prompt_template === 'string' ? entry.prompt_template
+      : '';
+    if (!promptRaw.trim()) {
       issues.push({
         path: `${where}.prompt`,
         message: 'prompt is required and may not be empty.',
@@ -539,10 +584,16 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
       });
     }
     if (type === 'cron') {
-      const cron = typeof entry.cron === 'string' ? entry.cron.trim() : '';
+      const cron =
+        typeof entry.cron === 'string' ? entry.cron.trim()
+        : typeof entry.schedule === 'string' ? entry.schedule.trim()
+        : '';
       // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
       // instead of a recurring `cron` expression — exactly one must be set.
-      const runAt = typeof entry.run_at === 'string' ? entry.run_at.trim() : '';
+      const runAt =
+        typeof entry.run_at === 'string' ? entry.run_at.trim()
+        : typeof entry.runAt === 'string' ? entry.runAt.trim()
+        : '';
       if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
@@ -566,7 +617,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         });
       }
     } else if (type === 'webhook') {
-      const secret = typeof entry.secret_env === 'string' ? entry.secret_env.trim() : '';
+      const secret =
+        typeof entry.secret_env === 'string' ? entry.secret_env.trim()
+        : typeof entry.secretEnv === 'string' ? entry.secretEnv.trim()
+        : '';
       if (!secret) {
         issues.push({
           path: `${where}.secret_env`,
@@ -581,16 +635,19 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         });
       }
     }
-    if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
+    if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({
         path: `${where}.enabled`,
         message: 'enabled must be a boolean.',
         severity: 'error',
       });
     }
-    if (entry.session_mode !== undefined) {
-      const sessionMode =
-        typeof entry.session_mode === 'string' ? entry.session_mode.trim() : '';
+    const sessionModeRaw =
+      typeof entry.session_mode === 'string' ? entry.session_mode
+      : typeof entry.sessionMode === 'string' ? entry.sessionMode
+      : undefined;
+    if (sessionModeRaw !== undefined) {
+      const sessionMode = sessionModeRaw.trim().toLowerCase();
       if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
         issues.push({
           path: `${where}.session_mode`,
@@ -633,11 +690,31 @@ function validateConnectors(
     } else {
       seenSlugs.add(slug);
     }
-    const provider = typeof entry.provider === 'string' ? entry.provider : '';
-    if (!(CONNECTOR_PROVIDERS as readonly string[]).includes(provider)) {
+    // Runtime parser lowercases provider/auth.type/policy.action/platform before
+    // matching — mirror that so a manifest using "MCP" or "Slack" isn't blocked.
+    const provider = typeof entry.provider === 'string' ? entry.provider.trim().toLowerCase() : '';
+    if (provider === 'computer') {
+      // Synth-only: a `computer` connector materializes when a machine is
+      // connected over the Agent Computer Tunnel — it is never declared by hand.
+      issues.push({
+        path: `${where}.provider`,
+        message:
+          'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.toml.',
+        severity: 'error',
+      });
+    } else if (!(CONNECTOR_PROVIDERS as readonly string[]).includes(provider)) {
       issues.push({
         path: `${where}.provider`,
         message: `provider must be one of: ${CONNECTOR_PROVIDERS.join(', ')} (got "${provider || 'unset'}").`,
+        severity: 'error',
+      });
+    }
+    // Reserved platform-owned slugs accept only their built-in provider.
+    const reservedProvider = RESERVED_SLUG_PROVIDERS[slug];
+    if (reservedProvider && provider !== reservedProvider) {
+      issues.push({
+        path: `${where}.provider`,
+        message: `"${slug}" is reserved for the built-in ${reservedProvider} connector (provider="${reservedProvider}").`,
         severity: 'error',
       });
     }
@@ -662,12 +739,22 @@ function validateConnectors(
         severity: 'error',
       });
     }
-    if (provider === 'http' && typeof entry.base_url !== 'string') {
+    if (provider === 'http' && typeof entry.base_url !== 'string' && typeof entry.baseUrl !== 'string') {
       issues.push({
         path: `${where}.base_url`,
         message: 'http connectors require `base_url`.',
         severity: 'error',
       });
+    }
+    if (provider === 'channel') {
+      const platform = typeof entry.platform === 'string' ? entry.platform.trim().toLowerCase() : '';
+      if (!(CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
+        issues.push({
+          path: `${where}.platform`,
+          message: `channel connectors require \`platform\` one of: ${CHANNEL_PLATFORMS.join(', ')} (got "${platform || 'unset'}").`,
+          severity: 'error',
+        });
+      }
     }
     // Optional [connectors.auth]
     if (entry.auth !== undefined) {
@@ -675,11 +762,18 @@ function validateConnectors(
       if (!isTable(auth)) {
         issues.push({ path: `${where}.auth`, message: 'auth must be a table.', severity: 'error' });
       } else {
-        const t = typeof auth.type === 'string' ? auth.type : '';
+        const t = typeof auth.type === 'string' ? auth.type.trim().toLowerCase() : '';
         if (!(CONNECTOR_AUTH_TYPES as readonly string[]).includes(t)) {
           issues.push({
             path: `${where}.auth.type`,
             message: `auth.type must be one of: ${CONNECTOR_AUTH_TYPES.join(', ')} (got "${t || 'unset'}").`,
+            severity: 'error',
+          });
+        }
+        if (provider === 'channel' && t !== 'none') {
+          issues.push({
+            path: `${where}.auth`,
+            message: 'channel connectors authenticate via the platform install token — omit [connectors.auth].',
             severity: 'error',
           });
         }
@@ -715,7 +809,7 @@ function validateConnectors(
               severity: 'error',
             });
           }
-          const action = typeof p.action === 'string' ? p.action : '';
+          const action = typeof p.action === 'string' ? p.action.trim().toLowerCase() : '';
           if (!(CONNECTOR_POLICY_ACTIONS as readonly string[]).includes(action)) {
             issues.push({
               path: `${pwhere}.action`,
@@ -758,7 +852,7 @@ function validateChannels(node: unknown, path: string, issues: ManifestIssue[]):
     } else {
       seenPlatforms.add(platform);
     }
-    if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
+    if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({ path: `${where}.enabled`, message: 'enabled must be a boolean.', severity: 'error' });
     }
     if (entry.events !== undefined) {
@@ -804,7 +898,7 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
     }
     expectStringOrAbsent(entry.name, `${where}.name`, issues);
     expectStringOrAbsent(entry.framework, `${where}.framework`, issues);
-    if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
+    if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({ path: `${where}.enabled`, message: 'enabled must be a boolean.', severity: 'error' });
     }
     if (entry.domains !== undefined) {

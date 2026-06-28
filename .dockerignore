@@ -6,6 +6,11 @@
 **/*.log
 .cache
 **/.cache
+**/.venv
+**/__pycache__
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
 .turbo
 **/.turbo
 .vercel

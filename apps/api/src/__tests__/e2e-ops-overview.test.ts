@@ -23,7 +23,7 @@ mock.module('../middleware/require-admin', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: { KORTIX_BILLING_INTERNAL_ENABLED: false },
+  config: { KORTIX_BILLING_INTERNAL_ENABLED: false, INTERNAL_KORTIX_ENV: 'dev' },
 }));
 
 mock.module('../tunnel', () => ({
@@ -84,6 +84,7 @@ describe('ops overview dashboard API', () => {
 
     expect(body.api).toEqual({
       status: 'ok',
+      env: 'dev',
       billing_enabled: false,
       tunnel: { enabled: true, connectedAgents: 2 },
     });
@@ -96,6 +97,7 @@ describe('ops overview dashboard API', () => {
     expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, local_docker: 2 });
     expect(body.queues.queued_total).toBe(0);
     expect(body.queues.trigger_events_by_status).toEqual({});
+    expect(body.queues.channel_events_by_status).toEqual({});
     expect(body.audit.events_24h).toBe(9);
     expect(body.audit.recent[0]).toMatchObject({ action: 'POST /v1/projects' });
     expect(body.usage).toMatchObject({

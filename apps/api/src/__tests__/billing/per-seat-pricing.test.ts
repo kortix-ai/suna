@@ -25,23 +25,23 @@ import {
 import { calculateComputeCost } from '../../billing/services/compute-metering';
 
 describe('Per-seat pricing math', () => {
-  test('$40/seat; typical compute+LLM budget split is a display figure ($20)', () => {
+  test('$40/seat; typical compute+LLM budget split is a display figure ($25)', () => {
     expect(PER_SEAT_PRICE_USD).toBe(40);
     // Display-only "typical" split — illustrative usage, not a wallet partition,
     // so it doesn't have to equal the seat price.
-    expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
+    expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(25);
   });
 
-  test('seat grant equals $20 included credits × seat count (NOT the $40 price)', () => {
-    // The $40 seat includes $20 of usage credits; the other $20 is platform margin.
-    expect(grantForSeats(1)).toBe(20);
-    expect(grantForSeats(5)).toBe(100);
-    expect(grantForSeats(10)).toBe(200);
+  test('seat grant equals $25 included credits × seat count (NOT the $40 price)', () => {
+    // The $40 seat includes $25 of usage credits; the other $15 is platform margin.
+    expect(grantForSeats(1)).toBe(25);
+    expect(grantForSeats(5)).toBe(125);
+    expect(grantForSeats(10)).toBe(250);
   });
 
   test('seat counts below 1 are clamped to 1', () => {
-    expect(grantForSeats(0)).toBe(20);
-    expect(grantForSeats(-3)).toBe(20);
+    expect(grantForSeats(0)).toBe(25);
+    expect(grantForSeats(-3)).toBe(25);
   });
 
   test('auto-topup defaults scale with seat count', () => {
@@ -161,7 +161,7 @@ describe('Compute cost calculation', () => {
   });
 
   test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
-    // 8h × 22 days of compute exceeds the $12 typical compute budget per seat,
+    // 8h × 22 days of compute exceeds the $15 typical compute budget per seat,
     // funded from the fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);

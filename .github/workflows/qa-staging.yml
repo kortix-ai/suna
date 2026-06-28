@@ -1,0 +1,141 @@
+name: QA - staging
+
+# Heavier regression after code reaches staging. Browser tests run only when a
+# deployed web target is configured; DB migration tests always run against
+# throwaway Docker.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      web_base_url:
+        description: "Frontend URL for e2e/visual/a11y, for example https://staging.kortix.com"
+        required: false
+        type: string
+
+concurrency:
+  group: qa-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    name: e2e + visual + a11y
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      E2E_BASE_URL: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
+      QA_API_BASE_URL: ${{ vars.QA_API_BASE_URL || vars.QA_TARGET_URL }}
+      A11Y_CONTRAST_MAX: ${{ vars.A11Y_CONTRAST_MAX || '560' }}
+      # staging.kortix.com sits behind Vercel deployment protection (SSO); the
+      # Playwright configs send this as x-vercel-protection-bypass so the browser
+      # suite can reach the app instead of the Vercel login wall.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: cd tests && npx playwright install --with-deps chromium
+      - name: Run browser regression when configured
+        run: |
+          set -euo pipefail
+          if [ -z "${E2E_BASE_URL:-}" ]; then
+            echo "::notice::QA_WEB_BASE_URL/E2E_BASE_URL is not set; skipping browser regression."
+            exit 0
+          fi
+          case "$E2E_BASE_URL" in
+            https://staging.kortix.com*) ;;
+            *) echo "::error::qa-staging must target staging.kortix.com, got ${E2E_BASE_URL}"; exit 1 ;;
+          esac
+          case "${QA_API_BASE_URL:-}" in
+            ""|https://staging-api.kortix.com*) ;;
+            *) echo "::error::qa-staging API target must be staging-api.kortix.com, got ${QA_API_BASE_URL}"; exit 1 ;;
+          esac
+          make e2e a11y
+          # Visual is advisory: it snapshots the live target (no deterministic
+          # per-platform baselines), so a pixel diff shouldn't red-gate qa-staging.
+          # It still runs and its results land in the report.
+          make visual || echo "::warning::Visual regression failed (advisory — live target). See the QA report for diffs."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-staging-ui
+          path: tests/test-results/**
+          retention-days: 30
+
+  migration:
+    name: db migration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install workspace dependencies
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
+      - name: Run migration tests
+        run: make migration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-staging-migration
+          path: tests/test-results/migration/**
+          retention-days: 30
+
+  publish-report:
+    name: publish Allure report
+    runs-on: ubuntu-latest
+    needs: [ui, migration]
+    if: always()
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install test dependencies
+        run: cd tests && bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          path: tests/test-results
+          merge-multiple: true
+      - name: Convert JUnit to Allure results
+        run: npm --prefix tests run allure:junit
+      - name: AWS auth (skipped if QA_REPORTS_ROLE_ARN unset)
+        if: ${{ env.QA_REPORTS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Generate and optionally publish report
+        run: bash tests/scripts/publish-allure.sh
+        env:
+          S3_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+          RUN_ID: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allure-report
+          path: tests/test-results/allure-report/**
+          retention-days: 30

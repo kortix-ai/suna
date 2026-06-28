@@ -1,5 +1,5 @@
 /**
- * /v1/marketplace — browse the registry catalog. Read-only + auth'd; installing
+ * /v1/marketplace — browse the registry catalog. Read-only routes are public; installing
  * is project-scoped and lives under /v1/projects/:id/registry/* (see r10.ts).
  */
 
@@ -32,21 +32,17 @@ warmMarketplaceCatalog();
 
 export const marketplaceApp = makeOpenApiApp<AppEnv>();
 
-marketplaceApp.use('/*', supabaseAuth);
-
 marketplaceApp.openapi(
   createRoute({
     method: 'get',
     path: '/items',
     tags: ['marketplace'],
     summary: 'GET /marketplace/items',
-    ...auth,
     request: {
       query: z.object({ query: z.string().optional(), type: z.string().optional(), source: z.string().optional() }),
     },
     responses: {
       200: json(z.any(), 'Catalog items'),
-      ...errors(401),
     },
   }),
   async (c: any) => {
@@ -64,10 +60,8 @@ marketplaceApp.openapi(
     path: '/marketplaces',
     tags: ['marketplace'],
     summary: 'GET /marketplace/marketplaces',
-    ...auth,
     responses: {
       200: json(z.any(), 'Distinct marketplaces with item counts'),
-      ...errors(401),
     },
   }),
   async (c: any) => {
@@ -81,10 +75,8 @@ marketplaceApp.openapi(
     path: '/marketplaces/featured',
     tags: ['marketplace'],
     summary: 'GET /marketplace/marketplaces/featured',
-    ...auth,
     responses: {
       200: json(z.any(), 'Curated featured marketplaces'),
-      ...errors(401),
     },
   }),
   async (c: any) => {
@@ -98,13 +90,12 @@ marketplaceApp.openapi(
     path: '/items/{id}',
     tags: ['marketplace'],
     summary: 'GET /marketplace/items/:id',
-    ...auth,
     request: {
       params: z.object({ id: z.string() }),
     },
     responses: {
       200: json(z.any(), 'Item detail'),
-      ...errors(401, 404),
+      ...errors(404),
     },
   }),
   async (c: any) => {
@@ -120,14 +111,13 @@ marketplaceApp.openapi(
     path: '/items/{id}/file',
     tags: ['marketplace'],
     summary: 'GET /marketplace/items/:id/file',
-    ...auth,
     request: {
       params: z.object({ id: z.string() }),
       query: z.object({ path: z.string().min(1) }),
     },
     responses: {
       200: json(z.any(), 'File content'),
-      ...errors(401, 404),
+      ...errors(404),
     },
   }),
   async (c: any) => {
@@ -138,6 +128,9 @@ marketplaceApp.openapi(
 );
 
 // ── Sources ("Add a marketplace") ──────────────────────────────────────────
+
+marketplaceApp.use('/sources', supabaseAuth);
+marketplaceApp.use('/sources/*', supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
 

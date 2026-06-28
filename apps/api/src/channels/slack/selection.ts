@@ -13,6 +13,7 @@ export interface ChannelSelection {
   projectId: string;
   agentName: string | null;
   opencodeModel: string | null;
+  conversationPolicy: string | null;
 }
 
 export interface ChannelCtx {
@@ -23,13 +24,14 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null } | undefined;
+  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
   try {
     [binding] = await db
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
         opencodeModel: chatChannelBindings.opencodeModel,
+        conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
       .where(and(
@@ -42,14 +44,35 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
     if (!isMissingSelectionColumnError(err)) throw err;
     console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
     const projectId = await currentChannelProjectId(ctx);
-    return projectId ? { projectId, agentName: null, opencodeModel: null } : null;
+    return projectId ? { projectId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
   }
   if (!binding?.projectId) return null;
   return {
     projectId: binding.projectId,
     agentName: binding.agentName ?? null,
     opencodeModel: binding.opencodeModel ?? null,
+    conversationPolicy: binding.conversationPolicy ?? null,
   };
+}
+
+export async function setChannelConversationPolicy(ctx: ChannelCtx, conversationPolicy: string): Promise<boolean> {
+  if (!ctx.channelId) return false;
+  try {
+    const rows = await db
+      .update(chatChannelBindings)
+      .set({ conversationPolicy })
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.channelId, ctx.channelId),
+      ))
+      .returning({ id: chatChannelBindings.bindingId });
+    return rows.length > 0;
+  } catch (err) {
+    if (!isMissingSelectionColumnError(err)) throw err;
+    console.warn('[slack-selection] conversation policy column missing; ignoring policy update');
+    return false;
+  }
 }
 
 /**
@@ -119,7 +142,8 @@ function isMissingSelectionColumnError(err: unknown): boolean {
   ].filter(Boolean).join('\n');
   return (
     parts.includes('column "agent_name" does not exist') ||
-    parts.includes('column "opencode_model" does not exist')
+    parts.includes('column "opencode_model" does not exist') ||
+    parts.includes('column "conversation_policy" does not exist')
   );
 }
 
@@ -130,10 +154,10 @@ export interface ProjectAgent {
 }
 
 /**
- * The project's named agents, parsed from `.kortix/opencode/agents/*.md` in the
- * repo. Touches git (lists repo files), so callers must use the async slash
- * response path (response_url) to stay inside Slack's 3s window. The implicit
- * 'default' agent is always available and is NOT in this list.
+ * The project's launchable agents from the server-side config summary:
+ * declarative `kortix.toml [[agents]]` for adopted projects, OpenCode markdown
+ * discovery for legacy projects. Touches git, so callers must use the async
+ * slash response path (response_url) to stay inside Slack's 3s window.
  */
 export async function listProjectAgents(projectId: string): Promise<ProjectAgent[]> {
   const [row] = await db

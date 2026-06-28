@@ -12,7 +12,18 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { QuestionPrompt } from '@/features/session/question-prompt';
+import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import {
+  SessionRetryDisplay,
+  TurnErrorDisplay,
+} from '@/features/session/session-error-banner';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import {
+  cleanResultSnippet,
+  formatRawOutput,
+  looksLikeJsonPayload,
+  recoverLinkResults,
+} from '@/features/session/tool-output-format';
 import {
   extractReadableHtml,
   stripMarkupForToolOutput,
@@ -35,6 +46,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
@@ -108,12 +120,16 @@ import React, {
 
 import {
   type Diagnostic,
+  getChildSessionError,
   getChildSessionId,
   getChildSessionToolParts,
   getDiagnostics,
   getDirectory,
   getFilename,
+  getRetryInfo,
+  getRetryMessage,
   getToolInfo,
+  type MessageWithParts,
   PERMISSION_LABELS,
   type PermissionRequest,
   type QuestionRequest,
@@ -219,10 +235,13 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setIsLoading(false), 5000);
+    if (!isLoading || !previewUrl) return;
+    const t = setTimeout(() => {
+      setIsLoading(false);
+      setHasError(true);
+    }, 8000);
     return () => clearTimeout(t);
-  }, [isLoading, refreshKey]);
+  }, [isLoading, previewUrl, refreshKey]);
 
   const displayLabel = label || (proxy ? 'App preview' : url);
 
@@ -270,7 +289,10 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     openExternal(previewUrl ?? undefined);
   }, [openExternal, previewUrl]);
 
-  const onLoad = useCallback(() => setIsLoading(false), []);
+  const onLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
+  }, []);
   const onError = useCallback(() => {
     setIsLoading(false);
     setHasError(true);
@@ -294,21 +316,46 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
 
 type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
+function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
+  const { previewUrl, displayLabel, handleRefresh, openInBrowser } = preview;
+  const label = previewUrl || displayLabel;
+
+  return (
+    <div className="bg-background absolute inset-0 z-10 flex items-center justify-center p-6">
+      <div className="flex max-w-2xl flex-col items-center gap-3 text-center">
+        <button
+          type="button"
+          onClick={openInBrowser}
+          disabled={!previewUrl}
+          className={cn(
+            'text-foreground inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium shadow-2xs transition-colors',
+            previewUrl
+              ? 'hover:bg-muted'
+              : 'cursor-not-allowed opacity-60',
+          )}
+        >
+          <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+          <span className="break-all font-mono">{label}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          Retry preview
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 16:9 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // In the side panel, fill the available height; inline in chat keep 16:9.
   const fill = useContext(ToolSurfaceContext) === 'panel';
-  const {
-    previewUrl,
-    displayLabel,
-    isLoading,
-    hasError,
-    refreshKey,
-    handleRefresh,
-    onLoad,
-    onError,
-  } = preview;
+  const { previewUrl, displayLabel, isLoading, hasError, refreshKey, onLoad, onError } = preview;
+  const linkOnlyPreview = prefersPreviewLink(previewUrl);
 
   // Render the iframe at its container's real size (16:9) with NO CSS transform.
   // Cross-origin iframes (OOPIFs) under `transform: scale()` hit a Chromium
@@ -320,7 +367,7 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
     <div
       className={cn('relative w-full overflow-hidden bg-white', fill ? 'h-full' : 'aspect-video')}
     >
-      {(isLoading || !previewUrl) && (
+      {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-muted-foreground flex items-center gap-2">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -330,23 +377,8 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
           </div>
         </div>
       )}
-      {hasError && (
-        <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-          <div className="text-muted-foreground text-center">
-            <p className="text-xs">
-              {tHardcodedUi.raw('componentsSessionToolRenderers.line387JsxTextFailedToLoad')}
-            </p>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="text-primary mt-1 text-xs hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-      {previewUrl && (
+      {(hasError || linkOnlyPreview) && <ServicePreviewUrlFallback preview={preview} />}
+      {previewUrl && !linkOnlyPreview && (
         <iframe
           key={refreshKey}
           src={previewUrl}
@@ -909,9 +941,40 @@ function ToolOutputFallback({
     );
   }
 
+  // Structured/oversized payloads (JSON dumps, very long blobs) render as a
+  // tidy, length-capped monospace block. Feeding raw JSON to the markdown
+  // renderer produces a garbled wall of text — the "looks weird" complaint.
+  if (looksLikeJsonPayload(output) || output.length > 4000) {
+    return <RawOutputBlock output={output} />;
+  }
+
   return (
     <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
       <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    </div>
+  );
+}
+
+/**
+ * Tidy, length-capped raw-output view: pretty-prints JSON when parseable, caps
+ * the rendered text, and notes how much was dropped. The shared safety net for
+ * any tool whose output isn't worth a bespoke renderer.
+ */
+function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
+  const { text, truncatedChars } = useMemo(
+    () => formatRawOutput(output, maxChars),
+    [output, maxChars],
+  );
+  return (
+    <div data-scrollable className="max-h-72 overflow-auto p-2">
+      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+        {text}
+      </pre>
+      {truncatedChars > 0 && (
+        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
+          +{truncatedChars.toLocaleString()} more characters
+        </div>
+      )}
     </div>
   );
 }
@@ -3890,6 +3953,21 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
     }
     if (sources.length > 0) return [{ query: '', sources }];
   }
+
+  // Last resort: the output was JSON we couldn't strictly parse (oversized /
+  // truncated mid-stream). Recover whatever title/url/snippet records we can so
+  // the user still sees clean result cards instead of a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return [
+        {
+          query: '',
+          sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        },
+      ];
+    }
+  }
   return [];
 }
 
@@ -4054,7 +4132,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                                 </div>
                                 {src.snippet && (
                                   <p className="text-muted-foreground/60 mt-1 line-clamp-2 text-xs leading-relaxed">
-                                    {src.snippet.slice(0, 200)}
+                                    {cleanResultSnippet(src.snippet, 200)}
                                   </p>
                                 )}
                               </div>
@@ -4139,6 +4217,25 @@ function parseScrapeOutput(output: string | any): ParsedScrapeOutput | null {
       })),
     };
   }
+
+  // Last resort: oversized / truncated JSON that failed strict parsing — recover
+  // the page records so we still render result cards, never a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return {
+        total: recovered.length,
+        successful: recovered.length,
+        failed: 0,
+        results: recovered.map((r) => ({
+          url: r.url,
+          success: true,
+          title: r.title || undefined,
+          content: r.snippet || undefined,
+        })),
+      };
+    }
+  }
   return null;
 }
 
@@ -4188,9 +4285,7 @@ function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               if (!resultUrl) return null;
               const favicon = wsFavicon(resultUrl);
               const resultDomain = wsDomain(resultUrl);
-              const snippet = result.content
-                ? result.content.replace(/\\n/g, ' ').replace(/\s+/g, ' ').slice(0, 200)
-                : undefined;
+              const snippet = result.content ? cleanResultSnippet(result.content, 200) : undefined;
 
               return (
                 <a
@@ -5389,6 +5484,67 @@ function SubAgentActivity({
   );
 }
 
+/**
+ * Surfaces a sub-agent's failure/retry state up into the parent thread.
+ *
+ * A child (sub-agent) session runs its own LLM turn and streams its own
+ * `session.status` (retry) and `session.error` events. Those reach the browser
+ * on the shared per-server SSE stream and are stored keyed by the CHILD session
+ * id — but the parent's spawn card only ever rendered child *tool activity*. So
+ * when a sub-agent died mid-LLM-call (e.g. "Free usage exceeded, subscribe to
+ * Go") before running any tool, the parent card showed nothing and the thread
+ * looked stuck/collapsed. This banner reads the child's live retry status and
+ * persisted error and renders them inline so the failure is always visible.
+ */
+function SubAgentStatusBanner({
+  childSessionId,
+  childMessages,
+}: {
+  childSessionId?: string;
+  childMessages?: MessageWithParts[];
+}) {
+  // Live status for the child session (retry / busy / idle), keyed by child id.
+  const childStatus = useSyncStore((s) =>
+    childSessionId ? s.sessionStatus[childSessionId] : undefined,
+  );
+  const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
+  const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
+  const childError = useMemo(() => getChildSessionError(childMessages), [childMessages]);
+
+  // Live countdown for the retry banner (mirrors session-chat's per-second tick).
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  useEffect(() => {
+    if (!retryInfo) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () =>
+      setSecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [retryInfo]);
+
+  // A live retry takes precedence — it's the actionable "still trying" signal.
+  if (retryInfo && retryMessage) {
+    return (
+      <SessionRetryDisplay
+        message={retryMessage}
+        attempt={retryInfo.attempt}
+        secondsLeft={secondsLeft}
+        className="mt-2"
+      />
+    );
+  }
+
+  // Otherwise surface the terminal error so it stays visible after the child idles.
+  if (childError) {
+    return <TurnErrorDisplay errorText={childError} className="mt-2" />;
+  }
+
+  return null;
+}
+
 function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
@@ -5444,6 +5600,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5518,6 +5675,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -6441,6 +6599,12 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
             <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
           </div>
         )}
+
+        {/* Sub-agent retry/error — always visible so a failed worker never
+            looks like a silently-stuck/empty card. */}
+        <div className="px-3 pb-3 empty:hidden">
+          <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+        </div>
       </div>
 
       {hasSession && (

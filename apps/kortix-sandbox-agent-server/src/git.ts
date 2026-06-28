@@ -783,6 +783,39 @@ export async function materializeScaffoldSeed(target: string, base: string): Pro
   }
 }
 
+/**
+ * Clone the PROJECT repo at base tip for a per-project warm seed (Platinum
+ * stateful capture). Unlike materializeScaffoldSeed (the
+ * repo-LESS generic scaffold), this clones the real project at base into
+ * /workspace so the captured snapshot already has the repo — a fork then hits
+ * materializeRepo's "using baked repo checkout (warm)" fast path (no in-box
+ * clone). Leaves /workspace on `base` tip with NO session branch (none exists
+ * during seed capture). Wipes any image-baked /workspace first so a scaffold is never mistaken
+ * for the seed. Returns false (→ caller degrades to the scaffold seed) on any
+ * failure, so a flaky clone never bricks the seed. Reuses materializeRepo's
+ * battle-tested clone (retries, stall-abort, proxy auth) verbatim.
+ */
+export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
+  if (!cfg.repoUrl) return false
+  const t0 = Date.now()
+  try {
+    await rm(cfg.projectTarget, { recursive: true, force: true })
+    // No branchName during seed capture (no session yet); baseSha=tip so a baked /workspace
+    // (if any) is treated as mismatched and re-materialized to the real repo.
+    await materializeRepo({ ...cfg, branchName: undefined, sessionFresh: true })
+    logger.info('[git] project seed materialized at base', {
+      ms: Date.now() - t0,
+      base: cfg.defaultBranch,
+    })
+    return true
+  } catch (err) {
+    logger.warn('[git] project seed materialize failed; warm seed will fall back to scaffold', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    return false
+  }
+}
+
 // Materialize `target` from the image-baked scaffold + a delta fetch from the
 // project origin. Returns true when target is ready on `base` tip; false →
 // caller runs the normal network clone (never leaves a partial target behind).
@@ -992,11 +1025,11 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
 }
 
 /**
- * Sync the workspace to the LATEST base-branch tip. Used when a warm-pool box
- * is claimed: it cloned base when it parked, so base may have advanced since.
- * Resets the current (session) branch to origin/<base> — safe because a fresh
- * warm session has no local work yet. No opencode restart needed; opencode's
- * file watcher picks up the changed files. See docs/specs/warm-pool.md.
+ * Sync the workspace to the LATEST base-branch tip. Used after restoring a
+ * per-project warm snapshot: it cloned base during seed capture, so base may
+ * have advanced since. Resets the current session branch to origin/<base> —
+ * safe because a fresh session has no local work yet. No opencode restart
+ * needed; opencode's file watcher picks up the changed files.
  */
 export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
   const target = cfg.projectTarget

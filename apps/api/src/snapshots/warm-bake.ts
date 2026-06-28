@@ -20,7 +20,7 @@
  * Validated on the experimental region (2026-06): apt+opencode+migration ~45s,
  * 75MB binary upload ~85s, snapshot ~40s (all one-time); warm create 1.3s.
  *
- * Toggle: warmSnapshotsEnabled() (KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET).
+ * Toggle: warmSnapshotsEnabled() (admin warm_snapshot toggle + DAYTONA_WARM_TARGET).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -32,6 +32,11 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { createGzip } from 'node:zlib';
 import { SandboxState } from '@daytonaio/sdk';
+import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
 import { config } from '../config';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 
@@ -49,13 +54,6 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
-
-// Keep in sync with snapshots/providers/daytona.ts + dockerfile-layer.ts.
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
-// Chromium for agent-browser, sourced from Playwright (cross-arch; Chrome for
-// Testing has no linux-arm64 build). Keep in sync with dockerfile-layer.ts.
-const PLAYWRIGHT_VERSION = '1.60.0';
 
 const RUNTIME_HOME = '/opt/kortix/home';
 export const OPENCODE_PORT = 4096;
@@ -251,7 +249,7 @@ export async function bakeWarmSnapshot(opts: {
   onLog?: (line: string) => void;
 }): Promise<WarmBakeResult> {
   if (!warmSnapshotsEnabled()) {
-    throw new WarmBakeError('warm snapshots are not enabled (KORTIX_WARM_SNAPSHOT_ENABLED / DAYTONA_WARM_TARGET)');
+    throw new WarmBakeError('warm snapshots are not enabled (admin warm_snapshot toggle / DAYTONA_WARM_TARGET)');
   }
   const onLog = opts.onLog;
   const baseSnapshot = opts.baseSnapshot || (await resolveBuilderBaseSnapshot(onLog));
@@ -321,7 +319,7 @@ fi
 bun --version
 mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps
 cd /opt/kortix/opencode-config-deps
-deps='{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}'
+deps='{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${OPENCODE_VERSION}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}'
 if [ "$(cat package.json 2>/dev/null)" = "$deps" ] && [ -d node_modules ]; then
   echo "config-deps: skip (unchanged)"
 else
@@ -385,15 +383,15 @@ kortix --version`,
 
     const bakeMs = Date.now() - bakeStart;
 
-    // NOTE — warm box resources are capped by Daytona, not by us. Verified live
+    // NOTE — snapshot-restored sandbox resources are capped by Daytona, not by us. Verified live
     // (2026-06-12): on the experimental region, resize() returns success but the
     // VM keeps its original size (pause/resume restores the old hardware config),
     // create-from-snapshot rejects explicit resources ("Cannot specify Sandbox
     // resources when using a snapshot"), and the sized stock snapshots
     // (daytona-medium/large) are not available in the region. Until Daytona
-    // fixes one of those, every warm box runs at the genesis size (1 vCPU /
-    // 1 GiB / 3 GiB). Speed-sensitive paths accept that; resource-sensitive
-    // pool fleets can opt out via KORTIX_WARM_POOL_FULL_SIZE.
+    // fixes one of those, every restored snapshot runs at the genesis size (1 vCPU /
+    // 1 GiB / 3 GiB). Speed-sensitive snapshot paths accept that until sized
+    // snapshots exist in the region.
 
     onLog?.(`[warm-bake] runtime installed in ${(bakeMs / 1000).toFixed(1)}s; snapshotting → ${opts.name}`);
     const snapStart = Date.now();
@@ -599,9 +597,10 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
  * Best-effort and bounded; safe to fire-and-forget.
  *
  * With no `snapshotName`, sweeps errored boxes for EVERY `kortix-warm-runtime-*`
- * base — used by the periodic warm-pool reconcile, since the opportunistic
- * after-a-failed-create reap can't keep up on a busy environment (each failed
- * create leaves a fresh corpse) and misses entirely across process restarts.
+ * base. This gives snapshot maintenance a bounded cleanup path when the
+ * opportunistic after-a-failed-create reap can't keep up on a busy environment
+ * (each failed create leaves a fresh corpse) and misses entirely across process
+ * restarts.
  */
 export async function reapErroredWarmBoxes(snapshotName?: string, log?: (l: string) => void): Promise<number> {
   if (!warmSnapshotsEnabled()) return 0;
@@ -621,7 +620,7 @@ export async function reapErroredWarmBoxes(snapshotName?: string, log?: (l: stri
       }
       if (reaped >= 25) break; // bound a single pass
     }
-    if (reaped > 0) log?.(`[warm-bake] reaped ${reaped} errored warm box(es) for ${snapshotName ?? 'all warm bases'}`);
+    if (reaped > 0) log?.(`[warm-bake] reaped ${reaped} errored snapshot restore(s) for ${snapshotName ?? 'all warm bases'}`);
   } catch (err) {
     log?.(`[warm-bake] errored-box reap skipped: ${err instanceof Error ? err.message : String(err)}`);
   }

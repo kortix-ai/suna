@@ -80,16 +80,14 @@ export class PlatinumProvider implements SandboxProvider {
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
     // (never auto-stops); >0 → ephemeral with that idle timeout.
     //
-    // Default 0 (PERSISTENT) for Platinum. Unlike Daytona (cold-container
-    // restart — resumes cleanly), a Platinum stop→resume currently wedges the
-    // restored guest's virtio devices (net AND vsock dead — the CH UFFD
-    // demand-paged device-resume bug; replicated + isolated 2026-06-06,
-    // host→guest:8000 times out, in-guest exec dead). So returning to an
-    // auto-stopped session 502s/hangs (the "resume-freeze", the 27s/502
-    // catastrophe). Never auto-stop into that broken path until the CH-side
-    // resume fix lands (or reprovision-on-resume). Host RAM is the capacity
-    // bound, not disk, and it's plentiful at current scale.
-    const autoStop = opts.autoStopInterval ?? 0;
+    // Platinum now AUTO-STOPS idle boxes natively (idle timeout) and resumes them
+    // CoW on reopen. The old reason for forcing persistent (the CH UFFD demand-paged
+    // device-resume bug, isolated 2026-06-06, which wedged net+vsock on resume) is
+    // FIXED — the CH v52 UFFD patch landed; verified stop→resume ~2.3s with the guest
+    // alive. Relying on Platinum's own timer makes idle-stop robust (no dependency on
+    // the Kortix maintenance reaper, which when down let boxes run 24/7 and flood the
+    // host). A normal session gets KORTIX_SANDBOX_AUTOSTOP_MINUTES.
+    const autoStop = opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
 
     const _t0 = Date.now();
     const sandbox = await platinumJson<PlatinumSandbox>(

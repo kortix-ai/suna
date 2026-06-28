@@ -6,7 +6,7 @@ import { getEnv } from '@/lib/env-config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'llm_gateway';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -43,10 +43,6 @@ export interface KortixProject {
   experimental_features?: ExperimentalFeatureView[];
   /** Back-compat alias for `experimental.apps`. */
   apps_enabled?: boolean;
-  /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
-  warm_pool?: { enabled: boolean; size: number };
-  /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
-  warm_pool_available?: boolean;
 }
 
 export interface KortixAccount {
@@ -231,11 +227,14 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   open_code_raw: string | null;
   open_code_default_agent: string | null;
+  agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
+    source?: 'opencode' | 'kortix.toml';
+    enabled?: boolean;
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
@@ -248,6 +247,18 @@ export interface ProjectDetail {
   config: ProjectConfigSummary;
   file_count: number;
   files: ProjectFileEntry[];
+}
+
+export interface ProjectLlmCatalogResponse {
+  models: Record<string, {
+    name: string;
+    free?: boolean;
+    reasoning?: boolean;
+    tool_call?: boolean;
+    attachment?: boolean;
+    temperature?: boolean;
+    limit?: { context?: number; output?: number };
+  }>;
 }
 
 export interface ProjectInput {
@@ -273,6 +284,7 @@ export interface ProvisionProjectInput {
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
   starter_template?: 'general-knowledge-worker' | 'minimal';
+  marketplace_items?: string[];
 }
 
 export interface ProjectGitConnection {
@@ -556,8 +568,25 @@ export function isManagedGithubProject(project: { metadata?: Record<string, unkn
 }
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
+  // Project access/error UX is owned by <ProjectAccessBoundary>, which renders the
+  // not-found / forbidden / retry states. Every other consumer fetches this same
+  // ['project-detail', id] query behind that boundary, so a stale or cross-account
+  // 404/403 must stay silent here — otherwise a background refetch dumps a loud
+  // "API Error: 404" to the console (and toasts). Callers can opt back in via options.
   return unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, options),
+    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
+export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+      showErrors: false,
+      ...options,
+    }),
   );
 }
 
@@ -571,10 +600,11 @@ export async function requestProjectAccess(projectId: string, message?: string) 
   );
 }
 
-export async function listProjectAccessRequests(projectId: string) {
+export async function listProjectAccessRequests(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<{ requests: ProjectAccessRequest[] }>(
       `/projects/${projectId}/access-requests`,
+      options,
     ),
   );
 }
@@ -830,6 +860,59 @@ export async function upsertProjectSecret(
   );
 }
 
+// ── Default model preferences (account-scoped, gateway-resolved) ───────────
+// The LLM gateway is the source of truth for the default model: a request for
+// the synthetic `auto` resolves server-side to the per-agent default → account
+// default → platform default. These read/write the account+agent defaults
+// (operating on the project's owner account). Stored values are gateway wire
+// models (bare managed id, BYOK `provider/model`, or `codex/…`).
+
+export interface ModelDefaultsResponse {
+  /** The platform-wide fallback model (what `auto` resolves to with no override). */
+  platformDefault: string;
+  /** Account-wide default wire model, or null when unset. */
+  accountDefault: string | null;
+  /** Per-agent default wire models, keyed by agent name. */
+  agentDefaults: Record<string, string>;
+  /** Account-level resolution for picker display (agent/vision-agnostic). */
+  resolvedForCaller: string | null;
+  /** True when the account can't use managed models (free tier). */
+  freeTier: boolean;
+}
+
+export async function getModelDefaults(projectId: string) {
+  return unwrap(
+    await backendApi.get<ModelDefaultsResponse>(`/projects/${projectId}/model-defaults`),
+  );
+}
+
+export async function setModelDefault(
+  projectId: string,
+  input: { scope: 'account' | 'agent'; agentName?: string; model: string },
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; scope: string; agentName?: string; model: string }>(
+      `/projects/${projectId}/model-defaults`,
+      input,
+    ),
+  );
+}
+
+export async function clearModelDefault(
+  projectId: string,
+  params: { scope: 'account' | 'agent'; agentName?: string },
+) {
+  const qs = new URLSearchParams({
+    scope: params.scope,
+    ...(params.agentName ? { agentName: params.agentName } : {}),
+  }).toString();
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/model-defaults?${qs}`,
+    ),
+  );
+}
+
 // ── Provider OAuth device flow (poll-based) ────────────────────────────────
 // Connect a subscription-backed provider (e.g. ChatGPT) via a device-code flow.
 // `start` returns the challenge; the caller polls `poll` until it resolves.
@@ -950,6 +1033,7 @@ export interface AdminConnector {
   slug: string;
   name: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
+  platform?: 'slack' | 'email' | null;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
@@ -1033,6 +1117,7 @@ export async function setConnectorPolicies(projectId: string, slug: string, poli
 export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
+  platform: 'slack' | 'email' | null;
   credentialMode: 'shared' | 'per_user';
   app: string | null;
   account: string | null;
@@ -1074,6 +1159,7 @@ export interface ConnectorDraftInput {
   slug: string;
   name?: string;
   provider: AdminConnector['provider'];
+  platform?: 'slack' | 'email';
   app?: string;
   account?: string;
   url?: string;
@@ -1233,23 +1319,11 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
-  /** Per-template warm pool config + live counts. null when the operator gate
-   *  is off (feature unavailable platform-wide). */
-  warm_pool?: {
-    enabled: boolean;
-    size: number;
-    /** Sandboxes parked and ready to claim instantly. */
-    ready: number;
-    /** Sandboxes currently booting toward ready. */
-    warming: number;
-  } | null;
 }
 
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
-  /** Whether the warm pool feature is enabled platform-wide. */
-  warm_pool_available?: boolean;
 }
 
 export interface ProjectSnapshotBuild {
@@ -1269,8 +1343,6 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
-  /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
-  warm_pool_available?: boolean;
 }
 
 export interface ProjectSandboxHealth {
@@ -1803,6 +1875,9 @@ export async function mergeChangeRequest(
     await backendApi.post<ChangeRequestMergeResponse>(
       `/projects/${projectId}/change-requests/${crId}/merge`,
       input ?? {},
+      // Surface merge failures via the CR dialog's own UI (the manifest-blocked
+      // banner offers a "Fix with agent" path) instead of a generic global toast.
+      { showErrors: false },
     ),
   );
 }
@@ -2066,10 +2141,12 @@ export async function createProjectSession(
 export async function getProjectSession(
   projectId: string,
   sessionId: string,
+  options?: { showErrors?: boolean },
 ) {
   return unwrap(
     await backendApi.get<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
+      { showErrors: options?.showErrors },
     ),
   );
 }
@@ -2333,9 +2410,14 @@ export interface SessionStartResult {
 export async function startProjectSession(
   projectId: string,
   sessionId: string,
+  // Optional server-side long-poll budget (ms): the server holds the request
+  // until readiness flips (or its bounded deadline), so we learn `ready` the
+  // instant it happens instead of on a fixed poll tick. Omit = one-shot.
+  waitMs?: number,
 ): Promise<SessionStartResult | null> {
+  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : '';
   const response = await backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start`,
+    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
     // 402 (billing) is handled by the page's plan gate before polling; other
     // failures just yield null and the caller retries.
@@ -2499,21 +2581,6 @@ export async function updateAppsConfig(
   input: { enabled: boolean | null },
 ) {
   return updateExperimentalFeature(projectId, 'apps', input.enabled);
-}
-
-/**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
- */
-export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
-  );
 }
 
 export async function setProjectOnboardingComplete(

@@ -17,6 +17,7 @@ import {
 } from "@/stores/opencode-sync-store";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { loadSessionFromIDB, saveSessionToIDB } from "@/lib/idb-sync-cache";
+import { canQueryOpenCodeSession } from "./use-opencode-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];
 const EMPTY_PERMS: PermissionRequest[] = [];
@@ -118,7 +119,7 @@ export function useSessionSync(sessionId: string) {
 	// Without retry, a transient failure (server not ready on page refresh)
 	// permanently prevents messages from loading because fetchedRef blocks re-fetch.
 	useEffect(() => {
-		if (!sessionId) return;
+		if (!canQueryOpenCodeSession(sessionId)) return;
 
 		// Guard against duplicate concurrent fetches for the same session.
 		if (fetchedRef.current === sessionId) return;

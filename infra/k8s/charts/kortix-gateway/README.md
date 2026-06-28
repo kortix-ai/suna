@@ -1,32 +1,31 @@
-# kortix-api Helm chart
+# kortix-gateway Helm chart
 
-The Kortix API workload on EKS. Deployed by `.github/workflows/deploy-prod-eks.yml`
-(and for first bring-up, by hand — see `infra/EKS.md`). Terraform owns the
-cluster + controllers; this chart owns the app, mirroring how CI rolls the ECS
-service while Terraform owns the ECS infra.
+The standalone Kortix LLM gateway workload on EKS. It runs alongside
+`kortix-api` in the same namespace, reusing the API ServiceAccount and the
+already-synced `kortix-api-env` secret bundle. Dev is reconciled from `main` via
+`infra/k8s/argocd/applications/gateway-dev.yaml`; prod is reconciled from `prod`
+via `gateway-prod.yaml`.
 
 ## What it renders
 
 | Object | Purpose |
 | ------ | ------- |
-| `Deployment` | The API. Startup/liveness/readiness probes, `preStop` drain, 3-AZ `topologySpreadConstraints`, `maxUnavailable: 0` rolling deploys. |
-| `Service` (ClusterIP) | Backend for the ALB target group. |
-| `Ingress` (`alb`) | AWS Load Balancer Controller → internet-facing ALB, ACM TLS, `:80→:443`, IP targets, `/v1/health` checks. external-dns → proxied `api-eks.kortix.com`. |
-| `HorizontalPodAutoscaler` | CPU+memory target tracking, 3→12 replicas. |
-| `PodDisruptionBudget` | `minAvailable: 50%` — disruptions never drop below half. |
-| `ServiceAccount` | Annotated with the IRSA role (Secrets Manager read). |
-| `SecretStore` + `ExternalSecret` | Sync the shared `kortix-prod-env-omifd2` bundle → `kortix-api-env`, consumed via `envFrom`. |
+| `Deployment` | Gateway process on port `8090`; streaming-safe termination (`preStop` + 300s grace). |
+| `Service` (ClusterIP) | Backend for the ALB target group and in-cluster callers. |
+| `Ingress` (`alb`) | Public gateway host (`gateway-dev.kortix.com` / `gateway.kortix.com`) with long idle timeout for LLM streams. |
+| `HorizontalPodAutoscaler` | Memory/CPU target tracking for long-lived stream load. |
+| `PodDisruptionBudget` | Keeps at least half the replicas available during disruptions. |
 
 ## Required deploy-time values
 
-These come from `terraform -chdir=environments/prod-eks/cluster output`:
+Per-environment values live in `infra/k8s/envs/<env>/gateway-values.yaml`:
 
-| Value | From TF output |
-| ----- | -------------- |
-| `serviceAccount.roleArn` | `app_irsa_role_arn` |
-| `ingress.certificateArn` | `acm_certificate_arn` |
-| `image.tag` | the released version (e.g. `0.9.36`) |
-| `kortixVersion` | same version string (reported by `/v1/health`) |
+| Value | Purpose |
+| ----- | ------- |
+| `image.tag` | Gateway image tag deployed by GitOps. |
+| `ingress.host` | Public gateway hostname. |
+| `ingress.certificateArn` | ACM certificate for the gateway ALB. |
 
-The chart `fail`s fast if `serviceAccount.roleArn` or `ingress.certificateArn`
-are unset, so a misconfigured deploy never reaches the cluster.
+The chart intentionally has no ServiceAccount or ExternalSecret of its own; it
+depends on the API chart having created `kortix-api` and `kortix-api-env` first,
+and Argo CD retries until those dependencies exist.

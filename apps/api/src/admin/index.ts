@@ -5,11 +5,11 @@
  * 'admin' | 'super_admin' in kortix.platform_user_roles). Backs the web admin
  * pages under apps/web/src/app/admin/.
  *
- * Scope (v1): the safe accounts console — list accounts, account members,
+ * Scope (v1): the safe accounts console — list accounts (filterable by tier,
+ * payment status, paid-only, and subscription presence), account members,
  * credit ledger, and grant/debit credits (reusing the billing grantCredits
- * service). Billing-detail fields (payment status, Stripe, etc.) are returned
- * as null for now; the legacy env/exec/schema endpoints are intentionally NOT
- * restored.
+ * service). Stripe customer id/email are still returned as null (no join yet);
+ * the legacy env/exec/schema endpoints are intentionally NOT restored.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
@@ -34,6 +34,9 @@ adminApp.openapi(
       query: z.object({
         search: z.string().optional(),
         tier: z.string().optional(),
+        paymentStatus: z.string().optional(),
+        paid: z.string().optional(),
+        hasSubscription: z.string().optional(),
         minBalance: z.string().optional(),
         maxBalance: z.string().optional(),
         sortBy: z.string().optional(),
@@ -52,19 +55,27 @@ adminApp.openapi(
   try {
     const { db } = await import('../shared/db');
     const { accounts, creditAccounts } = await import('@kortix/db');
-    const { and, asc, desc, eq, ilike, gte, lte, inArray, or, sql } = await import('drizzle-orm');
+    const { and, asc, desc, eq, ilike, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
+      await import('drizzle-orm');
     const { membersTableSql } = await import('./members-table');
+    const { parseAdminAccountsListQuery, UNPAID_TIERS } = await import('./accounts-query');
     const mt = await membersTableSql();
 
-    const search = (c.req.query('search') || '').trim();
-    const tierValues = (c.req.query('tier') || '').split(',').map((s: string) => s.trim()).filter(Boolean);
-    const minBalance = c.req.query('minBalance');
-    const maxBalance = c.req.query('maxBalance');
-    const sortBy = c.req.query('sortBy') || 'created';
-    const dir = c.req.query('sortDir') === 'asc' ? asc : desc;
-    const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
-    const offset = (page - 1) * limit;
+    const {
+      search,
+      tierValues,
+      paymentStatusValues,
+      paidOnly,
+      hasSubscription,
+      minBalance,
+      maxBalance,
+      sortBy,
+      sortDir,
+      page,
+      limit,
+      offset,
+    } = parseAdminAccountsListQuery((k: string) => c.req.query(k));
+    const dir = sortDir === 'asc' ? asc : desc;
 
     const ownerEmail = sql<string | null>`(
       SELECT au.email FROM auth.users au
@@ -86,8 +97,23 @@ adminApp.openapi(
       );
     }
     if (tierValues.length) conds.push(inArray(creditAccounts.tier, tierValues));
-    if (minBalance && minBalance.length) conds.push(gte(creditAccounts.balance, minBalance));
-    if (maxBalance && maxBalance.length) conds.push(lte(creditAccounts.balance, maxBalance));
+    // "Paid only" → any tier that isn't free/none (matches isPaidTier semantics).
+    if (paidOnly) {
+      conds.push(and(isNotNull(creditAccounts.tier), notInArray(creditAccounts.tier, [...UNPAID_TIERS])));
+    }
+    if (paymentStatusValues.length) conds.push(inArray(creditAccounts.paymentStatus, paymentStatusValues));
+    // "Has subscription" → a Stripe or RevenueCat subscription is on file.
+    if (hasSubscription === true) {
+      conds.push(
+        or(isNotNull(creditAccounts.stripeSubscriptionId), isNotNull(creditAccounts.revenuecatSubscriptionId)),
+      );
+    } else if (hasSubscription === false) {
+      conds.push(
+        and(isNull(creditAccounts.stripeSubscriptionId), isNull(creditAccounts.revenuecatSubscriptionId)),
+      );
+    }
+    if (minBalance) conds.push(gte(creditAccounts.balance, minBalance));
+    if (maxBalance) conds.push(lte(creditAccounts.balance, maxBalance));
     const where = conds.length ? and(...conds) : undefined;
 
     const sortCol =
@@ -99,7 +125,14 @@ adminApp.openapi(
         name: accounts.name,
         createdAt: accounts.createdAt,
         balance: creditAccounts.balance,
+        expiringCredits: creditAccounts.expiringCredits,
+        nonExpiringCredits: creditAccounts.nonExpiringCredits,
+        dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
         tier: creditAccounts.tier,
+        paymentStatus: creditAccounts.paymentStatus,
+        provider: creditAccounts.provider,
+        planType: creditAccounts.planType,
+        stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
         ownerEmail,
         memberCount,
       })
@@ -122,15 +155,16 @@ adminApp.openapi(
       ownerEmail: r.ownerEmail ?? null,
       memberCount: Number(r.memberCount ?? 0),
       balance: r.balance ?? null,
-      // Billing-detail fields — not wired yet (follow-up): return null so the UI renders.
-      expiringCredits: null,
-      nonExpiringCredits: null,
-      dailyCreditsBalance: null,
+      expiringCredits: r.expiringCredits ?? null,
+      nonExpiringCredits: r.nonExpiringCredits ?? null,
+      dailyCreditsBalance: r.dailyCreditsBalance ?? null,
       tier: r.tier ?? null,
-      paymentStatus: null,
-      provider: null,
-      planType: null,
-      stripeSubscriptionId: null,
+      paymentStatus: r.paymentStatus ?? null,
+      provider: r.provider ?? null,
+      planType: r.planType ?? null,
+      stripeSubscriptionId: r.stripeSubscriptionId ?? null,
+      // Stripe customer id/email aren't on credit_accounts — left null until a
+      // billing-customers join is added; the console degrades gracefully.
       billingCustomerId: null,
       billingCustomerEmail: null,
       createdAt: r.createdAt ? new Date(r.createdAt as any).toISOString() : null,
@@ -443,40 +477,37 @@ adminApp.openapi(
   },
 );
 
-// ── Warm pool: master enable + default ready-count (DB-backed, not env) ──────
-// GET current warm-pool config. The master gate AND-controls every per-template
-// opt-in (warm-pool.ts warmPoolEnabled). Default OFF — we don't run warm pools.
+// ── Warm-fork snapshots (per-project ~2s session start; DB-backed, not env) ──
+// GET the warm-snapshot toggle. Master switch for the per-project warm-fork
+// (Platinum + Daytona); per-provider sub-gates still apply (daytona warm target,
+// platinum host). Default ON — pure upside (a failed bake degrades to cold).
 adminApp.openapi(
   createRoute({
-    method: 'get', path: '/api/warm-pool-config', tags: ['admin'],
-    summary: 'Get warm pool config', ...auth,
+    method: 'get', path: '/api/warm-snapshot-config', tags: ['admin'],
+    summary: 'Get warm snapshot config', ...auth,
     responses: { 200: json(z.record(z.string(), z.any()), 'config'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const { warmPoolSetting } = await import('../platform/services/runtime-settings');
-    return c.json(warmPoolSetting());
+    const { warmSnapshotSetting } = await import('../platform/services/runtime-settings');
+    return c.json(warmSnapshotSetting());
   },
 );
 
-// PUT warm-pool config ({ enabled, size }). size capped at 25; enabled OFF = the
-// whole driver is inert (every create cold-provisions).
+// PUT warm-snapshot toggle ({ enabled }). OFF = every session cold-clones its repo.
 adminApp.openapi(
   createRoute({
-    method: 'put', path: '/api/warm-pool-config', tags: ['admin'],
-    summary: 'Set warm pool config', ...auth,
-    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean().optional(), size: z.number().int().min(0).max(25).optional() }) } } } },
+    method: 'put', path: '/api/warm-snapshot-config', tags: ['admin'],
+    summary: 'Set warm snapshot config', ...auth,
+    request: { body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
     responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
   }),
   async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
-    const value = {
-      enabled: body?.enabled === true,
-      size: Number.isInteger(body?.size) && body.size >= 0 ? Math.min(body.size, 25) : 0,
-    };
+    const value = { enabled: body?.enabled === true };
     const { db } = await import('../shared/db');
     const { platformSettings } = await import('@kortix/db');
-    const { WARM_POOL_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
-    await db.insert(platformSettings).values({ key: WARM_POOL_KEY, value, updatedAt: new Date() })
+    const { WARM_SNAPSHOT_KEY, invalidateRuntimeSettings, refreshRuntimeSettings } = await import('../platform/services/runtime-settings');
+    await db.insert(platformSettings).values({ key: WARM_SNAPSHOT_KEY, value, updatedAt: new Date() })
       .onConflictDoUpdate({ target: platformSettings.key, set: { value, updatedAt: new Date() } });
     invalidateRuntimeSettings();
     await refreshRuntimeSettings();

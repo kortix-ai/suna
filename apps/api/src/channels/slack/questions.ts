@@ -1,4 +1,4 @@
-import { postBlocks } from '../slack-api';
+import { postBlocks, postMessage } from '../slack-api';
 import { deleteTurn, finalizeTurn, loadTurn } from './turn';
 import { escapeMrkdwn } from './util';
 import type { QuestionInfo } from './types';
@@ -43,9 +43,35 @@ export async function postQuestion(
   const fallback = questions[0]?.question?.slice(0, 200) ?? 'A question for you';
   const messageTs = await postBlocks(handle.token, handle.channel, fallback, blocks, handle.triggerTs);
   if (!messageTs) {
-    return { ok: false, error: 'Failed to post the question to Slack.' };
+    // The Block Kit render was rejected (e.g. invalid_blocks). We've already
+    // closed the plan and the agent is about to end its turn, so losing the
+    // question here means a silent dead-end. Fall back to plain text — the
+    // buttons are gone, but the user can still see what's asked and answer with a
+    // free-form in-thread reply (which arrives as a normal follow-up turn).
+    const plainTs = await postMessage(handle.token, handle.channel, renderQuestionsPlain(questions), handle.triggerTs);
+    if (!plainTs) {
+      return { ok: false, error: 'Failed to post the question to Slack.' };
+    }
   }
   return { ok: true, answers: questions.map(() => [QUESTION_SENTINEL]) };
+}
+
+// Plain-text rendering of the question(s) for the postMessage fallback when the
+// Block Kit render is rejected. No buttons (a plain message can't carry them),
+// but a free-form reply in the thread still answers — so the user is never left
+// staring at a silently-closed turn with no question.
+function renderQuestionsPlain(questions: QuestionInfo[]): string {
+  const lines: string[] = [];
+  questions.forEach((q) => {
+    lines.push(`*${escapeMrkdwn(q.question)}*`);
+    q.options.forEach((o, i) => {
+      const desc = o.description ? ` — ${escapeMrkdwn(o.description)}` : '';
+      lines.push(`  ${i + 1}. ${escapeMrkdwn(o.label)}${desc}`);
+    });
+    lines.push('');
+  });
+  lines.push('↩︎ Reply in this thread to answer.');
+  return lines.join('\n');
 }
 
 // Interactive rendering: question + each option as a CLICKABLE button. A click

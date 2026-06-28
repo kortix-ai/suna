@@ -20,6 +20,7 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/share', // Shared content should be public
   '/templates', // Template pages should be public
+  '/marketplace', // Public read-only marketplace directory; installs still require auth
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
@@ -82,6 +83,7 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/github',
   '/cli',
   '/templates',
+  '/marketplace',
   '/maintenance',
   '/countryerror',
   '/debug',

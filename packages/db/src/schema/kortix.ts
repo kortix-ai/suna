@@ -23,7 +23,6 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'active',
   'stopped',
   'archived',
-  'pooled',
   'error',
 ]);
 
@@ -560,6 +559,36 @@ export const projectSessions = kortixSchema.table(
   ],
 );
 
+// Account-scoped default model preferences. Drives server-side resolution of the
+// synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
+// per-agent default (scope='agent', scope_key=agent_name) → the account default
+// (scope='account', scope_key='') → the platform default. The stored `model` is a
+// gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
+// or 'codex/<id>') — never the synthetic `auto`. One row per (account, scope, key).
+export const accountModelPreferences = kortixSchema.table(
+  'account_model_preferences',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    scopeKey: text('scope_key').default('').notNull(),
+    model: varchar('model', { length: 128 }).notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_model_preferences_account').on(table.accountId),
+    uniqueIndex('idx_account_model_preferences_scope').on(
+      table.accountId,
+      table.scope,
+      table.scopeKey,
+    ),
+  ],
+);
+
 /**
  * Allow-list for a `restricted` session — which members/groups (besides the
  * owner) can see + open it. Mirrors `project_secret_grants`.
@@ -739,6 +768,10 @@ export const chatChannelBindings = kortixSchema.table(
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
     opencodeModel: varchar('opencode_model', { length: 128 }),
+    // How Slack users may participate in sessions started from this channel.
+    // Default is project-wide sharing: linked project members can join the
+    // Slack thread. Teams can opt into owner approval or owner-only.
+    conversationPolicy: varchar('conversation_policy', { length: 32 }).default('project_open').notNull(),
     installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -779,6 +812,94 @@ export const chatThreads = kortixSchema.table(
     ),
     index('idx_chat_threads_project').on(table.projectId),
     index('idx_chat_threads_session').on(table.sessionId),
+  ],
+);
+
+// Short-lived Slack messages waiting for the sender to finish `/login`. The
+// login URL carries only this id; the original Slack event stays server-side so
+// we can resume the exact message after the account bind succeeds.
+export const chatPendingAuthMessages = kortixSchema.table(
+  'chat_pending_auth_messages',
+  {
+    pendingId: uuid('pending_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: varchar('platform', { length: 32 }).default('slack').notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    envelope: jsonb('envelope').notNull().$type<Record<string, unknown>>(),
+    event: jsonb('event').notNull().$type<Record<string, unknown>>(),
+    slackResponseUrl: text('slack_response_url'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_chat_pending_auth_messages_lookup').on(
+      table.workspaceId,
+      table.platformUserId,
+      table.expiresAt,
+    ),
+    index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+  ],
+);
+
+export const chatThreadParticipants = kortixSchema.table(
+  'chat_thread_participants',
+  {
+    participantId: uuid('participant_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    userId: uuid('user_id').notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decidedByUserId: uuid('decided_by_user_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_thread_participants_thread_user').on(
+      table.platform,
+      table.workspaceId,
+      table.threadId,
+      table.platformUserId,
+    ),
+    index('idx_chat_thread_participants_session').on(table.sessionId),
+    index('idx_chat_thread_participants_user').on(table.userId),
+  ],
+);
+
+// Per-user identity binding: maps a chat-platform user (e.g. a Slack user in a
+// given workspace) to the Kortix user they authenticated as via `/login`. The
+// inbound gate resolves the sender through this table and runs the agent as that
+// Kortix user — so each member acts under their OWN credentials/secrets, never
+// the installer's. No row = unlinked = blocked until they log in. revokedAt set
+// = `/logout`, treated as unlinked. Membership against a project's account is
+// re-checked at run time, so this mapping is intentionally workspace-scoped, not
+// account-scoped (one workspace can map to multiple projects/accounts).
+export const chatUserIdentities = kortixSchema.table(
+  'chat_user_identities',
+  {
+    identityId: uuid('identity_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    platformUserId: varchar('platform_user_id', { length: 128 }).notNull(),
+    userId: uuid('user_id').notNull(),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_user_identities_platform_user').on(
+      table.platform,
+      table.workspaceId,
+      table.platformUserId,
+    ),
+    index('idx_chat_user_identities_user').on(table.userId),
   ],
 );
 
@@ -859,10 +980,6 @@ export const sessionSandboxes = kortixSchema.table(
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    // Warm-pool lifecycle. NULL for a normal session sandbox; for a pre-booted
-    // pool sandbox: 'booting' → 'parked' (claimable) → 'claimed'. A parked
-    // sandbox has no project_sessions row yet. See docs/specs/warm-pool.md.
-    poolState: text('pool_state'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -873,27 +990,7 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
-    // Hot path for the atomic warm-sandbox claim (WHERE project_id, pool_state).
-    index('idx_session_sandboxes_pool').on(table.projectId, table.poolState),
   ],
-);
-
-/**
- * Warm-pool presence — one row per project a user currently has OPEN. The web
- * client heartbeats while the project tab is visible and beacons a "leave" on
- * close. The warm-pool reconcile keeps spares only for present projects and
- * reaps them when presence stops, so cost tracks projects-open-right-now rather
- * than every project touched in the last 6h. Cross-pod (a DB row, not an
- * in-memory map, so the leader reconcile sees every pod's presence).
- */
-export const warmPoolPresence = kortixSchema.table(
-  'warm_pool_presence',
-  {
-    projectId: uuid('project_id').primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('idx_warm_pool_presence_seen').on(table.lastSeenAt)],
 );
 
 /**
@@ -997,6 +1094,15 @@ export const sandboxTemplates = kortixSchema.table(
      * Dockerfile change drifted the identity.
      */
     builtFromCommit: text('built_from_commit'),
+    /**
+     * Agent-swap eligibility key of the last build: user image + spec + NON-agent
+     * runtime layer (everything the kortix-agent CAS swap does NOT touch). The
+     * builder swaps the agent in place of a full rebuild ONLY when the new
+     * identity's swapKey equals this stored value — i.e. the agent binary is the
+     * sole delta. NULL for rows built before this column / the platform default
+     * until first build → those rebuild. See snapshots/builder.ts maybeSwapAgent.
+     */
+    swapKey: text('swap_key'),
     /** Provider-side snapshot name (e.g. `kortix-default-…`, `kortix-tpl-…`). */
     providerSnapshotName: text('provider_snapshot_name'),
     /** Last-known provider state: 'active' | 'building' | 'pulling' | 'error' | 'missing'. */
@@ -1226,46 +1332,6 @@ export const sunaAccountMigrations = kortixSchema.table(
   ],
 );
 
-// ─── Pool Resources ─────────────────────────────────────────────────────────
-
-export const poolResources = kortixSchema.table(
-  'pool_resources',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    provider: sandboxProviderEnum('provider').notNull(),
-    serverType: varchar('server_type', { length: 64 }).notNull(),
-    location: varchar('location', { length: 64 }).notNull(),
-    desiredCount: integer('desired_count').notNull().default(2),
-    enabled: boolean('enabled').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_pool_resources_unique').on(table.provider, table.serverType, table.location),
-  ],
-);
-
-export const poolSandboxes = kortixSchema.table(
-  'pool_sandboxes',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    resourceId: uuid('resource_id').references(() => poolResources.id, { onDelete: 'set null' }),
-    provider: sandboxProviderEnum('provider').notNull(),
-    externalId: text('external_id').notNull(),
-    baseUrl: text('base_url').notNull().default(''),
-    serverType: varchar('server_type', { length: 64 }).notNull(),
-    location: varchar('location', { length: 64 }).notNull(),
-    status: varchar('status', { length: 32 }).notNull().default('provisioning'),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    readyAt: timestamp('ready_at', { withTimezone: true }),
-  },
-  (table) => [
-    index('idx_pool_sandboxes_claim').on(table.status, table.createdAt),
-    uniqueIndex('idx_pool_sandboxes_external_id_active').on(table.externalId),
-  ],
-);
-
 export const deployments = kortixSchema.table(
   'deployments',
   {
@@ -1371,8 +1437,8 @@ export const accountTokens = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     /** When non-null, this token is scoped to a single project — it
      *  can only call `/v1/projects/<project_id>/*` routes and is
-     *  rejected by account-level handlers. Used for sandbox-injected
-     *  CLI tokens. */
+     *  rejected by account-level handlers. Session executor tokens also set
+     *  sessionId + agentGrant. */
     projectId: uuid('project_id').references(() => projects.projectId, {
       onDelete: 'cascade',
     }),
@@ -1386,9 +1452,10 @@ export const accountTokens = kortixSchema.table(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     /** Per-agent authorization grant for a sandbox session token: which Kortix
      *  CLI/API actions + connector profiles the running agent may use. Resolved
-     *  from kortix.toml's [[agents]] overlay at session birth (= declared ∩ the
-     *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
-     *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
+     *  from kortix.toml's [[agents]] overlay at session birth. The launching
+     *  user's role is still enforced by route IAM, so effective access is
+     *  user role ∩ agentGrant. Null for non-agent tokens (laptop CLI PATs,
+     *  etc.) — which keep role-only access. */
     agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
     /** Session this token belongs to (sandbox executor token, session_id =
      *  sandbox_id). Lets the LLM gateway attribute usage_events per-session —
@@ -2095,6 +2162,10 @@ export const tunnelConnections = kortixSchema.table(
     status: tunnelStatusEnum('status').default('offline').notNull(),
     capabilities: jsonb('capabilities').default([]).$type<string[]>(),
     machineInfo: jsonb('machine_info').default({}).$type<TunnelMachineInfo>(),
+    relayOwnerId: varchar('relay_owner_id', { length: 255 }),
+    relayOwnerInstance: varchar('relay_owner_instance', { length: 255 }),
+    relayOwnerStartedAt: timestamp('relay_owner_started_at', { withTimezone: true }),
+    relayOwnerHeartbeatAt: timestamp('relay_owner_heartbeat_at', { withTimezone: true }),
     setupTokenHash: varchar('setup_token_hash', { length: 128 }),
     lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -2104,6 +2175,32 @@ export const tunnelConnections = kortixSchema.table(
     index('idx_tunnel_connections_account').on(table.accountId),
     index('idx_tunnel_connections_sandbox').on(table.sandboxId),
     index('idx_tunnel_connections_status').on(table.status),
+    index('idx_tunnel_connections_relay_owner').on(table.relayOwnerId),
+  ],
+);
+
+export const tunnelRpcForwards = kortixSchema.table(
+  'tunnel_rpc_forwards',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    tunnelId: uuid('tunnel_id').notNull().references(() => tunnelConnections.tunnelId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    requesterRelayOwnerId: varchar('requester_relay_owner_id', { length: 255 }),
+    targetRelayOwnerId: varchar('target_relay_owner_id', { length: 255 }).notNull(),
+    status: varchar('status', { length: 32 }).default('pending').notNull(),
+    method: varchar('method', { length: 255 }).notNull(),
+    params: jsonb('params').default({}).$type<Record<string, unknown>>(),
+    result: jsonb('result'),
+    error: jsonb('error').$type<{ code?: number; message?: string; data?: unknown } | null>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('idx_tunnel_rpc_forwards_target_status').on(table.targetRelayOwnerId, table.status, table.expiresAt),
+    index('idx_tunnel_rpc_forwards_expiry').on(table.expiresAt),
+    index('idx_tunnel_rpc_forwards_tunnel').on(table.tunnelId),
   ],
 );
 

@@ -5,11 +5,15 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 // DB), so mocking this module is enough to unit-test its behavior.
 const calls: Array<{ fn: string; args: unknown[] }> = [];
 let failFn: string | null = null; // set to a fn name to make that slack-api call reject
+const overrides: Record<string, unknown> = {}; // force a specific resolved value per fn
 const rec = (fn: string) => (...args: unknown[]) => {
   calls.push({ fn, args });
   if (fn === failFn) return Promise.reject(new Error(`${fn} boom`));
-  // startStream/postMessage/postBlocks return a ts; others return void.
+  if (fn in overrides) return Promise.resolve(overrides[fn]);
+  // startStream/postMessage/postBlocks return a ts; updateBlocks returns a
+  // success boolean; others return void.
   if (fn === 'startStream' || fn === 'postMessage' || fn === 'postBlocks') return Promise.resolve('ts.posted');
+  if (fn === 'updateBlocks') return Promise.resolve(true);
   return Promise.resolve();
 };
 
@@ -50,6 +54,7 @@ const fns = () => calls.map((c) => c.fn);
 afterEach(() => {
   calls.length = 0;
   failFn = null;
+  for (const k of Object.keys(overrides)) delete overrides[k];
 });
 
 describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
@@ -137,5 +142,56 @@ describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
     await finalizeTurn(handle, { answer: 'done!' });
     expect(calls.some((c) => c.fn === 'updateBlocks')).toBe(true); // render was attempted (and threw)
     expect(fns()).toContain('removeReaction'); // ⏳ cleared despite the failure
+  });
+});
+
+describe('finalizeTurn — silent-loss guards (block render rejected / answer too long)', () => {
+  const planHandle = () =>
+    makeHandle({
+      ts: 'plan.ts',
+      steps: [{ type: 'task_update', id: 'step-0', title: 'Working', status: 'in_progress' }],
+    });
+
+  test('chat.update rejects the blocks → falls back to a plain postMessage so the answer is not lost', async () => {
+    overrides.updateBlocks = false; // e.g. invalid_blocks / msg_too_long, not a throw
+    await finalizeTurn(planHandle(), { answer: 'the real answer text' });
+    const post = calls.find((c) => c.fn === 'postMessage');
+    expect(post).toBeDefined();
+    expect(String(post!.args[2])).toContain('the real answer text');
+    // The fallback posted, so the ✅ is still earned.
+    expect(calls.some((c) => c.fn === 'addReaction' && c.args[3] === 'white_check_mark')).toBe(true);
+  });
+
+  test('✅ is withheld when both the block render AND the plain fallback fail', async () => {
+    overrides.updateBlocks = false;
+    overrides.postMessage = null; // fallback post also fails
+    await finalizeTurn(planHandle(), { answer: 'nothing reached the thread' });
+    expect(calls.some((c) => c.fn === 'addReaction' && c.args[3] === 'white_check_mark')).toBe(false);
+    expect(fns()).toContain('removeReaction'); // ⏳ still cleared
+  });
+
+  test('a long answer is split into ≤3000-char sections with a truncation note (never one oversized section)', async () => {
+    const long = 'x'.repeat(12000); // > MAX_BODY (11000), forces truncation
+    await finalizeTurn(planHandle(), { answer: long });
+    const upd = calls.find((c) => c.fn === 'updateBlocks')!;
+    const blocks = upd.args[4] as Array<{
+      type: string;
+      text?: { text: string };
+      elements?: Array<{ text: string }>;
+    }>;
+    const sections = blocks.filter((b) => b.type === 'section');
+    expect(sections.length).toBeGreaterThan(1); // chunked, not one giant section
+    for (const s of sections) expect(s.text!.text.length).toBeLessThanOrEqual(3000);
+    // A context block carries the truncation note (separate from the session footer).
+    const noted = blocks.some(
+      (b) => b.type === 'context' && (b.elements?.[0]?.text ?? '').toLowerCase().includes('truncated'),
+    );
+    expect(noted).toBe(true);
+  });
+
+  test('no-plan error with no plan message still posts (via postBlocks) and clears ⏳', async () => {
+    await finalizeTurn(makeHandle(), { error: ':warning: out of credits', title: 'Out of credits' });
+    expect(calls.some((c) => c.fn === 'postBlocks')).toBe(true);
+    expect(fns()).toContain('removeReaction');
   });
 });

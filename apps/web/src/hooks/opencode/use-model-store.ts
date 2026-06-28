@@ -13,9 +13,13 @@
  * zustand-like pattern via useState + useCallback.
  */
 
-import { DEFAULT_MANAGED_MODEL_IDS, MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/shared/llm-catalog';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { safeSetItem } from '@/lib/storage/managed-storage';
+import {
+  AUTO_MODEL_ID,
+  DEFAULT_MANAGED_MODEL_IDS,
+  MANAGED_FLAGSHIP_MODEL_ID,
+} from '@kortix/shared/llm-catalog';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 // ============================================================================
@@ -23,6 +27,23 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 // ============================================================================
 
 export type ModelKey = { providerID: string; modelID: string };
+
+// ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
+// The LLM gateway identifies a model by its "wire model" — what opencode sends
+// as `body.model`. Under the kortix gateway provider that is just the modelID
+// (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
+// provider model uses 'provider/model'. The synthetic `auto` has no concrete
+// wire form and is never stored as a default.
+export function modelKeyToWire(model: ModelKey): string {
+  if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;
+  return `${model.providerID}/${model.modelID}`;
+}
+
+export function wireToModelKey(wire: string): ModelKey {
+  // Managed (bare) and BYOK ('provider/model') both live under the kortix
+  // provider in the picker namespace, so the modelID carries the full wire id.
+  return { providerID: 'kortix', modelID: wire };
+}
 
 type Visibility = 'show' | 'hide';
 
@@ -98,15 +119,15 @@ function getStore(): ModelStore {
 }
 
 function setStore(next: ModelStore) {
-  next = {
+  const capped = {
     ...next,
     sessionModel: capSessionMap(next.sessionModel),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
-  _store = next;
+  _store = capped;
   // Shared never-throw write — degrades gracefully and reclaims quota from
   // disposable caches instead of throwing if the bucket is full.
-  safeSetItem(STORE_KEY, JSON.stringify(next));
+  safeSetItem(STORE_KEY, JSON.stringify(capped));
   for (const fn of _listeners) fn();
 }
 
@@ -116,20 +137,27 @@ function subscribe(fn: () => void) {
 }
 
 /**
- * Non-hook API to hydrate the global default model from a server response.
- * Only sets the value if no globalDefault is already present in localStorage.
- * Notifies all useSyncExternalStore subscribers so the UI updates reactively.
+ * Non-hook API to SEED the global-default display cache from the server's
+ * account default (useModelDefaults). Always reflects the server value (it's the
+ * source of truth) but, unlike setGlobalDefaultModel, does NOT clear the user's
+ * explicit per-agent / per-session picks — this is passive hydration, not an
+ * explicit "make this my default everywhere" action. No-ops when unchanged.
  */
-export function hydrateGlobalDefaultFromServer(model: ModelKey): void {
+export function seedGlobalDefaultFromServer(model: ModelKey | undefined): void {
   const s = getStore();
-  if (s.globalDefault) return; // Don't overwrite existing local default
+  const same =
+    (!s.globalDefault && !model) ||
+    (!!s.globalDefault &&
+      !!model &&
+      s.globalDefault.providerID === model.providerID &&
+      s.globalDefault.modelID === model.modelID);
+  if (same) return;
   setStore({ ...s, globalDefault: model });
 }
 
 /**
  * Non-hook API to explicitly set the global default model.
- * Unlike hydrateGlobalDefaultFromServer, this always overwrites.
- * Use when the user explicitly picks a model in workspace settings.
+ * Use when the user explicitly picks a model as their account default.
  * Clears per-agent/per-session selections so the new default takes effect everywhere.
  */
 export function setGlobalDefaultModel(model: ModelKey | undefined): void {
@@ -171,14 +199,15 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // or its underlying provider is connected (live, from project secrets). The
 // rest stay one search away. Single source for the managed set lives in
 // @kortix/shared (mirrors the gateway's managed-ids).
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// Includes the synthetic `auto` entry so it's always offered in the picker.
+const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
 
 function subProviderOf(modelID: string): string {
   const slash = modelID.indexOf('/');
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
-function isDefaultVisible(model: ModelKey): boolean {
+export function isDefaultVisible(model: ModelKey): boolean {
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }
 
@@ -186,7 +215,7 @@ function isWithinMonths(dateStr: string | undefined, months: number): boolean {
   if (!dateStr) return false;
   try {
     const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return false;
+    if (Number.isNaN(date.getTime())) return false;
     const now = new Date();
     const diffMs = Math.abs(now.getTime() - date.getTime());
     const diffMonths = diffMs / (1000 * 60 * 60 * 24 * 30.44);
@@ -200,7 +229,7 @@ function isWithinMonths(dateStr: string | undefined, months: number): boolean {
  * Compute "latest" models: models released within 6 months,
  * grouped by provider then family, newest per family wins.
  */
-function computeLatestSet(models: FlatModel[]): Set<string> {
+export function computeLatestSet(models: FlatModel[]): Set<string> {
   // Filter to recent models (within 6 months)
   const recent = models.filter((m) => isWithinMonths(m.releaseDate, 6));
 
@@ -246,10 +275,15 @@ function computeLatestSet(models: FlatModel[]): Set<string> {
 
 export function useModelStore(
   allModels: FlatModel[],
-  opts?: { connectedProviderIds?: Set<string> },
+  opts?: {
+    connectedProviderIds?: Set<string>;
+    // Free tier (no active paid sub): hides every Kortix managed model.
+    freeTier?: boolean;
+  },
 ) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
   const connectedProviderIds = opts?.connectedProviderIds;
+  const freeTier = opts?.freeTier ?? false;
 
   // Compute latest set
   const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
@@ -269,8 +303,6 @@ export function useModelStore(
       const key = `${model.providerID}:${model.modelID}`;
       const state = visibilityMap.get(key);
       if (state === 'hide') return false;
-      // OpenCode Zen free models — always offered (native route, never billed).
-      if (model.providerID === 'opencode') return true;
       // Gateway (kortix) models. The catalog is namespaced `<provider>/<model>`,
       // and connection is AUTHORITATIVE — it overrides any stale `show` pin, so a
       // disconnected provider's models disappear (even ones you'd used) and a
@@ -282,9 +314,28 @@ export function useModelStore(
         const sub = subProviderOf(model.modelID);
         // Codex (ChatGPT subscription) is now baked unconditionally like BYOK, so
         // gate its display on the subscription being connected.
-        if (sub === SUBSCRIPTION_PROVIDER_ID) return connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false;
-        if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
-        return connectedProviderIds?.has(sub) ?? false;
+        const connected =
+          sub === SUBSCRIPTION_PROVIDER_ID
+            ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
+            : (connectedProviderIds?.has(sub) ?? false);
+        if (MANAGED_MODEL_IDS.has(model.modelID)) {
+          if (freeTier) return false;
+          return true;
+        }
+        if (!connected) return false;
+        if (state === 'show') return true;
+        if (latestSet.has(key)) return true;
+        const m = allModels.find(
+          (x) => x.providerID === model.providerID && x.modelID === model.modelID,
+        );
+        if (!m?.releaseDate) return isDefaultVisible(model);
+        try {
+          const d = new Date(m.releaseDate);
+          if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
+        } catch {
+          return isDefaultVisible(model);
+        }
+        return false;
       }
       if (state === 'show') return true;
       if (latestSet.has(key)) return true;
@@ -298,13 +349,13 @@ export function useModelStore(
       if (!m?.releaseDate) return isDefaultVisible(model);
       try {
         const d = new Date(m.releaseDate);
-        if (isNaN(d.getTime())) return isDefaultVisible(model);
+        if (Number.isNaN(d.getTime())) return isDefaultVisible(model);
       } catch {
         return isDefaultVisible(model);
       }
       return false;
     },
-    [visibilityMap, latestSet, allModels, connectedProviderIds],
+    [visibilityMap, latestSet, allModels, connectedProviderIds, freeTier],
   );
 
   // Check if a model is in the latest set

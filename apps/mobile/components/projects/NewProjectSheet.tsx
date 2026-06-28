@@ -2,7 +2,7 @@
  * NewProjectSheet — create a project, ported from web's ProjectCreateModal.
  *
  * Two modes (same as web):
- *  - managed: provision a private Kortix-managed repo (name + GKW skills toggle)
+ *  - managed: provision a private Kortix-managed repo (name + optional skills toggle)
  *  - github:  import an existing GitHub repo via the GitHub App installation
  */
 
@@ -22,6 +22,7 @@ import { SheetTextInput } from '@/components/ui/SheetInput';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useToast } from '@/components/ui/toast-provider';
+import { starterTemplateForManagedProject } from './project-starter-template';
 import {
   useGitHubInstallations,
   useGitHubRepositories,
@@ -47,7 +48,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
 
   const [mode, setMode] = useState<'managed' | 'github'>('managed');
   const [name, setName] = useState('');
-  const [includeGKW, setIncludeGKW] = useState(true);
+  const [includeGKW, setIncludeGKW] = useState(false);
   const [selectedInstallationId, setSelectedInstallationId] = useState('');
   const [selectedRepo, setSelectedRepo] = useState('');
   const [repoSearch, setRepoSearch] = useState('');
@@ -97,7 +98,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const reset = useCallback(() => {
     setMode('managed');
     setName('');
-    setIncludeGKW(true);
+    setIncludeGKW(false);
     setSelectedInstallationId('');
     setSelectedRepo('');
     setRepoSearch('');
@@ -124,7 +125,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
       const project = await provision.mutateAsync({
         account_id: accountId,
         name: cleaned,
-        starter_template: includeGKW ? 'general-knowledge-worker' : 'minimal',
+        starter_template: starterTemplateForManagedProject(includeGKW),
       });
       haptics.success();
       toast.success('Project created');
@@ -225,7 +226,7 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
               style={{ marginBottom: 16 }}
             />
 
-            {/* GKW skills toggle */}
+            {/* Optional skills toggle */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: border, marginBottom: 20 }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Starter skills</Text>

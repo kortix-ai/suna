@@ -1,429 +1,363 @@
 'use client';
 
-import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { SectionCard } from '@/components/ui/section-card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useQuery } from '@tanstack/react-query';
 import {
-  useConnectSlack,
-  useDisconnectSlack,
-  useSlackInstall,
-  useSlackManifest,
-  useSlackMode,
-  type SlackInstallation,
-} from '@/hooks/channels/use-channels-installations';
-import { cn } from '@/lib/utils';
-import { Check, ChevronDown, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+  Check,
+  Mail,
+  MessageSquare,
+  MoreHorizontal,
+  Plus,
+  Settings2,
+  Unplug,
+} from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 
+import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import {
+  EmailConnectForm,
+  SlackConnectForm,
+  SlackLogo,
+} from '@/components/projects/customize/sections/connectors-view';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { Skeleton } from '@/components/ui/skeleton';
+import { successToast } from '@/components/ui/toast';
+import {
+  type EmailInstallation,
+  type SlackInstallation,
+  useDisconnectEmail,
+  useDisconnectSlack,
+  useEmailInstall,
+  useSlackInstall,
+} from '@/hooks/channels/use-channels-installations';
+import { getProject } from '@/lib/projects-client';
+import { useCustomizeStore } from '@/stores/customize-store';
+
+/** The reserved slug the built-in Email channel materializes under (see api connectors.ts). */
+const EMAIL_CONNECTOR_SLUG = 'kortix_email';
+
+/**
+ * Channels — connect Slack and Email right here. Each channel is a card that
+ * shows its live connection, opens its connect flow in a modal in-place (no
+ * detour through Connectors), and offers Disconnect / advanced settings once
+ * connected. The deeper surface (per-tool permissions, multiple inboxes,
+ * sender rules) still lives in Connectors, reached from each card's menu.
+ */
 export function ChannelsView({ projectId }: { projectId: string | null }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
-  const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
-  const loading = loadingInstall || loadingMode;
+  const projectQuery = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId ?? ''),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+  });
+  const emailChannelEnabled = projectQuery.data?.experimental?.agentmail_email === true;
+  const { data: slackInstall, isLoading: loadingSlack } = useSlackInstall(projectId);
+  const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
+    emailChannelEnabled ? projectId : null,
+  );
+  const loading = loadingSlack || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
-      <CustomizeSectionHeader icon={Slack} title="Channels" />
+      <CustomizeSectionHeader icon={MessageSquare} title="Channels" />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-8">
-          <header className="space-y-1">
+        <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-8">
+          <header className="space-y-1.5">
             <h2 className="text-foreground text-base font-semibold">Channels</h2>
-            <p className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRunThisb83f74db',
-              )}
+            <p className="text-muted-foreground text-sm">
+              Let people reach your agent where they already work. Connect a channel and incoming
+              messages start agent sessions automatically.
             </p>
           </header>
 
           {!projectId ? (
-            <InfoBanner tone="neutral">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenA4ae69220',
-              )}
-            </InfoBanner>
+            <InfoBanner tone="neutral">Open a project before configuring channels.</InfoBanner>
           ) : loading ? (
-            <Skeleton className="h-32 w-full rounded-2xl" />
-          ) : install ? (
-            <ConnectedPanel projectId={projectId} installation={install} />
-          ) : (
-            <DisconnectedPanel
-              projectId={projectId}
-              oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DisconnectedPanel({
-  projectId,
-  oauthInstallUrl,
-}: {
-  projectId: string;
-  oauthInstallUrl: string | null;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [showByo, setShowByo] = useState(!oauthInstallUrl);
-
-  if (!oauthInstallUrl) {
-    return (
-      <SectionCard
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleBringbd0857f4',
-        )}
-        description={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrDescriptionSelf843645ea',
-        )}
-      >
-        <SelfInstall projectId={projectId} />
-      </SectionCard>
-    );
-  }
-
-  return (
-    <SectionCard flush>
-      <div className="flex flex-col items-start gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="border-border/60 bg-muted/40 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border">
-            <Slack className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-foreground text-sm font-medium">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddKortix0e416aa2',
-              )}
-            </p>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOneClick68f102dc',
-              )}
-            </p>
-          </div>
-        </div>
-        <a
-          href={oauthInstallUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex shrink-0"
-        >
-          <Button size="sm" className="gap-1.5">
-            <Slack className="h-3.5 w-3.5" />
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAddTo1729c1b6',
-            )}
-            <ExternalLink className="h-3 w-3" />
-          </Button>
-        </a>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setShowByo((v) => !v)}
-        className="border-border/60 hover:bg-muted/30 flex w-full items-center justify-between gap-3 border-t px-6 py-3 text-left transition-colors"
-        aria-expanded={showByo}
-      >
-        <div className="min-w-0">
-          <p className="text-foreground text-sm font-medium">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBringYourc7326733',
-            )}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextForSelf3fbeca22',
-            )}
-          </p>
-        </div>
-        <ChevronDown
-          className={cn(
-            'text-muted-foreground h-4 w-4 shrink-0 transition-transform',
-            showByo && 'rotate-180',
-          )}
-        />
-      </button>
-      {showByo && (
-        <div className="border-border/60 border-t px-6 py-5">
-          <SelfInstall projectId={projectId} />
-        </div>
-      )}
-    </SectionCard>
-  );
-}
-
-function ConnectedPanel({
-  projectId,
-  installation,
-}: {
-  projectId: string;
-  installation: SlackInstallation;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const disconnect = useDisconnectSlack();
-  const [confirming, setConfirming] = useState(false);
-
-  return (
-    <div className="space-y-4">
-      <InfoBanner
-        tone="success"
-        icon={Check}
-        title={`Connected to ${installation.workspaceName ?? installation.workspaceId}`}
-      >
-        Bot <code className="font-mono">{installation.botUserId ?? '—'}</code>
-        {' · '}Team <code className="font-mono">{installation.workspaceId}</code>
-      </InfoBanner>
-
-      <SectionCard
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrTitleHow8e991872',
-        )}
-      >
-        <p className="text-muted-foreground text-sm">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextInviteThe94db1964',
-          )}{' '}
-          <code className="font-mono text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextMention67ed74a7',
-            )}
-          </code>{' '}
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextItA7139ed4f',
-          )}{' '}
-          <code className="font-mono text-xs">slack</code> CLI.
-        </p>
-      </SectionCard>
-
-      <div className="flex items-center justify-end gap-2">
-        {confirming ? (
-          <>
-            <span className="text-muted-foreground text-xs">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextRemovesTheb460240b',
-              )}
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={disconnect.isPending}
-              onClick={() =>
-                disconnect.mutate(projectId, {
-                  onSuccess: () => setConfirming(false),
-                })
-              }
-            >
-              {disconnect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-              Disconnect
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
-            <X className="mr-1.5 h-3.5 w-3.5" />
-            Disconnect
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SelfInstall({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [step, setStep] = useState<1 | 2>(1);
-  const [copied, setCopied] = useState(false);
-  const [botToken, setBotToken] = useState('');
-  const [signingSecret, setSigningSecret] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const connect = useConnectSlack();
-  const manifest = useSlackManifest(projectId);
-
-  const manifestText = manifest.data ?? '';
-
-  const copyManifest = async () => {
-    if (!manifestText) return;
-    await navigator.clipboard.writeText(manifestText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  const submit = () => {
-    setError(null);
-    connect.mutate(
-      {
-        projectId,
-        bot_token: botToken.trim(),
-        signing_secret: signingSecret.trim(),
-      },
-      { onError: (e) => setError((e as Error).message) },
-    );
-  };
-
-  if (step === 1) {
-    return (
-      <div className="space-y-4">
-        <p className="text-muted-foreground text-sm">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep12c389f4e',
-          )}
-        </p>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAppManifest040b924e',
-              )}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={copyManifest}
-                disabled={!manifestText}
-                className="h-7 gap-1.5"
-              >
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <a
-                href="https://api.slack.com/apps?new_app=1"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex"
-              >
-                <Button variant="outline" size="sm" className="h-7 gap-1.5">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextOpenSlacka088997c',
-                  )}
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              </a>
+            <div className="space-y-3">
+              <Skeleton className="h-32 w-full rounded-2xl" />
+              {emailChannelEnabled && <Skeleton className="h-32 w-full rounded-2xl" />}
             </div>
-          </div>
-          <pre className="border-border bg-muted/30 max-h-64 overflow-auto rounded-2xl border p-3 text-xs leading-relaxed">
-            {manifest.isLoading
-              ? 'Loading manifest...'
-              : manifest.error
-                ? `Failed to load manifest: ${(manifest.error as Error).message}`
-                : manifestText}
-          </pre>
-        </div>
-
-        <ol className="space-y-1.5 text-sm">
-          {[
-            'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-            'On the next screen, click Install to Workspace and approve.',
-            'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
-          ].map((line, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="bg-muted text-muted-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
-                {i + 1}
-              </span>
-              <span className="text-muted-foreground">{line}</span>
-            </li>
-          ))}
-        </ol>
-
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setStep(2)}>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextNextPasted1384aaa',
-            )}
-          </Button>
+          ) : (
+            <div className="space-y-3">
+              <SlackChannelCard projectId={projectId} install={slackInstall ?? null} />
+              {emailChannelEnabled && (
+                <EmailChannelCard projectId={projectId} install={emailInstall ?? null} />
+              )}
+            </div>
+          )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function SlackChannelCard({
+  projectId,
+  install,
+}: {
+  projectId: string;
+  install: SlackInstallation | null;
+}) {
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const disconnect = useDisconnectSlack();
 
   return (
-    <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextStep22f8cae80',
-        )}{' '}
-        <code className="font-mono text-xs">project_secrets</code>{' '}
-        {tI18nHardcoded.raw(
-          'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextAlongsideAny8e77bd03',
-        )}
-      </p>
+    <ChannelCard
+      media={
+        <ChannelIconTile>
+          <SlackLogo className="size-6" />
+        </ChannelIconTile>
+      }
+      name="Slack"
+      description="Mentions and threaded replies route straight into agent sessions."
+      connected={Boolean(install)}
+      identityLabel="Workspace"
+      identity={install ? install.workspaceName || install.workspaceId : null}
+      onConnect={() => setConnectOpen(true)}
+      onDisconnect={() => setConfirmDisconnect(true)}
+    >
+      <ChannelConnectDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        title="Connect Slack"
+        description="Add Kortix to your workspace — one click and the channel is live, no setup required."
+      >
+        <SlackConnectForm
+          projectId={projectId}
+          onConnected={() => {
+            setConnectOpen(false);
+            successToast('Slack connected');
+          }}
+        />
+      </ChannelConnectDialog>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onOpenChange={setConfirmDisconnect}
+        title="Disconnect Slack?"
+        description="Kortix stops receiving Slack mentions and replies for this project. You can reconnect anytime."
+        confirmLabel="Disconnect"
+        confirmVariant="destructive"
+        confirmIcon={<Unplug className="h-4 w-4" />}
+        isPending={disconnect.isPending}
+        onConfirm={() =>
+          disconnect.mutate(projectId, {
+            onSuccess: () => {
+              setConfirmDisconnect(false);
+              successToast('Slack disconnected');
+            },
+          })
+        }
+      />
+    </ChannelCard>
+  );
+}
 
-      <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="bot-token">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextBotUser193e4bfd',
+function EmailChannelCard({
+  projectId,
+  install,
+}: {
+  projectId: string;
+  install: EmailInstallation | null;
+}) {
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const disconnect = useDisconnectEmail();
+
+  return (
+    <ChannelCard
+      media={
+        <ChannelIconTile>
+          <Mail className="text-muted-foreground size-5" />
+        </ChannelIconTile>
+      }
+      name="Email"
+      description="Give your agent its own inbox. Inbound mail starts a session and replies come back by email."
+      connected={Boolean(install)}
+      identityLabel="Address"
+      identity={install?.email ?? null}
+      onConnect={() => setConnectOpen(true)}
+      onDisconnect={() => setConfirmDisconnect(true)}
+    >
+      <ChannelConnectDialog
+        open={connectOpen}
+        onOpenChange={setConnectOpen}
+        title="Connect Email"
+        description="Create a managed AgentMail inbox for your agent, or attach one you already have."
+      >
+        <EmailConnectForm
+          projectId={projectId}
+          connectorSlug={EMAIL_CONNECTOR_SLUG}
+          onConnected={() => {
+            setConnectOpen(false);
+            successToast('Email connected');
+          }}
+        />
+      </ChannelConnectDialog>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onOpenChange={setConfirmDisconnect}
+        title="Disconnect Email?"
+        description="Kortix stops receiving mail at this address for this project. You can reconnect anytime."
+        confirmLabel="Disconnect"
+        confirmVariant="destructive"
+        confirmIcon={<Unplug className="h-4 w-4" />}
+        isPending={disconnect.isPending}
+        onConfirm={() =>
+          disconnect.mutate(
+            { projectId, connectorSlug: EMAIL_CONNECTOR_SLUG },
+            {
+              onSuccess: () => {
+                setConfirmDisconnect(false);
+                successToast('Email disconnected');
+              },
+            },
+          )
+        }
+      />
+    </ChannelCard>
+  );
+}
+
+/** The connect modal shell — header + scrollable body, shared by every channel. */
+function ChannelConnectDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[75vh] overflow-y-auto px-6 py-5">{children}</div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Neutral square tile that frames a channel's real brand logo (Slack) or glyph
+ *  (Email) — the same treatment the Connectors list gives connected apps, so the
+ *  real Slack logo shows consistently everywhere. */
+function ChannelIconTile({ children }: { children: ReactNode }) {
+  return (
+    <span className="border-border/60 bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * One channel as a card: identity + live status on the left, the single primary
+ * action on the right (Connect when off, a quiet menu when on). The connect and
+ * disconnect dialogs ride along as `children`.
+ */
+function ChannelCard({
+  media,
+  name,
+  description,
+  connected,
+  identityLabel,
+  identity,
+  onConnect,
+  onDisconnect,
+  children,
+}: {
+  media: ReactNode;
+  name: string;
+  description: string;
+  connected: boolean;
+  identityLabel: string;
+  identity: string | null;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  children: ReactNode;
+}) {
+  const setSection = useCustomizeStore((s) => s.setSection);
+
+  return (
+    <div className="border-border/60 bg-card rounded-2xl border p-5">
+      <div className="flex items-start gap-3.5">
+        {media}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-foreground text-sm font-semibold">{name}</h3>
+            {connected ? (
+              <Badge variant="success" size="sm" className="gap-1">
+                <Check className="h-3 w-3" />
+                Connected
+              </Badge>
+            ) : (
+              <Badge variant="outline" size="sm">
+                Not connected
+              </Badge>
             )}
-          </Label>
-          <Input
-            id="bot-token"
-            placeholder={tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxAttrPlaceholderXoxb84fe69f4',
-            )}
-            value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <p className="text-muted-foreground text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYouraeeca6ed',
-            )}
-          </p>
+          </div>
+          <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{description}</p>
+          {connected && identity ? (
+            <InlineMeta className="mt-2">
+              <span>{identityLabel}</span>
+              <code className="text-foreground font-mono">{identity}</code>
+            </InlineMeta>
+          ) : null}
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="signing-secret">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSigningSecret2762795e',
-            )}
-          </Label>
-          <Input
-            id="signing-secret"
-            placeholder="••••••••"
-            type="password"
-            value={signingSecret}
-            onChange={(e) => setSigningSecret(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <p className="text-muted-foreground text-xs">
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextSlackYour09fe8ce8',
-            )}
-          </p>
-        </div>
-      </div>
-
-      {error ? (
-        <p className="border-destructive/30 bg-destructive/5 text-destructive rounded-2xl border px-3 py-2 text-xs">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
-          Back
-        </Button>
-        <Button
-          size="sm"
-          onClick={submit}
-          disabled={connect.isPending || !botToken.trim() || !signingSecret.trim()}
-        >
-          {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsCustomizeSectionsChannelsViewJsxTextConnectSlack5ad82c3b',
+        <div className="shrink-0">
+          {connected ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={`${name} options`}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => setSection('connectors')}>
+                  <Settings2 className="h-4 w-4" />
+                  Advanced settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={onDisconnect}>
+                  <Unplug className="h-4 w-4" />
+                  Disconnect
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button size="sm" className="gap-1.5" onClick={onConnect}>
+              <Plus className="h-4 w-4" />
+              Connect
+            </Button>
           )}
-        </Button>
+        </div>
       </div>
+      {children}
     </div>
   );
 }

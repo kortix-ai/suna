@@ -1,12 +1,15 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { useCallback, useRef } from 'react';
 
+import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { isBillingEnabled } from '@/lib/config';
 import { markSessionFresh } from '@/lib/fresh-sessions';
 import { createProjectSession, prefetchSessionStart } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
 /**
  * The fastest possible "new empty session" path, shared by every entry point
@@ -14,8 +17,7 @@ import { toast } from '@/lib/toast';
  *
  * OPTIMISTIC: mint the session id client-side and navigate IMMEDIATELY — the
  * instant shell paints before the create POST even returns. The backend honors a
- * client-provided UUID (`session_id` is client-authoritative; the warm pool binds
- * to it), and the session page's `/start` poll tolerates the sub-second
+ * client-provided UUID (`session_id` is client-authoritative), and the session page's `/start` poll tolerates the sub-second
  * create-vs-start race by retrying. Provisioning + the route bundle are warmed
  * during the navigation; the session is persisted in the background.
  *
@@ -30,13 +32,27 @@ export function useNewProjectSession(projectId: string | undefined) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const creatingRef = useRef(false);
+  const { canRun, isLoading: billingLoading, accountId } = useProjectCanRun(projectId);
+  const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
 
   return useCallback(
     (opts?: {
       onNavigate?: (sessionId: string) => void;
-      create?: { sandbox_slug?: string };
+      // `agent_name` binds the session's immutable boot agent at birth. It MUST
+      // match the agent the composer sends on the first prompt — the API proxy
+      // rejects any prompt whose `agent` differs from the session's bound agent
+      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
+      create?: { sandbox_slug?: string; agent_name?: string };
     }) => {
       if (!projectId || creatingRef.current) return;
+
+      if (isBillingEnabled() && billingLoading) return;
+
+      if (isBillingEnabled() && !canRun) {
+        openUpgradeDialog({ reason: 'subscription_required', accountId });
+        return;
+      }
+
       creatingRef.current = true;
 
       // The API requires a UUIDv4; crypto.randomUUID is available in every
@@ -72,6 +88,6 @@ export function useNewProjectSession(projectId: string | undefined) {
           creatingRef.current = false;
         });
     },
-    [projectId, router, queryClient],
+    [projectId, router, queryClient, billingLoading, canRun, accountId, openUpgradeDialog],
   );
 }

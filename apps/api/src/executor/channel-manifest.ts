@@ -34,6 +34,8 @@ function connectorsOf(manifest: { raw: Record<string, unknown> }): Entry[] {
 export async function ensureChannelConnectorDeclared(
   projectId: string,
   platform: ChannelPlatform,
+  slug = channelDefaultSlug(platform),
+  name = channelLabel(platform),
 ): Promise<boolean> {
   try {
     const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -41,12 +43,11 @@ export async function ensureChannelConnectorDeclared(
     const manifest = await loadManifestForEdit(row).catch(() => null);
     if (!manifest) return false;
 
-    const slug = channelDefaultSlug(platform);
     const { connectors, changed } = withChannelDeclaration(
       connectorsOf(manifest),
       platform,
       slug,
-      channelLabel(platform),
+      name,
     );
     if (!changed) return false;
     manifest.raw.connectors = connectors;
@@ -68,6 +69,7 @@ export async function ensureChannelConnectorDeclared(
 export async function removeChannelConnectorDeclared(
   projectId: string,
   platform: ChannelPlatform,
+  slug = channelDefaultSlug(platform),
 ): Promise<boolean> {
   try {
     const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -75,7 +77,6 @@ export async function removeChannelConnectorDeclared(
     const manifest = await loadManifestForEdit(row).catch(() => null);
     if (!manifest) return false;
 
-    const slug = channelDefaultSlug(platform);
     const { connectors, changed } = withoutChannelDeclaration(connectorsOf(manifest), platform, slug);
     if (!changed) return false;
     manifest.raw.connectors = connectors;

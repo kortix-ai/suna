@@ -6,7 +6,8 @@ import { useAgent } from '@/contexts/AgentContext';
 import { ModeLogo } from '@/components/models/ModeLogo';
 
 // Android hit slop for better touch targets
-const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
+const ANDROID_HIT_SLOP =
+  Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
 
 /**
  * Helper to determine if a model ID is "advanced" (power) mode
@@ -14,10 +15,10 @@ const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left
 function isAdvancedModel(modelId: string | undefined): boolean {
   if (!modelId) return false;
   return (
-    modelId === 'kortix/power' ||
-    modelId === 'kortix-power' ||
-    modelId.includes('claude-sonnet-4-5') ||
-    modelId.includes('sonnet')
+    modelId === 'kortix/claude-opus-4.8' ||
+    modelId === 'claude-opus-4.8' ||
+    modelId.includes('claude-opus') ||
+    modelId.includes('opus')
   );
 }
 
@@ -28,7 +29,7 @@ interface AgentSelectorProps {
 
 /**
  * AgentSelector - Shows Basic or Advanced mode toggle
- * 
+ *
  * Displays the current mode (Basic/Advanced) based on selected model.
  * Tapping opens the agent drawer where user can switch modes.
  */
@@ -39,7 +40,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   if (isLoading || !hasInitialized) {
     return (
       <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2">
-        <View className="w-16 h-4 bg-muted rounded animate-pulse" />
+        <View className="h-4 w-16 animate-pulse rounded bg-muted" />
       </View>
     );
   }
@@ -53,15 +54,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         onPress={onPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
         hitSlop={ANDROID_HIT_SLOP}
-        activeOpacity={0.7}
-      >
+        activeOpacity={0.7}>
         <ModeLogo mode={mode} height={10} />
-        <Icon
-          as={ChevronDown}
-          size={9}
-          className="text-foreground/60"
-          strokeWidth={2}
-        />
+        <Icon as={ChevronDown} size={9} className="text-foreground/60" strokeWidth={2} />
       </TouchableOpacity>
     );
   }
@@ -69,17 +64,18 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        borderRadius: 14,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+      }}
       hitSlop={ANDROID_HIT_SLOP}
-      activeOpacity={0.7}
-    >
+      activeOpacity={0.7}>
       <ModeLogo mode={mode} height={11} />
-      <Icon
-        as={ChevronDown}
-        size={9}
-        className="text-foreground/50"
-        strokeWidth={2}
-      />
+      <Icon as={ChevronDown} size={9} className="text-foreground/50" strokeWidth={2} />
     </TouchableOpacity>
   );
 }

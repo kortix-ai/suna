@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import {
   buildSlackManifest,
+  defaultByoSlashCommand,
   generateSlackManifest,
   CANONICAL_DEV,
   CANONICAL_PROD,
@@ -28,7 +29,6 @@ describe('committed canonical manifests are generated from the builder (drift gu
     expect(committed('slack-app-manifest.prod.json')).toEqual(buildSlackManifest(CANONICAL_PROD));
   });
 });
-
 describe('canonical and BYO share ONE implementation (only URLs/names/command differ)', () => {
   const canonical = buildSlackManifest(CANONICAL_PROD);
   const byo = generateSlackManifest({ baseUrl: 'https://api.example.com', projectId: 'proj-123' });
@@ -73,5 +73,42 @@ describe('BYO per-project manifest endpoints', () => {
   });
   test('requests the commands scope', () => {
     expect(m.oauth_config.scopes.bot).toContain('commands');
+  });
+});
+
+describe('BYO slash command naming', () => {
+  test('keeps a normal Kortix BYO app on /kortix', () => {
+    const manifest = generateSlackManifest({
+      baseUrl: 'https://api.example.com',
+      projectId: 'proj-123',
+      appName: 'Kortix',
+      botName: 'kortix',
+    });
+
+    expect(manifest.features.slash_commands[0]?.command).toBe('/kortix');
+  });
+
+  test('derives non-conflicting dev commands from the BYO app name', () => {
+    const manifest = generateSlackManifest({
+      baseUrl: 'https://api.example.com',
+      projectId: 'proj-123',
+      appName: 'kortix-no-access',
+      botName: 'kortix-no-access',
+    });
+
+    expect(manifest.features.slash_commands[0]?.command).toBe('/kortix-no-access');
+    expect(defaultByoSlashCommand('Kortix No Access', 'Kortix No Access')).toBe('/kortix-no-access');
+  });
+
+  test('allows an explicit command override', () => {
+    const manifest = generateSlackManifest({
+      baseUrl: 'https://api.example.com',
+      projectId: 'proj-123',
+      appName: 'kortix-no-access',
+      botName: 'kortix-no-access',
+      command: 'kna',
+    });
+
+    expect(manifest.features.slash_commands[0]?.command).toBe('/kna');
   });
 });

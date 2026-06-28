@@ -45,6 +45,7 @@ const CatalogConnectorSchema = z
     slug: z.string(),
     name: z.string(),
     provider: z.string(),
+    platform: z.string().nullable().optional(),
     status: z.string(),
     actions: z.array(CatalogActionSchema),
   })
@@ -103,6 +104,8 @@ export interface CatalogConnector {
   slug: string;
   name: string;
   provider: string;
+  /** Channel provider only: native platform backing this profile. */
+  platform?: string | null;
   status: string;
   actions: CatalogAction[];
 }
@@ -176,6 +179,7 @@ export interface ExecutorRouterDeps {
   getConnectorConfig?(projectId: string, slug: string): Promise<{
     slug: string;
     provider: string;
+    platform?: string | null;
     credentialMode: 'shared' | 'per_user';
     app: string | null;
     account: string | null;
@@ -219,7 +223,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
   const app = makeOpenApiApp();
 
   // Shared gateway logic — used by BOTH the legacy flat routes (project derived
-  // from a project-scoped session token) and the project-EXPLICIT routes
+  // from a scoped session token) and the project-EXPLICIT routes
   // (project from the path, any valid principal). One implementation, two faces.
   const catalogResponse = async (c: any, p: ExecutorPrincipal) => {
     const connectors = await deps.listCatalog(p);

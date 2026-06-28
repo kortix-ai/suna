@@ -645,6 +645,28 @@ export function getChildSessionId(part: ToolPart): string | undefined {
 }
 
 /**
+ * Extract the error message from a child (sub-agent) session's raw messages.
+ *
+ * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
+ * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
+ * lives on the child session and never reaches the parent's turn renderer.
+ * Scans newest-first so the most recent failure wins.
+ */
+export function getChildSessionError(
+  childMessages: MessageWithParts[] | undefined,
+): string | undefined {
+  if (!childMessages) return undefined;
+  for (let i = childMessages.length - 1; i >= 0; i--) {
+    const info = childMessages[i]?.info as AssistantMessage | undefined;
+    if (info?.role === 'assistant' && info.error) {
+      return unwrapError(info.error);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Collect all tool parts from a child session's assistant messages.
  * Matches SolidJS getSessionToolParts — message-part.tsx:160-174
  */
@@ -920,6 +942,62 @@ export function getQuestionForTool(
  */
 export const COST_MARKUP = 1.2;
 
+export interface ModelCostRates {
+  inputPer1M: number;
+  outputPer1M: number;
+  cacheReadPer1M?: number;
+}
+
+export type ModelPricingLookup = (
+  providerID: string,
+  modelID: string,
+) => ModelCostRates | null;
+
+function estimateTokenCost(
+  tokens: StepFinishPart['tokens'] | undefined,
+  rates: ModelCostRates,
+): number {
+  if (!tokens) return 0;
+  const input = tokens.input ?? 0;
+  const output = (tokens.output ?? 0) + (tokens.reasoning ?? 0);
+  const cacheRead = tokens.cache?.read ?? 0;
+  const cacheWrite = tokens.cache?.write ?? 0;
+  const regularInput = Math.max(0, input - cacheRead - cacheWrite);
+
+  let cost = (regularInput / 1_000_000) * rates.inputPer1M;
+  cost += (output / 1_000_000) * rates.outputPer1M;
+  if (cacheRead > 0) {
+    cost += (cacheRead / 1_000_000) * (rates.cacheReadPer1M ?? rates.inputPer1M);
+  }
+  if (cacheWrite > 0) {
+    cost += (cacheWrite / 1_000_000) * rates.inputPer1M;
+  }
+  return cost;
+}
+
+function stepFinishRawCost(
+  sfp: StepFinishPart,
+  providerID: string | undefined,
+  modelID: string | undefined,
+  lookup?: ModelPricingLookup,
+): number {
+  const reported = sfp.cost || 0;
+  if (reported > 0) return reported;
+  if (!lookup || !providerID || !modelID) return 0;
+  const rates = lookup(providerID, modelID);
+  if (!rates) return 0;
+  return estimateTokenCost(sfp.tokens, rates);
+}
+
+function assistantMessageIds(message: MessageWithParts['info']): {
+  providerID?: string;
+  modelID?: string;
+} {
+  if (message.role !== 'assistant') return {};
+  const assistant = message as AssistantMessage;
+  return { providerID: assistant.providerID, modelID: assistant.modelID };
+}
+
 /**
  * Aggregate cost/token info from step-finish parts in a turn.
  * Returns undefined if no step-finish parts found.
@@ -927,7 +1005,10 @@ export const COST_MARKUP = 1.2;
  * The cost is multiplied by COST_MARKUP so the displayed value matches
  * the actual credits deducted (raw provider cost × 1.2).
  */
-export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined {
+export function getTurnCost(
+  parts: PartWithMessage[],
+  lookup?: ModelPricingLookup,
+): TurnCostInfo | undefined {
   let totalCost = 0;
   let input = 0;
   let output = 0;
@@ -936,11 +1017,12 @@ export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined 
   let cacheWrite = 0;
   let found = false;
 
-  for (const { part } of parts) {
+  for (const { part, message } of parts) {
     if (part.type === 'step-finish') {
       found = true;
       const sfp = part as StepFinishPart;
-      totalCost += sfp.cost || 0;
+      const { providerID, modelID } = assistantMessageIds(message.info);
+      totalCost += stepFinishRawCost(sfp, providerID, modelID, lookup);
       input += sfp.tokens?.input || 0;
       output += sfp.tokens?.output || 0;
       reasoning += sfp.tokens?.reasoning || 0;
@@ -949,8 +1031,76 @@ export function getTurnCost(parts: PartWithMessage[]): TurnCostInfo | undefined 
     }
   }
 
+  if (!found) {
+    for (const { message } of parts) {
+      if (message.info.role !== 'assistant') continue;
+      const assistant = message.info as AssistantMessage;
+      const stepCost = assistantTokensCost(assistant, lookup);
+      if (stepCost <= 0) continue;
+      found = true;
+      totalCost += stepCost;
+      const t = assistant.tokens;
+      if (t) {
+        input += t.input ?? 0;
+        output += t.output ?? 0;
+        reasoning += t.reasoning ?? 0;
+        cacheRead += t.cache?.read ?? 0;
+        cacheWrite += t.cache?.write ?? 0;
+      }
+    }
+  }
+
   if (!found) return undefined;
   return { cost: totalCost * COST_MARKUP, tokens: { input, output, reasoning, cacheRead, cacheWrite } };
+}
+
+function assistantTokensCost(
+  assistant: AssistantMessage,
+  lookup?: ModelPricingLookup,
+): number {
+  if (!lookup || !assistant.providerID || !assistant.modelID || !assistant.tokens) return 0;
+  const rates = lookup(assistant.providerID, assistant.modelID);
+  if (!rates) return 0;
+  return estimateTokenCost(
+    {
+      input: assistant.tokens.input,
+      output: assistant.tokens.output,
+      reasoning: assistant.tokens.reasoning,
+      cache: assistant.tokens.cache,
+    },
+    rates,
+  );
+}
+
+/**
+ * Aggregate billed cost for an entire session from step-finish parts.
+ * Matches per-turn `getTurnCost` and mobile session stats aggregation.
+ */
+export function getSessionCost(
+  messages: Array<{ info?: MessageWithParts['info']; parts: Part[] }>,
+  lookup?: ModelPricingLookup,
+): number {
+  let totalCost = 0;
+  for (const msg of messages) {
+    if (msg.info?.role !== 'assistant') continue;
+    const assistant = msg.info as AssistantMessage;
+    const { providerID, modelID } = assistantMessageIds(assistant);
+
+    let msgCost = 0;
+    let sawStepFinish = false;
+    for (const part of msg.parts) {
+      if (part.type !== 'step-finish') continue;
+      sawStepFinish = true;
+      msgCost += stepFinishRawCost(part as StepFinishPart, providerID, modelID, lookup);
+    }
+
+    if (!sawStepFinish) {
+      msgCost += assistantTokensCost(assistant, lookup);
+    }
+
+    totalCost += msgCost;
+  }
+  return totalCost * COST_MARKUP;
 }
 
 /** Format cost in USD (e.g. "$0.0032") */

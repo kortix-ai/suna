@@ -17,7 +17,7 @@ import { and, desc, eq, lt } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
-import { getSandboxProvider, type ProviderState } from './providers';
+import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
 import {
   computeTemplateIdentity,
@@ -133,6 +133,7 @@ export async function ensureSandboxImage(
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
       provider: buildProvider,
+      swapKey: identity.swapKey,
     });
     return {
       snapshotName: identity.snapshotName,
@@ -209,6 +210,58 @@ export async function ensureSandboxImage(
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
 /**
+ * Try the provider's agent-only swap instead of a full rebuild. Returns true iff
+ * the new snapshot was produced by swapping just the kortix-agent binary into the
+ * predecessor's rootfs. Conservative + CORRECT — fires ONLY when:
+ *   • the provider supports it (Platinum; Daytona has no `swapAgent`),
+ *   • a distinct predecessor snapshot exists (there's a real drift), and
+ *   • the drift is provably agent-ONLY: the new identity's swapKey (user image +
+ *     spec + NON-agent runtime layer) equals the predecessor's STORED swapKey, so
+ *     the ONLY thing that changed is the agent binary. A bumped opencode /
+ *     entrypoint / CLI / slack-cli / executor-sdk / manifest-schema / browser /
+ *     layer version — or the user image or spec — moves swapKey → full rebuild.
+ *     (No isShared shortcut: the shared default's runtime LAYER is not constant,
+ *     so it must pass the same swapKey gate as everything else.)
+ * Any uncertainty/error → false → the caller rebuilds. On a swap that FAILED after
+ * the provider created the new-name row, that row is reaped so it can't 409 the
+ * fallback rebuild. A bad swap must never ship a wrong image, and a swap fault
+ * must never block the build.
+ */
+async function maybeSwapAgent(
+  template: ResolvedTemplate,
+  identity: TemplateIdentity,
+  provider: SandboxProviderAdapter,
+  prevSnapshot: string | null,
+): Promise<boolean> {
+  if (!provider.swapAgent || !prevSnapshot || prevSnapshot === identity.snapshotName) return false;
+  // Agent-ONLY drift ⇔ everything except the agent binary is byte-identical to the
+  // predecessor. The predecessor's swapKey must be STORED (null for pre-rollout or
+  // never-built rows → rebuild) and equal to the new identity's swapKey.
+  if (!template.swapKey || template.swapKey !== identity.swapKey) return false;
+  // The predecessor must still be materializable on the provider (its CAS chunks).
+  if ((await provider.getSnapshotState(prevSnapshot)) !== 'active') return false;
+
+  try {
+    console.log(
+      `[snapshots] ${template.slug}: agent-only drift ${prevSnapshot} → ${identity.snapshotName}; ` +
+      `CAS agent-swap (no rebuild)`,
+    );
+    await provider.swapAgent(identity.snapshotName, prevSnapshot);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[snapshots] ${template.slug}: agent-swap failed, falling back to full rebuild: ` +
+      `${(err as Error)?.message ?? err}`,
+    );
+    // Reap any half-created new-name row so the fallback buildSnapshot (same name)
+    // isn't blocked by a name-collision 409 — pickBuildHost has no state filter for
+    // non-admin/org callers, which is exactly how Kortix builds authenticate.
+    await provider.deleteSnapshot(identity.snapshotName).catch(() => {});
+    return false;
+  }
+}
+
+/**
  * Do the actual provider build for a resolved (template, identity) pair and
  * record the result on the template row + build log. Always called behind the
  * `inflightBuilds` dedup in `ensureSandboxImage` — never directly.
@@ -240,7 +293,14 @@ async function runInlineBuild(
 
   const prevSnapshot = template.providerSnapshotName;
   try {
-    await provider.buildSnapshot({
+    // ── Agent-only fast path (Platinum CAS agent-swap) ────────────────────────
+    // If the predecessor differs from the new identity ONLY by the agent binary
+    // (same user image) and the provider can swap in place, skip the full rebuild:
+    // ship just the agent + have the host debugfs-swap it into the predecessor's
+    // rootfs (~seconds, ~one agent's worth of CAS chunks). Any miss/failure → a
+    // normal buildSnapshot below — the swap is a pure optimization, never a gate.
+    const swapped = await maybeSwapAgent(template, identity, provider, prevSnapshot);
+    if (!swapped) await provider.buildSnapshot({
       snapshotName: identity.snapshotName,
       image: template.image ?? undefined,
       userDockerfile: identity.userDockerfile,
@@ -251,8 +311,8 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
-      // ONE stateful template, captured WARM (no warm pool, no per-gen snapshots).
-      // KORTIX_WARM_POOL=1 boots the daemon's runPoolMode: scaffold-warm opencode
+      // ONE stateful template, captured WARM (no per-gen snapshots).
+      // KORTIX_WARM_SEED=1 boots the daemon's warm-capture mode: scaffold-warm opencode
       // (project-init to completion) + pin a root session; the capture gates on
       // the PIN FILE (/var/run/kortix/opencode-session-id) so the snapshot freezes
       // a genuinely-warm opencode — forks resume runtime-ready (~2s) instead of
@@ -264,7 +324,17 @@ async function runInlineBuild(
         ? { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 }
         : undefined,
       captureEnv: template.isShared
-        ? { KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
+        ? {
+            KORTIX_WARM_SEED: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC',
+            // No-restart warm-fork: bake proxy-mode opencode at capture so a fork
+            // hot-swaps the per-session token into the live proxy instead of
+            // restarting opencode (~8s). Best-effort: a hot-swap failure falls
+            // back to the restart. The full model catalog is baked into the image
+            // at build time (build-context.ts → /opt/kortix/llm-catalog.json), so
+            // the token-less shared seed still serves the FULL picker (no fallback).
+            KORTIX_LLM_HOTSWAP: '1',
+            KORTIX_LLM_CATALOG_FILE: '/opt/kortix/llm-catalog.json',
+          }
         : undefined,
     });
     if (buildId) await closeBuildLogReady(buildId);
@@ -273,6 +343,7 @@ async function runInlineBuild(
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
       provider: opts.buildProvider,
+      swapKey: identity.swapKey,
     });
     // One-template invariant: a successful rebuild supersedes the previous
     // snapshot. Delete it so old runtime fingerprints don't accumulate — this
@@ -661,9 +732,19 @@ let startupPreBuildKicked = false;
 export function kickStartupPreBuild(): void {
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
-  const provider = getSandboxProvider('daytona');
+  // Gate on the ACTUAL default provider, not daytona specifically — a Platinum-only
+  // deploy has no daytona adapter configured, which used to skip the pre-build and
+  // leave the first project after a release to pay a lazy "Not built yet" build.
+  const providerId = config.getDefaultProvider();
+  let provider: SandboxProviderAdapter;
+  try {
+    provider = getSandboxProvider(providerId);
+  } catch {
+    console.log(`[snapshots] startup pre-build skipped — no adapter for default provider '${providerId}'`);
+    return;
+  }
   if (!provider.isConfigured()) {
-    console.log('[snapshots] startup pre-build skipped — sandbox provider not configured');
+    console.log(`[snapshots] startup pre-build skipped — default provider '${providerId}' not configured`);
     return;
   }
   void ensurePlatformDefaultImage({ source: 'startup' })

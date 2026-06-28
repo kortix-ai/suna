@@ -22,11 +22,14 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
  * `action_not_found`.
  */
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
+export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
     case 'slack':
       return SLACK_CHANNEL_CONNECTOR_SLUG;
+    case 'email':
+      return EMAIL_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -42,6 +45,8 @@ export function channelApiBase(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'https://slack.com/api';
+    case 'email':
+      return 'https://api.agentmail.to/v0';
     default:
       return '';
   }
@@ -52,6 +57,8 @@ export function channelLabel(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'Slack';
+    case 'email':
+      return 'Email';
     default:
       return platform;
   }
@@ -61,7 +68,7 @@ export function channelLabel(platform: string): string {
 interface ChannelActionDef {
   /** Connector-relative tool path (the executor namespace tail, e.g. `send_message`). */
   path: string;
-  /** Slack Web API method name (the URL tail under https://slack.com/api/<method>). */
+  /** Platform API path/method tail. */
   method: string;
   /** HTTP verb — POST methods send a JSON body; GET methods send a query string. */
   verb: 'GET' | 'POST';
@@ -284,12 +291,157 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+const EMAIL_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'send_message',
+    method: 'inboxes/{inbox_id}/messages/send',
+    verb: 'POST',
+    name: 'Send email',
+    description: 'Send a new email from an AgentMail inbox. Supports text/html and attachments.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID to send from.' },
+      to: { type: 'array', description: 'Recipient email address or addresses.' },
+      cc: { type: 'array', description: 'Optional CC recipients.' },
+      bcc: { type: 'array', description: 'Optional BCC recipients.' },
+      subject: { type: 'string', description: 'Email subject.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['to'],
+  },
+  {
+    path: 'reply_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/reply',
+    verb: 'POST',
+    name: 'Reply to email',
+    description: 'Reply in the same AgentMail thread as an existing message.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'Message ID to reply to.' },
+      reply_all: { type: 'boolean', description: 'Reply to all recipients of the original message.' },
+      to: { type: 'array', description: 'Optional override recipients.' },
+      cc: { type: 'array', description: 'Optional CC recipients.' },
+      bcc: { type: 'array', description: 'Optional BCC recipients.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'reply_all_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/reply-all',
+    verb: 'POST',
+    name: 'Reply all to email',
+    description: 'Reply-all in the same AgentMail thread as an existing message.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'Message ID to reply-all to.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'list_messages',
+    method: 'inboxes/{inbox_id}/messages',
+    verb: 'GET',
+    name: 'List inbox messages',
+    description: 'List messages in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      limit: { type: 'number', description: 'Maximum messages to return.' },
+    },
+    required: [],
+  },
+  {
+    path: 'get_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}',
+    verb: 'GET',
+    name: 'Get email message',
+    description: 'Fetch a single AgentMail message.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'AgentMail message ID.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'search_messages',
+    method: 'inboxes/{inbox_id}/messages/search',
+    verb: 'GET',
+    name: 'Search inbox messages',
+    description: 'Search messages in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      query: { type: 'string', description: 'Search query.' },
+      limit: { type: 'number', description: 'Maximum messages to return.' },
+    },
+    required: ['query'],
+  },
+  {
+    path: 'list_threads',
+    method: 'inboxes/{inbox_id}/threads',
+    verb: 'GET',
+    name: 'List email threads',
+    description: 'List threads in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      limit: { type: 'number', description: 'Maximum threads to return.' },
+    },
+    required: [],
+  },
+  {
+    path: 'get_thread',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}',
+    verb: 'GET',
+    name: 'Get email thread',
+    description: 'Fetch an AgentMail thread and its message context.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      thread_id: { type: 'string', description: 'AgentMail thread ID.' },
+    },
+    required: ['thread_id'],
+  },
+  {
+    path: 'get_message_attachment',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/attachments/{attachment_id}',
+    verb: 'GET',
+    name: 'Get email attachment',
+    description: 'Download an attachment from an AgentMail message.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'AgentMail message ID.' },
+      attachment_id: { type: 'string', description: 'AgentMail attachment ID.' },
+    },
+    required: ['message_id', 'attachment_id'],
+  },
+];
+
 function toAction(def: ChannelActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'http', method: def.verb, path: `/${def.method}` };
+  const properties: Record<string, { type: string; description: string; 'x-in'?: string }> = {};
+  for (const [key, value] of Object.entries(def.properties)) {
+    properties[key] = {
+      ...value,
+      ...(def.method.includes(`{${key}}`) ? { 'x-in': 'path' } : {}),
+    };
+  }
   const inputSchema = Object.keys(def.properties).length
     ? {
         type: 'object',
-        properties: def.properties,
+        properties,
         ...(def.required.length ? { required: def.required } : {}),
       }
     : null;
@@ -309,6 +461,8 @@ export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
     case 'slack':
       return SLACK_ACTIONS.map(toAction);
+    case 'email':
+      return EMAIL_ACTIONS.map(toAction);
     default:
       return [];
   }

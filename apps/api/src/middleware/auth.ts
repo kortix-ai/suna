@@ -164,6 +164,7 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
+    if (result.sessionId) c.set('sessionId', result.sessionId);
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
     // Read by requireScope() to gate Kortix CLI/API actions on top of the
@@ -187,7 +188,11 @@ export async function supabaseAuth(c: Context, next: Next) {
   const sandboxTokenPathAllowed =
     path.endsWith('/git/clone-credential') ||
     path.endsWith('/turn-stream') ||
-    path.endsWith('/turn-question');
+    path.endsWith('/turn-question') ||
+    // The seed daemon fetches the org model catalog at PARK with its sandbox
+    // token (no per-session LLM key yet) so the no-restart warm-fork bakes the
+    // full picker. Catalog is the non-secret model list — safe for a sandbox token.
+    path.endsWith('/llm-catalog');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -381,6 +386,7 @@ export async function combinedAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
     if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
+    if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
     c.set('agentGrant', patResult.agentGrant ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
@@ -567,8 +573,8 @@ function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
   const path = c.req.path;
 
   // Whitelist a couple of self-identity probes the CLI hits even for
-  // project-scoped tokens. `/v1/accounts/me` lets the agent confirm
-  // "what project am I bound to?".
+  // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
+  // "what project/session/agent am I bound to?".
   if (path === '/v1/accounts/me') return;
 
   // Reject other account-level routes outright.

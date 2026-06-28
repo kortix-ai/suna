@@ -173,8 +173,10 @@ describe('validateManifest — [[channels]]', () => {
     expect(paths).toContain('channels[1].platform');
   });
 
-  test('non-boolean enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = "yes"')).toContain(
+  // Coercible values (booleans, 0/1, yes/no/on/off) are accepted to match the
+  // runtime's coerceBool; only genuinely non-coercible values are rejected.
+  test('non-coercible enabled is rejected', () => {
+    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = "maybe"')).toContain(
       'channels[0].enabled',
     );
   });
@@ -212,8 +214,8 @@ describe('validateManifest — [[apps]]', () => {
     expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\n[[apps]]\nslug = "s"')).toContain('apps[1].slug');
   });
 
-  test('non-boolean enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenabled = 1')).toContain('apps[0].enabled');
+  test('non-coercible enabled is rejected', () => {
+    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenabled = "maybe"')).toContain('apps[0].enabled');
   });
 
   test('non-array domains is rejected', () => {

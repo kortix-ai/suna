@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 383,
+  "count": 421,
   "routes": [
     {
       "method": "GET",
@@ -9,6 +9,42 @@
     {
       "method": "GET",
       "path": "/health/live"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/authenticate"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/billing"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/budget-check"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/resolve-upstream"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/trace"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/usage"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics"
     },
     {
       "method": "GET",
@@ -380,11 +416,11 @@
     },
     {
       "method": "GET",
-      "path": "/v1/admin/api/warm-pool-config"
+      "path": "/v1/admin/api/warm-snapshot-config"
     },
     {
       "method": "PUT",
-      "path": "/v1/admin/api/warm-pool-config"
+      "path": "/v1/admin/api/warm-snapshot-config"
     },
     {
       "method": "POST",
@@ -476,6 +512,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/billing/cron/free-tier-rotation"
+    },
+    {
+      "method": "POST",
       "path": "/v1/billing/cron/yearly-rotation"
     },
     {
@@ -543,6 +583,10 @@
       "path": "/v1/billing/webhooks/stripe"
     },
     {
+      "method": "POST",
+      "path": "/v1/channels/slack/identity/bind"
+    },
+    {
       "method": "GET",
       "path": "/v1/docs"
     },
@@ -552,7 +596,19 @@
     },
     {
       "method": "GET",
+      "path": "/v1/executor/connect-status"
+    },
+    {
+      "method": "GET",
       "path": "/v1/executor/connectors"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/call"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/catalog"
     },
     {
       "method": "GET",
@@ -645,6 +701,18 @@
     {
       "method": "GET",
       "path": "/v1/health/live"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/models"
     },
     {
       "method": "GET",
@@ -916,7 +984,35 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/mode"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/slack/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/file/upload"
     },
     {
       "method": "DELETE",
@@ -987,6 +1083,62 @@
       "path": "/v1/projects/:projectId/files/search"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/breakdown"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/budgets"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/gateway/budgets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/budgets/:budgetId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/errors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/keys/:keyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs/:logId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/overview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/playground"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/series"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/sessions"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/git-credential"
     },
@@ -1019,8 +1171,36 @@
       "path": "/v1/projects/:projectId/group-grants/:groupId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/llm-catalog"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/marketplace/:name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/install"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update-all"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace/updates"
     },
     {
       "method": "GET",
@@ -1043,14 +1223,6 @@
       "path": "/v1/projects/:projectId/onboarding"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence/leave"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/registry"
     },
@@ -1065,6 +1237,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/registry/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/registry/update-all"
     },
     {
       "method": "GET",
@@ -1176,6 +1352,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/snapshots"
     },
     {
@@ -1207,6 +1387,10 @@
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/activation"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
@@ -1217,14 +1401,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/version-diff"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/warm-pool"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/warm-pool"
     },
     {
       "method": "POST",
@@ -1363,42 +1539,6 @@
       "path": "/v1/setup-links/secret/:token"
     },
     {
-      "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
-    },
-    {
       "method": "GET",
       "path": "/v1/system/maintenance"
     },
@@ -1496,7 +1636,19 @@
     },
     {
       "method": "POST",
+      "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
       "path": "/v1/webhooks/projects/:projectId/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/sandbox/daytona"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/sandbox/platinum"
     },
     {
       "method": "POST",

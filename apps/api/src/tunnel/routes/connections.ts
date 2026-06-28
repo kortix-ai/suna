@@ -19,9 +19,19 @@ import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { reconcileComputerConnectors } from '../../executor/sync';
+import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
+
+function serializeConnection(conn: typeof tunnelConnections.$inferSelect) {
+  const isLive = isTunnelConnectionLive(conn);
+  return {
+    ...conn,
+    status: isLive ? 'online' : 'offline',
+    isLive,
+  };
+}
 
 export function createConnectionsRouter() {
   const router = makeOpenApiApp<AppEnv>();
@@ -49,14 +59,7 @@ export function createConnectionsRouter() {
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
 
-      const enriched = connections.map((conn) => {
-        const isLive = tunnelRelay.isConnected(conn.tunnelId);
-        return {
-          ...conn,
-          status: isLive ? 'online' : conn.status,
-          isLive,
-        };
-      });
+      const enriched = connections.map(serializeConnection);
 
       return c.json(enriched);
     },
@@ -150,10 +153,7 @@ export function createConnectionsRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      return c.json({
-        ...connection,
-        isLive: tunnelRelay.isConnected(connection.tunnelId),
-      });
+      return c.json(serializeConnection(connection));
     },
   );
 

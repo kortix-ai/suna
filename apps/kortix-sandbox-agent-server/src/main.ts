@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
@@ -9,14 +9,26 @@ import {
   configureRepoCredentialHelper,
   materializeRepo,
   materializeScaffoldSeed,
+  materializeProjectSeed,
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
-import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
+import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
+import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
 import { startProxy } from './proxy'
+import {
+  startLlmProxy,
+  setLlmProxyToken,
+  llmProxyReady,
+  llmProxyBaseUrl,
+  startExecutorProxy,
+  setExecutorProxyToken,
+  executorProxyReady,
+  executorProxyBaseUrl,
+} from './llm-proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
@@ -26,6 +38,12 @@ import { startStaticWebServer } from './static-web'
 // prompts into the same opencode conversation instead of opening a fresh
 // session with no context.
 export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
+const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
+  'deepseek-v4-flash-free',
+  'mimo-v2.5-free',
+  'nemotron-3-ultra-free',
+  'north-mini-code-free',
+])
 
 async function main() {
   const bootTime = Date.now()
@@ -58,11 +76,11 @@ async function main() {
   const staticWeb = startStaticWebServer(cfg.staticPort)
   bootMark('static-web')
 
-  // Warm-pool spare (KORTIX_WARM_POOL=1 — set only by the pool builder): boot a
-  // generic, session-less runtime, then adopt a claimant's session on claim.
-  // Opt-in early-return; the normal boot path below is byte-identical.
-  if ((process.env.KORTIX_WARM_POOL ?? '').trim() === '1') {
-    await runPoolMode(cfg, bootTime, bootState, bootMark, staticWeb)
+  // Warm snapshot seed capture. This boots a session-less runtime, warms
+  // opencode, writes the capture pin, and later adopts the forked session env
+  // written by Platinum restore.
+  if ((process.env.KORTIX_WARM_SEED ?? '').trim() === '1') {
+    await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
     return
   }
 
@@ -226,6 +244,10 @@ async function main() {
         )
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
           bootMark('seed-opencode-session')
@@ -245,9 +267,9 @@ async function main() {
   void startSessionRuntime(opencode, cfg, bootState, bootMark)
 }
 
-// Adopt a forked session inside a warm-seed clone. Mirrors the warm-pool claim
-// path, but the repo is already baked — materializeRepo() takes its local-only
-// branch (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
+// Adopt a forked session inside a warm-seed clone. The repo is already baked —
+// materializeRepo() takes its local-only branch (remote set-url + `checkout -B
+// <session>`), so adoption is ~100ms.
 // Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
@@ -295,8 +317,8 @@ function armSeedAdoption(
 
 // Post-opencode session runtime: create the initial opencode session (when a
 // prompt/bootstrap was requested) and start the question-relay event loop.
-// Extracted verbatim from the former inline block so the warm-pool claim path
-// reuses the EXACT same logic after a pooled spare adopts a claimant's session.
+// Shared post-boot session runtime: create the initial opencode session when
+// requested and wire the question/turn event relay.
 async function startSessionRuntime(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
   cfg: Config,
@@ -313,8 +335,8 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
-  const onSessionError = (opencodeSessionId: string) => {
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg).catch((err) =>
+  const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
+    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
@@ -342,18 +364,10 @@ async function startSessionRuntime(
   }
 }
 
-// Read KEY=VALUE lines from the per-session env file into process.env. TWO
-// writers stage it on DIFFERENT paths and we must accept either:
-//   • /tmp/pt-env — the warm-pool claim POSTs it via the daemon's /file/upload
-//     (its allowed-roots gate, routes/files.ts, permits /tmp + workspace but
-//     REJECTS /etc, so the claim-write must target /tmp).
-//   • /etc/pt-env — the PLATINUM on-demand restore writes it directly into the
-//     guest pre-boot (host-agent writeEnvIntoOverlay via debugfs / writeGuestEnv).
-//     The platinum fork never goes through /file/upload, so its env lands in /etc.
-// Reading both is what makes a pool-mode spare adopt regardless of which flow
-// forked it (the cross-codebase merge left these two paths disagreeing → forks
-// stayed tokenless/unconfigured, hanging at "Starting the agent").
-function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): void {
+// Read KEY=VALUE lines from the per-session env file into process.env. Platinum
+// restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
+// writeEnvIntoOverlay via debugfs / writeGuestEnv).
+function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
   for (const path of paths) {
     let txt: string
     try { txt = readFileSync(path, 'utf8') } catch { continue }
@@ -368,27 +382,44 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): voi
   }
 }
 
-// Warm-pool spare runtime (opt-in via KORTIX_WARM_POOL=1, set only by the pool
-// builder). Boot opencode + the proxy so the VM is snapshottable + health-green,
-// then idle until claimed. On claim the control plane writes the claimant's env
-// to the session-env file; we DETECT it by polling (robust to a snapshot-restored
-// process missing a signal), then reload env, re-read config, materialize the
-// repo, and start the session runtime.
+// Warm snapshot seed runtime (opt-in via KORTIX_WARM_SEED=1). Boot opencode +
+// the proxy so the VM is snapshottable + health-green, write the root-session
+// pin that gates capture, then adopt the forked session's env after Platinum
+// restore resumes the captured process.
+
+// Fetch the FULL org model catalog during seed capture and write it to KORTIX_LLM_CATALOG_FILE
+// so the seed's opencode config bakes the full picker instead of the
+// ~11-model fallback. The seed can't reach the gateway /models (no per-session
+// gateway key), so it asks an apps/api endpoint authed by the sandbox token.
+// Best-effort + idempotent: a no-op unless KORTIX_LLM_CATALOG_URL is set, and any
+// failure just leaves the fallback catalog (LLM + tools still work via proxies).
 //
-// Two park strategies:
-//   • Stage-1 (generic spare): boot opencode against the DEFAULT config with NO
-//     repo, then clone + warm opencode on CLAIM (~9s claim — pre-pays only the
-//     provider create).
-//   • Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1, set by the API pool driver on a
-//     project-scoped spare that carries KORTIX_REPO_URL/PROJECT_ID but NO session
-//     identity): clone the BASE branch AND warm the opencode project plugin AT
-//     PARK, so claim only creates the session branch locally (git checkout -B
-//     from the cloned base — instant, no network; materializeRepo's baked-checkout
-//     fast path) and adopts the already-warm opencode (~0.5s claim). opencode is
-//     warmed by a readiness PROBE (a /session read that resolves the /workspace
-//     Instance + loads pty-tools.ts) — never a bootstrap session, since there is
-//     no KORTIX_SESSION_ID to relay at park.
-async function runPoolMode(
+// ENDPOINT CONTRACT (apps/api, to be added deliberately): GET KORTIX_LLM_CATALOG_URL with
+// `Authorization: Bearer <KORTIX_SANDBOX_TOKEN>` → `{ models: {...} }` ==
+// gatewayModelCatalog(projectId, userId). During seed capture there is NO live
+// sessionSandboxes row (it's a template build), and the token is a type='user'
+// account key, so the route must authorize by validateAccountToken→accountId/projectId,
+// NOT by the sandbox-row check clone-credential uses.
+async function prefetchSeedCatalog(cfg: Config): Promise<void> {
+  const url = process.env.KORTIX_LLM_CATALOG_URL
+  if (!url || !cfg.sandboxToken) return
+  const file = process.env.KORTIX_LLM_CATALOG_FILE || `${OPENCODE_HOME}/.config/kortix-llm-catalog.json`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${cfg.sandboxToken}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(8_000),
+  })
+  if (!res.ok) throw new Error(`catalog http ${res.status}`)
+  const body = await res.text()
+  const parsed = JSON.parse(body) as { models?: Record<string, unknown> }
+  const count = parsed.models ? Object.keys(parsed.models).length : 0
+  if (count === 0) throw new Error('empty catalog')
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, body, { mode: 0o600 })
+  process.env.KORTIX_LLM_CATALOG_FILE = file
+  logger.info('[seed] baked full model catalog for seed', { file, models: count })
+}
+
+async function runWarmSeedMode(
   cfg: Config,
   bootTime: number,
   bootState: SandboxBootState,
@@ -404,113 +435,195 @@ async function runPoolMode(
   // every fork paid that ~3.2s init on its own hot path (the runtime-ready
   // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
   // seed (and every fork) runs the real agents/plugins, not the baked default.
-  const scaffolded = await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
-  bootMark('pool-scaffold-materialized')
-  const opencodeConfigDir = scaffolded
+  // Project-scoped warm seed: clone the REAL project repo at base so the
+  // captured snapshot already has /workspace. A fork then hits materializeRepo's
+  // baked-checkout fast path (no in-box clone). Otherwise use the shared
+  // scaffold seed. A failed project clone returns false and degrades to the
+  // scaffold seed.
+  const projectSeed = !!cfg.repoUrl && (process.env.KORTIX_WARM_SEED_PROJECT_CLONE ?? '').trim() === '1'
+  const materialized = projectSeed
+    ? await materializeProjectSeed(cfg)
+    : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
+  bootMark(projectSeed ? 'seed-project-materialized' : 'seed-scaffold-materialized')
+  const opencodeConfigDir = materialized
     ? await resolveOpencodeConfigDir(cfg)
     : cfg.defaultOpencodeConfigDir
   await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+
+  // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
+  // snapshots only — cold + Daytona never run it).
+  // Start the localhost LLM credential proxy, and optionally the Executor proxy
+  // used by the compatibility MCP face. The agent-facing Executor path is the
+  // `kortix executor` CLI, which reads live env on each shell command and does
+  // not need an OpenCode restart. Best-effort: a bind failure leaves the
+  // *_PROXY_URL unset and adoption falls back to the restart path where needed.
+  const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
+  if (llmHotswap) {
+    const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
+    const llmUrl = startLlmProxy(llmPort)
+    if (llmUrl) {
+      // Seen by buildOpencodeConfigContent (via process.env) at the seed spawn
+      // below → provider.kortix routes through the proxy.
+      process.env.KORTIX_LLM_PROXY_URL = llmUrl
+      bootMark('seed-llm-proxy-started')
+      logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
+    }
+    const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
+    const exUrl = startExecutorProxy(exPort)
+    if (exUrl) {
+      // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
+      // The proxy is harmless when unused; the CLI remains the primary path.
+      process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
+      bootMark('seed-executor-proxy-started')
+      logger.info('[seed] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
+    }
+    // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
+    // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
+    // authed by the sandbox token and write it to KORTIX_LLM_CATALOG_FILE BEFORE
+    // opencode spawns → the seed bakes the FULL model picker, not the ~11-model
+    // fallback. No-op unless KORTIX_LLM_CATALOG_URL is wired (see report for the
+    // endpoint contract); any failure → fallback models (LLM + tools still work).
+    await prefetchSeedCatalog(cfg).catch((err) =>
+      logger.warn('[seed] catalog prefetch failed; seed uses fallback models', { err: (err as Error).message }),
+    )
+  }
+
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
-  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-  bootMark('pool-opencode-spawned')
+  await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+  bootMark('seed-opencode-spawned')
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
-  bootMark('pool-ready')
+  bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
   // and pre-create + pin the root session, so the frozen image has opencode
   // genuinely 'ok' for /workspace AND a listed root session. The platinum
   // capture condition gates on the pin file existing, so the snapshot is taken
   // only AFTER this — making forks resume with runtime-ready instant and the
-  // backend ensure resolving 'healed' (no first-session init). Only when the
-  // scaffold materialized; otherwise the seed stays the old repo-less spare.
-  if (scaffolded) {
+  // backend ensure resolving 'healed' (no first-session init). Only when a seed
+  // (scaffold OR real project repo) materialized; otherwise capture cannot be pinned.
+  if (materialized) {
     void (async () => {
       const deadline = Date.now() + 5 * 60_000
       let ok = false
       while (!ok && Date.now() < deadline) ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
-      if (!ok) { logger.warn('[pool] opencode never warmed; capture will not trigger'); return }
-      bootMark('pool-opencode-ready')
+      if (!ok) { logger.warn('[seed] opencode never warmed; capture will not trigger'); return }
+      bootMark('seed-opencode-ready')
       try {
         const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
         const session = (await res.json()) as { id?: string }
         if (session.id) {
+          // Marker BEFORE the pin: the snapshot capture gates on the pin file
+          // existing, so writing the marker first guarantees every fork that
+          // inherits the pin also inherits the marker (else it can't rotate).
+          markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
-          bootMark('pool-seed-session')
-          logger.info('[pool] pre-created + pinned root opencode session', { sessionId: session.id })
+          bootMark('seed-opencode-session')
+          logger.info('[seed] pre-created + pinned root opencode session', { sessionId: session.id })
         }
       } catch (err) {
-        logger.warn('[pool] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
+        logger.warn('[seed] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
       }
-      logger.info('[pool] warm seed ready; awaiting claim', { timeline: bootState.timeline })
+      logger.info('[seed] capture-ready; awaiting fork adoption', { timeline: bootState.timeline })
     })()
   } else {
-    logger.info('[pool] repo-less spare ready; awaiting claim', { timeline: bootState.timeline })
+    logger.warn('[seed] no seed repo materialized; capture pin will not be written', { timeline: bootState.timeline })
   }
 
-  let claimed = false
-  const claim = (trigger: string) => {
-    if (claimed) return
-    claimed = true
+  let adopted = false
+  const adopt = (trigger: string) => {
+    if (adopted) return
+    adopted = true
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
       writeAgentEnvFile(createProjectEnvStore())
       const cfg2 = loadConfig()
-      // Rebuild the proxy/control surface with the claimant's cfg — the spare
-      // booted tokenless, so the auth gate would 503 every request otherwise.
+      // Rebuild the proxy/control surface with the fork's cfg; the seed booted
+      // tokenless or with seed-only credentials.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
-        // Clear any park-clone failure so this retries cleanly. When park
-        // pre-cloned (Stage-2 happy path) materializeRepo hits the baked-checkout
-        // fast path: set remote + local `git checkout -B <session>` from the
-        // cloned base, no network re-clone. Otherwise it clones now (Stage-1).
+        // Clear any seed-clone failure so this retries cleanly. When the seed
+        // pre-cloned the project, materializeRepo hits the baked-checkout fast
+        // path: set remote + local `git checkout -B <session>` from the cloned
+        // base, no network re-clone. Otherwise it clones now.
         bootState.repoMaterializationError = null
         await materializeRepo(cfg2).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-          logger.error('[pool] repo materialization failed', err)
+          logger.error('[seed] repo materialization failed', err)
         })
-        bootMark('claim-repo-materialized')
+        bootMark('adopt-repo-materialized')
         if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
       }
 
-      // A warm spare's opencode process is started before claim, when it has no
-      // session-scoped Executor/CLI/LLM env and (for Stage-1) before the project
-      // config dir exists. Restart it after adopting the claimant env + repo so
+      // The seed opencode process is started before adoption, when it has no
+      // session-scoped Executor/CLI/LLM env and may have started before the
+      // project config dir exists. Restart it after adopting the fork env + repo so
       // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
-      const claimOpencodeConfigDir = bootState.repoMaterializationError
+      const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
-      await ensureOpencodeConfigDeps(claimOpencodeConfigDir).catch((err) =>
-        logger.warn('[pool] claim config deps failed', { err: (err as Error).message }),
+      await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
+        logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
       )
-      opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
-      await opencode.restart().catch((err) =>
-        logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
-      )
-      bootMark('claim-opencode-restarted')
+      // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
+      // session-independent opencode config routed through the localhost LLM +
+      // executor proxies, so inject the per-session tokens LIVE and reuse the
+      // already-warm opencode — skipping the ~8s restart. Engages only when
+      // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
+      // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
+      // materialized cleanly. Anything missing falls through to restart.
+      let hotSwapped = false
+      if (
+        llmHotswap &&
+        !!process.env.KORTIX_LLM_PROXY_URL &&
+        llmProxyBaseUrl() != null &&
+        opencode.getState() === 'ok' &&
+        !bootState.repoMaterializationError
+      ) {
+        // LLM gateway: required for the session to function.
+        setLlmProxyToken(process.env.KORTIX_LLM_API_KEY, process.env.KORTIX_LLM_BASE_URL)
+        // Optional Executor MCP compatibility: if the seed enabled that face,
+        // the running MCP points at this proxy. The CLI path does not need this;
+        // it reads the live session env through BASH_ENV on every command.
+        if (process.env.KORTIX_EXECUTOR_PROXY_URL && executorProxyBaseUrl() != null) {
+          setExecutorProxyToken(process.env.KORTIX_EXECUTOR_TOKEN, process.env.KORTIX_API_URL)
+        }
+        if (llmProxyReady()) {
+          hotSwapped = true
+          bootMark('adopt-opencode-hotswapped')
+          // Observability only: this confirms the optional executor proxy has a
+          // live token. It does not assert that OpenCode registered MCP tools.
+          if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
+          logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
+            executorReady: executorProxyReady(),
+          })
+        }
+      }
+      if (!hotSwapped) {
+        opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
+        await opencode.restart().catch((err) =>
+          logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
+        )
+        bootMark('adopt-opencode-restarted')
+      }
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
-      logger.info('[pool] claim complete', { claimMs: Date.now() - t0, timeline: bootState.timeline })
+      logger.info('[seed] fork adoption complete', { adoptMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
     })()
   }
-  process.on('SIGHUP', () => claim('sighup'))
+  process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
-    // The claimant env lands at /tmp/pt-env (warm-pool claim via /file/upload)
-    // OR /etc/pt-env (platinum on-demand restore writes it pre-boot). Poll both
-    // so the spare adopts regardless of which flow forked it.
-    for (const p of ['/etc/pt-env', '/tmp/pt-env']) {
-      let txt = ''
-      try { txt = readFileSync(p, 'utf8') } catch { continue }
-      if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim(`env-poll:${p}`); return }
-    }
-  }, 200)  // tight: the warm daemon idles until env lands; a slow poll just delays adoption ~1s
+    let txt = ''
+    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll:/etc/pt-env') }
+  }, 200)
 }
 
 // Establish the session's canonical opencode root and (once) deliver the
@@ -541,7 +654,19 @@ async function maybeCreateInitialOpencodeSession(
   const baseUrl = `http://127.0.0.1:${opencodePort}`
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
-  const existing = await resolveExistingRoot(baseUrl, workspace)
+  let existing = await resolveExistingRoot(baseUrl, workspace)
+  // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
+  // pinned root, so `existing` here is the SHARED seed root — every fork would
+  // otherwise resolve the same opencode session id and their chats bleed together
+  // (the client keys all message state by that id). Rotate onto a fresh
+  // per-session root EXACTLY ONCE by ignoring the seed root here; the marker is
+  // retired below so later restarts reuse THIS fork's own root via the path above.
+  const seedBakedId = readSeedBakedSessionId()
+  const rotateOffSeedRoot = isSharedSeedBakedRoot(existing?.id, seedBakedId)
+  if (rotateOffSeedRoot) {
+    logger.info('[boot] fork is on the shared seed-baked root; rotating to its own', { seedBakedId })
+    existing = null
+  }
   let sessionId: string
   let alreadyDelivered = false
   if (existing) {
@@ -568,6 +693,15 @@ async function maybeCreateInitialOpencodeSession(
   }
 
   pinOpencodeSessionFile(sessionId)
+  if (rotateOffSeedRoot) {
+    // This fork now owns `sessionId` (pinned above): retire the one-shot marker
+    // and drop the orphaned shared seed root (best-effort — the pin is
+    // authoritative, so cleanup failing never reintroduces the collision).
+    clearSeedBakedMarker()
+    if (seedBakedId && seedBakedId !== sessionId) {
+      void deleteOpencodeSession(baseUrl, workspace, seedBakedId)
+    }
+  }
   bootState.initialOpenCodeSessionId = sessionId
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
@@ -608,6 +742,52 @@ function pinOpencodeSessionFile(sessionId: string): void {
     writeFileSync(OPENCODE_SESSION_PIN_PATH, sessionId, 'utf8')
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
+  }
+}
+
+/** Record (at seed time) that the pinned root is the SEED's pre-baked one, so the
+ *  first claiming fork rotates off it instead of sharing it. Captured into the
+ *  snapshot next to the pin, so every fork inherits it. See opencode-fork-root.ts. */
+function markSeedBakedSession(sessionId: string): void {
+  try {
+    mkdirSync(dirname(OPENCODE_SEED_BAKED_PIN_PATH), { recursive: true })
+    writeFileSync(OPENCODE_SEED_BAKED_PIN_PATH, sessionId, 'utf8')
+  } catch (err) {
+    logger.warn('[seed] failed to write seed-baked session marker', err)
+  }
+}
+
+function readSeedBakedSessionId(): string | null {
+  try {
+    if (!existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) return null
+    const id = readFileSync(OPENCODE_SEED_BAKED_PIN_PATH, 'utf8').trim()
+    return id.length > 0 ? id : null
+  } catch {
+    return null
+  }
+}
+
+/** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
+ *  restarts then reuse the fork's root via the normal idempotent reuse path. */
+function clearSeedBakedMarker(): void {
+  try {
+    if (existsSync(OPENCODE_SEED_BAKED_PIN_PATH)) unlinkSync(OPENCODE_SEED_BAKED_PIN_PATH)
+  } catch (err) {
+    logger.warn('[boot] failed to clear seed-baked marker', err)
+  }
+}
+
+/** Best-effort delete of the orphaned shared seed root after a fork rotates onto
+ *  its own. Correctness does NOT depend on this (the fork pins + relays its own
+ *  id); it just stops the empty shared root from lingering in the session list. */
+async function deleteOpencodeSession(baseUrl: string, workspace: string, sessionId: string): Promise<void> {
+  try {
+    await fetch(
+      `${baseUrl}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(workspace)}`,
+      { method: 'DELETE', signal: AbortSignal.timeout(3_000) },
+    )
+  } catch {
+    /* orphan is harmless — the fork's own pinned root is authoritative */
   }
 }
 
@@ -902,6 +1082,7 @@ async function relayTurnEndToApi(
   status: 'idle' | 'error',
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
+  eventError?: OpencodeTurnError,
 ): Promise<void> {
   const ctx = slackRelayContext()
   if (!ctx) return
@@ -910,9 +1091,31 @@ async function relayTurnEndToApi(
   // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
+  // Resolve the turn's error. session.error already hands us one; an idle end
+  // (e.g. retries exhausted, then idle) carries none, so read the root turn's
+  // last assistant message — exactly what the web UI shows — and upgrade idle→
+  // error when it failed. This is what turns a blank "ended without a reply" in
+  // Slack into "out of credits" / rate-limit / the real error.
+  const error = eventError ?? (await readRootTurnError(opencodeSessionId, opencode, cfg))
+  const effectiveStatus = error ? 'error' : status
+
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  const payload = JSON.stringify({ session_id: sessionId, kind: 'end', status, opencode_session_id: opencodeSessionId })
+  const payload = JSON.stringify({
+    session_id: sessionId,
+    kind: 'end',
+    status: effectiveStatus,
+    opencode_session_id: opencodeSessionId,
+    ...(error
+      ? {
+          error_name: error.name,
+          error_message: error.message,
+          error_status: error.statusCode,
+          error_retryable: error.isRetryable,
+          error_provider: error.providerID,
+        }
+      : {}),
+  })
   // This is the ONLY signal that finalizes a turn the agent ended without
   // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
   // best-effort: retry with backoff before giving up. A non-ok HTTP response is
@@ -928,7 +1131,7 @@ async function relayTurnEndToApi(
       })
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
-        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId, attempt })
+        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
       logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
@@ -937,7 +1140,50 @@ async function relayTurnEndToApi(
     }
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
-  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status })
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+}
+
+// Read the ROOT turn's failure, if any, from its last assistant message — the
+// same `AssistantMessage.error` the web UI renders. opencode's session.error
+// event already carries this for a hard failure, but a run that exhausts retries
+// (e.g. out of credits / rate-limited) can end on `session.idle` with the error
+// only on the message; this is what lets Slack still say *why* instead of going
+// silent. Best-effort: any miss/parse failure returns undefined (treated as a
+// clean end), so this never turns a healthy turn into a phantom failure.
+async function readRootTurnError(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<OpencodeTurnError | undefined> {
+  try {
+    const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return undefined
+    const rows = (await res.json()) as Array<{
+      info?: {
+        role?: string
+        error?: {
+          name?: string
+          data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
+        }
+      }
+    }>
+    if (!Array.isArray(rows)) return undefined
+    // The most recent assistant message decides the turn's outcome. Crucially,
+    // stop at the turn boundary: if a USER message is the newest row (a pending or
+    // follow-up turn that hasn't produced an assistant reply yet), treat the run
+    // as clean — never walk back into a PRIOR turn's already-superseded error and
+    // relay it as this turn's failure.
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const info = rows[i]?.info
+      if (info?.role === 'user') return undefined
+      if (info?.role !== 'assistant') continue
+      return info.error ? flattenOpencodeError(info.error) : undefined
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
 }
 
 // Is this opencode session the ROOT turn session (not a subagent child)? A root
@@ -963,15 +1209,18 @@ async function isRootOpencodeSession(
   }
 }
 
-/** Per-session model override from KORTIX_OPENCODE_MODEL (provider/model form,
- *  e.g. `anthropic/claude-sonnet-4-6`). Returned in opencode's
- *  `{ providerID, modelID }` shape, or undefined when unset/malformed so
- *  opencode falls back to its configured default. */
+/** Per-session model override from KORTIX_OPENCODE_MODEL. Most models use
+ *  provider/model form and are returned in OpenCode's `{ providerID, modelID }`
+ *  shape. Bare legacy Zen ids are normalized onto the OpenCode provider so old
+ *  queued boot prompts keep using the schema accepted by `prompt_async`. */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
   const slash = raw.indexOf('/')
   if (slash <= 0 || slash === raw.length - 1) return undefined
-  return { providerID: raw.slice(0, slash), modelID: raw.slice(slash + 1) }
+  const providerID = raw.slice(0, slash)
+  const modelID = raw.slice(slash + 1)
+  return { providerID, modelID }
 }
 
 /** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT
@@ -992,13 +1241,15 @@ export function readPinnedOpencodeSessionId(): string | null {
 // push/clone credential for the managed remote. Detect that mode before the
 // daemon boot path so we don't spin up opencode/proxy just to print a token.
 const subcommand = process.argv[2]
-if (subcommand === 'git-credential') {
-  runGitCredentialHelper(loadConfig(), process.argv[3])
-    .then((code) => process.exit(code))
-    .catch(() => process.exit(0))
-} else {
-  main().catch((err) => {
-    logger.error('[boot] fatal', err)
-    process.exit(1)
-  })
+if (import.meta.main) {
+  if (subcommand === 'git-credential') {
+    runGitCredentialHelper(loadConfig(), process.argv[3])
+      .then((code) => process.exit(code))
+      .catch(() => process.exit(0))
+  } else {
+    main().catch((err) => {
+      logger.error('[boot] fatal', err)
+      process.exit(1)
+    })
+  }
 }

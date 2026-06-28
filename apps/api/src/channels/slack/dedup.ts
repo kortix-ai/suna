@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { EVENT_DEDUPE_TTL_MS } from './app';
@@ -59,5 +60,58 @@ export async function claimInboundMessage(key: string): Promise<boolean> {
   } catch (err) {
     console.error('[slack-webhook] inbound message claim failed (fail-open)', err);
     return true;
+  }
+}
+
+// ── One-shot "this thread's session terminally failed" notice ────────────────
+// A thread whose session hit a terminal fault KEEPS its mapping — we never
+// silently recreate, because a fresh session wouldn't fix a real fault. But that
+// means every later message in the thread re-runs the turn, re-hits the same
+// `failed` outcome, and would re-post the identical "session hit an error" line —
+// the thread stuck on repeat forever (exactly the "ok bro is going to say it
+// every time now" report). So we tell the user ONCE: the first failed delivery
+// claims this key and posts the notice (with a link to open the session); every
+// later one finds the claim already held and stays silent. Unlike the 5-minute
+// inbound-message gate, the claim is long-lived so the quiet sticks — but it is
+// NOT permanent: a month on, a lone message earns one fresh reminder. Reuses the
+// same single-winner dedup table as `claimThreadCreate`, so no migration.
+//
+// Fail-CLOSED (suppress) on a DB hiccup — the entire purpose here is to NOT spam,
+// so when the claim can't be resolved, stay quiet rather than risk re-posting.
+const ERROR_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function threadErrorNoticeKey(teamId: string, threadId: string): string {
+  return `slack:threaderror:${teamId}:${threadId}`;
+}
+
+export async function claimThreadErrorNotice(teamId: string, threadId: string): Promise<boolean> {
+  if (!teamId || !threadId) return false;
+  try {
+    const inserted = await db
+      .insert(chatEventDedup)
+      .values({
+        eventId: threadErrorNoticeKey(teamId, threadId),
+        expiresAt: new Date(Date.now() + ERROR_NOTICE_TTL_MS),
+      })
+      .onConflictDoNothing({ target: chatEventDedup.eventId })
+      .returning({ eventId: chatEventDedup.eventId });
+    return inserted.length > 0;
+  } catch (err) {
+    console.warn('[slack-webhook] thread error-notice claim failed (suppressing notice)', err);
+    return false;
+  }
+}
+
+// Re-arm the notice when this thread is revived onto a genuinely NEW session (the
+// `no-session` replace path), so that session's OWN first failure is surfaced
+// instead of being swallowed by the prior session's still-held claim. Best-effort.
+export async function clearThreadErrorNotice(teamId: string, threadId: string): Promise<void> {
+  if (!teamId || !threadId) return;
+  try {
+    await db
+      .delete(chatEventDedup)
+      .where(eq(chatEventDedup.eventId, threadErrorNoticeKey(teamId, threadId)));
+  } catch (err) {
+    console.warn('[slack-webhook] thread error-notice clear failed', err);
   }
 }

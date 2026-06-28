@@ -20,7 +20,9 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ProviderList } from '@/features/providers/provider-list';
-import { setGlobalDefaultModel } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, setGlobalDefaultModel } from '@/hooks/opencode/use-model-store';
+import { clearModelDefault, setModelDefault } from '@/lib/projects-client';
+import { useParams } from 'next/navigation';
 import type { Config } from '@/hooks/opencode/use-opencode-config';
 import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import type { McpStatus } from '@/hooks/opencode/use-opencode-mcp';
@@ -1128,6 +1130,8 @@ export function OpenCodeSettingsDialog({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: config, isLoading } = useOpenCodeConfig();
   const updateMutation = useUpdateOpenCodeConfig();
+  const params = useParams();
+  const settingsProjectId = typeof params?.id === 'string' ? params.id : null;
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [activeTab, setActiveTab] = useState<OpenCodeSettingsTab>(initialTab);
 
@@ -1147,20 +1151,32 @@ export function OpenCodeSettingsDialog({
           if (typeof draft.model === 'string' && draft.model) {
             const idx = draft.model.indexOf('/');
             if (idx > 0 && idx < draft.model.length - 1) {
-              setGlobalDefaultModel({
+              const key = {
                 providerID: draft.model.slice(0, idx),
                 modelID: draft.model.slice(idx + 1),
-              });
+              };
+              setGlobalDefaultModel(key);
+              // Persist the account default server-side (the gateway resolves it).
+              if (settingsProjectId) {
+                setModelDefault(settingsProjectId, {
+                  scope: 'account',
+                  model: modelKeyToWire(key),
+                }).catch(() => {});
+              }
             }
           } else {
-            // User selected "Auto-detect" — clear globalDefault
+            // User selected "Auto-detect" — clear the default everywhere so the
+            // gateway falls back to the platform default.
             setGlobalDefaultModel(undefined);
+            if (settingsProjectId) {
+              clearModelDefault(settingsProjectId, { scope: 'account' }).catch(() => {});
+            }
           }
         }
         setDraft({});
       },
     });
-  }, [draft, hasDraftChanges, updateMutation]);
+  }, [draft, hasDraftChanges, updateMutation, settingsProjectId]);
 
   const handleDiscard = useCallback(() => setDraft({}), []);
 

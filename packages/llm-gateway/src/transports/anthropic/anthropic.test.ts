@@ -32,10 +32,14 @@ describe('buildAnthropicRequest', () => {
     expect(req.headers['x-api-key']).toBe('sk-ant-test');
     expect(req.headers['anthropic-version']).toBeTruthy();
     expect(req.payload.model).toBe('claude-sonnet-4-6');
-    expect(req.payload.system).toBe('be nice');
+    expect(req.payload.system).toEqual([
+      { type: 'text', text: 'be nice', cache_control: { type: 'ephemeral' } },
+    ]);
     expect(req.payload.max_tokens).toBeGreaterThan(0);
     expect(req.payload.stream).toBe(true);
-    expect(req.payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(req.payload.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }] },
+    ]);
   });
 
   test('normalizes dotted catalog ids to Anthropic dashed model names', () => {
@@ -57,6 +61,59 @@ describe('buildAnthropicRequest', () => {
       descriptor,
     );
     expect((req.payload.tools as any[])[0]).toMatchObject({ name: 'search', description: 'd' });
+  });
+});
+
+describe('buildAnthropicRequest — prompt caching', () => {
+  test('marks system, the last tool, and the conversation tail as cacheable', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          { role: 'system', content: 'a long stable system prompt' },
+          { role: 'user', content: 'first' },
+          { role: 'assistant', content: 'ok' },
+          { role: 'user', content: 'second' },
+        ],
+        tools: [
+          { type: 'function', function: { name: 'a', parameters: { type: 'object' } } },
+          { type: 'function', function: { name: 'b', parameters: { type: 'object' } } },
+        ],
+      },
+      descriptor,
+    );
+    const p = req.payload as any;
+    expect(p.system).toEqual([
+      { type: 'text', text: 'a long stable system prompt', cache_control: { type: 'ephemeral' } },
+    ]);
+    expect(p.tools[0].cache_control).toBeUndefined();
+    expect(p.tools[1].cache_control).toEqual({ type: 'ephemeral' });
+    const lastMsg = p.messages[p.messages.length - 1];
+    expect(lastMsg.content).toEqual([
+      { type: 'text', text: 'second', cache_control: { type: 'ephemeral' } },
+    ]);
+    const firstUser = p.messages[0];
+    expect(firstUser.content).toBe('first');
+  });
+
+  test('adds the breakpoint to the final block of an array-content tail message', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          { role: 'user', content: 'hi' },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'look' },
+              { type: 'text', text: 'at this' },
+            ],
+          },
+        ],
+      },
+      descriptor,
+    );
+    const tail = (req.payload as any).messages.at(-1).content;
+    expect(tail[0].cache_control).toBeUndefined();
+    expect(tail[1].cache_control).toEqual({ type: 'ephemeral' });
   });
 });
 

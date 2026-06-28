@@ -14,8 +14,15 @@ export async function createClient() {
   //
   // SUPABASE_SERVER_URL is the internal Docker network URL (e.g. http://supabase-kong:8000)
   // used for server-side calls that run inside the Docker container.
-  const supabaseUrl = process.env.SUPABASE_SERVER_URL || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabaseUrl =
+    process.env.SUPABASE_SERVER_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.KORTIX_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   return createServerClient(
     supabaseUrl,

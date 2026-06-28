@@ -34,22 +34,31 @@ export function ComposerChatInput({
   onSend,
   onCommand,
   sessionId,
+  projectId,
   isBusy,
+  stopDisabled,
   disabled,
   autoFocus,
   placeholder,
+  prefill,
   inputSlot,
+  toolbarSlot,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
   sessionId?: string;
+  projectId?: string;
   isBusy?: boolean;
+  /** Show a disabled stop button while busy (e.g. the computer is still booting). */
+  stopDisabled?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
+  prefill?: { text: string; id: number } | null;
   inputSlot?: ReactNode;
+  toolbarSlot?: ReactNode;
 }) {
-  const { data: agents } = useOpenCodeAgents();
+  const { data: agents } = useOpenCodeAgents({ projectId });
   const { data: providers } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
@@ -69,10 +78,13 @@ export function ComposerChatInput({
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       isBusy={isBusy}
+      stopDisabled={stopDisabled}
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
+      prefill={prefill}
       inputSlot={inputSlot}
+      toolbarSlot={toolbarSlot}
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}
@@ -81,6 +93,7 @@ export function ComposerChatInput({
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+      modelRequired
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}

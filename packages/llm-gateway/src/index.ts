@@ -25,6 +25,7 @@ export {
   TimeoutError,
   UpstreamHttpError,
   defaultIsRetryable,
+  indicatesUpstreamDown,
 } from './errors';
 export type { UpstreamErrorKind } from './errors';
 
@@ -42,9 +43,11 @@ export type { CatalogUpstream } from './catalog';
 
 export type {
   AuthedPrincipal,
+  AuthorizeResult,
   BillingMode,
   GatewayConfig,
   GatewayHooks,
+  GatewayLogger,
   GatewayTrace,
   ModelCatalog,
   ModelInfo,

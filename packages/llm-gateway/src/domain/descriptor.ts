@@ -1,6 +1,11 @@
 import type { BillingMode } from './principal';
 
-export type ProviderKind = 'openai-compat' | 'openai-responses' | 'anthropic' | 'bedrock' | 'custom';
+export type ProviderKind =
+  | 'openai-compat'
+  | 'openai-responses'
+  | 'anthropic'
+  | 'bedrock'
+  | 'custom';
 
 export interface UpstreamPricing {
   inputPerMillion: number;
@@ -19,5 +24,6 @@ export interface UpstreamDescriptor {
   appReferer?: string;
   resolvedModel?: string;
   headers?: Record<string, string>;
+  omitAuthorization?: boolean;
   pricing?: UpstreamPricing;
 }

@@ -1,0 +1,199 @@
+name: Build Staging Artifacts
+
+# Staging is the pre-prod branch. Human/code changes advance it by PR only:
+# either `main` -> `staging` for the full dev candidate, or a targeted branch
+# -> `staging` for a selective release candidate.
+#
+# Build every releasable container on every staging push and tag it with the
+# exact staging commit (`staging-<sha8>`). That gives deploy-prod a precise image
+# source for both full dev-candidate PRs and targeted release-candidate
+# PRs. The deploy workflow may add `[skip ci]` GitOps pin commits after this
+# build; those are deployment metadata, not code promotion.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Staging commit SHA to build; defaults to the workflow ref SHA"
+        required: false
+        type: string
+
+concurrency:
+  group: build-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  version:
+    name: Compute staging version
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+      sha8: ${{ steps.v.outputs.sha8 }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Derive staging version from the latest release tag
+        id: v
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin staging:refs/remotes/origin/staging --quiet
+          sha="${INPUT_SHA:-$GITHUB_SHA}"
+          sha="$(git rev-parse "$sha")"
+          git merge-base --is-ancestor "$sha" origin/staging || {
+            echo "::error::$sha is not reachable from origin/staging"; exit 1;
+          }
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
+          [ -n "$latest" ] || latest="$(tr -d '[:space:]' < VERSION)"
+          IFS='.' read -r ma mi pa <<< "$latest"
+          : "${ma:=0}"; : "${mi:=0}"; : "${pa:=0}"
+          next="${ma}.${mi}.$((pa + 1))"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha8=${sha::8}" >> "$GITHUB_OUTPUT"
+          echo "version=${next}-staging.${sha::8}" >> "$GITHUB_OUTPUT"
+          echo "Latest release: ${latest:-none} -> staging ${next}-staging.${sha::8}"
+
+  build-api:
+    name: Build API image (staging)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          submodules: false
+      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push staging API
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            SERVICE=apps/api
+            KORTIX_VERSION=${{ needs.version.outputs.version }}
+            KORTIX_COMMIT=${{ needs.version.outputs.sha }}
+          tags: |
+            kortix/kortix-api:staging-${{ needs.version.outputs.sha }}
+            kortix/kortix-api:staging-latest
+      - name: Retag API staging-<sha8>
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "kortix/kortix-api:staging-${{ needs.version.outputs.sha8 }}" \
+            "kortix/kortix-api:staging-${{ needs.version.outputs.sha }}"
+
+  build-gateway:
+    name: Build gateway image (staging)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          submodules: false
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push staging gateway
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/llm-gateway/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            KORTIX_VERSION=${{ needs.version.outputs.version }}
+            KORTIX_COMMIT=${{ needs.version.outputs.sha }}
+          tags: |
+            kortix/kortix-gateway:staging-${{ needs.version.outputs.sha }}
+            kortix/kortix-gateway:staging-latest
+      - name: Retag gateway staging-<sha8>
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "kortix/kortix-gateway:staging-${{ needs.version.outputs.sha8 }}" \
+            "kortix/kortix-gateway:staging-${{ needs.version.outputs.sha }}"
+
+  build-frontend:
+    name: Build frontend image (staging)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          submodules: false
+      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build frontend standalone output
+        run: pnpm --filter ./apps/web build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.version.outputs.version }}
+          NEXT_OUTPUT: standalone
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push staging frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            kortix/kortix-frontend:staging-${{ needs.version.outputs.sha }}
+            kortix/kortix-frontend:staging-latest
+      - name: Retag frontend staging-<sha8>
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "kortix/kortix-frontend:staging-${{ needs.version.outputs.sha8 }}" \
+            "kortix/kortix-frontend:staging-${{ needs.version.outputs.sha }}"
+
+  dispatch-deploy:
+    name: Dispatch staging deploy
+    needs: [version, build-api, build-gateway, build-frontend]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Deploy Staging for completed manual build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run deploy-staging.yml --repo "${{ github.repository }}" --ref main -f sha="${{ needs.version.outputs.sha }}"
+          echo "Deploy Staging dispatched for ${{ needs.version.outputs.sha }}."
