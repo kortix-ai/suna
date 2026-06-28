@@ -108,7 +108,7 @@ projectsApp.openapi(
     if (!UUID_V4_REGEX.test(sessionId))
       return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
     // Restart is reserved for the session owner or a project manager.

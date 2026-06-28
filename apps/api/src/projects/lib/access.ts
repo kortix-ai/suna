@@ -238,6 +238,11 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   switch (action) {
     case 'read':
       return 'project.read';
+    case 'session':
+      // Starting / running / stopping a session. Granted to every project
+      // role (viewer included) so the default role can actually use Kortix,
+      // while project customization stays behind project.write.
+      return 'project.session.start';
     case 'write':
       return 'project.write';
     case 'manage':
