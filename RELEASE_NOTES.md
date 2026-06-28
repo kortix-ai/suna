@@ -1,3 +1,3 @@
-Slack identity and project session reliability
+Production hotfix: account membership repair
 
-Promotes the Slack identity gate and access/authentication hardening with SLACK_REQUIRE_USER_IDENTITY enabled, plus the project-session agent binding fixes that prevent invalid agent switches and preserve default OpenCode agent behavior. Also includes the current main release candidate already validated on staging.
+- Keep the Slack identity/session authorization release active in production.\n- Repair explicit legacy account memberships during project provisioning so fresh production users can create projects after /accounts returns a legacy account_id.\n- Preserve the normal account_members authorization gate after the repair and cover it with a managed-project provisioning regression test.\n- Verified staging API health for 0.9.84-staging.10fccfe9 and staging deploy live verification.
