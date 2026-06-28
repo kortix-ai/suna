@@ -51,7 +51,7 @@ const j = async (p, o = {}) => {
       s.error = `${e.name}: ${e.message?.slice(0, 120)}`;
       console.log(`#${i + 1} ERR ${s.error}`);
     } finally {
-      if (id) { const d = await j(`/v1/sandboxes/${id}`, { method: 'DELETE' }).catch(() => null); }
+      if (id) { await j(`/v1/sandboxes/${id}`, { method: 'DELETE' }).catch(() => null); }
     }
     samples.push(s);
     if (i < N - 1) await sleep(1500);

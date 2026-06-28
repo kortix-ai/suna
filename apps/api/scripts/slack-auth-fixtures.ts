@@ -279,7 +279,7 @@ Usage:
 Workspace: ${workspaceId}
 Slack user: ${slackUserId}
 Project: ${projectId}
-Fixture password: ${password}
+Fixture password: set by SLACK_AUTH_FIXTURE_PASSWORD or the local fixture default
 `);
 }
 
