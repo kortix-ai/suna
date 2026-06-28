@@ -36,7 +36,14 @@ export function useNewProjectSession(projectId: string | undefined) {
   const openUpgradeDialog = useUpgradeDialogStore((state) => state.openUpgradeDialog);
 
   return useCallback(
-    (opts?: { onNavigate?: (sessionId: string) => void; create?: { sandbox_slug?: string } }) => {
+    (opts?: {
+      onNavigate?: (sessionId: string) => void;
+      // `agent_name` binds the session's immutable boot agent at birth. It MUST
+      // match the agent the composer sends on the first prompt — the API proxy
+      // rejects any prompt whose `agent` differs from the session's bound agent
+      // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
+      create?: { sandbox_slug?: string; agent_name?: string };
+    }) => {
       if (!projectId || creatingRef.current) return;
 
       if (isBillingEnabled() && billingLoading) return;
