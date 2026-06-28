@@ -5858,6 +5858,9 @@ export function SessionChat({
           onStop={handleStop}
           escCount={escCount}
           agents={local.agent.list}
+          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentSelectorLocked={!!lockedAgentName}
           commands={commands || []}
           onCommand={handleCommand}
           models={local.model.list}

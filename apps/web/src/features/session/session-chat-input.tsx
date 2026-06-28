@@ -237,13 +237,16 @@ export function AgentSelector({
   const displayName = currentAgent?.name || 'Agent';
 
   return (
-    <CommandPopover open={open} onOpenChange={setOpen}>
+    // When locked we keep the trigger hoverable (no native `disabled`, which
+    // would suppress hover) but gate the popover shut, so the tooltip can still
+    // explain WHY the agent can't be switched mid-session.
+    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <Tooltip>
         <TooltipTrigger asChild>
           <CommandPopoverTrigger>
             <button
               type="button"
-              disabled={disabled}
+              aria-disabled={disabled || undefined}
               aria-label={tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
               )}
@@ -264,11 +267,19 @@ export function AgentSelector({
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          <p>
-            {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-            <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">Tab</kbd>
-          </p>
+        <TooltipContent side="top" className="max-w-[240px] text-xs">
+          {disabled ? (
+            <p>
+              {"This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."}
+            </p>
+          ) : (
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
+              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
+                Tab
+              </kbd>
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
 
@@ -1436,9 +1447,11 @@ export interface SessionChatInputProps {
    * busy input shows a (non-clickable) stop button instead of nothing at all.
    */
   stopDisabled?: boolean;
-  /** Agents drive the `@agent` mention popover. In-session agent switching is
-   *  intentionally not offered here — switching agents requires a new session. */
   agents?: Agent[];
+  selectedAgent?: string | null;
+  onAgentChange?: (agentName: string | null | undefined) => void;
+  /** Show the selected agent but prevent switching inside an immutable session. */
+  agentSelectorLocked?: boolean;
   commands?: Command[];
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
@@ -1534,6 +1547,9 @@ export function SessionChatInput({
   onStop,
   stopDisabled = false,
   agents = [],
+  selectedAgent = null,
+  onAgentChange,
+  agentSelectorLocked = false,
   commands = [],
   onCommand,
   models = [],
@@ -1599,6 +1615,10 @@ export function SessionChatInput({
   const pathname = normalizeAppPathname(usePathname());
   const isOnboarding = pathname?.startsWith('/onboarding');
   const dragDepthRef = useRef(0);
+  const primaryAgents = useMemo(
+    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
+    [agents],
+  );
 
   // File search: use provided callback or fall back to the SDK directly
   const fileSearchFn = useMemo(() => {
@@ -2228,6 +2248,15 @@ export function SessionChatInput({
       }
     }
 
+    // Tab cycles through agents when no popover is open
+    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange && !agentSelectorLocked) {
+      e.preventDefault();
+      const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
+      const nextIdx = (currentIdx + 1) % primaryAgents.length;
+      onAgentChange(primaryAgents[nextIdx].name);
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -2566,6 +2595,14 @@ export function SessionChatInput({
                 </TooltipContent>
               </Tooltip>
 
+              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
+                <AgentSelector
+                  agents={primaryAgents}
+                  selectedAgent={selectedAgent}
+                  onSelect={onAgentChange ?? (() => {})}
+                  disabled={agentSelectorLocked}
+                />
+              )}
               {(models.length > 0 || modelRequired) && onModelChange && (
                 <ModelSelector
                   models={models}
