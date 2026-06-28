@@ -308,22 +308,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `files` lists the user-facing installer AND the auto-update metadata
+          # electron-updater reads (latest*.yml + blockmaps, plus the mac update
+          # zip). Without the yml/zip attached to the release the in-app updater
+          # has nothing to fetch.
           # macOS universal (Apple Silicon + Intel) in one signed/notarized .dmg.
           - target_pretty: macos
             runner: macos-14
             eb_flag: --mac
             artifact: desktop-macos
-            files: apps/desktop-electron/dist/*.dmg
+            files: |
+              apps/desktop-electron/dist/*.dmg
+              apps/desktop-electron/dist/*.zip
+              apps/desktop-electron/dist/*.blockmap
+              apps/desktop-electron/dist/latest-mac.yml
           - target_pretty: windows-x64
             runner: windows-2022
             eb_flag: --win
             artifact: desktop-windows-x64
-            files: apps/desktop-electron/dist/*.exe
+            files: |
+              apps/desktop-electron/dist/*.exe
+              apps/desktop-electron/dist/*.blockmap
+              apps/desktop-electron/dist/latest.yml
           - target_pretty: linux-x64
             runner: ubuntu-22.04
             eb_flag: --linux
             artifact: desktop-linux-x64
-            files: apps/desktop-electron/dist/*.AppImage
+            files: |
+              apps/desktop-electron/dist/*.AppImage
+              apps/desktop-electron/dist/latest-linux.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -384,7 +397,8 @@ jobs:
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
             --publish never \
             --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
-            --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL"
+            --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.extraMetadata.kortixUpdateChannel="stable"
         env:
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}

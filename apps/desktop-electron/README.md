@@ -73,6 +73,41 @@ Icons live in `build/` (`icon.icns` / `icon.ico` / `icon.png`). Code signing /
 notarization are env-driven (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY*`,
 `WIN_CSC_LINK`, …); unsigned local builds are fine for testing.
 
+## Auto-update
+
+The installed app self-updates via **electron-updater**, reading the `vX.Y.Z`
+**GitHub Releases** as its feed (the `publish: github` block in
+`electron-builder.yml` bakes an `app-update.yml` pointing at `kortix-ai/suna`).
+
+Flow (`src/updater.js`, wired from `src/main.js`):
+
+1. On launch it checks GitHub for a newer release. While the splash is up it
+   shows `Checking…/Downloading… N%`.
+2. A newer version downloads in the **background** — the window stays usable; we
+   never block on the download.
+3. Once staged, a native **"Restart to update"** dialog appears. Declining keeps
+   the update; it installs on the next quit (`autoInstallOnAppQuit`). A 6-hour
+   re-check covers long sessions, and **Kortix → Check for Updates…** runs it on
+   demand with explicit feedback.
+
+For this to work the release must carry the electron-updater **metadata** —
+`latest*.yml`, the `*.blockmap`s, and (macOS only) the update **`.zip`** that
+Squirrel.Mac installs from. The dmg/exe/AppImage is the first-install download;
+the zip + yml are what the updater consumes. CI (`deploy-prod.yml` for prod,
+`desktop.yml` for dev) builds the mac zip target and uploads all of these to the
+release.
+
+Scope: auto-update runs only for **packaged, stable-channel** builds. Unpackaged
+`electron .` dev runs can't self-update; the **`dev`** channel (the mutable
+`desktop-dev-latest` prerelease) opts out so a dev build never cross-updates to a
+prod installer. macOS additionally requires the build to be **signed +
+notarized** — CI signs when the cert secrets are present.
+
+> End-to-end note: a true download→install→relaunch can only be exercised
+> against two signed, published releases. To test the *check* locally, build a
+> packaged app (`pnpm build:mac`) — it will reach GitHub and either find a newer
+> release or report "up to date".
+
 ## Parity with the Tauri shell
 
 The web app talks to the native shell through exactly one module —
@@ -96,6 +131,7 @@ runs **unchanged** on either shell:
 | Maximized persistence | window-state plugin (maximized only) | `userData/window_state.json` (maximized only) |
 | Launch size | ~85% display, clamped | identical |
 | Startup gap | blank window | branded splash window |
+| Auto-update | ✗ none (manual re-download) | ✓ electron-updater (GitHub releases) |
 
 ### OAuth: two flows, handled differently (on purpose)
 
