@@ -47,7 +47,7 @@ import {
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
-import { getSendRetryDelayMs } from '@/features/session/opencode-send-retry';
+import { getSendRetryDelayMs, isOpenCodeNotReadyError } from '@/features/session/opencode-send-retry';
 import {
   isInvisibleActivityPart,
   isNoGroupActivityTool,
@@ -5094,8 +5094,20 @@ export function SessionChat({
           // the exact status, the URL it actually hit, and the error body.
           // Lead with a readable string; the dev overlay renders the raw SDK
           // error object that embeds a non-enumerable Response as `{}`.
-          console.error(
-            `[session-chat] send failed (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
+          // A 503 "opencode not ready" (and other retryable blips) self-heal
+          // across the sandbox cold-boot window, so a normal first-send retry
+          // shouldn't surface as a red console error. Log transient retries
+          // quietly (debug for the expected boot 503, warn for other retries)
+          // and only escalate to console.error once we're actually giving up.
+          const delay = getSendRetryDelayMs(attempt, status, res?.error);
+          const willRetry = delay !== null;
+          const logSend = !willRetry
+            ? console.error
+            : isOpenCodeNotReadyError(res?.error)
+              ? console.debug
+              : console.warn;
+          logSend(
+            `[session-chat] send ${willRetry ? 'retrying' : 'failed'} (HTTP ${status ?? 'unknown'}, attempt ${attempt}): ${formatCommandError(res?.error)}`,
             {
               sessionId,
               attempt,
@@ -5105,8 +5117,7 @@ export function SessionChat({
               error: res?.error,
             },
           );
-          const delay = getSendRetryDelayMs(attempt, status, res?.error);
-          if (delay !== null) {
+          if (willRetry) {
             await sleep(delay);
             continue;
           }
