@@ -5,6 +5,7 @@ import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { createSlackAccessRequest, notifyAdminsOfAccessRequest } from './identity';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { modelLabel, setChannelAgent, setChannelModel } from './selection';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
@@ -278,6 +279,43 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
   });
 }
 
+// "Request access" (the ephemeral nudge for a connected-but-no-access user) →
+// file a project access request and ping the account's admins. Replaces the
+// ephemeral in place via the interaction's response_url so the user gets an
+// immediate, only-visible-to-them confirmation.
+async function handleRequestAccess(payload: SlackInteractionPayload, value: string): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const slackUserId = payload.user?.id ?? '';
+  let projectId = '';
+  try {
+    projectId = (JSON.parse(value || '{}') as { projectId?: string }).projectId ?? '';
+  } catch {
+    projectId = '';
+  }
+  if (!teamId || !slackUserId || !projectId) return;
+
+  const result = await createSlackAccessRequest({ teamId, slackUserId, projectId });
+  const message =
+    result.status === 'created'
+      ? "Access requested ✓ — an admin will review it. I'll pick up your message once you're approved."
+      : result.status === 'pending'
+        ? "You've already requested access — it's pending an admin's review."
+        : result.status === 'already-member'
+          ? 'You already have access — send your message again and I’ll get on it.'
+          : 'I couldn’t request access — connect your Kortix account first, then try again.';
+  await respondViaUrl(payload.response_url, { replace_original: true, text: message });
+
+  if (result.status === 'created') {
+    await notifyAdminsOfAccessRequest({
+      teamId,
+      projectId,
+      accountId: result.accountId,
+      requesterUserId: result.requesterUserId,
+      requesterSlackUserId: slackUserId,
+    });
+  }
+}
+
 export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
@@ -299,6 +337,17 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   // A plain "Open session ↗" link button carries a `url` and needs no handling.
   if (action.action_id === 'session_open') return;
+
+  // Identity / access nudges. "Connect" and "Review in Kortix" are URL buttons —
+  // they open a link, so swallow their block_action so it doesn't fall through to
+  // the agent-click catch-all below. "Request access" does real work.
+  if (action.action_id === 'slack_login_connect' || action.action_id === 'slack_open_access_review') {
+    return;
+  }
+  if (action.action_id === 'slack_request_access') {
+    await handleRequestAccess(payload, action.value ?? '');
+    return;
+  }
 
   if (action.action_id.startsWith('switch_project_')) {
     await handleSwitchProject(payload, action.value ?? '');

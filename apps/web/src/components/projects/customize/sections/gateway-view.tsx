@@ -46,6 +46,7 @@ const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
 export function LlmManagementView({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
   const section = useCustomizeStore((s) => s.section);
+  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
   const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
 
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
@@ -80,7 +81,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
             projectId={projectId}
             open={open}
             onOpenChange={() => {}}
-            defaultTab="connected"
+            defaultTab={llmProvidersTab}
           />
         )}
         {tab === 'overview' && <GatewayOverview projectId={projectId} />}

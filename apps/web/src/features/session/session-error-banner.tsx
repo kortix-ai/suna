@@ -35,8 +35,57 @@ function isInsufficientCreditsError(text: string): boolean {
   const lower = text.toLowerCase();
   return (
     lower.includes('insufficient credits') ||
+    lower.includes('out of credits') ||
     (lower.includes('payment required') && lower.includes('credit')) ||
     (lower.includes('402') && lower.includes('credit'))
+  );
+}
+
+// ============================================================================
+// Usage-limit / subscription-required detection — the free tier running dry, an
+// inactive subscription, or an exhausted budget surfaces as messages like
+// "Free usage exceeded, subscribe to Go" or "Subscribe to activate your seat".
+// These are NOT a credit top-up situation, so they get their own subscribe CTA.
+// ============================================================================
+
+function isUsageLimitError(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('free usage') ||
+    lower.includes('usage exceeded') ||
+    lower.includes('subscription required') ||
+    lower.includes('subscription_required') ||
+    lower.includes('budget exceeded') ||
+    lower.includes('budget_exceeded') ||
+    lower.includes('subscribe to') ||
+    lower.includes('billing inactive')
+  );
+}
+
+function UsageLimitCard({ errorText, className }: { errorText: string; className?: string }) {
+  const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
+  const openBilling = () => openAccountSettings({ tab: 'billing' });
+
+  return (
+    <InfoBanner
+      tone="warning"
+      icon={Zap}
+      title="Usage limit reached"
+      className={cn('flex-col gap-2.5', className)}
+    >
+      <p className="break-words">{errorText}</p>
+      <div className="flex items-center gap-1.5 mt-2">
+        <Button
+          size="sm"
+          variant="default"
+          className="h-7 text-xs px-2.5"
+          onClick={openBilling}
+        >
+          <Zap className="size-3 mr-1" />
+          Upgrade plan
+        </Button>
+      </div>
+    </InfoBanner>
   );
 }
 
@@ -117,6 +166,11 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
   // Insufficient credits → actionable card with buy/auto-topup buttons
   if (isInsufficientCreditsError(errorText)) {
     return <InsufficientCreditsCard errorText={errorText} className={className} />;
+  }
+
+  // Free-tier / subscription / budget limit → actionable upgrade card
+  if (isUsageLimitError(errorText)) {
+    return <UsageLimitCard errorText={errorText} className={className} />;
   }
 
   // Real errors → full card

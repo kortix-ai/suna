@@ -12,7 +12,9 @@
  */
 
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
+import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { featureFlags } from '@/lib/feature-flags';
+import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/shared/llm-catalog';
 import { listProjectSecrets } from '@/lib/projects-client';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';
@@ -124,10 +126,38 @@ export function parseModelKey(model: unknown): ModelKey | undefined {
 }
 
 /**
- * Format a ModelKey as a string "providerID/modelID" for command endpoints.
+ * Format a ModelKey as OpenCode's string model override. Native OpenCode models
+ * are bare ids; provider-prefixed managed/BYOK models keep provider/model form.
  */
 export function formatModelString(model: ModelKey): string {
+  if (model.providerID === 'opencode') return model.modelID;
   return `${model.providerID}/${model.modelID}`;
+}
+
+export function formatPromptModel(model: ModelKey): ModelKey {
+  return model;
+}
+
+export function resolveHiddenAutoModel(
+  resolved: ModelKey | undefined,
+  {
+    enableAutoModel,
+    isModelValid,
+  }: {
+    enableAutoModel: boolean;
+    isModelValid: (model: ModelKey) => boolean;
+  },
+): ModelKey | undefined {
+  if (
+    enableAutoModel ||
+    resolved?.providerID !== 'kortix' ||
+    resolved.modelID !== AUTO_MODEL_ID
+  ) {
+    return resolved;
+  }
+
+  const explicit = { providerID: 'kortix', modelID: AUTO_DEFAULT_MODEL_ID };
+  return isModelValid(explicit) ? explicit : undefined;
 }
 
 export type ModelProviderMode = 'native' | 'gateway';
@@ -155,12 +185,17 @@ export function useOpenCodeLocal({
   config,
   sessionId,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input, so the
-  // gateway-only allowlist applies here too — native providers never leak in) ----
+  // ---- Flatten models from providers (shared with the chat input). ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  const { data: accountState } = useAccountState();
+  const freeTier = useMemo(() => {
+    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
+    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
+    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
+  }, [accountState]);
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId as string),
@@ -177,7 +212,10 @@ export function useOpenCodeLocal({
   }, [providerMode, secretsQuery.data]);
 
   // ---- Model store (persisted: visibility, recent, variant) ----
-  const modelStore = useModelStore(flatModels, { connectedProviderIds });
+  const modelStore = useModelStore(flatModels, {
+    connectedProviderIds,
+    freeTier: providerMode === 'gateway' && freeTier,
+  });
 
   // ---- Model validation: a model is valid only if it's in the flattened list,
   // which is already filtered to connected + gateway-only providers. This keeps
@@ -321,7 +359,7 @@ export function useOpenCodeLocal({
     // fallback slots resolve fine without one, and the agent roster can be empty
     // (e.g. a project with no configured agents, or `enableProjects` off). The
     // agent-keyed slots are simply skipped when there's no current agent.
-    return getFirstValidModel(
+    const resolved = getFirstValidModel(
       // 1. Per-session model (user's explicit choice in this session — survives reload)
       () => (scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined),
       // Back-compat: read the old unscoped slot only if it is valid in the
@@ -337,6 +375,14 @@ export function useOpenCodeLocal({
       // 5. Global fallback (config.model > recent > first connected)
       () => fallbackModel,
     );
+    // AUTO is synthetic. When the feature is hidden, never surface or send it as a
+    // concrete selected model. Prefer the explicit managed default if available;
+    // otherwise report "no model" so callers wait/block instead of falling through
+    // to OpenCode's `kortix/auto` server default.
+    return resolveHiddenAutoModel(resolved, {
+      enableAutoModel: featureFlags.enableAutoModel,
+      isModelValid,
+    });
   }, [
     currentAgent,
     sessionId,
@@ -344,6 +390,7 @@ export function useOpenCodeLocal({
     providerMode,
     modelStore,
     getFirstValidModel,
+    isModelValid,
     fallbackModel,
   ]);
 

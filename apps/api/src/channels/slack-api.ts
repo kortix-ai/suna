@@ -158,6 +158,43 @@ export async function postBlocks(
   }
 }
 
+// Post a message visible ONLY to `user`, in-channel (and in-thread when
+// `threadTs` is set). Used for the identity/access nudges so they appear right
+// where the user @-mentioned Kortix instead of in a separate DM. Returns whether
+// it landed. Note: an ephemeral cannot be edited by ts later — to update it after
+// a button click, respond via the interaction's response_url.
+export async function postEphemeral(
+  token: string,
+  channel: string,
+  user: string,
+  text: string,
+  blocks?: unknown[],
+  threadTs?: string,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(
+      token,
+      'chat.postEphemeral',
+      {
+        channel,
+        user,
+        text,
+        ...(blocks ? { blocks } : {}),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      },
+      { idempotent: false },
+    );
+    if (!r.ok) {
+      console.warn('[slack-api] chat.postEphemeral failed', { error: r.error });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] chat.postEphemeral error', err);
+    return false;
+  }
+}
+
 export async function updateMessage(
   token: string,
   channel: string,

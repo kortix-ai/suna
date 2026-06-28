@@ -9,8 +9,8 @@ import { useTranslations } from 'next-intl';
  * OpenCode SDK; this one stores them as plain project secrets so every session
  * sandbox for the project picks them up as env vars on boot.
  *
- * Layout intentionally mirrors the legacy three-tab UX so the muscle memory
- * carries over: Connected | Add provider | Models.
+ * Three-tab layout, "Add provider" first since connecting a new provider is the
+ * core action: Add provider | Connected | Models.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -282,6 +282,19 @@ export function ProjectProviderModal({
         >
           {showTabBar && (
             <FilterBar>
+              {/* "Add provider" leads — it's the core surface (connect a new
+                  provider). "Connected" follows. */}
+              {showTab('catalog') && (
+                <FilterBarItem
+                  data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
+                  onClick={() => switchTab('catalog')}
+                  className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
+                >
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line178JsxTextAddProvider',
+                  )}
+                </FilterBarItem>
+              )}
               {showTab('connected') && (
                 <FilterBarItem
                   data-state={activeTab === 'connected' ? 'active' : 'inactive'}
@@ -293,17 +306,6 @@ export function ProjectProviderModal({
                     <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
                       {connectedProviders.length}
                     </span>
-                  )}
-                </FilterBarItem>
-              )}
-              {showTab('catalog') && (
-                <FilterBarItem
-                  data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
-                  onClick={() => switchTab('catalog')}
-                  className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-                >
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line178JsxTextAddProvider',
                   )}
                 </FilterBarItem>
               )}
@@ -396,10 +398,10 @@ export function ProjectProviderModal({
 }
 
 function pickInitialTab(defaultTab: ActiveTab | undefined, hasConnections: boolean): ActiveTab {
-  if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
-  return hasConnections ? 'connected' : 'catalog';
+  // Default (and explicit 'catalog') land on "Add provider" — the core surface.
+  return 'catalog';
 }
 
 // ─── Connected tab ──────────────────────────────────────────────────────────

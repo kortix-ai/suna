@@ -5,8 +5,6 @@ import { LLM_PROVIDERS } from '@/lib/llm-providers';
 
 export type ProviderListResponse = SdkProviderListResponse;
 
-// In gateway mode OpenCode must see Kortix as the single LLM provider. Native
-// providers, including OpenCode Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 
@@ -79,6 +77,26 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   };
 }
 
+export function mergeProviderLists(
+  primary: ProviderListResponse,
+  secondary: ProviderListResponse,
+): ProviderListResponse {
+  const a = normalizeProviderList(primary);
+  const b = normalizeProviderList(secondary);
+  const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
+  for (const provider of Array.isArray(a.all) ? a.all : []) all.set(provider.id, provider);
+  for (const provider of Array.isArray(b.all) ? b.all : []) all.set(provider.id, provider);
+  const connected = new Set<string>();
+  for (const id of Array.isArray(a.connected) ? a.connected : []) connected.add(id);
+  for (const id of Array.isArray(b.connected) ? b.connected : []) connected.add(id);
+  return {
+    ...a,
+    all: [...all.values()],
+    connected: [...connected],
+    default: { ...(a.default ?? {}), ...(b.default ?? {}) },
+  };
+}
+
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -142,8 +160,9 @@ export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
   const models = catalog.models ?? {};
+  const firstModelId = Object.keys(models)[0];
   return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    default: firstModelId ? { kortix: models.auto ? 'auto' : firstModelId } : {},
     connected: ['kortix'],
     all: [{
       id: 'kortix',

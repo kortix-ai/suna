@@ -23,6 +23,10 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
   };
 }
 
+function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
+  return livePricing(managed.pricingRef);
+}
+
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.OPENROUTER_API_KEY) return null;
   return {
@@ -35,7 +39,7 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     appName: 'Kortix',
     appReferer: config.KORTIX_URL,
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
+    pricing: managedPricing(managed),
   };
 }
 
@@ -50,35 +54,15 @@ function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.upstreamModelId,
-    pricing: livePricing(managed.pricingRef),
-  };
-}
-
-function opencodeZenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor {
-  return {
-    provider: 'opencode-zen',
-    kind: 'openai-compat',
-    baseUrl: 'https://opencode.ai/zen/v1',
-    apiKey: '',
-    omitAuthorization: true,
-    billingMode: 'none',
-    markup: 0,
-    resolvedModel: managed.upstreamModelId,
-    pricing: {
-      inputPerMillion: 0,
-      outputPerMillion: 0,
-      cachedInputPerMillion: 0,
-    },
+    pricing: managedPricing(managed),
   };
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   const d =
-    managed.transport === 'opencode-zen'
-      ? opencodeZenManagedDescriptor(managed)
-      : managed.transport === 'openrouter'
-        ? openRouterManagedDescriptor(managed)
-        : bedrockManagedDescriptor(managed);
+    managed.transport === 'openrouter'
+      ? openRouterManagedDescriptor(managed)
+      : bedrockManagedDescriptor(managed);
   return d ? [d] : [];
 }
 
