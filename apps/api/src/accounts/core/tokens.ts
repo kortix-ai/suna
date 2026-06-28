@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
   createAccountToken,
@@ -16,6 +17,7 @@ import {
   AccountTokenSchema,
   OkSchema,
   MeSchema,
+  autoClaimPendingInvites,
   readBodyTokens,
   resolveAccountForUser,
   lookupEmailsByUserIds,
@@ -40,6 +42,7 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  const authType = (c.get('authType') as string | undefined) ?? null;
   let userEmail = (c.get('userEmail') as string) || '';
   // CLI PAT requests carry no email in context (the auth middleware sets it
   // empty for PATs), so resolve it from the user record — otherwise whoami
@@ -48,31 +51,41 @@ accountsRouter.openapi(
     userEmail = (await lookupEmailsByUserIds([userId])).get(userId) || '';
   }
 
-  let memberships: Array<{
+  const loadMemberships = async (): Promise<Array<{
     accountId: string;
     accountRole: string;
     name: string;
-  }> = [];
+  }>> => {
+    try {
+      return await db
+        .select({
+          accountId: accountMembers.accountId,
+          accountRole: accountMembers.accountRole,
+          name: accounts.name,
+        })
+        .from(accountMembers)
+        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+        .where(eq(accountMembers.userId, userId));
+    } catch {
+      /* table may not exist yet */
+      return [];
+    }
+  };
 
-  try {
-    memberships = await db
-      .select({
-        accountId: accountMembers.accountId,
-        accountRole: accountMembers.accountRole,
-        name: accounts.name,
-      })
-      .from(accountMembers)
-      .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-      .where(eq(accountMembers.userId, userId));
-  } catch {
-    /* table may not exist yet */
+  if (authType === 'supabase' && userEmail) {
+    await autoClaimPendingInvites(userId, userEmail);
+  }
+  let memberships = await loadMemberships();
+  if (memberships.length === 0 && authType === 'supabase') {
+    await resolveAccountId(userId);
+    memberships = await loadMemberships();
   }
 
   return c.json({
     user_id: userId,
     email: userEmail,
     token_context: {
-      auth_type: (c.get('authType') as string | undefined) ?? null,
+      auth_type: authType,
       project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
