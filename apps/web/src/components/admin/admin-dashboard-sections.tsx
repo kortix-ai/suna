@@ -82,8 +82,6 @@ function StatusBadge({ status }: { status: string | null }) {
     case 'active':
     case 'running':
       return <Badge variant="highlight">{status}</Badge>;
-    case 'pooled':
-      return <Badge variant="info" className="gap-1">{status}</Badge>;
     case 'provisioning':
       return <Badge variant="warning" className="gap-1">{status}</Badge>;
     case 'stopped':
@@ -212,7 +210,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
           <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
             <SelectTrigger className="h-8 w-[130px] text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line208JsxTextAllStatuses')}</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pooled">Pooled</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
+              <SelectItem value="all">{tHardcodedUi.raw('componentsAdminAdminDashboardSections.line208JsxTextAllStatuses')}</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="provisioning">Provisioning</SelectItem><SelectItem value="stopped">Stopped</SelectItem><SelectItem value="error">Error</SelectItem>
             </SelectContent>
           </Select>
           <Select value={providerFilter || 'all'} onValueChange={(v) => setProviderFilter(v === 'all' ? '' : v)}>

@@ -13,7 +13,7 @@ export async function initializeFreeTierAccount(accountId: string): Promise<void
   });
   await grantCredits(
     accountId,
-    5,
+    2,
     'free_tier_grant',
     'Free tier welcome credits',
     true,

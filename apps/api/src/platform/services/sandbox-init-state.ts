@@ -201,9 +201,9 @@ export async function retrySandboxProvisionCreate(
       return { result, attempts: attempt };
     } catch (error) {
       lastError = error;
-      // Warm path gave up (experimental restore kept dropping the runtime). Not
-      // retryable here — the caller falls back to the normal snapshot path;
-      // retrying would just spin up more flaky warm boxes.
+      // Memory-snapshot restore gave up (experimental restore kept dropping the
+      // runtime). Not retryable here — the caller falls back to the normal
+      // snapshot path; retrying would just create more flaky restores.
       if (error instanceof WarmRuntimeUnavailableError) {
         await hooks.onAttemptFailure?.(attempt, error, false);
         throw error;

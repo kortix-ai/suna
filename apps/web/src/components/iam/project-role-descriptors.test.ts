@@ -47,10 +47,12 @@ describe('PROJECT_ROLE_DESCRIPTORS', () => {
     }
   });
 
-  test('viewer blurb communicates read-only', () => {
-    // Marko: "What does a viewer in a project do?" — if this assertion
-    // ever fails, we've regressed on the whole point of the descriptor.
-    expect(PROJECT_ROLE_DESCRIPTORS.viewer.blurb.toLowerCase()).toContain('read');
+  test('viewer blurb communicates it can use the project (start sessions)', () => {
+    // Viewer is the base *usable* role — it can start sessions and use the
+    // agent chat, NOT a read-only role. Marko: "What does a viewer in a
+    // project do?" — if this fails, we've regressed the whole point of the
+    // descriptor (a viewer that can't open a session is useless).
+    expect(PROJECT_ROLE_DESCRIPTORS.viewer.blurb.toLowerCase()).toMatch(/session|chat|use/);
   });
 
   test('manager blurb communicates member management', () => {

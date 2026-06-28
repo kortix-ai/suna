@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
-import { resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import { type ProjectRole } from '../access';
@@ -144,11 +143,6 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     experimental: resolveExperimentalFeatures(row.metadata),
     experimental_features: buildExperimentalCatalog(row.metadata),
     apps_enabled: resolveAppsEnabled(row.metadata),
-    // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
-    // per-project config (UI value over the operator default); `warm_pool_available`
-    // gates the UI control off the platform feature flag.
-    warm_pool: resolveWarmConfig(row.metadata),
-    warm_pool_available: warmPoolEnabled(),
   };
 }
 
@@ -452,17 +446,7 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
 }
 
 
-export interface TemplateWarmStatus {
-  enabled: boolean;
-  size: number;
-  ready: number;
-  warming: number;
-}
-
-export function serializeTemplate(
-  t: Awaited<ReturnType<typeof listSandboxTemplates>>[number],
-  warm?: TemplateWarmStatus | null,
-) {
+export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
   return {
     template_id: t.templateId,
     slug: t.slug,
@@ -484,9 +468,6 @@ export function serializeTemplate(
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
-    // Per-template warm pool config + live counts (null when the operator gate
-    // is off, i.e. the feature isn't available platform-wide).
-    warm_pool: warm ?? null,
   };
 }
 

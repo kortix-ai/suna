@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Kortix session e2e loop: create -> resolve sandbox -> runtimeReady -> verify daemon -> cleanup.
 # Loops until N consecutive fast+healthy runs (or max rounds). FAA: also asserts
-# the daemon is actually serving :8000 in-guest (the cloneAtPark crash left it dead).
+# the daemon is actually serving :8000 in-guest (startup regressions left it dead before).
 set -uo pipefail
 cd "$(dirname "$0")/.."   # apps/api
 DIR=/Users/vukasinkubet/dev/comp/apps/api

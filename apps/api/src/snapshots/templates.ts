@@ -66,7 +66,13 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // browser-automation skill works out of the box with no runtime download.
 // v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
 // no-restart warm seed serves the full picker without a PARK-time fetch.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v13-python-skill-floor';
+// v14: bake the COMPLETE config-dir deps (incl. @opencode-ai/plugin + its effect/
+// zod/sdk tree + overrides) instead of a partial hardcoded list.
+// v15: pin the baked @opencode-ai/plugin to the OPENCODE BINARY version (opencode
+// loads the plugin SDK matching its own binary and re-fetches it over the network
+// if the baked tree carries a different version — the stale starter pin left every
+// boot re-installing it, the ~5–8s opencode-session-created gap).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v15';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

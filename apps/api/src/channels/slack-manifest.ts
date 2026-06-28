@@ -271,15 +271,18 @@ export interface GenerateManifestInput {
   projectId: string;
   appName?: string;
   botName?: string;
+  command?: string;
   description?: string;
 }
 
 /** Per-project (BYO) manifest. Same implementation as canonical, scoped to the project. */
 export function generateSlackManifest(input: GenerateManifestInput): SlackManifest {
+  const appName = input.appName ?? 'Kortix';
+  const botName = input.botName ?? 'kortix';
   return buildSlackManifest({
-    appName: input.appName ?? 'Kortix',
-    botName: input.botName ?? 'kortix',
-    command: '/kortix',
+    appName,
+    botName,
+    command: normalizeSlashCommand(input.command) ?? defaultByoSlashCommand(appName, botName),
     baseUrl: input.baseUrl,
     webhookPath: `/v1/webhooks/slack/${input.projectId}`,
     oauthRedirect: false,
@@ -296,4 +299,31 @@ export function resolveBaseUrl(reqUrl: URL, override?: string): string {
 
 function stripTrailingSlash(s: string): string {
   return s.replace(/\/$/, '');
+}
+
+export function defaultByoSlashCommand(appName: string, botName: string): string {
+  const source = appName.trim().toLowerCase() === 'kortix'
+    ? botName
+    : appName;
+  const slug = source
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 31);
+  return slug && slug !== 'kortix' ? `/${slug}` : '/kortix';
+}
+
+function normalizeSlashCommand(command?: string): string | null {
+  const raw = command?.trim().toLowerCase();
+  if (!raw) return null;
+  const withSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  const slug = withSlash
+    .slice(1)
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 31);
+  return slug ? `/${slug}` : null;
 }

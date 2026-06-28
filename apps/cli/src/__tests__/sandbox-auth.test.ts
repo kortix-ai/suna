@@ -11,7 +11,7 @@ import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN carry the
-// project-scoped PAT, KORTIX_API_URL already includes the `/v1` mount, and
+// session executor PAT, KORTIX_API_URL already includes the `/v1` mount, and
 // KORTIX_PROJECT_ID selects the project — all read with zero config files.
 
 const ENV_KEYS = [

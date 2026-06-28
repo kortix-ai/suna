@@ -91,6 +91,7 @@ export interface SlackInteractionPayload {
   actions?: Array<{
     action_id?: string;
     value?: string;
+    url?: string;
     text?: { type?: string; text?: string };
     // static_select fires block_actions with the picked option here.
     selected_option?: { value?: string; text?: { text?: string } } | null;

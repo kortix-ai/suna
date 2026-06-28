@@ -206,15 +206,28 @@ function requestHasImage(body: Record<string, unknown>): boolean {
  * the synthetic `auto` id. Returns null for any other model (a no-op pass-through
  * the caller treats as "use the requested model as-is"). Pure + dependency-free
  * so both the in-process mount and the standalone gateway can call it locally.
+ *
+ * `opts.defaultModel` is the account/agent-configured default for the calling
+ * principal (a concrete wire model, never `auto`). It takes precedence over the
+ * platform text default, so `auto` resolves to what the account actually wants.
+ * The vision override still applies: if the chosen target is a managed text-only
+ * model and the request carries an image, swap to a vision-capable model so
+ * attachments aren't silently dropped. A vision-capable or BYOK default is kept.
  */
 export function pickAutoModel(
   model: string,
   body: Record<string, unknown>,
+  opts?: { defaultModel?: string | null },
 ): string | null {
   if (model !== AUTO_MODEL_ID && model !== `kortix/${AUTO_MODEL_ID}`)
     return null;
-  const hasImage = requestHasImage(body);
-  return hasImage ? AUTO_VISION_MODEL : AUTO_TARGET_MODEL;
+  const target = opts?.defaultModel || AUTO_TARGET_MODEL;
+  if (requestHasImage(body)) {
+    const bareId = target.startsWith("kortix/") ? target.slice("kortix/".length) : target;
+    const managed = getManagedModel(bareId);
+    if (managed && !managed.vision) return AUTO_VISION_MODEL;
+  }
+  return target;
 }
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [

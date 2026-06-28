@@ -27,7 +27,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 | `OWNER` | account owner (super-admin, bypasses policy) | full access |
 | `ADMIN` | account `admin` (Administrator policy) | all but account.delete / billing.write / owner-grant |
 | `MEMBER` | account `member`, **no** project grant | account-reads only; cannot see projects |
-| `M_VIEWER` `M_EDITOR` `M_MANAGER` | member + project_members row (viewer/editor/manager) | per-project read / write / manage |
+| `M_VIEWER` `M_EDITOR` `M_MANAGER` | member + project_members row (viewer/editor/manager) | per-project (read + run-sessions) / +customize (write) / +manage. Viewer is the base *usable* role: it can read AND start/run/stop sessions (use the agent chat) — it just can't customize the project. So POST `/projects/:id/sessions` is allowed for M_VIEWER; PATCH `/projects/:id` is not |
 | `BILLING` | `billing_manager` policy | billing read+write only |
 | `AUDITOR` | `auditor` policy | reads + audit only |
 | `RO_ADMIN` | `administrator_read_only` | read-only everywhere |
@@ -176,15 +176,15 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 
 DB `project_sessions` (`status queued|branching|provisioning|running|stopped|failed|completed`, unique `(project_id, branch_name)`). Branch name = `session_id`.
 
-`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?}` → `write` (M_EDITOR/M_MANAGER) → 201 status `provisioning` (fire-and-forget sandbox). M_VIEWER → 403.
+`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
 `SESS-2` concurrency cap — Nth session over tier cap → **429** + `X-RateLimit-Limit/-Remaining` headers.
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
 `SESS-5` `GET /projects/:id/sessions/:sid` → `read` → 200; non-uuid `sid` → 400.
-`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by the server-side OpenCode title mirror, which only writes the auto title `metadata.name` during session reads); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
-`SESS-7` `DELETE /projects/:id/sessions/:sid` → `write` → 200 soft-delete status `stopped`; **remote branch preserved**.
+`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `session` (any project member, M_VIEWER included); attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by the server-side OpenCode title mirror, which only writes the auto title `metadata.name` during session reads); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
+`SESS-7` `DELETE /projects/:id/sessions/:sid` → `session` (then **owner or project manager** only — a viewer can stop sessions they own) → 200 soft-delete status `stopped`; **remote branch preserved**.
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
-`SESS-9` `POST /projects/:id/sessions/:sid/restart` → `write` → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
+`SESS-9` `POST /projects/:id/sessions/:sid/restart` → `session` (then **owner or project manager** only) → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
 `SESS-10` OpenCode title/tree mirror is server-owned: `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` read the sandbox's OpenCode sessions server-side and mirror `metadata.name`/`metadata.opencode_sessions`; there is no browser-write sync endpoint.
 
 ---
@@ -413,8 +413,9 @@ Run these against representative endpoints from each domain.
 | Action level | OWNER | ADMIN | M_MANAGER | M_EDITOR | M_VIEWER | MEMBER (no grant) | NONMEMBER |
 |---|---|---|---|---|---|---|---|
 | `read` (GET project/files/sessions) | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 |
-| `write` (session create/CR merge/PATCH session) | ✓ | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 | ✗ 403 |
-| `manage` (PATCH/DELETE project, secrets, triggers, access) | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 | ✗ 403 | ✗ 403 |
+| `session` (create/PATCH/DELETE/restart session — use the chat) | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 |
+| `write` (PATCH project, CR merge, deploy, triggers) | ✓ | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 | ✗ 403 |
+| `manage` (DELETE project, secrets, members/access) | ✓ | ✓ | ✓ | ✗ 403 | ✗ 403 | ✗ 403 | ✗ 403 |
 
 ### Role × account-action grid
 
@@ -434,7 +435,7 @@ Run these against representative endpoints from each domain.
 
 - project: `active | archived`
 - session: `queued | branching | provisioning | running | stopped | failed | completed`
-- sandbox (session_sandboxes): `provisioning | active | stopped | error | archived` (legacy `sandboxes` table also has `pooled`)
+- sandbox (session_sandboxes): `provisioning | active | stopped | error | archived`
 - snapshot: `queued | building | ready | failed` (session boot needs a `ready` snapshot of baseRef)
 - change request: `open | merged | closed`
 - trigger fire result: `fired | queued | failed`
@@ -442,7 +443,7 @@ Run these against representative endpoints from each domain.
 ## 21. Known gaps (don't write tests for these — they don't exist)
 
 - No account-level vault — secrets are project-scoped, all-or-nothing per project (the `vault_items`/per-member-scope design was reversed).
-- Granular IAM actions `project.trigger.*`, `channel.*`, `trigger.*`, `project.session.*` exist in the catalog but project routes only enforce coarse `read|write|manage` — test the coarse gate, not the fine actions.
+- Granular IAM actions `project.trigger.*`, `channel.*`, `trigger.*` exist in the catalog but those project routes only enforce coarse `read|write|manage` — test the coarse gate, not the fine actions. **Exception:** session lifecycle routes (create/PATCH/DELETE/restart) now enforce `project.session.start` via the `session` access tier, which every project role (viewer included) holds — so a viewer CAN run sessions but still can't `write`/`manage`.
 - No inbound GitHub event webhook (no push/PR receiver) — see `TRG-9`.
 - CLI `providers`, `doctor`, `proxy`, `sessions-chat` source files exist but are **not wired** into the dispatcher and not in the reserved list — so `kortix providers …` is **treated as a new-project name** (`runCreate`), not an "unknown command" error. Don't test for an error here.
 - Cron scheduler scans only first 200 active projects/tick.
@@ -583,7 +584,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
-`SBX-5` `GET/PATCH /projects/:id/warm-pool` → 200 (clamped 0-25).
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.

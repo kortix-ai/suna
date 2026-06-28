@@ -3,6 +3,8 @@ import { backendApi } from '../api-client';
 export interface SlackBindResult {
   ok: boolean;
   workspaceName: string | null;
+  hasAccess: boolean;
+  resumed: boolean;
 }
 
 export const slackIdentityApi = {

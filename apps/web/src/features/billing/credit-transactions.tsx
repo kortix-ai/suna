@@ -2,14 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -18,32 +22,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Clock,
-  Infinity,
-  Plus,
-  Minus,
-  RefreshCw,
-  Info,
-} from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/billing/use-transactions';
+import { useTransactions } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
+import { AlertCircle, Clock, Infinity, Minus, Plus, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 
 interface Props {
   accountId?: string;
@@ -82,22 +65,22 @@ export default function CreditTransactions({ accountId }: Props) {
 
   const getTransactionBadge = (type: string) => {
     const badges: Record<string, { label: string; variant: any }> = {
-      'tier_grant': { label: 'Tier Grant', variant: 'default' },
-      'purchase': { label: 'Purchase', variant: 'default' },
-      'auto_topup': { label: 'Auto Top-up', variant: 'default' },
-      'machine_bonus': { label: 'Machine Bonus', variant: 'secondary' },
-      'admin_grant': { label: 'Admin Grant', variant: 'secondary' },
-      'promotional': { label: 'Promotional', variant: 'secondary' },
-      'daily_refresh': { label: 'Daily Refresh', variant: 'secondary' },
-      'usage': { label: 'Usage', variant: 'outline' },
-      'llm_debit': { label: 'LLM', variant: 'outline' },
-      'token_deduction': { label: 'LLM', variant: 'outline' },
-      'token_overage': { label: 'LLM Overage', variant: 'outline' },
-      'compute_debit': { label: 'Sandbox', variant: 'outline' },
-      'compute_refund': { label: 'Sandbox Refund', variant: 'secondary' },
-      'refund': { label: 'Refund', variant: 'secondary' },
-      'adjustment': { label: 'Adjustment', variant: 'outline' },
-      'expired': { label: 'Expired', variant: 'destructive' },
+      tier_grant: { label: 'Tier Grant', variant: 'default' },
+      purchase: { label: 'Purchase', variant: 'default' },
+      auto_topup: { label: 'Auto Top-up', variant: 'default' },
+      machine_bonus: { label: 'Machine Bonus', variant: 'secondary' },
+      admin_grant: { label: 'Admin Grant', variant: 'secondary' },
+      promotional: { label: 'Promotional', variant: 'secondary' },
+      daily_refresh: { label: 'Daily Refresh', variant: 'secondary' },
+      usage: { label: 'Usage', variant: 'outline' },
+      llm_debit: { label: 'LLM', variant: 'outline' },
+      token_deduction: { label: 'LLM', variant: 'outline' },
+      token_overage: { label: 'LLM Overage', variant: 'outline' },
+      compute_debit: { label: 'Sandbox', variant: 'outline' },
+      compute_refund: { label: 'Sandbox Refund', variant: 'secondary' },
+      refund: { label: 'Refund', variant: 'secondary' },
+      adjustment: { label: 'Adjustment', variant: 'outline' },
+      expired: { label: 'Expired', variant: 'destructive' },
     };
 
     const badge = badges[type] || { label: type, variant: 'outline' };
@@ -116,40 +99,21 @@ export default function CreditTransactions({ accountId }: Props) {
 
   if (isLoading && offset === 0) {
     return (
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>{tHardcodedUi.raw('componentsBillingCreditTransactions.line114JsxTextCreditTransactions')}</CardTitle>
-            <CardDescription>{tHardcodedUi.raw('componentsBillingCreditTransactions.line115JsxTextLoadingYourTransactionHistory')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="space-y-3">
+        {[...Array(5)].map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{tHardcodedUi.raw('componentsBillingCreditTransactions.line133JsxTextCreditTransactions')}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              {error.message || 'Failed to load transactions'}
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>{error.message || 'Failed to load transactions'}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -161,19 +125,38 @@ export default function CreditTransactions({ accountId }: Props) {
       <div className="flex items-center gap-2">
         <Select
           value={typeFilter ?? 'all'}
-          onValueChange={(v) => { setTypeFilter(v === 'all' ? undefined : v); setOffset(0); }}
+          onValueChange={(v) => {
+            setTypeFilter(v === 'all' ? undefined : v);
+            setOffset(0);
+          }}
         >
-          <SelectTrigger className="w-[160px] h-9">
-            <SelectValue placeholder={tHardcodedUi.raw('componentsBillingCreditTransactions.line159JsxAttrPlaceholderAllTypes')} />
+          <SelectTrigger className="h-9 w-[160px]">
+            <SelectValue
+              placeholder={tHardcodedUi.raw(
+                'componentsBillingCreditTransactions.line159JsxAttrPlaceholderAllTypes',
+              )}
+            />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{tHardcodedUi.raw('componentsBillingCreditTransactions.line162JsxTextAllTypes')}</SelectItem>
-            <SelectItem value="tier_grant">{tHardcodedUi.raw('componentsBillingCreditTransactions.line163JsxTextTierGrant')}</SelectItem>
+            <SelectItem value="all">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line162JsxTextAllTypes')}
+            </SelectItem>
+            <SelectItem value="tier_grant">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line163JsxTextTierGrant')}
+            </SelectItem>
             <SelectItem value="purchase">Purchase</SelectItem>
-            <SelectItem value="auto_topup">{tHardcodedUi.raw('componentsBillingCreditTransactions.line165JsxTextAutoTopUp')}</SelectItem>
-            <SelectItem value="machine_bonus">{tHardcodedUi.raw('componentsBillingCreditTransactions.line166JsxTextMachineBonus')}</SelectItem>
-            <SelectItem value="daily_refresh">{tHardcodedUi.raw('componentsBillingCreditTransactions.line167JsxTextDailyRefresh')}</SelectItem>
-            <SelectItem value="admin_grant">{tHardcodedUi.raw('componentsBillingCreditTransactions.line168JsxTextAdminGrant')}</SelectItem>
+            <SelectItem value="auto_topup">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line165JsxTextAutoTopUp')}
+            </SelectItem>
+            <SelectItem value="machine_bonus">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line166JsxTextMachineBonus')}
+            </SelectItem>
+            <SelectItem value="daily_refresh">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line167JsxTextDailyRefresh')}
+            </SelectItem>
+            <SelectItem value="admin_grant">
+              {tHardcodedUi.raw('componentsBillingCreditTransactions.line168JsxTextAdminGrant')}
+            </SelectItem>
             <SelectItem value="usage">Usage</SelectItem>
             <SelectItem value="refund">Refund</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>
@@ -186,10 +169,10 @@ export default function CreditTransactions({ accountId }: Props) {
         </Button>
       </div>
 
-      <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
-        <CardContent className='px-0'>
+      <Card className="border-none bg-transparent p-0 px-0 shadow-none">
+        <CardContent className="px-0">
           {transactions.length === 0 ? (
-            <div className="text-center py-8">
+            <div className="py-8 text-center">
               <p className="text-muted-foreground">
                 {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
               </p>
@@ -203,9 +186,17 @@ export default function CreditTransactions({ accountId }: Props) {
                       <TableHead className="w-[180px]">Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="text-center">{tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}</TableHead>
+                      <TableHead className="text-center">
+                        {tHardcodedUi.raw(
+                          'componentsBillingCreditTransactions.line198JsxTextCreditType',
+                        )}
+                      </TableHead>
                       <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">{tHardcodedUi.raw('componentsBillingCreditTransactions.line200JsxTextCreditsAfter')}</TableHead>
+                      <TableHead className="text-right">
+                        {tHardcodedUi.raw(
+                          'componentsBillingCreditTransactions.line200JsxTextCreditsAfter',
+                        )}
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -214,9 +205,7 @@ export default function CreditTransactions({ accountId }: Props) {
                         <TableCell className="font-mono text-xs">
                           {formatDate(tx.created_at)}
                         </TableCell>
-                        <TableCell>
-                          {getTransactionBadge(tx.type)}
-                        </TableCell>
+                        <TableCell>{getTransactionBadge(tx.type)}</TableCell>
                         <TableCell className="text-sm">
                           <div className="flex items-center gap-2">
                             {getTransactionIcon(tx.type, tx.amount)}
@@ -229,21 +218,23 @@ export default function CreditTransactions({ accountId }: Props) {
                               {tx.is_expiring ? (
                                 <>
                                   <Clock className="h-3 w-3 text-orange-500" />
-                                  <span className="text-xs text-muted-foreground">Expiring</span>
+                                  <span className="text-muted-foreground text-xs">Expiring</span>
                                 </>
                               ) : (
                                 <>
                                   <Infinity className="h-3 w-3 text-blue-500" />
-                                  <span className="text-xs text-muted-foreground">Permanent</span>
+                                  <span className="text-muted-foreground text-xs">Permanent</span>
                                 </>
                               )}
                             </div>
                           )}
                         </TableCell>
-                        <TableCell className={cn(
-                          "text-right font-mono font-semibold",
-                          tx.amount >= 0 ? "text-emerald-600" : "text-red-600"
-                        )}>
+                        <TableCell
+                          className={cn(
+                            'text-right font-mono font-semibold',
+                            tx.amount >= 0 ? 'text-emerald-600' : 'text-red-600',
+                          )}
+                        >
                           {formatCreditsWithSign(tx.amount, { showDecimals: true })}
                         </TableCell>
                         <TableCell className="text-right font-mono">
@@ -255,9 +246,10 @@ export default function CreditTransactions({ accountId }: Props) {
                 </Table>
               </div>
               {data?.pagination && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} transactions
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-muted-foreground text-sm">
+                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of{' '}
+                    {data.pagination.total} transactions
                   </p>
                   <div className="flex items-center gap-2">
                     <Button

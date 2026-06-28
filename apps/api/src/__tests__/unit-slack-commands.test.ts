@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Slash command handlers for agent/model selection + session visibility.
 
@@ -47,6 +47,7 @@ mock.module('../accounts/core/app', () => ({
     new Map(ids.map((id) => [id, `${id}@example.com`])),
 }));
 
+const { config } = await import('../config');
 const { handleSlashCommand } = await import('../channels/slack/commands');
 
 const ctx = { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' };
@@ -91,10 +92,17 @@ describe('unknown subcommand', () => {
   });
 });
 
-// Per-user identity is OFF by default (SLACK_REQUIRE_USER_IDENTITY unset in the
-// test env), so the whole feature is dark: login/logout are not real subcommands
-// and help never advertises them.
 describe('identity feature gated OFF', () => {
+  const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
+
+  beforeEach(() => {
+    config.SLACK_REQUIRE_USER_IDENTITY = false;
+  });
+
+  afterEach(() => {
+    config.SLACK_REQUIRE_USER_IDENTITY = originalRequireIdentity;
+  });
+
   test('/login is an unknown subcommand', async () => {
     const resp = await handleSlashCommand('login', '', ctx);
     expect(resp.text).toContain('Unknown subcommand');

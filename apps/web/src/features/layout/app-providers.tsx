@@ -7,7 +7,6 @@ import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
@@ -136,7 +135,9 @@ export function AppProviders({
   showGlobalNewInstanceModal = false,
   showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
-  useModelHydration(showRightSidebar);
+  // The default model is hydrated server-side now (useModelDefaults inside the
+  // session hook seeds it from the account/agent defaults the gateway resolves),
+  // so the old per-sandbox /kortix/preferences/model round-trip is gone.
 
   // One-time sweep on app load: reclaim localStorage left over from older builds
   // that never evicted their per-sandbox caches. Ongoing growth is bounded by

@@ -12,6 +12,14 @@ export interface AccountMembership {
 export interface MeResponse {
   user_id: string;
   email: string;
+  token_context?: {
+    auth_type: string | null;
+    project_id: string | null;
+    session_id: string | null;
+    agent: string | null;
+    connectors: string[] | 'all' | null;
+    kortix_cli: string[] | 'all' | null;
+  };
   accounts: AccountMembership[];
 }
 

@@ -27,14 +27,14 @@ export function llmPriceMarkup(): number {
 }
 
 // ─── Billing v2 — per-seat model ─────────────────────────────────────────────
-// Every new account starts on the free tier with $5 of expiring sandbox-only
+// Every new account starts on the free tier with $2 of expiring sandbox-only
 // credits. Upgrading to Team moves them onto the per-seat model.
 //
 // Team accounts are billed $40/month × number of accepted account_members.
-// $20 grants $20 of fungible wallet credits — there's NO separate compute/
+// $25 grants $25 of fungible wallet credits — there's NO separate compute/
 // LLM bucket in the wallet. Spend is debited from the unified balance; the
 // credit_ledger.type tag (`compute_debit` / `llm_debit`) drives the UI
-// usage breakdown. The free tier keeps its $5 wallet sandbox-only by blocking
+// usage breakdown. The free tier keeps its $2 wallet sandbox-only by blocking
 // managed premium LLM access while leaving OpenCode, BYOK, and ChatGPT
 // subscription paths intact.
 //
@@ -44,16 +44,16 @@ export function llmPriceMarkup(): number {
 
 export const PER_SEAT_PRICE_USD = 40;
 /**
- * Usage credits granted per seat each month. The $40 seat price includes $20 of
- * usage credits (LLM + compute); the other $20 is platform margin. Decoupled
+ * Usage credits granted per seat each month. The $40 seat price includes $25 of
+ * usage credits (LLM + compute); the other $15 is platform margin. Decoupled
  * from PER_SEAT_PRICE_USD on purpose — the price and the included usage are two
  * different numbers. The two TYPICAL_* splits below add up to this value.
  */
-export const INCLUDED_CREDITS_PER_SEAT_USD = 20;
+export const INCLUDED_CREDITS_PER_SEAT_USD = 25;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
-export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
+export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
-export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
+export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
 // Per-second sandbox compute pricing, keyed off the reserved spec (kortix.toml
 // [sandbox]). The constants below are Daytona's PUBLISHED LIST rates (kept as
@@ -105,9 +105,9 @@ export function defaultAutoTopupForSeats(seatCount: number): { threshold: number
 }
 
 /**
- * Monthly wallet grant for N seats. INCLUDED_CREDITS_PER_SEAT_USD ($20) per
+ * Monthly wallet grant for N seats. INCLUDED_CREDITS_PER_SEAT_USD ($25) per
  * seat, fungible across compute and LLM usage — NOT the full $40 seat price
- * (the other $20 is platform margin). Per-category transparency comes from the
+ * (the other $15 is platform margin). Per-category transparency comes from the
  * credit_ledger (compute_debit / llm_debit), not from a wallet partition.
  */
 export function grantForSeats(seatCount: number): number {
@@ -177,7 +177,7 @@ const TIERS: Record<string, TierConfig> = {
     displayName: 'Free',
     monthlyPrice: 0,
     yearlyPrice: 0,
-    monthlyCredits: 5,
+    monthlyCredits: 2,
     canPurchaseCredits: false,
     models: [],
     dailyCreditConfig: null,
@@ -200,7 +200,7 @@ const TIERS: Record<string, TierConfig> = {
     entitlements: NO_ENTERPRISE,
   },
 
-  // Billing v2 — per-member seat plan. $20 × seat_count / month.
+  // Billing v2 — per-member seat plan. $25 × seat_count / month.
   // The TIERS entry models a single seat; multi-seat math is in
   // grantForSeats() and applied at subscription create + renew.
   per_seat: {

@@ -384,10 +384,9 @@ export function buildOpencodeApp(
 export type ProxyServer = {
   stop(): Promise<void>
   port: number
-  // Rebuild the control surface with a new Config. A warm-pool spare boots
-  // tokenless and only learns its session cfg (KORTIX_TOKEN, projectId, …) on
-  // claim; without this the proxy auth gate + routers keep the empty boot cfg
-  // and reject every request with "KORTIX_TOKEN not configured".
+  // Rebuild the control surface with a new Config. A warm snapshot seed boots
+  // with seed-time credentials and only learns its forked session cfg after
+  // restore; without this the proxy auth gate + routers keep the seed cfg.
   reload(next: Config): void
 }
 
@@ -399,7 +398,7 @@ export function startProxy(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {
-  // Mutable so claim-time reload() can hot-swap the handler in place; the
+  // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
   let currentCfg = cfg
   let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)

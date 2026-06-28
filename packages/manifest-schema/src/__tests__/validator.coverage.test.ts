@@ -11,6 +11,10 @@ function errorPaths(input: string | Record<string, unknown>): string[] {
   return validateManifest(input).issues.filter((i) => i.severity === 'error').map((i) => i.path);
 }
 
+function warningPaths(input: string | Record<string, unknown>): string[] {
+  return validateManifest(input).issues.filter((i) => i.severity === 'warning').map((i) => i.path);
+}
+
 describe('validateManifest — object input', () => {
   test('accepts an already-parsed object without re-parsing TOML', () => {
     const result = validateManifest({ kortix_version: 1 });
@@ -173,8 +177,10 @@ describe('validateManifest — [[channels]]', () => {
     expect(paths).toContain('channels[1].platform');
   });
 
-  test('non-boolean enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = "yes"')).toContain(
+  // Coercible values (booleans, 0/1, yes/no/on/off) are accepted to match the
+  // runtime's coerceBool; only genuinely non-coercible values are rejected.
+  test('non-coercible enabled is rejected', () => {
+    expect(errorPaths('kortix_version = 1\n[[channels]]\nplatform = "slack"\nenabled = "maybe"')).toContain(
       'channels[0].enabled',
     );
   });
@@ -212,8 +218,8 @@ describe('validateManifest — [[apps]]', () => {
     expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\n[[apps]]\nslug = "s"')).toContain('apps[1].slug');
   });
 
-  test('non-boolean enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenabled = 1')).toContain('apps[0].enabled');
+  test('non-coercible enabled is rejected', () => {
+    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenabled = "maybe"')).toContain('apps[0].enabled');
   });
 
   test('non-array domains is rejected', () => {
@@ -442,5 +448,49 @@ describe('exported constants', () => {
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('project.read');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).toContain('channel.send');
     expect(GRANTABLE_KORTIX_CLI_ACTIONS).not.toContain('billing.read');
+  });
+});
+
+// Things the runtime rejects but that the gate surfaces as NON-BLOCKING warnings
+// (no overblocking): the merge still passes (valid === true) while the author is
+// told what would fail to materialize / deploy / fire at runtime.
+describe('validateManifest — non-blocking warnings (runtime enforces; gate advises)', () => {
+  function assertWarnsButValid(input: string, warnPath: string) {
+    const result = validateManifest(input);
+    expect(result.valid).toBe(true);
+    expect(warningPaths(input)).toContain(warnPath);
+  }
+
+  test('app with no [apps.source] warns (would not deploy) but does not block', () => {
+    assertWarnsButValid('kortix_version = 1\n[[apps]]\nslug = "site"', 'apps[0].source');
+  });
+
+  test('tar app source without url warns', () => {
+    assertWarnsButValid('kortix_version = 1\n[[apps]]\nslug = "site"\n  [apps.source]\n  type = "tar"', 'apps[0].source.url');
+  });
+
+  test('app env with a non-string value warns', () => {
+    expect(warningPaths('kortix_version = 1\n[[apps]]\nslug = "s"\n  [apps.source]\n  type = "git"\n  [apps.env]\n  PORT = 3000')).toContain('apps[0].env.PORT');
+  });
+
+  test('over-long sandbox template slug warns (runtime would drop it) but does not block', () => {
+    const longSlug = 'a'.repeat(80);
+    assertWarnsButValid(`kortix_version = 1\n[[sandbox.templates]]\nslug = "${longSlug}"\nimage = "python:3.12-slim"`, `sandbox.templates[0].slug`);
+  });
+
+  test('mcp connector with a bad transport warns but does not block', () => {
+    assertWarnsButValid('kortix_version = 1\n[[connectors]]\nslug = "m"\nprovider = "mcp"\nurl = "https://e.com"\ntransport = "grpc"', 'connectors[0].transport');
+  });
+
+  test('openapi connector missing spec warns', () => {
+    expect(warningPaths('kortix_version = 1\n[[connectors]]\nslug = "o"\nprovider = "openapi"')).toContain('connectors[0].spec');
+  });
+
+  test('connector with a bad credential mode warns', () => {
+    expect(warningPaths('kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "https://e.com"\ncredential = "team"')).toContain('connectors[0].credential');
+  });
+
+  test('trigger with a non-IANA timezone warns (would never fire) but does not block', () => {
+    assertWarnsButValid('kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"', 'triggers[0].timezone');
   });
 });

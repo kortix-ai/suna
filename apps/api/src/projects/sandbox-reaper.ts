@@ -221,8 +221,6 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     .where(and(
       eq(sessionSandboxes.status, 'active'),
       isNotNull(sessionSandboxes.externalId),
-      // Unclaimed warm-pool spares manage their own lifecycle.
-      sql`${sessionSandboxes.poolState} IS NULL`,
     ))
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 

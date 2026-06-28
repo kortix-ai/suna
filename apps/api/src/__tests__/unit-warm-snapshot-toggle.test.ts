@@ -22,17 +22,17 @@ let dbRows: Array<{ key: string; value: unknown }> = [];
 const cfg = {
   DAYTONA_API_KEY: '',
   DAYTONA_WARM_TARGET: '',
-  KORTIX_WARM_POOL_ENABLED: false,
-  KORTIX_WARM_POOL_SIZE: 0,
 };
 let platinumConfigured = false;
 
 mock.module('../config', () => ({ config: cfg }));
 mock.module('../shared/platinum', () => ({ isPlatinumConfigured: () => platinumConfigured }));
-mock.module('../shared/db', () => ({
+const dbMock = {
   hasDatabase: true,
   db: { select: () => ({ from: () => ({ where: () => Promise.resolve(dbRows) }) }) },
-}));
+};
+mock.module('../shared/db', () => dbMock);
+mock.module('../../shared/db', () => dbMock);
 mock.module('@kortix/db', () => ({ platformSettings: { key: 'key', value: 'value' } }));
 mock.module('drizzle-orm', () => ({ inArray: () => ({}) }));
 
