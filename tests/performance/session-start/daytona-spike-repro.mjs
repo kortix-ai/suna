@@ -28,7 +28,7 @@ const sdkVersion = (() => { try { return createRequire(import.meta.url)('@dayton
   for (let i = 0; i < N; i++) {
     const startedAt = new Date().toISOString();
     const t0 = Date.now();
-    let id = null, ms = null, err = null, state = null;
+    let id = null, ms, err = null, state = null;
     try {
       const sb = await d.create({ snapshot: SNAPSHOT }, { timeout: 120 });
       ms = Date.now() - t0;
@@ -36,9 +36,10 @@ const sdkVersion = (() => { try { return createRequire(import.meta.url)('@dayton
       state = sb.state ?? null;
       orgId = orgId || sb.organizationId || sb.orgId || null;
     } catch (e) { err = e.message?.slice(0, 160); ms = Date.now() - t0; }
-    const spike = ms != null && ms >= SPIKE_MS;
+    const hasTiming = typeof ms === 'number';
+    const spike = hasTiming && ms >= SPIKE_MS;
     rows.push({ i: i + 1, startedAt, id, ms, state, err, spike });
-    console.log(`#${String(i + 1).padStart(2)} ${startedAt} create->running=${ms != null ? ms + 'ms' : 'FAIL'}${spike ? '  <<< SPIKE' : ''}  id=${id ?? '-'}${err ? `  err=${err}` : ''}`);
+    console.log(`#${String(i + 1).padStart(2)} ${startedAt} create->running=${hasTiming ? ms + 'ms' : 'FAIL'}${spike ? '  <<< SPIKE' : ''}  id=${id ?? '-'}${err ? `  err=${err}` : ''}`);
     if (id) { try { await d.delete(await d.get(id), 30); } catch {} }
     await sleep(1200);
   }
