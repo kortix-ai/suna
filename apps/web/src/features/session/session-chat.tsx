@@ -5883,6 +5883,9 @@ export function SessionChat({
                   if (name) void local.model.defaults.setAgentDefault(name, m);
                 }
               : undefined,
+            onSetProjectDefault: (m) => {
+              void local.model.defaults.setProjectDefault(m);
+            },
           }}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}

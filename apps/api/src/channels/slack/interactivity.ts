@@ -10,7 +10,12 @@ import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
 import { verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
-import { modelLabel, setChannelAgent, setChannelModel } from './selection';
+import { setChannelAgent, setChannelModel } from './selection';
+import { channelModelContext } from './model-gate';
+import { type SlashCtx, handleSlashCommand } from './commands';
+import { labelForModelRef } from '../../llm-gateway/models/picker';
+import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
+import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
 // Agent-emitted button click (carousel cards, actions blocks). Routes the
@@ -214,17 +219,71 @@ async function handleSetSelection(
     return;
   }
 
-  const model = value.m && value.m.length > 0 ? value.m : null;
-  const ok = await setChannelModel(ctx, model);
+  const requested = value.m && value.m.length > 0 ? value.m : null;
+  if (!requested) {
+    const ok = await setChannelModel(ctx, null);
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: ok
+        ? '✓ Model reset to the project default.'
+        : 'That channel is no longer connected to a project — run `/kortix` first.',
+    });
+    return;
+  }
+  // Picker options are already servable, but re-validate before persisting so a
+  // stored model can NEVER 404 at request time ("model isn't available").
+  const gate = await channelModelContext(ctx);
+  if (gate) {
+    const servable = await isModelServableForAccount({
+      userId: gate.ownerUserId,
+      accountId: gate.accountId,
+      projectId: gate.projectId,
+      freeModelsOnly: gate.freeManagedOnly,
+      model: requested,
+    });
+    if (!servable) {
+      await respondViaUrl(payload.response_url, {
+        response_type: 'ephemeral',
+        replace_original: true,
+        text: `⚠️ \`${escapeMrkdwn(requested)}\` isn't available for this workspace. Pick another, or connect that provider's API key in Kortix.`,
+      });
+      return;
+    }
+  }
+  const stored = toOpencodeModelRef(requested);
+  const ok = await setChannelModel(ctx, stored);
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     replace_original: true,
-    text: !ok
-      ? 'That channel is no longer bound to a project — run `/kortix switch` first.'
-      : model
-        ? `✓ Model for this channel set to *${escapeMrkdwn(modelLabel(model))}* (\`${escapeMrkdwn(model)}\`). New sessions will use it.`
-        : '✓ Model reset to the project default.',
+    text: ok
+      ? `✓ Model for this channel set to *${escapeMrkdwn(labelForModelRef(stored))}* (\`${escapeMrkdwn(stored)}\`). New sessions will use it.`
+      : 'That channel is no longer connected to a project — run `/kortix` first.',
   });
+}
+
+// A `/kortix` panel "Change model/agent/project" button. Re-runs the matching
+// slash subcommand for the channel and replaces the panel with that picker, so
+// the whole config flow lives behind one command + inline buttons.
+async function handleConfigOpen(
+  payload: SlackInteractionPayload,
+  actionId: 'cfg_open_models' | 'cfg_open_agents' | 'cfg_open_projects',
+): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const channelId = payload.channel?.id ?? '';
+  if (!teamId || !channelId || !payload.response_url) return;
+  const sub = actionId === 'cfg_open_models' ? 'models' : actionId === 'cfg_open_agents' ? 'agents' : 'switch';
+  const ctx: SlashCtx = {
+    teamId,
+    channelId,
+    slackUserId: payload.user?.id ?? '',
+    command: '/kortix',
+    responseUrl: payload.response_url,
+  };
+  // `agents` defers internally (git) and posts the real picker via responseUrl;
+  // its sync return is a "Loading…" ack. `models`/`switch` return full blocks.
+  const resp = await handleSlashCommand(sub, '', ctx);
+  await respondViaUrl(payload.response_url, { ...resp, replace_original: true });
 }
 
 // Message shortcut ("Open in Kortix", callback_id `open_session`). Resolves the
@@ -455,6 +514,26 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   if (action.action_id.startsWith('set_model')) {
     await handleSetSelection(payload, action.value ?? '', 'model');
+    return;
+  }
+
+  // `/kortix` panel "Change …" buttons re-render the focused picker in place.
+  if (
+    action.action_id === 'cfg_open_models' ||
+    action.action_id === 'cfg_open_agents' ||
+    action.action_id === 'cfg_open_projects'
+  ) {
+    await handleConfigOpen(payload, action.action_id);
+    return;
+  }
+
+  // URL buttons (open a link) — swallow so they don't fall to the agent-click
+  // catch-all and get echoed back into a thread.
+  if (
+    action.action_id.startsWith('panel_open_') ||
+    action.action_id.startsWith('whoami_open_') ||
+    action.action_id.startsWith('whoami_repo_')
+  ) {
     return;
   }
 

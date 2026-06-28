@@ -40,6 +40,7 @@ import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
+  resolveEffectiveModel,
 } from "../../llm-gateway/resolution/default-model";
 import {
   deleteAccountModelPreference,
@@ -1382,25 +1383,36 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const ownerAccountId = loaded.row.accountId as string;
+    const userId = c.get("userId") as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
     const freeTier =
       config.KORTIX_BILLING_INTERNAL_ENABLED
         ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
         : false;
+    // Honest project-level resolution (project → account → platform) + where it
+    // came from, so the UI can show "Sonnet 4.6 · project default". The
+    // authoritative per-request resolution still happens in the gateway.
+    const resolved = await resolveEffectiveModel({
+      userId,
+      accountId: ownerAccountId,
+      projectId,
+      explicit: null,
+      freeModelsOnly: freeTier,
+    });
     return c.json({
       platformDefault: AUTO_DEFAULT_MODEL_ID,
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
-      // Account-level resolution (agent/vision-agnostic) for picker display; the
-      // authoritative per-request resolution still happens in the gateway.
-      resolvedForCaller: defaults.account ?? AUTO_DEFAULT_MODEL_ID,
+      projectDefault: defaults.projects[projectId] ?? null,
+      resolvedForCaller: resolved.model ?? AUTO_DEFAULT_MODEL_ID,
+      resolvedSource: resolved.source,
       freeTier,
     });
   },
 );
 
 const ModelDefaultBody = z.object({
-  scope: z.enum(["account", "agent"]),
+  scope: z.enum(["account", "agent", "project"]),
   agentName: z.string().min(1).max(128).optional(),
   model: z.string().min(1).max(128),
 });
@@ -1467,7 +1479,8 @@ projectsApp.openapi(
     await upsertAccountModelPreference({
       accountId: ownerAccountId,
       scope,
-      scopeKey: agentName,
+      // agent → agent name; project → the project id; account → '' (in the repo).
+      scopeKey: scope === "agent" ? agentName : scope === "project" ? projectId : undefined,
       model,
       updatedBy: userId,
     });
@@ -1492,7 +1505,7 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string() }),
       query: z.object({
-        scope: z.enum(["account", "agent"]),
+        scope: z.enum(["account", "agent", "project"]),
         agentName: z.string().min(1).max(128).optional(),
       }),
     },
@@ -1511,8 +1524,8 @@ projectsApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");
-    if (scope !== "account" && scope !== "agent") {
-      return c.json({ error: "scope must be 'account' or 'agent'", code: "invalid_scope" }, 400);
+    if (scope !== "account" && scope !== "agent" && scope !== "project") {
+      return c.json({ error: "scope must be 'account', 'agent', or 'project'", code: "invalid_scope" }, 400);
     }
     if (scope === "agent" && !agentName) {
       return c.json(
@@ -1520,7 +1533,8 @@ projectsApp.openapi(
         400,
       );
     }
-    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey: agentName });
+    const scopeKey = scope === "agent" ? agentName : scope === "project" ? projectId : undefined;
+    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
     invalidateAccountModelDefaults(ownerAccountId);
     return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
   },

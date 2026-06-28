@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Bot, Check, ChevronDown, CreditCard, KeyRound, Plus, SlidersHorizontal, Star } from 'lucide-react';
+import { Bot, Check, ChevronDown, CreditCard, FolderGit2, KeyRound, Plus, SlidersHorizontal, Star } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -109,6 +109,8 @@ export interface ModelDefaultControls {
   agentName?: string;
   onSetAccountDefault: (model: ModelRef) => void;
   onSetAgentDefault?: (model: ModelRef) => void;
+  /** When set (in-project picker), pin the model as this project's default. */
+  onSetProjectDefault?: (model: ModelRef) => void;
 }
 
 export interface ModelSelectorProps {
@@ -532,6 +534,19 @@ export function ModelSelector({
                     <Star className="size-3.5 shrink-0" />
                     Set as my default model
                   </button>
+                  {defaultControls.onSetProjectDefault ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        defaultControls.onSetProjectDefault?.(selectedModel);
+                        setOpen(false);
+                      }}
+                      className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
+                    >
+                      <FolderGit2 className="size-3.5 shrink-0" />
+                      Set as this project&apos;s default
+                    </button>
+                  ) : null}
                   {defaultControls.agentName && defaultControls.onSetAgentDefault ? (
                     <button
                       type="button"

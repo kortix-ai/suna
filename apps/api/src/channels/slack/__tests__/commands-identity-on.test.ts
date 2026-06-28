@@ -24,10 +24,9 @@ mock.module('../selection', () => ({
   setChannelConversationPolicy: async () => true,
   setChannelModel: async () => true,
   listProjectAgents: async () => [],
-  RECOMMENDED_MODELS: [],
   isValidModelId: () => true,
-  modelLabel: (id: string) => id,
 }));
+mock.module('../model-gate', () => ({ channelModelContext: async () => null }));
 mock.module('../participants', () => ({
   conversationPolicyLabel: () => 'Owner approval',
   normalizeConversationPolicy: () => 'owner_approval',
