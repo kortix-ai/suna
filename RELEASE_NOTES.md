@@ -1,3 +1,6 @@
-Release v0.9.85 — Slack identity and account bootstrap hardening
+Fix false 'agent switch requires a new session' on new sessions
 
-Promotes the staged Slack identity and session access hardening plus the fresh-account /accounts/me bootstrap repair. Includes the live staging candidate at 79d43a7f with staging API health verified before production promotion.
+**Fixes**
+- Stop the false **AGENT_SWITCH_REQUIRES_NEW_SESSION** 409 that blocked new sessions on the second message. The proxy now treats the `default` agent sentinel as non-binding and only blocks a genuine switch between two distinct concrete agents; for default sessions the echoed agent is stripped so OpenCode runs its booted `default_agent`.
+- Agent picker: clearer hover tooltip explaining a session's agent is fixed at start (start a new session to switch); switcher behavior unchanged.
+- Includes billing duplicate-suppression and Platinum snapshot upload fixes already on main.

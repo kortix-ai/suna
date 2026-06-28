@@ -237,13 +237,16 @@ export function AgentSelector({
   const displayName = currentAgent?.name || 'Agent';
 
   return (
-    <CommandPopover open={open} onOpenChange={setOpen}>
+    // When locked we keep the trigger hoverable (no native `disabled`, which
+    // would suppress hover) but gate the popover shut, so the tooltip can still
+    // explain WHY the agent can't be switched mid-session.
+    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <Tooltip>
         <TooltipTrigger asChild>
           <CommandPopoverTrigger>
             <button
               type="button"
-              disabled={disabled}
+              aria-disabled={disabled || undefined}
               aria-label={tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
               )}
@@ -264,11 +267,19 @@ export function AgentSelector({
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          <p>
-            {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-            <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">Tab</kbd>
-          </p>
+        <TooltipContent side="top" className="max-w-[240px] text-xs">
+          {disabled ? (
+            <p>
+              {"This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."}
+            </p>
+          ) : (
+            <p>
+              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
+              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
+                Tab
+              </kbd>
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
 
