@@ -26,6 +26,43 @@ Carve-outs where you don't need to ask — just proceed: read-only
 investigation/questions, and trivial single-file typo/comment fixes on the
 current branch.
 
+## Architecture: `@kortix/sdk` is the source of truth
+
+`@kortix/sdk` is the **single source of truth** for everything that talks to the
+Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
+OpenCode runtime, SSE streaming, model state, and auth-token plumbing. The apps
+(`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
+these as standing rules whenever you touch the data/runtime layer:
+
+- **Logic lives in the SDK, never in a host.** No raw `fetch` to the Kortix API,
+  no `@opencode-ai/sdk` imports, no transport / runtime / data-state code written
+  in app code. New data or runtime behavior is added to the SDK and exposed
+  through its public surface — not hand-rolled or duplicated in a host. If you
+  need something the SDK doesn't expose, add it to the SDK.
+- **One client per host.** Create it once via `createKortix({ backendUrl,
+  getToken })` and read everything through `@kortix/sdk` + `@kortix/sdk/react`.
+  Auth is just `getToken` — an API key / PAT for programmatic use, or a Supabase
+  JWT for the logged-in web app. Hosts never instantiate a second client.
+- **A whole session is one hook.** `useSession(projectId, sessionId)` owns the
+  entire runtime lifecycle — `/start`, the sandbox switch, the live SSE stream,
+  readiness seeding, the canonical OpenCode id, and message sync. Hosts don't
+  hand-roll the mount, drive a server-store "switch", or mount a separate event
+  provider.
+- **Session-scoped + provider-agnostic.** The public API is session-scoped
+  (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
+  "Sandbox" and the provider (daytona / local_docker / …) are server-side
+  concerns; client code must never branch on them.
+- **`apps/web` data modules are shims.** Files such as
+  `apps/web/src/stores/server-store`, `lib/projects-client`, and
+  `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).
+  Keep them as shims; put the real logic in the SDK. When a merge conflict lands
+  on one of these, **keep the shim (`--ours`) and port any new host-side logic
+  into the SDK** — do not revert to a host-local implementation.
+- **Docs are the spec.** `apps/web/content/docs/sdk/*` and
+  `packages/sdk/README.md` describe the intended surface. Keep them current with
+  the SDK, and flag legacy/deprecated surfaces in-doc rather than documenting them
+  as current.
+
 ## You CAN run and verify everything end-to-end. Do it.
 
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
