@@ -13,8 +13,27 @@
  */
 import type { ProjectConfigSummary } from '../git/types';
 import { filterAccessibleProjectResources, hasAnyResourceGrants } from '../../iam';
-import { loadProjectConfig } from '../git';
+import { loadProjectConfig, listRepoFiles } from '../git';
 import { withProjectGitAuth } from './git';
+
+/**
+ * Load a project's config WITH its repo file list. File-based agents/skills
+ * (`.opencode/agent/*.md`, `skills/<slug>/`) are discovered by scanning the
+ * files passed to loadProjectConfig — calling it with `[]` finds NONE. Every
+ * resource path (the grant picker, the visibility denier) must go through this.
+ */
+export async function loadConfigWithFiles(
+  row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string },
+): Promise<ProjectConfigSummary> {
+  const gitProject = await withProjectGitAuth(row);
+  let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
+  try {
+    files = await listRepoFiles(gitProject, row.defaultBranch);
+  } catch {
+    // Repo momentarily unreachable — fall back to manifest-only discovery.
+  }
+  return loadProjectConfig(gitProject, files);
+}
 
 export interface ProjectResourceItem {
   /** Stable grant key — agent name / skill slug. */
@@ -183,12 +202,12 @@ export async function resourceDenierForRequest(ctx: {
   accountId: string;
   projectId: string;
   actingTokenId?: string;
-  row: Parameters<typeof withProjectGitAuth>[0];
+  row: Parameters<typeof withProjectGitAuth>[0] & { defaultBranch: string };
 }): Promise<ResourceDenier | null> {
   if (!(await hasAnyResourceGrants(ctx.projectId))) return null;
   let config: ProjectConfigSummary;
   try {
-    config = await loadProjectConfig(await withProjectGitAuth(ctx.row), []);
+    config = await loadConfigWithFiles(ctx.row);
   } catch (err) {
     console.warn('[resource-denier] config load failed; skipping file-path scoping', {
       projectId: ctx.projectId,

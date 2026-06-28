@@ -8,9 +8,7 @@ import {
 } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
-import { loadProjectConfig } from '../git';
-import { withProjectGitAuth } from '../lib/git';
-import { projectHasResource, projectResourcesFromConfig } from '../lib/project-resources';
+import { projectHasResource, projectResourcesFromConfig, loadConfigWithFiles } from '../lib/project-resources';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
@@ -813,7 +811,7 @@ projectsApp.openapi(
     let resources: { agents: { id: string }[]; skills: { id: string }[] } = { agents: [], skills: [] };
     let configLoaded = false;
     try {
-      const config = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+      const config = await loadConfigWithFiles(loaded.row);
       resources = projectResourcesFromConfig(config);
       configLoaded = true;
     } catch (err) {
@@ -933,7 +931,7 @@ projectsApp.openapi(
     // a silent dead row that scopes a phantom resource.
     let config;
     try {
-      config = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+      config = await loadConfigWithFiles(loaded.row);
     } catch (err) {
       return c.json({ error: `project config unavailable: ${err instanceof Error ? err.message : String(err)}` }, 400);
     }
