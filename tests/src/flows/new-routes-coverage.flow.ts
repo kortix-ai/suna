@@ -250,3 +250,69 @@ flow(
     });
   },
 );
+
+flow(
+  'COV-8',
+  {
+    domain: 'coverage',
+    routes: [
+      'GET /v1/projects/:projectId/llm-catalog',
+      'GET /v1/projects/:projectId/marketplace',
+      'GET /v1/projects/:projectId/marketplace/updates',
+      'POST /v1/projects/:projectId/marketplace/install',
+      'POST /v1/projects/:projectId/marketplace/update',
+      'POST /v1/projects/:projectId/marketplace/update-all',
+      'DELETE /v1/projects/:projectId/marketplace/:name',
+      'POST /v1/projects/:projectId/registry/update-all',
+      'PATCH /v1/projects/:projectId/channels/email/installation',
+      'POST /v1/channels/slack/identity/bind',
+      'POST /internal/gateway/authorize',
+    ],
+  },
+  async (ctx) => {
+    const params = { projectId: ZERO_UUID };
+
+    await ctx.step('unauthenticated project marketplace and catalog routes are gated', async () => {
+      for (const route of [
+        '/v1/projects/:projectId/llm-catalog',
+        '/v1/projects/:projectId/marketplace',
+        '/v1/projects/:projectId/marketplace/updates',
+      ]) {
+        const r = await ctx.client.as(ctx.P.ANON).get(route, { params });
+        r.status(401);
+      }
+    });
+
+    await ctx.step('unauthenticated marketplace mutation routes are gated', async () => {
+      for (const route of [
+        '/v1/projects/:projectId/marketplace/install',
+        '/v1/projects/:projectId/marketplace/update',
+        '/v1/projects/:projectId/marketplace/update-all',
+        '/v1/projects/:projectId/registry/update-all',
+      ]) {
+        const r = await ctx.client.as(ctx.P.ANON).post(route, {}, { params });
+        r.status(401);
+      }
+
+      const del = await ctx.client.as(ctx.P.ANON).del('/v1/projects/:projectId/marketplace/:name', {
+        params: { ...params, name: 'missing' },
+      });
+      del.status(401);
+    });
+
+    await ctx.step('unauthenticated email and Slack identity mutations are gated', async () => {
+      const email = await ctx.client
+        .as(ctx.P.ANON)
+        .patch('/v1/projects/:projectId/channels/email/installation', {}, { params });
+      email.status(401);
+
+      const slack = await ctx.client.as(ctx.P.ANON).post('/v1/channels/slack/identity/bind', {});
+      slack.status(401);
+    });
+
+    await ctx.step('internal gateway authorization rejects missing internal credentials', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/authorize', {});
+      r.status([401, 503]);
+    });
+  },
+);
