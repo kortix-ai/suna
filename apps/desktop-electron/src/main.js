@@ -26,12 +26,12 @@ const {
 const path = require('node:path');
 const fs = require('node:fs');
 
-// Stable product name → clean UA token. Set before anything reads it.
-app.setName('Kortix');
-// Dedicated data dir. Isolating from the default "Kortix" Application Support
-// folder avoids inheriting another app's stale Chromium state (per-site zoom,
-// GPU cache) — a real cause of blurry rendering.
-app.setPath('userData', path.join(app.getPath('appData'), 'Kortix Desktop'));
+// Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
+// dev builds. Per-name data dir so dev + prod coexist without sharing a session,
+// and so we never inherit another "Kortix" app's stale Chromium state (per-site
+// zoom / GPU cache) — a real cause of blurry rendering. `${name} Desktop` keeps
+// us off the bare "Kortix" Application Support folder.
+app.setPath('userData', path.join(app.getPath('appData'), `${app.getName()} Desktop`));
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -689,9 +689,12 @@ function registerIpc() {
    append the KortixDesktop marker the web middleware + isDesktop() rely on. */
 
 function applyUserAgent() {
+  // Strip the Electron token and the product token (whatever the app is named —
+  // "Kortix" or "Kortix Dev") before appending the stable KortixDesktop marker.
+  const name = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const ua = app.userAgentFallback
     .replace(/\sElectron\/\S+/, '')
-    .replace(/\sKortix\/\S+/, '');
+    .replace(new RegExp(`\\s${name}\\/\\S+`), '');
   app.userAgentFallback = `${ua} ${UA_TOKEN}`;
 }
 

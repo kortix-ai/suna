@@ -123,6 +123,8 @@ jobs:
             --publish never \
             --config.extraMetadata.version="${{ steps.ver.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.productName="Kortix Dev" \
+            --config.extraMetadata.productName="Kortix Dev" \
             --config.appId="$DESKTOP_APP_ID"
         env:
           # macOS signing + notarization (electron-builder conventions).

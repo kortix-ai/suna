@@ -1,5 +1,6 @@
 {
   "name": "@kortix/desktop-electron",
+  "productName": "Kortix",
   "version": "0.1.0",
   "private": true,
   "description": "Kortix desktop shell — Electron wrapper around the web app",
