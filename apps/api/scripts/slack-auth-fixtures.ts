@@ -276,9 +276,9 @@ Usage:
   bun apps/api/scripts/slack-auth-fixtures.ts policy <channel_id> <project_open|owner_approval|owner_only>
   bun apps/api/scripts/slack-auth-fixtures.ts inventory
 
-Workspace: ${workspaceId}
-Slack user: ${slackUserId}
-Project: ${projectId}
+Workspace: configured by SLACK_AUTH_WORKSPACE_ID or the fixture default
+Slack user: configured by SLACK_AUTH_USER_ID or the fixture default
+Project: configured by SLACK_AUTH_FIXTURE_PROJECT_ID or the fixture default
 Fixture password: set by SLACK_AUTH_FIXTURE_PASSWORD or the local fixture default
 `);
 }
