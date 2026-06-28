@@ -24,7 +24,6 @@ import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { restartSession, startSession } from '../session-lifecycle';
-import { dropPoolPresence } from '../../platform/services/warm-pool';
 import {
   refreshCrTips,
 } from './shared';
@@ -82,52 +81,6 @@ projectsApp.openapi(
   },
 );
 
-// POST /v1/projects/:projectId/presence
-// Warm-pool presence heartbeat. The web client pings this every ~45s while the
-// project tab is open + visible. loadProjectForUser records DB presence for
-// write-capable members (warm-pool notePoolPresence), keeping a spare parked +
-// refilled; the reconcile reaps spares once presence stops.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/presence',
-    tags: ['sessions'],
-    summary: 'POST /:projectId/presence — warm-pool presence heartbeat',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.object({ ok: z.boolean() }), 'OK'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    return c.json({ ok: true }, 200);
-  },
-);
-
-// POST /v1/projects/:projectId/presence/leave
-// Sent (keepalive fetch) when the project tab closes/hides. Drops presence and
-// reaps the project's parked/booting spares immediately, so warm-pool cost
-// tracks projects-open-now. loadProjectForUser skips the presence kick here.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/presence/leave',
-    tags: ['sessions'],
-    summary: 'POST /:projectId/presence/leave — warm-pool leave beacon',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: { 200: json(z.object({ ok: z.boolean() }), 'OK'), ...errors(404) },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await dropPoolPresence(projectId);
-    return c.json({ ok: true }, 200);
-  },
-);
-
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
 // Reboot the existing sandbox in place via the provider SDK (stop+start) — the
 // box and its disk (repo clone, deps, opencode) are kept, never removed. Only
@@ -155,7 +108,7 @@ projectsApp.openapi(
     if (!UUID_V4_REGEX.test(sessionId))
       return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
     // Restart is reserved for the session owner or a project manager.

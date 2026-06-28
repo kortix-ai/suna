@@ -97,10 +97,8 @@ export async function reconcileSnapshotQuota(
   );
   // Per-project warm snapshots (kortix-wproj-*) are referenced via
   // projects.metadata. Protect a pointer ONLY while its project is alive and
-  // recently ACTIVE (a session in the activity window, or portal presence) —
-  // archived/dormant projects' snapshots are reclaimable: their sessions fall
-  // back to the generic warm base, and the pool-presence hook re-bakes the
-  // snapshot the moment someone returns. Pointers of reclaimed snapshots are
+  // recently ACTIVE (a session in the activity window) — archived/dormant
+  // projects' snapshots are reclaimable. Pointers of reclaimed snapshots are
   // cleared below so session boot never chases a deleted name.
   const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
   const pointerRows = await db.execute(sql`
@@ -108,8 +106,7 @@ export async function reconcileSnapshotQuota(
            p.metadata -> 'warm_snapshot' ->> 'name' AS name,
            (
              p.status <> 'archived' AND (
-               coalesce((p.metadata ->> 'warm_pool_seen_at')::timestamptz, 'epoch'::timestamptz) > ${activityCutoff}::timestamptz
-               OR EXISTS (
+               EXISTS (
                  SELECT 1 FROM kortix.project_sessions ps
                  WHERE ps.project_id = p.project_id AND ps.created_at > ${activityCutoff}::timestamptz
                )

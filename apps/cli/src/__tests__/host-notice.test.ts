@@ -11,6 +11,7 @@ const ENV_KEYS = [
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_SESSION_ID',
   'BASH_ENV',
   'KORTIX_DISABLE_SANDBOX_ENV_FILE',
   'KORTIX_CONFIG_FILE',
@@ -90,6 +91,32 @@ describe('host notice', () => {
       expect(notice).toContain('https://dev-api.kortix.com/v1');
       expect(notice).toContain('user@example.com (user)');
       expect(notice).not.toContain('https://api.kortix.com');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('shows session-token auth when sandbox env includes a session id', () => {
+    const dir = writeConfig({
+      cloud: {
+        url: 'https://api.kortix.com',
+        token: '',
+        user_id: '',
+        user_email: '',
+        account_id: '',
+        logged_in_at: '',
+      },
+    });
+    try {
+      process.env.KORTIX_API_URL = 'https://api.kortix.com/v1';
+      process.env.KORTIX_CLI_TOKEN = 'kortix_pat_session';
+      process.env.KORTIX_PROJECT_ID = 'proj_123';
+      process.env.KORTIX_SESSION_ID = 'sess_123';
+
+      const notice = renderHostNotice(['whoami']);
+      expect(notice).toContain('host sandbox');
+      expect(notice).toContain('authenticated (session token)');
+      expect(notice).not.toContain('authenticated (project token)');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

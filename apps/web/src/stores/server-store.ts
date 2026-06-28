@@ -502,7 +502,7 @@ export const useServerStore = create<ServerStore>()(
         // that reads it before the next health poll (runtime-ready marks, the
         // ensure/opencode query gates) was acting on another sandbox's health
         // — observed live as runtime-ready firing 1ms BEFORE server-switched
-        // and the chat wedging against a mid-claim runtime. Null-safe: the
+        // and the chat wedging against a mid-boot runtime. Null-safe: the
         // connection store registers this lazily (see registerConnSwitchReset);
         // before then the hook's effect-reset covers it.
         _connSwitchReset?.();

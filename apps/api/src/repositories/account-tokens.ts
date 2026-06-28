@@ -34,8 +34,8 @@ export interface CreateAccountTokenParams {
   accountId: string;
   userId: string;
   name: string;
-  /** Non-null = project-scoped token (sandbox injection). Null/undefined
-   *  = user-scoped (laptop CLI). */
+  /** Non-null = token is scoped to one project. Session executor tokens also
+   *  set sessionId + agentGrant. Null/undefined = user-scoped laptop CLI PAT. */
   projectId?: string;
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
    *  through the gateway is attributed to the session. */

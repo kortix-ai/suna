@@ -1,11 +1,12 @@
 'use client';
 
-import { CheckCircle2, Loader2, Slack, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { slackIdentityApi } from '@/lib/api/slack-identity';
 
@@ -27,6 +28,8 @@ export default function SlackLoginPage() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [resumed, setResumed] = useState(false);
+  const [hasAccess, setHasAccess] = useState(true);
 
   useEffect(() => {
     if (isLoading) return;
@@ -62,6 +65,8 @@ export default function SlackLoginPage() {
     try {
       const res = await slackIdentityApi.bind(token);
       setWorkspaceName(res.workspaceName);
+      setResumed(res.resumed);
+      setHasAccess(res.hasAccess);
       setPhase('success');
     } catch (err) {
       setError((err as Error).message);
@@ -75,7 +80,13 @@ export default function SlackLoginPage() {
         <ResultCard
           ok
           title="Slack connected"
-          message={`Kortix will now run as your account${workspaceName ? ` in ${workspaceName}` : ''}. Head back to Slack and send your message again. You can close this tab.`}
+          message={
+            !hasAccess
+              ? `Your Kortix account is connected${workspaceName ? ` in ${workspaceName}` : ''}. Head back to Slack and request project access to continue.`
+              : resumed
+                ? `Your Kortix account is connected${workspaceName ? ` in ${workspaceName}` : ''}. Kortix is picking up your Slack message now.`
+                : `Your Kortix account is connected${workspaceName ? ` in ${workspaceName}` : ''}. Head back to Slack and mention Kortix with a task.`
+          }
         />
       </Centered>
     );
@@ -88,7 +99,7 @@ export default function SlackLoginPage() {
         <div className="p-7">
           <div className="mb-6 flex items-center gap-3">
             <div className="bg-muted/40 grid size-11 place-items-center rounded-2xl border">
-              <Slack className="size-5" />
+              <Icon.Slack className="size-5" />
             </div>
             <div>
               <div className="text-base font-semibold">Connect Slack to Kortix</div>
@@ -97,8 +108,8 @@ export default function SlackLoginPage() {
           </div>
 
           <p className="text-muted-foreground text-sm">
-            Connecting lets the Kortix bot run as <strong className="text-foreground">your</strong> account when you
-            message it in Slack — using your own credentials, secrets, and connected apps instead of the installer&apos;s.
+            Connect or create a Kortix account so the Slack bot can run as <strong className="text-foreground">you</strong> —
+            using your own credentials, secrets, and connected apps instead of the installer&apos;s.
           </p>
 
           <dl className="bg-muted/30 mt-5 space-y-2 rounded-2xl border p-4 text-sm">
@@ -126,7 +137,7 @@ export default function SlackLoginPage() {
                 </>
               ) : (
                 <>
-                  <Slack className="size-4" /> Connect my account
+                  <Icon.Slack className="size-4" /> Connect account
                 </>
               )}
             </Button>

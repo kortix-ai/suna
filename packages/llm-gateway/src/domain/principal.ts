@@ -12,6 +12,13 @@ export interface AuthedPrincipal {
   // with internal billing on). The served catalog still includes BYOK/Codex
   // project models so users can connect their own provider.
   freeModelsOnly?: boolean;
+  // The account/agent-configured default model this principal's session should use
+  // when it asks for the synthetic `auto` model — a concrete gateway wire model
+  // (e.g. 'glm-5.2', 'anthropic/claude-sonnet-4.6'), never `auto`. Resolved once at
+  // authentication (agent default → account default) and undefined when there is no
+  // configured default (→ the platform default applies). Travels with the principal
+  // across the RPC boundary so the standalone pod resolves `auto` identically.
+  defaultModel?: string;
 }
 
 export type BillingMode = 'credits' | 'platform-fee' | 'none';

@@ -27,15 +27,15 @@ export interface ProjectRoleDescriptor {
 export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor> = {
   viewer: {
     label: 'Viewer',
-    blurb: 'Read-only. See the project, sessions, triggers, and members.',
+    blurb: 'Use the project: start sessions and chat with the agent.',
     summary:
-      'Can open the project and read its sessions, triggers, and member list. Cannot edit anything, run sessions, or change settings.',
+      'The base role. Can open the project, start and run sessions, and use the agent chat. Cannot customize the project — no editing settings, deploying, managing members, or changing triggers.',
   },
   editor: {
     label: 'Editor',
-    blurb: 'Everything a viewer sees, plus edit the project and run sessions.',
+    blurb: 'Everything a viewer does, plus edit and customize the project.',
     summary:
-      'Everything a viewer can do, plus edit the project, deploy, start/stop sessions, and create or fire triggers. Cannot invite members or change project settings.',
+      'Everything a viewer can do, plus edit the project, deploy, and create or fire triggers. Cannot invite members, change member roles, or delete the project.',
   },
   manager: {
     label: 'Manager',

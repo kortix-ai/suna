@@ -9,6 +9,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
+import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
@@ -347,6 +348,14 @@ projectsApp.openapi(
       message,
     })
     .returning();
+
+  await notifyProjectAccessRequestManagers({
+    accountId: project.accountId,
+    projectId,
+    requesterUserId: userId,
+    requesterEmail: created.requesterEmail,
+    message,
+  });
 
   return c.json({ status: 'created', request: serializeProjectAccessRequest(created) }, 201);
 },

@@ -49,10 +49,11 @@ compile_with_retry() {
 # Typecheck BEFORE the bundler runs. `bun build --compile` is a bundler — it
 # does NOT typecheck, so a name referenced but never declared (e.g. a variable
 # dropped during a merge while its use survived) compiles cleanly into a binary
-# that throws ReferenceError at runtime. That exact class shipped a daemon that
-# crashed on every warm-pool claim (cloneAtPark, 2026-06-19) → port 8000 never
-# rebound → every proxied request 502'd → sandboxes stuck at "Starting the
-# agent" forever. Gate the compile on a clean tsc so it can never recur.
+# that throws ReferenceError at runtime. That exact class once shipped a daemon
+# that crashed during restored-snapshot startup (2026-06-19) → port
+# 8000 never rebound → every proxied request 502'd → sandboxes stuck at
+# "Starting the agent" forever. Gate the compile on a clean tsc so it can never
+# recur.
 echo "Typechecking (tsc --noEmit) before compile…"
 bun run typecheck
 

@@ -28,9 +28,9 @@ export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
       return c.json({ error: 'refresh already running' }, 409)
     }
 
-    // `?base=1` syncs the workspace to the latest base tip (warm-pool claim);
+    // `?base=1` syncs a restored warm-snapshot workspace to the latest base tip;
     // `?restart=0` skips the opencode restart (the file watcher picks up changes
-    // — keeps a warm claim fast). Default behaviour is the full refresh+restart.
+    // and keeps warm-snapshot restore fast). Default behaviour is refresh+restart.
     const syncBase = c.req.query('base') === '1'
     const skipRestart = c.req.query('restart') === '0'
 

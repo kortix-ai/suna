@@ -20,7 +20,6 @@ import {
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { useProjectPresence } from '@/hooks/platform/use-project-presence';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
@@ -67,11 +66,6 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-
-  // Warm-pool presence: heartbeat while this project tab is open so a spare stays
-  // ready for the next session, and reap it on close. Keeps warm cost scoped to
-  // open projects (no-op unless the pool is enabled + the member can launch).
-  useProjectPresence(projectId);
 
   // Billing gate. An account that cannot run should not start a session — the
   // backend would never provision a sandbox, so polling for one spins forever.
@@ -157,8 +151,8 @@ export default function ProjectSessionPage() {
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       try {
-        // If /start already resolved the runtime as ready (warm claim: the box
-        // was pre-warmed and the pin handed to us), seed the connection store
+        // If /start already resolved the runtime as ready (for example, restored
+        // from a warm snapshot), seed the connection store
         // connected+healthy through the switch so the chat shows without an extra
         // client /kortix/health RTT. Otherwise fall back to provisioning-verified
         // (the health poller resolves readiness). The poller runs either way.

@@ -8,29 +8,25 @@ import {
   Edit3,
   FileCode,
   Loader2,
-  Minus,
   Package,
   Plus,
   RefreshCw,
   Sparkles,
   Trash2,
   XCircle,
-  Zap,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form';
 import { Button } from '@/components/ui/button';
 import { List } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { useSandboxRecovery } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
 import {
   buildSandboxTemplate,
   deleteSandboxTemplate,
   listProjectSnapshots,
-  updateTemplateWarmPool,
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
   type SandboxTemplate,
@@ -38,8 +34,6 @@ import {
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-
-const MAX_WARM_SIZE = 25;
 
 interface SandboxSnapshotCardProps {
   projectId: string;
@@ -160,145 +154,15 @@ function formatRelative(input: string | null | undefined): string {
   return new Date(input).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/**
- * Per-template warm pool control (Customize → Sandbox → template row). Keeps N
- * pre-booted sandboxes of THIS template ready so a session on it opens instantly
- * instead of cold-booting. Opt-in + off by default; only rendered when the
- * operator gate is on (warm_pool_available). Held only while a user is active in
- * the project, then released.
- */
-function TemplateWarmControl({
-  projectId,
-  template,
-  canManage,
-}: {
-  projectId: string;
-  template: SandboxTemplate;
-  canManage: boolean;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const queryClient = useQueryClient();
-  const warm = template.warm_pool;
-  const serverEnabled = warm?.enabled ?? false;
-  const serverSize = warm?.size ?? 1;
-
-  const [enabled, setEnabled] = useState(serverEnabled);
-  const [size, setSize] = useState(serverSize);
-  useEffect(() => {
-    setEnabled(serverEnabled);
-  }, [serverEnabled]);
-  useEffect(() => {
-    setSize(serverSize);
-  }, [serverSize]);
-
-  const save = useMutation({
-    mutationFn: (input: { enabled?: boolean; size?: number }) =>
-      updateTemplateWarmPool(projectId, { slug: template.slug, ...input }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
-    },
-    onError: (err: Error) => {
-      toast.error(err.message || 'Failed to update warm pool');
-      setEnabled(serverEnabled);
-      setSize(serverSize);
-    },
-  });
-
-  const commit = (next: { enabled?: boolean; size?: number }) => {
-    if (!canManage) return;
-    save.mutate(next);
-  };
-  const setSizeClamped = (n: number) => {
-    const clamped = Math.max(0, Math.min(MAX_WARM_SIZE, n));
-    setSize(clamped);
-    commit({ size: clamped });
-  };
-
-  return (
-    <div className="border-border/50 mt-1 flex basis-full flex-wrap items-center gap-x-3 gap-y-2 border-t pt-2.5">
-      <Zap className="text-muted-foreground size-3.5" />
-      <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium">
-          {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextKeepWarm55c849e1')}
-        </div>
-        <div className="text-muted-foreground text-[11px]">
-          {tI18nHardcoded.raw(
-            'autoComponentsProjectsSandboxSnapshotCardJsxTextPreBootSandboxes7405a223',
-          )}
-        </div>
-        {enabled && warm && (
-          <div className="mt-1 flex items-center gap-3 text-[11px]">
-            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-500">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              {warm.ready} ready
-            </span>
-            {warm.warming > 0 && (
-              <span className="text-muted-foreground inline-flex items-center gap-1.5">
-                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                {warm.warming}{' '}
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsSandboxSnapshotCardJsxTextWarmingfab1d732',
-                )}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      {enabled && (
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-7"
-            disabled={!canManage || save.isPending || size <= 0}
-            onClick={() => setSizeClamped(size - 1)}
-            aria-label={tI18nHardcoded.raw(
-              'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelDecreased514ed20',
-            )}
-          >
-            <Minus className="size-3.5" />
-          </Button>
-          <span className="w-5 text-center text-xs font-medium tabular-nums">{size}</span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-7"
-            disabled={!canManage || save.isPending || size >= MAX_WARM_SIZE}
-            onClick={() => setSizeClamped(size + 1)}
-            aria-label={tI18nHardcoded.raw(
-              'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelIncrease82989967',
-            )}
-          >
-            <Plus className="size-3.5" />
-          </Button>
-        </div>
-      )}
-      <Switch
-        checked={enabled}
-        disabled={!canManage || save.isPending}
-        onCheckedChange={(v) => {
-          setEnabled(v);
-          commit({ enabled: v });
-        }}
-        aria-label={tI18nHardcoded.raw(
-          'autoComponentsProjectsSandboxSnapshotCardJsxAttrAriaLabelKeepb2a43916',
-        )}
-      />
-    </div>
-  );
-}
-
 function TemplateRow({
   projectId,
   template,
   canManage,
-  warmAvailable,
   onEdit,
 }: {
   projectId: string;
   template: SandboxTemplate;
   canManage: boolean;
-  warmAvailable: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -408,9 +272,6 @@ function TemplateRow({
           )}
         </div>
       )}
-      {warmAvailable && template.warm_pool && (
-        <TemplateWarmControl projectId={projectId} template={template} canManage={canManage} />
-      )}
     </li>
   );
 }
@@ -431,10 +292,6 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
         templates.some((t) =>
           ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase()),
         );
-      // Poll while any template's warm pool is on — refreshes ready/warming
-      // counts and doubles as the presence heartbeat that keeps spares warm.
-      const anyWarm = templates.some((t) => t.warm_pool?.enabled);
-      if (anyWarm) return 4_000;
       return anyBuilding ? 5_000 : false;
     },
   });
@@ -543,7 +400,6 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
                 projectId={projectId}
                 template={t}
                 canManage={canManage}
-                warmAvailable={data.warm_pool_available ?? false}
                 onEdit={openEditForm}
               />
             ))}
