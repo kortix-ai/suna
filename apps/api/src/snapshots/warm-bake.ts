@@ -319,7 +319,7 @@ fi
 bun --version
 mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps
 cd /opt/kortix/opencode-config-deps
-deps='{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}'
+deps='{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${OPENCODE_VERSION}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}'
 if [ "$(cat package.json 2>/dev/null)" = "$deps" ] && [ -d node_modules ]; then
   echo "config-deps: skip (unchanged)"
 else
@@ -389,8 +389,9 @@ kortix --version`,
     // create-from-snapshot rejects explicit resources ("Cannot specify Sandbox
     // resources when using a snapshot"), and the sized stock snapshots
     // (daytona-medium/large) are not available in the region. Until Daytona
-    // fixes one of those, every warm snapshot bake runs at the genesis size
-    // (1 vCPU / 1 GiB / 3 GiB).
+    // fixes one of those, every warm box runs at the genesis size (1 vCPU /
+    // 1 GiB / 3 GiB). Speed-sensitive paths accept that; resource-sensitive
+    // pool fleets can opt out via KORTIX_WARM_POOL_FULL_SIZE.
 
     onLog?.(`[warm-bake] runtime installed in ${(bakeMs / 1000).toFixed(1)}s; snapshotting → ${opts.name}`);
     const snapStart = Date.now();
@@ -596,7 +597,9 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
  * Best-effort and bounded; safe to fire-and-forget.
  *
  * With no `snapshotName`, sweeps errored boxes for EVERY `kortix-warm-runtime-*`
- * base. This catches failed warm snapshot bakes across process restarts.
+ * base — used by the periodic warm-pool reconcile, since the opportunistic
+ * after-a-failed-create reap can't keep up on a busy environment (each failed
+ * create leaves a fresh corpse) and misses entirely across process restarts.
  */
 export async function reapErroredWarmBoxes(snapshotName?: string, log?: (l: string) => void): Promise<number> {
   if (!warmSnapshotsEnabled()) return 0;
