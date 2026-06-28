@@ -756,6 +756,15 @@ export async function resolvePreviewWsUpstream(opts: {
   if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
     if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
+    // opencode's PTY WS replays its scrollback — including the live shell prompt —
+    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
+    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
+    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
+    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
+    // hits the agent's ticket+cursor default. Default to replay-from-start when the
+    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
+    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
+    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
   }
 
   return { ok: true, url: upstreamUrl.toString(), headers };
