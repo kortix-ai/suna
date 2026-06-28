@@ -88,9 +88,13 @@ explicit pick  >  trigger.model  >  agent default  >  project default  >  accoun
 - **`model_preferences`** (a generalized `account_model_preferences`) holds the
   reusable defaults — `scope ∈ {account, project, agent}` + `scopeKey`
   (`projectId` for project, `agentName` for agent) + `model`.
-- **`trigger.model`** is a nullable field **on the trigger/webhook spec itself**
-  (set where you create the trigger; `null` = "Default" = resolve the chain). It
-  is the most-specific *default-time* override for that run.
+- **`trigger.model`** is a nullable field on the `kortix.toml` `[[triggers]]`
+  entry itself (set where you create the trigger; `null`/absent = "Default" =
+  resolve the chain). It is the most-specific *default-time* override for that run.
+- **`agent.model`** is a nullable field on the `kortix.toml` `[[agents]]` entry —
+  the agent's declarative default. A `model_preferences` (scope=agent) row is an
+  optional dynamic override (wins over the manifest). So "agent default" =
+  `model_preferences.agent ?? manifest [[agents]].model`.
 
 **API.** Generalize `model-defaults` from `{account,agent}` to `{account,project,agent}`:
 
@@ -148,11 +152,14 @@ only if a host truly needs it.
 
 ## Migration plan
 
-1. **API** — (a) generalize `model-defaults` to `{account,project,agent}` scope
-   (`model_preferences` table + routes + `default-model.ts` resolution), dropping
-   `freeTier` from the response (the catalog already encodes availability); (b) add
-   a nullable **`model`** field to the trigger/webhook spec + routes, and have the
-   trigger run resolver check `trigger.model` first.
+1. **API + manifest** — (a) generalize `model-defaults` to `{account,project,agent}`
+   scope (`model_preferences` table + routes + `default-model.ts` resolution),
+   dropping `freeTier` from the response (the catalog already encodes availability);
+   (b) add a nullable **`model`** to `kortix.toml` `[[agents]]` (`AgentSpec`) and
+   `[[triggers]]` (`GitTriggerSpec`) — parse + serialize + validate against the
+   catalog — and have the trigger run resolver check `trigger.model` first, then
+   the agent's `model` (manifest, then DB override). The triggers routes already
+   round-trip the manifest; the agent + model selectors in the UI edit it.
 2. **SDK** — port main's model-defaults into the SDK (not `apps/web`):
    `projects-client.modelDefaults.*` (account/project/agent), `useModelDefaults`,
    the `currentKey`/`sendKey`/`onDefault` split, `modelKeyToWire`/`wireToModelKey`
@@ -184,22 +191,27 @@ only if a host truly needs it.
      > platform default (auto → gateway picks)
    ```
 
-2. **Triggers + webhooks carry an agent AND a model.** Creating a schedule (cron)
-   or a webhook exposes a **server-side selector for both the agent and the
-   model**. The model field defaults to **"Default"** (meaning: leave it to the
-   resolution chain above — agent → project → account → platform) and can be set
-   to a specific model. Agents/triggers do **not** pin a model today; this is new.
-   - Storage: add a nullable **`model`** field to the trigger/webhook spec
-     (alongside the existing `agent`). `null` ⇒ "Default" ⇒ resolve the chain at
-     run time. This keeps a trigger's model part of the trigger's own definition
-     (set where you create it), while still flowing through the one resolution
-     path. `model_preferences` covers project/account/agent scope; the trigger's
-     own `model` is the most-specific override for that run.
+2. **Triggers + webhooks carry an agent AND a model — in `kortix.toml`.** A
+   cron schedule or webhook exposes a **server-side selector for both the agent
+   and the model**, persisted into the project manifest `[[triggers]]` entry
+   (which already has `agent`; add a nullable **`model`**). `null`/absent ⇒
+   **"Default"** ⇒ resolve the chain at run time. `kortix.toml` is the source of
+   truth for triggers; the UI/API edits + serializes the manifest (the trigger
+   routes already round-trip it).
 
-3. **Per-agent default via the SDK** (no manifest `model` field). An agent's
-   default model is a `model_preferences` row (scope=agent); the agent picker in a
-   trigger/webhook just chooses *which* agent, and the model selector chooses its
-   model-or-Default.
+3. **Agents declare a default model — in `kortix.toml`.** Add a nullable
+   **`model`** to `[[agents]]` (alongside `name`/`connectors`/…). This is the
+   agent's declarative default. A `model_preferences` row (scope=agent) is an
+   optional **dynamic override** set via the SDK/UI without a code commit
+   (override wins). The agent picker in a trigger/webhook chooses *which* agent;
+   that agent's own `model` (manifest or DB override) is its default.
+
+   **Where each default lives (two homes, one resolution path):**
+   - **`kortix.toml` (declarative, committed code):** `[[agents]].model`,
+     `[[triggers]].agent` + `.model`. Project-as-code config.
+   - **DB `model_preferences` (dynamic, set via SDK/UI):** account (personal) +
+     project defaults, and optional per-agent override. No manifest home needed —
+     these are runtime/personal settings.
 
 4. **Client sends `auto` on Default.** When the user is on a default (hasn't made
    an explicit pick), the client sends `auto` and the gateway resolves it through
