@@ -1,3 +1,3 @@
-Production hotfix: account membership repair
+Release v0.9.85 — Slack identity and account bootstrap hardening
 
-- Keep the Slack identity/session authorization release active in production.\n- Repair explicit legacy account memberships during project provisioning so fresh production users can create projects after /accounts returns a legacy account_id.\n- Preserve the normal account_members authorization gate after the repair and cover it with a managed-project provisioning regression test.\n- Verified staging API health for 0.9.84-staging.10fccfe9 and staging deploy live verification.
+Promotes the staged Slack identity and session access hardening plus the fresh-account /accounts/me bootstrap repair. Includes the live staging candidate at 79d43a7f with staging API health verified before production promotion.
