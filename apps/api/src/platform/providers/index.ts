@@ -19,7 +19,7 @@ export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
  * comes up WITHOUT the baked runtime (its filesystem layer is dropped ~half the
  * time — a Daytona experimental-region bug). Non-retryable at the provision
  * layer: the caller falls back to the normal Dockerfile-snapshot path instead of
- * spinning up more flaky warm boxes.
+ * creating more flaky memory-snapshot restores.
  */
 export class WarmRuntimeUnavailableError extends Error {
   constructor(message: string) {

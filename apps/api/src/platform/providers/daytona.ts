@@ -38,7 +38,7 @@ import type {
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
-// just to confirm a freshly-claimed warm box is still running — pure overhead that
+// just to confirm a snapshot-restored sandbox is still running — pure overhead that
 // dominates the warm-start server cost. Box state changes far slower than the poll
 // cadence, so caching the 'running' verdict briefly collapses ~2/3 of those
 // provider round-trips. Only 'running' is cached (never 'stopped'/'unknown'), so
@@ -264,7 +264,7 @@ export class DaytonaProvider implements SandboxProvider {
 
       if (result.includes(WARM_RESTORE_MARKERS.noRuntime)) {
         console.warn(
-          `[daytona] warm box ${box.id} restored without runtime ` +
+          `[daytona] snapshot-restored sandbox ${box.id} restored without runtime ` +
           `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
         );
         await box.delete().catch(() => {});

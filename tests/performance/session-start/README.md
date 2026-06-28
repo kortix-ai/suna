@@ -113,9 +113,9 @@ Results (`create → running`, 2026-06-28):
 ### Still open (the big levers)
 
 - **opencode cold start (~2–6s, high variance)** — Bun loading the opencode
-  bundle + project init on a cold Daytona runner. Needs the **warm pool**
-  (CoW-fork a pre-booted, opencode-already-running box) or a patched opencode
-  build (`/usr/local/bin/opencode-kortix`).
+  bundle + project init on a cold Daytona runner. Reducing it further needs a
+  patched opencode build (`/usr/local/bin/opencode-kortix`) or more bake-time
+  initialization in the warm snapshot.
 - **Daytona `provider-create` variance / retries** — the largest run-to-run
   swing.
 - **repo clone (~2.5s)** — eliminated by warm/baked-repo snapshots.
