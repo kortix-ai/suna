@@ -4,6 +4,7 @@
   "private": true,
   "description": "Kortix desktop shell — Electron wrapper around the web app",
   "author": "Kortix",
+  "repository": "https://github.com/kortix-ai/suna",
   "main": "src/main.js",
   "scripts": {
     "setup": "node scripts/ensure-runtime.js",

@@ -9,6 +9,15 @@ appId: com.kortix.desktop
 productName: Kortix
 copyright: © Kortix
 
+# Publish target. We never auto-publish from electron-builder (CI uploads the
+# artifacts itself with --publish never), but a concrete provider is REQUIRED:
+# without it electron-builder can't infer one ("Cannot detect repository") and
+# crashes generating update metadata (computeChannelNames → channel of null).
+publish:
+  provider: github
+  owner: kortix-ai
+  repo: suna
+
 directories:
   output: dist
   buildResources: build
