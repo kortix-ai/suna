@@ -93,9 +93,6 @@ export function ComposerChatInput({
       sessionId={sessionId}
       providers={providers}
       agents={local.agent.list}
-      selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-      onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
-      agentSelectorLocked={!!lockedAgentName}
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}

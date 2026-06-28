@@ -1436,11 +1436,9 @@ export interface SessionChatInputProps {
    * busy input shows a (non-clickable) stop button instead of nothing at all.
    */
   stopDisabled?: boolean;
+  /** Agents drive the `@agent` mention popover. In-session agent switching is
+   *  intentionally not offered here — switching agents requires a new session. */
   agents?: Agent[];
-  selectedAgent?: string | null;
-  onAgentChange?: (agentName: string | null | undefined) => void;
-  /** Show the selected agent but prevent switching inside an immutable session. */
-  agentSelectorLocked?: boolean;
   commands?: Command[];
   onCommand?: (command: Command, args?: string) => void;
   models?: FlatModel[];
@@ -1536,9 +1534,6 @@ export function SessionChatInput({
   onStop,
   stopDisabled = false,
   agents = [],
-  selectedAgent = null,
-  onAgentChange,
-  agentSelectorLocked = false,
   commands = [],
   onCommand,
   models = [],
@@ -1604,10 +1599,6 @@ export function SessionChatInput({
   const pathname = normalizeAppPathname(usePathname());
   const isOnboarding = pathname?.startsWith('/onboarding');
   const dragDepthRef = useRef(0);
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
 
   // File search: use provided callback or fall back to the SDK directly
   const fileSearchFn = useMemo(() => {
@@ -2237,15 +2228,6 @@ export function SessionChatInput({
       }
     }
 
-    // Tab cycles through agents when no popover is open
-    if (e.key === 'Tab' && primaryAgents.length > 1 && onAgentChange && !agentSelectorLocked) {
-      e.preventDefault();
-      const currentIdx = primaryAgents.findIndex((a) => a.name === selectedAgent);
-      const nextIdx = (currentIdx + 1) % primaryAgents.length;
-      onAgentChange(primaryAgents[nextIdx].name);
-      return;
-    }
-
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -2584,14 +2566,6 @@ export function SessionChatInput({
                 </TooltipContent>
               </Tooltip>
 
-              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
-                <AgentSelector
-                  agents={primaryAgents}
-                  selectedAgent={selectedAgent}
-                  onSelect={onAgentChange ?? (() => {})}
-                  disabled={agentSelectorLocked}
-                />
-              )}
               {(models.length > 0 || modelRequired) && onModelChange && (
                 <ModelSelector
                   models={models}
