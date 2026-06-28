@@ -168,13 +168,11 @@ const envSchema = z.object({
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
-  // Feature flag for per-Slack-user identity. OFF (default): every Slack message
-  // runs as the account owner (legacy behavior). ON: each sender must link their
-  // own Kortix account via `/kortix login` (a member of the project's account)
-  // and the agent runs AS them; unlinked senders are blocked. `/kortix login`
-  // and the bind endpoint stay available regardless, so users can pre-link
-  // before the flag is flipped on.
-  SLACK_REQUIRE_USER_IDENTITY: optBoolFalse,
+  // Per-Slack-user identity. Default-on: each sender must link their own Kortix
+  // account via `/kortix login` and the agent runs AS them; unlinked senders
+  // are blocked. Set explicitly to "false" only for legacy fallback where
+  // Slack messages should run as the bound project owner.
+  SLACK_REQUIRE_USER_IDENTITY: optBoolTrue,
 
   // ── Channels — AgentMail email adapter (optional) ────────────────────────
   AGENTMAIL_API_URL:           optUrl('https://api.agentmail.to/v0'),
