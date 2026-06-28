@@ -6,7 +6,10 @@ import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
+import { Message, MessageContent } from '@/components/ui/message';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
@@ -144,7 +147,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
+      <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
           {c.isLoading && (
             <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
@@ -165,11 +168,13 @@ function Thread({ session: c }: { session: UseSessionResult }) {
           ))}
 
           {c.pending && (
-            <div className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary/70 px-4 py-2.5 text-sm text-secondary-foreground">
-                {c.pending}
-              </div>
-            </div>
+            <Message align="end">
+              <MessageContent>
+                <Bubble variant="secondary" align="end" className="opacity-70">
+                  <BubbleContent>{c.pending}</BubbleContent>
+                </Bubble>
+              </MessageContent>
+            </Message>
           )}
 
           {c.permissions.map((p) => (
@@ -189,12 +194,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
           ))}
 
           {c.isBusy && !c.hasPending && (
-            <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-              <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
-              <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.1s]" />
-              <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" />
-              <span className="ml-1 text-xs">{c.pending ? 'Sending…' : 'Agent is working…'}</span>
-            </div>
+            <Marker className="py-1">
+              <MarkerIcon>
+                <Loader2 className="animate-spin" />
+              </MarkerIcon>
+              <MarkerContent className="shimmer text-sm">
+                {c.pending ? 'Sending…' : 'Agent is working…'}
+              </MarkerContent>
+            </Marker>
           )}
         </div>
       </div>

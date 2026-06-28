@@ -1,12 +1,17 @@
 'use client';
 
 /**
- * One message from the sync store. User messages are a right-aligned bubble;
- * assistant messages render full-width as ordered content blocks (markdown text,
- * collapsible reasoning, tool cards, files) — the same shape Kortix uses.
+ * One message from the sync store, composed from the shadcn chat primitives.
+ * User turns are a right-aligned `Bubble`; assistant turns render as a left
+ * `Message` row (brand avatar + full-width content blocks: markdown, collapsible
+ * reasoning, tool cards, file markers).
  */
 
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
+import { Message, MessageAvatar, MessageContent } from '@/components/ui/message';
 import type { MessageWithParts } from '@kortix/sdk/react';
 import { Brain, ChevronRight, Paperclip } from 'lucide-react';
 import { Markdown } from './markdown';
@@ -41,10 +46,12 @@ function PartView({ part }: { part: AnyPart }) {
       return <ToolCall part={part} />;
     case 'file':
       return (
-        <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
-          <Paperclip className="size-3" />
-          {part.filename ?? part.url ?? 'file'}
-        </div>
+        <Marker className="w-fit text-foreground">
+          <MarkerIcon>
+            <Paperclip />
+          </MarkerIcon>
+          <MarkerContent>{part.filename ?? part.url ?? 'file'}</MarkerContent>
+        </Marker>
       );
     default:
       return null; // step-start, step-finish, snapshot, agent
@@ -65,20 +72,29 @@ export function MessageView({ message }: { message: MessageWithParts }) {
       .trim();
     if (!text) return null;
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
-          {text}
-        </div>
-      </div>
+      <Message align="end">
+        <MessageContent>
+          <Bubble variant="secondary" align="end">
+            <BubbleContent>{text}</BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </Message>
     );
   }
 
   if (parts.length === 0) return null;
   return (
-    <div className="space-y-2.5">
-      {parts.map((p, i) => (
-        <PartView key={p.id ?? i} part={p} />
-      ))}
-    </div>
+    <Message align="start">
+      <MessageAvatar>
+        <Avatar className="size-7">
+          <AvatarFallback className="bg-brand/15 text-xs font-semibold text-brand">K</AvatarFallback>
+        </Avatar>
+      </MessageAvatar>
+      <MessageContent className="gap-2.5 pt-0.5">
+        {parts.map((p, i) => (
+          <PartView key={p.id ?? i} part={p} />
+        ))}
+      </MessageContent>
+    </Message>
   );
 }
