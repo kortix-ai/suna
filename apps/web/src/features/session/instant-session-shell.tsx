@@ -53,12 +53,15 @@ export function InstantSessionShell({
   projectId,
   sessionId,
   stage,
+  boundAgentName,
   onSubmit,
 }: {
   projectId: string;
   /** The route's session id (== the pending-prompt namespace the page migrates). */
   sessionId: string;
   stage: SessionStartStage;
+  /** Immutable project-session agent returned by /start. */
+  boundAgentName?: string | null;
   /** Fired on the first send so the page can mount the real chat (which auto-sends
    *  the handed-off prompt) and crossfade it in. */
   onSubmit?: () => void;
@@ -229,6 +232,7 @@ export function InstantSessionShell({
         sessionId={sessionId}
         projectId={projectId}
         prefill={prefill}
+        boundAgentName={boundAgentName}
         // While the computer boots after the first send the input stays fully
         // normal (typeable) — only the send button flips to a stop button. The
         // stop is disabled because there's nothing running to stop yet; the real

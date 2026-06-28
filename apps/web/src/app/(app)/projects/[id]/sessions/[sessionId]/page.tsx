@@ -119,6 +119,7 @@ export default function ProjectSessionPage() {
   });
   const sandbox = start?.sandbox ?? null;
   const startStage = start?.stage ?? 'provisioning';
+  const boundAgentName = start?.agent_name ?? null;
 
   // Subscribe to the store so we can BOTH render-gate the dashboard mount and
   // drive the active-server switch off the real success condition (the active
@@ -341,6 +342,7 @@ export default function ProjectSessionPage() {
                 <ActiveSessionChat
                   projectId={projectId}
                   sessionId={sessionId}
+                  boundAgentName={boundAgentName}
                   pinFromStart={start?.opencode_session_id ?? null}
                   onChatReady={() => setChatReady(true)}
                 />
@@ -364,6 +366,7 @@ export default function ProjectSessionPage() {
                 projectId={projectId}
                 sessionId={sessionId}
                 stage={authLoading || !user ? 'provisioning' : startStage}
+                boundAgentName={boundAgentName}
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
@@ -425,11 +428,13 @@ function InlineSessionError({
 function ActiveSessionChat({
   projectId,
   sessionId,
+  boundAgentName,
   pinFromStart,
   onChatReady,
 }: {
   projectId: string;
   sessionId: string;
+  boundAgentName: string | null;
   pinFromStart: string | null;
   /** Called once the chat is actually showable (resolved + healthy, or erroring)
    *  so the page can crossfade it in over the loader. */
@@ -655,7 +660,12 @@ function ActiveSessionChat({
       projectId={projectId}
       projectSessionId={sessionId}
     >
-      <SessionChat key={chatSessionId} sessionId={chatSessionId} projectId={projectId} />
+      <SessionChat
+        key={chatSessionId}
+        sessionId={chatSessionId}
+        projectId={projectId}
+        boundAgentName={boundAgentName}
+      />
     </SessionLayout>
   );
 }

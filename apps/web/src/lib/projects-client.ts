@@ -2395,6 +2395,8 @@ export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;

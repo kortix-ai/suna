@@ -39,6 +39,12 @@ export interface UseOpenCodeLocalOptions {
   config?: Config;
   /** Session ID — used to persist agent selection per-session in localStorage */
   sessionId?: string;
+  /**
+   * Server-bound immutable agent for project sessions. When present, it seeds
+   * the session picker instead of the global last-used agent so existing
+   * sessions never accidentally prompt with a different agent.
+   */
+  boundAgentName?: string | null;
 }
 
 export interface OpenCodeLocalAgent {
@@ -182,6 +188,20 @@ export function scopedModelSelectionKey(
   return key ? `${mode}:${key}` : undefined;
 }
 
+export function resolveCurrentAgentName(input: {
+  sessionId?: string;
+  sessionAgentName?: string;
+  boundAgentName?: string | null;
+  lastAgentName?: string;
+}): string | undefined {
+  const boundAgentName = input.boundAgentName?.trim() || undefined;
+  return (
+    input.sessionAgentName ??
+    boundAgentName ??
+    (input.sessionId ? undefined : input.lastAgentName)
+  );
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -191,6 +211,7 @@ export function useOpenCodeLocal({
   providers,
   config,
   sessionId,
+  boundAgentName,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
   // ---- Flatten models from providers (shared with the chat input). ----
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
@@ -280,7 +301,12 @@ export function useOpenCodeLocal({
   //      sessions, so reloading the dashboard or starting a new chat doesn't
   //      reset to the first agent in the list.
   const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
-  const currentAgentName = sessionAgentName ?? modelStore.lastAgentName;
+  const currentAgentName = resolveCurrentAgentName({
+    sessionId,
+    sessionAgentName,
+    boundAgentName,
+    lastAgentName: modelStore.lastAgentName,
+  });
   const scopedSessionModelKey = useMemo(
     () => scopedModelSelectionKey(sessionId, providerMode),
     [sessionId, providerMode],

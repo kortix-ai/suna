@@ -1156,6 +1156,7 @@ describe('project session API contract', () => {
     expect(pendingSandbox.status).toBe(200);
     expect(await pendingSandbox.json()).toMatchObject({
       stage: 'provisioning',
+      agent_name: 'default',
     });
 
     sessionRow = null;
@@ -1200,6 +1201,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
+      agent_name: 'default',
       retriable: true,
     });
     expect(providerStartCalls).toBe(1);
@@ -1241,6 +1243,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
+      agent_name: 'default',
       retriable: true,
       sandbox: null,
       reason: 'runtime_waking',
@@ -1288,6 +1291,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
+      agent_name: 'default',
       retriable: true,
       sandbox: null,
       reason: 'runtime_removed',

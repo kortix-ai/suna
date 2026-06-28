@@ -5,6 +5,7 @@ import {
   formatPromptModel,
   modelProviderMode,
   parseModelKey,
+  resolveCurrentAgentName,
   resolveHiddenAutoModel,
   scopedModelSelectionKey,
 } from './use-opencode-local';
@@ -88,5 +89,30 @@ describe('OpenCode local model selection scoping', () => {
         },
       ),
     ).toEqual({ providerID: 'kortix', modelID: 'auto' });
+  });
+
+  test('project sessions prefer the server-bound agent over global last-used agent', () => {
+    expect(
+      resolveCurrentAgentName({
+        sessionId: 'session-1',
+        boundAgentName: 'default',
+        lastAgentName: 'reviewer',
+      }),
+    ).toBe('default');
+  });
+
+  test('explicit per-session agent selection wins over the server-bound seed', () => {
+    expect(
+      resolveCurrentAgentName({
+        sessionId: 'session-1',
+        sessionAgentName: 'builder',
+        boundAgentName: 'default',
+        lastAgentName: 'reviewer',
+      }),
+    ).toBe('builder');
+  });
+
+  test('dashboard composer can still seed from global last-used agent', () => {
+    expect(resolveCurrentAgentName({ lastAgentName: 'reviewer' })).toBe('reviewer');
   });
 });

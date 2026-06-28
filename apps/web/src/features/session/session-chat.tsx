@@ -3629,6 +3629,8 @@ interface SessionChatProps {
   sessionId: string;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
+  /** Immutable project-session agent. When set, prompts are locked to this agent. */
+  boundAgentName?: string | null;
   /** Optional element rendered at the leading (left) edge of the session header */
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
@@ -3642,6 +3644,7 @@ interface SessionChatProps {
 export function SessionChat({
   sessionId,
   projectId,
+  boundAgentName,
   headerLeadingAction,
   hideHeader,
   readOnly,
@@ -3782,7 +3785,8 @@ export function SessionChat({
   const forkSession = useForkSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId });
+  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const lockedAgentName = boundAgentName?.trim() || null;
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -3924,8 +3928,10 @@ export function SessionChat({
           const pendingOptions = JSON.parse(raw);
           sessionStorage.removeItem(`opencode_pending_options:${sessionId}`);
           if (pendingOptions?.agent) {
-            options.agent = pendingOptions.agent;
-            localAgentSet(pendingOptions.agent as string);
+            if (!lockedAgentName || pendingOptions.agent === lockedAgentName) {
+              options.agent = pendingOptions.agent;
+              localAgentSet(pendingOptions.agent as string);
+            }
           }
           if (pendingOptions?.model) {
             const parsedPendingModel = parseModelKey(pendingOptions.model);
@@ -3942,6 +3948,10 @@ export function SessionChat({
         }
       } catch {
         // ignore
+      }
+
+      if (lockedAgentName) {
+        options.agent = lockedAgentName;
       }
 
       if (!selectedModelForSend && localModelSendKey) {
@@ -4111,6 +4121,7 @@ export function SessionChat({
     localModelSet,
     localModelVisible,
     localVariantSet,
+    lockedAgentName,
     session?.directory,
   ]);
 
@@ -4938,7 +4949,9 @@ export function SessionChat({
       const overrideAgent = overrides?.agent;
       const overrideModel = overrides?.model;
       const overrideVariant = overrides?.variant;
-      if (overrideAgent !== undefined) {
+      if (lockedAgentName) {
+        options.agent = lockedAgentName;
+      } else if (overrideAgent !== undefined) {
         if (overrideAgent) options.agent = overrideAgent;
       } else if (local.agent.current) {
         options.agent = local.agent.current.name;
@@ -5184,6 +5197,7 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
+      lockedAgentName,
       local.agent.current,
       local.model.currentKey,
       local.model.sendKey,
@@ -5390,7 +5404,9 @@ export function SessionChat({
           sessionID: sessionId,
           command: cmd.name,
           arguments: args || '',
-          ...(local.agent.current && { agent: local.agent.current.name }),
+          ...((lockedAgentName || local.agent.current?.name) && {
+            agent: lockedAgentName || local.agent.current?.name,
+          }),
           ...(selectedModel && { model: selectedModel }),
           ...(local.model.variant.current && {
             variant: local.model.variant.current,
@@ -5411,6 +5427,7 @@ export function SessionChat({
     [
       sessionId,
       scrollToBottom,
+      lockedAgentName,
       local.agent.current,
       local.model.currentKey,
       local.model.sendKey,
@@ -5841,21 +5858,22 @@ export function SessionChat({
           onStop={handleStop}
           escCount={escCount}
           agents={local.agent.list}
-          selectedAgent={local.agent.current?.name ?? null}
-          onAgentChange={(name) => local.agent.set(name ?? undefined)}
+          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
+          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
+          agentSelectorLocked={!!lockedAgentName}
           commands={commands || []}
           onCommand={handleCommand}
           models={local.model.list}
           selectedModel={local.model.currentKey ?? null}
           onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
           modelDefaultControls={{
-            agentName: local.agent.current?.name,
+            agentName: lockedAgentName ?? local.agent.current?.name,
             onSetAccountDefault: (m) => {
               void local.model.defaults.setAccountDefault(m);
             },
-            onSetAgentDefault: local.agent.current
+            onSetAgentDefault: lockedAgentName || local.agent.current
               ? (m) => {
-                  const name = local.agent.current?.name;
+                  const name = lockedAgentName ?? local.agent.current?.name;
                   if (name) void local.model.defaults.setAgentDefault(name, m);
                 }
               : undefined,

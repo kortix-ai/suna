@@ -286,6 +286,8 @@ export type SessionStartStage =
 export interface SessionStartResult {
   /** Coarse lifecycle stage the client renders + polls on. */
   stage: SessionStartStage;
+  /** Immutable project-session agent bound at session creation. */
+  agent_name: string;
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   /** Serialized session_sandboxes row (same shape as GET /sandbox), or null. */
@@ -395,6 +397,7 @@ async function replaceStaleRuntimeOnOpen(
   await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
   return {
     stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
     opencode_session_id: null,
@@ -477,6 +480,7 @@ export async function openSession(args: {
     if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
       return {
         stage: visible.row.status === 'failed' ? 'failed' : 'stopped',
+        agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
         opencode_session_id: null,
@@ -492,6 +496,7 @@ export async function openSession(args: {
     }
     return {
       stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
@@ -502,6 +507,7 @@ export async function openSession(args: {
   if (row.status === 'provisioning' || !row.externalId) {
     return {
       stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
       opencode_session_id: null,
@@ -560,6 +566,7 @@ export async function openSession(args: {
     });
     return {
       stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
       opencode_session_id: null,
@@ -587,6 +594,7 @@ export async function openSession(args: {
     ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   return {
     stage: booting ? 'starting' : 'ready',
+    agent_name: visible.row.agentName ?? 'default',
     retriable: booting,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: ensured.pin,
