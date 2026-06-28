@@ -2,7 +2,7 @@
 # kortix-api (`kortix-staging`) and is promoted only from release-candidate code.
 
 image:
-  tag: "staging-da783034"
+  tag: "staging-685ce63d"
 replicas: 2
 autoscaling:
   enabled: true
