@@ -192,31 +192,54 @@ async function buildKortixProvider(opts: KortixProviderOpts): Promise<Record<str
   }
 }
 
-// Resolve the model catalog. A baked file (org-stable, written by a step that has
-// the catalog without a per-session token) wins — that's what lets a tokenless
-// warm seed bake the FULL catalog. Otherwise fetch from the real gateway (needs a
-// real base+key; only present in direct mode). Falls back to the minimal set.
+// Well-known path the snapshot builder bakes the full org model catalog to (see
+// dockerfile-layer.ts `COPY ${catalogPath} /opt/kortix/llm-catalog.json`). Present
+// on every modern image; used as the fast, always-available fallback so a slow or
+// down gateway never collapses the picker to the ~13-model minimal set.
+const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
+
+/** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
+ *  Returns null when missing, unreadable, or empty so callers can fall through. */
+function readCatalogFile(path: string): Record<string, KortixGatewayModel> | null {
+  try {
+    const raw = readFileSync(path, 'utf8')
+    const parsed = JSON.parse(raw) as { models?: Record<string, KortixGatewayModel> } | Record<string, KortixGatewayModel>
+    const models = (parsed && typeof parsed === 'object' && 'models' in parsed
+      ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
+      : (parsed as Record<string, KortixGatewayModel>)) ?? {}
+    return Object.keys(models).length > 0 ? models : null
+  } catch {
+    return null
+  }
+}
+
+// Resolve the model catalog. Order:
+//   1. an EXPLICIT baked file (warm seed's KORTIX_LLM_CATALOG_FILE) — tokenless
+//      full catalog, wins outright;
+//   2. a fresh per-session fetch from the real gateway (per-account catalog) when
+//      we have creds (direct mode);
+//   3. the IMAGE-BAKED catalog at the well-known path — so a slow/down gateway
+//      still yields the full picker instead of the tiny minimal set;
+//   4. the minimal hardcoded set (last resort).
 async function loadGatewayCatalog(opts: KortixProviderOpts): Promise<Record<string, KortixGatewayModel>> {
   if (opts.catalogFile) {
-    try {
-      const raw = readFileSync(opts.catalogFile, 'utf8')
-      const parsed = JSON.parse(raw) as { models?: Record<string, KortixGatewayModel> } | Record<string, KortixGatewayModel>
-      const models = (parsed && typeof parsed === 'object' && 'models' in parsed
-        ? (parsed as { models?: Record<string, KortixGatewayModel> }).models
-        : (parsed as Record<string, KortixGatewayModel>)) ?? {}
-      if (Object.keys(models).length > 0) {
-        logger.info(`[opencode] loaded ${Object.keys(models).length} gateway models from baked catalog ${opts.catalogFile}`)
-        return models
-      }
-      logger.warn(`[opencode] baked catalog ${opts.catalogFile} was empty; falling back`)
-    } catch (err) {
-      logger.warn(`[opencode] baked catalog read failed (${opts.catalogFile}): ${(err as Error).message}; falling back`)
+    const models = readCatalogFile(opts.catalogFile)
+    if (models) {
+      logger.info(`[opencode] loaded ${Object.keys(models).length} gateway models from baked catalog ${opts.catalogFile}`)
+      return models
     }
+    logger.warn(`[opencode] baked catalog ${opts.catalogFile} unreadable/empty; falling back`)
   }
   if (opts.fetchBaseURL && opts.fetchApiKey) {
-    return fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+    const fetched = await fetchGatewayModels(opts.fetchBaseURL, opts.fetchApiKey)
+    if (fetched) return fetched
   }
-  logger.warn('[opencode] no baked catalog and no gateway credentials to fetch; using minimal fallback')
+  const baked = readCatalogFile(BAKED_LLM_CATALOG_PATH)
+  if (baked) {
+    logger.info(`[opencode] gateway fetch unavailable; loaded ${Object.keys(baked).length} models from image-baked catalog ${BAKED_LLM_CATALOG_PATH}`)
+    return baked
+  }
+  logger.warn('[opencode] no baked catalog and no gateway models; using minimal fallback')
   return MINIMAL_FALLBACK_MODELS
 }
 
@@ -234,7 +257,7 @@ const GATEWAY_MODELS_TIMEOUT_MS = 6_000
 async function fetchGatewayModels(
   baseUrl: string,
   apiKey: string,
-): Promise<Record<string, KortixGatewayModel>> {
+): Promise<Record<string, KortixGatewayModel> | null> {
   const url = `${baseUrl.replace(/\/+$/, '')}/models`
   const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
   logger.info(`[opencode] fetching gateway models from ${url} (timeout ${GATEWAY_MODELS_TIMEOUT_MS}ms)`)
@@ -267,8 +290,8 @@ async function fetchGatewayModels(
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
-  logger.error(`[opencode] gateway models unavailable (${url}); using minimal fallback so the session can start`)
-  return MINIMAL_FALLBACK_MODELS
+  logger.error(`[opencode] gateway models unavailable (${url}); caller will fall back to the baked/minimal catalog`)
+  return null
 }
 
 // New sessions default to AUTO — the gateway's smart router (text → GLM 5.2,
