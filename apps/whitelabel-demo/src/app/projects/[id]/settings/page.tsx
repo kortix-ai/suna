@@ -14,11 +14,18 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
+import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { ExternalLink, GitBranch, Loader2 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
+
+function fmtDate(value: unknown): string {
+  if (!value) return '—';
+  const d = new Date(value as string);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
 
 const TABS = [
   'general',
@@ -123,6 +130,13 @@ function GeneralTab() {
     : undefined;
   const healthState = (health.data as any)?.status ?? (health.isError ? 'unknown' : undefined);
 
+  const p = (project.data ?? {}) as Record<string, any>;
+  const repoUrl: string | undefined = p.git_origin_url || p.repo_url || undefined;
+  const repoLabel = repoUrl
+    ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '')
+    : undefined;
+  const baseRef: string | undefined = p.base_ref || p.default_branch || undefined;
+
   return (
     <div className="space-y-4">
       <Card className="p-5">
@@ -142,6 +156,27 @@ function GeneralTab() {
             Save
           </Button>
         </div>
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm font-medium">
+          <GitBranch className="size-4 text-muted-foreground" />
+          Repository &amp; info
+        </div>
+        <dl className="divide-y divide-border">
+          <InfoRow
+            label="Repository"
+            value={repoLabel ?? 'Not linked'}
+            href={repoUrl}
+            mono={!!repoUrl}
+          />
+          {baseRef && <InfoRow label="Default branch" value={baseRef} mono />}
+          <InfoRow label="Project ID" value={projectId} mono />
+          {p.account_id && <InfoRow label="Account" value={p.account_id} mono />}
+          {p.status && <InfoRow label="Status" value={p.status} />}
+          <InfoRow label="Created" value={fmtDate(p.created_at)} />
+          <InfoRow label="Last updated" value={fmtDate(p.updated_at)} />
+        </dl>
       </Card>
 
       <Card className="grid grid-cols-3 divide-x divide-border p-0 text-center">
@@ -166,6 +201,39 @@ function GeneralTab() {
           </Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  href,
+  mono,
+}: {
+  label: string;
+  value: React.ReactNode;
+  href?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-2.5">
+      <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+      <dd className={cn('min-w-0 truncate text-right text-sm', mono && 'font-mono text-xs')}>
+        {href ? (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex max-w-full items-center gap-1.5 truncate text-foreground transition-colors hover:text-muted-foreground"
+          >
+            <span className="truncate">{value}</span>
+            <ExternalLink className="size-3 shrink-0" />
+          </a>
+        ) : (
+          (value ?? '—')
+        )}
+      </dd>
     </div>
   );
 }
