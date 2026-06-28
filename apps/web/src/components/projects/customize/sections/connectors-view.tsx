@@ -141,6 +141,9 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
+const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
+const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
+
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
   if (p === 'pipedream') return 'App';
@@ -2999,6 +3002,22 @@ function ChannelCatalogue({
   );
 }
 
+function SlackIconTile() {
+  return (
+    <span className="border-border/60 bg-card relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border">
+      <Image
+        src={SLACK_ICON_SRC}
+        alt=""
+        referrerPolicy="no-referrer"
+        fill
+        sizes="36px"
+        className="object-contain p-1"
+        unoptimized
+      />
+    </span>
+  );
+}
+
 function slugifyConnector(input: string): string {
   const slug = input
     .trim()
@@ -3133,7 +3152,7 @@ function AddSlackProfileCard({
         className="group border-border/60 bg-card hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:ring-primary/50 flex flex-col rounded-2xl border p-4 text-left transition-all hover:shadow-sm focus-visible:ring-2 focus-visible:outline-none"
       >
         <div className="flex items-center gap-3">
-          <EntityAvatar icon={Slack} size="sm" />
+          <SlackIconTile />
           <div className="min-w-0 flex-1">
             <div className="text-foreground truncate text-sm font-semibold">Slack</div>
             <div className="text-muted-foreground truncate text-xs">Built-in channel</div>
@@ -3182,6 +3201,7 @@ function AppCatalogue({
   });
   const [configApp, setConfigApp] = useState<{ slug: string; name: string } | null>(null);
   const apps = (appsQuery.data?.pages ?? []).flatMap((p) => p.apps);
+  const visibleApps = apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug));
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
 
@@ -3216,7 +3236,7 @@ function AppCatalogue({
               <Skeleton key={i} className="h-[104px] w-full rounded-2xl" />
             ))}
           </div>
-        ) : apps.length === 0 ? (
+        ) : visibleApps.length === 0 ? (
           <EmptyState
             icon={Search}
             title={tI18nHardcoded.raw(
@@ -3227,7 +3247,7 @@ function AppCatalogue({
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {apps.map((app) => (
+              {visibleApps.map((app) => (
                 <button
                   key={app.slug}
                   type="button"
