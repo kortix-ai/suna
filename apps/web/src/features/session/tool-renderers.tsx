@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { QuestionPrompt } from '@/features/session/question-prompt';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { isShowContentUnavailable, type ShowLoadStatus } from './show-availability';
 import {
   SessionRetryDisplay,
   TurnErrorDisplay,
@@ -5051,6 +5052,10 @@ function ShowTool({ part, sessionId }: ToolProps) {
   const [carouselIndex, setCarouselIndex] = useState(0);
   const currentItem = isCarousel ? items![carouselIndex] || items![0] : null;
 
+  // Load status of a single-item show's content — drives whether we hide a dead
+  // reference (renamed/deleted file → 404) instead of rendering a broken card.
+  const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
+
   // Derive the "active" item props — either the single item or the current carousel item
   const activeType = isCarousel ? currentItem?.type || '' : type;
   const activeUrl = isCarousel ? currentItem?.url || '' : url;
@@ -5122,6 +5127,23 @@ function ShowTool({ part, sessionId }: ToolProps) {
     : title || (type === 'error' ? 'Error' : type === 'url' ? showDomain(url) || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
+
+  // Hide a settled single-item show whose artifact failed to load — a renamed/
+  // deleted file (404) or an unhealthy iframe preview. Artifacts are updated
+  // throughout a run, so stale `show` references are expected; we surface only
+  // the ones that actually loaded rather than a broken "File not found" card.
+  if (
+    isShowContentUnavailable({
+      running,
+      isCarousel,
+      contentStatus,
+      isWebsitePreview,
+      previewHasError: preview.hasError,
+      previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
+    })
+  ) {
+    return null;
+  }
 
   return (
     <div
@@ -5251,6 +5273,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                 aspectRatio={aspectRatio}
                 LocalhostPreview={InlineServicePreview}
                 fill={fill}
+                onStatusChange={setContentStatus}
               />
             </div>
             {description && !title && (

@@ -25,6 +25,7 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -79,11 +80,27 @@ const BG_COLOR = '#0a0a0a';
 //      <style> element. IMPORTANT: `webContents.insertCSS()` does NOT honor
 //      -webkit-app-region — only a real <style>/<link> in the document does, so
 //      we inject it here instead of via insertCSS.
-//   2. On pages with no app shell (the login/auth page), drop a fallback drag
-//      strip across the top so the window is always movable. Tauri made the top
-//      32px draggable from JS; Electron can only drag via app-region, so a strip
-//      is the equivalent. It's removed once the sidebar shell mounts (post
-//      login) so it never covers the tab bar.
+//   2. Keep a full-width drag strip pinned across the very top of the window so
+//      it's movable from ANYWHERE up top — not just over the sidebar/tab-bar.
+//      The web app reserves a ~40px title-bar band at the top on desktop
+//      (--kx-titlebar-inset), so on pages whose main panel has no tab bar that
+//      band was dead space you couldn't grab. The strip fills it.
+//
+// The strip is the FIRST child of <body> and `pointer-events:none`, which is
+// what lets it coexist with the tab bar instead of covering it (the reason the
+// old strip had to be removed once the app shell mounted):
+//   • Draggable regions resolve in DOM order, so the tab-bar tabs / sidebar
+//     buttons — all marked `no-drag` and later in the DOM — punch holes back
+//     through the strip's drag region and stay grabbable as buttons.
+//   • `pointer-events:none` means clicks in those holes pass straight through to
+//     the real controls; only the bare band stays a drag handle.
+const IS_MAC = process.platform === 'darwin';
+// Skip the macOS traffic-light gutter on the left; Win/Linux have no left
+// controls (their min/max/close render on the right and are `no-drag` buttons).
+const DRAG_STRIP_LEFT = IS_MAC ? 80 : 0;
+// Match the reserved title-bar band (--kx-titlebar-inset: 40px macOS / 28px
+// else); 32px on Win/Linux leaves the strip comfortably grabbable.
+const DRAG_STRIP_HEIGHT = IS_MAC ? 40 : 32;
 const DESKTOP_CHROME_JS = `
 (function () {
   if (window.__kortixChrome) return;
@@ -100,31 +117,32 @@ const DESKTOP_CHROME_JS = `
   (document.head || document.documentElement).appendChild(style);
 
   var ID = 'kortix-drag-strip';
-  function hasAppShell() {
-    return !!document.querySelector('[data-sidebar="sidebar"],[data-sidebar="header"]');
-  }
-  function sync() {
+  function ensureStrip() {
     if (!document.body) return;
     var strip = document.getElementById(ID);
-    if (hasAppShell()) {
-      if (strip) strip.remove();
-    } else if (!strip) {
+    if (!strip) {
       strip = document.createElement('div');
       strip.id = ID;
-      // Cover the full top bar to the right edge (incl. the top-right corner)
-      // so the window drags from anywhere up top; inset only past the macOS
-      // traffic lights on the left.
+      strip.setAttribute('aria-hidden', 'true');
+      // pointer-events:none → clicks fall through to controls beneath; the drag
+      // region still works (it's OS-level, not pointer-event driven). z-index:0
+      // so it never visually layers over content (it's transparent regardless).
       strip.style.cssText =
-        'position:fixed;top:0;left:80px;right:0;height:40px;z-index:2147483646;';
-      document.body.appendChild(strip);
+        'position:fixed;top:0;left:${DRAG_STRIP_LEFT}px;right:0;height:${DRAG_STRIP_HEIGHT}px;' +
+        'z-index:0;pointer-events:none;-webkit-app-region:drag;';
+    }
+    // First child so every interactive element (later in the DOM, all no-drag)
+    // overrides the strip and stays clickable; bare band stays draggable.
+    if (strip !== document.body.firstChild) {
+      document.body.insertBefore(strip, document.body.firstChild);
     }
   }
-  sync();
-  // SPA route changes swap the DOM without a reload — keep the strip in sync.
+  ensureStrip();
+  // SPA route changes swap the DOM without a reload — keep the strip first.
   var t;
   new MutationObserver(function () {
     clearTimeout(t);
-    t = setTimeout(sync, 250);
+    t = setTimeout(ensureStrip, 250);
   }).observe(document.documentElement, { childList: true, subtree: true });
 })();
 `;
@@ -583,6 +601,10 @@ function buildMenu() {
             label: app.name,
             submenu: [
               { role: 'about' },
+              {
+                label: 'Check for Updates…',
+                click: () => checkForUpdatesInteractive(),
+              },
               { type: 'separator' },
               frontendSubmenu,
               { type: 'separator' },
@@ -610,7 +632,13 @@ function buildMenu() {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
-        ...(isMac ? [] : [{ type: 'separator' }, frontendSubmenu]),
+        ...(isMac
+          ? []
+          : [
+              { type: 'separator' },
+              { label: 'Check for Updates…', click: () => checkForUpdatesInteractive() },
+              frontendSubmenu,
+            ]),
       ],
     },
     { role: 'windowMenu' },
@@ -744,6 +772,13 @@ if (!gotLock) {
 
     createSplash();
     createMainWindow();
+
+    // Kick off the background update check (no-ops on dev/unsigned builds).
+    // Getters because both windows are recreated on macOS re-activate.
+    setupAutoUpdates({
+      getSplashWindow: () => splashWindow,
+      getMainWindow: () => mainWindow,
+    });
 
     // A deep link that arrived during cold start (macOS first-launch via URL).
     const firstArgvDeepLink = process.argv.find((a) =>

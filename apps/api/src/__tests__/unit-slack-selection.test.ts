@@ -32,10 +32,8 @@ mock.module('../projects/git', () => ({
 }));
 
 const {
-  RECOMMENDED_MODELS,
   currentChannelSelection,
   isValidModelId,
-  modelLabel,
   setChannelAgent,
   setChannelModel,
 } = await import('../channels/slack/selection');
@@ -56,26 +54,6 @@ describe('isValidModelId — provider/model shape only (no stale-catalog gate)',
     expect(isValidModelId('trailing/')).toBe(false);
     expect(isValidModelId('has space/model')).toBe(false);
     expect(isValidModelId('')).toBe(false);
-  });
-});
-
-describe('modelLabel', () => {
-  test('uses the friendly label for a recommended model', () => {
-    expect(modelLabel('anthropic/claude-opus-4-8')).toBe('Claude Opus 4.8');
-  });
-  test('falls back to the raw id for an unknown model', () => {
-    expect(modelLabel('exotic/model-x')).toBe('exotic/model-x');
-  });
-});
-
-describe('RECOMMENDED_MODELS', () => {
-  test('every entry is a valid id with a label + hint', () => {
-    expect(RECOMMENDED_MODELS.length).toBeGreaterThan(0);
-    for (const m of RECOMMENDED_MODELS) {
-      expect(isValidModelId(m.id)).toBe(true);
-      expect(m.label.length).toBeGreaterThan(0);
-      expect(m.hint.length).toBeGreaterThan(0);
-    }
   });
 });
 

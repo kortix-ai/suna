@@ -38,21 +38,34 @@ jobs:
       matrix:
         include:
           # macOS universal (Apple Silicon + Intel) in one signed/notarized .dmg.
+          # `files` lists EVERYTHING the release needs: the installer/download
+          # AND the auto-update metadata electron-updater reads (latest*.yml +
+          # blockmaps, plus the mac update zip). Without the yml/zip the updater
+          # has nothing to fetch.
           - target_pretty: macos
             runner: macos-14
             eb_flag: --mac
             artifact: desktop-macos
-            files: apps/desktop-electron/dist/*.dmg
+            files: |
+              apps/desktop-electron/dist/*.dmg
+              apps/desktop-electron/dist/*.zip
+              apps/desktop-electron/dist/*.blockmap
+              apps/desktop-electron/dist/latest-mac.yml
           - target_pretty: windows-x64
             runner: windows-2022
             eb_flag: --win
             artifact: desktop-windows-x64
-            files: apps/desktop-electron/dist/*.exe
+            files: |
+              apps/desktop-electron/dist/*.exe
+              apps/desktop-electron/dist/*.blockmap
+              apps/desktop-electron/dist/latest.yml
           - target_pretty: linux-x64
             runner: ubuntu-22.04
             eb_flag: --linux
             artifact: desktop-linux-x64
-            files: apps/desktop-electron/dist/*.AppImage
+            files: |
+              apps/desktop-electron/dist/*.AppImage
+              apps/desktop-electron/dist/latest-linux.yml
     steps:
       - uses: actions/checkout@v4
 
@@ -123,6 +136,7 @@ jobs:
             --publish never \
             --config.extraMetadata.version="${{ steps.ver.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.extraMetadata.kortixUpdateChannel="dev" \
             --config.productName="Kortix Dev" \
             --config.extraMetadata.productName="Kortix Dev" \
             --config.appId="$DESKTOP_APP_ID"

@@ -37,6 +37,17 @@ import { PROJECT_ACTIONS, assertAuthorized } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
 import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
+import {
+  invalidateAccountModelDefaults,
+  isModelServableForAccount,
+  resolveEffectiveModel,
+} from "../../llm-gateway/resolution/default-model";
+import {
+  deleteAccountModelPreference,
+  getAccountModelDefaults,
+  upsertAccountModelPreference,
+} from "../../repositories/model-preferences";
+import { AUTO_DEFAULT_MODEL_ID } from "@kortix/shared/llm-catalog";
 import { resolveExperimentalFeature } from "../../experimental/features";
 import { db } from "../../shared/db";
 import { extractApps } from "../apps";
@@ -1339,6 +1350,193 @@ projectsApp.openapi(
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
+  },
+);
+
+// ─── Default model preferences (account-scoped) ─────────────────────────────
+// The gateway is the source of truth for the default model: a request for the
+// synthetic `auto` resolves server-side to the per-agent default → account
+// default → platform default. These routes manage the account/agent defaults;
+// they operate on the project's OWNER account, the same account the gateway
+// principal carries, so the picker and the gateway always agree. Stored values
+// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
+
+// GET /v1/projects/:projectId/model-defaults
+projectsApp.openapi(
+  createRoute({
+    method: "get",
+    path: "/{projectId}/model-defaults",
+    tags: ["projects"],
+    summary: "GET /:projectId/model-defaults",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: z.any() } },
+      },
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "read");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const ownerAccountId = loaded.row.accountId as string;
+    const userId = c.get("userId") as string;
+    const defaults = await getAccountModelDefaults(ownerAccountId);
+    const freeTier =
+      config.KORTIX_BILLING_INTERNAL_ENABLED
+        ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+        : false;
+    // Honest project-level resolution (project → account → platform) + where it
+    // came from, so the UI can show "Sonnet 4.6 · project default". The
+    // authoritative per-request resolution still happens in the gateway.
+    const resolved = await resolveEffectiveModel({
+      userId,
+      accountId: ownerAccountId,
+      projectId,
+      explicit: null,
+      freeModelsOnly: freeTier,
+    });
+    return c.json({
+      platformDefault: AUTO_DEFAULT_MODEL_ID,
+      accountDefault: defaults.account,
+      agentDefaults: defaults.agents,
+      projectDefault: defaults.projects[projectId] ?? null,
+      resolvedForCaller: resolved.model ?? AUTO_DEFAULT_MODEL_ID,
+      resolvedSource: resolved.source,
+      freeTier,
+    });
+  },
+);
+
+const ModelDefaultBody = z.object({
+  scope: z.enum(["account", "agent", "project"]),
+  agentName: z.string().min(1).max(128).optional(),
+  model: z.string().min(1).max(128),
+});
+
+// PUT /v1/projects/:projectId/model-defaults
+projectsApp.openapi(
+  createRoute({
+    method: "put",
+    path: "/{projectId}/model-defaults",
+    tags: ["projects"],
+    summary: "PUT /:projectId/model-defaults",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: ModelDefaultBody } } },
+    },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: z.any() } },
+      },
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const ownerAccountId = loaded.row.accountId as string;
+    const userId = c.get("userId") as string;
+
+    const parsed = ModelDefaultBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
+    }
+    const { scope, agentName, model } = parsed.data;
+    if (scope === "agent" && !agentName) {
+      return c.json(
+        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        400,
+      );
+    }
+
+    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? !tierGrantsAllModels(await getCachedAccountTier(ownerAccountId))
+      : false;
+    const servable = await isModelServableForAccount({
+      userId,
+      accountId: ownerAccountId,
+      projectId,
+      freeModelsOnly,
+      model,
+    });
+    if (!servable) {
+      return c.json(
+        {
+          error: `Model "${model}" is not available for this account`,
+          code: "model_not_servable",
+        },
+        409,
+      );
+    }
+
+    await upsertAccountModelPreference({
+      accountId: ownerAccountId,
+      scope,
+      // agent → agent name; project → the project id; account → '' (in the repo).
+      scopeKey: scope === "agent" ? agentName : scope === "project" ? projectId : undefined,
+      model,
+      updatedBy: userId,
+    });
+    invalidateAccountModelDefaults(ownerAccountId);
+    return c.json({
+      ok: true,
+      scope,
+      agentName: scope === "agent" ? agentName : undefined,
+      model,
+    });
+  },
+);
+
+// DELETE /v1/projects/:projectId/model-defaults?scope=account|agent&agentName=
+projectsApp.openapi(
+  createRoute({
+    method: "delete",
+    path: "/{projectId}/model-defaults",
+    tags: ["projects"],
+    summary: "DELETE /:projectId/model-defaults",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({
+        scope: z.enum(["account", "agent", "project"]),
+        agentName: z.string().min(1).max(128).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "OK",
+        content: { "application/json": { schema: z.any() } },
+      },
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const ownerAccountId = loaded.row.accountId as string;
+    const scope = c.req.query("scope");
+    const agentName = c.req.query("agentName");
+    if (scope !== "account" && scope !== "agent" && scope !== "project") {
+      return c.json({ error: "scope must be 'account', 'agent', or 'project'", code: "invalid_scope" }, 400);
+    }
+    if (scope === "agent" && !agentName) {
+      return c.json(
+        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        400,
+      );
+    }
+    const scopeKey = scope === "agent" ? agentName : scope === "project" ? projectId : undefined;
+    await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
+    invalidateAccountModelDefaults(ownerAccountId);
+    return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
   },
 );
 
