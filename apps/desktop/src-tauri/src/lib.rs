@@ -251,6 +251,18 @@ fn is_preview_host(host: &str) -> bool {
         || host.ends_with(".justavps.com")
 }
 
+/// Third-party hosts we embed as IFRAMES inside the product UI (never as
+/// top-level navigations). Tauri's `on_navigation` callback fires for iframe
+/// loads too, so without allow-listing these the embedded frame gets punted to
+/// the user's system browser — which is exactly the "Must be inside iframe"
+/// failure of the Pipedream Connect overlay
+/// (`https://pipedream.com/_static/connect.html?token=ctok_…`). The product
+/// never top-level-navigates to these hosts, so loading them in-app is safe and
+/// strictly scoped to the connect overlay.
+fn is_embeddable_iframe_host(host: &str) -> bool {
+    host == "pipedream.com" || host.ends_with(".pipedream.com")
+}
+
 /// The app-shell hosts that serve BOTH the product and the marketing site.
 /// On these we only allow product/auth paths to render in-app (see
 /// `is_app_path`); everything else (marketing homepage, docs, blog, legal,
@@ -290,6 +302,41 @@ fn is_app_path(path: &str) -> bool {
         path == *prefix
             || (path.starts_with(prefix) && path.as_bytes().get(prefix.len()) == Some(&b'/'))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipedream_connect_iframe_loads_in_app() {
+        // The Connect overlay iframe must render in-webview, not be punted to
+        // the system browser (the "Must be inside iframe" bug).
+        assert!(is_embeddable_iframe_host("pipedream.com"));
+        assert!(is_embeddable_iframe_host("api.pipedream.com"));
+        // Unrelated hosts stay external.
+        assert!(!is_embeddable_iframe_host("google.com"));
+        assert!(!is_embeddable_iframe_host("evilpipedream.com"));
+        assert!(!is_embeddable_iframe_host("pipedream.com.attacker.net"));
+    }
+
+    #[test]
+    fn preview_and_app_hosts_render_in_app() {
+        assert!(is_preview_host("p3211-kortix-sandbox.localhost"));
+        assert!(is_preview_host("foo.kortix.cloud"));
+        assert!(!is_preview_host("localhost")); // dev shell, handled separately
+
+        assert!(is_main_app_host("kortix.com"));
+        assert!(is_main_app_host("dev.kortix.com"));
+        assert!(is_main_app_host("localhost"));
+        assert!(!is_main_app_host("pipedream.com"));
+
+        assert!(is_app_path("/projects"));
+        assert!(is_app_path("/auth/callback"));
+        assert!(is_app_path("/connectors"));
+        assert!(!is_app_path("/pricing"));
+        assert!(!is_app_path("/docs/intro"));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -446,6 +493,13 @@ pub fn run() {
 
                 // Sandbox previews / tunnels: user content, always in-app.
                 if is_preview_host(host) {
+                    return true;
+                }
+
+                // Embedded third-party overlays (Pipedream Connect iframe). These
+                // MUST render in-app — punting them to the system browser strips
+                // the iframe context and the page errors "Must be inside iframe".
+                if is_embeddable_iframe_host(host) {
                     return true;
                 }
 
