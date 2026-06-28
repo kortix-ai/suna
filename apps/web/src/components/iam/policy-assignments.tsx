@@ -485,12 +485,16 @@ function CreateAssignmentDialog({
                         </SelectItem>
                       ))
                     : agents.length === 0
-                      ? <SelectItem value="__none" disabled>No agents yet — start an agent session first</SelectItem>
-                      : agents.map((a) => (
-                          <SelectItem key={a.service_account_id} value={a.service_account_id}>
-                            {a.agent_name ?? a.name}
-                          </SelectItem>
-                        ))}
+                      ? <SelectItem value="__none" disabled>No agents in this account&apos;s projects yet</SelectItem>
+                      : agents.map((a) => {
+                          const projectName = a.project_id ? projectNameById.get(a.project_id) : null;
+                          return (
+                            <SelectItem key={a.service_account_id} value={a.service_account_id}>
+                              {a.agent_name ?? a.name}
+                              {projectName ? ` · ${projectName}` : ''}
+                            </SelectItem>
+                          );
+                        })}
               </SelectContent>
             </Select>
           </div>
