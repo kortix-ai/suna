@@ -24,6 +24,7 @@ import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
 import type { Event as OpenCodeSdkEvent, Part } from '@opencode-ai/sdk/v2/client';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { hasUnsettledToolPart, IDLE_RECONCILE_DELAY_MS } from './idle-reconcile';
 import { ptyKeys } from './use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from './use-opencode-sessions';
 import { resetPrefetchState } from './use-session-prefetch';
@@ -106,36 +107,13 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
 // busy/retry → idle completion edge we refetch the authoritative messages and
 // `hydrate` — the same data a refresh loads, and for tool parts the server's
 // `completed` snapshot wins — so the stuck result resolves on its own.
-const IDLE_RECONCILE_DELAY_MS = 400;
+// The unsettled-part predicate lives in ./idle-reconcile (pure + unit-tested).
 const idleReconcileTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const idleReconcileInFlight = new Set<string>();
 
-/**
- * True if the session has a tool part still genuinely awaiting its result
- * (running, or pending WITH input/raw) — i.e. a spinner that would otherwise
- * hang. Stale-pending parts (pending with empty input and no raw, abandoned
- * when a run ends abruptly) are excluded: the server reports them pending too,
- * so a refetch can't settle them and the renderer already treats them as
- * non-spinning (see ToolPartRenderer `isStalePending`).
- */
 function sessionHasUnsettledToolPart(sessionID: string): boolean {
   const s = useSyncStore.getState();
-  const msgs = s.messages[sessionID] ?? [];
-  for (const m of msgs) {
-    const parts = s.parts[m.id];
-    if (!parts) continue;
-    for (const p of parts) {
-      const part = p as any;
-      if (part?.type !== 'tool') continue;
-      const state = part.state;
-      if (!state) continue;
-      if (state.status === 'running') return true;
-      if (state.status === 'pending' && (Object.keys(state.input ?? {}).length > 0 || state.raw)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return hasUnsettledToolPart(s.messages[sessionID] ?? [], s.parts);
 }
 
 function reconcileSessionFromServer(sessionID: string): void {
@@ -821,10 +799,7 @@ export function useOpenCodeEventStream() {
               // Shallow check: skip only if BOTH the timestamp and the title are
               // unchanged. Title alone can flip (opencode auto-titles) without a
               // perceptible time bump, and dropping that would keep the tab stale.
-              if (
-                old[idx].time.updated === info.time.updated &&
-                old[idx].title === info.title
-              )
+              if (old[idx].time.updated === info.time.updated && old[idx].title === info.title)
                 return old;
               const next = [...old];
               next[idx] = info;
