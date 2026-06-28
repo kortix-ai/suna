@@ -1,13 +1,13 @@
 name: Desktop
 
-# Desktop (Tauri) build — kept OUT of Deploy Dev on purpose. The desktop app is a
-# thin webview shell that changes rarely and needs slow, signed macOS/Windows
-# runners, so building it on every main push would be wasteful and would gate the
-# fast API/frontend/CLI path on scarce runners.
+# Desktop (Electron) DEV build — kept OUT of Deploy Dev on purpose. The desktop
+# app is a thin shell around the web app that changes rarely and needs slow,
+# signed macOS/Windows runners, so building it on every main push would be
+# wasteful and would gate the fast API/frontend/CLI path on scarce runners.
 #
-# It builds only when desktop code actually changes (push to main touching
-# apps/desktop/**) or when manually dispatched. Signed installers are published
-# to the mutable `desktop-dev-latest` prerelease.
+# It builds only when desktop code changes (push to main touching
+# apps/desktop-electron/**) or when manually dispatched. Signed installers are
+# published to the mutable `desktop-dev-latest` prerelease.
 #
 # Production desktop installers are built separately by deploy-prod.yml and
 # bundled into the unified vX.Y.Z release.
@@ -16,7 +16,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/desktop/**'
+      - 'apps/desktop-electron/**'
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
@@ -29,75 +29,54 @@ jobs:
     name: Build dev desktop ${{ matrix.target_pretty }}
     runs-on: ${{ matrix.runner }}
     env:
-      DESKTOP_PRODUCT_NAME: Kortix Dev
-      DESKTOP_IDENTIFIER: com.kortix.desktop.dev
+      # Baked into the app so the shell points at dev by default.
       DESKTOP_URL: https://dev.kortix.com/projects
+      # Distinct bundle id so a dev install can sit beside a prod install.
+      DESKTOP_APP_ID: com.kortix.desktop.dev
     strategy:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon only. Intel Macs (macos-13 runners) are scarce on
-          # GitHub-hosted and routinely sit queued for 20+ min, blocking the
-          # publish job for everyone. Apple Silicon covers all modern Macs; the
-          # arm64 .dmg is signed + notarized. Re-add an Intel leg only if needed.
-          - target_pretty: macos-arm64
+          # macOS universal (Apple Silicon + Intel) in one signed/notarized .dmg.
+          - target_pretty: macos
             runner: macos-14
-            bundles: dmg
-            artifact: desktop-macos-arm64
-            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            eb_flag: --mac
+            artifact: desktop-macos
+            files: apps/desktop-electron/dist/*.dmg
           - target_pretty: windows-x64
             runner: windows-2022
-            bundles: msi
+            eb_flag: --win
             artifact: desktop-windows-x64
-            files: apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            files: apps/desktop-electron/dist/*.exe
           - target_pretty: linux-x64
             runner: ubuntu-22.04
-            bundles: appimage
+            eb_flag: --linux
             artifact: desktop-linux-x64
-            files: apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            files: apps/desktop-electron/dist/*.AppImage
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux Tauri dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            curl \
-            file \
-            libgtk-3-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            wget
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - uses: dtolnay/rust-toolchain@stable
-
       - name: Install pnpm
         run: corepack enable pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
         env:
           npm_config_engine_strict: "false"
 
-      - name: Compute dev version
+      - name: Compute version
         id: ver
         shell: bash
-        run: echo "version=$(cat VERSION)-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
       # Decide whether this platform can SIGN. We never hard-fail on missing
-      # certs — a release should always ship an installer. If the platform's
+      # certs — a build should always produce an installer. If the platform's
       # signing secrets are present we sign (+ notarize on macOS); otherwise we
-      # build UNSIGNED (users get a Gatekeeper/SmartScreen warning, right-click →
-      # Open / "Run anyway" to bypass). `steps.sign.outputs.enabled` gates it.
+      # build UNSIGNED (Gatekeeper/SmartScreen warning).
       - name: Decide signing
         id: sign
         shell: bash
@@ -129,72 +108,35 @@ jobs:
           if [ -n "$APPLE_API_KEY_P8" ]; then
             KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
             printf '%s' "$APPLE_API_KEY_P8" > "$KEY_PATH"
-            echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+            echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
           fi
 
-      - name: Import Windows signing certificate
-        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          New-Item -ItemType Directory -Force -Path certificate | Out-Null
-          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
-          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
-          Remove-Item certificate/tempCert.txt
-          Import-PfxCertificate `
-            -FilePath certificate/certificate.pfx `
-            -CertStoreLocation Cert:\CurrentUser\My `
-            -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText)
+      # electron-builder reads electron's binary from node_modules; .npmrc sets
+      # ignore-scripts=true so its download postinstall is skipped — ensure it.
+      - name: Ensure Electron runtime
+        run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
-      - name: Configure dev desktop build
+      - name: Build desktop installer (Electron)
         shell: bash
-        env:
-          DESKTOP_VERSION: ${{ steps.ver.outputs.version }}
-          SIGN_ENABLED: ${{ steps.sign.outputs.enabled }}
-          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
-          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = 'apps/desktop/src-tauri/tauri.conf.json';
-          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
-          // Tauri requires a strict semver version; dev builds use the clean
-          // X.Y.Z so the bundler accepts it (the -dev.<sha> suffix is not valid
-          // for Windows MSI/macOS bundle versions).
-          config.version = (process.env.DESKTOP_VERSION || '0.0.0').split('-')[0];
-          config.productName = process.env.DESKTOP_PRODUCT_NAME;
-          config.identifier = process.env.DESKTOP_IDENTIFIER;
-          // Only wire Windows code-signing when signing is enabled AND a
-          // thumbprint is set — otherwise build unsigned (no certificateThumbprint).
-          if (process.env.SIGN_ENABLED === 'true' && process.env.WINDOWS_CERTIFICATE_THUMBPRINT) {
-            config.bundle ||= {};
-            config.bundle.windows ||= {};
-            config.bundle.windows.certificateThumbprint = process.env.WINDOWS_CERTIFICATE_THUMBPRINT;
-            config.bundle.windows.digestAlgorithm = 'sha256';
-            config.bundle.windows.timestampUrl = process.env.WINDOWS_TIMESTAMP_URL || 'http://timestamp.digicert.com';
-          }
-          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
-          NODE
-
-      - name: Prepare desktop shell assets
-        run: pnpm --filter @kortix/desktop run prepare-assets
-
-      # When signing is enabled, the Apple env vars trigger Tauri's sign +
-      # notarize. When disabled, they're empty → Tauri builds an unsigned bundle.
-      - name: Build desktop installer
-        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
+          pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
+            --publish never \
+            --config.extraMetadata.version="${{ steps.ver.outputs.version }}" \
+            --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.appId="$DESKTOP_APP_ID"
         env:
-          KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
-          APPLE_CERTIFICATE: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          # macOS signing + notarization (electron-builder conventions).
+          CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
           APPLE_API_ISSUER: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_API_KEY: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_API_KEY || '' }}
-          APPLE_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (secrets.APPLE_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD) || '' }}
-          APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
+          # Windows signing (pfx via CSC_*). Both runners read CSC_*; only the
+          # matching platform's secret is non-empty.
+          WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          # Never let an unsigned build fail the job.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7

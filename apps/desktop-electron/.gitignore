@@ -1,0 +1,6 @@
+node_modules
+dist
+
+# The repo-root .gitignore ignores `build/`, but this app's electron-builder
+# resources (icons + entitlements) live in build/ and MUST be committed.
+!/build
