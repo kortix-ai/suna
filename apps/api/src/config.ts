@@ -39,9 +39,8 @@ const optInt = (def: number) =>
 
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
  * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle
- * isn't silently dropped — the bug that left KORTIX_WARM_POOL_CLONE_AT_PARK="1"
- * parsing as false (Stage-1, re-clone on claim) even though the daemon itself
- * sets that env to '1'. optBoolTrue keeps its original 'anything but false' rule. */
+ * isn't silently dropped. optBoolTrue keeps its original 'anything but false'
+ * rule. */
 const optBoolTrue = z.string().optional().default('true').transform((v) => v !== 'false');
 const optBoolFalse = z
   .string()
@@ -127,32 +126,6 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (re-introduced behind the session runtime allocator: a
-  // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
-  // bound to a session id on create — decoupled from the durable session row).
-  // Per-template default ready-count when a template is first opted in via the
-  // UI (per-template UI value overrides). FALLBACK DEFAULT ONLY — the live value
-  // is the DB `warm_pool` setting (admin Providers panel / runtime-settings.ts).
-  KORTIX_WARM_POOL_SIZE:           optInt(0),
-  // Master on/off for the warm pool subsystem. Default OFF — we don't run warm
-  // pools by default (they hold idle boxes for no reason). This env is only the
-  // FALLBACK default; the live master gate is the DB `warm_pool` setting flipped
-  // from the admin Providers panel (runtime-settings.ts → warmPoolEnabled()).
-  // When OFF the allocator skips the claim path and every create cold-provisions.
-  KORTIX_WARM_POOL_ENABLED:        optBoolFalse,
-  // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
-  // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
-  // base branch + warm the opencode project plugin AT PARK — so a claim only
-  // creates the session branch locally + adopts the warm opencode (~0.5s claim
-  // vs ~9s when the spare clones+warms on claim). Default off; turns a generic
-  // pool into per-project warm boxes (idle cost per hot project), so enable only
-  // for projects with predictable imminent sessions and after live-validation.
-  KORTIX_WARM_POOL_CLONE_AT_PARK:  optBoolFalse,
-  // Presence window: only keep a warm pool while a user has touched the project
-  // (authenticated portal activity) within this many minutes. Closing the tab
-  // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
-
   // ── Pause / resume tuning ─────────────────────────────────────────────────
   // The sandbox idle→stop / stop→archive / →delete intervals live below as
   // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
@@ -285,11 +258,6 @@ const envSchema = z.object({
   // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
   DAYTONA_WARM_TARGET:         optStr,
   DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
-  // Pool spawns default to warm snapshots (fast refills, but Daytona caps warm
-  // boxes at 1 vCPU / 1 GiB — see warm-bake.ts). Set true to boot pool boxes
-  // from the full-size Dockerfile image instead (slower refills, 2/4/20 spec).
-  KORTIX_WARM_POOL_FULL_SIZE:  optBoolFalse,
-
   // When a template's content hash changes and a fresh snapshot is built, drop
   // the now-superseded predecessor immediately (reap-on-repoint) instead of
   // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
@@ -332,8 +300,7 @@ const envSchema = z.object({
   // that created it dies (orphaned local-dev & ephemeral-env sessions are the
   // main leak source). All in MINUTES.
   //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
-  //                use site so a box is NEVER created persistent (a 0 here once
-  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                use site so a box is NEVER created persistent.
   //                This is what actually stops the money burn.
   //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
   //                still resumable; kept warm-resumable in the meantime).
@@ -595,10 +562,6 @@ export const config = {
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
-  KORTIX_WARM_POOL_ENABLED: env.KORTIX_WARM_POOL_ENABLED,
-  KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
@@ -659,7 +622,6 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
-  KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.

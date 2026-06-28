@@ -76,11 +76,11 @@ async function main() {
   const staticWeb = startStaticWebServer(cfg.staticPort)
   bootMark('static-web')
 
-  // Warm-pool spare (KORTIX_WARM_POOL=1 — set only by the pool builder): boot a
-  // generic, session-less runtime, then adopt a claimant's session on claim.
-  // Opt-in early-return; the normal boot path below is byte-identical.
-  if ((process.env.KORTIX_WARM_POOL ?? '').trim() === '1') {
-    await runPoolMode(cfg, bootTime, bootState, bootMark, staticWeb)
+  // Warm snapshot seed capture. This boots a session-less runtime, warms
+  // opencode, writes the capture pin, and later adopts the forked session env
+  // written by Platinum restore.
+  if ((process.env.KORTIX_WARM_SEED ?? '').trim() === '1') {
+    await runWarmSeedMode(cfg, bootTime, bootState, bootMark, staticWeb)
     return
   }
 
@@ -267,9 +267,9 @@ async function main() {
   void startSessionRuntime(opencode, cfg, bootState, bootMark)
 }
 
-// Adopt a forked session inside a warm-seed clone. Mirrors the warm-pool claim
-// path, but the repo is already baked — materializeRepo() takes its local-only
-// branch (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
+// Adopt a forked session inside a warm-seed clone. The repo is already baked —
+// materializeRepo() takes its local-only branch (remote set-url + `checkout -B
+// <session>`), so adoption is ~100ms.
 // Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
@@ -317,8 +317,8 @@ function armSeedAdoption(
 
 // Post-opencode session runtime: create the initial opencode session (when a
 // prompt/bootstrap was requested) and start the question-relay event loop.
-// Extracted verbatim from the former inline block so the warm-pool claim path
-// reuses the EXACT same logic after a pooled spare adopts a claimant's session.
+// Shared post-boot session runtime: create the initial opencode session when
+// requested and wire the question/turn event relay.
 async function startSessionRuntime(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
   cfg: Config,
@@ -364,18 +364,10 @@ async function startSessionRuntime(
   }
 }
 
-// Read KEY=VALUE lines from the per-session env file into process.env. TWO
-// writers stage it on DIFFERENT paths and we must accept either:
-//   • /tmp/pt-env — the warm-pool claim POSTs it via the daemon's /file/upload
-//     (its allowed-roots gate, routes/files.ts, permits /tmp + workspace but
-//     REJECTS /etc, so the claim-write must target /tmp).
-//   • /etc/pt-env — the PLATINUM on-demand restore writes it directly into the
-//     guest pre-boot (host-agent writeEnvIntoOverlay via debugfs / writeGuestEnv).
-//     The platinum fork never goes through /file/upload, so its env lands in /etc.
-// Reading both is what makes a pool-mode spare adopt regardless of which flow
-// forked it (the cross-codebase merge left these two paths disagreeing → forks
-// stayed tokenless/unconfigured, hanging at "Starting the agent").
-function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): void {
+// Read KEY=VALUE lines from the per-session env file into process.env. Platinum
+// restore writes it directly into the guest pre-boot at /etc/pt-env (host-agent
+// writeEnvIntoOverlay via debugfs / writeGuestEnv).
+function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
   for (const path of paths) {
     let txt: string
     try { txt = readFileSync(path, 'utf8') } catch { continue }
@@ -390,41 +382,24 @@ function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): voi
   }
 }
 
-// Warm-pool spare runtime (opt-in via KORTIX_WARM_POOL=1, set only by the pool
-// builder). Boot opencode + the proxy so the VM is snapshottable + health-green,
-// then idle until claimed. On claim the control plane writes the claimant's env
-// to the session-env file; we DETECT it by polling (robust to a snapshot-restored
-// process missing a signal), then reload env, re-read config, materialize the
-// repo, and start the session runtime.
-//
-// Two park strategies:
-//   • Stage-1 (generic spare): boot opencode against the DEFAULT config with NO
-//     repo, then clone + warm opencode on CLAIM (~9s claim — pre-pays only the
-//     provider create).
-//   • Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1, set by the API pool driver on a
-//     project-scoped spare that carries KORTIX_REPO_URL/PROJECT_ID but NO session
-//     identity): clone the BASE branch AND warm the opencode project plugin AT
-//     PARK, so claim only creates the session branch locally (git checkout -B
-//     from the cloned base — instant, no network; materializeRepo's baked-checkout
-//     fast path) and adopts the already-warm opencode (~0.5s claim). opencode is
-//     warmed by a readiness PROBE (a /session read that resolves the /workspace
-//     Instance + loads pty-tools.ts) — never a bootstrap session, since there is
-//     no KORTIX_SESSION_ID to relay at park.
+// Warm snapshot seed runtime (opt-in via KORTIX_WARM_SEED=1). Boot opencode +
+// the proxy so the VM is snapshottable + health-green, write the root-session
+// pin that gates capture, then adopt the forked session's env after Platinum
+// restore resumes the captured process.
 
-// Fetch the FULL org model catalog at PARK and write it to KORTIX_LLM_CATALOG_FILE
-// so the (tokenless) seed's opencode config bakes the full picker instead of the
+// Fetch the FULL org model catalog during seed capture and write it to KORTIX_LLM_CATALOG_FILE
+// so the seed's opencode config bakes the full picker instead of the
 // ~11-model fallback. The seed can't reach the gateway /models (no per-session
 // gateway key), so it asks an apps/api endpoint authed by the sandbox token.
 // Best-effort + idempotent: a no-op unless KORTIX_LLM_CATALOG_URL is set, and any
 // failure just leaves the fallback catalog (LLM + tools still work via proxies).
 //
-// ENDPOINT CONTRACT (apps/api, to be added deliberately — NOT done here because
-// the PARK auth path is subtle): GET KORTIX_LLM_CATALOG_URL with
+// ENDPOINT CONTRACT (apps/api, to be added deliberately): GET KORTIX_LLM_CATALOG_URL with
 // `Authorization: Bearer <KORTIX_SANDBOX_TOKEN>` → `{ models: {...} }` ==
-// gatewayModelCatalog(projectId, userId). At PARK there is NO live sessionSandboxes
-// row (it's a template build), and the token is a type='user' account key, so the
-// route must authorize by validateAccountToken→accountId/projectId (like the git
-// proxy at park), NOT by the sandbox-row check clone-credential uses.
+// gatewayModelCatalog(projectId, userId). During seed capture there is NO live
+// sessionSandboxes row (it's a template build), and the token is a type='user'
+// account key, so the route must authorize by validateAccountToken→accountId/projectId,
+// NOT by the sandbox-row check clone-credential uses.
 async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   const url = process.env.KORTIX_LLM_CATALOG_URL
   if (!url || !cfg.sandboxToken) return
@@ -441,10 +416,10 @@ async function prefetchSeedCatalog(cfg: Config): Promise<void> {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, body, { mode: 0o600 })
   process.env.KORTIX_LLM_CATALOG_FILE = file
-  logger.info('[pool] baked full model catalog for seed', { file, models: count })
+  logger.info('[seed] baked full model catalog for seed', { file, models: count })
 }
 
-async function runPoolMode(
+async function runWarmSeedMode(
   cfg: Config,
   bootTime: number,
   bootState: SandboxBootState,
@@ -460,29 +435,28 @@ async function runPoolMode(
   // every fork paid that ~3.2s init on its own hot path (the runtime-ready
   // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
   // seed (and every fork) runs the real agents/plugins, not the baked default.
-  // Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1 on a project-scoped seed that
-  // carries KORTIX_REPO_URL but no session): clone the REAL project repo at base
-  // so the captured snapshot already has /workspace — a fork then hits
-  // materializeRepo's baked-checkout fast path (no in-box clone). Otherwise the
-  // generic repo-less scaffold seed (Stage-1 / the shared default). A failed
-  // project clone returns false → degrades to the repo-less spare, never bricks.
-  const projectSeed = !!cfg.repoUrl && (process.env.KORTIX_WARM_POOL_CLONE_AT_PARK ?? '').trim() === '1'
+  // Project-scoped warm seed: clone the REAL project repo at base so the
+  // captured snapshot already has /workspace. A fork then hits materializeRepo's
+  // baked-checkout fast path (no in-box clone). Otherwise use the shared
+  // scaffold seed. A failed project clone returns false and degrades to the
+  // scaffold seed.
+  const projectSeed = !!cfg.repoUrl && (process.env.KORTIX_WARM_SEED_PROJECT_CLONE ?? '').trim() === '1'
   const materialized = projectSeed
     ? await materializeProjectSeed(cfg)
     : await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
-  bootMark(projectSeed ? 'pool-project-seed-materialized' : 'pool-scaffold-materialized')
+  bootMark(projectSeed ? 'seed-project-materialized' : 'seed-scaffold-materialized')
   const opencodeConfigDir = materialized
     ? await resolveOpencodeConfigDir(cfg)
     : cfg.defaultOpencodeConfigDir
   await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
 
-  // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful/warm-pool
-  // only — this whole function is the warm path; cold + Daytona never run it).
+  // Warm-fork NO-RESTART path (opt-in KORTIX_LLM_HOTSWAP=1; stateful warm
+  // snapshots only — cold + Daytona never run it).
   // Start the localhost LLM credential proxy, and optionally the Executor proxy
   // used by the compatibility MCP face. The agent-facing Executor path is the
   // `kortix executor` CLI, which reads live env on each shell command and does
   // not need an OpenCode restart. Best-effort: a bind failure leaves the
-  // *_PROXY_URL unset and claim falls back to the restart path where needed.
+  // *_PROXY_URL unset and adoption falls back to the restart path where needed.
   const llmHotswap = (process.env.KORTIX_LLM_HOTSWAP ?? '').trim() === '1'
   if (llmHotswap) {
     const llmPort = Number(process.env.KORTIX_LLM_PROXY_PORT) || 4319
@@ -491,8 +465,8 @@ async function runPoolMode(
       // Seen by buildOpencodeConfigContent (via process.env) at the seed spawn
       // below → provider.kortix routes through the proxy.
       process.env.KORTIX_LLM_PROXY_URL = llmUrl
-      bootMark('pool-llm-proxy-started')
-      logger.info('[pool] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
+      bootMark('seed-llm-proxy-started')
+      logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
     }
     const exPort = Number(process.env.KORTIX_EXECUTOR_PROXY_PORT) || 4320
     const exUrl = startExecutorProxy(exPort)
@@ -500,8 +474,8 @@ async function runPoolMode(
       // Seen by buildOpencodeConfigContent only when KORTIX_EXECUTOR_MCP_ENABLED=1.
       // The proxy is harmless when unused; the CLI remains the primary path.
       process.env.KORTIX_EXECUTOR_PROXY_URL = exUrl
-      bootMark('pool-executor-proxy-started')
-      logger.info('[pool] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
+      bootMark('seed-executor-proxy-started')
+      logger.info('[seed] executor hot-swap proxy up for optional executor MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -510,16 +484,16 @@ async function runPoolMode(
     // fallback. No-op unless KORTIX_LLM_CATALOG_URL is wired (see report for the
     // endpoint contract); any failure → fallback models (LLM + tools still work).
     await prefetchSeedCatalog(cfg).catch((err) =>
-      logger.warn('[pool] catalog prefetch failed; seed uses fallback models', { err: (err as Error).message }),
+      logger.warn('[seed] catalog prefetch failed; seed uses fallback models', { err: (err as Error).message }),
     )
   }
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
-  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-  bootMark('pool-opencode-spawned')
+  await opencode.start().catch((err) => logger.warn('[seed] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+  bootMark('seed-opencode-spawned')
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
-  bootMark('pool-ready')
+  bootMark('seed-proxy-ready')
 
   // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
   // and pre-create + pin the root session, so the frozen image has opencode
@@ -527,14 +501,14 @@ async function runPoolMode(
   // capture condition gates on the pin file existing, so the snapshot is taken
   // only AFTER this — making forks resume with runtime-ready instant and the
   // backend ensure resolving 'healed' (no first-session init). Only when a seed
-  // (scaffold OR real project repo) materialized; else the old repo-less spare.
+  // (scaffold OR real project repo) materialized; otherwise capture cannot be pinned.
   if (materialized) {
     void (async () => {
       const deadline = Date.now() + 5 * 60_000
       let ok = false
       while (!ok && Date.now() < deadline) ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
-      if (!ok) { logger.warn('[pool] opencode never warmed; capture will not trigger'); return }
-      bootMark('pool-opencode-ready')
+      if (!ok) { logger.warn('[seed] opencode never warmed; capture will not trigger'); return }
+      bootMark('seed-opencode-ready')
       try {
         const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
         const session = (await res.json()) as { id?: string }
@@ -545,59 +519,59 @@ async function runPoolMode(
           markSeedBakedSession(session.id)
           mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
           writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
-          bootMark('pool-seed-session')
-          logger.info('[pool] pre-created + pinned root opencode session', { sessionId: session.id })
+          bootMark('seed-opencode-session')
+          logger.info('[seed] pre-created + pinned root opencode session', { sessionId: session.id })
         }
       } catch (err) {
-        logger.warn('[pool] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
+        logger.warn('[seed] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
       }
-      logger.info('[pool] warm seed ready; awaiting claim', { timeline: bootState.timeline })
+      logger.info('[seed] capture-ready; awaiting fork adoption', { timeline: bootState.timeline })
     })()
   } else {
-    logger.info('[pool] repo-less spare ready; awaiting claim', { timeline: bootState.timeline })
+    logger.warn('[seed] no seed repo materialized; capture pin will not be written', { timeline: bootState.timeline })
   }
 
-  let claimed = false
-  const claim = (trigger: string) => {
-    if (claimed) return
-    claimed = true
+  let adopted = false
+  const adopt = (trigger: string) => {
+    if (adopted) return
+    adopted = true
     void (async () => {
       const t0 = Date.now()
       reloadSessionEnv()
       writeAgentEnvFile(createProjectEnvStore())
       const cfg2 = loadConfig()
-      // Rebuild the proxy/control surface with the claimant's cfg — the spare
-      // booted tokenless, so the auth gate would 503 every request otherwise.
+      // Rebuild the proxy/control surface with the fork's cfg; the seed booted
+      // tokenless or with seed-only credentials.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
-        // Clear any park-clone failure so this retries cleanly. When park
-        // pre-cloned (Stage-2 happy path) materializeRepo hits the baked-checkout
-        // fast path: set remote + local `git checkout -B <session>` from the
-        // cloned base, no network re-clone. Otherwise it clones now (Stage-1).
+        // Clear any seed-clone failure so this retries cleanly. When the seed
+        // pre-cloned the project, materializeRepo hits the baked-checkout fast
+        // path: set remote + local `git checkout -B <session>` from the cloned
+        // base, no network re-clone. Otherwise it clones now.
         bootState.repoMaterializationError = null
         await materializeRepo(cfg2).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-          logger.error('[pool] repo materialization failed', err)
+          logger.error('[seed] repo materialization failed', err)
         })
-        bootMark('claim-repo-materialized')
+        bootMark('adopt-repo-materialized')
         if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
       }
 
-      // A warm spare's opencode process is started before claim, when it has no
-      // session-scoped Executor/CLI/LLM env and (for Stage-1) before the project
-      // config dir exists. Restart it after adopting the claimant env + repo so
+      // The seed opencode process is started before adoption, when it has no
+      // session-scoped Executor/CLI/LLM env and may have started before the
+      // project config dir exists. Restart it after adopting the fork env + repo so
       // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
-      const claimOpencodeConfigDir = bootState.repoMaterializationError
+      const adoptedOpencodeConfigDir = bootState.repoMaterializationError
         ? cfg2.defaultOpencodeConfigDir
         : await resolveOpencodeConfigDir(cfg2)
-      await ensureOpencodeConfigDeps(claimOpencodeConfigDir).catch((err) =>
-        logger.warn('[pool] claim config deps failed', { err: (err as Error).message }),
+      await ensureOpencodeConfigDeps(adoptedOpencodeConfigDir).catch((err) =>
+        logger.warn('[seed] adoption config deps failed', { err: (err as Error).message }),
       )
       // NO-RESTART fast path (opt-in, stateful warm-fork only): the seed baked a
       // session-independent opencode config routed through the localhost LLM +
@@ -605,8 +579,7 @@ async function runPoolMode(
       // already-warm opencode — skipping the ~8s restart. Engages only when
       // hot-swap is on, the LLM proxy is up + the seed baked the proxied provider
       // (KORTIX_LLM_PROXY_URL set), opencode is currently healthy, and the repo
-      // materialized cleanly (Stage-2 baked-checkout → projectTarget unchanged, so
-      // reconfigure is unnecessary). Anything missing → fall through to restart.
+      // materialized cleanly. Anything missing falls through to restart.
       let hotSwapped = false
       if (
         llmHotswap &&
@@ -625,37 +598,32 @@ async function runPoolMode(
         }
         if (llmProxyReady()) {
           hotSwapped = true
-          bootMark('claim-opencode-hotswapped')
+          bootMark('adopt-opencode-hotswapped')
           // Observability only: this confirms the optional executor proxy has a
           // live token. It does not assert that OpenCode registered MCP tools.
-          if (executorProxyReady()) bootMark('claim-executor-proxy-ready')
-          logger.info('[pool] claim hot-swap: per-session tokens injected via proxies, opencode NOT restarted', {
+          if (executorProxyReady()) bootMark('adopt-executor-proxy-ready')
+          logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
             executorReady: executorProxyReady(),
           })
         }
       }
       if (!hotSwapped) {
-        opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
+        opencode.reconfigure(cfg2, adoptedOpencodeConfigDir, projectEnv)
         await opencode.restart().catch((err) =>
-          logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
+          logger.warn('[seed] adoption opencode restart failed', { err: (err as Error).message }),
         )
-        bootMark('claim-opencode-restarted')
+        bootMark('adopt-opencode-restarted')
       }
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
-      logger.info('[pool] claim complete', { claimMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
+      logger.info('[seed] fork adoption complete', { adoptMs: Date.now() - t0, hotSwapped, timeline: bootState.timeline })
     })()
   }
-  process.on('SIGHUP', () => claim('sighup'))
+  process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
-    // The claimant env lands at /tmp/pt-env (warm-pool claim via /file/upload)
-    // OR /etc/pt-env (platinum on-demand restore writes it pre-boot). Poll both
-    // so the spare adopts regardless of which flow forked it.
-    for (const p of ['/etc/pt-env', '/tmp/pt-env']) {
-      let txt = ''
-      try { txt = readFileSync(p, 'utf8') } catch { continue }
-      if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim(`env-poll:${p}`); return }
-    }
-  }, 200)  // tight: the warm daemon idles until env lands; a slow poll just delays adoption ~1s
+    let txt = ''
+    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
+    if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll:/etc/pt-env') }
+  }, 200)
 }
 
 // Establish the session's canonical opencode root and (once) deliver the

@@ -13,25 +13,6 @@ import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '.
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
-import { getWarmCountsBySlug, resolveTemplateWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
-
-/**
- * Build a `slug → warm status` resolver for a project's templates: the per-template
- * opt-in config merged with live ready/warming counts. Returns a function that
- * yields null for every slug when the operator gate is off (feature unavailable).
- */
-async function buildTemplateWarmResolver(
-  projectId: string,
-  metadata: unknown,
-): Promise<(slug: string) => { enabled: boolean; size: number; ready: number; warming: number } | null> {
-  if (!warmPoolEnabled()) return () => null;
-  const counts = await getWarmCountsBySlug(projectId).catch(() => new Map());
-  return (slug: string) => {
-    const cfg = resolveTemplateWarmConfig(metadata, slug);
-    const c = counts.get(slug) ?? { ready: 0, warming: 0 };
-    return { enabled: cfg.enabled, size: cfg.size, ready: c.ready, warming: c.warming };
-  };
-}
 
 projectsApp.openapi(
   createRoute({
@@ -381,11 +362,9 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
-    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+      items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
-      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -429,12 +408,10 @@ projectsApp.openapi(
   // before reading them, so the dashboard never shows a permanent "Building".
   await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
-  const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
   return c.json({
-    templates: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+    templates: templates.map((t) => serializeTemplate(t)),
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
-    warm_pool_available: warmPoolEnabled(),
   });
 },
 );
@@ -722,11 +699,9 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
-    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+      items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
-      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -2,11 +2,11 @@ import { logger } from './logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localhost credential-injecting reverse proxy (the warm-fork "no restart on
-// claim" mechanism). Two instances run when KORTIX_LLM_HOTSWAP=1:
+// restore" mechanism). Two instances run when KORTIX_LLM_HOTSWAP=1:
 //   • the LLM gateway proxy   (opencode's kortix provider baseURL → here)
 //   • the executor MCP proxy  (kortix-executor MCP's KORTIX_API_URL → here)
 //
-// WHY: a stateful warm-fork session attach ("claim") used to KILL + respawn
+// WHY: a stateful warm-fork session attach used to KILL + respawn
 // opencode purely to swap in the per-session tokens (LLM gateway key + executor
 // token) — re-paying ~8s of opencode init that the snapshot already baked.
 // opencode reads its config (provider.options.apiKey, mcp.environment) only at
@@ -15,7 +15,7 @@ import { logger } from './logger'
 // Fix: make those credentials SESSION-INDEPENDENT in the baked config. The config
 // points the relevant baseURL/api-url at THIS localhost proxy with a fixed
 // placeholder Bearer; the proxy holds the real per-session token in memory and
-// rewrites the Authorization header on the way upstream. On claim the daemon just
+// rewrites the Authorization header on the way upstream. On restore the daemon just
 // calls setToken() — opencode is never restarted.
 //
 // SCOPE: stateful warm-fork only (the caller gates it). Cold templates + Daytona
@@ -95,7 +95,7 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
           const upstream = state.upstreamBase
           const tok = state.token
           if (!upstream || !tok) {
-            // Not claimed yet (or token cleared) — fail closed; never an open relay.
+            // Not restored yet (or token cleared) — fail closed; never an open relay.
             return new Response(JSON.stringify({ error: `${name} proxy not ready` }), {
               status: 503,
               headers: { 'content-type': 'application/json' },

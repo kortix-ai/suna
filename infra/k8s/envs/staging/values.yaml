@@ -13,9 +13,6 @@ env:
 extraEnv:
   LLM_GATEWAY_BASE_URL: "https://gateway-staging.kortix.com/v1/llm"
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
-  KORTIX_WARM_POOL_MAX_TOTAL: "10"
-  KORTIX_WARM_POOL_SIZE: "1"
-  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
 # Staging has its own DB/Supabase data plane via `kortix-staging-env`, so the
 # singleton background workers are safe to run here. This makes staging a true
 # production rehearsal instead of a read-only preview.

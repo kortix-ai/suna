@@ -17,8 +17,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
  *
  * OPTIMISTIC: mint the session id client-side and navigate IMMEDIATELY — the
  * instant shell paints before the create POST even returns. The backend honors a
- * client-provided UUID (`session_id` is client-authoritative; the warm pool binds
- * to it), and the session page's `/start` poll tolerates the sub-second
+ * client-provided UUID (`session_id` is client-authoritative), and the session page's `/start` poll tolerates the sub-second
  * create-vs-start race by retrying. Provisioning + the route bundle are warmed
  * during the navigation; the session is persisted in the background.
  *

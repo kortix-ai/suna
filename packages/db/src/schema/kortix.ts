@@ -23,7 +23,6 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'active',
   'stopped',
   'archived',
-  'pooled',
   'error',
 ]);
 
@@ -918,10 +917,6 @@ export const sessionSandboxes = kortixSchema.table(
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
     config: jsonb('config').default({}).$type<Record<string, unknown>>(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    // Warm-pool lifecycle. NULL for a normal session sandbox; for a pre-booted
-    // pool sandbox: 'booting' → 'parked' (claimable) → 'claimed'. A parked
-    // sandbox has no project_sessions row yet. See docs/specs/warm-pool.md.
-    poolState: text('pool_state'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -932,27 +927,7 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_account').on(table.accountId),
     index('idx_session_sandboxes_status').on(table.status),
     index('idx_session_sandboxes_external_id').on(table.externalId),
-    // Hot path for the atomic warm-sandbox claim (WHERE project_id, pool_state).
-    index('idx_session_sandboxes_pool').on(table.projectId, table.poolState),
   ],
-);
-
-/**
- * Warm-pool presence — one row per project a user currently has OPEN. The web
- * client heartbeats while the project tab is visible and beacons a "leave" on
- * close. The warm-pool reconcile keeps spares only for present projects and
- * reaps them when presence stops, so cost tracks projects-open-right-now rather
- * than every project touched in the last 6h. Cross-pod (a DB row, not an
- * in-memory map, so the leader reconcile sees every pod's presence).
- */
-export const warmPoolPresence = kortixSchema.table(
-  'warm_pool_presence',
-  {
-    projectId: uuid('project_id').primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('idx_warm_pool_presence_seen').on(table.lastSeenAt)],
 );
 
 /**
@@ -1291,46 +1266,6 @@ export const sunaAccountMigrations = kortixSchema.table(
     index('idx_suna_account_migrations_status').on(table.status),
     index('idx_suna_account_migrations_account').on(table.accountId),
     index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
-  ],
-);
-
-// ─── Pool Resources ─────────────────────────────────────────────────────────
-
-export const poolResources = kortixSchema.table(
-  'pool_resources',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    provider: sandboxProviderEnum('provider').notNull(),
-    serverType: varchar('server_type', { length: 64 }).notNull(),
-    location: varchar('location', { length: 64 }).notNull(),
-    desiredCount: integer('desired_count').notNull().default(2),
-    enabled: boolean('enabled').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_pool_resources_unique').on(table.provider, table.serverType, table.location),
-  ],
-);
-
-export const poolSandboxes = kortixSchema.table(
-  'pool_sandboxes',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    resourceId: uuid('resource_id').references(() => poolResources.id, { onDelete: 'set null' }),
-    provider: sandboxProviderEnum('provider').notNull(),
-    externalId: text('external_id').notNull(),
-    baseUrl: text('base_url').notNull().default(''),
-    serverType: varchar('server_type', { length: 64 }).notNull(),
-    location: varchar('location', { length: 64 }).notNull(),
-    status: varchar('status', { length: 32 }).notNull().default('provisioning'),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    readyAt: timestamp('ready_at', { withTimezone: true }),
-  },
-  (table) => [
-    index('idx_pool_sandboxes_claim').on(table.status, table.createdAt),
-    uniqueIndex('idx_pool_sandboxes_external_id_active').on(table.externalId),
   ],
 );
 

@@ -60,7 +60,6 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
-  warmPoolPresence,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -126,9 +125,6 @@ export {
   platformSettings,
   accessAllowlist,
   accessRequests,
-  // Pool
-  poolResources,
-  poolSandboxes,
   // Change Requests
   changeRequestStatusEnum,
   changeRequests,

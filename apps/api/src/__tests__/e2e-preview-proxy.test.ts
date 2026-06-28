@@ -66,8 +66,6 @@ function sortPreferredSandboxRows(rows: any[]): any[] {
   return [...rows].sort((a, b) => {
     const statusDiff = rank(a.status) - rank(b.status);
     if (statusDiff !== 0) return statusDiff;
-    const poolDiff = (a.poolState == null ? 0 : 1) - (b.poolState == null ? 0 : 1);
-    if (poolDiff !== 0) return poolDiff;
     return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
   });
 }

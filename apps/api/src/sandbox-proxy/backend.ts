@@ -88,7 +88,6 @@ function preferredSandboxOrder() {
       when ${sessionSandboxes.status} = 'stopped' then 2
       else 3
     end`,
-    sql`case when ${sessionSandboxes.poolState} is null then 0 else 1 end`,
     sql`${sessionSandboxes.updatedAt} desc`,
   ];
 }

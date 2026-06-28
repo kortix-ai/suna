@@ -5,7 +5,6 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickProjectWarmBake } from '../../snapshots/warm-project';
-import { notePoolPresence } from '../../platform/services/warm-pool';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
@@ -317,11 +316,6 @@ projectsApp.openapi(
   // caches) so even the FIRST session skips the clone. No-op unless warm
   // snapshots are enabled.
   kickProjectWarmBake(row);
-
-  // Start the warm pool NOW instead of waiting for portal presence — "first
-  // session right after creating a project" was exactly the cold moment users
-  // felt. Fire-and-forget; no-op when the pool is disabled. Warm for the creator.
-  notePoolPresence(row.projectId, scope.userId);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },

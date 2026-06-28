@@ -37,11 +37,11 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 • 1. What changed
      Fixed and pushed c21209bf to origin/main and origin/executor-session-identity.
 
-     Root cause: warm-pool session claims minted project-scoped tokens without sessionId / agentGrant, while cold boots minted proper session
+     Root cause: restored warm-snapshot sessions minted project-scoped tokens without sessionId / agentGrant, while cold boots minted proper session
      executor tokens. That made Executor connector lookup resolve as unassigned/empty.
 
      Main fixes:
-      - Warm-pool claims now mint session-bound executor tokens with project, session, agent, connector, and kortix_cli grant context.
+      - Restored warm-snapshot sessions now mint session-bound executor tokens with project, session, agent, connector, and kortix_cli grant context.
       - Auth middleware now exposes sessionId for PAT/account-token auth.
       - Executor principal resolution now uses token session context, not only X-Kortix-Session-Id.
       - /accounts/me and kortix whoami/token now show explicit token_context.
@@ -52,7 +52,7 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
   2. What was verified
      Local checks passed:
       - API preview proxy tests.
-      - warm-pool / agent-grant / unit scope tests.
+      - restored warm-snapshot / agent-grant / unit scope tests.
       - executor SDK tests.
       - CLI host/auth tests.
       - API and CLI TypeScript checks.
@@ -92,7 +92,7 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 
 
 • Yes, for the bug we traced: fresh dev sessions should now get a session-scoped executor token, so Executor connector discovery should no
-  longer be empty just because the sandbox came from the warm pool.
+  longer be empty just because the sandbox came from a restored warm snapshot.
 
   The fix is live on dev: dev-api.kortix.com reports commit c21209bf. The thing to verify manually is the exact Veyris flow: start a new
   session, run kortix token / kortix whoami --json, and then call the executor connector path. It should show session token context with

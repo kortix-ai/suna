@@ -43,10 +43,6 @@ export interface KortixProject {
   experimental_features?: ExperimentalFeatureView[];
   /** Back-compat alias for `experimental.apps`. */
   apps_enabled?: boolean;
-  /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
-  warm_pool?: { enabled: boolean; size: number };
-  /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
-  warm_pool_available?: boolean;
 }
 
 export interface KortixAccount {
@@ -1322,23 +1318,11 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
-  /** Per-template warm pool config + live counts. null when the operator gate
-   *  is off (feature unavailable platform-wide). */
-  warm_pool?: {
-    enabled: boolean;
-    size: number;
-    /** Sandboxes parked and ready to claim instantly. */
-    ready: number;
-    /** Sandboxes currently booting toward ready. */
-    warming: number;
-  } | null;
 }
 
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
-  /** Whether the warm pool feature is enabled platform-wide. */
-  warm_pool_available?: boolean;
 }
 
 export interface ProjectSnapshotBuild {
@@ -1358,8 +1342,6 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
-  /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
-  warm_pool_available?: boolean;
 }
 
 export interface ProjectSandboxHealth {
@@ -2598,21 +2580,6 @@ export async function updateAppsConfig(
   input: { enabled: boolean | null },
 ) {
   return updateExperimentalFeature(projectId, 'apps', input.enabled);
-}
-
-/**
- * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
- * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
- * the platform default). Live ready/warming counts come back on each template via
- * `listProjectSnapshots`.
- */
-export async function updateTemplateWarmPool(
-  projectId: string,
-  input: { slug: string; enabled?: boolean; size?: number },
-) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
-  );
 }
 
 export async function setProjectOnboardingComplete(

@@ -434,7 +434,7 @@ Run these against representative endpoints from each domain.
 
 - project: `active | archived`
 - session: `queued | branching | provisioning | running | stopped | failed | completed`
-- sandbox (session_sandboxes): `provisioning | active | stopped | error | archived` (legacy `sandboxes` table also has `pooled`)
+- sandbox (session_sandboxes): `provisioning | active | stopped | error | archived`
 - snapshot: `queued | building | ready | failed` (session boot needs a `ready` snapshot of baseRef)
 - change request: `open | merged | closed`
 - trigger fire result: `fired | queued | failed`
@@ -583,7 +583,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
-`SBX-5` `GET/PATCH /projects/:id/warm-pool` → 200 (clamped 0-25).
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.

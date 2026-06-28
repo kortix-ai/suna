@@ -3,11 +3,10 @@
  *
  * The API runs as N replicas on ECS Fargate (prod: min 2, up to 10). Request-
  * path code is stateless and safe on every replica, but the SINGLETON background
- * loops (cron trigger scheduler, project maintenance, warm-pool reconcile,
- * legacy-migration worker, snapshot pre-build, grant-expiry sweep) must run on
+ * loops (cron trigger scheduler, project maintenance, legacy-migration worker,
+ * snapshot pre-build, grant-expiry sweep) must run on
  * exactly ONE replica — otherwise every cron trigger fires N times (N duplicate
- * paid agent sessions + duplicate external side effects), the warm pool is
- * over-provisioned, etc.
+ * paid agent sessions + duplicate external side effects), etc.
  *
  * We elect a single leader with a TTL lease row in `kortix.worker_leader_lease`.
  * One atomic UPSERT both acquires (when the row is absent or its lease expired)

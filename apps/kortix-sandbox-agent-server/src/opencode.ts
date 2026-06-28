@@ -47,7 +47,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
   // the proxy with a placeholder key, making the gateway provider config
   // SESSION-INDEPENDENT (the real per-session token is injected by the proxy, not
-  // baked here). This lets a tokenless warm seed bake a usable provider so claim
+  // baked here). This lets a tokenless warm seed bake a usable provider so restore
   // can hot-swap the token with NO opencode restart. Cold/Daytona never set this
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
@@ -101,7 +101,7 @@ export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promis
           // Proxy mode: the MCP talks to the localhost executor proxy with a
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
-          // claim). Direct mode (cold/Daytona): the real token + api url, as before.
+          // restore). Direct mode (cold/Daytona): the real token + api url, as before.
           KORTIX_EXECUTOR_TOKEN: executorProxyMode ? EXECUTOR_PROXY_PLACEHOLDER_KEY : executorToken!,
           KORTIX_API_URL: executorProxyMode ? executorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',

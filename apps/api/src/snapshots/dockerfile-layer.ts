@@ -148,8 +148,8 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // pdf/docx/pptx/presentations, LaTeX paper creation). Bake them into every
     // layered image so custom sandbox Dockerfiles get the same runtime floor as
     // the platform default image.
-    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a warm-pool
-    // clone is a memory-restored VM that keeps its snapshot-baked IP until the
+    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a stateful
+    // restore is a memory-restored VM that keeps its snapshot-baked IP until the
     // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
     // inside the guest. Without these the IP never changes → the guest stays on
     // the baked IP while the edge routes to the allocated IP → every request
@@ -214,11 +214,10 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
     // time database migration (may take a few minutes)" — before it answers any
     // request. On a fresh VM that runs on the session hot path, adding ~15-35s
-    // before opencode replies to /session; on a warm-pool claim that window is
-    // exactly what surfaces as the FE's "sandbox not ready" 503s. opencode's db
+    // before opencode replies to /session. opencode's db
     // lives in a BAKED path (XDG_DATA_HOME=/opt/kortix/home/.local/share), so we
     // run opencode here once to complete the migration and bake the migrated db
-    // into the image layer. Every boot afterwards — cold or warm-pool restore —
+    // into the image layer. Every boot afterwards — cold or warm restore —
     // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
     // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
     // effort: if opencode can't serve at build time it just falls back to the

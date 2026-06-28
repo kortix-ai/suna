@@ -389,9 +389,8 @@ kortix --version`,
     // create-from-snapshot rejects explicit resources ("Cannot specify Sandbox
     // resources when using a snapshot"), and the sized stock snapshots
     // (daytona-medium/large) are not available in the region. Until Daytona
-    // fixes one of those, every warm box runs at the genesis size (1 vCPU /
-    // 1 GiB / 3 GiB). Speed-sensitive paths accept that; resource-sensitive
-    // pool fleets can opt out via KORTIX_WARM_POOL_FULL_SIZE.
+    // fixes one of those, every warm snapshot bake runs at the genesis size
+    // (1 vCPU / 1 GiB / 3 GiB).
 
     onLog?.(`[warm-bake] runtime installed in ${(bakeMs / 1000).toFixed(1)}s; snapshotting → ${opts.name}`);
     const snapStart = Date.now();
@@ -597,9 +596,7 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
  * Best-effort and bounded; safe to fire-and-forget.
  *
  * With no `snapshotName`, sweeps errored boxes for EVERY `kortix-warm-runtime-*`
- * base — used by the periodic warm-pool reconcile, since the opportunistic
- * after-a-failed-create reap can't keep up on a busy environment (each failed
- * create leaves a fresh corpse) and misses entirely across process restarts.
+ * base. This catches failed warm snapshot bakes across process restarts.
  */
 export async function reapErroredWarmBoxes(snapshotName?: string, log?: (l: string) => void): Promise<number> {
   if (!warmSnapshotsEnabled()) return 0;

@@ -23,7 +23,7 @@ A sandbox session executor token must include:
 - `session_id`: the project session id, equal to the sandbox id.
 - `agent_grant`: the resolved grant for the session boot agent from `[[agents]]`.
 
-Cold provisioning and warm-pool claim must mint the same shape of token. The token is unique per session; a claimed warm sandbox must never keep a project-only token from its parked state.
+Cold provisioning and restored warm-snapshot sessions must mint the same shape of token. The token is unique per session; a restored session must never keep a project-only token from its seed capture.
 
 `/accounts/me` exposes this as `token_context` so CLI and debugging surfaces can say whether the active credential is a user, project, or session token and show its agent/connector/Kortix CLI grant.
 
