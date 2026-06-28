@@ -5,17 +5,16 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.85"
-kortixVersion: "0.9.85"
+  tag: "0.9.84"
+kortixVersion: "0.9.84"
 env:
   internalKortixEnv: prod
 # Explicit container env (overrides the kortix-prod-env secret bundle — k8s env
 # wins over envFrom).
 extraEnv:
-  # Slack identity gate ON in prod so Slack @mentions require the caller to
-  # connect their Kortix account and pass project access checks. Kept explicit
-  # here so k8s env overrides any stale value in the synced secret bundle.
-  SLACK_REQUIRE_USER_IDENTITY: "true"
+  # Incident rollback: keep Slack identity enforcement disabled until the Slack
+  # auth/interactivity bug is fixed and re-tested.
+  SLACK_REQUIRE_USER_IDENTITY: "false"
   # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
   # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
