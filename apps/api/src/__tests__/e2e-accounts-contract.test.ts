@@ -266,6 +266,7 @@ mock.module('../middleware/auth', () => ({
     if (!currentUserId) return c.json({ error: 'Unauthorized' }, 401);
     c.set('userId', currentUserId);
     c.set('userEmail', currentUserEmail);
+    c.set('authType', 'supabase');
     await next();
   },
 }));
@@ -295,6 +296,30 @@ mock.module('../shared/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));
 
+mock.module('../shared/resolve-account', () => ({
+  resolveAccountId: async (userId: string) => {
+    const existing = memberRows.find((row) => row.userId === userId);
+    if (existing) return existing.accountId;
+    const accountId = accountRows[0]?.accountId ?? userId;
+    if (!accountRows.some((row) => row.accountId === accountId)) {
+      accountRows.push({
+        accountId,
+        name: 'Personal Account',
+        personalAccount: true,
+        createdAt: baseDate,
+        updatedAt: baseDate,
+      });
+    }
+    memberRows.push({
+      userId,
+      accountId,
+      accountRole: 'owner',
+      joinedAt: baseDate,
+    });
+    return accountId;
+  },
+}));
+
 mock.module('../shared/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => ({
@@ -314,15 +339,30 @@ mock.module('../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: any) => {
         if (table === accounts) {
-          const row: AccountRow = {
-            accountId: nextAccountId,
+          const buildRow = (): AccountRow => ({
+            accountId: values.accountId ?? nextAccountId,
             name: values.name,
             personalAccount: values.personalAccount ?? false,
             createdAt: baseDate,
             updatedAt: values.updatedAt ?? baseDate,
+          });
+          return {
+            onConflictDoNothing: () => ({
+              returning: async () => {
+                if (accountRows.some((row) => row.accountId === (values.accountId ?? nextAccountId))) {
+                  return [];
+                }
+                const row = buildRow();
+                accountRows.push(row);
+                return [row];
+              },
+            }),
+            returning: async () => {
+              const row = buildRow();
+              accountRows.push(row);
+              return [row];
+            },
           };
-          accountRows.push(row);
-          return { returning: async () => [row] };
         }
 
         if (table === accountMembers) {
@@ -445,6 +485,34 @@ function createApp() {
 describe('accounts API contract', () => {
   beforeEach(() => resetState());
 
+  test('identity probe repairs and returns a fresh user account membership', async () => {
+    accountRows = [{
+      accountId: PERSONAL_ACCOUNT_ID,
+      name: 'Fresh Personal',
+      personalAccount: true,
+      createdAt: baseDate,
+      updatedAt: baseDate,
+    }];
+    memberRows = [];
+
+    const res = await createApp().request('/v1/accounts/me');
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.accounts).toEqual([
+      expect.objectContaining({
+        account_id: PERSONAL_ACCOUNT_ID,
+        name: 'Fresh Personal',
+        role: 'owner',
+      }),
+    ]);
+    expect(memberRows).toContainEqual(expect.objectContaining({
+      userId: OWNER_ID,
+      accountId: PERSONAL_ACCOUNT_ID,
+      accountRole: 'owner',
+    }));
+  });
+
   test('auto-creates a personal account when the caller has no membership', async () => {
     accountRows = [];
     memberRows = [];
@@ -455,13 +523,13 @@ describe('accounts API contract', () => {
     const body = await res.json();
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
-      account_id: PERSONAL_ACCOUNT_ID,
+      account_id: OWNER_ID,
       account_role: 'owner',
       is_primary_owner: true,
     });
     expect(memberRows).toContainEqual(expect.objectContaining({
       userId: OWNER_ID,
-      accountId: PERSONAL_ACCOUNT_ID,
+      accountId: OWNER_ID,
       accountRole: 'owner',
     }));
   });
