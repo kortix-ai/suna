@@ -311,8 +311,8 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
-      // ONE stateful template, captured WARM (no warm pool, no per-gen snapshots).
-      // KORTIX_WARM_POOL=1 boots the daemon's runPoolMode: scaffold-warm opencode
+      // ONE stateful template, captured WARM (no per-gen snapshots).
+      // KORTIX_WARM_SEED=1 boots the daemon's warm-capture mode: scaffold-warm opencode
       // (project-init to completion) + pin a root session; the capture gates on
       // the PIN FILE (/var/run/kortix/opencode-session-id) so the snapshot freezes
       // a genuinely-warm opencode — forks resume runtime-ready (~2s) instead of
@@ -325,8 +325,8 @@ async function runInlineBuild(
         : undefined,
       captureEnv: template.isShared
         ? {
-            KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC',
-            // No-restart warm-fork: bake proxy-mode opencode at PARK so a claim
+            KORTIX_WARM_SEED: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC',
+            // No-restart warm-fork: bake proxy-mode opencode at capture so a fork
             // hot-swaps the per-session token into the live proxy instead of
             // restarting opencode (~8s). Best-effort: a hot-swap failure falls
             // back to the restart. The full model catalog is baked into the image

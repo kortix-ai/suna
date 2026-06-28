@@ -38,7 +38,7 @@ import type {
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
 // is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
-// just to confirm a freshly-claimed warm box is still running — pure overhead that
+// just to confirm a snapshot-restored sandbox is still running — pure overhead that
 // dominates the warm-start server cost. Box state changes far slower than the poll
 // cadence, so caching the 'running' verdict briefly collapses ~2/3 of those
 // provider round-trips. Only 'running' is cached (never 'stopped'/'unknown'), so
@@ -53,43 +53,19 @@ const runningStatusCache = new Map<string, number>(); // externalId → cachedAt
  * idle sweep can't see boxes it has no DB row for.
  *
  *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
- *    box is NEVER created persistent. A 0 here (the old warm-pool "stay ready
- *    until claimed" value) leaked 500+ never-stopping boxes that nothing reaped.
- *    This is the setting that actually stops the money burn.
+ *    box is NEVER created persistent. This is the setting that actually stops
+ *    the money burn.
  *  - autoArchiveInterval: stopped → archived to cold storage after a few days
  *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
  *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
  *    nearly free once stopped + cold-archived, so we never destroy its disk;
  *    a session is only removed when the user explicitly deletes it.
  */
-// A persistent (autoStop=0) warm-pool spare that nothing reaps is exactly what
-// caused the "500+ never-stopping boxes" leak noted above. reconcileWarmPool is
-// the primary reaper, but if the API/tunnel that owns the pool dies, nothing
-// runs it — so we FORCE a provider-side auto-delete backstop on every persistent
-// spare (≥ the pool's 6h max-age) regardless of the global -1/never default.
-const PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN = 24 * 60; // 24h
-
 export function daytonaLifecycle(autoStopOverride?: number): {
   autoStopInterval: number;
   autoArchiveInterval: number;
   autoDeleteInterval: number;
 } {
-  // autoStopOverride === 0 is the WARM-POOL spare contract: "never auto-stop".
-  // A spare must stay RUNNING + warm until claimed — a hibernate would kill the
-  // pre-warmed opencode (and, for clone-at-park spares, the warmed plugin),
-  // defeating the whole pre-warm. Spares manage their own lifecycle via
-  // reconcileWarmPool, but because such a box never auto-stops we ALSO pin a
-  // finite provider auto-delete backstop (never -1) so a leaked spare self-
-  // destructs if the reaper stops running. EVERY other caller is clamped to >= 1
-  // so a normal session box can never be created persistent.
-  if (autoStopOverride === 0) {
-    const configuredDelete = config.KORTIX_SANDBOX_AUTODELETE_MINUTES;
-    return {
-      autoStopInterval: 0,
-      autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
-      autoDeleteInterval: configuredDelete > 0 ? configuredDelete : PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN,
-    };
-  }
   const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
   return {
     autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
@@ -194,8 +170,7 @@ export class DaytonaProvider implements SandboxProvider {
         // a large auto-archive (default 3 days) keeps a hibernated box in the
         // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
         // API/tunnel that created it dies. Intervals are env-tunable
-        // (KORTIX_SANDBOX_AUTO*). A warm-pool spare passes autoStopInterval=0 →
-        // persistent (it manages its own lifecycle via reconcileWarmPool).
+        // (KORTIX_SANDBOX_AUTO*).
         ...daytonaLifecycle(opts.autoStopInterval),
         labels: managedSandboxLabels(),
         public: false,
@@ -289,7 +264,7 @@ export class DaytonaProvider implements SandboxProvider {
 
       if (result.includes(WARM_RESTORE_MARKERS.noRuntime)) {
         console.warn(
-          `[daytona] warm box ${box.id} restored without runtime ` +
+          `[daytona] snapshot-restored sandbox ${box.id} restored without runtime ` +
           `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
         );
         await box.delete().catch(() => {});

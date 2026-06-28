@@ -17,7 +17,7 @@ export const isTerminalStage = (stage: string): boolean =>
  * Bounded long-poll loop. Given an initial readiness result and a `resolve` that
  * re-checks it, keep polling until a terminal stage (ready/failed/stopped) or the
  * deadline, then return the latest. Returns the initial immediately when already
- * terminal or waitMs<=0 (the warm-claim fast path). `now`/`sleepFn` are
+ * terminal or waitMs<=0 (the immediate-ready fast path). `now`/`sleepFn` are
  * injectable so tests run without wall-clock.
  */
 export async function awaitTerminalStage(

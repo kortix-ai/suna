@@ -244,6 +244,27 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
+function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
+  if (!body) return null;
+  const contentType = incomingHeaders.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) return null;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
+    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string): Response {
+  return jsonProxyError({
+    error: 'agent switch requires a new session',
+    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+    expected_agent: expectedAgent,
+    requested_agent: requestedAgent,
+  }, 409);
+}
+
 // === Core HTTP forwarder ======================================================
 //
 // Forwards one request to a sandbox port with the full upstream auth header set,
@@ -360,6 +381,11 @@ export async function forwardToSandbox(
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
+        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
+        const sessionAgent = record.agentName ?? 'default';
+        if (requestedAgent && requestedAgent !== sessionAgent) {
+          return agentSwitchConflictResponse(sessionAgent, requestedAgent);
+        }
         try {
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,

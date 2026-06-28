@@ -24,6 +24,7 @@ import {
   connectedGatewayProviderIdsFromSecretNames,
   normalizeProviderList,
 } from './provider-selection';
+import { useModelDefaults, type UseModelDefaults } from './use-model-defaults';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -54,8 +55,12 @@ export interface OpenCodeLocalAgent {
 export interface OpenCodeLocalModel {
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
-  /** Current model as ModelKey (for sending to API) */
+  /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
   currentKey: ModelKey | undefined;
+  /** Wire model to SEND: `auto` when on the default (gateway resolves it), else the explicit pick. */
+  sendKey: ModelKey | undefined;
+  /** True when no explicit pick is active — the picker shows currentKey as the resolved default. */
+  onDefault: boolean;
   /** Recent models (enriched) */
   recent: FlatModel[];
   /** All available models */
@@ -70,6 +75,8 @@ export interface OpenCodeLocalModel {
   cycle: (direction: 1 | -1) => void;
   /** Whether this session has an explicit per-session model selection in localStorage */
   hasSessionModel: boolean;
+  /** Server-backed account/agent default model management (gateway source of truth). */
+  defaults: UseModelDefaults;
   /** Variant management */
   variant: {
     current: string | undefined;
@@ -190,6 +197,8 @@ export function useOpenCodeLocal({
   const params = useParams();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
+  // Server-backed account/agent default model (the gateway is the source of truth).
+  const modelDefaults = useModelDefaults(projectId);
   const { data: accountState } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
@@ -350,49 +359,79 @@ export function useOpenCodeLocal({
   }, [config?.model, modelStore.recent, providers, isModelValid, isModelDefaultVisible]);
 
   // ---- Current model resolution ----
-  // Priority: per-session > per-agent > globalDefault > agent.model > fallback
-  // Per-session and per-agent overrides take priority over globalDefault so that
-  // explicit per-conversation choices are respected. globalDefault is the user's
-  // chosen default for NEW conversations (set during onboarding or settings).
+  // The LLM gateway is the source of truth for the default model. The client
+  // distinguishes an EXPLICIT per-conversation/per-agent pick from being "on the
+  // default":
+  //   • explicit pick (per-session / per-agent localStorage) → sent as-is.
+  //   • on default → the client sends `auto` (kortix/auto) and trusts the gateway
+  //     to resolve the per-agent → account → platform default server-side.
+  // For DISPLAY we still surface a concrete model: the server-configured default
+  // (agent → account → platform, via useModelDefaults), falling back to the
+  // legacy globalDefault cache / agent.model / provider fallback.
+
+  // Explicit per-conversation/per-agent picks (highest priority, localStorage).
+  const explicitModelKey = useMemo<ModelKey | undefined>(
+    () =>
+      getFirstValidModel(
+        // Per-session model (user's explicit choice in this session — survives reload)
+        () =>
+          scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
+        // Back-compat: the old unscoped slot, only if valid in the current mode.
+        () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
+        // Per-agent model (persisted across sessions for this agent)
+        () =>
+          currentAgent
+            ? modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`)
+            : undefined,
+        () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
+      ),
+    [currentAgent, sessionId, scopedSessionModelKey, providerMode, modelStore, getFirstValidModel],
+  );
+
+  // The server-configured default for the current agent (agent → account →
+  // platform), validated against the catalog. Used for DISPLAY of "on default".
+  const serverDefaultKey = useMemo<ModelKey | undefined>(() => {
+    const candidate = modelDefaults.resolveDefaultFor(currentAgent?.name);
+    return candidate && isModelValid(candidate) ? candidate : undefined;
+  }, [modelDefaults, currentAgent?.name, isModelValid]);
+
+  // Display key: explicit pick → server default → legacy globalDefault cache →
+  // agent.model → provider fallback. Never the synthetic `auto`.
   const currentModelKey = useMemo<ModelKey | undefined>(() => {
-    // Model selection must NOT depend on a loaded agent: the session/global/
-    // fallback slots resolve fine without one, and the agent roster can be empty
-    // (e.g. a project with no configured agents, or `enableProjects` off). The
-    // agent-keyed slots are simply skipped when there's no current agent.
-    const resolved = getFirstValidModel(
-      // 1. Per-session model (user's explicit choice in this session — survives reload)
-      () => (scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined),
-      // Back-compat: read the old unscoped slot only if it is valid in the
-      // current provider mode. New writes always go into the scoped slot below.
-      () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
-      // 2. Per-agent model (persisted across sessions for this agent)
-      () => (currentAgent ? modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`) : undefined),
-      () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
-      // 3. User's global default (set during onboarding or settings)
-      () => modelStore.globalDefault,
-      // 4. Agent's configured default model
-      () => (currentAgent?.model as ModelKey | undefined),
-      // 5. Global fallback (config.model > recent > first connected)
-      () => fallbackModel,
-    );
-    // AUTO is synthetic. When the feature is hidden, never surface or send it as a
-    // concrete selected model. Prefer the explicit managed default if available;
-    // otherwise report "no model" so callers wait/block instead of falling through
-    // to OpenCode's `kortix/auto` server default.
+    const resolved =
+      explicitModelKey ??
+      getFirstValidModel(
+        () => serverDefaultKey,
+        () => modelStore.globalDefault,
+        () => (currentAgent?.model as ModelKey | undefined),
+        () => fallbackModel,
+      );
     return resolveHiddenAutoModel(resolved, {
       enableAutoModel: featureFlags.enableAutoModel,
       isModelValid,
     });
   }, [
+    explicitModelKey,
+    serverDefaultKey,
     currentAgent,
-    sessionId,
-    scopedSessionModelKey,
-    providerMode,
     modelStore,
     getFirstValidModel,
     isModelValid,
     fallbackModel,
   ]);
+
+  // True when the user hasn't made an explicit pick — the picker shows the
+  // resolved default with a "Default" badge and the client sends `auto`.
+  const onDefaultModel = !explicitModelKey;
+
+  // Wire key actually SENT to opencode/the gateway. On default we send `auto`
+  // (when the catalog offers it — paid tiers) so the gateway resolves the
+  // account/agent default; otherwise the concrete display key.
+  const sendModelKey = useMemo<ModelKey | undefined>(() => {
+    if (explicitModelKey) return explicitModelKey;
+    const auto: ModelKey = { providerID: 'kortix', modelID: AUTO_MODEL_ID };
+    return isModelValid(auto) ? auto : currentModelKey;
+  }, [explicitModelKey, isModelValid, currentModelKey]);
 
   const currentModel = useMemo<FlatModel | undefined>(
     () => (currentModelKey ? findModel(currentModelKey) : undefined),
@@ -581,6 +620,12 @@ export function useOpenCodeLocal({
     model: {
       current: currentModel,
       currentKey: currentModelKey,
+      // The wire model to SEND: `auto` when on the default (gateway resolves it),
+      // otherwise the explicit pick. Callers should send this, not currentKey.
+      sendKey: sendModelKey,
+      // True when no explicit pick is active — the picker shows currentKey as the
+      // resolved default and the wire send is `auto`.
+      onDefault: onDefaultModel,
       recent: recentModels,
       list: flatModels,
       set: setModel,
@@ -588,6 +633,8 @@ export function useOpenCodeLocal({
       setVisibility: modelStore.setVisibility,
       cycle: cycleModel,
       hasSessionModel,
+      // Server-backed account/agent default management (gateway source of truth).
+      defaults: modelDefaults,
       variant: {
         current: variantCurrent,
         list: variantList,

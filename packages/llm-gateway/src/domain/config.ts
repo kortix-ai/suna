@@ -10,7 +10,8 @@ export interface GatewayConfig {
   // requested model + parsed body + the authenticated principal, return a
   // concrete model id to route to, or null to use the requested model unchanged.
   // Kept generic — the host owns the model names and policy. Runs in-process
-  // (pure/local, no I/O); the principal carries any tier signal it needs.
+  // (pure/local, no I/O); the principal carries any signal it needs (e.g. `tier`
+  // and the resolved `defaultModel` the host attached at authentication).
   autoRouter?: (
     model: string,
     body: Record<string, unknown>,

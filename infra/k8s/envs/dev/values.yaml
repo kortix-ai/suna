@@ -6,25 +6,15 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-87f35d73"
+  tag: "dev-1285e942"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
-# Pool-only mode: disable the experimental Daytona memory-snapshot path on dev.
-# It depends on the flaky experimental region and doesn't beat the warm pool
-# (which runs on the reliable region). Rendered as explicit container env, so it
-# OVERRIDES whatever the synced kortix-dev-env secret bundle carries (k8s env
-# wins over envFrom). Flip back to "true" only once Daytona stabilizes the
-# experimental region.
 extraEnv:
-  # Identity gate OFF on dev. With it on, an @mention from anyone whose Kortix
-  # account isn't a member of this workspace's project is blocked (nudged to
-  # connect / request access) instead of running — which makes dogfooding in dev
-  # painful (you get no agent reply until you're added). Off → @mentions run as
-  # the project owner, like prod-lite. Rendered as explicit k8s env so it
-  # OVERRIDES the synced kortix-dev-env secret bundle. Flip to "true" to exercise
-  # the per-user identity / request-access flow. (Prod/staging keep it on.)
-  SLACK_REQUIRE_USER_IDENTITY: "false"
+  # Slack identity gate ON in dev so @mentions require the caller to connect
+  # their Kortix account and pass project access checks. Rendered as explicit k8s
+  # env so it OVERRIDES the synced kortix-dev-env secret bundle.
+  SLACK_REQUIRE_USER_IDENTITY: "true"
   # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
   # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
@@ -38,29 +28,6 @@ extraEnv:
   # stopped Platinum box CoW-resumes on reopen (~2.3s, CH resume-freeze is fixed).
   # Per-deployment setting, not a code default.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: "15"
-  # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
-  # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's
-  # a pure accelerator: any claim miss/error falls through to the unchanged cold
-  # provision (session-runtime-allocator.ts:83-88), so it can only speed starts
-  # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
-  # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
-  # (~0.5s, no network) instead of re-cloning (~9s).
-  #
-  # Per-project, active-only model: SIZE spares per project the user CURRENTLY has
-  # OPEN (FE presence heartbeat → DB presence → reconcile keeps/refills only
-  # present projects and reaps a project's spares the moment its tab closes). So
-  # MAX_TOTAL is now just a runaway COST CEILING, not the limiter — the real count
-  # is (projects open right now) × SIZE. Also master-enable: warmPoolEnabled() =
-  # MAX_TOTAL>0. Pre-warm is skipped for non-billing accounts (refillProjectPool
-  # gate). Must live here (k8s env), NOT in .env.dev (unit-warm-pool.test asserts
-  # off there). For prod, raise MAX_TOTAL to your cost budget (it caps concurrent
-  # open projects × SIZE, not total projects).
-  KORTIX_WARM_POOL_MAX_TOTAL: "20"
-  KORTIX_WARM_POOL_SIZE: "2"
-  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
-  # Vestigial under the presence model (the DB-presence staleness window in
-  # warm-pool.ts governs reaping now); kept for back-compat.
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev

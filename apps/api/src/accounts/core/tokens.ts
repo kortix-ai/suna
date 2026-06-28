@@ -71,6 +71,14 @@ accountsRouter.openapi(
   return c.json({
     user_id: userId,
     email: userEmail,
+    token_context: {
+      auth_type: (c.get('authType') as string | undefined) ?? null,
+      project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
+      session_id: (c.get('sessionId') as string | undefined) ?? null,
+      agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
+      connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
+      kortix_cli: (c.get('agentGrant') as { kortixCli?: string[] | 'all' } | null | undefined)?.kortixCli ?? null,
+    },
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),

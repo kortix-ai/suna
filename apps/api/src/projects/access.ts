@@ -1,6 +1,8 @@
 export type ProjectRole = 'manager' | 'editor' | 'viewer';
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectAccessAction = 'read' | 'write' | 'manage';
+// 'session' sits between 'read' and 'write': any project member (viewer
+// included) may start and run sessions, but not customize the project.
+export type ProjectAccessAction = 'read' | 'session' | 'write' | 'manage';
 
 export function isAccountManager(role: AccountRole): boolean {
   return role === 'owner' || role === 'admin';
@@ -9,6 +11,8 @@ export function isAccountManager(role: AccountRole): boolean {
 export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction): boolean {
   if (!role) return false;
   if (action === 'read') return true;
+  // Every project role can use sessions — viewer is the base *usable* role.
+  if (action === 'session') return true;
   if (action === 'write') return role === 'editor' || role === 'manager';
   return role === 'manager';
 }

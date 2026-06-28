@@ -172,6 +172,14 @@ export async function saveSlackInstall(
   input: SlackInstallInput,
 ): Promise<SlackInstallSummary> {
   const { projectId } = input;
+  await db
+    .insert(chatInstalls)
+    .values({
+      platform: "slack",
+      workspaceId: input.teamId,
+      projectId,
+    })
+    .onConflictDoNothing();
   await upsertSecret(projectId, SLACK_BOT_TOKEN, input.botToken);
   await upsertSecret(projectId, SLACK_SIGNING_SECRET, input.signingSecret);
   await upsertSecret(projectId, SLACK_TEAM_ID, input.teamId);

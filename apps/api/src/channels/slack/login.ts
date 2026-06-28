@@ -12,6 +12,7 @@ const LOGIN_TTL_MS = 10 * 60 * 1000;
 export interface LoginStatePayload {
   teamId: string;
   slackUserId: string;
+  pendingId?: string;
   exp: number;
   nonce: string;
 }
@@ -20,10 +21,11 @@ function loginSigningKey(): string {
   return config.SLACK_SIGNING_SECRET ?? 'kortix-dev-state-key';
 }
 
-export function signLoginState(input: { teamId: string; slackUserId: string }): string {
+export function signLoginState(input: { teamId: string; slackUserId: string; pendingId?: string }): string {
   const full: LoginStatePayload = {
     teamId: input.teamId,
     slackUserId: input.slackUserId,
+    ...(input.pendingId ? { pendingId: input.pendingId } : {}),
     exp: Date.now() + LOGIN_TTL_MS,
     nonce: randomBytes(8).toString('hex'),
   };
@@ -43,13 +45,29 @@ export function verifyLoginState(token: string): LoginStatePayload | null {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as LoginStatePayload;
     if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
     if (typeof payload.teamId !== 'string' || typeof payload.slackUserId !== 'string') return null;
+    if (payload.pendingId !== undefined && typeof payload.pendingId !== 'string') return null;
     return payload;
   } catch {
     return null;
   }
 }
 
-export function buildSlackLoginUrl(input: { teamId: string; slackUserId: string }): string {
-  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  return `${base}/slack/login/${signLoginState(input)}`;
+export function buildSlackLoginUrl(input: { teamId: string; slackUserId: string; pendingId?: string }): string {
+  const token = signLoginState(input);
+  const apiBase = (config.KORTIX_URL || '').replace(/\/+$/, '');
+  if (apiBase.startsWith('https://')) {
+    return `${apiBase}/v1/channels/slack/identity/login/${token}`;
+  }
+
+  const configured = config.FRONTEND_URL || 'https://kortix.com';
+  const apiPort = Number(process.env.PORT);
+  const localWorktreeFrontend =
+    configured === 'http://localhost:3000' &&
+    process.env.KORTIX_LOCAL_DEV === '1' &&
+    Number.isFinite(apiPort) &&
+    apiPort >= 10_000
+      ? `http://localhost:${apiPort - 8}`
+      : configured;
+  const base = localWorktreeFrontend.replace(/\/+$/, '');
+  return `${base}/slack/login/${token}`;
 }

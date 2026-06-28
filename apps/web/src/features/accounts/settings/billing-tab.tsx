@@ -2,8 +2,8 @@
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
@@ -25,7 +25,7 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { formatCredits } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Zap } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -126,24 +126,19 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
   if (isLoading) {
     return (
-      <div className="max-w-full min-w-0 space-y-5 overflow-x-hidden p-4 sm:space-y-6 sm:p-6">
-        <Skeleton className="h-8 w-32" />
-        <div className="space-y-4">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-        </div>
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="max-w-full min-w-0 overflow-x-hidden p-4 sm:p-6">
-        <Alert variant="destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      </div>
+      <Alert variant="destructive">
+        <AlertTriangle className="h-4 w-4" />
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -155,39 +150,30 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
   const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
 
   return (
-    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
+    <div className="space-y-6">
       {showTeamCheckout ? (
-        <>
-          <Card className="gap-4">
-            <CardHeader>
-              <CardTitle>
-                {tI18nHardcoded.raw(
-                  'autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b',
-                )}
-              </CardTitle>
-              <CardDescription>
-                {tI18nHardcoded.raw(
-                  'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardFooter>
-              <Button
-                onClick={() =>
-                  openUpgradeDialog({
-                    reason: 'subscription_required',
-                    accountId: billingAccountId,
-                  })
-                }
-                className="w-full shrink-0 sm:w-auto"
-              >
-                {tI18nHardcoded.raw(
-                  'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73',
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
-          <div className="flex justify-center">
+        <SectionCard
+          title={tI18nHardcoded.raw(
+            'autoFeaturesAccountsSettingsBillingTabJsxTextKortixTeam698bb03b',
+          )}
+          description={tI18nHardcoded.raw(
+            'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToPut67032571',
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Button
+              onClick={() =>
+                openUpgradeDialog({
+                  reason: 'subscription_required',
+                  accountId: billingAccountId,
+                })
+              }
+              className="shrink-0"
+            >
+              {tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxTextSubscribeToTeam6a396f73',
+              )}
+            </Button>
             <Button
               variant="link"
               size="sm"
@@ -198,7 +184,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
               {createPortalSessionMutation.isPending ? 'Loading…' : 'Manage billing'}
             </Button>
           </div>
-        </>
+        </SectionCard>
       ) : (
         <>
           {highlight === 'credits' && totalCredits <= 0 && (
@@ -222,92 +208,86 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
           {subscribedToTeam && <SeatManagementCard accountState={accountState} />}
 
           {canPurchaseCredits && (
-            <div className="border-border space-y-3 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <p className="text-muted-foreground flex items-center gap-1.5 text-xs tracking-widest uppercase">
-                  <Zap className="size-3" />
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextAutoTopUp9c42761a',
-                  )}
-                </p>
-                <p className="text-muted-foreground/60 text-xs">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
-                  )}
-                </p>
-              </div>
+            <SectionCard
+              title={tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxTextAutoTopUp9c42761a',
+              )}
+              description={tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
+              )}
+            >
               <AutoTopupCard fetchSettings showSaveButton />
-            </div>
+            </SectionCard>
           )}
 
           {canPurchaseCredits && (
-            <div className="border-border space-y-3 border-t pt-4">
-              <div className="flex items-center justify-between">
-                <p className="text-muted-foreground text-xs tracking-widest uppercase">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextBuyCreditsd35e7077',
-                  )}
-                </p>
-                <p className="text-muted-foreground/60 text-xs">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
-                  )}
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {CREDIT_PACKAGES.map((pkg) => {
-                  const isSelected = selectedPackage?.price === pkg.price;
-                  return (
-                    <Button
-                      key={pkg.price}
-                      type="button"
-                      onClick={() => setSelectedPackage(pkg)}
-                      disabled={isPurchasing}
-                      variant="outline"
-                      className={cn(
-                        'h-auto flex-col rounded-2xl p-3 text-center',
-                        isSelected && 'border-foreground bg-foreground/5',
-                      )}
-                    >
-                      <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
-                      <span className="text-muted-foreground text-xs">
-                        {formatCredits(pkg.credits)} credits
-                      </span>
-                    </Button>
-                  );
-                })}
-              </div>
-              {purchaseError && (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>{purchaseError}</AlertDescription>
-                </Alert>
+            <SectionCard
+              title={tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxTextBuyCreditsd35e7077',
               )}
-              <Button
-                onClick={handlePurchaseCredits}
-                disabled={isPurchasing || !selectedPackage}
-                className="w-full"
-              >
-                {isPurchasing
-                  ? 'Processing...'
-                  : selectedPackage
-                    ? `Buy $${selectedPackage.price} in credits`
-                    : 'Select a package'}
-              </Button>
-            </div>
+              description={tI18nHardcoded.raw(
+                'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
+              )}
+            >
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {CREDIT_PACKAGES.map((pkg) => {
+                    const isSelected = selectedPackage?.price === pkg.price;
+                    return (
+                      <Button
+                        key={pkg.price}
+                        type="button"
+                        onClick={() => setSelectedPackage(pkg)}
+                        disabled={isPurchasing}
+                        variant="outline"
+                        className={cn(
+                          'h-auto flex-col rounded-2xl p-3 text-center',
+                          isSelected && 'border-primary bg-primary/[0.06]',
+                        )}
+                      >
+                        <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {formatCredits(pkg.credits)} credits
+                        </span>
+                      </Button>
+                    );
+                  })}
+                </div>
+                {purchaseError && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>{purchaseError}</AlertDescription>
+                  </Alert>
+                )}
+                <Button
+                  onClick={handlePurchaseCredits}
+                  disabled={isPurchasing || !selectedPackage}
+                  className="w-full"
+                >
+                  {isPurchasing
+                    ? 'Processing...'
+                    : selectedPackage
+                      ? `Buy $${selectedPackage.price} in credits`
+                      : 'Select a package'}
+                </Button>
+              </div>
+            </SectionCard>
           )}
 
-          <div className="border-border border-t pt-4">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs"
-              onClick={handleManageSubscription}
-              disabled={createPortalSessionMutation.isPending}
-            >
-              {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
-            </Button>
-          </div>
+          <SectionCard
+            title="Billing portal"
+            description="Manage your subscription, payment methods, and invoices."
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleManageSubscription}
+                disabled={createPortalSessionMutation.isPending}
+              >
+                {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage billing'}
+              </Button>
+            }
+          />
         </>
       )}
     </div>

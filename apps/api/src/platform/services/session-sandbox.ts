@@ -185,13 +185,6 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
-  /**
-   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
-   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
-   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
-   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
-   */
-  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -419,9 +412,7 @@ export async function provisionSessionSandbox(opts: {
     // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
     // idle-stops + CoW-resumes natively rather than depending on the maintenance
     // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
-    // reaper stays as a secondary backstop only. Warm seeds / legacy spares pass
-    // an EXPLICIT autoStopInterval=0 to stay persistent.
-    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
+    // reaper stays as a secondary backstop only.
   };
 
   // Detach the actual provisioning — the API caller navigates immediately

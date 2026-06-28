@@ -86,8 +86,7 @@ export class PlatinumProvider implements SandboxProvider {
     // FIXED — the CH v52 UFFD patch landed; verified stop→resume ~2.3s with the guest
     // alive. Relying on Platinum's own timer makes idle-stop robust (no dependency on
     // the Kortix maintenance reaper, which when down let boxes run 24/7 and flood the
-    // host). A normal session gets KORTIX_SANDBOX_AUTOSTOP_MINUTES; only an EXPLICIT
-    // autoStopInterval=0 (the warm-seed / legacy spare contract) stays persistent.
+    // host). A normal session gets KORTIX_SANDBOX_AUTOSTOP_MINUTES.
     const autoStop = opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
 
     const _t0 = Date.now();

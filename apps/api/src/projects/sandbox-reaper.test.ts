@@ -353,15 +353,15 @@ describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
-  test('stops boxes with no live DB row; spares kept, too-young, and unknown-age boxes', async () => {
+  test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
     candidates = [{ externalId: 'keep-1' }];
     managedBoxes = [
-      { externalId: 'keep-1', createdAt: hoursAgo(48) }, // in keepSet → spare
+      { externalId: 'keep-1', createdAt: hoursAgo(48) }, // in keepSet → live
       { externalId: 'orphan-1', createdAt: hoursAgo(48) }, // orphan + old → STOP
       { externalId: 'orphan-2', createdAt: hoursAgo(3) }, // orphan + old → STOP
-      { externalId: 'young-1', createdAt: hoursAgo(0.2) }, // orphan but <1h → spare (provision race)
-      { externalId: 'nodate', createdAt: null }, // unknown age → spare (fail-safe)
+      { externalId: 'young-1', createdAt: hoursAgo(0.2) }, // orphan but <1h → keep (provision race)
+      { externalId: 'nodate', createdAt: null }, // unknown age → keep (fail-safe)
     ];
 
     const r = await reapOrphanProviderBoxes(NOW2);

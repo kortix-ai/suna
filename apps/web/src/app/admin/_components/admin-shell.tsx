@@ -21,7 +21,6 @@ const BREADCRUMBS: Record<string, string> = {
   '/admin/notifications': 'Notifications',
   '/admin/ops': 'Operations',
   '/admin/providers': 'Providers',
-  '/admin/sandbox-pool': 'Sandbox pool',
   '/admin/stress-test': 'Stress test',
   '/admin/utils': 'Maintenance',
 };

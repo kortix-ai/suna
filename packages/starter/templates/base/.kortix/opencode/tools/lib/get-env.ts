@@ -18,7 +18,7 @@ let dotenvCache: Record<string, string> | null = null;
 
 /**
  * Parsed live env file cache.
- * Invalidated by mtime so warm-pool/session env swaps become visible without
+ * Invalidated by mtime so live session env swaps become visible without
  * restarting the OpenCode process that runs these tools.
  */
 let liveEnvCache: Record<

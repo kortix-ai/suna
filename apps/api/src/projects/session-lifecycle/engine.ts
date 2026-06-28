@@ -151,7 +151,7 @@ export async function startSession(command: StartSessionCommand) {
   // like continueSession) until ready/terminal or the bounded deadline, so the
   // client learns `ready` immediately instead of on its ~800ms poll tick.
   // waitMs<=0 or an already-terminal first result → returns `first` unchanged,
-  // so the warm-claim fast path and every non-long-poll caller are untouched.
+  // so the immediate-ready path and every non-long-poll caller are untouched.
   const start = await awaitTerminalStage(
     first,
     async () => {
