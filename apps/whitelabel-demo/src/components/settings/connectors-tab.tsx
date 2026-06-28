@@ -108,7 +108,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Plug className="size-4 text-brand" /> Connectors
+              <Plug className="size-4 text-muted-foreground" /> Connectors
             </div>
             <p className="text-xs text-muted-foreground">
               Tools and integrations the agent can call at runtime.

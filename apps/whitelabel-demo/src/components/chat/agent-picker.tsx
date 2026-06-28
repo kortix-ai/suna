@@ -49,7 +49,7 @@ export function AgentPicker({
           <span className="flex-1 text-sm capitalize">
             {defaultName ? `${defaultName} (default)` : 'Default agent'}
           </span>
-          {!value && <Check className="size-4 shrink-0 text-brand" />}
+          {!value && <Check className="size-4 shrink-0 text-muted-foreground" />}
         </DropdownMenuItem>
         {agents.map((a) => (
           <DropdownMenuItem
@@ -63,7 +63,7 @@ export function AgentPicker({
                 <div className="truncate text-xs text-muted-foreground">{a.description}</div>
               )}
             </div>
-            {value === a.name && <Check className="mt-0.5 size-4 shrink-0 text-brand" />}
+            {value === a.name && <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

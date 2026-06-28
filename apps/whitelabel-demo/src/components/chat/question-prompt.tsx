@@ -61,9 +61,9 @@ export function QuestionPrompt({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-brand/30 bg-brand/[0.06]">
-      <div className="flex items-center gap-2 border-b border-brand/15 px-3 py-2">
-        <MessageCircleQuestion className="size-4 text-brand" />
+    <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <MessageCircleQuestion className="size-4 text-muted-foreground" />
         <span className="flex-1 text-xs font-medium text-foreground">
           {questions.length > 1 ? `${questions.length} questions` : 'The agent has a question'}
         </span>
@@ -99,7 +99,7 @@ export function QuestionPrompt({
                       className={cn(
                         'flex w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors',
                         picked
-                          ? 'border-brand/60 bg-brand/10'
+                          ? 'border-foreground/40 bg-accent'
                           : 'border-border bg-card hover:bg-accent',
                       )}
                     >
@@ -107,7 +107,7 @@ export function QuestionPrompt({
                         className={cn(
                           'mt-0.5 grid size-4 shrink-0 place-items-center border',
                           multiple ? 'rounded-[4px]' : 'rounded-full',
-                          picked ? 'border-brand bg-brand text-brand-foreground' : 'border-border',
+                          picked ? 'border-foreground bg-foreground text-background' : 'border-border',
                         )}
                       >
                         {picked && <span className="size-1.5 rounded-full bg-current" />}

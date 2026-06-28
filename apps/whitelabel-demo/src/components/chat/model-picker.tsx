@@ -78,7 +78,7 @@ export function ModelPicker({
                   <div className="truncate text-sm">{m.modelName}</div>
                   <div className="truncate text-xs text-muted-foreground">{m.providerName}</div>
                 </div>
-                {selected && <Check className="size-4 shrink-0 text-brand" />}
+                {selected && <Check className="size-4 shrink-0 text-muted-foreground" />}
               </button>
             );
           })}

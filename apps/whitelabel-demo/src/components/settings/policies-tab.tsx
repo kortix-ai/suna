@@ -87,7 +87,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Shield className="size-4 text-brand" /> Tool policies
+          <Shield className="size-4 text-muted-foreground" /> Tool policies
         </div>
         <p className="text-xs text-muted-foreground">
           Decide which tool calls run automatically, need approval, or are blocked.

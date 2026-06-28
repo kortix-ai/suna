@@ -64,7 +64,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <KeyRound className="size-4 text-brand" /> Shared secrets
+          <KeyRound className="size-4 text-muted-foreground" /> Shared secrets
         </div>
         <p className="text-xs text-muted-foreground">
           Environment variables + API keys available to every member at runtime.
@@ -119,7 +119,7 @@ export function SecretsTab({ projectId }: { projectId: string }) {
 
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <GitBranch className="size-4 text-brand" /> Git credential
+          <GitBranch className="size-4 text-muted-foreground" /> Git credential
         </div>
         <p className="text-xs text-muted-foreground">
           A token the agent uses to clone and push to the project repository.

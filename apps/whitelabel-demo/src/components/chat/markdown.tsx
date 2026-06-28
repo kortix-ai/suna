@@ -37,7 +37,7 @@ export function Markdown({ children, className }: { children: string; className?
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="text-brand underline underline-offset-2 hover:opacity-80"
+              className="text-foreground underline underline-offset-2 hover:opacity-70"
             >
               {children}
             </a>

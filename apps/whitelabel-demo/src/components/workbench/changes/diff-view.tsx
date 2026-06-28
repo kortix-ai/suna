@@ -33,7 +33,7 @@ export function DiffView({ patch }: { patch?: string | null }) {
             key={i}
             className={cn(
               'px-1',
-              isHunk && 'text-brand',
+              isHunk && 'text-muted-foreground',
               isMeta && 'text-muted-foreground',
               isAdd && 'bg-emerald-500/10 text-emerald-500',
               isRemove && 'bg-destructive/10 text-destructive',

@@ -58,7 +58,7 @@ function Section({
                 {prefix}
                 {it.name}
               </span>
-              {defaultName === it.name && <span className="text-xs text-brand">default</span>}
+              {defaultName === it.name && <span className="text-xs text-muted-foreground">default</span>}
             </div>
             {it.description && (
               <div className="mt-0.5 text-xs text-muted-foreground">{it.description}</div>

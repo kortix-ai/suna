@@ -120,7 +120,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
       {/* Header — title + download */}
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <div className="flex items-center gap-2">
-          <FileText className="size-4 text-brand" />
+          <FileText className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Files</span>
         </div>
         <Button
@@ -293,7 +293,7 @@ function FileHistory({ projectId, path }: { projectId: string; path: string }) {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center gap-2 px-3 py-2">
-          <History className="size-3.5 text-brand" />
+          <History className="size-3.5 text-muted-foreground" />
           <span className="truncate font-mono text-xs text-foreground">{basename(path)}</span>
         </div>
         <Separator />

@@ -100,7 +100,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Zap className="size-4 text-brand" /> Automations
+              <Zap className="size-4 text-muted-foreground" /> Automations
             </div>
             <p className="text-xs text-muted-foreground">
               {paused
@@ -213,7 +213,7 @@ export function TriggersTab({ projectId }: { projectId: string }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-muted-foreground hover:text-brand"
+                  className="size-8 text-muted-foreground hover:text-muted-foreground"
                   disabled={fire.isPending}
                   onClick={() => fire.mutate(slug)}
                   aria-label={`Run ${slug}`}

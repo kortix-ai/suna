@@ -132,7 +132,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Invite */}
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Mail className="size-4 text-brand" /> Invite a member
+          <Mail className="size-4 text-muted-foreground" /> Invite a member
         </div>
         <form
           className="mt-3 flex flex-wrap gap-2"
@@ -170,7 +170,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Members */}
       <Card className="p-0">
         <div className="flex items-center gap-2 px-5 pt-5 text-sm font-medium">
-          <Users className="size-4 text-brand" /> Members
+          <Users className="size-4 text-muted-foreground" /> Members
         </div>
         <div className="mt-2 divide-y divide-border">
           {access.isLoading && (
@@ -237,7 +237,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
       {/* Pending invites */}
       <Card className="p-0">
         <div className="flex items-center gap-2 px-5 pt-5 text-sm font-medium">
-          <Send className="size-4 text-brand" /> Pending invites
+          <Send className="size-4 text-muted-foreground" /> Pending invites
         </div>
         <div className="mt-2 divide-y divide-border">
           {pending.isLoading && (
@@ -315,7 +315,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="size-8 text-brand"
+                    className="size-8 text-muted-foreground"
                     disabled={approve.isPending}
                     onClick={() => approve.mutate(requestId)}
                     aria-label="Approve"
