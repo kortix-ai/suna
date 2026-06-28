@@ -60,13 +60,35 @@ const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
 const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
+/** The global default project for a host — used by every project-scoped
+ *  command (executor, connectors, sessions, …) when the cwd is not bound
+ *  to a project via `.kortix/link.json`. Carries its account_id so the
+ *  default always resolves under the right account. */
+export interface DefaultProjectRef {
+  project_id: string;
+  account_id: string;
+  name?: string;
+}
+
 export interface Host {
   url: string;
   token: string;
   user_id: string;
   user_email: string;
+  /** The host's active account id — every account-scoped call defaults to it. */
   account_id: string;
+  /** Active account display fields, captured at login / `accounts use`. */
+  account_slug?: string;
+  account_name?: string;
+  /** Global default project for this host (see DefaultProjectRef). */
+  default_project?: DefaultProjectRef;
   logged_in_at: string;
+}
+
+export interface ActiveAccount {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 export interface Config {
@@ -237,6 +259,83 @@ export function activeHostName(): string | null {
   return config.hosts[config.active] ? config.active : null;
 }
 
+// ─── Active account + default project ───────────────────────────────────────
+
+/** The active account for the current invocation (the active host's
+ *  stored account), or null when there's no host / no account yet (e.g.
+ *  inside a sandbox, where the env host carries no account). */
+export function activeAccount(): ActiveAccount | null {
+  const host = activeHost();
+  if (!host || !host.account_id) return null;
+  return {
+    id: host.account_id,
+    slug: host.account_slug || host.account_id.slice(0, 8),
+    name: host.account_name || '',
+  };
+}
+
+/** The active host's global default project, or null when none is set. */
+export function defaultProject(): DefaultProjectRef | null {
+  const host = activeHost();
+  return host?.default_project ?? null;
+}
+
+/** Plain "Name (slug)" label, or just the slug when no name is known (a
+ *  pre-name-capture login). Avoids the ugly "slug (slug)" duplication. */
+export function accountLabel(a: { name?: string; slug: string }): string {
+  return a.name ? `${a.name} (${a.slug})` : a.slug;
+}
+
+/** Switch the active account on a host (default: the active host). A
+ *  default project that no longer lives in the active account is dropped —
+ *  the default must always be reachable under the active account. */
+export function setActiveAccount(
+  account: { id: string; slug?: string; name?: string },
+  hostName?: string,
+): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.account_id = account.id;
+  host.account_slug = account.slug ?? account.id.slice(0, 8);
+  host.account_name = account.name ?? '';
+  if (host.default_project && host.default_project.account_id !== account.id) {
+    delete host.default_project;
+  }
+  saveConfig(config);
+}
+
+/** Set the global default project on a host (default: the active host). */
+export function setDefaultProject(project: DefaultProjectRef, hostName?: string): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.default_project = {
+    project_id: project.project_id,
+    account_id: project.account_id,
+    ...(project.name ? { name: project.name } : {}),
+  };
+  saveConfig(config);
+}
+
+/** Clear the global default project. Returns true if one was removed. */
+export function clearDefaultProject(hostName?: string): boolean {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host?.default_project) return false;
+  delete host.default_project;
+  saveConfig(config);
+  return true;
+}
+
+function resolveTargetHostName(config: Config, hostName?: string): string {
+  if (hostName) return hostName;
+  return config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────
 
 export function upsertHost(name: string, host: Host, makeActive = false): void {
@@ -309,6 +408,11 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       user_email: h.user_email ?? '',
       account_id: h.account_id ?? '',
       logged_in_at: h.logged_in_at ?? new Date().toISOString(),
+      // New optional fields — carried through verbatim when present so an
+      // older config (without them) still loads, and a newer one round-trips.
+      ...(typeof h.account_slug === 'string' ? { account_slug: h.account_slug } : {}),
+      ...(typeof h.account_name === 'string' ? { account_name: h.account_name } : {}),
+      ...(isDefaultProjectRef(h.default_project) ? { default_project: h.default_project } : {}),
     };
   }
   // Tracks which old names were folded into new ones so we can retarget the
@@ -369,6 +473,12 @@ function normalizeConfig(parsed: Partial<Config>): Config {
     active = cleaned[DEFAULT_HOST_NAME] ? DEFAULT_HOST_NAME : Object.keys(cleaned)[0]!;
   }
   return { active, hosts: cleaned };
+}
+
+function isDefaultProjectRef(value: unknown): value is DefaultProjectRef {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.project_id === 'string' && typeof v.account_id === 'string';
 }
 
 function defaultHost(url: string): Host {

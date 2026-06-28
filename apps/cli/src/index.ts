@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { runAccess } from './commands/access.ts';
+import { runAccounts } from './commands/accounts.ts';
 import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
@@ -30,7 +31,7 @@ import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { printBanner } from './banner.ts';
 import { getUpdateNotice } from './update-check.ts';
-import { renderHostNotice } from './host-notice.ts';
+import { renderContext, renderHostNotice } from './host-notice.ts';
 import { C, header, pad, rule } from './style.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
@@ -55,7 +56,8 @@ const COMMANDS: readonly Command[] = [
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
   { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
-  { name: 'projects', args: '<subcommand>', blurb: 'List, link, open Kortix cloud projects' },
+  { name: 'accounts', args: '<subcommand>', blurb: 'List + switch the active account (multi-account logins)' },
+  { name: 'projects', args: '<subcommand>', blurb: 'List, link, set-default, open Kortix cloud projects' },
   { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
   { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
@@ -112,6 +114,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     // No args — show the big ASCII banner above the help, like `vercel`.
     printBanner();
+    // Always surface what host/account/project commands will act on.
+    process.stdout.write(`${renderContext()}\n`);
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
     process.stdout.write(renderHelp());
@@ -163,6 +167,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'hosts') {
     return runHosts(argv.slice(1));
+  }
+  if (argv[0] === 'accounts') {
+    return runAccounts(argv.slice(1));
   }
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));
@@ -226,7 +233,6 @@ async function main(argv: string[]): Promise<number> {
   // through to the project scaffold (`kortix <new-project-name>`), which
   // would otherwise create a directory called `deploy/`, etc.
   const RESERVED_FUTURE_COMMANDS = new Set([
-    'accounts',
     'add',
     'mcp',
     'logs',
@@ -262,10 +268,27 @@ async function printUpdateNoticeForCommand(command: string): Promise<void> {
   if (notice) process.stderr.write(`${notice}\n`);
 }
 
+// `process.exit()` does NOT wait for a piped stdout/stderr to flush — on large
+// output (e.g. `kortix projects ls --all --json | jq`, or executor JSON the
+// in-sandbox agent parses) it drops everything past the ~64KiB pipe buffer,
+// producing truncated/invalid output. Instead set the exit code and let the
+// runtime flush both streams and exit naturally. Release stdin first so an
+// interactive raw-mode read (tui-select / prompts) can't keep the event loop
+// alive after the command is done.
+function finish(code: number): void {
+  process.exitCode = code;
+  try {
+    process.stdin.pause();
+    (process.stdin as unknown as { unref?: () => void }).unref?.();
+  } catch {
+    /* stdin may not support pause/unref in every environment */
+  }
+}
+
 main(process.argv.slice(2))
-  .then((code) => process.exit(code))
+  .then((code) => finish(code))
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`${C.red}kortix:${C.reset} ${msg}\n`);
-    process.exit(1);
+    finish(1);
   });
