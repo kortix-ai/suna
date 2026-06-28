@@ -120,6 +120,38 @@ The release PR carries the staging candidate into prod, Vercel builds the latest
 FE, and Argo rolls the latest API/gateway images. The rollback evaporates. No
 manual Vercel step to resume.
 
+## 6b. NEVER repoint Argo `targetRevision` at a rollback branch
+
+There's a tempting break-glass shortcut: instead of merging the image-tag PR into
+`prod`, hand-patch the live Argo app's `spec.sources[].targetRevision` (API,
+`kortix-prod`) / `spec.source.targetRevision` (gateway, `kortix-gateway-prod`) to
+a one-off `rollback/<...>` branch so Argo deploys it **without** the prod merge
+gate. **Don't.** A forward release advances the `prod` branch, but Argo is now
+tracking the rollback branch, so it never sees the new version — **every future
+release silently stalls**: `deploy-prod`'s "Wait for Deployment rolled out" loops
+~28min on the OLD image while pods are perfectly Healthy, then fails. (Happened
+2026-06-28: a 0.9.84 rollback branch stranded prod; the 0.9.86 release hung.)
+
+If it ever happens, recover by pointing Argo back at `prod`:
+
+```bash
+CTX=arn:aws:eks:eu-west-2:935064898258:cluster/kortix-prod-eks
+# kortix-prod is MULTI-source (chart + $values) — patch every source:
+kubectl --context "$CTX" -n argocd patch application kortix-prod --type json \
+  -p '[{"op":"replace","path":"/spec/sources/0/targetRevision","value":"prod"},
+       {"op":"replace","path":"/spec/sources/1/targetRevision","value":"prod"}]'
+# kortix-gateway-prod is single-source:
+kubectl --context "$CTX" -n argocd patch application kortix-gateway-prod --type merge \
+  -p '{"spec":{"source":{"targetRevision":"prod"}}}'
+kubectl --context "$CTX" -n argocd annotate application kortix-prod kortix-gateway-prod \
+  argocd.argoproj.io/refresh=hard --overwrite
+```
+
+`deploy-prod` now **self-heals** this: an "Ensure Argo app tracks 'prod'" step
+asserts + repoints before the rollout wait, so a forward release reclaims a
+stranded app automatically. The git-based rollback (image-tag PR into `prod`,
+§1–2) keeps Argo on `prod` and is the only supported method — use it.
+
 ## 7. Gotchas
 
 - **The deploy-prod run on the backend merge goes partly red** (its version-watch
