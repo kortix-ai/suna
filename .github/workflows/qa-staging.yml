@@ -124,7 +124,7 @@ jobs:
         run: npm --prefix tests run allure:junit
       - name: AWS auth (skipped if QA_REPORTS_ROLE_ARN unset)
         if: ${{ env.QA_REPORTS_ROLE_ARN != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}
