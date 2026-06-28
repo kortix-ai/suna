@@ -107,8 +107,6 @@ type ModelRef = { providerID: string; modelID: string };
 export interface ModelDefaultControls {
   /** Current agent name; enables the per-agent default action when set. */
   agentName?: string;
-  /** True when the account can't use managed models (free tier) — hides "default" hints. */
-  freeTier?: boolean;
   onSetAccountDefault: (model: ModelRef) => void;
   onSetAgentDefault?: (model: ModelRef) => void;
 }
@@ -521,7 +519,7 @@ export function ModelSelector({
                   </div>
                 )}
               </CommandList>
-              {defaultControls && selectedModel && !defaultControls.freeTier ? (
+              {defaultControls && selectedModel ? (
                 <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
                   <button
                     type="button"
