@@ -9,7 +9,7 @@ import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
-import { Message, MessageContent } from '@/components/ui/message';
+import { Message } from '@/components/ui/message';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
@@ -35,14 +35,10 @@ export function WorkbenchTabs({
 }) {
   return (
     <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
-      <div className="border-b border-border px-5">
-        <TabsList className="h-10 bg-transparent p-0">
+      <div className="px-5 pt-3.5">
+        <TabsList>
           {(['chat', 'files', 'changes', 'preview'] as const).map((v) => (
-            <TabsTrigger
-              key={v}
-              value={v}
-              className="h-10 rounded-none border-b-2 border-transparent bg-transparent px-3 capitalize text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-            >
+            <TabsTrigger key={v} value={v} className="px-3.5 capitalize">
               {v}
             </TabsTrigger>
           ))}
@@ -169,11 +165,9 @@ function Thread({ session: c }: { session: UseSessionResult }) {
 
           {c.pending && (
             <Message align="end">
-              <MessageContent>
-                <Bubble variant="secondary" align="end" className="opacity-70">
-                  <BubbleContent>{c.pending}</BubbleContent>
-                </Bubble>
-              </MessageContent>
+              <Bubble variant="secondary" align="end" className="opacity-70">
+                <BubbleContent>{c.pending}</BubbleContent>
+              </Bubble>
             </Message>
           )}
 

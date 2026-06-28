@@ -1,17 +1,15 @@
 'use client';
 
 /**
- * One message from the sync store, composed from the shadcn chat primitives.
- * User turns are a right-aligned `Bubble`; assistant turns render as a left
- * `Message` row (brand avatar + full-width content blocks: markdown, collapsible
- * reasoning, tool cards, file markers).
+ * One message from the sync store. The user turn is a right-aligned `Bubble`;
+ * the assistant turn renders full-width as ordered content blocks (markdown,
+ * collapsible reasoning, tool cards, file markers) — clean and monochrome.
  */
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
-import { Message, MessageAvatar, MessageContent } from '@/components/ui/message';
+import { Message } from '@/components/ui/message';
 import type { MessageWithParts } from '@kortix/sdk/react';
 import { Brain, ChevronRight, Paperclip } from 'lucide-react';
 import { Markdown } from './markdown';
@@ -22,7 +20,7 @@ type AnyPart = MessageWithParts['parts'][number] & Record<string, any>;
 function Reasoning({ text }: { text: string }) {
   return (
     <Collapsible>
-      <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+      <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
         <Brain className="size-3.5" />
         <span>Thought process</span>
         <ChevronRight className="size-3 transition-transform group-data-[state=open]:rotate-90" />
@@ -71,30 +69,23 @@ export function MessageView({ message }: { message: MessageWithParts }) {
       .join('\n')
       .trim();
     if (!text) return null;
+    // Bubble sits directly in the row (no min-w-0 column) so it sizes to its
+    // content up to max-width — never collapses to a sliver.
     return (
       <Message align="end">
-        <MessageContent>
-          <Bubble variant="secondary" align="end">
-            <BubbleContent>{text}</BubbleContent>
-          </Bubble>
-        </MessageContent>
+        <Bubble variant="secondary" align="end">
+          <BubbleContent>{text}</BubbleContent>
+        </Bubble>
       </Message>
     );
   }
 
   if (parts.length === 0) return null;
   return (
-    <Message align="start">
-      <MessageAvatar>
-        <Avatar className="size-7">
-          <AvatarFallback className="bg-brand/15 text-xs font-semibold text-brand">K</AvatarFallback>
-        </Avatar>
-      </MessageAvatar>
-      <MessageContent className="gap-2.5 pt-0.5">
-        {parts.map((p, i) => (
-          <PartView key={p.id ?? i} part={p} />
-        ))}
-      </MessageContent>
-    </Message>
+    <div className="space-y-2.5 text-sm leading-relaxed">
+      {parts.map((p, i) => (
+        <PartView key={p.id ?? i} part={p} />
+      ))}
+    </div>
   );
 }
