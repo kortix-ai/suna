@@ -1,18 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-
-type Particle = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  hx: number;
-  hy: number;
-  delay: number;
-};
-
-const BRANDMARK_SRC = '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg';
+import {
+  advanceParticle,
+  BRANDMARK_SRC,
+  buildBrandmarkParticles,
+  getParticleMarkSize,
+  type Particle,
+} from './particle-mark';
 
 /**
  * A Rauch-style hard-pixel particle canvas that resolves into the Kortix
@@ -60,13 +55,13 @@ export function KortixParticleMark() {
       canvas.style.height = `${viewportHeight}px`;
       ctx.imageSmoothingEnabled = false;
 
-      const aspectRatio = brandmark.naturalWidth / brandmark.naturalHeight;
-      const targetWidthCss = Math.max(
-        132,
-        Math.min(244, viewportWidth * 0.54, viewportHeight * 0.7 * aspectRatio),
-      );
-      const targetWidth = Math.round(targetWidthCss * dpr);
-      const targetHeight = Math.round(targetWidth / aspectRatio);
+      const { width: targetWidth, height: targetHeight } = getParticleMarkSize({
+        sourceWidth: brandmark.naturalWidth,
+        sourceHeight: brandmark.naturalHeight,
+        viewportWidth,
+        viewportHeight,
+        dpr,
+      });
 
       const offscreen = document.createElement('canvas');
       offscreen.width = targetWidth;
@@ -81,28 +76,16 @@ export function KortixParticleMark() {
       const imageData = offscreenCtx.getImageData(0, 0, targetWidth, targetHeight);
       const offsetX = (canvas.width - targetWidth) / 2;
       const offsetY = (canvas.height - targetHeight) / 2;
-      const nextParticles: Particle[] = [];
-
-      for (let y = 0; y < targetHeight; y += particleStride) {
-        for (let x = 0; x < targetWidth; x += particleStride) {
-          const alpha = imageData.data[(y * targetWidth + x) * 4 + 3];
-          if (alpha <= 32) continue;
-
-          const hx = Math.round((offsetX + x) / particleStride) * particleStride;
-          const hy = Math.round((offsetY + y) / particleStride) * particleStride;
-          nextParticles.push({
-            x: hx,
-            y: -(Math.random() * canvas.height * 0.6 + 100 * dpr),
-            vx: 0,
-            vy: 0,
-            hx,
-            hy,
-            delay: ((targetHeight - y) / targetHeight) * 220 + Math.random() * 90,
-          });
-        }
-      }
-
-      particles = nextParticles;
+      particles = buildBrandmarkParticles({
+        targetWidth,
+        targetHeight,
+        particleStride,
+        offsetX,
+        offsetY,
+        canvasHeight: canvas.height,
+        dpr,
+        alphaAt: (x, y) => imageData.data[(y * targetWidth + x) * 4 + 3],
+      });
       sceneStartedAt = performance.now();
     };
 
@@ -111,61 +94,17 @@ export function KortixParticleMark() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#000000';
 
-      const influenceRadius = 36 * dpr;
-      const influenceRadiusSquared = influenceRadius * influenceRadius;
-      const pointerForce = 2.6 * dpr;
-      const maxVelocity = 28 * dpr;
-      const homeForce = 0.02;
-      const fallGravity = 2.4 * dpr;
-
       for (const particle of particles) {
         if (elapsed < particle.delay) continue;
-
-        if (particle.y < particle.hy - 1 && elapsed < particle.delay + 900) {
-          particle.vy += fallGravity;
-          particle.vx += (particle.hx - particle.x) * homeForce;
-          particle.vx *= 0.86;
-          particle.x += particle.vx;
-          particle.y += particle.vy;
-
-          if (particle.y >= particle.hy) {
-            particle.x = particle.hx;
-            particle.y = particle.hy;
-            particle.vx = 0;
-            particle.vy = 0;
-          }
-        } else {
-          const dx = particle.x - pointerX;
-          const dy = particle.y - pointerY;
-          const distanceSquared = dx * dx + dy * dy;
-
-          if (isPointerActive && distanceSquared < influenceRadiusSquared) {
-            const distance = Math.sqrt(distanceSquared) || 0.0001;
-            const falloff = 1 - distance / influenceRadius;
-            const force = falloff * falloff;
-            particle.vx += (dx / distance) * force * pointerForce;
-            particle.vy += (dy / distance) * force * pointerForce;
-            particle.vx += pointerVelocityX * force * 0.9;
-            particle.vy += pointerVelocityY * force * 0.9;
-          } else {
-            particle.vx += (particle.hx - particle.x) * homeForce;
-            particle.vy += (particle.hy - particle.y) * homeForce;
-          }
-
-          particle.vx *= 0.86;
-          particle.vy *= 0.86;
-
-          const velocity = Math.sqrt(
-            particle.vx * particle.vx + particle.vy * particle.vy,
-          );
-          if (velocity > maxVelocity) {
-            particle.vx = (particle.vx / velocity) * maxVelocity;
-            particle.vy = (particle.vy / velocity) * maxVelocity;
-          }
-
-          particle.x += particle.vx;
-          particle.y += particle.vy;
-        }
+        advanceParticle(particle, {
+          elapsed,
+          dpr,
+          isPointerActive,
+          pointerX,
+          pointerY,
+          pointerVelocityX,
+          pointerVelocityY,
+        });
 
         const pixelX = Math.round(particle.x / dpr) * dpr;
         const pixelY = Math.round(particle.y / dpr) * dpr;
