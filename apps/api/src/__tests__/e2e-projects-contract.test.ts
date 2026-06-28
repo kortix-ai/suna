@@ -315,6 +315,7 @@ mock.module('../iam/dispatcher', () => {
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
+    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
   };
 });
 

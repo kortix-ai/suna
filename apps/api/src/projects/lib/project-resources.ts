@@ -40,8 +40,8 @@ export function skillSlugFromPath(path: string): string | null {
 /** Map a loaded project config → the grantable agent/skill resource ids. */
 export function projectResourcesFromConfig(config: ProjectConfigSummary): ProjectResources {
   return {
-    agents: config.agents.map((a) => ({ id: a.name, name: a.name, description: a.description })),
-    skills: config.skills.map((s) => ({
+    agents: (config.agents ?? []).map((a) => ({ id: a.name, name: a.name, description: a.description })),
+    skills: (config.skills ?? []).map((s) => ({
       id: skillSlugFromPath(s.path) ?? s.name,
       name: s.name,
       description: s.description,
@@ -69,8 +69,8 @@ export async function filterConfigResourcesForUser(
   config: ProjectConfigSummary,
   ctx: { userId: string; accountId: string; projectId: string; actingTokenId?: string },
 ): Promise<ProjectConfigSummary> {
-  const agentIds = config.agents.map((a) => a.name);
-  const skillIds = config.skills.map((s) => skillSlugFromPath(s.path) ?? s.name);
+  const agentIds = (config.agents ?? []).map((a) => a.name);
+  const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
   const [okAgents, okSkills] = await Promise.all([
     filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'agent', agentIds, ctx.actingTokenId),
     filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'skill', skillIds, ctx.actingTokenId),
@@ -79,8 +79,8 @@ export async function filterConfigResourcesForUser(
   const okSkillSet = new Set(okSkills);
   return {
     ...config,
-    agents: config.agents.filter((a) => okAgentSet.has(a.name)),
-    skills: config.skills.filter((s) => okSkillSet.has(skillSlugFromPath(s.path) ?? s.name)),
+    agents: (config.agents ?? []).filter((a) => okAgentSet.has(a.name)),
+    skills: (config.skills ?? []).filter((s) => okSkillSet.has(skillSlugFromPath(s.path) ?? s.name)),
   };
 }
 
@@ -114,8 +114,8 @@ export async function denierFromConfig(
   config: ProjectConfigSummary,
   ctx: { userId: string; accountId: string; projectId: string; actingTokenId?: string },
 ): Promise<ResourceDenier | null> {
-  const agentIds = config.agents.map((a) => a.name);
-  const skillIds = config.skills.map((s) => skillSlugFromPath(s.path) ?? s.name);
+  const agentIds = (config.agents ?? []).map((a) => a.name);
+  const skillIds = (config.skills ?? []).map((s) => skillSlugFromPath(s.path) ?? s.name);
   const [okAgents, okSkills] = await Promise.all([
     filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'agent', agentIds, ctx.actingTokenId),
     filterAccessibleProjectResources(ctx.userId, ctx.accountId, ctx.projectId, 'skill', skillIds, ctx.actingTokenId),
@@ -138,12 +138,12 @@ export function buildResourceDenier(
   // Denied agents → block their exact file (opencode agents are single .md
   // files; a kortix.toml agent has no separate file, only the shared manifest).
   const deniedExact = new Set<string>();
-  for (const a of config.agents) {
+  for (const a of config.agents ?? []) {
     if (!okAgent.has(a.name) && a.source === 'opencode' && a.path) deniedExact.add(trimPath(a.path));
   }
   // Denied skills → block the whole skill directory (SKILL.md + references/…).
   const deniedPrefixes: string[] = [];
-  for (const s of config.skills) {
+  for (const s of config.skills ?? []) {
     const slug = skillSlugFromPath(s.path) ?? s.name;
     if (!okSkill.has(slug)) {
       const trimmed = trimPath(s.path);
