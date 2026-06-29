@@ -5,7 +5,9 @@ description: "Kortix brand + design system: the rules, tokens, and component lib
 
 # Kortix Design System
 
-**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished reference implementations — the old version is stale and superseded.
+**Track this file:** `.claude/skills/kortix-design-system/SKILL.md` (mirror: `.cursor/skills/kortix-design-system/SKILL.md`)
+
+**If you are touching a visual surface in `apps/web`, follow this.** This skill was rewritten in June 2026 to match the polished customize-panel reference implementations — older guidance is stale and superseded.
 
 ## Companion skill — always load both
 
@@ -27,39 +29,83 @@ Load both before writing or reviewing UI. When Kortix rules and polish rules ove
 
 ## Strictly avoid — deprecated primitives
 
-**Do not use these in new work or when refactoring screens.** They are legacy wrappers; match the hand-composed patterns in the reference implementations instead.
+**Do not use these in new work or when refactoring screens.** They are legacy wrappers; match the hand-composed patterns in the customize section views instead.
 
-- **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) — use `Card` + explicit header markup (see `settings-view.tsx`, `agents-view.tsx`) instead.
-- **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) — compose entity rows inside a `Card` or flush container with `divide-border/60 divide-y` and the row layout from reference views. Never import `List` or `ListRow`.
+| Banned | Use instead |
+| --- | --- |
+| **`SectionCard`** (`apps/web/src/components/ui/section-card.tsx`) | `Label` + `bg-popover rounded-md border` panel, or `Disclosure` — see `settings-view.tsx` |
+| **`List` / `ListRow`** (`apps/web/src/components/ui/list.tsx`) | `<ul className="space-y-2">` + entity row classes — see `changes-view.tsx`, `members-view.tsx` |
+| **`Dialog` / `DialogContent`** in feature code | **`Modal`** from `apps/web/src/components/ui/modal.tsx` — see `secrets-view.tsx`, `channels-view.tsx` |
+| **`Tooltip` / `TooltipTrigger` / `TooltipContent`** in feature code | **`Hint`** from `apps/web/src/components/ui/hint.tsx` |
+| **`@/lib/toast`**, raw `sonner`, `toast.custom()` | Named helpers from `apps/web/src/components/ui/toast.tsx` |
+| Hand-rolled badge `<span>` chips | **`Badge`** from `apps/web/src/components/ui/badge.tsx` |
+| **`Loader2`**, `Loader`, or any icon as a spinner (`lucide-react`, `@mynaui/icons-react`, etc.) | **`Loading`** from `apps/web/src/components/ui/loading.tsx` |
+| Hand-rolled `<svg>` spinners, `animate-spin` on non-`Loading` elements | **`Loading`** — animation is built in |
 
-When editing a file that already uses them, prefer migrating to the reference pattern over adding more usage.
+When editing a file that already uses banned primitives, migrate to the reference pattern — do not add more usage.
 
-## Reference implementations — read these before building a new screen
+## Required primitives — use these, not alternatives
 
-These files are the new source of truth for what good looks like. Match their patterns.
+These are **mandatory** for their job. Import from the paths below; never reimplement or swap in a different library.
 
-- **Shell + responsive layout:** `apps/web/src/features/workspace/customize/customize-panel.tsx` + `sections/component/section-wrapper.tsx`
-- **List/card composition, flush rows, no nested rounding:** `apps/web/src/features/workspace/customize/sections/view/agents-view.tsx`, `apps/web/src/features/workspace/customize/sections/view/settings-view.tsx`
-- **Tinted-icon status pattern:** `apps/web/src/components/projects/schedule-view.tsx`
-- **Table + badges + header:** `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx`
-- **Sidebar chrome:** `apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx` + `apps/web/src/components/sidebar/sidebar-left.tsx`
+| Job | Import from | Notes |
+| --- | --- | --- |
+| Tooltips on icon buttons | `apps/web/src/components/ui/hint.tsx` | `<Hint label="…">…</Hint>` — wraps trigger, never Tooltip in features |
+| Dialogs / sheets | `apps/web/src/components/ui/modal.tsx` | `Modal`, `ModalContent`, `ModalHeader`, `ModalTitle`, `ModalDescription`, `ModalBody`, `ModalFooter` |
+| Toasts | `apps/web/src/components/ui/toast.tsx` | `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, `loadingToast` |
+| Status chips | `apps/web/src/components/ui/badge.tsx` | `size="sm"` or `size="xs"`; variants `outline`, `kortix`, `success`, `destructive`, `beta`, etc. |
+| Expand/collapse panels | `apps/web/src/components/ui/disclosure.tsx` | `Disclosure`, `DisclosureTrigger`, `DisclosureContent` — config lists, settings groups |
+| Inline alerts | `apps/web/src/components/ui/info-banner.tsx` | `tone` + optional `icon` + `title` |
+| Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput variant="popover"` |
+| Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
+| Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
+| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | Final confirm only — not routine buttons |
+| Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `Loader2` or other icons |
+
+Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
+
+## Reference implementations — customize section views
+
+**Read the closest match before building any new screen.** All live under `apps/web/src/features/workspace/customize/sections/view/`.
+
+| File | Pattern to copy |
+| --- | --- |
+| **`section-wrapper.tsx`** (`sections/component/`) | Section shell: title left, action right, `max-w-2xl`, responsive header |
+| **`agents-view.tsx`** | Config entity list: search → `Disclosure` rows → detail panel with `Badge`, `ButtonGroup` + `Hint`, toasts |
+| **`skills-view.tsx`** | Same disclosure pattern as agents; `EmptyState` + docs link; `InfoBanner` for 403 |
+| **`commands-view.tsx`** | Disclosure trigger uses `Button variant="accent"`; otherwise identical config-entity flow |
+| **`settings-view.tsx`** | Form sections: `Label` header → `bg-popover rounded-md border px-4 py-5` panel; `Disclosure` for experimental; danger zone as neutral bordered row |
+| **`secrets-view.tsx`** | `Table` + `TabsListCompact` filters + **`Modal`** forms + `DropdownMenu` row actions |
+| **`members-view.tsx`** | Entity rows (`MEMBER_ROW`), `UserAvatar`, `InlineMeta`, underline `Tabs`, tab badge counts |
+| **`changes-view.tsx`** | Tinted `size-9` icon tiles, `Badge variant="kortix" size="xs"`, row inline actions, `TabsListCompact` |
+| **`channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
+| **`sandbox-view.tsx`** | Build status rows, `Badge` variants per status, nested `Disclosure` for error details |
+| **`dev-view.tsx`** | `Stepper` onboarding, command blocks, minimal bordered panels |
+| **`computers-view.tsx`** | Thin wrapper — delegates to `TunnelOverview` |
+
+**Shell:** `apps/web/src/features/workspace/customize/customize-panel.tsx`
+
+**Other references:** tinted-icon tiles → `apps/web/src/components/projects/schedule-view.tsx`; sidebar → `project-sidebar.tsx` + `sidebar-left.tsx`.
 
 ## Layout & responsiveness
 
-**Canonical section wrapper pattern** (from `section-wrapper.tsx`):
+**Always wrap customize-style sections in `CustomizeSectionWrapper`.** Do not hand-roll the outer shell.
+
+Canonical pattern (from `section-wrapper.tsx`):
 
 ```tsx
 <div className="flex h-full min-h-0 flex-col">
   <div className="min-h-0 flex-1 overflow-y-auto">
-    <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-20">
+    <div className="mx-auto w-full max-w-2xl space-y-5 px-4 py-10 pb-20 lg:py-20">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h2 className="text-foreground text-xl font-medium">{title}</h2>
-          <p className="text-muted-foreground text-sm text-balance">
-            {description}
-          </p>
+          <span className="flex items-center gap-1">
+            <p className="text-muted-foreground text-sm text-balance">{description}</p>
+            {/* optional docs link: Button variant="transparent" asChild */}
+          </span>
         </div>
-        {action} {/* button/control on the right */}
+        {action ? <div className="mt-2 shrink-0 sm:mt-0">{action}</div> : null}
       </header>
       {children}
     </div>
@@ -69,188 +115,267 @@ These files are the new source of truth for what good looks like. Match their pa
 
 Rules:
 
-- **Header:** label/title + description on the left, action button on the right. Stacks vertically on mobile (`flex-col sm:flex-row`). Always.
-- **Content below** the header, never beside it.
-- **Page section padding:** `py-20` for breathable sections; `space-y-5` between sections.
-- **Container:** `mx-auto w-full max-w-2xl` keeps content readable and centered.
-- Mobile-first: every layout must be tested at narrow width.
+- **Header:** title + description left; primary action right. Stacks on mobile (`flex-col sm:flex-row`). Content always **below** the header.
+- **Container:** `mx-auto w-full max-w-2xl`.
+- **Section padding:** `py-10 pb-20 lg:py-20`; `space-y-5` between header and body.
+- **Major blocks inside body:** `space-y-4` (search + list), `space-y-6` (tab panels), `space-y-8` (settings sections).
+- Mobile-first: test narrow width.
+
+## Card & panel patterns (no SectionCard)
+
+Panels are **hand-composed** `bg-popover rounded-md border` surfaces — not `SectionCard`, not raw `Card` with padding on the outer element.
+
+### Settings / form panel
+
+```tsx
+<section className="space-y-4">
+  <Label>Repository</Label>
+  <div className="bg-popover space-y-5 rounded-md border px-4 py-5">
+    <FieldGroup className="grid gap-3 sm:grid-cols-2">{/* fields */}</FieldGroup>
+  </div>
+</section>
+```
+
+### Entity row (list item)
+
+```tsx
+<ul className="space-y-2">
+  <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2 transition-colors">
+    {/* leading: size-9 tinted icon tile */}
+    {/* body: min-w-0 flex-1 */}
+    {/* trailing: Button size="sm" */}
+  </li>
+</ul>
+```
+
+Members use `py-2.5` (`MEMBER_ROW` in `members-view.tsx`). Changes/sandbox use `py-2`.
+
+### Config entity disclosure (agents, skills, commands)
+
+```tsx
+<div className="space-y-2">
+  <Disclosure variant="outline" className="overflow-hidden" open={open} onOpenChange={setOpen}>
+    <DisclosureTrigger variant="outline">
+      <Button variant="popover" className="flex w-full items-center justify-start rounded-none">
+        <span className="truncate text-sm font-medium">{name}</span>
+      </Button>
+    </DisclosureTrigger>
+    <DisclosureContent variant="outline" contentClassName="border-border border-t">
+      <div className="relative px-4 py-5">{/* detail */}</div>
+    </DisclosureContent>
+  </Disclosure>
+</div>
+```
+
+Detail header: `text-2xl font-semibold tracking-tight` title; meta `Badge variant="outline" size="sm"`; toolbar `absolute top-4 right-4` with `ButtonGroup` + `Hint`.
+
+### Danger zone (settings)
+
+Neutral bordered row — no red panel fill:
+
+```tsx
+<div className="bg-popover rounded-md border px-4 py-3">
+  <div className="flex items-center justify-between gap-4">
+    <div className="min-w-0">{/* title text-sm font-medium + description text-xs */}</div>
+    <Button variant="destructive" size="sm" onClick={openConfirm}>Archive</Button>
+  </div>
+</div>
+```
+
+`destructive` on the button is OK inside `ConfirmDialog` flow; panel itself stays neutral.
+
+## Button conventions
+
+Match the customize views — consistent sizes and variants:
+
+| Context | Pattern |
+| --- | --- |
+| Section header primary action | `Button size="sm" variant="secondary"` + `Plus` icon (`size-4`) + label; group with `gap-1.5` |
+| Empty state CTA | `Button variant="outline" size="sm" className="gap-1.5"` |
+| Docs / secondary link | `Button asChild variant="ghost" size="sm" className="gap-1.5"` |
+| Row secondary action | `Button variant="ghost" size="sm"` |
+| Row primary action | `Button size="sm"` (default variant) |
+| Icon-only with tooltip | `Hint` → `Button variant="outline" size="icon"` inside `ButtonGroup` |
+| Inline text link | `Button variant="transparent" size="sm" asChild` |
+| Modal cancel | `Button variant="outline-ghost"` |
+| Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `Loader2` |
+
+Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
+
+## Spacing cheat sheet (from reference views)
+
+| Layer | Classes |
+| --- | --- |
+| Section wrapper → body | `space-y-5` |
+| Search + content block | `space-y-4` |
+| List of rows / disclosures | `space-y-2` inside `space-y-4` parent |
+| Settings major sections | `space-y-8` |
+| Tab panel content | `space-y-6` |
+| Panel inner padding | `px-4 py-5` (standard), `px-4 py-3` (compact row) |
+| Row internal gap | `gap-3` (row), `gap-1.5` (title/meta), `gap-2` (button groups) |
+| Detail content below title | `mt-8` |
+| No-match empty search | `px-3 py-6 text-center text-xs` |
+
+**No direct padding on the outer bordered panel** — padding lives on inner content (`px-4 py-5`).
 
 ## Tokens — `globals.css` is law
 
 ### Color
 
-Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind palette classes (`bg-blue-500`, `text-red-400`, `bg-emerald-600`, `border-amber-300`), raw values (`#fff`, `oklch(...)`, `rgb(...)`), or manual theme hacks (`bg-black/10`, `bg-white/10`, `dark:bg-emerald-400`).
+Use only semantic tokens and `kortix-*` brand accents. **Never** raw Tailwind palette classes (`bg-blue-500`, `text-red-400`), raw hex/oklch, or manual `dark:` palette hacks.
 
-**Semantic tokens:** `background/foreground`, `card/card-foreground`, `popover/popover-foreground`, `primary/primary-foreground`, `secondary/secondary-foreground`, `muted/muted-foreground`, `accent/accent-foreground`, `destructive/destructive-foreground`, `border`, `input`, `ring`, `sidebar-*`, `chart-1`…`chart-5`.
+**Brand accents (`kortix-*`):** `kortix-base`, `kortix-blue`, `kortix-yellow`, `kortix-orange`, `kortix-green`, `kortix-purple`, `kortix-red` — the *only* sources for semantic UI color.
 
-**Brand accents (`kortix-*`):** `kortix-base`, `kortix-blue`, `kortix-yellow`, `kortix-orange`, `kortix-green`, `kortix-purple`, `kortix-red`. These are the _only_ color sources for semantic UI color (status, icons, tints). No other color names are allowed.
-
-**Semantic palette (status & icon color):**
 | State | Token |
-|---|---|
+| --- | --- |
 | success / running / connected | `kortix-green` |
 | error / failed | `kortix-red` |
-| warning / needs attention / unsaved | `kortix-orange` |
-| pending / soft / informational | `kortix-yellow` |
-| paused / idle / neutral | `muted-foreground` |
-| data visualization only | `chart-1`…`chart-5` |
+| warning / needs attention | `kortix-orange` |
+| pending / informational | `kortix-yellow` |
+| idle / neutral | `muted-foreground` |
 
-**Two-mode design (light + dark):** every color must work in both. Use semantic tokens that auto-flip — they are defined in `.dark {}` in `globals.css`. Never hard-code a single-mode color or add a manual `dark:` palette class (`dark:text-emerald-400`). The only allowed `dark:` uses are for shadow and sidebar-specific overrides already in primitives.
-
-**Active / selected = tinted primary, never flat grey:**
-
-- Selected rows/cards: `bg-primary/[0.05]`–`bg-primary/[0.08]`, optionally `border-l-2 border-l-primary`.
-- Active toggles, pills, tabs: `variant="subtle"` (`bg-primary/10 text-primary`).
-- Never `variant="secondary"` or `bg-muted` to mean "selected."
-
-**Destructive / danger semantics:**
-
-- `kortix-red` is allowed on _status icons_ (failed, error) — this is explicit and intentional.
-- The `destructive` token (deeper red) is reserved for the _single final confirm button_ inside a `ConfirmDialog`. Never on menu rows, trigger buttons, labels, or routine actions like Log out / Cancel.
-- A Danger Zone panel stays neutral — faint warm edge only (`border-kortix-orange/20` or similar), no red fill or red text on the panel itself. Do not use `SectionCard`; compose with `Card` like `settings-view.tsx`.
+**Active / selected:** `bg-primary/[0.05]`–`bg-primary/[0.08]` or `variant="subtle"` — never `bg-muted` for selection.
 
 ### Radius
 
-**Default container radius: `rounded-md`.** (The old skill's `rounded-2xl` for containers is superseded.)
+| Surface | Radius |
+| --- | --- |
+| Panels, rows, tables | `rounded-md` |
+| Flush seam inside disclosure | `rounded-none` on trigger button |
+| Status icon tiles | `rounded-sm` (`size-8` or `size-9`) |
+| Inputs / selects | `rounded-lg` via `variant="popover"` |
+| Pills (buttons, badges) | `rounded-full` |
 
-| Surface                                                  | Radius         |
-| -------------------------------------------------------- | -------------- |
-| Main containers, cards, panels, dialogs, tables, banners | `rounded-md`   |
-| Flush / edge-to-edge seams inside a container            | `rounded-none` |
-| Menu/list highlight rows                                 | `rounded-md`   |
-| Status icon tiles (`size-8` tinted squares)              | `rounded-sm`   |
-| Inputs, textareas, selects                               | `rounded-lg`   |
-| Pills (buttons, badges)                                  | `rounded-full` |
-| Tiny micro-bits (kbd, swatches, ≤24px icon squares)      | `rounded-sm`   |
-
-**Never:** arbitrary radii (`rounded-[5px]`), `rounded-xl`, `rounded-2xl` on containers, or two levels of rounding nested inside each other (a rounded child inside a rounded parent — use `rounded-none` for the inner piece).
-
-### Spacing & padding
-
-- **No direct padding on a Card/panel.** The card owns the border + radius; padding lives on inner content containers.
-- Inner section padding: `px-4 py-5` (standard), `px-3 py-6` (compact with centered content).
-- Vertical rhythm between items: `space-y-1`, `space-y-2`, `space-y-2.5`, `space-y-4`, `space-y-5`. Don't invent off-scale values.
-- Row gaps: `gap-1`, `gap-1.5`, `gap-2`. Section-level gaps: `gap-2`, `gap-4`, `gap-5`.
-- Spacing utilities are backed by `--spacing: 0.23rem`; don't override per-component.
+**Never:** `rounded-xl` / `rounded-2xl` on app containers, nested rounding (parent + child both rounded).
 
 ### Typography
 
-- `font-sans` for all UI, headings, body. `font-mono` only for code, paths, IDs, CLI nouns.
-- Named text tokens only: `text-xs` (metadata/badges/timestamps), `text-sm` (dense rows, menus, sidebar), `text-base` (body, forms, chat), `text-lg`+ (page hierarchy, display).
-- Section titles: `text-base font-semibold`. Row titles: `text-sm font-medium`.
-- No arbitrary font sizes: `text-[11px]`, `text-[13.5px]`, `text-[0.875em]` — all banned.
-- Navigation hierarchy: show it with indentation, border, dot/icon, or opacity — not by making child titles smaller than parent titles.
-
-### Shadows & motion
-
-- Shadows stay subtle. Use `shadow-2xs`…`shadow-2xl` tokens only when elevation is genuinely needed. Most app surfaces are flat.
-- Motion tokens: `duration-fast` 100ms, `duration-normal` 150ms, `duration-moderate` 200ms, `duration-slow` 300ms; `ease-default`, `ease-out`. Default transitions: 150–200ms `ease-default`. Repeated keyboard actions don't animate.
+- Section page title (wrapper): `text-xl font-medium`
+- Panel section label: `Label` component
+- Row title: `text-sm font-medium`
+- Row meta: `text-xs text-muted-foreground`
+- Detail title: `text-2xl font-semibold tracking-tight`
+- Named sizes only — no `text-[11px]` except where `Badge size="xs"` already defines it
 
 ## Status pattern — tinted icon tile
 
-**Never show status as a plain text label or an in-patch `<Badge>` when an icon can carry the meaning.**
+```tsx
+<span className={cn(
+  'flex size-9 items-center justify-center rounded-sm',
+  merged && 'bg-kortix-green/15',
+  failed && 'bg-kortix-red/15',
+  open && 'bg-kortix-blue/15',
+)}>
+  <Icon className={cn('size-5', merged && 'text-kortix-green', …)} />
+</span>
+```
 
-Canonical pattern (from `schedule-view.tsx`):
+Use **solid** icons at `size-5` inside `size-8`/`size-9` tiles. Pair with `Badge` for text labels when needed (`changes-view.tsx`, `sandbox-view.tsx`).
+
+## Modal pattern (canonical — use `modal.tsx`)
+
+From `secrets-view.tsx` / `channels-view.tsx` — **not** raw Dialog:
 
 ```tsx
-<div
-  className={cn(
-    "inline-flex size-8 shrink-0 items-center justify-center rounded-sm border",
-    isRunning && "bg-kortix-green/10 text-kortix-green",
-    isFailed && "bg-kortix-red/10   text-kortix-red",
-    isPaused && "bg-kortix-orange/10 text-kortix-orange",
-    isIdle && "text-muted-foreground border-border",
+<Modal open={open} onOpenChange={setOpen}>
+  <ModalContent className="lg:max-w-lg">
+    <ModalHeader>
+      <ModalTitle>Title</ModalTitle>
+      <ModalDescription>Description</ModalDescription>
+    </ModalHeader>
+    <form onSubmit={handleSubmit}>
+      <ModalBody className="max-h-[60vh] overflow-y-auto">
+        {/* fields */}
+      </ModalBody>
+      <ModalFooter className="sm:justify-between">
+        <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? <Loading className="size-4 shrink-0" /> : null}
+          Save
+        </Button>
+      </ModalFooter>
+    </form>
+  </ModalContent>
+</Modal>
+```
+
+Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
+
+## Tabs pattern
+
+- **Primary section tabs:** `TabsList type="underline"` + `TabsTrigger className="w-fit flex-none"` (`members-view.tsx`, `changes-view.tsx`)
+- **Filter / status tabs:** `TabsListCompact` + `TabsTriggerCompact` (`changes-view.tsx`, `secrets-view.tsx`)
+- Tab badge count: `<Badge variant="secondary" size="sm">` inside trigger
+
+## Loading pattern (canonical)
+
+**Every in-flight spinner is `Loading` from `loading.tsx`.** The component ships its own rotate/dash animation — do not swap in `Loader2`, `Loader`, or any other spinning icon.
+
+```tsx
+import Loading from '@/components/ui/loading';
+
+// Button pending (replaces action icon)
+<Button disabled={pending}>
+  {pending ? <Loading className="size-3.5 shrink-0" /> : <Plus className="size-3.5 shrink-0" />}
+  Save
+</Button>
+
+// Section header action
+<Button size="sm" variant="secondary" disabled={pending}>
+  {pending ? <Loading className="size-4 shrink-0" /> : <Plus className="size-4" />}
+  New
+</Button>
+
+// Inline / modal submit
+{pending ? <Loading className="size-4 shrink-0" /> : null}
+```
+
+For page-level loading placeholders use **`Skeleton`** (shape-matched). Use **`Loading`** only for active async operations (submit, fetch-in-button, mutation pending).
+
+## Search + loading + empty flow
+
+Standard content block (`agents-view.tsx` pattern):
+
+```tsx
+<div className="space-y-4">
+  <InputGroupSearch>…<InputGroupSearchInput variant="popover" />…</InputGroupSearch>
+  {isLoading ? (
+    <div className="space-y-1">{/* Skeleton h-7 rounded-md × 5 */}</div>
+  ) : isError ? (
+    <ErrorState size="sm" action={<Button variant="outline" size="sm">Retry</Button>} />
+  ) : items.length === 0 ? (
+    <EmptyState icon={…} size="sm" action={…} />
+  ) : (
+  /* list */
   )}
->
-  <SomeSolidIcon className="size-5 shrink-0" />
 </div>
 ```
 
-Rules:
-
-- `size-8 rounded-sm border` — the tile shape is fixed.
-- Color = `bg-kortix-{c}/10 text-kortix-{c}` — tint background + matching icon color.
-- Use a **solid** icon variant (not outline) so color reads clearly at small sizes.
-- Text label underneath only when the icon alone is ambiguous.
-
-## Component catalog — what to use when
-
-### Surfaces & layout
-
-- **`CustomizeSectionWrapper`** (`sections/component/section-wrapper.tsx`) — THE section shell for customize-panel views. Title left, action right, responsive.
-- **`Card` / `CardHeader` / `CardContent`** — panels and grouped content. Compose headers with title, count, description, and trailing action inline (see `settings-view.tsx`). **Not** `SectionCard`.
-- **`PageShell` / `PageHeader`** — page width + intro.
-
-### Lists & rows
-
-- **Hand-composed rows in `Card`** — entity lists: `divide-border/60 divide-y` container, each row with `leading` (avatar/icon), `title` + `badges`, `subtitle` (`InlineMeta`), `trailing` (status + kebab). Clickable rows are `div role="button"`; wrap trailing menus in `stopPropagation`. Copy structure from `agents-view.tsx` / `settings-view.tsx`. **Not** `List` / `ListRow`.
-- **`Table` / `DataTable`** — only for genuinely multi-column tabular data.
-- **`DefinitionList` / `DefinitionRow`** — key/value detail panels.
-
-### Identity
-
-- **`UserAvatar`** — person (round). Supabase profile picture or neutral monochrome initials — no colored backgrounds. Pending invites are people → `UserAvatar`.
-- **`EntityAvatar`** — thing: account, project, group, workspace (rounded square). **People are round, things are square — never mix.**
-
-### Atoms
-
-- **`Badge`** — status chips. `variant` + `size="sm"` for dense UI. Never hand-roll a badge.
-- **`Button`** — `rounded-md`. Sizes `sm|default|lg|icon`. Variants `default|outline|ghost|destructive|secondary|subtle`.
-- **`InlineMeta`** — `a · b · c` fact strip (skips falsy children). Use for row subtitles instead of manual `·` separators.
-- **`InfoBanner`** — inline status/note box. `tone` = `neutral|info|success|warning|destructive`. Use instead of hand-rolled colored `<div>` banners.
-- **`EmptyState`** — zero-state: icon + title + description + ≤2 actions. Use for every empty list.
-- **`Tabs`** / **`TabsListCompact`** — pill tabs.
-- **`Skeleton`** — loading placeholder; match the shape it replaces.
-
-### Feedback
-
-- **`toast`** (`@/components/ui/toast`) — import `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, `loadingToast` from here only. Never `sonner`, `@/lib/toast`, or `toast.custom()`.
-- **`Hint`** (`@/components/ui/hint`) — `<Hint label="…">…</Hint>`. Never import `Tooltip`/`TooltipTrigger`/`TooltipContent` in feature code.
-
-## Modal pattern (canonical)
-
-```tsx
-<DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-  <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4"> … </DialogHeader>
-  <form onSubmit={…}>
-    <div className="space-y-4 px-6 py-5">{/* fields */}</div>
-    <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
-      <Button variant="ghost">Cancel</Button>
-      <Button type="submit">Confirm</Button>
-    </div>
-  </form>
-</DialogContent>
-```
-
-- Header `border-b`, padded body, flush footer with `bg-muted/30`.
-- No `-mx-6`/`mt-4` hacks. No leftover bottom padding under the footer.
-
 ## Dos & Don'ts
 
-- ✅ Section shells → `CustomizeSectionWrapper`. ❌ a hand-rolled `<div className="flex flex-col px-… py-…">` with ad-hoc headers.
-- ✅ Panels → `Card` + composed header/body. ❌ `SectionCard`, or `<section className="rounded-xl border border-border/70 bg-card">`.
-- ✅ Danger zone trigger → neutral button that opens a confirm. ❌ a red trigger button, red menu row, or `text-destructive` on routine actions.
-- ✅ Status → tinted icon tile (`bg-kortix-{c}/10 text-kortix-{c} rounded-sm`). ❌ plain text labels or raw-color icon classes.
-- ✅ Color → `kortix-*` tokens only (`kortix-green`, `kortix-red`, `kortix-orange`, …). ❌ `text-emerald-600`, `bg-amber-500`, `dark:text-emerald-400`.
-- ✅ Container radius → `rounded-md`. Flush seam → `rounded-none`. ❌ `rounded-2xl` or `rounded-xl` on containers, nested rounding.
-- ✅ Padding on inner content div. ❌ padding directly on the Card/panel element.
-- ✅ Entity rows → hand-composed rows in `Card` (`divide-y`, reference views). ❌ `List` / `ListRow`, or ad-hoc `<ul>` without matching reference spacing.
-- ✅ Badges → `<Badge size="sm" variant="…">`. ❌ `className="h-4 rounded-md px-1 text-[9px]"`.
-- ✅ People → `UserAvatar` (round); things → `EntityAvatar` (square). ❌ mixing shapes.
-- ✅ Meta → `InlineMeta`. ❌ manual `<span className="text-muted-foreground/40">·</span>`.
-- ✅ Empty views → `EmptyState`. ❌ centered `<p>` with custom padding.
-- ✅ Status/note boxes → `<InfoBanner tone="…">`. ❌ `<div className="rounded-md border border-amber-500/30 bg-amber-500/5">`.
-- ✅ Font sizes → named tokens (`text-xs`, `text-sm`, `text-base`). ❌ `text-[11px]`, `text-[13.5px]`.
-- ✅ Selected/active → `bg-primary/[0.05]` or `variant="subtle"`. ❌ `bg-muted` or `variant="secondary"` to mean selected.
-- ✅ Toasts → named helpers from `@/components/ui/toast`. ❌ `sonner`, raw `toast.success()`.
-- ✅ Hints → `<Hint>` from `@/components/ui/hint`. ❌ `Tooltip` primitives in feature code.
+- ✅ Section shell → `CustomizeSectionWrapper`. ❌ hand-rolled outer flex + header.
+- ✅ Panels → `bg-popover rounded-md border` + inner `px-4 py-5`. ❌ `SectionCard`, ❌ padding on the border element itself.
+- ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
+- ✅ Expandable config → `Disclosure` + `Button variant="popover"`. ❌ custom accordion, ❌ nested `rounded-md` inside rounded parent.
+- ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
+- ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
+- ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast`, raw sonner.
+- ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
+- ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
+- ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
+- ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
+- ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
+- ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
+- ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `Loader2`, `Loader`, or any `animate-spin` icon.
 
 ## Workflow checklist
 
 1. **Load [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md)** — run its review checklist after composing UI.
-2. **Read a reference implementation** first (list above). Match its structure.
-3. Open `/design-system` and skim `src/components/ui/` before writing UI.
-4. Compose: `CustomizeSectionWrapper` → `Card` + hand-composed rows (or `Table`) → `Badge` + `InlineMeta` + `EmptyState`. Never `SectionCard` or `List`.
-5. Status → tinted icon tile. Color → `kortix-*` token. Radius → `rounded-md` (container), `rounded-none` (flush seam).
-6. If you must create a primitive: tokens only, tiny API, add a showcase block to `/design-system`.
-7. Verify: no raw palette colors, no nested rounding, no direct card padding, both light + dark themes work, `tsc` clean, plus polish checklist from `make-interfaces-feel-better`.
+2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
+3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
+4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `Loader2`.
+5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger).
+6. New primitive? Tokens only, tiny API, add to `/design-system`.
+7. Verify: no banned imports, no raw palette colors, no nested rounding, light + dark, `tsc` clean, polish checklist from `make-interfaces-feel-better`.

@@ -130,25 +130,41 @@ const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
     variant?: 'default' | 'secondary';
+    /** Renders below children in the dropdown only — not in the trigger. */
+    description?: React.ReactNode;
   }
->(({ className, children, variant = 'default', ...props }, ref) => (
+>(({ className, children, variant = 'default', description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
       'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center rounded-md px-4 py-1.5 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50',
+      description &&
+        'items-start [&>[data-slot=select-item-indicator]]:top-2 [&>[data-slot=select-item-indicator]]:translate-y-0',
       variant === 'secondary' &&
         'text-primary/80 hover:bg-accent hover:text-primary focus:bg-foreground/10 focus:text-primary relative flex w-full cursor-default items-center justify-start gap-2 rounded-[0.4rem] px-2 py-1.5 text-sm font-normal transition-all duration-500 outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       className,
     )}
     {...props}
   >
-    <span className="absolute right-3 flex h-3.5 w-3.5 items-center justify-center">
+    <span
+      data-slot="select-item-indicator"
+      className="absolute right-3 flex h-3.5 w-3.5 items-center justify-center"
+    >
       <SelectPrimitive.ItemIndicator>
         <Check className="size-4 shrink-0" />
       </SelectPrimitive.ItemIndicator>
     </span>
 
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {description ? (
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        <span className="max-w-[260px] text-[11px] leading-snug whitespace-normal text-muted-foreground">
+          {description}
+        </span>
+      </div>
+    ) : (
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    )}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
