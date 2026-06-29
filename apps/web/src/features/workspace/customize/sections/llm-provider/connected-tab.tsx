@@ -1,19 +1,10 @@
 'use client';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
@@ -21,11 +12,11 @@ import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deletePersonalProjectSecret, deleteProjectSecret } from '@/lib/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plug, Unplug } from 'lucide-react';
+import { Plug, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
-import { providerCredentialSummary } from './utils';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
+import { providerCredentialSummary } from './utils';
 
 export function ConnectedTab({
   projectId,
@@ -116,114 +107,104 @@ export function ConnectedTab({
 
   return (
     <>
-      <div className="px-5 pt-3 pb-4">
-        <SectionCard flush count={filtered.length}>
-          <List>
-            {filtered.map((provider) => (
-              <ListRow
-                key={provider.id}
-                leading={
-                  <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
-                }
-                title={PROVIDER_LABELS[provider.id] ?? provider.label}
-                badges={
-                  provider.managed ? (
+      <ul className="space-y-2 px-5 pt-3 pb-4">
+        {filtered.map((provider) => {
+          const busy = disconnect.isPending && disconnect.variables?.id === provider.id;
+          return (
+            <li
+              key={provider.id}
+              className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+            >
+              <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-foreground truncate text-sm font-medium">
+                    {PROVIDER_LABELS[provider.id] ?? provider.label}
+                  </span>
+                  {provider.managed && (
                     <Badge size="sm" variant="secondary">
                       Managed
                     </Badge>
-                  ) : undefined
-                }
-                subtitle={
-                  <span className="text-muted-foreground truncate text-xs">
-                    {provider.managed
-                      ? `${provider.hint} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`
-                      : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
-                  </span>
-                }
-                trailing={
-                  !provider.managed ? (
-                    <Button
-                      type="button"
-                      onClick={() => setConfirmId(provider.id)}
-                      disabled={disconnect.isPending}
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground/40 hover:bg-muted hover:text-foreground"
-                      title="Disconnect"
-                    >
-                      {disconnect.isPending && disconnect.variables?.id === provider.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Unplug className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  ) : undefined
-                }
-              />
-            ))}
-          </List>
-        </SectionCard>
-      </div>
-
-      <AlertDialog open={!!confirmId} onOpenChange={(open) => !open && setConfirmId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line361JsxTextDisconnectProvider',
+                  )}
+                </div>
+                <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                  {provider.managed
+                    ? `${provider.hint} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`
+                    : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
+                </p>
+              </div>
+              {!provider.managed && (
+                <Hint label="Disconnect">
+                  <Button
+                    type="button"
+                    onClick={() => setConfirmId(provider.id)}
+                    disabled={disconnect.isPending}
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground/40 hover:text-foreground shrink-0"
+                    aria-label="Disconnect"
+                  >
+                    {busy ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : (
+                      <Unplug className="size-3.5 shrink-0" />
+                    )}
+                  </Button>
+                </Hint>
               )}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-xs">
-              {confirmProvider && (
+            </li>
+          );
+        })}
+      </ul>
+
+      <ConfirmDialog
+        open={!!confirmId}
+        onOpenChange={(open) => !open && setConfirmId(null)}
+        title={tHardcodedUi.raw(
+          'componentsProjectsProjectProviderModal.line361JsxTextDisconnectProvider',
+        )}
+        confirmLabel="Disconnect"
+        confirmVariant="destructive"
+        confirmIcon={<Unplug className="size-3.5 shrink-0" />}
+        isPending={disconnect.isPending}
+        onConfirm={() => confirmProvider && disconnect.mutate(confirmProvider)}
+        description={
+          confirmProvider ? (
+            <span className="text-xs">
+              Remove <span className="text-foreground font-medium">{confirmProvider.label}</span>
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
+              {confirmProvider.envVars.length === 1 ? (
                 <>
-                  Remove{' '}
-                  <span className="text-foreground font-medium">{confirmProvider.label}</span>
+                  the{' '}
+                  <code className="bg-muted rounded px-1 py-0.5 font-mono">
+                    {confirmProvider.envVars[0]}
+                  </code>{' '}
                   {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line366JsxTextThisDeletes',
-                  )}{' '}
-                  {confirmProvider.envVars.length === 1 ? (
-                    <>
-                      the{' '}
-                      <code className="bg-muted rounded px-1 py-0.5 font-mono">
-                        {confirmProvider.envVars[0]}
-                      </code>{' '}
-                      {tHardcodedUi.raw(
-                        'componentsProjectsProjectProviderModal.line374JsxTextProjectSecret',
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {confirmProvider.envVars.length}
-                      {tHardcodedUi.raw(
-                        'componentsProjectsProjectProviderModal.line378JsxTextProjectSecrets',
-                      )}
-                      {confirmProvider.envVars.map((envVar, index) => (
-                        <span key={envVar}>
-                          {index > 0 && ', '}
-                          <code className="bg-muted rounded px-1 py-0.5 font-mono">{envVar}</code>
-                        </span>
-                      ))}
-                      ).
-                    </>
-                  )}{' '}
-                  {tHardcodedUi.raw(
-                    'componentsProjectsProjectProviderModal.line388JsxTextYouAposLlNeedToReconnectToUse',
+                    'componentsProjectsProjectProviderModal.line374JsxTextProjectSecret',
                   )}
                 </>
+              ) : (
+                <>
+                  {confirmProvider.envVars.length}
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line378JsxTextProjectSecrets',
+                  )}
+                  {confirmProvider.envVars.map((envVar, index) => (
+                    <span key={envVar}>
+                      {index > 0 && ', '}
+                      <code className="bg-muted rounded px-1 py-0.5 font-mono">{envVar}</code>
+                    </span>
+                  ))}
+                  ).
+                </>
+              )}{' '}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line388JsxTextYouAposLlNeedToReconnectToUse',
               )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => confirmProvider && disconnect.mutate(confirmProvider)}
-              className={buttonVariants({ variant: 'destructive' })}
-            >
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </span>
+          ) : null
+        }
+      />
     </>
   );
 }

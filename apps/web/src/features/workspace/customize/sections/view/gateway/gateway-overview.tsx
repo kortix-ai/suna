@@ -1,11 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Coins, Cpu, DollarSign, Sparkles, Zap } from 'lucide-react';
 
-import { SectionCard } from '@/components/ui/section-card';
-import { cn } from '@/lib/utils';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { listProjectSessions } from '@/lib/projects-client';
 import {
   useGatewayBreakdown,
@@ -146,35 +145,30 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
         </div>
 
         {/* One chart, pivoted across metrics */}
-        <SectionCard
+        <Panel
           title="Trend"
           description="Daily gateway traffic across the window"
           action={
-            <div className="flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5">
+            <FilterBar className="h-8">
               {METRICS.map((m) => (
-                <button
+                <FilterBarItem
                   key={m.key}
-                  type="button"
                   onClick={() => setMetric(m.key)}
-                  className={cn(
-                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                    metric === m.key
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
+                  data-state={metric === m.key ? 'active' : 'inactive'}
+                  className="text-xs"
                 >
                   {m.label}
-                </button>
+                </FilterBarItem>
               ))}
-            </div>
+            </FilterBar>
           }
         >
           <UsageChart data={series} keys={activeMetric.keys} yFormatter={activeMetric.fmt} />
-        </SectionCard>
+        </Panel>
 
         {/* Breakdowns */}
         <div className="grid gap-4 lg:grid-cols-2">
-          <SectionCard title="Top models" count={models.length} description="Spend by model">
+          <Panel title="Top models" count={models.length} description="Spend by model">
             {models.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">No requests yet.</p>
             ) : (
@@ -194,9 +188,9 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                 })}
               </div>
             )}
-          </SectionCard>
+          </Panel>
 
-          <SectionCard
+          <Panel
             title="Top sessions"
             count={sessions.length}
             description="Total cost — LLM + sandbox compute"
@@ -254,11 +248,11 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                 })}
               </div>
             )}
-          </SectionCard>
+          </Panel>
         </div>
 
         {errorTypes.length > 0 && (
-          <SectionCard
+          <Panel
             title="Errors by type"
             count={errorTypes.length}
             description="What's failing across this window"
@@ -275,9 +269,47 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
                 />
               ))}
             </div>
-          </SectionCard>
+          </Panel>
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Hand-composed analytics panel — the design-system `bg-popover rounded-md
+ * border` surface (replaces the deprecated SectionCard). Header carries the
+ * title / count / description / action; padding lives on the inner sections,
+ * never the bordered shell.
+ */
+function Panel({
+  title,
+  count,
+  description,
+  action,
+  children,
+}: {
+  title: ReactNode;
+  count?: number;
+  description?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="bg-popover overflow-hidden rounded-md border">
+      <div className="border-border/60 flex items-start justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-foreground text-sm font-medium">
+            {title}
+            {count != null && <span className="text-muted-foreground font-normal"> ({count})</span>}
+          </h3>
+          {description != null && (
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+          )}
+        </div>
+        {action != null && <div className="shrink-0">{action}</div>}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
   );
 }
