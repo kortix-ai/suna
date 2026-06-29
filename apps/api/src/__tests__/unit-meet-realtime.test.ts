@@ -18,7 +18,7 @@ import {
   verifyMeetSessionToken,
   wakeKey,
 } from '../channels/meet-realtime';
-import { buildWakePrompt, extractTurn } from '../channels/meet-webhook';
+import { buildRecapPrompt, buildWakePrompt, extractTurn } from '../channels/meet-webhook';
 
 function transcriptEvent(words: string[], opts: { name?: string; wake?: string } = {}) {
   return {
@@ -81,6 +81,16 @@ describe('buildWakePrompt — reply in the same channel', () => {
     expect(p).toContain('wrote in the chat');
     expect(p).toContain('meet chat bot_abc');
     expect(p).not.toContain('meet speak bot_abc');
+  });
+});
+
+describe('buildRecapPrompt (auto-recap on meeting end)', () => {
+  test('tells the agent to pull the transcript and produce action items', () => {
+    const p = buildRecapPrompt('bot_xyz');
+    expect(p.toLowerCase()).toContain('meeting just ended');
+    expect(p).toContain('meet transcript bot_xyz');
+    expect(p).toContain('Action items');
+    expect(p).toContain('TL;DR');
   });
 });
 

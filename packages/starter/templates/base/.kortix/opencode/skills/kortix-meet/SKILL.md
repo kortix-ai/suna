@@ -164,9 +164,9 @@ If no reply is needed, do nothing.
 ```
 
 How to handle a live wake — **match the channel they used** (the wake prompt tells you which it was):
-- **They SPOKE to you** → reply **out loud** with `meet speak <bot_id> "…"` (TTS in the project's voice). This is the default for a spoken question.
+- **They SPOKE to you** → you **MUST** reply **out loud** with `meet speak <bot_id> "…"`. This is non-negotiable for a spoken turn — **never** answer a spoken question by typing in the chat, no matter how the answer is shaped (even a few points are spoken aloud as a sentence).
 - **They TYPED in the meeting chat** → reply in the chat with `meet chat <bot_id> "…"`.
-- **Override only when the content demands it:** if a *spoken* request really needs a link, code snippet, or anything clickable/readable, use `meet chat` (and you can also briefly `meet speak` "I've dropped it in the chat").
+- **The only time chat enters a spoken turn:** the answer contains something genuinely un-speakable — a URL, a code snippet, a file. Then **still speak your answer**, and *additionally* `meet chat` the link/snippet. Speaking is never skipped; chat is only an add-on here.
 - **Be brief and useful.** One or two sentences — you're interjecting in a live conversation, not writing a report. Spoken replies especially must be short, plain spoken language — no markdown, no URLs read aloud.
 - **It's fine to do nothing.** If the mention wasn't really a request to you (someone just said the word "Kortix" in passing), don't reply.
 - **You can act first, then answer.** If they ask for something ("share the Q3 numbers"), do the work, then `meet chat` the result or a link.
@@ -180,7 +180,7 @@ You can talk back **out loud** in the call, not just type. `meet speak <bot_id> 
 **When to speak vs. type** — the relay tells you which channel they used; match it:
 - Someone **spoke** to you → **`meet speak`** (answer aloud). The default for any spoken question.
 - Someone **typed** in the chat → **`meet chat`** (answer in the chat).
-- Content overrides the channel: anything that must be **clickable or read carefully** — a link, a file, a code snippet, a long list — goes in **`meet chat`** even if they asked out loud. You can speak a pointer to it: `meet speak <id> "Sent it in the chat."`
+- A spoken turn is **always** answered by voice. If part of the answer is genuinely un-speakable (a link, a file, a code snippet), **speak the answer anyway** and *additionally* drop the un-speakable bit in chat — e.g. `meet speak <id> "Here's the summary — I've put the doc link in the chat."` then `meet chat <id> "<link>"`. A list of points is **not** un-speakable: say it aloud as a sentence.
 
 **Write for the ear, not the eye.** A spoken reply is heard once, live:
 - **Short.** One or two sentences. Long monologues are painful to sit through on a call.
@@ -302,6 +302,8 @@ A bot recording people is a governance matter, not a detail. Hold the line on it
 </consent-and-disclosure>
 
 <recap-format>
+**The recap is auto-triggered.** When the meeting ends (the bot leaves / everyone leaves), the platform automatically wakes this session with a "the meeting just ended — produce the meeting notes" prompt. You don't need to be asked: pull the transcript with `meet transcript <bot_id>` (retry if it's still `processing`) and produce the recap below. (You can also produce it on demand mid-call if someone asks for a summary.)
+
 When you summarize from a transcript, **do not** paste the raw transcript. Produce a tight, skimmable recap. Structure:
 
 - **TL;DR** — 1–2 sentences: what the meeting was about and the outcome.

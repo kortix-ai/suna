@@ -78,7 +78,9 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // v19: natural-conversation relay (debounce + acknowledgement + follow-up) skill notes.
 // v20: multi-platform rebrand (Meet/Zoom/Teams) + dedicated speaking skill section.
 // v21: configurable bot name (project setting) + wake word = bot's first name (skill).
-const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v21';
+// v22: spoken turns MUST reply by voice (skill) — no chat fallback for speech.
+// v23: auto-recap on meeting end (bot.done webhook -> session produces notes).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v23';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

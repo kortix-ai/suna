@@ -243,7 +243,7 @@ function makeDbGatewayDeps(): GatewayDeps {
     resolveMeetJoinContext: async (projectId, sessionId) => {
       if (!sessionId) return null;
       const botName = await resolveProjectBotName(projectId);
-      const patch = meetRealtimeJoinPatch(projectId, sessionId, deriveWakeWord(botName));
+      const patch = meetRealtimeJoinPatch(projectId, sessionId, deriveWakeWord(botName), botName);
       return patch
         ? {
             metadata: patch.metadata,

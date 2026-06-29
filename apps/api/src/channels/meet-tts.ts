@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { channelApiBase, channelAuth } from '../executor/channels';
 import { type FetchImpl, executeCall } from '../executor/execute';
+import { recordBotSpeech } from './meet-echo';
 import { loadMeetTokenForProject } from './install-store';
 import { getMeetVoice, resolveProjectVoice } from './meet-voices';
 
@@ -76,6 +77,7 @@ export async function speakInMeeting(
   voiceOverride?: string | null,
 ): Promise<{ ok: true; voice: string } | Fail> {
   const voice = voiceOverride ? getMeetVoice(voiceOverride) : await resolveProjectVoice(projectId);
+  recordBotSpeech(botId, text);
   const tts = await synthesizeSpeechB64(text, voice.elevenVoiceId);
   if (!tts.ok) return tts;
   const played = await recallOutputAudio(projectId, botId, tts.b64);
@@ -86,6 +88,7 @@ export async function playAcknowledgement(projectId: string, botId: string): Pro
   if (!config.ELEVENLABS_API_KEY) return;
   const voice = await resolveProjectVoice(projectId);
   const index = Math.floor(Math.random() * ACK_LINES.length);
+  recordBotSpeech(botId, ACK_LINES[index]!);
   const key = `${voice.elevenVoiceId}:${index}`;
 
   let b64 = fillerCache.get(key);
