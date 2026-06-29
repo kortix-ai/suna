@@ -18,6 +18,7 @@
  */
 
 import { Icon } from '@/features/icon/icon';
+import type { ExperimentalFeatureKey } from '@/lib/projects-client';
 import {
   CogOne,
   CogOneSolid,
@@ -73,7 +74,6 @@ import {
   Webhook,
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
-import type { ExperimentalFeatureKey } from '@/lib/projects-client';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -404,7 +404,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'proj-changes',
-    label: 'Customize · Changes',
+    label: 'Customize · Checkpoints',
     icon: GitPullRequest,
     group: 'navigation',
     showIn: ['commandPalette'],
@@ -412,7 +412,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/changes',
     requiresProject: true,
     keywords:
-      'changes change requests review merge pull request diff versions branches project customize',
+      'checkpoint checkpoints changes change requests review merge pull request diff commits git history timeline versions branches project customize',
   },
   {
     id: 'proj-marketplace',
