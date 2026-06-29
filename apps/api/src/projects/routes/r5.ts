@@ -10,7 +10,6 @@ import { deployments, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import { filterConfigResourcesForUser, denierFromConfig, resourceDenierForRequest } from '../lib/project-resources';
-import { assertAgentScope } from '../../iam/agent-scope';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody, serializeDeploymentRow, serializeProject, serializeProjectGitConnection } from '../lib/serializers';
