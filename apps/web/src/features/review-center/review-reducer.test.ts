@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   approveAllSafe,
+  bulkSetStatus,
   countsBySegment,
   decideApprovalAction,
   filterItems,
+  matchesQuery,
   rollupApprovalStatus,
   safePendingCount,
   setStatus,
@@ -221,5 +223,39 @@ describe('filterItems', () => {
     expect(filterItems(items, 'needs_you', 'all').map((i) => i.id)).toEqual(['c1', 'a1']);
     expect(filterItems(items, 'needs_you', 'change').map((i) => i.id)).toEqual(['c1']);
     expect(filterItems(items, 'done', 'all').map((i) => i.id)).toEqual(['c2']);
+  });
+  test('also narrows by the search query', () => {
+    const items = [change('pricing-page', 'needs_you'), change('signup-form', 'needs_you')];
+    expect(filterItems(items, 'needs_you', 'all', 'pricing').map((i) => i.id)).toEqual([
+      'pricing-page',
+    ]);
+    expect(filterItems(items, 'needs_you', 'all', '   ').map((i) => i.id)).toEqual([
+      'pricing-page',
+      'signup-form',
+    ]);
+  });
+});
+
+describe('matchesQuery', () => {
+  test('matches title, summary, project and agent case-insensitively; empty matches all', () => {
+    const item = change('c1', 'needs_you'); // title 'c1', project 'P', agent 'A'
+    expect(matchesQuery(item, '')).toBe(true);
+    expect(matchesQuery(item, 'c1')).toBe(true);
+    expect(matchesQuery(item, 'p')).toBe(true); // project P
+    expect(matchesQuery(item, 'zzz')).toBe(false);
+  });
+});
+
+describe('bulkSetStatus', () => {
+  test('sets the status on every id in the set and leaves others alone', () => {
+    const items = [change('a', 'needs_you'), change('b', 'needs_you'), change('c', 'needs_you')];
+    const next = bulkSetStatus(items, ['a', 'c'], 'dismissed');
+    expect(next.map((i) => i.status)).toEqual(['dismissed', 'needs_you', 'dismissed']);
+    expect(items[0].status).toBe('needs_you'); // immutable
+  });
+  test('accepts a Set of ids', () => {
+    const items = [change('a', 'needs_you'), change('b', 'needs_you')];
+    const next = bulkSetStatus(items, new Set(['b']), 'approved');
+    expect(next.find((i) => i.id === 'b')?.status).toBe('approved');
   });
 });

@@ -77,13 +77,34 @@ export function countsBySegment(items: ReviewItem[]): Record<ReviewSegment, numb
   return counts;
 }
 
-/** Items visible for the current segment + kind filter. */
+/** True if the free-text query matches an item's title / summary / project / agent. */
+export function matchesQuery(item: ReviewItem, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return `${item.title} ${item.summary} ${item.project} ${item.agent}`.toLowerCase().includes(q);
+}
+
+/** Items visible for the current segment + kind filter + search query. */
 export function filterItems(
   items: ReviewItem[],
   segment: ReviewSegment,
   kind: ReviewKind | 'all',
+  query = '',
 ): ReviewItem[] {
   return items.filter(
-    (i) => segmentForStatus(i.status) === segment && (kind === 'all' || i.kind === kind),
+    (i) =>
+      segmentForStatus(i.status) === segment &&
+      (kind === 'all' || i.kind === kind) &&
+      matchesQuery(i, query),
   );
+}
+
+/** Set the same status on many items at once (multi-select bulk approve / dismiss). */
+export function bulkSetStatus(
+  items: ReviewItem[],
+  ids: Iterable<string>,
+  status: ReviewStatus,
+): ReviewItem[] {
+  const set = ids instanceof Set ? ids : new Set(ids);
+  return items.map((i) => (set.has(i.id) ? ({ ...i, status } as ReviewItem) : i));
 }
