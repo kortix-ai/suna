@@ -251,14 +251,22 @@ the real design-system components so it looks native. Route `/review` (added to 
 shareable/clickable without login; mock data only, safe to expose).
 
 - `features/review-center/types.ts` — the `ReviewItem` model above.
-- `features/review-center/mock-data.ts` — realistic items of every kind.
-- `features/review-center/review-meta.tsx` — kind/status/risk/source metadata (icons, tones, labels).
+- `features/review-center/review-reducer.ts` — pure state transitions (bulk approve, roll-up to a terminal
+  status, filtering, counts), unit-tested in `review-reducer.test.ts` (`bun test`, 17 cases).
+- `features/review-center/mock-data.ts` — realistic items of every kind, including a conflict-bearing change.
+- `features/review-center/review-meta.ts` — kind/status/risk/source metadata (icons, tones, labels).
 - `features/review-center/review-center.tsx` — the inbox: **Needs you / Waiting / Done** segments with
-  counts, kind filters, entity-row list, **Approve all safe** bulk bar, empty state, optimistic actions.
+  counts, kind filters (with per-kind counts), entity-row list, **Approve all safe** bulk bar, empty state,
+  optimistic actions.
 - `features/review-center/review-detail-modal.tsx` — per-kind friendly detail in a `Modal`, each with an
-  **Advanced** disclosure and a Slack-preview.
+  **Advanced** disclosure and a Slack-preview. Implements the friendly-conflict flow (disabled "Ship it" +
+  "Resolve with agent") and an optional **feedback composer** that returns free-text to the agent.
 - `features/review-center/slack-preview.tsx` — static Block Kit mock (cross-surface parity).
 - `app/(app)/review/page.tsx` — thin route.
 
 Run: `pnpm --filter web dev` → open `/review`. Switch segments, filter by kind, open any item, toggle
 Advanced, click Approve / Deny / Answer / Ship, and run **Approve all safe** (risky items stay behind).
+
+**Tested:** `bun test` for the reducer (17 cases); a Playwright pass against the running dev server drives
+the real UI (23 assertions: counts, modals, Advanced, conflict resolve, feedback composer, bulk approve,
+decision answer) with zero console errors.
