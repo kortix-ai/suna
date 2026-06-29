@@ -1435,6 +1435,7 @@ export function EmailConnectForm({
         </Field>
         {attachExisting ? (
           <Field>
+            <FieldLabel htmlFor="email-channel-existing-email">Existing inbox email</FieldLabel>
             <Input
               id="email-channel-existing-email"
               name="email-channel-existing-email"
@@ -1485,6 +1486,7 @@ export function EmailConnectForm({
             </div>
             {attachExisting ? (
               <Field>
+                <FieldLabel htmlFor="email-channel-existing-inbox-id">Existing inbox ID</FieldLabel>
                 <Input
                   id="email-channel-existing-inbox-id"
                   name="email-channel-existing-inbox-id"
