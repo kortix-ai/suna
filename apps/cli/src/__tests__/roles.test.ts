@@ -28,10 +28,10 @@ let stdout = '';
 let stderr = '';
 let requests: Array<{ url: string; method: string; body: any }> = [];
 
-// Built-in `viewer` (read-only) + a custom `support-agent` role.
+// Built-in `viewer` (read-only) + a custom `support_agent` role.
 const ROLES = [
   { role_id: 'builtin:user', key: 'user', name: 'User', description: null, resource_type: 'project', is_system: true, account_id: null },
-  { role_id: 'role_77', key: 'support-agent', name: 'Support Agent', description: 'Read + run', resource_type: 'project', is_system: false, account_id: 'account_1' },
+  { role_id: 'role_77', key: 'support_agent', name: 'Support Agent', description: 'Read + run', resource_type: 'project', is_system: false, account_id: 'account_1' },
 ];
 
 function writeConfig(): void {
@@ -74,7 +74,7 @@ function mockApi() {
     requests.push({ url, method, body });
 
     const has = (p: string) => url.includes(p);
-    if (has('/iam/roles/role_77/permissions')) return json({ role_id: 'role_77', key: 'support-agent', actions: ['project.read', 'project.session.start'] });
+    if (has('/iam/roles/role_77/permissions')) return json({ role_id: 'role_77', key: 'support_agent', actions: ['project.read', 'project.session.start'] });
     if (has('/iam/roles/role_77/usage')) return json({ role_id: 'role_77', policy_count: 1 });
     if (has('/iam/roles/role_77') && method === 'DELETE') return json({ deleted: true });
     if (has('/iam/roles') && method === 'POST') return json({ role_id: 'role_new', key: body?.key, name: body?.name, resource_type: body?.resourceType, is_system: false, account_id: 'account_1' });
@@ -121,7 +121,7 @@ describe('kortix roles', () => {
     expect(code).toBe(0);
     expect(requests[0].url).toContain('/v1/accounts/account_1/iam/roles');
     const out = stripAnsi(stdout);
-    expect(out).toContain('support-agent');
+    expect(out).toContain('support_agent');
     expect(out).toContain('built-in');
     expect(out).toContain('custom');
   });
@@ -130,12 +130,12 @@ describe('kortix roles', () => {
     const code = await runRoles(['ls', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout) as Array<{ key: string }>;
-    expect(parsed.map((r) => r.key)).toContain('support-agent');
+    expect(parsed.map((r) => r.key)).toContain('support_agent');
   });
 
   test('create sends key/name/resourceType/actions to POST /iam/roles', async () => {
     const code = await runRoles([
-      'create', 'support-agent',
+      'create', 'support_agent',
       '--name', 'Support Agent',
       '--scope', 'project',
       '--actions', 'project.read, project.session.start',
@@ -144,15 +144,25 @@ describe('kortix roles', () => {
     const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/roles'));
     expect(post).toBeDefined();
     expect(post!.body).toMatchObject({
-      key: 'support-agent',
+      key: 'support_agent',
       name: 'Support Agent',
       resourceType: 'project',
       actions: ['project.read', 'project.session.start'], // trimmed
     });
   });
 
+  test('create rejects an invalid key client-side (no round-trip) and suggests a fix', async () => {
+    const code = await runRoles(['create', 'support-agent', '--name', 'X', '--actions', 'project.read']);
+    expect(code).toBe(2);
+    const err = stripAnsi(stderr);
+    expect(err).toContain('[a-z0-9_]');
+    expect(err).toContain('support_agent'); // hyphen → underscore suggestion
+    // Never hit the API.
+    expect(requests.some((r) => r.method === 'POST')).toBe(false);
+  });
+
   test('assign binds a role to a principal at project scope (POST /iam/policies)', async () => {
-    const code = await runRoles(['assign', 'support-agent', '--to', 'member:user-9', '--project', 'proj-1']);
+    const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9', '--project', 'proj-1']);
     expect(code).toBe(0);
     const post = requests.find((r) => r.method === 'POST' && r.url.includes('/iam/policies'));
     expect(post).toBeDefined();
@@ -186,7 +196,7 @@ describe('kortix roles', () => {
     expect(requests.some((r) => r.method === 'DELETE')).toBe(false);
 
     requests = [];
-    const code = await runRoles(['rm', 'support-agent']);
+    const code = await runRoles(['rm', 'support_agent']);
     expect(code).toBe(0);
     expect(requests.some((r) => r.method === 'DELETE' && r.url.includes('/iam/roles/role_77'))).toBe(true);
   });

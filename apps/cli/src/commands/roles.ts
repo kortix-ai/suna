@@ -59,7 +59,7 @@ Assignments (policies):
   assign <role> --to <type>:<id> [opts]   Bind a role to a principal.
   unassign <policy-id>                    Remove a binding.
 
-A <role> may be its key (e.g. "support-agent") or its role id.
+A <role> may be its key (e.g. "support_agent") or its role id.
 A principal is "member:<user-id>", "group:<group-id>", or "token:<sa-id>".
 
 Options:
@@ -78,9 +78,9 @@ Options:
 Examples:
   kortix roles ls
   kortix roles actions
-  kortix roles create support-agent --name "Support Agent" \\
+  kortix roles create support_agent --name "Support Agent" \\
     --scope project --actions project.read,project.session.start,project.trigger.fire
-  kortix roles assign support-agent --to member:<user-id> --project <project-id>
+  kortix roles assign support_agent --to member:<user-id> --project <project-id>
   kortix roles assignments --project <project-id>
 `;
 
@@ -196,7 +196,16 @@ export async function runRoles(argv: string[]): Promise<number> {
 
       case 'create': {
         const key = positional[0];
-        if (!key) return missing('a role key (e.g. "support-agent")');
+        if (!key) return missing('a role key (e.g. "support_agent")');
+        // Match the backend rule client-side so the error is friendly + offline.
+        if (!/^[a-z0-9_]{2,64}$/.test(key)) {
+          const suggestion = key.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64);
+          process.stderr.write(
+            `${status.err(`Role key must be 2–64 chars of [a-z0-9_] (lowercase, digits, underscore — no hyphens or spaces).`)}\n` +
+              (suggestion.length >= 2 ? `   ${C.dim}Try: ${C.cyan}${suggestion}${C.reset}\n` : ''),
+          );
+          return 2;
+        }
         if (!f.name) return missing('--name <display name>');
         const resourceType = (f.scope ?? 'project') as ResourceType;
         const actions = (f.actions ?? '').split(',').map((a) => a.trim()).filter(Boolean);
