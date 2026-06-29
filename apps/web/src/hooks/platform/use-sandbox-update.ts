@@ -133,6 +133,9 @@ export function useSandboxUpdate(currentVersion: string | null) {
       updated_at: '',
     };
   }, [activeServer?.instanceId, activeServer?.sandboxId, activeServer?.label, activeServer?.provider, activeServer?.url]);
+  // local_docker is gone — sandbox updates always run the cloud path.
+  const isLocalDocker = false;
+
   // Detect which channel the running instance belongs to
   const currentChannel = useMemo(() => detectChannel(currentVersion), [currentVersion]);
 
