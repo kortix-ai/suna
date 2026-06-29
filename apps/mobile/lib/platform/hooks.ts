@@ -81,8 +81,8 @@ export function useSandbox(enabled: boolean = true) {
       // ANY sandbox the list returns (active / provisioning / stopped) so a
       // cold app open never accidentally routes through POST /platform/init
       // just because the DB row momentarily says 'stopped' — calling /init
-      // would trigger tryReactivateStaleSandbox → provider.start(), which for
-      // local_docker surfaces to users as a spurious "restart on every open".
+      // would trigger tryReactivateStaleSandbox → provider.start(), which can
+      // surface to users as a spurious "restart on every open".
       if (!sandbox) {
         log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
         const allSandboxes = await listSandboxes();
@@ -521,18 +521,6 @@ export function useProviders() {
     queryKey: platformKeys.providers(),
     queryFn: getProviders,
     staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useCreateLocalInstance() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (args: { name?: string; onProgress?: (p: LocalSandboxProgress) => void }) =>
-      initLocalSandbox(args.name, args.onProgress),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
-      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
-    },
   });
 }
 

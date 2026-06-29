@@ -130,8 +130,6 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
     timeoutMs = 660_000,
   } = opts;
 
-  const isLocalDocker = provider === 'local_docker';
-
   const [state, setState] = useState<SandboxPollerState>(initial);
   const stateRef = useRef<SandboxPollerState>(state);
   const stoppedRef = useRef(false);
@@ -242,8 +240,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
     update({ status: 'polling', stageEnteredAt: Date.now() });
 
     // Start interpolation interval (smooth progress between polls)
-    // Skip for local docker — backend provides real progress every 2s
-    if (!isLocalDocker && !interpolationRef.current) {
+    if (!interpolationRef.current) {
       interpolationRef.current = setInterval(() => {
         const s = stateRef.current;
         if (s.status !== 'polling' || !s.currentStage || s.stageEnteredAt === null) return;
@@ -274,16 +271,8 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         if (!d || stoppedRef.current) {
           // No data — keep polling
         } else if (d.status === 'active') {
-          // Local docker: /init/local/status returning 'ready' is sufficient — skip health check
-          if (isLocalDocker) {
-            log.log('[SandboxPoller] Local sandbox ready!');
-            set({ ...initial(), status: 'ready', progress: 100 });
-            pollingRef.current = false;
-            cleanup();
-            return;
-          }
+          // Verify workspace health via proxy
 
-          // Cloud: verify workspace health via proxy
           log.log('[SandboxPoller] Sandbox active, verifying health...');
           const healthId = externalId || sandboxId;
           if (!healthId) return;
@@ -321,9 +310,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           const isNewStage = d.stage !== null && d.stage !== stateRef.current.currentStage;
           // Local docker: use raw progress from backend (real pull %)
           // Cloud: use max of current and backend progress (interpolation fills gaps)
-          const newProgress = isLocalDocker
-            ? (d.stageProgress ?? stateRef.current.progress)
-            : Math.max(stateRef.current.progress, d.stageProgress ?? stateRef.current.progress);
+          const newProgress = Math.max(stateRef.current.progress, d.stageProgress ?? stateRef.current.progress);
           update({
             progress: newProgress,
             stages: d.stages ?? stateRef.current.stages,
@@ -338,7 +325,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
       }
 
       if (!stoppedRef.current) {
-        pollTimerRef.current = setTimeout(tick, isLocalDocker ? 2_000 : 5_000);
+        pollTimerRef.current = setTimeout(tick, 5_000);
       }
     };
 

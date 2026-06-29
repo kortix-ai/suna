@@ -32,7 +32,6 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useInstances,
   useProviders,
-  useCreateLocalInstance,
   useSandbox,
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
@@ -44,7 +43,6 @@ import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 
 function providerLabel(provider: SandboxProviderName): string {
   switch (provider) {
-    case 'local_docker': return 'LOCAL';
     case 'justavps': return 'CLOUD';
     case 'daytona': return 'CLOUD';
     default: return 'INSTANCE';
@@ -412,9 +410,6 @@ const AddInstanceSheet = React.forwardRef<
   const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
 
   const { data: providers } = useProviders();
-  const createLocalMutation = useCreateLocalInstance();
-
-  const hasLocalDocker = Array.isArray(providers) && providers.includes('local_docker');
   const fgColor = isDark ? '#f8f8f8' : '#121215';
 
   const snapPoints = React.useMemo(() => {
@@ -436,40 +431,6 @@ const AddInstanceSheet = React.forwardRef<
     setIsCreating(false);
     setProgress(null);
   }, []);
-
-  const handleLocalDocker = React.useCallback(() => {
-    haptics.medium();
-    setIsCreating(true);
-    const initial = { percent: 0, message: 'Initializing...' };
-    setProgress(initial);
-    onProgress(initial);
-    createLocalMutation.mutate(
-      {
-        onProgress: (p) => {
-          const update = { percent: p.progress, message: p.message };
-          setProgress(update);
-          onProgress(update);
-        },
-      },
-      {
-        onSuccess: () => {
-          setIsCreating(false);
-          setProgress(null);
-          onProgress(null);
-          haptics.success();
-          onCreated();
-          resetState();
-        },
-        onError: (err: any) => {
-          setIsCreating(false);
-          setProgress(null);
-          onProgress(null);
-          haptics.warning();
-          Alert.alert('Error', err?.message || 'Failed to create local instance');
-        },
-      },
-    );
-  }, [createLocalMutation, onCreated, onProgress, resetState]);
 
   const handleCustomConnect = React.useCallback(async () => {
     const url = customUrl.trim();
@@ -550,25 +511,6 @@ const AddInstanceSheet = React.forwardRef<
             </Text>
 
             <View>
-              {hasLocalDocker && (
-                <>
-                  <Pressable
-                    onPress={handleLocalDocker}
-                    disabled={isCreating}
-                    className="py-3.5 active:opacity-85"
-                  >
-                    <View className="flex-row items-center">
-                      <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
-                      <View className="ml-4 flex-1">
-                        <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
-                        <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Runs on your machine via Docker</Text>
-                      </View>
-                      {isCreating && createLocalMutation.isPending && <ActivityIndicator size="small" />}
-                    </View>
-                  </Pressable>
-                  <View className="h-px bg-border/35" />
-                </>
-              )}
 
               <Pressable
                 onPress={() => { haptics.tap(); setStep('custom'); }}
