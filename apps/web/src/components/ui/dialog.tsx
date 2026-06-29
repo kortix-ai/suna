@@ -46,7 +46,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogVariants = cva(
   cn(
-    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 border p-5 shadow-lg duration-200 sm:max-w-lg sm:rounded-xl',
+    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 border p-5 shadow-lg duration-200 sm:max-w-lg sm:rounded-lg',
   ),
   {
     variants: {
@@ -66,13 +66,15 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> &
     VariantProps<typeof DialogVariants> & {
       hideCloseButton?: boolean;
+      showOverlay?: boolean;
+      overlayClassName?: string;
     }
->(({ className, children, hideCloseButton = false, style, ...props }, ref) => {
+>(({ className, children, hideCloseButton = false, showOverlay = true, overlayClassName, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
     <DialogPortal>
-      <DialogOverlay />
+      {showOverlay && <DialogOverlay className={overlayClassName} />}
       <DialogPrimitive.Content
         ref={ref}
         className={cn(DialogVariants({ variant: 'default' }), className)}

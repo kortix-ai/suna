@@ -69,16 +69,25 @@ const ModalClose = DialogPrimitive.Close;
 
 const ModalPortal = DialogPrimitive.Portal;
 
+const overlayAnimationClasses = {
+  default:
+    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+  none: '',
+} as const;
+
 const ModalOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, style, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay> & {
+    animation?: keyof typeof overlayAnimationClasses;
+  }
+>(({ className, style, animation = 'default', ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
     <DialogPrimitive.Overlay
       className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 bg-black/65 backdrop-blur-xs duration-200',
+        'fixed inset-0 bg-black/65 backdrop-blur-xs',
+        overlayAnimationClasses[animation],
         className,
       )}
       style={{ zIndex: dialogOverlayZ(depth), ...style }}
@@ -92,8 +101,7 @@ ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const ModalVariants = cva(
   cn(
     'fixed gap-0 border p-0 shadow-lg overflow-y-auto',
-    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
-    'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:rounded-xl',
+    'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
   ),
   {
@@ -104,19 +112,50 @@ const ModalVariants = cva(
         transparent: 'bg-transparent border-none p-0',
       },
       side: {
-        top: 'inset-x-0 top-0 border-b rounded-b-xl max-h-[90%] lg:h-fit max-lg:data-[state=closed]:slide-out-to-top max-lg:data-[state=open]:slide-in-from-top',
-        bottom:
-          'inset-x-0 bottom-0 lg:bottom-auto border-t lg:h-auto max-h-[90%] rounded-t-xl max-lg:data-[state=closed]:slide-out-to-bottom max-lg:data-[state=open]:slide-in-from-bottom',
-        left: 'inset-y-0 left-0 h-full lg:h-fit w-3/4 border-r rounded-r-xl max-lg:data-[state=closed]:slide-out-to-left max-lg:data-[state=open]:slide-in-from-left sm:max-w-sm',
-        right:
-          'inset-y-0 right-0 h-full lg:h-fit w-3/4 border-l rounded-l-xl max-lg:data-[state=closed]:slide-out-to-right max-lg:data-[state=open]:slide-in-from-right sm:max-w-sm',
-        fullscreen:
-          'inset-0 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-black/85',
+        top: 'inset-x-0 top-0 border-b rounded-b-xl max-h-[90%] lg:h-fit',
+        bottom: 'inset-x-0 bottom-0 lg:bottom-auto border-t lg:h-auto max-h-[90%] rounded-t-xl',
+        left: 'inset-y-0 left-0 h-full lg:h-fit w-3/4 border-r rounded-r-xl sm:max-w-sm',
+        right: 'inset-y-0 right-0 h-full lg:h-fit w-3/4 border-l rounded-l-xl sm:max-w-sm',
+        fullscreen: 'inset-0 bg-black/60 dark:bg-black/85',
+      },
+      animation: {
+        default: cn(
+          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+          'lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95',
+        ),
+        none: '',
       },
     },
+    compoundVariants: [
+      {
+        animation: 'default',
+        side: 'top',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-top max-lg:data-[state=open]:slide-in-from-top',
+      },
+      {
+        animation: 'default',
+        side: 'bottom',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-bottom max-lg:data-[state=open]:slide-in-from-bottom',
+      },
+      {
+        animation: 'default',
+        side: 'left',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-left max-lg:data-[state=open]:slide-in-from-left',
+      },
+      {
+        animation: 'default',
+        side: 'right',
+        class:
+          'max-lg:data-[state=closed]:slide-out-to-right max-lg:data-[state=open]:slide-in-from-right',
+      },
+    ],
     defaultVariants: {
       side: 'bottom',
       variant: 'default',
+      animation: 'default',
     },
   },
 );
@@ -137,9 +176,10 @@ const ModalContentInner = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   ModalContentProps
 >(
-  (
+    (
     {
       side = 'bottom',
+      animation = 'default',
       className,
       modalClassName,
       closeClassName,
@@ -160,7 +200,7 @@ const ModalContentInner = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          ModalVariants({ side, className: modalClassName, variant }),
+          ModalVariants({ side, animation, className: modalClassName, variant }),
           className,
           'rounded-xl rounded-b-none lg:rounded-b-xl',
         )}
@@ -196,12 +236,16 @@ ModalContentInner.displayName = 'ModalContentInner';
 const ModalContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   ModalContentProps
->((props, ref) => (
-  <ModalPortal>
-    <ModalOverlay className={props.overlayClassName} />
-    <ModalContentInner {...props} ref={ref} />
-  </ModalPortal>
-));
+>(({ animation = 'default', overlayClassName, ...props }, ref) => {
+  const resolvedAnimation = animation ?? 'default';
+
+  return (
+    <ModalPortal>
+      <ModalOverlay animation={resolvedAnimation} className={overlayClassName} />
+      <ModalContentInner animation={resolvedAnimation} {...props} ref={ref} />
+    </ModalPortal>
+  );
+});
 ModalContent.displayName = DialogPrimitive.Content.displayName;
 
 const ModalHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
